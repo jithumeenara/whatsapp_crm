@@ -1,0 +1,361 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/use-auth';
+import { toast } from 'sonner';
+import type { Contact, Tag, ContactTag } from '@/types';
+import type { ExistingContact } from '@/lib/contacts/dedupe';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, AlertTriangle } from 'lucide-react';
+
+interface ContactFormProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  contact?: Contact | null;
+  contactTags?: ContactTag[];
+  onSaved: () => void;
+  /** Open an existing contact's detail view — used by the duplicate
+   *  notice to jump to the contact that already owns this number. */
+  onViewExisting?: (contactId: string) => void;
+}
+
+export function ContactForm({
+  open,
+  onOpenChange,
+  contact,
+  contactTags = [],
+  onSaved,
+  onViewExisting,
+}: ContactFormProps) {
+  const { accountId } = useAuth();
+  const isEdit = !!contact;
+
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [company, setCompany] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Duplicate-phone detection for NEW contacts. `exact` (same digits)
+  // hard-blocks the save; a fuzzy trunk-variant match only warns. The
+  // DB unique index (migration 022) is the real backstop — this is the
+  // friendly heads-up before we get there.
+  const [dupMatch, setDupMatch] = useState<
+    { contact: ExistingContact; exact: boolean } | null
+  >(null);
+  const [checkingDup, setCheckingDup] = useState(false);
+
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [loadingTags, setLoadingTags] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setName(contact?.name ?? '');
+      setPhone(contact?.phone ?? '');
+      setEmail(contact?.email ?? '');
+      setCompany(contact?.company ?? '');
+      setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
+      setDupMatch(null);
+      fetchTags();
+    }
+  }, [open, contact]);
+
+  // Look up an existing contact with this number (new contacts only).
+  // Runs on blur so we don't query on every keystroke.
+  async function checkDuplicate() {
+    if (isEdit || !accountId) return;
+    const value = phone.trim();
+    if (!value) {
+      setDupMatch(null);
+      return;
+    }
+    setCheckingDup(true);
+    try {
+      const res = await fetch(`/api/contacts/check-duplicate?phone=${encodeURIComponent(value)}`);
+      if (res.ok) {
+        const json = await res.json();
+        setDupMatch(json.match ?? null);
+      }
+    } finally {
+      setCheckingDup(false);
+    }
+  }
+
+  async function fetchTags() {
+    setLoadingTags(true);
+    const res = await fetch('/api/tags', { cache: 'no-store' });
+    if (res.ok) {
+      const json = await res.json();
+      setTags(json.tags ?? []);
+    }
+    setLoadingTags(false);
+  }
+
+  function toggleTag(tagId: string) {
+    setSelectedTagIds((prev) =>
+      prev.includes(tagId)
+        ? prev.filter((id) => id !== tagId)
+        : [...prev, tagId]
+    );
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!phone.trim()) {
+      toast.error('Phone number is required');
+      return;
+    }
+
+    // Hard-block an exact duplicate on create (the DB unique index is
+    // the real backstop; this avoids a round-trip + a raw error toast).
+    if (!isEdit && dupMatch?.exact) {
+      toast.error('A contact with this phone number already exists');
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      let contactId = contact?.id;
+
+      if (isEdit && contactId) {
+        const res = await fetch(`/api/contacts/${contactId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim() || null,
+            phone: phone.trim(),
+            email: email.trim() || null,
+            company: company.trim() || null,
+          }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          throw new Error(json.error ?? 'Failed to update contact');
+        }
+      } else {
+        const res = await fetch('/api/contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim() || null,
+            phone: phone.trim(),
+            email: email.trim() || null,
+            company: company.trim() || null,
+          }),
+        });
+        if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          if (res.status === 409 || (json.error ?? '').toLowerCase().includes('unique')) {
+            toast.error('A contact with this phone number already exists');
+            const dupRes = await fetch(`/api/contacts/check-duplicate?phone=${encodeURIComponent(phone.trim())}`);
+            if (dupRes.ok) {
+              const dupJson = await dupRes.json();
+              if (dupJson.match) setDupMatch(dupJson.match);
+            }
+            return;
+          }
+          throw new Error(json.error ?? 'Failed to create contact');
+        }
+        const json = await res.json();
+        contactId = json.contact?.id;
+      }
+
+      // Sync tags
+      if (contactId) {
+        await fetch(`/api/contacts/${contactId}/tags`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tag_ids: selectedTagIds }),
+        });
+      }
+
+      toast.success(isEdit ? 'Contact updated' : 'Contact created');
+      onOpenChange(false);
+      onSaved();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to save contact';
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-card border-border text-foreground/80 sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-foreground">
+            {isEdit ? 'Edit Contact' : 'Add Contact'}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            {isEdit
+              ? 'Update the contact details below.'
+              : 'Fill in the details to create a new contact.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="cf-name" className="text-foreground/80">
+              Name
+            </Label>
+            <Input
+              id="cf-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="John Doe"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-phone" className="text-foreground/80">
+              Phone <span className="text-red-400">*</span>
+            </Label>
+            <Input
+              id="cf-phone"
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                if (dupMatch) setDupMatch(null);
+              }}
+              onBlur={checkDuplicate}
+              placeholder="+1 234 567 8900"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+            {dupMatch ? (
+              <div
+                className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs ${
+                  dupMatch.exact
+                    ? 'border-red-500/40 bg-red-500/10 text-red-300'
+                    : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                }`}
+              >
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <div className="space-y-1">
+                  <p>
+                    {dupMatch.exact
+                      ? 'A contact with this phone number already exists.'
+                      : 'A contact with a very similar number already exists.'}
+                  </p>
+                  {onViewExisting && (
+                    <button
+                      type="button"
+                      onClick={() => onViewExisting(dupMatch.contact.id)}
+                      className="font-medium underline underline-offset-2 hover:no-underline"
+                    >
+                      View {dupMatch.contact.name || dupMatch.contact.phone}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Include country code, e.g. +1 for US
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-email" className="text-foreground/80">
+              Email
+            </Label>
+            <Input
+              id="cf-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="john@example.com"
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="cf-company" className="text-foreground/80">
+              Company
+            </Label>
+            <Input
+              id="cf-company"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Acme Inc."
+              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-foreground/80">Tags</Label>
+            {loadingTags ? (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                <Loader2 className="size-3 animate-spin" />
+                Loading tags...
+              </div>
+            ) : tags.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No tags available. Create tags in Settings.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((tag) => {
+                  const selected = selectedTagIds.includes(tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleTag(tag.id)}
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors cursor-pointer ${
+                        selected
+                          ? 'ring-2 ring-primary ring-offset-1 ring-offset-slate-900'
+                          : 'opacity-60 hover:opacity-100'
+                      }`}
+                      style={{
+                        backgroundColor: tag.color + '20',
+                        color: tag.color,
+                        borderColor: tag.color,
+                      }}
+                    >
+                      {tag.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="bg-card border-border">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              className="border-border text-foreground/80 hover:bg-muted"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={saving || checkingDup || (!isEdit && !!dupMatch?.exact)}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              {isEdit ? 'Update' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

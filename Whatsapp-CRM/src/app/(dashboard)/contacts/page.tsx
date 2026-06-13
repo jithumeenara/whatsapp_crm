@@ -1,0 +1,475 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { toast } from 'sonner';
+import type { Contact, Tag, ContactTag } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Search,
+  Plus,
+  Upload,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Loader2,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
+import { ContactForm } from '@/components/contacts/contact-form';
+import { ContactDetailView } from '@/components/contacts/contact-detail-view';
+import { ImportModal } from '@/components/contacts/import-modal';
+import { useCan } from '@/hooks/use-can';
+import { GatedButton } from '@/components/ui/gated-button';
+
+const PAGE_SIZE = 25;
+
+interface ContactWithTags extends Contact {
+  tags?: Tag[];
+}
+
+export default function ContactsPage() {
+  const canEdit = useCan('send-messages');
+
+  const [contacts, setContacts] = useState<ContactWithTags[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+
+  // Modals
+  const [formOpen, setFormOpen] = useState(false);
+  const [editContact, setEditContact] = useState<Contact | null>(null);
+  const [editContactTags, setEditContactTags] = useState<ContactTag[]>([]);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailContactId, setDetailContactId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // All tags for display
+  const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
+
+  const fetchTags = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tags');
+      if (!res.ok) return;
+      const body = await res.json();
+      const map: Record<string, Tag> = {};
+      (body.tags ?? []).forEach((t: Tag) => (map[t.id] = t));
+      setTagsMap(map);
+    } catch {
+      // non-critical; tags just won't render inline
+    }
+  }, []);
+
+  const fetchContacts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(PAGE_SIZE),
+      });
+      if (search.trim()) params.set('search', search.trim());
+
+      const res = await fetch(`/api/contacts?${params}`);
+      if (!res.ok) {
+        toast.error('Failed to load contacts');
+        setLoading(false);
+        return;
+      }
+      const body = await res.json();
+      setTotalCount(body.total ?? 0);
+      setContacts((body.contacts ?? []) as ContactWithTags[]);
+    } catch {
+      toast.error('Failed to load contacts');
+    } finally {
+      setLoading(false);
+    }
+  }, [page, search]);
+
+  // Load-once-on-mount-ish data fetches. Each setter inside runs
+  // inside an async promise completion (Supabase await), not
+  // synchronously in the effect body, so the cascade the lint rule
+  // warns about doesn't apply here.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchTags();
+  }, [fetchTags]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchContacts();
+  }, [fetchContacts]);
+
+  function openAddForm() {
+    setEditContact(null);
+    setEditContactTags([]);
+    setFormOpen(true);
+  }
+
+  async function openEditForm(contact: Contact) {
+    // Fetch contact tags for the edit form
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}/tags`);
+      const data = res.ok ? (await res.json()).tags ?? [] : [];
+      setEditContactTags(data as ContactTag[]);
+    } catch {
+      setEditContactTags([]);
+    }
+    setEditContact(contact);
+    setFormOpen(true);
+  }
+
+  function openDetail(contactId: string) {
+    setDetailContactId(contactId);
+    setDetailOpen(true);
+  }
+
+  function confirmDelete(contact: Contact) {
+    setDeleteTarget(contact);
+    setDeleteConfirmOpen(true);
+  }
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+
+    const res = await fetch(`/api/contacts/${deleteTarget.id}`, { method: 'DELETE' });
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      toast.error(body?.error ?? 'Failed to delete contact');
+    } else {
+      toast.success('Contact deleted');
+      fetchContacts();
+    }
+
+    setDeleting(false);
+    setDeleteConfirmOpen(false);
+    setDeleteTarget(null);
+  }
+
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const hasNext = page < totalPages - 1;
+  const hasPrev = page > 0;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Contacts</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage your contact list. {totalCount > 0 && `${totalCount} total contacts.`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <GatedButton
+            variant="outline"
+            canAct={canEdit}
+            gateReason="add or import contacts"
+            onClick={() => setImportOpen(true)}
+            className="border-border text-foreground/80 hover:bg-muted"
+          >
+            <Upload className="size-4" />
+            Import
+          </GatedButton>
+          <GatedButton
+            canAct={canEdit}
+            gateReason="add or import contacts"
+            onClick={openAddForm}
+            className="bg-primary hover:bg-primary/90 text-primary-foreground"
+          >
+            <Plus className="size-4" />
+            Add Contact
+          </GatedButton>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            // Reset pagination when the query changes — the result
+            // set shrinks/grows, page N may no longer be valid.
+            setPage(0);
+          }}
+          placeholder="Search by name, phone, or email..."
+          className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="rounded-lg border border-border overflow-hidden">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-border hover:bg-transparent">
+              <TableHead className="text-muted-foreground">Name</TableHead>
+              <TableHead className="text-muted-foreground">Phone</TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">Email</TableHead>
+              <TableHead className="text-muted-foreground hidden lg:table-cell">Company</TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">Tags</TableHead>
+              <TableHead className="text-muted-foreground hidden lg:table-cell">Created</TableHead>
+              <TableHead className="text-muted-foreground w-12" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              <TableRow className="border-border">
+                <TableCell colSpan={7} className="text-center py-12">
+                  <div className="flex flex-col items-center gap-2">
+                    <Loader2 className="size-6 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">Loading contacts...</p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : contacts.length === 0 ? (
+              <TableRow className="border-border">
+                <TableCell colSpan={7} className="text-center py-12">
+                  <div className="flex flex-col items-center gap-2">
+                    <Users className="size-8 text-slate-600" />
+                    <p className="text-sm text-muted-foreground">
+                      {search ? 'No contacts match your search.' : 'No contacts yet.'}
+                    </p>
+                    {!search && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={openAddForm}
+                        className="mt-2 border-border text-foreground/80 hover:bg-muted"
+                      >
+                        <Plus className="size-3.5" />
+                        Add your first contact
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              contacts.map((contact) => (
+                <TableRow
+                  key={contact.id}
+                  className="border-border hover:bg-card/50 cursor-pointer"
+                  onClick={() => openDetail(contact.id)}
+                >
+                  <TableCell className="text-foreground font-medium">
+                    {contact.name || <span className="text-muted-foreground italic">Unnamed</span>}
+                  </TableCell>
+                  <TableCell className="text-foreground/80 font-mono text-xs">
+                    {contact.phone}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground hidden md:table-cell text-sm">
+                    {contact.email || <span className="text-slate-600">-</span>}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground hidden lg:table-cell text-sm">
+                    {contact.company || <span className="text-slate-600">-</span>}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <div className="flex flex-wrap gap-1">
+                      {contact.tags && contact.tags.length > 0 ? (
+                        contact.tags.slice(0, 3).map((tag) => (
+                          <span
+                            key={tag.id}
+                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{
+                              backgroundColor: tag.color + '20',
+                              color: tag.color,
+                            }}
+                          >
+                            {tag.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-slate-600 text-xs">-</span>
+                      )}
+                      {contact.tags && contact.tags.length > 3 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          +{contact.tags.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground text-xs hidden lg:table-cell">
+                    {new Date(contact.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        }
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="bg-card border-border"
+                      >
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditForm(contact);
+                          }}
+                          className="text-foreground/80 focus:bg-muted focus:text-foreground"
+                        >
+                          <Pencil className="size-4" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="bg-muted" />
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            confirmDelete(contact);
+                          }}
+                        >
+                          <Trash2 className="size-4" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, totalCount)} of{' '}
+            {totalCount}
+          </p>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={!hasPrev}
+              onClick={() => setPage((p) => p - 1)}
+              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground px-2">
+              Page {page + 1} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={!hasNext}
+              onClick={() => setPage((p) => p + 1)}
+              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Form Dialog */}
+      <ContactForm
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        contact={editContact}
+        contactTags={editContactTags}
+        onSaved={() => {
+          fetchContacts();
+          fetchTags();
+        }}
+        onViewExisting={(id) => {
+          setFormOpen(false);
+          openDetail(id);
+        }}
+      />
+
+      {/* Contact Detail Sheet */}
+      <ContactDetailView
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        contactId={detailContactId}
+        onUpdated={fetchContacts}
+      />
+
+      {/* Import Modal */}
+      <ImportModal
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={fetchContacts}
+      />
+
+      {/* Delete Confirmation */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="bg-card border-border text-foreground/80 sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Delete Contact</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Are you sure you want to delete{' '}
+              <span className="text-foreground/80 font-medium">
+                {deleteTarget?.name || deleteTarget?.phone}
+              </span>
+              ? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="bg-card border-border">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteConfirmOpen(false)}
+              className="border-border text-foreground/80 hover:bg-muted"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting && <Loader2 className="size-4 animate-spin" />}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -1,0 +1,937 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// AUTH
+// ============================================================
+
+model User {
+  id             String    @id @default(uuid()) @db.Uuid
+  email          String    @unique
+  password_hash  String?
+  email_verified DateTime? @db.Timestamptz(6)
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  profile                      Profile?
+  owned_accounts               Account[]                    @relation("AccountOwner")
+  contacts                     Contact[]
+  tags                         Tag[]
+  custom_fields                CustomField[]
+  contact_notes                ContactNote[]
+  conversations                Conversation[]
+  message_templates            MessageTemplate[]
+  pipelines                    Pipeline[]
+  deals                        Deal[]
+  broadcasts                   Broadcast[]
+  automations                  Automation[]
+  automation_logs              AutomationLog[]
+  automation_pending_executions AutomationPendingExecution[]
+  flows                        Flow[]
+  flow_runs                    FlowRun[]
+  whatsapp_configs             WhatsAppConfig[]
+  ai_configs                   AiConfig[]
+  invitations_created          AccountInvitation[]          @relation("InvitationCreator")
+  invitations_accepted         AccountInvitation[]          @relation("InvitationAcceptor")
+  leads                        Lead[]
+  leads_assigned               Lead[]                       @relation("LeadAssignee")
+  follow_ups                   FollowUp[]
+  follow_ups_assigned          FollowUp[]                   @relation("FollowUpAssignee")
+  lead_activities              LeadActivity[]
+  segments                     Segment[]
+  tasks                        Task[]
+  tasks_assigned               Task[]                       @relation("TaskAssignee")
+  conversations_assigned       Conversation[]               @relation("ConversationAgent")
+  push_subscriptions           PushSubscription[]
+
+  @@map("users")
+}
+
+// ============================================================
+// ACCOUNTS & TEAM
+// ============================================================
+
+enum AccountRole {
+  owner
+  admin
+  agent
+  viewer
+
+  @@map("account_role")
+}
+
+model Account {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  owner_user_id    String   @db.Uuid
+  default_currency String   @default("USD")
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+
+  owner       User                @relation("AccountOwner", fields: [owner_user_id], references: [id], onDelete: Restrict)
+  profiles    Profile[]
+  invitations AccountInvitation[]
+
+  contacts                     Contact[]
+  tags                         Tag[]
+  custom_fields                CustomField[]
+  contact_notes                ContactNote[]
+  conversations                Conversation[]
+  whatsapp_config              WhatsAppConfig?
+  ai_config                    AiConfig?
+  message_templates            MessageTemplate[]
+  pipelines                    Pipeline[]
+  deals                        Deal[]
+  broadcasts                   Broadcast[]
+  automations                  Automation[]
+  automation_logs              AutomationLog[]
+  automation_pending_executions AutomationPendingExecution[]
+  flows                        Flow[]
+  flow_runs                    FlowRun[]
+  data_tables                  DataTable[]
+  file_uploads                 FileUpload[]
+  leads                        Lead[]
+  follow_ups                   FollowUp[]
+  lead_activities              LeadActivity[]
+  segments                     Segment[]
+  tasks                        Task[]
+  push_subscriptions           PushSubscription[]
+
+  @@unique([owner_user_id])
+  @@map("accounts")
+}
+
+model AccountInvitation {
+  id                  String      @id @default(uuid()) @db.Uuid
+  account_id          String      @db.Uuid
+  token_hash          String      @unique
+  role                AccountRole
+  created_by_user_id  String?     @db.Uuid
+  label               String?
+  created_at          DateTime    @default(now()) @db.Timestamptz(6)
+  expires_at          DateTime    @db.Timestamptz(6)
+  accepted_at         DateTime?   @db.Timestamptz(6)
+  accepted_by_user_id String?     @db.Uuid
+
+  account      Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  created_by   User?   @relation("InvitationCreator", fields: [created_by_user_id], references: [id], onDelete: SetNull)
+  accepted_by  User?   @relation("InvitationAcceptor", fields: [accepted_by_user_id], references: [id], onDelete: SetNull)
+
+  @@map("account_invitations")
+}
+
+model Profile {
+  id           String      @id @default(uuid()) @db.Uuid
+  user_id      String      @unique @db.Uuid
+  full_name    String      @default("")
+  email        String
+  avatar_url   String?
+  account_id   String      @db.Uuid
+  account_role AccountRole
+  created_at   DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime    @updatedAt @db.Timestamptz(6)
+
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+// ============================================================
+// CONTACTS
+// ============================================================
+
+model Contact {
+  id               String   @id @default(uuid()) @db.Uuid
+  account_id       String   @db.Uuid
+  user_id          String   @db.Uuid
+  phone            String
+  phone_normalized String?
+  name             String?
+  email            String?
+  company          String?
+  avatar_url       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  tags                         ContactTag[]
+  custom_values                ContactCustomValue[]
+  notes                        ContactNote[]
+  conversations                Conversation[]
+  deals                        Deal[]
+  broadcast_recipients         BroadcastRecipient[]
+  automation_logs              AutomationLog[]
+  automation_pending_executions AutomationPendingExecution[]
+  flow_runs                    FlowRun[]
+  leads                        Lead[]
+  follow_ups                   FollowUp[]
+  lead_activities              LeadActivity[]
+  tasks                        Task[]
+
+  @@unique([account_id, phone_normalized], name: "contacts_account_phone_normalized")
+  @@map("contacts")
+}
+
+model Tag {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  name       String
+  color      String   @default("#3b82f6")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account  Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contacts ContactTag[]
+
+  @@map("tags")
+}
+
+model ContactTag {
+  id         String   @id @default(uuid()) @db.Uuid
+  contact_id String   @db.Uuid
+  tag_id     String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  contact Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@unique([contact_id, tag_id])
+  @@map("contact_tags")
+}
+
+model CustomField {
+  id            String   @id @default(uuid()) @db.Uuid
+  account_id    String   @db.Uuid
+  user_id       String   @db.Uuid
+  field_name    String
+  field_type    String   @default("text")
+  field_options Json?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  account Account              @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  values  ContactCustomValue[]
+
+  @@map("custom_fields")
+}
+
+model ContactCustomValue {
+  id              String   @id @default(uuid()) @db.Uuid
+  contact_id      String   @db.Uuid
+  custom_field_id String   @db.Uuid
+  value           String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  contact      Contact     @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  custom_field CustomField @relation(fields: [custom_field_id], references: [id], onDelete: Cascade)
+
+  @@unique([contact_id, custom_field_id])
+  @@map("contact_custom_values")
+}
+
+model ContactNote {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  contact_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  note_text  String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("contact_notes")
+}
+
+// ============================================================
+// CONVERSATIONS & MESSAGES
+// ============================================================
+
+model Conversation {
+  id                String    @id @default(uuid()) @db.Uuid
+  account_id        String    @db.Uuid
+  user_id           String    @db.Uuid
+  contact_id        String    @db.Uuid
+  status            String    @default("open")
+  assigned_agent_id String?   @db.Uuid
+  last_message_text String?
+  last_message_at   DateTime? @db.Timestamptz(6)
+  unread_count      Int       @default(0)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+
+  account        Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user           User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact        Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  assigned_agent User?   @relation("ConversationAgent", fields: [assigned_agent_id], references: [id], onDelete: SetNull)
+
+  messages         Message[]
+  message_reactions MessageReaction[]
+  deals            Deal[]
+  flow_runs        FlowRun[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id                  String   @id @default(uuid()) @db.Uuid
+  conversation_id     String   @db.Uuid
+  sender_type         String
+  sender_id           String?  @db.Uuid
+  content_type        String   @default("text")
+  content_text        String?
+  media_url           String?
+  template_name       String?
+  message_id          String?
+  status              String   @default("sent")
+  interactive_reply_id String?
+  reply_to_message_id String?  @db.Uuid
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  reply_to        Message?     @relation("MessageReplies", fields: [reply_to_message_id], references: [id], onDelete: SetNull)
+  replies         Message[]    @relation("MessageReplies")
+  reactions       MessageReaction[]
+  prompt_for_runs FlowRun[]    @relation("LastPromptMessage")
+
+  @@map("messages")
+}
+
+model MessageReaction {
+  id              String   @id @default(uuid()) @db.Uuid
+  message_id      String   @db.Uuid
+  conversation_id String   @db.Uuid
+  actor_type      String
+  actor_id        String?  @db.Uuid
+  emoji           String
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  message      Message      @relation(fields: [message_id], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+
+  @@unique([message_id, actor_type, actor_id])
+  @@map("message_reactions")
+}
+
+// ============================================================
+// WHATSAPP CONFIG
+// ============================================================
+
+model WhatsAppConfig {
+  id                     String    @id @default(uuid()) @db.Uuid
+  account_id             String    @unique @db.Uuid
+  user_id                String    @db.Uuid
+  phone_number_id        String
+  waba_id                String?
+  access_token           String
+  verify_token           String?
+  status                 String    @default("disconnected")
+  registered_at          DateTime? @db.Timestamptz(6)
+  subscribed_apps_at     DateTime? @db.Timestamptz(6)
+  last_registration_error String?
+  connected_at           DateTime? @db.Timestamptz(6)
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_config")
+}
+
+// ============================================================
+// AI CONFIG
+// ============================================================
+
+model AiConfig {
+  id            String   @id @default(uuid()) @db.Uuid
+  account_id    String   @unique @db.Uuid
+  user_id       String   @db.Uuid
+  provider      String   @default("gemini")
+  api_key       String
+  model         String   @default("gemini-1.5-flash")
+  temperature   Float    @default(0.7)
+  max_tokens    Int      @default(500)
+  system_prompt String?
+  training_data Json?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("ai_configs")
+}
+
+// ============================================================
+// MESSAGE TEMPLATES
+// ============================================================
+
+model MessageTemplate {
+  id                String    @id @default(uuid()) @db.Uuid
+  account_id        String    @db.Uuid
+  user_id           String    @db.Uuid
+  name              String
+  category          String    @default("Marketing")
+  language          String?   @default("en_US")
+  header_type       String?
+  header_content    String?
+  body_text         String
+  footer_text       String?
+  buttons           Json?
+  status            String    @default("DRAFT")
+  sample_values     Json?
+  meta_template_id  String?
+  rejection_reason  String?
+  quality_score     String?
+  header_handle     String?
+  header_media_url  String?
+  submission_error  String?
+  last_submitted_at DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([account_id, name, language])
+  @@map("message_templates")
+}
+
+// ============================================================
+// PIPELINES & DEALS
+// ============================================================
+
+model Pipeline {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  name       String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account Account         @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  stages  PipelineStage[]
+  deals   Deal[]
+
+  @@map("pipelines")
+}
+
+model PipelineStage {
+  id          String   @id @default(uuid()) @db.Uuid
+  pipeline_id String   @db.Uuid
+  name        String
+  position    Int      @default(0)
+  color       String   @default("#3b82f6")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  pipeline Pipeline @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  deals    Deal[]
+
+  @@map("pipeline_stages")
+}
+
+model Deal {
+  id                  String    @id @default(uuid()) @db.Uuid
+  account_id          String    @db.Uuid
+  user_id             String    @db.Uuid
+  pipeline_id         String    @db.Uuid
+  stage_id            String    @db.Uuid
+  contact_id          String    @db.Uuid
+  conversation_id     String?   @db.Uuid
+  assigned_to         String?   @db.Uuid
+  title               String
+  value               Decimal   @default(0) @db.Decimal(12, 2)
+  currency            String?   @default("USD")
+  notes               String?
+  expected_close_date DateTime? @db.Date
+  status              String    @default("open")
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
+
+  account      Account       @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  pipeline     Pipeline      @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  stage        PipelineStage @relation(fields: [stage_id], references: [id])
+  contact      Contact       @relation(fields: [contact_id], references: [id])
+  conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
+
+  @@map("deals")
+}
+
+// ============================================================
+// BROADCASTS
+// ============================================================
+
+model Broadcast {
+  id                 String    @id @default(uuid()) @db.Uuid
+  account_id         String    @db.Uuid
+  user_id            String    @db.Uuid
+  name               String
+  template_name      String
+  template_language  String    @default("en_US")
+  template_variables Json?
+  audience_filter    Json?
+  scheduled_at       DateTime? @db.Timestamptz(6)
+  status             String    @default("draft")
+  total_recipients   Int       @default(0)
+  sent_count         Int       @default(0)
+  delivered_count    Int       @default(0)
+  read_count         Int       @default(0)
+  replied_count      Int       @default(0)
+  failed_count       Int       @default(0)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+
+  account    Account             @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user       User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  recipients BroadcastRecipient[]
+
+  @@map("broadcasts")
+}
+
+model BroadcastRecipient {
+  id                   String    @id @default(uuid()) @db.Uuid
+  broadcast_id         String    @db.Uuid
+  contact_id           String    @db.Uuid
+  whatsapp_message_id  String?   @unique
+  status               String    @default("pending")
+  sent_at              DateTime? @db.Timestamptz(6)
+  delivered_at         DateTime? @db.Timestamptz(6)
+  read_at              DateTime? @db.Timestamptz(6)
+  replied_at           DateTime? @db.Timestamptz(6)
+  error_message        String?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+
+  broadcast Broadcast @relation(fields: [broadcast_id], references: [id], onDelete: Cascade)
+  contact   Contact   @relation(fields: [contact_id], references: [id])
+
+  @@map("broadcast_recipients")
+}
+
+// ============================================================
+// AUTOMATIONS
+// ============================================================
+
+model Automation {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  user_id         String    @db.Uuid
+  name            String
+  description     String?
+  trigger_type    String
+  trigger_config  Json      @default("{}")
+  is_active       Boolean   @default(false)
+  execution_count Int       @default(0)
+  last_executed_at DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  account  Account           @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  steps    AutomationStep[]
+  logs     AutomationLog[]
+  pending  AutomationPendingExecution[]
+
+  @@map("automations")
+}
+
+model AutomationStep {
+  id             String  @id @default(uuid()) @db.Uuid
+  automation_id  String  @db.Uuid
+  parent_step_id String? @db.Uuid
+  branch         String?
+  step_type      String
+  step_config    Json    @default("{}")
+  position       Int
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  automation  Automation      @relation(fields: [automation_id], references: [id], onDelete: Cascade)
+  parent      AutomationStep? @relation("StepChildren", fields: [parent_step_id], references: [id], onDelete: Cascade)
+  children    AutomationStep[] @relation("StepChildren")
+
+  pending_executions AutomationPendingExecution[]
+
+  @@map("automation_steps")
+}
+
+model AutomationLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  account_id     String   @db.Uuid
+  automation_id  String   @db.Uuid
+  user_id        String   @db.Uuid
+  contact_id     String?  @db.Uuid
+  trigger_event  String
+  steps_executed Json     @default("[]")
+  status         String
+  error_message  String?
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  account    Account    @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  automation Automation @relation(fields: [automation_id], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact    Contact?   @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+
+  pending_executions AutomationPendingExecution[]
+
+  @@map("automation_logs")
+}
+
+model AutomationPendingExecution {
+  id                  String   @id @default(uuid()) @db.Uuid
+  account_id          String   @db.Uuid
+  automation_id       String   @db.Uuid
+  user_id             String   @db.Uuid
+  contact_id          String?  @db.Uuid
+  log_id              String?  @db.Uuid
+  parent_step_id      String?  @db.Uuid
+  branch              String?
+  next_step_position  Int
+  context             Json     @default("{}")
+  status              String   @default("pending")
+  run_at              DateTime @db.Timestamptz(6)
+  created_at          DateTime @default(now()) @db.Timestamptz(6)
+
+  account    Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  automation Automation     @relation(fields: [automation_id], references: [id], onDelete: Cascade)
+  user       User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact    Contact?       @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  log        AutomationLog? @relation(fields: [log_id], references: [id], onDelete: Cascade)
+  parent     AutomationStep? @relation(fields: [parent_step_id], references: [id], onDelete: SetNull)
+
+  @@map("automation_pending_executions")
+}
+
+// ============================================================
+// FLOWS
+// ============================================================
+
+model Flow {
+  id               String    @id @default(uuid()) @db.Uuid
+  account_id       String    @db.Uuid
+  user_id          String    @db.Uuid
+  name             String
+  description      String?
+  flow_type        String    @default("flow")   // "flow" | "chatbot"
+  status           String    @default("draft")
+  trigger_type     String
+  trigger_config   Json      @default("{}")
+  entry_node_id    String?
+  fallback_policy  Json      @default("{\"on_unknown_reply\":\"reprompt\",\"max_reprompts\":2,\"on_timeout_hours\":24,\"on_exhaust\":\"handoff\"}")
+  execution_count  Int       @default(0)
+  last_executed_at DateTime? @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account    @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  nodes   FlowNode[]
+  runs    FlowRun[]
+
+  @@map("flows")
+}
+
+model FlowNode {
+  id         String   @id @default(uuid()) @db.Uuid
+  flow_id    String   @db.Uuid
+  node_key   String
+  node_type  String
+  config     Json     @default("{}")
+  position_x Int      @default(0)
+  position_y Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  flow Flow @relation(fields: [flow_id], references: [id], onDelete: Cascade)
+
+  @@unique([flow_id, node_key])
+  @@map("flow_nodes")
+}
+
+model FlowRun {
+  id                    String    @id @default(uuid()) @db.Uuid
+  account_id            String    @db.Uuid
+  flow_id               String    @db.Uuid
+  user_id               String    @db.Uuid
+  contact_id            String?   @db.Uuid
+  conversation_id       String?   @db.Uuid
+  status                String    @default("active")
+  current_node_key      String?
+  last_prompt_message_id String?  @db.Uuid
+  vars                  Json      @default("{}")
+  reprompt_count        Int       @default(0)
+  started_at            DateTime  @default(now()) @db.Timestamptz(6)
+  last_advanced_at      DateTime  @default(now()) @db.Timestamptz(6)
+  ended_at              DateTime? @db.Timestamptz(6)
+  end_reason            String?
+
+  account      Account       @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  flow         Flow          @relation(fields: [flow_id], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
+  last_prompt  Message?      @relation("LastPromptMessage", fields: [last_prompt_message_id], references: [id], onDelete: SetNull)
+  events       FlowRunEvent[]
+
+  @@map("flow_runs")
+}
+
+model FlowRunEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  flow_run_id String   @db.Uuid
+  event_type  String
+  node_key    String?
+  payload     Json     @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  flow_run FlowRun @relation(fields: [flow_run_id], references: [id], onDelete: Cascade)
+
+  @@map("flow_run_events")
+}
+
+// ============================================================
+// CUSTOM DATA STORE
+// ============================================================
+
+model DataTable {
+  id          String   @id @default(uuid()) @db.Uuid
+  account_id  String   @db.Uuid
+  name        String
+  slug        String
+  icon        String   @default("database")
+  description String?
+  sort_order  Int      @default(0)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+
+  account          Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  fields           DataField[]  @relation("TableFields")
+  relation_targets DataField[]  @relation("FieldRelation")
+  records          DataRecord[]
+
+  @@unique([account_id, slug])
+  @@map("data_tables")
+}
+
+model DataField {
+  id                   String   @id @default(uuid()) @db.Uuid
+  table_id             String   @db.Uuid
+  account_id           String   @db.Uuid
+  label                String
+  field_key            String
+  field_type           String   @default("text")
+  options              Json?
+  relation_table_id    String?  @db.Uuid
+  relation_label_field String?
+  required             Boolean  @default(false)
+  sort_order           Int      @default(0)
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+
+  table          DataTable  @relation("TableFields", fields: [table_id], references: [id], onDelete: Cascade)
+  relation_table DataTable? @relation("FieldRelation", fields: [relation_table_id], references: [id], onDelete: SetNull)
+
+  @@unique([table_id, field_key])
+  @@map("data_fields")
+}
+
+model DataRecord {
+  id         String   @id @default(uuid()) @db.Uuid
+  table_id   String   @db.Uuid
+  account_id String   @db.Uuid
+  data       Json     @default("{}")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  table DataTable @relation(fields: [table_id], references: [id], onDelete: Cascade)
+
+  @@map("data_records")
+}
+
+// ============================================================
+// FILE UPLOADS
+// ============================================================
+
+model FileUpload {
+  id            String   @id @default(uuid()) @db.Uuid
+  account_id    String   @db.Uuid
+  original_name String
+  stored_name   String
+  file_path     String
+  url           String
+  mime_type     String
+  size          Int
+  file_category String   @default("other")
+  scan_status   String   @default("pending")
+  scan_result   Json?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("file_uploads")
+}
+
+// ============================================================
+// LEADS
+// ============================================================
+
+model Lead {
+  id           String    @id @default(uuid()) @db.Uuid
+  account_id   String    @db.Uuid
+  user_id      String    @db.Uuid
+  contact_id   String?   @db.Uuid
+  title        String
+  source       String    @default("manual")  // manual, whatsapp_flow, import, broadcast, referral
+  status       String    @default("new")     // new, contacted, qualified, converted, lost
+  score        String    @default("warm")    // hot, warm, cold
+  notes        String?
+  assigned_to  String?   @db.Uuid
+  lost_reason  String?
+  converted_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+
+  account    Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact    Contact?     @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  assignee   User?        @relation("LeadAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
+  activities LeadActivity[]
+  follow_ups FollowUp[]
+  tasks      Task[]
+
+  @@map("leads")
+}
+
+// ============================================================
+// FOLLOW-UPS
+// ============================================================
+
+model FollowUp {
+  id           String    @id @default(uuid()) @db.Uuid
+  account_id   String    @db.Uuid
+  user_id      String    @db.Uuid
+  contact_id   String?   @db.Uuid
+  lead_id      String?   @db.Uuid
+  title        String
+  note         String?
+  due_at       DateTime  @db.Timestamptz(6)
+  status       String    @default("pending") // pending, done, skipped
+  assigned_to  String?   @db.Uuid
+  completed_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+
+  account  Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  lead     Lead?    @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  assignee User?    @relation("FollowUpAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
+
+  @@map("follow_ups")
+}
+
+// ============================================================
+// LEAD ACTIVITIES (Timeline)
+// ============================================================
+
+model LeadActivity {
+  id          String   @id @default(uuid()) @db.Uuid
+  account_id  String   @db.Uuid
+  contact_id  String?  @db.Uuid
+  lead_id     String?  @db.Uuid
+  user_id     String?  @db.Uuid
+  type        String   // note, call, email, whatsapp, stage_change, follow_up, flow_submitted, created
+  title       String
+  description String?
+  metadata    Json     @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  account Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  lead    Lead?    @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@map("lead_activities")
+}
+
+// ============================================================
+// SEGMENTS
+// ============================================================
+
+model Segment {
+  id            String   @id @default(uuid()) @db.Uuid
+  account_id    String   @db.Uuid
+  user_id       String   @db.Uuid
+  name          String
+  description   String?
+  color         String   @default("#3b82f6")
+  filter_config Json     @default("{}")
+  // filter_config: { match: "all"|"any", rules: [{ field, op, value }] }
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("segments")
+}
+
+// ============================================================
+// TASKS
+// ============================================================
+
+model Task {
+  id           String    @id @default(uuid()) @db.Uuid
+  account_id   String    @db.Uuid
+  user_id      String    @db.Uuid
+  contact_id   String?   @db.Uuid
+  lead_id      String?   @db.Uuid
+  title        String
+  description  String?
+  priority     String    @default("medium") // low, medium, high, urgent
+  status       String    @default("todo")   // todo, in_progress, done, cancelled
+  due_date     DateTime? @db.Date
+  assigned_to  String?   @db.Uuid
+  completed_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+
+  account  Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  lead     Lead?    @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  assignee User?    @relation("TaskAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
+
+  @@map("tasks")
+}
+
+// ============================================================
+// PUSH NOTIFICATIONS
+// ============================================================
+
+model PushSubscription {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  account_id String   @db.Uuid
+  endpoint   String
+  p256dh     String
+  auth       String
+  user_agent String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, endpoint])
+  @@map("push_subscriptions")
+}
