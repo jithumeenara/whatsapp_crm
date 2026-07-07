@@ -167,6 +167,7 @@ export default function DataTablePage() {
 
       {formOpen && (
         <RecordForm
+          open={formOpen}
           tableId={tableId}
           fields={fields}
           record={editingRecord ?? undefined}

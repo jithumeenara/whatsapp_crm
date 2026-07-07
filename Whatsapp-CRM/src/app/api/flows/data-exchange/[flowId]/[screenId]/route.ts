@@ -1,4 +1,4 @@
-import { handleFlowWebhookPost } from '@/app/api/flows/[id]/webhook/route'
+import { handleFlowWebhookPost } from '@/lib/flows/webhook-handler'
 
 /**
  * POST /api/flows/data-exchange/[flowId]/[screenId]

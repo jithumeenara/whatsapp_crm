@@ -537,6 +537,8 @@ export interface Lead {
   district: string | null;
   place: string | null;
   notes: string | null;
+  description?: string | null;
+  language?: string | null;
   assigned_to: string | null;
   claimed_at: string | null;
   lost_reason: string | null;
