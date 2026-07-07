@@ -9,9 +9,14 @@ export async function GET(
     const ctx = await requireRole("viewer")
     const { id: conversationId } = await params
 
-    // Verify the conversation belongs to the caller's account
+    // Verify the conversation belongs to the caller's account.
+    // Agents can only read messages from conversations assigned to them.
     const conversation = await ctx.db.conversation.findFirst({
-      where: { id: conversationId, account_id: ctx.accountId },
+      where: {
+        id: conversationId,
+        account_id: ctx.accountId,
+        ...(ctx.role === "agent" ? { assigned_agent_id: ctx.userId } : {}),
+      },
       select: { id: true },
     })
     if (!conversation) {
@@ -21,10 +26,19 @@ export async function GET(
       )
     }
 
-    const messages = await ctx.db.message.findMany({
-      where: { conversation_id: conversationId },
-      orderBy: { created_at: "asc" },
-    })
+    // Raw query ensures deleted_at is included even before prisma generate
+    await ctx.db.$executeRaw`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
+    `.catch(() => {})
+
+    const messages = await ctx.db.$queryRaw<unknown[]>`
+      SELECT id, conversation_id, sender_type, sender_id, content_type,
+             content_text, media_url, template_name, message_id, status,
+             interactive_reply_id, reply_to_message_id, created_at, deleted_at
+      FROM messages
+      WHERE conversation_id = ${conversationId}::uuid
+      ORDER BY created_at ASC
+    `
 
     return NextResponse.json(messages)
   } catch (err) {

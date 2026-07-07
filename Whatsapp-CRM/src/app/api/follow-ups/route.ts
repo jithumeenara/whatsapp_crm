@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 
 const PAGE_SIZE = 25
 
 export async function GET(req: NextRequest) {
   try {
-    const ctx = await requireRole('viewer')
+    const ctx = await requireRoleOrApiKey(req, 'viewer')
     const { searchParams } = req.nextUrl
 
     const status = searchParams.get('status')?.trim() ?? ''
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
         include: {
           contact: { select: { id: true, name: true, phone: true, avatar_url: true } },
           lead: { select: { id: true, title: true } },
-          assignee: { select: { id: true, name: true, email: true } },
+          assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
         },
       }),
       prisma.followUp.count({ where }),
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await requireRole('agent')
+    const ctx = await requireRoleOrApiKey(req, 'agent')
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
       include: {
         contact: { select: { id: true, name: true, phone: true } },
         lead: { select: { id: true, title: true } },
-        assignee: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
 

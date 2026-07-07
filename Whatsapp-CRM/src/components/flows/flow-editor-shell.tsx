@@ -85,7 +85,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
             <div
               role="group"
               aria-label="Editor view"
-              className="inline-flex items-center gap-1 rounded-md border border-border bg-card p-0.5 text-xs"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5 text-xs"
             >
               <ToggleButton
                 active={effectiveView === "canvas"}
@@ -157,8 +157,8 @@ function ToggleButton({
       className={cn(
         "inline-flex items-center gap-1.5 rounded px-2 py-1 transition-colors",
         active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground/80",
+          ? "bg-slate-100 text-slate-800"
+          : "text-slate-500 hover:bg-slate-100 hover:text-slate-800/80",
       )}
     >
       {icon}

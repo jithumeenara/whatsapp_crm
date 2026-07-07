@@ -169,13 +169,13 @@ export function TemplatePicker({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="border-border bg-card sm:max-w-lg">
+      <DialogContent className="border-slate-200 bg-white sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-foreground">
+          <DialogTitle className="flex items-center gap-2 text-slate-800">
             <LayoutTemplate className="h-4 w-4 text-primary" />
             {selected ? selected.name : "Send template"}
           </DialogTitle>
-          <DialogDescription className="text-muted-foreground">
+          <DialogDescription className="text-slate-500">
             {selected
               ? "Fill in the placeholders to render this template. Meta requires every variable to be set."
               : "Pick an approved WhatsApp template to send to this contact."}
@@ -183,15 +183,15 @@ export function TemplatePicker({
         </DialogHeader>
 
         {!selected ? (
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto scroll-styled">
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
               </div>
             ) : templates.length === 0 ? (
-              <div className="rounded-md border border-border bg-background/50 p-6 text-center">
-                <p className="text-sm text-foreground/80">No approved templates</p>
-                <p className="mt-1 text-xs text-muted-foreground">
+              <div className="rounded-md border border-slate-200 bg-white/50 p-6 text-center">
+                <p className="text-sm text-slate-800/80">No approved templates</p>
+                <p className="mt-1 text-xs text-slate-500">
                   Approve a template in Meta WhatsApp Manager, then sync it
                   from Settings → Templates.
                 </p>
@@ -202,28 +202,28 @@ export function TemplatePicker({
                   key={t.id}
                   type="button"
                   onClick={() => pickTemplate(t)}
-                  className="w-full rounded-md border border-border bg-background/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-card"
+                  className="w-full rounded-md border border-slate-200 bg-white/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-white"
                 >
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-foreground">
+                        <p className="truncate text-sm font-medium text-slate-800">
                           {t.name}
                         </p>
                         <Badge className="border border-primary/30 bg-primary/20 text-[10px] text-primary">
                           {t.category}
                         </Badge>
                         {t.language && (
-                          <span className="text-[10px] uppercase text-muted-foreground">
+                          <span className="text-[10px] uppercase text-slate-500">
                             {t.language}
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">
                         {t.body_text}
                       </p>
                     </div>
-                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-slate-500" />
                   </div>
                 </button>
               ))
@@ -231,33 +231,33 @@ export function TemplatePicker({
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="rounded-md border border-border bg-background/50 p-3">
-              <p className="mb-1 text-xs text-muted-foreground">Preview</p>
-              <p className="whitespace-pre-wrap text-sm text-foreground/80">
+            <div className="rounded-md border border-slate-200 bg-white/50 p-3">
+              <p className="mb-1 text-xs text-slate-500">Preview</p>
+              <p className="whitespace-pre-wrap text-sm text-slate-800/80">
                 {renderBodyPreview(selected.body_text, params)}
               </p>
               {selected.footer_text && (
-                <p className="mt-2 text-xs italic text-muted-foreground">
+                <p className="mt-2 text-xs italic text-slate-500">
                   {selected.footer_text}
                 </p>
               )}
             </div>
             {slots && slots.headerVarCount > 0 && (
               <div className="space-y-1">
-                <Label className="text-xs text-foreground/80">
+                <Label className="text-xs text-slate-800/80">
                   {`Header {{1}}`}
                 </Label>
                 <Input
                   value={headerText}
                   onChange={(e) => setHeaderText(e.target.value)}
                   placeholder="Value for the header variable"
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                  className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
                 />
               </div>
             )}
             {slots?.bodyVars.map((v, i) => (
               <div key={v} className="space-y-1">
-                <Label className="text-xs text-foreground/80">{`Body {{${v}}}`}</Label>
+                <Label className="text-xs text-slate-800/80">{`Body {{${v}}}`}</Label>
                 <Input
                   value={params[i] ?? ""}
                   onChange={(e) => {
@@ -266,13 +266,13 @@ export function TemplatePicker({
                     setParams(next);
                   }}
                   placeholder={`Value for {{${v}}}`}
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                  className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
                 />
               </div>
             ))}
             {slots?.urlButtonSlots.map((slot) => (
               <div key={slot.index} className="space-y-1">
-                <Label className="text-xs text-foreground/80">
+                <Label className="text-xs text-slate-800/80">
                   {`URL button "${slot.text}" — value for `}{`{{1}}`}
                 </Label>
                 <Input
@@ -284,9 +284,9 @@ export function TemplatePicker({
                     }))
                   }
                   placeholder="URL suffix value"
-                  className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                  className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
                 />
-                <p className="text-[10px] text-muted-foreground break-all">
+                <p className="text-[10px] text-slate-500 break-all">
                   Final URL: {slot.url.replace(/\{\{1\}\}/g, buttonParams[slot.index] || "{{1}}")}
                 </p>
               </div>
@@ -300,7 +300,7 @@ export function TemplatePicker({
               <Button
                 variant="outline"
                 onClick={resetSelection}
-                className="border-border text-foreground/80 hover:bg-muted"
+                className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
@@ -317,7 +317,7 @@ export function TemplatePicker({
             <Button
               variant="outline"
               onClick={() => handleOpenChange(false)}
-              className="border-border text-foreground/80 hover:bg-muted"
+              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
             >
               Cancel
             </Button>

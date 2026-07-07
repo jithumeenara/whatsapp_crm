@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account"
+import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 
 interface AudienceCountBody {
   type: string
@@ -10,6 +10,7 @@ interface AudienceCountBody {
     value: string
   }
   csvContacts?: { phone: string }[]
+  contactIds?: string[]
   excludeTagIds?: string[]
 }
 
@@ -19,12 +20,15 @@ interface AudienceCountBody {
  */
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await getCurrentAccount()
+    const ctx = await requireRoleOrApiKey(req, "viewer")
     const db = ctx.db
     const body = (await req.json()) as AudienceCountBody
 
     if (body.type === "csv") {
       return NextResponse.json({ count: body.csvContacts?.length ?? 0 })
+    }
+    if (body.type === "contacts") {
+      return NextResponse.json({ count: body.contactIds?.length ?? 0 })
     }
 
     let baseIds: Set<string> | null = null

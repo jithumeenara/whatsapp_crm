@@ -17,12 +17,10 @@ import {
   ChevronDown,
   UserPlus,
   Check,
-  Clock,
   ArrowLeft,
   RefreshCw,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,7 +113,7 @@ function groupMessagesByDate(messages: Message[]) {
 const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
   { label: "Open", value: "open", color: "text-primary" },
   { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+  { label: "Closed", value: "closed", color: "text-slate-500" },
 ];
 
 /**
@@ -128,7 +126,7 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
  * if we ever switch the asset, both spots update together.
  */
 const DOODLE_BG_CLASSES =
-  "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
+  "bg-white bg-[url('/inbox-doodle.svg')] bg-repeat";
 
 export function MessageThread({
   conversation,
@@ -299,18 +297,18 @@ export function MessageThread({
     };
   }, [conversationId, resyncToken]);
 
-  // Poll reactions every 5 seconds while a conversation is open to pick
-  // up customer reactions that arrive via the webhook. The resyncToken
-  // effect above already refetches on reconnect / tab-focus, so this is
-  // just a background heartbeat. We don't use Supabase realtime here
-  // because the Supabase client has been removed from the codebase.
+  // Poll reactions every 30 seconds while a conversation is open.
+  // In-flight guard prevents pileup when the server is slow.
   useEffect(() => {
     if (!conversationId) return;
 
-    const POLL_MS = 5_000;
+    const POLL_MS = 30_000;
     let cancelled = false;
+    let inFlight = false;
 
     const poll = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch(`/api/conversations/${conversationId}/reactions`);
         if (cancelled || !res.ok) return;
@@ -318,13 +316,14 @@ export function MessageThread({
         if (!cancelled) {
           setReactions((prev) => {
             const incoming = (body.reactions as MessageReaction[]) ?? [];
-            // Preserve optimistic temp rows that haven't been confirmed yet
             const tempRows = prev.filter((r) => r.id.startsWith("temp-"));
             return [...incoming, ...tempRows];
           });
         }
       } catch {
         // silently swallow poll errors
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -378,6 +377,7 @@ export function MessageThread({
         id: tempId,
         conversation_id: conversation.id,
         sender_type: "agent",
+        sender_id: userId ?? undefined,
         content_type: "text",
         content_text: text,
         status: "sending",
@@ -421,7 +421,7 @@ export function MessageThread({
         onUpdateMessage(tempId, { status: "failed" });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage]
+    [conversation, userId, onNewMessage, onUpdateMessage]
   );
 
   const handleSendMedia = useCallback(
@@ -433,6 +433,7 @@ export function MessageThread({
         id: tempId,
         conversation_id: conversation.id,
         sender_type: 'agent',
+        sender_id: userId ?? undefined,
         content_type: contentType,
         content_text: filename ?? undefined,
         media_url: mediaUrl,
@@ -463,7 +464,7 @@ export function MessageThread({
         onUpdateMessage(tempId, { status: 'failed' });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage],
+    [conversation, userId, onNewMessage, onUpdateMessage],
   );
 
   const handleStatusChange = useCallback(
@@ -482,8 +483,13 @@ export function MessageThread({
   );
 
   const handleOpenTemplates = useCallback(() => {
+    const ch = (conversation as { channel?: string })?.channel
+    if (ch === 'instagram' || ch === 'facebook') {
+      toast.info('Templates are not supported for this channel.')
+      return
+    }
     setTemplateModalOpen(true);
-  }, []);
+  }, [conversation]);
 
   const handleSendTemplate = useCallback(
     async (
@@ -503,6 +509,7 @@ export function MessageThread({
         id: tempId,
         conversation_id: conversation.id,
         sender_type: "agent",
+        sender_id: userId ?? undefined,
         content_type: "template",
         content_text: renderedBody,
         template_name: template.name,
@@ -552,7 +559,7 @@ export function MessageThread({
         onUpdateMessage(tempId, { status: "failed" });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage],
+    [conversation, userId, onNewMessage, onUpdateMessage],
   );
 
   // Build a quick id → Message map so reply quotes can be rendered without
@@ -576,15 +583,33 @@ export function MessageThread({
 
   const contactDisplayName = contact?.name || contact?.phone || "Customer";
 
-  // Author label for a quoted message: "You" when we sent the parent,
-  // contact name when the customer sent it.
+  // Map every team member's user_id → display name for per-message attribution.
+  const senderNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of profiles) {
+      map.set(p.user_id, p.full_name || p.email);
+    }
+    return map;
+  }, [profiles]);
+
+  // Resolve the human-readable sender label for an outbound (agent) message.
+  const agentLabelFor = useCallback(
+    (msg: Message): string => {
+      if (!msg.sender_id) return "Agent";
+      if (msg.sender_id === userId) return "You";
+      return senderNameById.get(msg.sender_id) ?? "Agent";
+    },
+    [userId, senderNameById],
+  );
+
+  // Author label for a quoted message: sender name for agent/bot, contact name for customer.
   const authorLabelFor = useCallback(
     (m: Message): string => {
-      const isAgentMsg =
-        m.sender_type === "agent" || m.sender_type === "bot";
-      return isAgentMsg ? "You" : contactDisplayName;
+      if (m.sender_type === "bot") return "Chatbot";
+      if (m.sender_type === "agent") return agentLabelFor(m);
+      return contactDisplayName;
     },
-    [contactDisplayName],
+    [contactDisplayName, agentLabelFor],
   );
 
   const handleStartReply = useCallback(
@@ -596,6 +621,30 @@ export function MessageThread({
       });
     },
     [authorLabelFor],
+  );
+
+  const handleDeleteMessage = useCallback(
+    async (msg: Message) => {
+      if (msg.id.startsWith("temp-")) return;
+      const channel = (conversation as { channel?: string })?.channel ?? "whatsapp";
+      onUpdateMessage(msg.id, { deleted_at: new Date().toISOString() });
+      try {
+        const res = await fetch(`/api/messages/${msg.id}`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ channel, message_id: msg.message_id }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({})) as { error?: string };
+          toast.error(err.error ?? "Delete failed");
+          onUpdateMessage(msg.id, { deleted_at: null });
+        }
+      } catch {
+        toast.error("Delete failed");
+        onUpdateMessage(msg.id, { deleted_at: null });
+      }
+    },
+    [conversation, onUpdateMessage],
   );
 
   // Single reaction-set primitive. emoji === "" removes; otherwise adds/swaps.
@@ -688,10 +737,10 @@ export function MessageThread({
   if (!conversation || !contact) {
     return (
       <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
           <MessageSquare className="h-8 w-8 text-slate-600" />
         </div>
-        <h3 className="mt-4 text-sm font-medium text-muted-foreground">
+        <h3 className="mt-4 text-sm font-medium text-slate-500">
           Select a conversation
         </h3>
         <p className="mt-1 text-xs text-slate-600">
@@ -714,79 +763,68 @@ export function MessageThread({
 
   return (
     <div className={cn("flex flex-1 flex-col", DOODLE_BG_CLASSES)}>
-      {/* Header — solid bg-card sits on top of the doodle so the
-          name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          {/* Back-to-list button — mobile only. Hidden on lg+ where the
-              conversation list is always visible next to the thread. */}
+      {/* Header */}
+      <div className="flex h-14 items-center justify-between gap-2 border-b border-slate-200 bg-white px-4">
+        <div className="flex min-w-0 items-center gap-3">
           {onBack && (
             <button
               type="button"
               onClick={onBack}
               aria-label="Back to conversations"
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-foreground/80 hover:bg-muted hover:text-foreground lg:hidden"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
           )}
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary">
             {displayName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            <h2 className="truncate text-[16px] font-semibold text-slate-800">{displayName}</h2>
+            <div className="flex items-center gap-1.5">
+              <DropdownMenu>
+                <DropdownMenuTrigger className="flex items-center gap-1 text-[13.5px] text-slate-500 hover:text-slate-800">
+                  <span>{currentAssignee ? `Assigned to ${currentAssignee.full_name}` : "Unassigned"}</span>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="border-slate-200 bg-white">
+                  <DropdownMenuItem onClick={() => handleAssignChange(null)} className="text-sm text-slate-500">
+                    Unassign
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-border" />
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {sessionInfo.remaining && (
+                <span className={cn("text-[12.5px]", sessionInfo.expired ? "text-red-400" : "text-primary/60")}>
+                  · {sessionInfo.remaining}
+                </span>
+              )}
+            </div>
           </div>
-          {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Manual refresh — forces a refetch of the messages + the
-              conversation list (the parent bumps its resyncToken). Useful
-              when realtime missed an event or the agent just wants to be
-              sure nothing's stale. Only rendered when the parent wires
-              up `onRefresh`. */}
+        <div className="flex items-center gap-1">
           {onRefresh && (
             <button
               type="button"
               onClick={handleRefreshClick}
               disabled={isRefreshing}
-              aria-label="Refresh conversation"
-              title="Refresh"
-              className={cn(
-                "inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60",
-              )}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
             >
-              <RefreshCw
-                className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
-              />
+              <RefreshCw className={cn("h-[18px] w-[18px]", isRefreshing && "animate-spin")} />
             </button>
           )}
 
-          {/* Status dropdown */}
+          {/* Status */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
-                )}>
-                {currentStatus?.label ?? "Status"}
-                <ChevronDown className="h-3 w-3" />
+              "flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[13px] font-medium hover:bg-slate-100",
+              currentStatus?.color ?? "text-slate-500"
+            )}>
+              {currentStatus?.label ?? "Status"}
+              <ChevronDown className="h-3.5 w-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-border bg-muted"
-            >
+            <DropdownMenuContent align="end" className="border-slate-200 bg-white">
               {STATUS_OPTIONS.map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
@@ -799,24 +837,20 @@ export function MessageThread({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Assign dropdown */}
+          {/* Assign */}
           <DropdownMenu>
-            <DropdownMenuTrigger
-              className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                assignedAgentId ? "text-primary" : "text-muted-foreground"
-              )}
-            >
-              <UserPlus className="h-3 w-3" />
-              <span className="hidden sm:inline">{assignLabel}</span>
-              <ChevronDown className="h-3 w-3" />
+            <DropdownMenuTrigger className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100",
+              assignedAgentId && "text-primary"
+            )}>
+              <UserPlus className="h-[18px] w-[18px]" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="border-border bg-muted"
+              className="border-slate-200 bg-slate-100"
             >
               {profiles.length === 0 ? (
-                <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                <DropdownMenuItem disabled className="text-sm text-slate-500">
                   No teammates available
                 </DropdownMenuItem>
               ) : (
@@ -828,7 +862,7 @@ export function MessageThread({
                       onClick={() => handleAssignChange(p.user_id)}
                       className={cn(
                         "text-sm",
-                        isSelected ? "text-primary" : "text-foreground/80"
+                        isSelected ? "text-primary" : "text-slate-800/80"
                       )}
                     >
                       <span className="flex-1">
@@ -842,10 +876,10 @@ export function MessageThread({
               )}
               {assignedAgentId && (
                 <>
-                  <DropdownMenuSeparator className="bg-muted" />
+                  <DropdownMenuSeparator className="bg-border" />
                   <DropdownMenuItem
                     onClick={() => handleAssignChange(null)}
-                    className="text-sm text-muted-foreground"
+                    className="text-sm text-slate-500"
                   >
                     Unassign
                   </DropdownMenuItem>
@@ -857,14 +891,14 @@ export function MessageThread({
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-styled px-4 py-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">No messages yet</p>
+            <p className="text-sm text-slate-500">No messages yet</p>
             <p className="text-xs text-slate-600">
               Send a template to start the conversation
             </p>
@@ -873,16 +907,22 @@ export function MessageThread({
           <div className="space-y-4">
             {messageGroups.map((group) => (
               <div key={group.date}>
-                {/* Date separator */}
-                <div className="mb-4 flex items-center justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
+                {/* Date separator — WhatsApp style */}
+                <div className="mb-3 flex items-center justify-center">
+                  <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-500 shadow-sm backdrop-blur-sm select-none">
                     {formatDateSeparator(group.date)}
                   </span>
                 </div>
                 {/* Messages */}
                 <div className="space-y-2">
                   {group.messages.map((msg) => {
-                    const parent = msg.reply_to_message_id
+                    // Interactive button-reply messages carry a context.id from
+                    // WhatsApp pointing to the bot's button prompt. Showing that
+                    // as a reply-quote makes the chatbot question appear inside the
+                    // customer's left-side bubble, creating a confusing "chatbot on
+                    // the wrong side" illusion. Button context is already visible
+                    // in the thread above, so we skip the quote for interactive msgs.
+                    const parent = msg.reply_to_message_id && msg.content_type !== 'interactive'
                       ? messagesById.get(msg.reply_to_message_id)
                       : null;
                     const reply = parent
@@ -911,6 +951,11 @@ export function MessageThread({
                         onReact={(emoji) => {
                           if (emoji) void postReaction(msg.id, emoji);
                         }}
+                        onDelete={
+                          (msg.sender_type === "agent" || msg.sender_type === "bot") && !msg.deleted_at
+                            ? () => void handleDeleteMessage(msg)
+                            : undefined
+                        }
                       >
                         <MessageBubble
                           message={msg}
@@ -918,6 +963,11 @@ export function MessageThread({
                           reactions={msgReactions}
                           currentUserId={userId ?? undefined}
                           onToggleReaction={handlePillToggle}
+                          agentName={
+                            msg.sender_type === "agent"
+                              ? agentLabelFor(msg)
+                              : undefined
+                          }
                         />
                       </MessageActions>
                     );
@@ -933,6 +983,7 @@ export function MessageThread({
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
+        channel={(conversation as { channel?: string })?.channel}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onOpenTemplates={handleOpenTemplates}

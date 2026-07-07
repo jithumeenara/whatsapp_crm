@@ -1,19 +1,6 @@
 "use client";
 
-/**
- * Chatbot builder canvas.
- *
- * Features:
- * - Drag nodes from the LEFT palette onto the canvas
- * - React Flow drag-to-pan (default) or drag-to-select (toggle)
- * - Click a node → right side-sheet opens with config form
- * - Drag between handles to wire next_node_key / buttons / etc.
- * - Delete / Backspace removes selected nodes (with confirm dialog)
- * - Ctrl/Cmd+click for multi-select; toggle button for box selection
- * - "Set as entry" sets entry_node_id
- */
-
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -22,35 +9,28 @@ import {
   Panel,
   ReactFlow,
   ReactFlowProvider,
-  addEdge,
   useNodesState,
   useEdgesState,
   useReactFlow,
   type Connection,
   type Edge,
   type Node,
-  type NodeChange,
   type OnConnect,
   type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
+  ChevronDown,
   Flag,
   LayoutGrid,
   MousePointer2,
   Hand,
   Trash2,
+  X,
+  Search,
+  ChevronRight,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
 import {
   NODE_META,
   PALETTE_GROUPS,
@@ -67,71 +47,62 @@ import { useConfirm } from "@/hooks/use-confirm";
 import { ChatbotNode } from "./chatbot-node";
 import { NodeForm } from "./forms/node-form";
 
-// ─── React Flow node types registry ─────────────────────────────
+function cn(...c: (string | boolean | undefined | null)[]) {
+  return c.filter(Boolean).join(" ");
+}
+
+/** Channel context so any nested component (nodes, palette) can read the current chatbot's channel */
+export const ChatbotChannelContext = createContext<string>('whatsapp')
+
 const NODE_TYPES = { chatbot: ChatbotNode };
 
-// ─── Helpers ────────────────────────────────────────────────────
 let _nodeCounter = 0;
 function genKey(type: ChatbotNodeType) {
   return `${type}_${++_nodeCounter}`;
 }
 
-function builderToRf(
-  nodes: ChatbotBuilderNode[],
-  entryId: string | null,
-): Node[] {
+function builderToRf(nodes: ChatbotBuilderNode[], entryId: string | null): Node[] {
   return nodes.map((n) => ({
     id: n.node_key,
     type: "chatbot",
     position: { x: n.position_x, y: n.position_y },
-    data: {
-      node_type: n.node_type,
-      config: n.config,
-      isEntry: n.node_key === entryId,
-    },
+    data: { node_type: n.node_type, config: n.config, isEntry: n.node_key === entryId },
     draggable: true,
     selectable: true,
   }));
 }
 
-/** Derive React Flow edges from node configs. */
 function deriveEdges(nodes: ChatbotBuilderNode[]): Edge[] {
   const edges: Edge[] = [];
   for (const node of nodes) {
     const cfg = node.config;
     const handles = getSourceHandles(node.node_type, cfg);
-
     for (const h of handles) {
       let targetKey: string | undefined;
-
       if (node.node_type === "condition") {
-        targetKey =
-          h.id === "true"
-            ? (cfg.true_next as string)
-            : (cfg.false_next as string);
+        targetKey = h.id === "true" ? (cfg.true_next as string) : (cfg.false_next as string);
       } else if (node.node_type === "send_buttons") {
         const buttons = (cfg.buttons as Array<Record<string, unknown>>) ?? [];
-        const replyId = h.id.replace(/^btn_/, "");
-        const btn = buttons.find((b) => String(b.reply_id) === replyId);
+        const btn = buttons.find((b) => String(b.reply_id) === h.id.replace(/^btn_/, ""));
         targetKey = btn?.next_node_key as string | undefined;
       } else if (node.node_type === "send_list") {
-        const sections =
-          (cfg.sections as Array<Record<string, unknown>>) ?? [];
         const replyId = h.id.replace(/^row_/, "");
-        for (const sec of sections) {
-          const rows = (sec.rows as Array<Record<string, unknown>>) ?? [];
-          const row = rows.find((r) => String(r.reply_id) === replyId);
+        for (const sec of (cfg.sections as Array<Record<string, unknown>>) ?? []) {
+          const row = ((sec.rows as Array<Record<string, unknown>>) ?? []).find((r) => String(r.reply_id) === replyId);
           if (row) { targetKey = row.next_node_key as string; break; }
         }
       } else if (node.node_type === "http_request") {
-        targetKey =
-          h.id === "error"
-            ? (cfg.error_node_key as string)
-            : (cfg.next_node_key as string);
+        targetKey = h.id === "error" ? (cfg.error_node_key as string) : (cfg.next_node_key as string);
+      } else if (node.node_type === "switch_case") {
+        const cases = (cfg.cases as Array<Record<string, unknown>>) ?? [];
+        if (h.id === "default") targetKey = cfg.default_next as string;
+        else {
+          const idx = parseInt(h.id.replace(/^case_/, ""), 10);
+          if (!isNaN(idx) && cases[idx]) targetKey = cases[idx].next_node_key as string;
+        }
       } else {
         targetKey = cfg.next_node_key as string;
       }
-
       if (targetKey) {
         edges.push({
           id: `${node.node_key}-${h.id}->${targetKey}`,
@@ -139,8 +110,10 @@ function deriveEdges(nodes: ChatbotBuilderNode[]): Edge[] {
           sourceHandle: h.id,
           target: targetKey,
           label: h.label,
-          labelStyle: { fontSize: 10, fill: "var(--muted-foreground)" },
-          style: { stroke: "var(--primary)", strokeWidth: 1.5 },
+          labelStyle: { fontSize: 10, fill: "#94a3b8" },
+          labelBgStyle: { fill: "#f8fafc", fillOpacity: 0.9 },
+          style: { stroke: "#818cf8", strokeWidth: 2 },
+          type: "smoothstep",
           animated: false,
         });
       }
@@ -149,7 +122,31 @@ function deriveEdges(nodes: ChatbotBuilderNode[]): Edge[] {
   return edges;
 }
 
-// ─── Inner canvas (needs useReactFlow inside provider) ──────────
+// CSS vars that force all shadcn components inside the panel to render in light mode,
+// regardless of the global dark theme the user may have selected.
+const LIGHT_PANEL_VARS: React.CSSProperties = {
+  "--background":           "oklch(1 0 0)",
+  "--foreground":           "oklch(0.16 0.015 256)",
+  "--card":                 "oklch(1 0 0)",
+  "--card-foreground":      "oklch(0.16 0.015 256)",
+  "--popover":              "oklch(1 0 0)",
+  "--popover-foreground":   "oklch(0.16 0.015 256)",
+  "--muted":                "oklch(0.965 0.002 256)",
+  "--muted-foreground":     "oklch(0.52 0.01 256)",
+  "--border":               "oklch(0.918 0.003 256)",
+  "--input":                "oklch(0.918 0.003 256)",
+  "--primary":              "oklch(0.585 0.22 266)",
+  "--primary-foreground":   "oklch(1 0 0)",
+  "--secondary":            "oklch(0.965 0.002 256)",
+  "--secondary-foreground": "oklch(0.16 0.015 256)",
+  "--accent":               "oklch(0.965 0.002 256)",
+  "--accent-foreground":    "oklch(0.16 0.015 256)",
+  "--ring":                 "oklch(0.585 0.22 266)",
+  "--destructive":          "oklch(0.577 0.245 27.325)",
+  "--radius":               "0.625rem",
+} as React.CSSProperties;
+
+// ─── Inner canvas ────────────────────────────────────────────────
 
 interface CanvasProps {
   nodes: ChatbotBuilderNode[];
@@ -158,24 +155,16 @@ interface CanvasProps {
   onEntryChange: (key: string) => void;
 }
 
-function CanvasInner({
-  nodes: builderNodes,
-  entryNodeId,
-  onChange,
-  onEntryChange,
-}: CanvasProps) {
+function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange }: CanvasProps) {
   const { screenToFlowPosition, fitView } = useReactFlow();
   const confirm = useConfirm();
 
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(
-    builderToRf(builderNodes, entryNodeId),
-  );
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(builderToRf(builderNodes, entryNodeId));
   const [rfEdges, setRfEdges] = useEdgesState(deriveEdges(builderNodes));
-
-  // Pan vs box-selection mode
   const [interactionMode, setInteractionMode] = useState<"pan" | "select">("pan");
+  const [sheetKey, setSheetKey] = useState<string | null>(null);
+  const sheetNode = builderNodes.find((n) => n.node_key === sheetKey) ?? null;
 
-  // Sync RF nodes from external builder state change (save/load / undo/redo)
   const prevBuilderRef = useRef(builderNodes);
   useEffect(() => {
     if (prevBuilderRef.current === builderNodes) return;
@@ -184,193 +173,129 @@ function CanvasInner({
     setRfEdges(deriveEdges(builderNodes));
   }, [builderNodes, entryNodeId, setRfNodes, setRfEdges]);
 
-  // Side-sheet state
-  const [sheetKey, setSheetKey] = useState<string | null>(null);
-  const sheetNode = builderNodes.find((n) => n.node_key === sheetKey) ?? null;
-
-  // ── Handle connecting nodes via drag ────────────────────────
-  const onConnect: OnConnect = useCallback(
-    (connection: Connection) => {
-      const { source, sourceHandle, target } = connection;
-      if (!source || !target) return;
-
-      const updated = builderNodes.map((n) => {
-        if (n.node_key !== source) return n;
-        const cfg = { ...n.config };
-
-        if (n.node_type === "condition") {
-          if (sourceHandle === "true") cfg.true_next = target;
-          else cfg.false_next = target;
-        } else if (n.node_type === "send_buttons") {
-          const replyId = (sourceHandle ?? "").replace(/^btn_/, "");
-          const buttons = [...((cfg.buttons as Array<Record<string, unknown>>) ?? [])];
-          const idx = buttons.findIndex((b) => String(b.reply_id) === replyId);
-          if (idx !== -1) buttons[idx] = { ...buttons[idx], next_node_key: target };
-          cfg.buttons = buttons;
-        } else if (n.node_type === "send_list") {
-          const replyId = (sourceHandle ?? "").replace(/^row_/, "");
-          const sections = JSON.parse(JSON.stringify(cfg.sections ?? [])) as Array<Record<string, unknown>>;
-          for (const sec of sections) {
-            const rows = (sec.rows as Array<Record<string, unknown>>) ?? [];
-            const ri = rows.findIndex((r) => String(r.reply_id) === replyId);
-            if (ri !== -1) { rows[ri] = { ...rows[ri], next_node_key: target }; break; }
-          }
-          cfg.sections = sections;
-        } else if (n.node_type === "http_request") {
-          if (sourceHandle === "error") cfg.error_node_key = target;
-          else cfg.next_node_key = target;
-        } else {
-          cfg.next_node_key = target;
+  const onConnect: OnConnect = useCallback((connection: Connection) => {
+    const { source, sourceHandle, target } = connection;
+    if (!source || !target) return;
+    const updated = builderNodes.map((n) => {
+      if (n.node_key !== source) return n;
+      const cfg = { ...n.config };
+      if (n.node_type === "condition") {
+        if (sourceHandle === "true") cfg.true_next = target; else cfg.false_next = target;
+      } else if (n.node_type === "send_buttons") {
+        const replyId = (sourceHandle ?? "").replace(/^btn_/, "");
+        const buttons = [...((cfg.buttons as Array<Record<string, unknown>>) ?? [])];
+        const idx = buttons.findIndex((b) => String(b.reply_id) === replyId);
+        if (idx !== -1) buttons[idx] = { ...buttons[idx], next_node_key: target };
+        cfg.buttons = buttons;
+      } else if (n.node_type === "send_list") {
+        const replyId = (sourceHandle ?? "").replace(/^row_/, "");
+        const sections = JSON.parse(JSON.stringify(cfg.sections ?? [])) as Array<Record<string, unknown>>;
+        for (const sec of sections) {
+          const rows = (sec.rows as Array<Record<string, unknown>>) ?? [];
+          const ri = rows.findIndex((r) => String(r.reply_id) === replyId);
+          if (ri !== -1) { rows[ri] = { ...rows[ri], next_node_key: target }; break; }
         }
-
-        return { ...n, config: cfg };
-      });
-
-      onChange(updated);
-      setRfEdges(deriveEdges(updated));
-    },
-    [builderNodes, onChange, setRfEdges],
-  );
-
-  // ── Drag position update ─────────────────────────────────────
-  const onNodeDragStop: OnNodeDrag = useCallback(
-    (_, rfNode) => {
-      const updated = builderNodes.map((n) =>
-        n.node_key === rfNode.id
-          ? { ...n, position_x: Math.round(rfNode.position.x), position_y: Math.round(rfNode.position.y) }
-          : n,
-      );
-      onChange(updated);
-    },
-    [builderNodes, onChange],
-  );
-
-  // ── Delete selected nodes (with confirm) ─────────────────────
-  const deleteNodes = useCallback(
-    async (keysToRemove: Set<string>) => {
-      const count = keysToRemove.size;
-      const label =
-        count === 1
-          ? `"${[...keysToRemove][0]}" node`
-          : `${count} nodes`;
-
-      const yes = await confirm({
-        title: `Delete ${label}?`,
-        description: "Connected edges will also be removed. This can be undone with Ctrl+Z.",
-        confirmLabel: "Delete",
-        variant: "destructive",
-      });
-      if (!yes) return;
-
-      const remaining = builderNodes.filter((n) => !keysToRemove.has(n.node_key));
-      const cleaned = remaining.map((n) => {
-        const cfg = JSON.parse(JSON.stringify(n.config)) as Record<string, unknown>;
-        function clearRef(obj: Record<string, unknown>) {
-          for (const k of Object.keys(obj)) {
-            if (typeof obj[k] === "string" && keysToRemove.has(obj[k] as string)) {
-              obj[k] = "";
-            } else if (Array.isArray(obj[k])) {
-              for (const item of obj[k] as unknown[]) {
-                if (typeof item === "object" && item !== null)
-                  clearRef(item as Record<string, unknown>);
-              }
-            } else if (typeof obj[k] === "object" && obj[k] !== null) {
-              clearRef(obj[k] as Record<string, unknown>);
-            }
-          }
+        cfg.sections = sections;
+      } else if (n.node_type === "http_request") {
+        if (sourceHandle === "error") cfg.error_node_key = target; else cfg.next_node_key = target;
+      } else if (n.node_type === "switch_case") {
+        const cases = JSON.parse(JSON.stringify(cfg.cases ?? [])) as Array<Record<string, unknown>>;
+        if (sourceHandle === "default") cfg.default_next = target;
+        else {
+          const idx = parseInt((sourceHandle ?? "").replace(/^case_/, ""), 10);
+          if (!isNaN(idx) && cases[idx]) { cases[idx] = { ...cases[idx], next_node_key: target }; cfg.cases = cases; }
         }
-        clearRef(cfg);
-        return { ...n, config: cfg };
-      });
+      } else {
+        cfg.next_node_key = target;
+      }
+      return { ...n, config: cfg };
+    });
+    onChange(updated);
+    setRfEdges(deriveEdges(updated));
+  }, [builderNodes, onChange, setRfEdges]);
 
-      onChange(cleaned);
-      if (sheetKey && keysToRemove.has(sheetKey)) setSheetKey(null);
-    },
-    [builderNodes, onChange, sheetKey, confirm],
-  );
+  const onNodeDragStop: OnNodeDrag = useCallback((_, rfNode) => {
+    const updated = builderNodes.map((n) =>
+      n.node_key === rfNode.id
+        ? { ...n, position_x: Math.round(rfNode.position.x), position_y: Math.round(rfNode.position.y) }
+        : n,
+    );
+    onChange(updated);
+  }, [builderNodes, onChange]);
 
-  // ── Keyboard: Delete / Backspace ─────────────────────────────
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
-      // Don't intercept when focus is in an input inside the sheet
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+  const deleteNodes = useCallback(async (keysToRemove: Set<string>) => {
+    const count = keysToRemove.size;
+    const yes = await confirm({
+      title: `Delete ${count === 1 ? `"${[...keysToRemove][0]}"` : `${count} nodes`}?`,
+      description: "Connected edges will also be removed.",
+      confirmLabel: "Delete",
+      variant: "destructive",
+    });
+    if (!yes) return;
+    const remaining = builderNodes.filter((n) => !keysToRemove.has(n.node_key));
+    const cleaned = remaining.map((n) => {
+      const cfg = JSON.parse(JSON.stringify(n.config)) as Record<string, unknown>;
+      function clearRef(obj: Record<string, unknown>) {
+        for (const k of Object.keys(obj)) {
+          if (typeof obj[k] === "string" && keysToRemove.has(obj[k] as string)) obj[k] = "";
+          else if (Array.isArray(obj[k])) {
+            for (const item of obj[k] as unknown[])
+              if (typeof item === "object" && item !== null) clearRef(item as Record<string, unknown>);
+          } else if (typeof obj[k] === "object" && obj[k] !== null) clearRef(obj[k] as Record<string, unknown>);
+        }
+      }
+      clearRef(cfg);
+      return { ...n, config: cfg };
+    });
+    onChange(cleaned);
+    if (sheetKey && keysToRemove.has(sheetKey)) setSheetKey(null);
+  }, [builderNodes, onChange, sheetKey, confirm]);
 
-      const selected = rfNodes.filter((n) => n.selected);
-      if (selected.length === 0) return;
-      e.preventDefault();
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== "Delete" && e.key !== "Backspace") return;
+    const target = e.target as HTMLElement;
+    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+    const selected = rfNodes.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    e.preventDefault();
+    const keysToRemove = new Set(selected.map((n) => n.id));
+    keysToRemove.delete("start");
+    if (keysToRemove.size === 0) return;
+    void deleteNodes(keysToRemove);
+  }, [rfNodes, deleteNodes]);
 
-      const keysToRemove = new Set(selected.map((n) => n.id));
-      // Don't allow deleting the start node
-      keysToRemove.delete("start");
-      if (keysToRemove.size === 0) return;
-
-      void deleteNodes(keysToRemove);
-    },
-    [rfNodes, deleteNodes],
-  );
-
-  // ── Drop node from palette ───────────────────────────────────
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      const type = e.dataTransfer.getData("chatbot/node_type") as ChatbotNodeType;
-      if (!type) return;
-
-      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
-      const key = genKey(type);
-      const newNode: ChatbotBuilderNode = {
-        node_key: key,
-        node_type: type,
-        config: defaultConfigFor(type),
-        position_x: Math.round(pos.x),
-        position_y: Math.round(pos.y),
-      };
-      onChange([...builderNodes, newNode]);
-    },
-    [builderNodes, onChange, screenToFlowPosition],
-  );
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const type = e.dataTransfer.getData("chatbot/node_type") as ChatbotNodeType;
+    if (!type) return;
+    const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const key = genKey(type);
+    onChange([...builderNodes, {
+      node_key: key,
+      node_type: type,
+      config: defaultConfigFor(type),
+      position_x: Math.round(pos.x),
+      position_y: Math.round(pos.y),
+    }]);
+  }, [builderNodes, onChange, screenToFlowPosition]);
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
   }, []);
 
-  // ── Node click → open sheet ──────────────────────────────────
-  const onNodeClick = useCallback(
-    (_: React.MouseEvent, rfNode: Node) => {
-      setSheetKey(rfNode.id);
-    },
-    [],
-  );
+  const onNodeClick = useCallback((_: React.MouseEvent, rfNode: Node) => {
+    setSheetKey(rfNode.id);
+  }, []);
 
-  // ── Config update from sheet form ────────────────────────────
-  const handleConfigChange = useCallback(
-    (key: string, cfg: Record<string, unknown>) => {
-      const updated = builderNodes.map((n) =>
-        n.node_key === key ? { ...n, config: cfg } : n,
-      );
-      onChange(updated);
-      setRfEdges(deriveEdges(updated));
-    },
-    [builderNodes, onChange, setRfEdges],
-  );
-
-  // ── Delete from sheet button ─────────────────────────────────
-  const handleSheetDelete = useCallback(
-    (key: string) => {
-      void deleteNodes(new Set([key]));
-    },
-    [deleteNodes],
-  );
+  const handleConfigChange = useCallback((key: string, cfg: Record<string, unknown>) => {
+    const updated = builderNodes.map((n) => n.node_key === key ? { ...n, config: cfg } : n);
+    onChange(updated);
+    setRfEdges(deriveEdges(updated));
+  }, [builderNodes, onChange, setRfEdges]);
 
   return (
-    <div
-      className="relative h-full w-full outline-none"
-      tabIndex={-1}
-      onKeyDown={handleKeyDown}
-    >
+    <div className="relative h-full w-full outline-none" tabIndex={-1} onKeyDown={handleKeyDown}>
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -382,170 +307,219 @@ function CanvasInner({
         onDrop={onDrop}
         onDragOver={onDragOver}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.25 }}
         deleteKeyCode={null}
-        // Pan vs select mode
         panOnDrag={interactionMode === "pan"}
         selectionOnDrag={interactionMode === "select"}
-        // Ctrl/Cmd+click always adds to selection regardless of mode
         multiSelectionKeyCode="Meta"
         selectionKeyCode="Shift"
-        className="bg-[#F8F9FA]"
+        className="bg-[#D6DDEF]"
+        edgesFocusable={false}
+        nodesDraggable
+        nodesConnectable
       >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#d1d5db" />
-        <Controls className="!border-border !bg-card !shadow-sm" />
+        <Background variant={BackgroundVariant.Dots} gap={18} size={1.8} color="#9aabc7" />
+
+        <Controls
+          showInteractive={false}
+          className="!bottom-6 !left-4 !border-0 !bg-transparent !shadow-none [&>button]:!mb-1 [&>button]:!flex [&>button]:!h-8 [&>button]:!w-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!rounded-xl [&>button]:!border [&>button]:!border-slate-200 [&>button]:!bg-white [&>button]:!shadow-sm [&>button]:!fill-slate-600 [&>button:hover]:!bg-slate-50"
+        />
+
         <MiniMap
-          nodeStrokeWidth={2}
-          className="!border-border !bg-card"
+          nodeStrokeWidth={0}
+          className="!bottom-6 !right-4 !overflow-hidden !rounded-xl !border !border-slate-200 !bg-white !shadow-lg"
+          maskColor="rgba(248,250,252,0.7)"
           nodeColor={(n) => {
             const nd = n.data as { node_type?: string };
             const meta = nd.node_type ? NODE_META[nd.node_type as ChatbotNodeType] : null;
-            return meta ? "var(--primary)" : "#94a3b8";
+            return meta ? "#6366f1" : "#cbd5e1";
           }}
         />
 
-        {/* Top-right panel: interaction mode + fit */}
-        <Panel position="top-right" className="flex items-center gap-2">
-          {/* Pan / Select toggle */}
-          <div className="flex gap-0.5 rounded-lg border border-border bg-card p-0.5 shadow-sm">
+        {/* Pan / Select / Fit toolbar */}
+        <Panel position="top-right" className="flex items-center gap-2 !top-3 !right-3">
+          <div className="flex gap-0.5 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
             <button
+              type="button"
               onClick={() => setInteractionMode("pan")}
-              title="Pan mode — drag canvas to pan"
+              title="Pan mode"
               className={cn(
-                "flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-all",
                 interactionMode === "pan"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800",
               )}
             >
               <Hand className="h-3 w-3" />
               Pan
             </button>
             <button
+              type="button"
               onClick={() => setInteractionMode("select")}
-              title="Select mode — drag to select multiple nodes"
+              title="Select mode"
               className={cn(
-                "flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-all",
                 interactionMode === "select"
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800",
               )}
             >
               <MousePointer2 className="h-3 w-3" />
               Select
             </button>
           </div>
-
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1.5 text-xs shadow-sm"
-            onClick={() => fitView({ padding: 0.2, duration: 300 })}
+          <button
+            type="button"
+            onClick={() => fitView({ padding: 0.25, duration: 400 })}
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
           >
             <LayoutGrid className="h-3.5 w-3.5" />
-            Fit
-          </Button>
+            Fit view
+          </button>
         </Panel>
 
-        {/* Bottom hint when in select mode */}
         {interactionMode === "select" && (
-          <Panel position="bottom-center">
-            <div className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-[10px] text-primary shadow-sm">
-              Drag to box-select nodes · Ctrl+click to add to selection · Delete to remove selected
+          <Panel position="bottom-center" className="!bottom-6">
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/90 px-4 py-2 text-[11px] font-medium text-indigo-600 shadow-sm backdrop-blur-sm">
+              Drag to box-select · Shift+click to add · Delete key to remove
             </div>
           </Panel>
         )}
       </ReactFlow>
 
-      {/* Config side-sheet */}
-      <Sheet open={!!sheetNode} onOpenChange={(open) => { if (!open) setSheetKey(null); }}>
-        <SheetContent
-          side="right"
-          className="w-[380px] overflow-y-auto p-0 sm:max-w-[380px]"
+      {/* Node edit panel */}
+      {sheetNode && (
+        <div
+          className="absolute inset-y-0 right-0 z-20 flex w-[380px] flex-col overflow-hidden bg-white shadow-[−4px_0_32px_rgba(0,0,0,0.08)]"
+          style={LIGHT_PANEL_VARS}
         >
-          {sheetNode && (
-            <>
-              <SheetHeader
-                className={cn(
-                  "border-b border-border px-5 py-4",
-                  NODE_META[sheetNode.node_type].bg,
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const Icon = NODE_META[sheetNode.node_type].icon;
-                      return (
-                        <Icon
-                          className={cn("h-5 w-5", NODE_META[sheetNode.node_type].color)}
-                        />
-                      );
-                    })()}
-                    <SheetTitle className="text-base">
-                      {NODE_META[sheetNode.node_type].label}
-                    </SheetTitle>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {sheetNode.node_type !== "start" && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                        onClick={() => handleSheetDelete(sheetNode.node_key)}
-                        title="Delete node"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                    {sheetNode.node_key !== entryNodeId && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 gap-1 text-xs text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
-                        onClick={() => {
-                          onEntryChange(sheetNode.node_key);
-                          setSheetKey(null);
-                        }}
-                      >
-                        <Flag className="h-3.5 w-3.5" />
-                        Set entry
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <SheetDescription className="text-xs text-muted-foreground">
-                  {NODE_META[sheetNode.node_type].description}
-                </SheetDescription>
-              </SheetHeader>
-
-              <div className="px-5 py-4">
-                <NodeForm
-                  node={sheetNode}
-                  allNodes={builderNodes}
-                  onChange={(cfg) => handleConfigChange(sheetNode.node_key, cfg)}
-                />
+          {/* Panel header */}
+          <div className="flex shrink-0 flex-col gap-1 border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm", NODE_META[sheetNode.node_type].bg)}>
+                {(() => {
+                  const Icon = NODE_META[sheetNode.node_type].icon;
+                  return <Icon className={cn("h-4.5 w-4.5", NODE_META[sheetNode.node_type].color)} />;
+                })()}
               </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+              <div className="min-w-0 flex-1">
+                <h3 className="truncate text-[14px] font-bold text-slate-900">
+                  {NODE_META[sheetNode.node_type].label}
+                </h3>
+                <p className="text-[11px] text-slate-400">
+                  {NODE_META[sheetNode.node_type].group}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {sheetNode.node_type !== "start" && (
+                  <button
+                    type="button"
+                    onClick={() => void (async () => {
+                      const ok = await confirm({ title: "Delete node?", description: "This cannot be undone.", confirmLabel: "Delete", variant: "destructive" });
+                      if (ok) { onChange(builderNodes.filter((n) => n.node_key !== sheetNode.node_key)); setSheetKey(null); }
+                    })()}
+                    title="Delete node"
+                    className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSheetKey(null)}
+                  title="Close"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Entry + description row */}
+            <div className="flex items-center gap-2 pt-1">
+              <p className="flex-1 text-[11px] text-slate-500 leading-relaxed">
+                {NODE_META[sheetNode.node_type].description}
+              </p>
+              {sheetNode.node_key !== entryNodeId && (
+                <button
+                  type="button"
+                  onClick={() => { onEntryChange(sheetNode.node_key); setSheetKey(null); }}
+                  className="flex shrink-0 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-100 transition-colors"
+                >
+                  <Flag className="h-3 w-3" />
+                  Set entry
+                </button>
+              )}
+              {sheetNode.node_key === entryNodeId && (
+                <span className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  Entry node
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Form */}
+          <div className="flex-1 overflow-y-auto px-5 py-5">
+            <NodeForm
+              node={sheetNode}
+              allNodes={builderNodes}
+              onChange={(cfg) => handleConfigChange(sheetNode.node_key, cfg)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Node palette sidebar ────────────────────────────────────────
 
-function NodePalette() {
+/** Node types that are exclusive to WhatsApp and must be hidden for Instagram chatbots */
+const WHATSAPP_ONLY_NODES = new Set<string>([
+  // send_buttons IS available on Instagram via Quick Replies API
+  'send_list',      // WhatsApp interactive list menus — not supported on Instagram
+  'send_template',  // WhatsApp HSM templates — not supported on Instagram
+  'send_flow',      // Meta WhatsApp Flows — not supported on Instagram
+  'send_to_number', // WhatsApp notification to arbitrary number — not supported on Instagram
+])
+
+function NodePalette({ channel = 'whatsapp' }: { channel?: string }) {
+  const [query, setQuery] = useState("");
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
+    new Set(PALETTE_GROUPS.slice(0, 2)),
+  );
+
+  const availableNodes = useMemo(() =>
+    channel === 'instagram'
+      ? PALETTE_NODES.filter((t) => !WHATSAPP_ONLY_NODES.has(t))
+      : PALETTE_NODES,
+  [channel])
+
   const grouped = useMemo(() => {
-    const map = new Map<string, typeof PALETTE_NODES>(
-      PALETTE_GROUPS.map((g) => [g, []]),
-    );
-    for (const type of PALETTE_NODES) {
-      const g = NODE_META[type].group;
-      map.get(g)?.push(type);
+    const map = new Map<string, typeof PALETTE_NODES>(PALETTE_GROUPS.map((g) => [g, []]));
+    for (const type of availableNodes) {
+      map.get(NODE_META[type].group)?.push(type);
     }
     return Array.from(map.entries()).filter(([, items]) => items.length > 0);
-  }, []);
+  }, [availableNodes]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return null;
+    const q = query.toLowerCase();
+    return availableNodes.filter((type) => {
+      const meta = NODE_META[type];
+      return meta.label.toLowerCase().includes(q) || meta.group.toLowerCase().includes(q);
+    });
+  }, [query, availableNodes]);
+
+  const toggleGroup = (group: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group); else next.add(group);
+      return next;
+    });
+  };
 
   const onDragStart = (e: React.DragEvent, type: ChatbotNodeType) => {
     e.dataTransfer.setData("chatbot/node_type", type);
@@ -553,56 +527,100 @@ function NodePalette() {
   };
 
   return (
-    <div className="flex h-full w-52 shrink-0 flex-col border-r border-border bg-card">
-      <div className="border-b border-border px-3 py-2.5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Nodes
-        </p>
-        <p className="text-[10px] text-muted-foreground/70">Drag onto canvas</p>
+    <div className="flex h-full w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
+      {/* Header */}
+      <div className="border-b border-slate-100 px-4 py-3">
+        <p className="text-[12px] font-bold text-slate-800">Node Palette</p>
+        <p className="text-[10px] text-slate-400">Drag nodes onto the canvas</p>
       </div>
-      <div className="flex-1 overflow-y-auto px-2 py-2">
-        {grouped.map(([group, types]) => (
-          <div key={group} className="mb-3">
-            <p
-              className={cn(
-                "mb-1.5 px-1 text-[10px] font-bold uppercase tracking-widest",
-                PALETTE_GROUP_COLORS[group as keyof typeof PALETTE_GROUP_COLORS],
-              )}
-            >
-              {group}
-            </p>
-            {types.map((type) => {
-              const meta = NODE_META[type];
-              const Icon = meta.icon;
-              return (
-                <div
-                  key={type}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, type)}
-                  className={cn(
-                    "mb-1 flex cursor-grab items-center gap-2 rounded-lg border border-transparent px-2 py-1.5",
-                    "hover:border-border hover:bg-muted active:cursor-grabbing",
-                    "transition-colors select-none",
-                  )}
-                  title={meta.description}
-                >
-                  <div
-                    className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-                      meta.bg,
-                    )}
-                  >
-                    <Icon className={cn("h-3.5 w-3.5", meta.color)} />
-                  </div>
-                  <span className="text-xs font-medium text-foreground">
-                    {meta.label}
-                  </span>
-                </div>
-              );
-            })}
+
+      {/* Search */}
+      <div className="border-b border-slate-100 px-3 py-2.5">
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+          <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search nodes…"
+            className="flex-1 bg-transparent text-[12px] text-slate-700 placeholder:text-slate-400 focus:outline-none"
+          />
+          {query && (
+            <button onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600">
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Node list */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {filtered ? (
+          /* Search results */
+          <div className="px-2 py-1">
+            {filtered.length === 0 ? (
+              <p className="px-2 py-4 text-center text-[11px] text-slate-400">No nodes match "{query}"</p>
+            ) : (
+              filtered.map((type) => <PaletteItem key={type} type={type} onDragStart={onDragStart} />)
+            )}
           </div>
-        ))}
+        ) : (
+          /* Grouped */
+          grouped.map(([group, types]) => {
+            const isOpen = expandedGroups.has(group);
+            const color = PALETTE_GROUP_COLORS[group as keyof typeof PALETTE_GROUP_COLORS];
+            return (
+              <div key={group} className="border-b border-slate-100 last:border-0">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group)}
+                  className="flex w-full items-center justify-between px-4 py-2.5 hover:bg-slate-50 transition-colors"
+                >
+                  <span className={cn("text-[10px] font-bold uppercase tracking-widest", isOpen ? color : "text-slate-400")}>
+                    {group}
+                  </span>
+                  <div className={cn("flex items-center gap-1", isOpen ? color : "text-slate-300")}>
+                    <span className="text-[10px] font-medium">{types.length}</span>
+                    <ChevronDown className={cn("h-3 w-3 transition-transform", isOpen ? "rotate-0" : "-rotate-90")} />
+                  </div>
+                </button>
+                <div className={cn("overflow-hidden transition-all duration-200", isOpen ? "max-h-[500px]" : "max-h-0")}>
+                  <div className="px-2 pb-2">
+                    {types.map((type) => <PaletteItem key={type} type={type} onDragStart={onDragStart} />)}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
+    </div>
+  );
+}
+
+function PaletteItem({
+  type,
+  onDragStart,
+}: {
+  type: ChatbotNodeType;
+  onDragStart: (e: React.DragEvent, type: ChatbotNodeType) => void;
+}) {
+  const meta = NODE_META[type];
+  const Icon = meta.icon;
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, type)}
+      className="mb-0.5 flex cursor-grab items-center gap-2.5 rounded-xl border border-transparent p-2 hover:border-slate-200 hover:bg-slate-50 active:cursor-grabbing select-none transition-all group"
+      title={meta.description}
+    >
+      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg shadow-sm transition-transform group-hover:scale-105", meta.bg)}>
+        <Icon className={cn("h-3.5 w-3.5", meta.color)} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold text-slate-700 leading-tight">{meta.label}</p>
+      </div>
+      <ChevronRight className="ml-auto h-3 w-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
     </div>
   );
 }
@@ -614,15 +632,18 @@ interface ChatbotCanvasProps {
   entryNodeId: string | null;
   onChange: (nodes: ChatbotBuilderNode[]) => void;
   onEntryChange: (key: string) => void;
+  channel?: string;
 }
 
-export function ChatbotCanvas(props: ChatbotCanvasProps) {
+export function ChatbotCanvas({ channel = 'whatsapp', ...props }: ChatbotCanvasProps) {
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      <NodePalette />
-      <ReactFlowProvider>
-        <CanvasInner {...props} />
-      </ReactFlowProvider>
-    </div>
+    <ChatbotChannelContext.Provider value={channel}>
+      <div className="flex h-full w-full overflow-hidden">
+        <NodePalette channel={channel} />
+        <ReactFlowProvider>
+          <CanvasInner {...props} />
+        </ReactFlowProvider>
+      </div>
+    </ChatbotChannelContext.Provider>
   );
 }

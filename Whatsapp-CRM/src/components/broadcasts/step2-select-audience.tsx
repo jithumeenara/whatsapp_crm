@@ -1,294 +1,278 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { CustomField, Tag } from '@/types';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Tag, Contact } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
-  Users,
-  Tags,
-  Filter,
-  Upload,
-  Loader2,
-  ArrowRight,
-  ArrowLeft,
-  X,
+  Users, Loader2, ArrowRight, ArrowLeft, X, Search, Phone,
+  CheckCheck, Tag as TagIcon,
 } from 'lucide-react';
 
-type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
-type CustomFieldOperator = 'is' | 'is_not' | 'contains';
+/* ── types ─────────────────────────────────────────────────────── */
+type AudienceMode = 'all' | 'tags' | 'pick';
 
-interface CustomFieldFilter {
-  fieldId: string;
-  operator: CustomFieldOperator;
-  value: string;
-}
-
-interface AudienceConfig {
-  type: AudienceType;
+export interface AudienceConfig {
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
   tagIds?: string[];
-  customField?: CustomFieldFilter;
+  customField?: { fieldId: string; operator: 'is' | 'is_not' | 'contains'; value: string };
   csvContacts?: { phone: string; name?: string }[];
+  contactIds?: string[];
   excludeTagIds?: string[];
 }
 
 interface Step2Props {
   audience: AudienceConfig;
-  onUpdate: (audience: AudienceConfig) => void;
+  onUpdate: (a: AudienceConfig) => void;
   onNext: () => void;
   onBack: () => void;
 }
 
-const audienceOptions: {
-  type: AudienceType;
-  label: string;
-  description: string;
-  icon: typeof Users;
-}[] = [
-  {
-    type: 'all',
-    label: 'All Contacts',
-    description: 'Send to every contact in your database',
-    icon: Users,
-  },
-  {
-    type: 'tags',
-    label: 'Filter by Tags',
-    description: 'Target contacts with specific tags',
-    icon: Tags,
-  },
-  {
-    type: 'custom_field',
-    label: 'Custom Field',
-    description: 'Filter by a custom field value',
-    icon: Filter,
-  },
-  {
-    type: 'csv',
-    label: 'Upload CSV',
-    description: 'Upload a list of phone numbers',
-    icon: Upload,
-  },
-];
+/* ── helpers ──────────────────────────────────────────────────── */
+function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
-const OPERATOR_OPTIONS: { value: CustomFieldOperator; label: string }[] = [
-  { value: 'is', label: 'is' },
-  { value: 'is_not', label: 'is not' },
-  { value: 'contains', label: 'contains' },
+function initials(c: Contact) {
+  if (c.name) return c.name.split(' ').map((w) => w[0]).join('').toUpperCase().slice(0, 2);
+  return c.phone.slice(-2);
+}
+const GRADS = [
+  'from-indigo-400 to-indigo-600', 'from-emerald-400 to-emerald-600',
+  'from-violet-400 to-violet-600', 'from-sky-400 to-sky-600',
+  'from-amber-400 to-amber-600', 'from-rose-400 to-rose-600',
 ];
+function grad(id: string) {
+  const s = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  return GRADS[s % GRADS.length];
+}
 
-export function Step2SelectAudience({
-  audience,
-  onUpdate,
-  onNext,
-  onBack,
-}: Step2Props) {
+function WaBadge() {
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#25D366]">
+      <svg viewBox="0 0 24 24" fill="white" className="h-2.5 w-2.5">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
+      </svg>
+    </span>
+  );
+}
+
+/* ── Main component ─────────────────────────────────────────────── */
+export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step2Props) {
+  /* Derive which UI mode we're in */
+  const initMode = (): AudienceMode => {
+    if (audience.type === 'tags') return 'tags';
+    if (audience.type === 'contacts') return 'pick';
+    return 'all';
+  };
+  const [mode, setMode] = useState<AudienceMode>(initMode);
+
+  /* All WhatsApp contacts (full list for the picker) */
+  const [allContacts, setAllContacts] = useState<Contact[]>([]);
+  const [loadingContacts, setLoadingContacts] = useState(true);
+  const [totalWa, setTotalWa] = useState(0);
+
+  /* Search / tag filter for the picker list */
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageTotal, setPageTotal] = useState(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const PAGE = 20;
+
+  /* Tags */
   const [tags, setTags] = useState<Tag[]>([]);
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [loadingTags, setLoadingTags] = useState(false);
-  const [loadingFields, setLoadingFields] = useState(false);
-  const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
-  const [loadingCount, setLoadingCount] = useState(false);
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(audience.tagIds ?? []);
 
-  // Tags are used both by the primary "Filter by Tags" audience type
-  // AND by the exclude-list below — so always load once on mount.
-  useEffect(() => {
-    async function fetchTags() {
-      setLoadingTags(true);
-      try {
-        const res = await fetch('/api/tags', { cache: 'no-store' });
-        if (res.ok) {
-          const json = await res.json();
-          setTags(json.tags ?? []);
-        }
-      } finally {
-        setLoadingTags(false);
-      }
+  /* Selected contact IDs (for pick mode) */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    new Set(audience.type === 'contacts' ? (audience.contactIds ?? []) : [])
+  );
+  /* Full contact objects for preview */
+  const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
+
+  /* ── Fetch WhatsApp contacts (paginated) ─────────────────────── */
+  const loadContacts = useCallback(async () => {
+    setLoadingContacts(true);
+    try {
+      const params = new URLSearchParams({ channel: 'whatsapp', limit: String(PAGE), page: String(page) });
+      if (query) params.set('search', query);
+      if (mode === 'tags' && selectedTagIds.length > 0) params.set('tagIds', selectedTagIds.join(','));
+      const res = await fetch(`/api/contacts?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setAllContacts(data.contacts ?? []);
+      setPageTotal(data.total ?? 0);
+    } finally {
+      setLoadingContacts(false);
     }
-    fetchTags();
+  }, [page, query, mode, selectedTagIds]);
+
+  /* Fetch total WhatsApp count once */
+  useEffect(() => {
+    fetch('/api/contacts?channel=whatsapp&limit=1')
+      .then((r) => r.json())
+      .then((d) => setTotalWa(d.total ?? 0))
+      .catch(() => {});
   }, []);
 
-  // Lazy-load custom fields only when that audience type is active.
+  useEffect(() => { loadContacts(); }, [loadContacts]);
+
+  /* ── Fetch tags ─────────────────────────────────────────────── */
   useEffect(() => {
-    if (audience.type !== 'custom_field') return;
-    async function fetchFields() {
-      setLoadingFields(true);
-      try {
-        const res = await fetch('/api/custom-fields', { cache: 'no-store' });
-        if (res.ok) {
-          const json = await res.json();
-          setCustomFields(json.fields ?? []);
-        }
-      } finally {
-        setLoadingFields(false);
-      }
-    }
-    fetchFields();
-  }, [audience.type]);
+    fetch('/api/tags', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setTags(d.tags ?? []))
+      .catch(() => {});
+  }, []);
 
-  const fetchEstimatedCount = useCallback(async () => {
-    setLoadingCount(true);
-    try {
-      if (audience.type === 'csv') {
-        setEstimatedCount(audience.csvContacts?.length ?? 0);
-        return;
-      }
-      if (
-        audience.type !== 'all' &&
-        !(audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) &&
-        !(audience.type === 'custom_field' && audience.customField?.fieldId && audience.customField.value)
-      ) {
-        setEstimatedCount(null);
-        return;
-      }
-      const res = await fetch('/api/broadcasts/audience-count', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: audience.type,
-          tagIds: audience.tagIds,
-          customField: audience.customField,
-          excludeTagIds: audience.excludeTagIds,
-        }),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        setEstimatedCount(json.count ?? null);
-      }
-    } finally {
-      setLoadingCount(false);
-    }
-  }, [
-    audience.type,
-    audience.tagIds,
-    audience.customField,
-    audience.csvContacts,
-    audience.excludeTagIds,
-  ]);
-
+  /* ── Restore selected contacts for preview on remount ────────── */
+  const hydratedRef = useRef(false);
   useEffect(() => {
-    fetchEstimatedCount();
-  }, [fetchEstimatedCount]);
+    if (hydratedRef.current || selectedIds.size === 0) return;
+    hydratedRef.current = true;
+    fetch('/api/contacts?channel=whatsapp&limit=100')
+      .then((r) => r.json())
+      .then((d) => {
+        const all: Contact[] = d.contacts ?? [];
+        setSelectedContacts(all.filter((c) => selectedIds.has(c.id)));
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  function toggleTag(tagId: string) {
-    const current = audience.tagIds ?? [];
-    const updated = current.includes(tagId)
-      ? current.filter((id) => id !== tagId)
-      : [...current, tagId];
-    onUpdate({ ...audience, tagIds: updated });
+  /* ── Search debounce ─────────────────────────────────────────── */
+  function handleSearch(v: string) {
+    setSearch(v);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => { setPage(0); setQuery(v); }, 300);
   }
 
-  function toggleExcludeTag(tagId: string) {
-    const current = audience.excludeTagIds ?? [];
-    const updated = current.includes(tagId)
-      ? current.filter((id) => id !== tagId)
-      : [...current, tagId];
-    onUpdate({ ...audience, excludeTagIds: updated });
+  /* ── Mode switch ─────────────────────────────────────────────── */
+  function switchMode(m: AudienceMode) {
+    setMode(m);
+    setPage(0);
+    setQuery('');
+    setSearch('');
+    if (m === 'all') onUpdate({ type: 'all' });
+    else if (m === 'tags') onUpdate({ type: 'tags', tagIds: selectedTagIds });
+    else onUpdate({ type: 'contacts', contactIds: [...selectedIds] });
   }
 
-  function updateCustomField(patch: Partial<CustomFieldFilter>) {
-    const prev = audience.customField ?? {
-      fieldId: '',
-      operator: 'is' as CustomFieldOperator,
-      value: '',
-    };
-    onUpdate({ ...audience, customField: { ...prev, ...patch } });
+  /* ── Tag toggle ──────────────────────────────────────────────── */
+  function toggleTag(id: string) {
+    const next = selectedTagIds.includes(id)
+      ? selectedTagIds.filter((t) => t !== id)
+      : [...selectedTagIds, id];
+    setSelectedTagIds(next);
+    setPage(0);
+    onUpdate({ type: 'tags', tagIds: next });
   }
+
+  /* ── Contact toggle ──────────────────────────────────────────── */
+  function toggleContact(c: Contact) {
+    const next = new Set(selectedIds);
+    if (next.has(c.id)) {
+      next.delete(c.id);
+      setSelectedContacts((prev) => prev.filter((p) => p.id !== c.id));
+    } else {
+      next.add(c.id);
+      setSelectedContacts((prev) => prev.some((p) => p.id === c.id) ? prev : [...prev, c]);
+    }
+    setSelectedIds(next);
+    onUpdate({ type: 'contacts', contactIds: [...next] });
+  }
+
+  function removeSelected(id: string) {
+    const next = new Set(selectedIds);
+    next.delete(id);
+    setSelectedIds(next);
+    setSelectedContacts((prev) => prev.filter((c) => c.id !== id));
+    onUpdate({ type: 'contacts', contactIds: [...next] });
+  }
+
+  /* ── Select/deselect page ─────────────────────────────────────── */
+  function selectAllPage() {
+    const next = new Set(selectedIds);
+    const toAdd: Contact[] = [];
+    for (const c of allContacts) {
+      if (!next.has(c.id)) { next.add(c.id); toAdd.push(c); }
+    }
+    setSelectedIds(next);
+    setSelectedContacts((prev) => [...prev, ...toAdd]);
+    onUpdate({ type: 'contacts', contactIds: [...next] });
+  }
+  function deselectAllPage() {
+    const pageIds = new Set(allContacts.map((c) => c.id));
+    const next = new Set([...selectedIds].filter((id) => !pageIds.has(id)));
+    setSelectedIds(next);
+    setSelectedContacts((prev) => prev.filter((c) => !pageIds.has(c.id)));
+    onUpdate({ type: 'contacts', contactIds: [...next] });
+  }
+
+  const totalPages = Math.ceil(pageTotal / PAGE);
 
   const isValid =
-    audience.type === 'all' ||
-    (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) ||
-    (audience.type === 'custom_field' &&
-      !!audience.customField?.fieldId &&
-      audience.customField.value.length > 0) ||
-    (audience.type === 'csv' &&
-      audience.csvContacts &&
-      audience.csvContacts.length > 0);
+    mode === 'all' ||
+    (mode === 'tags' && selectedTagIds.length > 0) ||
+    (mode === 'pick' && selectedIds.size > 0);
+
+  /* ── Summary label ───────────────────────────────────────────── */
+  const summaryLabel =
+    mode === 'all'
+      ? `${totalWa.toLocaleString()} WhatsApp contacts`
+      : mode === 'tags'
+      ? selectedTagIds.length === 0
+        ? 'Select at least one tag'
+        : `Contacts with ${selectedTagIds.length} tag${selectedTagIds.length !== 1 ? 's' : ''}`
+      : `${selectedIds.size} contact${selectedIds.size !== 1 ? 's' : ''} selected`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Select Audience</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Choose who will receive this broadcast.
-        </p>
+        <h2 className="text-[16px] font-semibold text-slate-900">Select Audience</h2>
+        <p className="mt-0.5 text-[13px] text-slate-500">Only WhatsApp contacts can receive broadcasts.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {audienceOptions.map((option) => {
-          const isSelected = audience.type === option.type;
-          const Icon = option.icon;
-          return (
-            <button
-              key={option.type}
-              onClick={() =>
-                onUpdate({
-                  ...audience,
-                  type: option.type,
-                  // Wipe shape fields from other types to avoid stale
-                  // config leaking across selections.
-                  tagIds: option.type === 'tags' ? audience.tagIds : undefined,
-                  customField:
-                    option.type === 'custom_field'
-                      ? audience.customField
-                      : undefined,
-                  csvContacts:
-                    option.type === 'csv' ? audience.csvContacts : undefined,
-                })
-              }
-              className={`flex items-start gap-3 rounded-xl border p-4 text-left transition-all ${
-                isSelected
-                  ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
-                  : 'border-border bg-card/50 hover:border-border'
-              }`}
-            >
-              <div
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                  isSelected
-                    ? 'bg-primary/10 text-primary'
-                    : 'bg-muted text-muted-foreground'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">{option.label}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {option.description}
-                </p>
-              </div>
-            </button>
-          );
-        })}
+      {/* ── Mode tabs ── */}
+      <div className="flex gap-1.5 rounded-xl bg-slate-100 p-1">
+        {([
+          { key: 'all',  label: 'All WhatsApp', icon: Users },
+          { key: 'tags', label: 'By Tag',        icon: TagIcon },
+          { key: 'pick', label: 'Pick Contacts', icon: CheckCheck },
+        ] as { key: AudienceMode; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => switchMode(key)}
+            className={cn(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[13px] font-medium transition-all',
+              mode === key
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {audience.type === 'tags' && (
-        <div className="rounded-xl border border-border bg-card/50 p-4">
-          <p className="mb-3 text-sm font-medium text-foreground">Select Tags</p>
-          {loadingTags ? (
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          ) : tags.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No tags found. Create tags in Settings.
-            </p>
+      {/* ── Tag picker (tags mode) ── */}
+      {mode === 'tags' && (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <p className="mb-3 text-[12px] font-semibold text-slate-600 uppercase tracking-wide">Filter by tag</p>
+          {tags.length === 0 ? (
+            <p className="text-[13px] text-slate-400">No tags yet. Create tags in Settings.</p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => {
-                const isSelected = audience.tagIds?.includes(tag.id);
+              {tags.map((t) => {
+                const on = selectedTagIds.includes(t.id);
                 return (
-                  <button
-                    key={tag.id}
-                    onClick={() => toggleTag(tag.id)}
-                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                      isSelected
-                        ? 'border-primary/30 bg-primary/10 text-primary'
-                        : 'border-border bg-muted text-foreground/80 hover:border-slate-600'
-                    }`}
-                  >
-                    <span
-                      className="mr-1.5 h-2 w-2 rounded-full"
-                      style={{ backgroundColor: tag.color }}
-                    />
-                    {tag.name}
+                  <button key={t.id} type="button" onClick={() => toggleTag(t.id)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-all',
+                      on ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+                    )}>
+                    <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />
+                    {t.name}
                   </button>
                 );
               })}
@@ -297,132 +281,246 @@ export function Step2SelectAudience({
         </div>
       )}
 
-      {audience.type === 'custom_field' && (
-        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
-          <p className="text-sm font-medium text-foreground">Custom Field Filter</p>
-          {loadingFields ? (
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          ) : customFields.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No custom fields defined. Create one in Settings → Custom Fields.
-            </p>
-          ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)]">
-              <select
-                value={audience.customField?.fieldId ?? ''}
-                onChange={(e) => updateCustomField({ fieldId: e.target.value })}
-                className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="">Select field…</option>
-                {customFields.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.field_name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={audience.customField?.operator ?? 'is'}
-                onChange={(e) =>
-                  updateCustomField({
-                    operator: e.target.value as CustomFieldOperator,
-                  })
-                }
-                className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                {OPERATOR_OPTIONS.map((op) => (
-                  <option key={op.value} value={op.value}>
-                    {op.label}
-                  </option>
-                ))}
-              </select>
+      {/* ── Contacts list (pick mode) ── */}
+      {mode === 'pick' && (
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          {/* Search + bulk actions */}
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
-                type="text"
-                value={audience.customField?.value ?? ''}
-                onChange={(e) => updateCustomField({ value: e.target.value })}
-                placeholder="Value"
-                className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-[13px] placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                placeholder="Search name or phone…"
+                value={search}
+                onChange={(e) => handleSearch(e.target.value)}
               />
+              {search && (
+                <button type="button" onClick={() => { setSearch(''); setPage(0); setQuery(''); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <button type="button" onClick={selectAllPage}
+              className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
+              Select page
+            </button>
+            <button type="button" onClick={deselectAllPage}
+              className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50">
+              Deselect
+            </button>
+          </div>
+
+          {/* Contact rows */}
+          <div className="divide-y divide-slate-50 max-h-72 overflow-y-auto">
+            {loadingContacts ? (
+              [...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3 animate-pulse">
+                  <div className="h-4 w-4 rounded bg-slate-100 shrink-0" />
+                  <div className="h-8 w-8 rounded-full bg-slate-100 shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 w-32 rounded bg-slate-100" />
+                    <div className="h-2.5 w-24 rounded bg-slate-100" />
+                  </div>
+                </div>
+              ))
+            ) : allContacts.length === 0 ? (
+              <p className="py-10 text-center text-[13px] text-slate-400">
+                {query ? 'No WhatsApp contacts match.' : 'No WhatsApp contacts found.'}
+              </p>
+            ) : (
+              allContacts.map((c) => {
+                const checked = selectedIds.has(c.id);
+                return (
+                  <button key={c.id} type="button" onClick={() => toggleContact(c)}
+                    className={cn('flex w-full items-center gap-3 px-4 py-3 text-left transition-colors',
+                      checked ? 'bg-indigo-50/70' : 'hover:bg-slate-50')}>
+                    {/* Checkbox */}
+                    <div className={cn('flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded border-[1.5px] transition-all',
+                      checked ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white')}>
+                      {checked && (
+                        <svg viewBox="0 0 10 8" className="h-2.5 w-2.5">
+                          <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                        </svg>
+                      )}
+                    </div>
+                    {/* Avatar */}
+                    <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-white text-[11px] font-bold', grad(c.id))}>
+                      {initials(c)}
+                    </div>
+                    {/* Info */}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-medium text-slate-800 truncate leading-snug">
+                        {c.name || <span className="italic text-slate-400">Unnamed</span>}
+                      </p>
+                      <p className="text-[11px] text-slate-400 flex items-center gap-1 truncate">
+                        <Phone className="h-2.5 w-2.5 shrink-0" />{c.phone}
+                      </p>
+                    </div>
+                    <WaBadge />
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 bg-slate-50">
+              <p className="text-[11px] text-slate-400">{pageTotal} WhatsApp contacts</p>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 text-[12px] text-slate-500 disabled:opacity-30 hover:bg-white">‹</button>
+                <span className="px-2 text-[11px] text-slate-500">{page + 1} / {totalPages}</span>
+                <button type="button" onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 text-[12px] text-slate-500 disabled:opacity-30 hover:bg-white">›</button>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Exclude list — applies regardless of audience type */}
-      <div className="rounded-xl border border-border bg-card/50 p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <X className="h-4 w-4 text-red-400" />
-          <p className="text-sm font-medium text-foreground">
-            Exclude contacts with these tags
-          </p>
-          <span className="text-xs text-muted-foreground">(optional)</span>
+      {/* ── All / Tags mode: WhatsApp contacts preview ── */}
+      {(mode === 'all' || mode === 'tags') && (
+        <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-[13px] placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                placeholder="Preview contacts…"
+                value={search}
+                onChange={(e) => handleSearch(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto">
+            {loadingContacts ? (
+              [...Array(4)].map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3 animate-pulse">
+                  <div className="h-8 w-8 rounded-full bg-slate-100 shrink-0" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="h-3 w-32 rounded bg-slate-100" />
+                    <div className="h-2.5 w-24 rounded bg-slate-100" />
+                  </div>
+                  {/* checked indicator */}
+                  <div className="h-4 w-4 rounded bg-indigo-100 shrink-0" />
+                </div>
+              ))
+            ) : allContacts.length === 0 ? (
+              <p className="py-8 text-center text-[13px] text-slate-400">
+                {mode === 'tags' ? 'No contacts with selected tags.' : 'No WhatsApp contacts found.'}
+              </p>
+            ) : (
+              allContacts.map((c) => (
+                <div key={c.id} className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50/30">
+                  {/* Pre-checked (read-only visual) */}
+                  <div className="flex h-4 w-4 shrink-0 items-center justify-center rounded border-[1.5px] border-indigo-500 bg-indigo-500">
+                    <svg viewBox="0 0 10 8" className="h-2.5 w-2.5">
+                      <path d="M1 4l3 3 5-6" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+                    </svg>
+                  </div>
+                  <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br text-white text-[10px] font-bold', grad(c.id))}>
+                    {initials(c)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium text-slate-800 truncate">
+                      {c.name || <span className="italic text-slate-400">Unnamed</span>}
+                    </p>
+                    <p className="text-[11px] text-slate-400 truncate">{c.phone}</p>
+                  </div>
+                  <WaBadge />
+                </div>
+              ))
+            )}
+          </div>
+          {pageTotal > PAGE && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 bg-slate-50">
+              <p className="text-[11px] text-slate-400">Showing {allContacts.length} of {pageTotal}</p>
+              <div className="flex gap-1">
+                <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 text-[12px] text-slate-500 disabled:opacity-30 hover:bg-white">‹</button>
+                <button type="button" onClick={() => setPage((p) => p + 1)} disabled={page >= totalPages - 1}
+                  className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 text-[12px] text-slate-500 disabled:opacity-30 hover:bg-white">›</button>
+              </div>
+            </div>
+          )}
         </div>
-        {tags.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No tags available.</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => {
-              const isExcluded = audience.excludeTagIds?.includes(tag.id);
-              return (
-                <button
-                  key={tag.id}
-                  onClick={() => toggleExcludeTag(tag.id)}
-                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all ${
-                    isExcluded
-                      ? 'border-red-500/30 bg-red-500/10 text-red-300'
-                      : 'border-border bg-muted text-foreground/80 hover:border-slate-600'
-                  }`}
-                >
-                  <span
-                    className="mr-1.5 h-2 w-2 rounded-full"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  {tag.name}
+      )}
+
+      {/* ── Selected preview (pick mode) ── */}
+      {mode === 'pick' && selectedContacts.length > 0 && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              {/* Stacked avatars */}
+              <div className="flex -space-x-1.5">
+                {selectedContacts.slice(0, 5).map((c) => (
+                  <div key={c.id}
+                    className={cn('h-6 w-6 rounded-full ring-2 ring-indigo-50 flex items-center justify-center bg-gradient-to-br text-white text-[9px] font-bold shrink-0', grad(c.id))}>
+                    {initials(c)}
+                  </div>
+                ))}
+                {selectedContacts.length > 5 && (
+                  <div className="h-6 w-6 rounded-full ring-2 ring-indigo-50 bg-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-600">
+                    +{selectedContacts.length - 5}
+                  </div>
+                )}
+              </div>
+              <p className="text-[13px] font-semibold text-indigo-800">
+                {selectedContacts.length} contact{selectedContacts.length !== 1 ? 's' : ''} selected
+              </p>
+            </div>
+            <button type="button" onClick={() => { setSelectedIds(new Set()); setSelectedContacts([]); onUpdate({ type: 'contacts', contactIds: [] }); }}
+              className="text-[11px] text-indigo-500 hover:text-indigo-700 font-medium">
+              Clear all
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+            {selectedContacts.map((c) => (
+              <span key={c.id}
+                className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white pl-2.5 pr-1.5 py-0.5 text-[12px] font-medium text-indigo-800">
+                <span className={cn('h-3.5 w-3.5 rounded-full shrink-0 flex items-center justify-center bg-gradient-to-br text-white text-[7px] font-bold', grad(c.id))}>
+                  {initials(c)[0]}
+                </span>
+                {c.name || c.phone}
+                <button type="button" onClick={() => removeSelected(c.id)}
+                  className="text-indigo-300 hover:text-indigo-600 transition-colors">
+                  <X className="h-3 w-3" />
                 </button>
-              );
-            })}
+              </span>
+            ))}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Audience Summary */}
-      <div className="rounded-xl border border-border bg-card/50 p-4">
-        <p className="mb-2 text-sm font-medium text-foreground">Audience Summary</p>
-        {loadingCount ? (
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-xs text-muted-foreground">Calculating…</span>
-          </div>
-        ) : estimatedCount !== null ? (
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-primary" />
-            <span className="text-sm text-foreground">
-              {estimatedCount.toLocaleString()}
-            </span>
-            <span className="text-xs text-muted-foreground">estimated recipients</span>
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Select an audience type to see the estimate.
+      {/* ── Summary bar ── */}
+      <div className={cn(
+        'flex items-center gap-3 rounded-xl border px-4 py-3',
+        isValid ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-slate-50'
+      )}>
+        <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+          isValid ? 'bg-emerald-100' : 'bg-slate-100')}>
+          <Users className={cn('h-4 w-4', isValid ? 'text-emerald-600' : 'text-slate-400')} />
+        </div>
+        <div>
+          <p className={cn('text-[13px] font-semibold', isValid ? 'text-emerald-800' : 'text-slate-600')}>
+            {summaryLabel}
           </p>
-        )}
+          <p className="text-[11px] text-slate-500">
+            {isValid ? 'Only WhatsApp contacts — Instagram and invalid numbers excluded.' : 'Complete your selection above.'}
+          </p>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between border-t border-border pt-4">
-        <Button
-          variant="outline"
-          onClick={onBack}
-          className="border-border text-foreground/80"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
+      {/* ── Nav ── */}
+      <div className="flex items-center justify-between border-t border-slate-200 pt-4">
+        <Button variant="outline" onClick={onBack} className="border-slate-200 text-slate-700 h-9">
+          <ArrowLeft className="h-4 w-4" /> Back
         </Button>
-        <Button
-          onClick={onNext}
-          disabled={!isValid}
-          className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          Next
-          <ArrowRight className="h-4 w-4" />
+        <Button onClick={onNext} disabled={!isValid}
+          className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50">
+          Continue <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
     </div>

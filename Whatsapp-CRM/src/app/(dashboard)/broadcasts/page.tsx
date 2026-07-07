@@ -1,286 +1,222 @@
-'use client';
+"use client"
 
-import { useEffect, useState, useMemo, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { Broadcast } from '@/types';
-import { Button } from '@/components/ui/button';
+import Link from "next/link"
+import { useEffect, useState, useCallback, useRef } from "react"
+import { toast } from "sonner"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Radio, Plus, Loader2 } from 'lucide-react';
-import { useCan } from '@/hooks/use-can';
-import { GatedButton } from '@/components/ui/gated-button';
-import { getBroadcastStatus } from '@/lib/broadcast-status';
+  Radio, Plus, RefreshCw, Send, CheckCircle2, XCircle,
+  Eye, MessageCircle, Users,
+} from "lucide-react"
+import type { Broadcast } from "@/types"
 
-/**
- * Poll cadence while any broadcast is sending. Kept modest so we don't
- * beat on Supabase — the aggregate trigger in migration 003 keeps
- * counts consistent; we just need to surface the freshest snapshot.
- */
-const POLL_INTERVAL_MS = 5_000;
+function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
-function percent(numerator: number, denominator: number): number {
-  if (!denominator) return 0;
-  return Math.round((numerator / denominator) * 100);
+const STATUS: Record<string, { label: string; dot: string; badge: string }> = {
+  draft:     { label: "Draft",     dot: "bg-slate-400",  badge: "bg-slate-100 text-slate-600 border-slate-200" },
+  scheduled: { label: "Scheduled", dot: "bg-sky-500",    badge: "bg-sky-50 text-sky-700 border-sky-200" },
+  sending:   { label: "Sending",   dot: "bg-indigo-500 animate-pulse", badge: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  sent:      { label: "Sent",      dot: "bg-emerald-500", badge: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  failed:    { label: "Failed",    dot: "bg-rose-500",    badge: "bg-rose-50 text-rose-700 border-rose-200" },
 }
 
-function RateCell({
-  value,
-  total,
-  color,
-}: {
-  value: number;
-  total: number;
-  /** Tailwind bg class for the fill, e.g. "bg-primary" */
-  color: string;
-}) {
-  const pct = percent(value, total);
+function DeliveryRing({ pct, color }: { pct: number; color: string }) {
+  const r = 18; const c = 2 * Math.PI * r
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-10 text-right text-xs tabular-nums text-foreground/80">
-        {pct}%
-      </span>
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-1.5 rounded-full ${color}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-    </div>
-  );
+    <svg className="h-11 w-11 -rotate-90" viewBox="0 0 44 44">
+      <circle cx="22" cy="22" r={r} fill="none" strokeWidth="4" stroke="#f1f5f9" />
+      <circle cx="22" cy="22" r={r} fill="none" strokeWidth="4" stroke={color}
+        strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)}
+        strokeLinecap="round" className="transition-all duration-700" />
+    </svg>
+  )
 }
 
-export default function BroadcastsPage() {
-  const router = useRouter();
-  const canCreate = useCan('send-messages');
-  const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default function BroadcastsV2() {
+  const [broadcasts, setBroadcasts] = useState<Broadcast[]>([])
+  const [loading, setLoading] = useState(true)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Used to kick off polling only while something is actively sending.
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  async function fetchBroadcasts() {
+  const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/broadcasts');
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body?.error ?? `HTTP ${res.status}`);
-      }
-      const body = await res.json();
-      setBroadcasts(body.broadcasts ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load broadcasts');
+      const data = await fetch("/api/broadcasts").then((r) => r.json())
+      setBroadcasts(Array.isArray(data) ? data : (data?.broadcasts ?? []))
+    } catch {
+      toast.error("Failed to load broadcasts")
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    fetchBroadcasts();
-  }, []);
-
-  const anySending = useMemo(
-    () => broadcasts.some((b) => b.status === 'sending'),
-    [broadcasts],
-  );
-
-  useEffect(() => {
-    function startPolling() {
-      if (pollTimer.current) return;
-      pollTimer.current = setInterval(fetchBroadcasts, POLL_INTERVAL_MS);
-    }
-    function stopPolling() {
-      if (!pollTimer.current) return;
-      clearInterval(pollTimer.current);
-      pollTimer.current = null;
-    }
-
-    // Pause polling while the tab is hidden — keeps Supabase cold when
-    // the user is away, and ensures a fresh fetch the moment they
-    // refocus so they don't see stale data on return.
-    function handleVisibilityChange() {
-      if (!anySending) return;
-      if (document.visibilityState === 'hidden') {
-        stopPolling();
-      } else {
-        fetchBroadcasts();
-        startPolling();
-      }
-    }
-
-    if (anySending && document.visibilityState === 'visible') {
-      startPolling();
-    } else {
-      stopPolling();
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      stopPolling();
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [anySending]);
-
-  if (loading) {
-    return (
-      <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex h-64 flex-col items-center justify-center gap-2">
-        <p className="text-sm text-red-400">{error}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>
-          Retry
-        </Button>
-      </div>
-    );
-  }
+    load()
+    pollRef.current = setInterval(() => {
+      setBroadcasts((prev) => {
+        if (prev.some((b) => b.status === "sending")) load()
+        return prev
+      })
+    }, 5000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [load])
 
   return (
-    <div className="space-y-6">
-      {/* Top indeterminate progress bar: only visible while a broadcast
-          is mid-send. Pure CSS animation so no extra deps. */}
-      {anySending && (
-        <div
-          role="progressbar"
-          aria-label="Broadcast in progress"
-          className="broadcast-indeterminate fixed inset-x-0 top-0 z-40 h-0.5 overflow-hidden bg-muted"
-        >
-          <div className="broadcast-indeterminate-bar h-0.5 bg-primary" />
-          <style jsx>{`
-            .broadcast-indeterminate-bar {
-              width: 33%;
-              transform: translateX(-100%);
-              animation: broadcast-slide 1.6s cubic-bezier(0.4, 0, 0.2, 1)
-                infinite;
-            }
-            @keyframes broadcast-slide {
-              0% {
-                transform: translateX(-100%);
-              }
-              100% {
-                transform: translateX(400%);
-              }
-            }
-          `}</style>
-        </div>
-      )}
+    <div className="flex h-full flex-col bg-[#F4F6FA]">
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Broadcasts</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Send bulk messages to your contacts using approved templates.
-          </p>
+      {/* â”€â”€ Header â”€â”€ */}
+      <div className="shrink-0 bg-white border-b border-slate-200 px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-sm">
+              <Radio className="h-4.5 w-4.5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-[16px] font-bold text-slate-900 leading-tight">Broadcasts</h1>
+              <p className="text-[12px] text-slate-500 leading-tight">
+                {loading ? "Loading…" : `${broadcasts.length} total`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={load}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </button>
+            <Link href="/broadcasts/new"
+              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-700 shadow-sm transition-colors">
+              <Plus className="h-3.5 w-3.5" /> New Broadcast
+            </Link>
+          </div>
         </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason="create broadcasts"
-          onClick={() => router.push('/broadcasts/new')}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          New Broadcast
-        </GatedButton>
       </div>
 
-      {broadcasts.length === 0 ? (
-        <div className="flex h-64 flex-col items-center justify-center rounded-xl border border-border bg-card">
-          <Radio className="mb-3 h-10 w-10 text-slate-600" />
-          <p className="text-sm font-medium text-foreground">No broadcasts yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Create your first broadcast to reach your contacts at scale.
-          </p>
-          <GatedButton
-            canAct={canCreate}
-            gateReason="create broadcasts"
-            onClick={() => router.push('/broadcasts/new')}
-            className="mt-4 bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" />
-            New Broadcast
-          </GatedButton>
-        </div>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border hover:bg-transparent">
-                <TableHead className="text-muted-foreground">Name</TableHead>
-                <TableHead className="hidden text-muted-foreground md:table-cell">Template</TableHead>
-                <TableHead className="hidden text-right text-muted-foreground sm:table-cell">
-                  Recipients
-                </TableHead>
-                <TableHead className="hidden text-muted-foreground lg:table-cell">Delivery</TableHead>
-                <TableHead className="hidden text-muted-foreground lg:table-cell">Read</TableHead>
-                <TableHead className="text-muted-foreground">Status</TableHead>
-                <TableHead className="hidden text-muted-foreground sm:table-cell">Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {broadcasts.map((broadcast) => {
-                const status = getBroadcastStatus(broadcast.status);
-                return (
-                  <TableRow
-                    key={broadcast.id}
-                    className="cursor-pointer border-border hover:bg-muted/50"
-                    onClick={() => router.push(`/broadcasts/${broadcast.id}`)}
-                  >
-                    <TableCell className="font-medium text-foreground">
-                      {broadcast.name}
-                    </TableCell>
-                    <TableCell className="hidden text-foreground/80 md:table-cell">
-                      {broadcast.template_name}
-                    </TableCell>
-                    <TableCell className="hidden text-right text-foreground/80 tabular-nums sm:table-cell">
-                      {broadcast.total_recipients}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={broadcast.delivered_count}
-                        total={broadcast.total_recipients}
-                        color="bg-primary"
-                      />
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={broadcast.read_count}
-                        total={broadcast.total_recipients}
-                        color="bg-blue-500"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
-                      >
-                        {status.pulse && (
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
-                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-yellow-400" />
+      {/* â”€â”€ Content â”€â”€ */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="rounded-2xl bg-white border border-slate-200 p-5 h-[130px] animate-pulse" />
+            ))}
+          </div>
+        ) : broadcasts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-sm mb-5">
+              <Radio className="h-8 w-8 text-slate-300" />
+            </div>
+            <p className="text-[15px] font-semibold text-slate-700">No broadcasts yet</p>
+            <p className="mt-1 text-[13px] text-slate-400 max-w-xs">
+              Send a WhatsApp template message to multiple contacts at once.
+            </p>
+            <Link href="/broadcasts/new"
+              className="mt-5 flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-700 shadow-sm transition-colors">
+              <Plus className="h-3.5 w-3.5" /> New Broadcast
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {broadcasts.map((b) => {
+              const cfg = STATUS[b.status] ?? STATUS.draft
+              const readPct = b.total_recipients > 0 ? Math.round((b.read_count / b.total_recipients) * 100) : 0
+              const delivPct = b.total_recipients > 0 ? Math.round((b.delivered_count / b.total_recipients) * 100) : 0
+              const sentPct = b.total_recipients > 0 ? Math.round((b.sent_count / b.total_recipients) * 100) : 0
+              const isSending = b.status === "sending"
+
+              return (
+                <Link key={b.id} href={`/broadcasts/${b.id}`} className="group block">
+                  <div className="rounded-2xl bg-white border border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.08)] hover:border-indigo-100 transition-all p-5">
+                    <div className="flex items-start gap-4">
+                      {/* Ring graphic */}
+                      <div className="shrink-0 relative">
+                        <DeliveryRing pct={readPct} color="#6366f1" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-[10px] font-bold text-slate-700">{readPct}%</span>
+                        </div>
+                      </div>
+
+                      {/* Main info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="min-w-0">
+                            <p className="text-[14px] font-semibold text-slate-900 truncate leading-snug">{b.name}</p>
+                            <p className="text-[12px] text-slate-400 truncate mt-0.5">{b.template_name}</p>
+                          </div>
+                          <span className={cn("shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold", cfg.badge)}>
+                            <span className={cn("h-1.5 w-1.5 rounded-full", cfg.dot)} />
+                            {cfg.label}
                           </span>
+                        </div>
+
+                        {/* Sending progress bar */}
+                        {isSending && (
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                              <span>Sending…</span>
+                              <span>{sentPct}%</span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                              <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${sentPct}%` }} />
+                            </div>
+                          </div>
                         )}
-                        {status.label}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground sm:table-cell">
-                      {new Date(broadcast.created_at).toLocaleDateString()}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+
+                        {/* Stats row */}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+                          <span className="flex items-center gap-1 text-slate-500">
+                            <Users className="h-3.5 w-3.5 text-slate-300" />
+                            <span className="font-semibold text-slate-700">{b.total_recipients.toLocaleString()}</span>
+                            <span>recipients</span>
+                          </span>
+                          <span className="flex items-center gap-1 text-slate-500">
+                            <Send className="h-3.5 w-3.5 text-indigo-300" />
+                            <span className="font-semibold text-indigo-600">{b.sent_count.toLocaleString()}</span>
+                            <span>sent</span>
+                          </span>
+                          <span className="flex items-center gap-1 text-slate-500">
+                            <CheckCircle2 className="h-3.5 w-3.5 text-teal-300" />
+                            <span className="font-semibold text-teal-600">{b.delivered_count.toLocaleString()}</span>
+                            <span>delivered</span>
+                          </span>
+                          <span className="flex items-center gap-1 text-slate-500">
+                            <Eye className="h-3.5 w-3.5 text-sky-300" />
+                            <span className="font-semibold text-sky-600">{b.read_count.toLocaleString()}</span>
+                            <span>read</span>
+                          </span>
+                          {b.replied_count > 0 && (
+                            <span className="flex items-center gap-1 text-slate-500">
+                              <MessageCircle className="h-3.5 w-3.5 text-violet-300" />
+                              <span className="font-semibold text-violet-600">{b.replied_count.toLocaleString()}</span>
+                              <span>replied</span>
+                            </span>
+                          )}
+                          {b.failed_count > 0 && (
+                            <span className="flex items-center gap-1 text-slate-500">
+                              <XCircle className="h-3.5 w-3.5 text-rose-300" />
+                              <span className="font-semibold text-rose-600">{b.failed_count.toLocaleString()}</span>
+                              <span>failed</span>
+                            </span>
+                          )}
+                          <span className="ml-auto text-[11px] text-slate-400">
+                            {new Date(b.created_at).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+                          </span>
+                        </div>
+
+                        {/* Delivery progress strip (non-sending) */}
+                        {!isSending && b.total_recipients > 0 && (
+                          <div className="mt-3 h-1.5 rounded-full overflow-hidden bg-slate-100 flex gap-px">
+                            <div className="bg-sky-400 rounded-l-full transition-all" style={{ width: `${Math.max(0, delivPct - readPct)}%` }} />
+                            <div className="bg-indigo-500 transition-all" style={{ width: `${readPct}%` }} />
+                            {b.failed_count > 0 && (
+                              <div className="bg-rose-400 rounded-r-full transition-all" style={{ width: `${Math.round((b.failed_count / b.total_recipients) * 100)}%` }} />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </div>
-  );
+  )
 }

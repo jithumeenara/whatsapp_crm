@@ -67,7 +67,7 @@ function toMetaScreens(def: MetaFlowDefinition): Record<string, unknown>[] {
         }
       }
       return cleanComp(raw)
-    })
+    }).filter((c) => !(c.type === 'Image' && !c.src))
 
     // Mirror the upload route: wrap form elements in a Form component for v7.3
     const isTerminal = screen.terminal === true || screen.id === 'SUCCESS'
@@ -78,9 +78,13 @@ function toMetaScreens(def: MetaFlowDefinition): Record<string, unknown>[] {
       cleanedComps.push({ type: 'Footer', label: 'Done', 'on-click-action': { name: 'complete', payload: {} } })
     }
 
+    const footers = cleanedComps.filter((c) => c.type === 'Footer')
+    const nonFooters = cleanedComps.filter((c) => c.type !== 'Footer')
+    const orderedComps = [...nonFooters, ...footers]
+
     const layoutChildren = (!isTerminal && hasFormElements)
-      ? [{ type: 'Form', name: 'flow_path', children: cleanedComps }]
-      : cleanedComps
+      ? [{ type: 'Form', name: 'flow_path', children: orderedComps }]
+      : orderedComps
 
     return {
       id: idMap[screen.id],
@@ -329,7 +333,7 @@ export function validateMetaFlow(def: MetaFlowDefinition): FlowValidationError[]
           break
 
         case 'Image':
-          if (!comp.src) err(`${cPrefix}.src`, "'src' is required for Image.", 'warning')
+          if (!comp.src) err(`${cPrefix}.src`, "Image has no URL set — it will be hidden on upload.", 'warning')
           break
       }
     })

@@ -19,7 +19,7 @@ process.on("uncaughtException", (err) => {
   console.error("[uncaughtException]", err.stack ?? err);
 });
 
-const app = next({ dev, hostname, port });
+const app = next({ dev, hostname, port, webpack: true });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {

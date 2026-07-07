@@ -1,50 +1,63 @@
-import { redirect, notFound } from "next/navigation";
-import { auth } from "@/auth";
-import { prisma } from "@/lib/db";
-import { ChatbotShell } from "@/components/chatbot/chatbot-shell";
-import type { ChatbotBuilderNode } from "@/lib/chatbot/types";
+"use client"
 
-export default async function ChatbotEditorPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const { id } = await params;
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
+import { useEffect, useState } from "react"
+import { useParams, useRouter } from "next/navigation"
+import { Loader2, AlertCircle } from "lucide-react"
+import { toast } from "sonner"
+import { ChatbotShell } from "@/components/chatbot/chatbot-shell"
+import type { ChatbotBuilderNode } from "@/lib/chatbot/types"
 
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  });
-  if (!profile?.account_id) redirect("/login");
+interface Chatbot {
+  id: string; name: string; status: string; channel?: string
+  entry_node_id?: string | null
+  trigger_config?: { no_reply_delay_enabled?: boolean; no_reply_delay_minutes?: number; no_reply_message?: string } | null
+}
 
-  const chatbot = await prisma.flow.findFirst({
-    where: { id, account_id: profile.account_id, flow_type: "chatbot" },
-  });
-  if (!chatbot) notFound();
+export default function ChatbotDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const router = useRouter()
+  const [chatbot, setChatbot] = useState<Chatbot | null>(null)
+  const [nodes, setNodes] = useState<ChatbotBuilderNode[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const dbNodes = await prisma.flowNode.findMany({
-    where: { flow_id: id },
-    orderBy: { created_at: "asc" },
-  });
+  useEffect(() => {
+    fetch(`/api/chatbot/${id}`)
+      .then((r) => r.json())
+      .then((d) => {
+        setChatbot(d.chatbot)
+        setNodes(d.nodes ?? [])
+      })
+      .catch(() => toast.error("Failed to load chatbot"))
+      .finally(() => setLoading(false))
+  }, [id])
 
-  const nodes: ChatbotBuilderNode[] = dbNodes.map((n) => ({
-    id: n.id,
-    node_key: n.node_key,
-    node_type: n.node_type as ChatbotBuilderNode["node_type"],
-    config: (n.config as Record<string, unknown>) ?? {},
-    position_x: n.position_x ?? 0,
-    position_y: n.position_y ?? 0,
-  }));
+  if (loading) return (
+    <div className="flex items-center justify-center h-full bg-[#F4F6FA]">
+      <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+    </div>
+  )
+
+  if (!chatbot) return (
+    <div className="flex flex-col items-center justify-center h-full bg-[#F4F6FA]">
+      <AlertCircle className="h-8 w-8 text-slate-300 mb-2" />
+      <p className="text-[14px] text-slate-400">Chatbot not found</p>
+      <button onClick={() => router.push("/chatbot")} className="mt-3 text-[13px] text-indigo-600 hover:underline">Back</button>
+    </div>
+  )
+
+  const triggerCfg = chatbot.trigger_config ?? {}
 
   return (
     <ChatbotShell
-      chatbotId={id}
+      chatbotId={chatbot.id}
       initialName={chatbot.name}
       initialStatus={chatbot.status}
       initialNodes={nodes}
-      initialEntryNodeKey={chatbot.entry_node_id ?? "start"}
+      initialEntryNodeKey={chatbot.entry_node_id ?? ""}
+      initialNoReplyEnabled={triggerCfg.no_reply_delay_enabled ?? false}
+      initialNoReplyMinutes={triggerCfg.no_reply_delay_minutes ?? 30}
+      initialNoReplyMessage={triggerCfg.no_reply_message ?? ""}
+      channel={chatbot.channel ?? "whatsapp"}
     />
-  );
+  )
 }

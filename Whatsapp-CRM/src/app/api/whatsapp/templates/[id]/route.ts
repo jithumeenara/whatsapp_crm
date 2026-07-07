@@ -176,7 +176,7 @@ export async function PATCH(
           body_text: payload.body_text,
           footer_text: payload.footer_text ?? null,
           buttons: payload.buttons ?? Prisma.JsonNull,
-          sample_values: payload.sample_values ?? Prisma.JsonNull,
+          sample_values: (payload.sample_values ?? Prisma.JsonNull) as Prisma.InputJsonValue,
           status: 'PENDING',
           submission_error: null,
           rejection_reason: null,

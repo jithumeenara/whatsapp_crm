@@ -38,11 +38,13 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { generateAiReply } from "@/lib/ai/gemini";
 import {
+  engineSendFlow,
   engineSendInteractiveButtons,
   engineSendInteractiveList,
   engineSendMedia,
   engineSendTemplate,
   engineSendText,
+  engineSendToNumber,
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import {
@@ -130,7 +132,10 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "delay" ||
     node_type === "join" ||
     node_type === "ai_reply" ||
-    node_type === "save_to_table"
+    node_type === "save_to_table" ||
+    node_type === "crm_action" ||
+    node_type === "switch_case" ||
+    node_type === "send_to_number"
   );
 }
 
@@ -154,7 +159,7 @@ export function isTerminal(node_type: string): boolean {
  * DB lookup for `tag` / `contact_field` subjects.
  */
 export function evaluateConditionPredicate(args: {
-  operator: ConditionNodeConfig["operator"];
+  operator: ConditionNodeConfig["operator"] | string;
   subjectValue: string | undefined;
   configValue: string | undefined;
   caseSensitive?: boolean;
@@ -171,9 +176,40 @@ export function evaluateConditionPredicate(args: {
     case "equals":
       if (args.subjectValue === undefined) return false;
       return actual === expected;
+    case "not_equals":
+      if (args.subjectValue === undefined) return true;
+      return actual !== expected;
     case "contains":
       if (args.subjectValue === undefined) return false;
       return actual.includes(expected);
+    case "starts_with":
+      if (args.subjectValue === undefined) return false;
+      return actual.startsWith(expected);
+    case "ends_with":
+      if (args.subjectValue === undefined) return false;
+      return actual.endsWith(expected);
+    case "gt": {
+      const a = parseFloat(args.subjectValue ?? "");
+      const b = parseFloat(args.configValue ?? "");
+      return !isNaN(a) && !isNaN(b) && a > b;
+    }
+    case "lt": {
+      const a = parseFloat(args.subjectValue ?? "");
+      const b = parseFloat(args.configValue ?? "");
+      return !isNaN(a) && !isNaN(b) && a < b;
+    }
+    case "gte": {
+      const a = parseFloat(args.subjectValue ?? "");
+      const b = parseFloat(args.configValue ?? "");
+      return !isNaN(a) && !isNaN(b) && a >= b;
+    }
+    case "lte": {
+      const a = parseFloat(args.subjectValue ?? "");
+      const b = parseFloat(args.configValue ?? "");
+      return !isNaN(a) && !isNaN(b) && a <= b;
+    }
+    default:
+      return false;
   }
 }
 
@@ -368,7 +404,7 @@ async function logEvent(
         flow_run_id: flowRunId,
         event_type,
         node_key,
-        payload,
+        payload: payload as Prisma.InputJsonValue,
       },
     });
   } catch (err) {
@@ -415,18 +451,28 @@ async function findEntryFlow(
   accountId: string,
   message: ParsedInbound,
   isFirstInbound: boolean,
+  channel?: string,
 ): Promise<FlowRow | null> {
   // Only text messages can match an entry trigger. Interactive replies
   // are responses to existing prompts; they never start a new flow.
   if (message.kind !== "text") return null;
 
-  // Pull all active flows for this account. Active set is bounded
-  // (the builder discourages double-trigger overlap).
+  // Pull active flows for this account, filtered by channel so Instagram
+  // messages only match Instagram chatbots and vice versa.
+  const channelFilter = channel ?? "whatsapp";
   try {
-    const rows = await prisma.flow.findMany({
-      where: { account_id: accountId, status: "active" },
-      orderBy: { created_at: "asc" },
-    });
+    const rawRows = await prisma.$queryRaw<Parameters<typeof toFlowRow>[0][]>`
+      SELECT id, account_id, user_id, name, description, status, trigger_type,
+             trigger_config, entry_node_id, fallback_policy,
+             execution_count, last_executed_at, created_at, updated_at
+      FROM flows
+      WHERE account_id = ${accountId}::uuid
+        AND status = 'active'
+        AND COALESCE(channel, 'whatsapp') = ${channelFilter}
+      ORDER BY created_at ASC
+    `;
+    const rows = rawRows;
+
     const flows = rows.map(toFlowRow);
 
     for (const flow of flows) {
@@ -461,29 +507,39 @@ async function sendButtonsAndSuspend(
   node: FlowNodeRow,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
-  const { whatsapp_message_id } = await engineSendInteractiveButtons({
-    accountId: run.account_id,
-    userId: run.user_id,
-    conversationId: run.conversation_id!,
-    contactId: run.contact_id!,
-    bodyText: cfg.text,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
-    buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
-  });
-  await logEvent(run.id, "message_sent", node.node_key, {
-    node_type: "send_buttons",
-    whatsapp_message_id,
-  });
-  // Look up our internal message id so we can stash it on the run.
-  const msg = await prisma.message.findFirst({
-    where: { message_id: whatsapp_message_id },
-    select: { id: true },
-  });
-  await prisma.flowRun.update({
-    where: { id: run.id },
-    data: { last_prompt_message_id: msg?.id ?? null },
-  });
+  // WhatsApp API requires a non-empty body — fall back to a generic prompt
+  // so a node with an empty text field doesn't crash the run.
+  const bodyText = cfg.text?.trim() || "Please choose an option:";
+  try {
+    const { whatsapp_message_id } = await engineSendInteractiveButtons({
+      accountId: run.account_id,
+      userId: run.user_id,
+      conversationId: run.conversation_id!,
+      contactId: run.contact_id!,
+      bodyText,
+      headerText: cfg.header_text,
+      footerText: cfg.footer_text,
+      buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
+    });
+    await logEvent(run.id, "message_sent", node.node_key, {
+      node_type: "send_buttons",
+      whatsapp_message_id,
+    });
+    const msg = await prisma.message.findFirst({
+      where: { message_id: whatsapp_message_id },
+      select: { id: true },
+    });
+    await prisma.flowRun.update({
+      where: { id: run.id },
+      data: { last_prompt_message_id: msg?.id ?? null },
+    });
+  } catch (err) {
+    await logEvent(run.id, "error", node.node_key, {
+      reason: "send_buttons_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    await endRun(run.id, "failed", "send_buttons_failed");
+  }
   return { outcome: "advanced", node_key: node.node_key };
 }
 
@@ -492,36 +548,46 @@ async function sendListAndSuspend(
   node: FlowNodeRow,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
-  const { whatsapp_message_id } = await engineSendInteractiveList({
-    accountId: run.account_id,
-    userId: run.user_id,
-    conversationId: run.conversation_id!,
-    contactId: run.contact_id!,
-    bodyText: cfg.text,
-    buttonLabel: cfg.button_label,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
-    sections: cfg.sections.map((s) => ({
-      title: s.title,
-      rows: s.rows.map((r) => ({
-        id: r.reply_id,
-        title: r.title,
-        description: r.description,
+  // WhatsApp API requires a non-empty body — fall back to a generic prompt.
+  const bodyText = cfg.text?.trim() || "Please select an option:";
+  try {
+    const { whatsapp_message_id } = await engineSendInteractiveList({
+      accountId: run.account_id,
+      userId: run.user_id,
+      conversationId: run.conversation_id!,
+      contactId: run.contact_id!,
+      bodyText,
+      buttonLabel: cfg.button_label || "View options",
+      headerText: cfg.header_text,
+      footerText: cfg.footer_text,
+      sections: cfg.sections.map((s) => ({
+        title: s.title,
+        rows: s.rows.map((r) => ({
+          id: r.reply_id,
+          title: r.title,
+          description: r.description,
+        })),
       })),
-    })),
-  });
-  await logEvent(run.id, "message_sent", node.node_key, {
-    node_type: "send_list",
-    whatsapp_message_id,
-  });
-  const msg = await prisma.message.findFirst({
-    where: { message_id: whatsapp_message_id },
-    select: { id: true },
-  });
-  await prisma.flowRun.update({
-    where: { id: run.id },
-    data: { last_prompt_message_id: msg?.id ?? null },
-  });
+    });
+    await logEvent(run.id, "message_sent", node.node_key, {
+      node_type: "send_list",
+      whatsapp_message_id,
+    });
+    const msg = await prisma.message.findFirst({
+      where: { message_id: whatsapp_message_id },
+      select: { id: true },
+    });
+    await prisma.flowRun.update({
+      where: { id: run.id },
+      data: { last_prompt_message_id: msg?.id ?? null },
+    });
+  } catch (err) {
+    await logEvent(run.id, "error", node.node_key, {
+      reason: "send_list_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    await endRun(run.id, "failed", "send_list_failed");
+  }
   return { outcome: "advanced", node_key: node.node_key };
 }
 
@@ -529,33 +595,97 @@ async function executeHandoff(
   run: FlowRunRow,
   node: FlowNodeRow,
 ): Promise<void> {
-  const cfg = node.config as { assign_to?: string; note?: string };
+  const cfg = node.config as { assign_to?: string; note?: string; notify_message?: string; timeout_hours?: number };
   if (run.conversation_id) {
-    await prisma.conversation.update({
+    // Verify the agent still exists before assigning — the user may have been
+    // deleted since the chatbot was configured, which would violate the FK.
+    let resolvedAgentId: string | undefined = undefined;
+    if (cfg.assign_to) {
+      const agentExists = await prisma.user.findUnique({
+        where: { id: cfg.assign_to },
+        select: { id: true },
+      });
+      resolvedAgentId = agentExists?.id;
+    }
+
+    const updatedConv = await prisma.conversation.update({
       where: { id: run.conversation_id },
       data: {
         status: "pending",
-        ...(cfg.assign_to ? { assigned_agent_id: cfg.assign_to } : {}),
+        ...(resolvedAgentId ? { assigned_agent_id: resolvedAgentId } : {}),
       },
     });
-    // Push notification to the assigned agent
-    if (cfg.assign_to) {
+
+    // Notify the inbox in real-time so agents see the pending assignment immediately.
+    const { emitToAccount } = await import("@/lib/socket");
+    emitToAccount(run.account_id, "conversation", { eventType: "UPDATE", new: updatedConv, old: {} });
+
+    if (resolvedAgentId) {
+      const contact = run.contact_id
+        ? await prisma.contact.findUnique({
+            where: { id: run.contact_id },
+            select: { name: true, phone: true },
+          })
+        : null;
+
+      // Push notification to the assigned agent
       try {
         const { sendPushToUser } = await import("@/lib/push");
-        const contact = run.contact_id
-          ? await prisma.contact.findUnique({
-              where: { id: run.contact_id },
-              select: { name: true, phone: true },
-            })
-          : null;
         const contactName = contact?.name ?? contact?.phone ?? "a contact";
-        void sendPushToUser(cfg.assign_to, {
+        void sendPushToUser(resolvedAgentId, {
           title: "Conversation Handed Off to You",
           body: `Chatbot handed off ${contactName}'s conversation`,
           tag: `handoff-${run.conversation_id}`,
           data: { type: "assignment", conversationId: run.conversation_id },
         });
       } catch { /* ignore push errors */ }
+
+      // WhatsApp notification to the agent's personal WhatsApp number
+      if (cfg.notify_message) {
+        try {
+          const agentUser = await prisma.user.findUnique({
+            where: { id: resolvedAgentId },
+            select: { email: true },
+          });
+          const agentEmail = agentUser?.email ?? "";
+          if (agentEmail.endsWith("@agent.local")) {
+            const agentPhone = agentEmail.replace("@agent.local", "");
+            const waConfig = await prisma.whatsAppConfig.findUnique({
+              where: { account_id: run.account_id },
+            });
+            if (waConfig && agentPhone) {
+              const lastMsg = await prisma.message.findFirst({
+                where: { conversation_id: run.conversation_id, sender_type: "contact" },
+                orderBy: { created_at: "desc" },
+                select: { content_text: true },
+              });
+              const accessToken = decrypt(waConfig.access_token);
+              const contactName = contact?.name ?? contact?.phone ?? "Unknown";
+              const contactPhone = contact?.phone ?? "";
+              const lastMsgText = lastMsg?.content_text ?? "";
+              const text = cfg.notify_message
+                // canonical forms
+                .replace(/\{\{contact\.name\}\}/gi, contactName)
+                .replace(/\{\{contact\.phone\}\}/gi, contactPhone)
+                .replace(/\{\{last_message\}\}/gi, lastMsgText)
+                // short aliases: {{name}}, {{number}}
+                .replace(/\{\{name\}\}/gi, contactName)
+                .replace(/\{\{number\}\}/gi, contactPhone)
+                // Profile.* aliases used by the builder variable picker
+                .replace(/\{\{Profile\.name\}\}/gi, contactName)
+                .replace(/\{\{Profile\.number\}\}/gi, contactPhone)
+                .replace(/\{\{Profile\.phone\}\}/gi, contactPhone);
+              const { sendTextMessage } = await import("@/lib/whatsapp/meta-api");
+              await sendTextMessage({
+                phoneNumberId: waConfig.phone_number_id,
+                accessToken,
+                to: agentPhone,
+                text,
+              });
+            }
+          }
+        } catch { /* ignore WhatsApp notification errors */ }
+      }
     }
   }
   await logEvent(run.id, "handoff", node.node_key, {
@@ -601,8 +731,8 @@ async function evaluateConditionNode(
     const contact = await prisma.contact.findUnique({
       where: { id: run.contact_id! },
       select: { [cfg.subject_key]: true },
-    });
-    const raw = contact?.[cfg.subject_key as AllowedField];
+    }) as Record<string, unknown> | null;
+    const raw = contact?.[cfg.subject_key];
     subjectValue = typeof raw === "string" && raw.length > 0 ? raw : undefined;
   }
   return evaluateConditionPredicate({
@@ -626,6 +756,78 @@ function interpolateVars(template: string, vars: Record<string, unknown>): strin
     return v === undefined || v === null ? "" : String(v);
   });
 }
+
+/**
+ * Full interpolation for nodes that need contact fields:
+ *   {{vars.X}}         → flow run variable
+ *   {{contact.name}}   → contact's saved name
+ *   {{contact.phone}}  → contact's phone number
+ *   {{name}}           → shorthand for {{contact.name}}
+ *   {{phone}} / {{number}} → shorthand for {{contact.phone}}
+ */
+function interpolateWithContact(
+  template: string,
+  vars: Record<string, unknown>,
+  contact: { name?: string | null; phone?: string | null } | null,
+): string {
+  if (!template) return "";
+  const name = contact?.name ?? contact?.phone ?? "";
+  const phone = contact?.phone ?? "";
+  return template
+    .replace(/\{\{vars\.([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
+      const v = vars[key];
+      return v === undefined || v === null ? "" : String(v);
+    })
+    .replace(/\{\{contact\.name\}\}/gi, name)
+    .replace(/\{\{contact\.phone\}\}/gi, phone)
+    .replace(/\{\{name\}\}/gi, name)
+    .replace(/\{\{phone\}\}/gi, phone)
+    .replace(/\{\{number\}\}/gi, phone);
+}
+
+/**
+ * Validate a user's reply against a collect_input node's input_type.
+ * Returns true when the value is acceptable, false when it should be rejected.
+ */
+function validateCollectInputValue(
+  inputType: string,
+  value: string,
+  cfg: Record<string, unknown>,
+): boolean {
+  const v = value.trim();
+  switch (inputType) {
+    case "number": {
+      const n = Number(v);
+      if (isNaN(n) || v === "") return false;
+      const validation = cfg.validation as Record<string, unknown> | undefined;
+      if (validation?.min !== undefined && n < Number(validation.min)) return false;
+      if (validation?.max !== undefined && n > Number(validation.max)) return false;
+      return true;
+    }
+    case "email":
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    case "website":
+      return /^(https?:\/\/|www\.).+\..+/.test(v);
+    case "date":
+      return /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v));
+    case "time":
+      return /^\d{1,2}:\d{2}(:\d{2})?$/.test(v);
+    case "phone":
+      return /^[\d\s+\-().]{6,}$/.test(v);
+    default:
+      // text, file, location — accept anything
+      return true;
+  }
+}
+
+const DEFAULT_VALIDATION_ERRORS: Record<string, string> = {
+  number:  "Please enter a valid number.",
+  email:   "Please enter a valid email address.",
+  website: "Please enter a valid website URL (e.g. https://example.com).",
+  date:    "Please enter a date in YYYY-MM-DD format.",
+  time:    "Please enter a time in HH:MM format.",
+  phone:   "Please enter a valid phone number.",
+};
 
 async function endRun(
   runId: string,
@@ -709,13 +911,21 @@ async function advanceFromNodeKey(
     }
     if (node.node_type === "send_media") {
       const cfg = node.config as unknown as SendMediaNodeConfig;
+      if (!cfg.media_url) {
+        await logEvent(run.id, "error", node.node_key, {
+          reason: "send_media_failed",
+          detail: "media_url is empty",
+        });
+        await endRun(run.id, "failed", "send_media_missing_url");
+        return { outcome: "completed" };
+      }
       try {
         const { whatsapp_message_id } = await engineSendMedia({
           accountId: run.account_id,
           userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
-          kind: cfg.media_type,
+          kind: (cfg.media_type ?? "image") as import("@/lib/whatsapp/meta-api").MediaKind,
           link: cfg.media_url,
           caption: cfg.caption
             ? interpolateVars(cfg.caption, run.vars)
@@ -801,6 +1011,32 @@ async function advanceFromNodeKey(
         branch === "true" ? cfg.true_next : cfg.false_next;
       await logEvent(run.id, "node_entered", node.node_key, {
         condition_result: branch,
+        advancing_to: currentKey,
+      });
+      continue;
+    }
+    if (node.node_type === "switch_case") {
+      const cfg = node.config as {
+        variable?: string;
+        case_sensitive?: boolean;
+        cases?: Array<{ value: string; next_node_key: string }>;
+        default_next?: string;
+      };
+      const varKey = cfg.variable ?? "";
+      const rawValue = typeof run.vars[varKey] === "string" ? (run.vars[varKey] as string) : "";
+      const caseSensitive = cfg.case_sensitive === true;
+      const matchValue = caseSensitive ? rawValue : rawValue.toLowerCase();
+
+      const matched = (cfg.cases ?? []).find((c) => {
+        const caseVal = typeof c.value === "string" ? c.value : "";
+        return caseSensitive ? caseVal === rawValue : caseVal.toLowerCase() === matchValue;
+      });
+
+      currentKey = matched?.next_node_key || cfg.default_next || null;
+      await logEvent(run.id, "node_entered", node.node_key, {
+        variable: varKey,
+        value: rawValue,
+        matched_case: matched?.value ?? "default",
         advancing_to: currentKey,
       });
       continue;
@@ -1059,7 +1295,7 @@ async function advanceFromNodeKey(
             data: {
               table_id: cfg.table_id,
               account_id: run.account_id,
-              data: recordData,
+              data: recordData as Prisma.InputJsonValue,
             },
           });
         } catch (err) {
@@ -1073,7 +1309,421 @@ async function advanceFromNodeKey(
       continue;
     }
 
-    // Unknown node type — shouldn't happen given the CHECK constraint.
+    // crm_action — perform a CRM operation on the contact, then advance.
+    if (node.node_type === "crm_action") {
+      const cfg = node.config as {
+        action?: string;
+        next_node_key?: string;
+        // lead
+        lead_title?: string;
+        lead_source?: string;
+        lead_status?: string;
+        lead_score?: string;
+        lead_quality?: string;
+        lead_district?: string;
+        lead_place?: string;
+        lead_assigned_to?: string;
+        lead_mode?: 'upsert' | 'create_new';
+        // segment
+        segment_id?: string;
+        // followup
+        followup_title?: string;
+        followup_note?: string;
+        followup_due_hours?: number;
+        followup_assigned_to?: string;
+        // task
+        task_title?: string;
+        task_description?: string;
+        task_priority?: string;
+        task_due_days?: number;
+        task_assigned_to?: string;
+      };
+
+      if (run.contact_id) {
+        try {
+          const contact = await prisma.contact.findUnique({
+            where: { id: run.contact_id },
+            select: { id: true, name: true, phone: true },
+          });
+          const contactName = contact?.name ?? contact?.phone ?? "Contact";
+
+          const action = cfg.action ?? "create_lead";
+
+          if (action === "create_lead") {
+            const title = interpolateVars(cfg.lead_title || contactName, run.vars) || contactName;
+            const leadMode = cfg.lead_mode ?? "upsert";
+
+            // "upsert" (default): update the most-recent lead for this contact
+            // if one already exists — prevents duplicate leads from repeated
+            // chatbot submissions. "create_new" always creates a fresh lead.
+            const existingLead =
+              leadMode === "upsert"
+                ? await prisma.lead.findFirst({
+                    where: { account_id: run.account_id, contact_id: run.contact_id },
+                    orderBy: { created_at: "desc" },
+                    select: { id: true },
+                  })
+                : null;
+
+            if (existingLead) {
+              await prisma.lead.update({
+                where: { id: existingLead.id },
+                data: {
+                  title,
+                  ...(cfg.lead_source ? { source: cfg.lead_source } : {}),
+                  ...(cfg.lead_status ? { status: cfg.lead_status } : {}),
+                  ...(cfg.lead_score ? { score: cfg.lead_score } : {}),
+                  ...(cfg.lead_quality ? { lead_quality: cfg.lead_quality } : {}),
+                  ...(cfg.lead_district ? { district: cfg.lead_district } : {}),
+                  ...(cfg.lead_place ? { place: cfg.lead_place } : {}),
+                  ...(cfg.lead_assigned_to ? { assigned_to: cfg.lead_assigned_to } : {}),
+                },
+              });
+              await prisma.leadActivity.create({
+                data: {
+                  account_id: run.account_id,
+                  lead_id: existingLead.id,
+                  contact_id: run.contact_id,
+                  user_id: run.user_id,
+                  type: "note",
+                  title: "Lead updated by chatbot",
+                  description: `Lead "${title}" was updated automatically by a chatbot flow`,
+                },
+              });
+            } else {
+              const newLead = await prisma.lead.create({
+                data: {
+                  account_id: run.account_id,
+                  user_id: run.user_id,
+                  contact_id: run.contact_id,
+                  title,
+                  source: cfg.lead_source || "whatsapp",
+                  status: cfg.lead_status || "new",
+                  score: cfg.lead_score || "warm",
+                  ...(cfg.lead_quality ? { lead_quality: cfg.lead_quality } : {}),
+                  ...(cfg.lead_district ? { district: cfg.lead_district } : {}),
+                  ...(cfg.lead_place ? { place: cfg.lead_place } : {}),
+                  ...(cfg.lead_assigned_to ? { assigned_to: cfg.lead_assigned_to } : {}),
+                },
+              });
+              await prisma.leadActivity.create({
+                data: {
+                  account_id: run.account_id,
+                  lead_id: newLead.id,
+                  contact_id: run.contact_id,
+                  user_id: run.user_id,
+                  type: "created",
+                  title: "Lead created via chatbot",
+                  description: `Lead "${title}" was created automatically by a chatbot flow`,
+                },
+              });
+              const { emitToAccount } = await import("@/lib/socket");
+              emitToAccount(run.account_id, "lead", { eventType: "INSERT", new: newLead, old: {} });
+            }
+
+          } else if (action === "add_to_segment" && cfg.segment_id) {
+            // Segments work by filter_config evaluation — we store a direct
+            // contact link on the contact via a tag convention or just mark
+            // via custom field. Since segments in this CRM are filter-based
+            // (not manual membership), we add the contact to the segment by
+            // creating a tag named after the segment if it exists, or we
+            // update a dedicated segment membership table if one is added
+            // later. For now: look up the segment and create a ContactTag
+            // with a matching tag_id if the segment has one, otherwise log.
+            const segment = await prisma.segment.findFirst({
+              where: { id: cfg.segment_id, account_id: run.account_id },
+              select: { id: true, name: true },
+            });
+            if (segment) {
+              // Find or create a tag matching this segment name
+              let tag = await prisma.tag.findFirst({
+                where: { account_id: run.account_id, name: `[Segment] ${segment.name}` },
+                select: { id: true },
+              });
+              if (!tag) {
+                tag = await prisma.tag.create({
+                  data: {
+                    account_id: run.account_id,
+                    user_id: run.user_id,
+                    name: `[Segment] ${segment.name}`,
+                    color: "#3b82f6",
+                  },
+                  select: { id: true },
+                });
+              }
+              await prisma.contactTag.upsert({
+                where: {
+                  contact_id_tag_id: {
+                    contact_id: run.contact_id,
+                    tag_id: tag.id,
+                  },
+                },
+                create: { contact_id: run.contact_id, tag_id: tag.id },
+                update: {},
+              });
+            }
+
+          } else if (action === "create_followup") {
+            const dueHours = cfg.followup_due_hours ?? 24;
+            const dueAt = new Date(Date.now() + dueHours * 60 * 60 * 1000);
+            const title = interpolateVars(cfg.followup_title || `Follow up with ${contactName}`, run.vars);
+            // Link the follow-up to the contact's most recent lead so it shows in the lead timeline
+            const recentLeadForFollowup = await prisma.lead.findFirst({
+              where: { account_id: run.account_id, contact_id: run.contact_id, status: { not: "closed" } },
+              orderBy: { created_at: "desc" },
+              select: { id: true },
+            });
+            const followUp = await prisma.followUp.create({
+              data: {
+                account_id: run.account_id,
+                user_id: run.user_id,
+                contact_id: run.contact_id,
+                lead_id: recentLeadForFollowup?.id ?? null,
+                title,
+                note: cfg.followup_note
+                  ? interpolateVars(cfg.followup_note, run.vars)
+                  : null,
+                due_at: dueAt,
+                status: "pending",
+                ...(cfg.followup_assigned_to ? { assigned_to: cfg.followup_assigned_to } : {}),
+              },
+            });
+            // Log in lead activity if linked to a lead
+            if (recentLeadForFollowup) {
+              await prisma.leadActivity.create({
+                data: {
+                  account_id: run.account_id,
+                  lead_id: recentLeadForFollowup.id,
+                  contact_id: run.contact_id,
+                  user_id: run.user_id,
+                  type: "follow_up",
+                  title: "Follow-up scheduled by chatbot",
+                  description: `"${title}" due in ${dueHours}h — created automatically by a chatbot flow`,
+                  metadata: { follow_up_id: followUp.id },
+                },
+              });
+            }
+
+          } else if (action === "create_task") {
+            const dueDays = cfg.task_due_days ?? 1;
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + dueDays);
+            const title = interpolateVars(cfg.task_title || `Task for ${contactName}`, run.vars);
+            // Link task to the contact's most recent active lead
+            const recentLeadForTask = await prisma.lead.findFirst({
+              where: { account_id: run.account_id, contact_id: run.contact_id, status: { not: "closed" } },
+              orderBy: { created_at: "desc" },
+              select: { id: true },
+            });
+            await prisma.task.create({
+              data: {
+                account_id: run.account_id,
+                user_id: run.user_id,
+                contact_id: run.contact_id,
+                lead_id: recentLeadForTask?.id ?? null,
+                title,
+                description: cfg.task_description
+                  ? interpolateVars(cfg.task_description, run.vars)
+                  : null,
+                priority: cfg.task_priority || "medium",
+                status: "todo",
+                due_date: dueDate,
+                ...(cfg.task_assigned_to ? { assigned_to: cfg.task_assigned_to } : {}),
+              },
+            });
+          }
+        } catch (err) {
+          // Non-fatal — log and advance so the customer flow isn't blocked.
+          await logEvent(run.id, "error", node.node_key, {
+            reason: "crm_action_failed",
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      currentKey = cfg.next_node_key ?? "";
+      continue;
+    }
+
+    // http_request — make an outbound HTTP call, optionally save the response body
+    // to a flow variable, then advance. Errors route to error_node_key if set.
+    if (node.node_type === "http_request") {
+      const cfg = node.config as {
+        method?: string;
+        url?: string;
+        headers?: Record<string, string>;
+        body?: string;
+        response_var?: string;
+        next_node_key?: string;
+        error_node_key?: string;
+      };
+      const method = cfg.method ?? "GET";
+      const url = interpolateVars(cfg.url ?? "", run.vars);
+      let httpError = false;
+      try {
+        const reqInit: RequestInit = {
+          method,
+          headers: { "Content-Type": "application/json", ...(cfg.headers ?? {}) },
+        };
+        if (cfg.body && method !== "GET" && method !== "HEAD") {
+          reqInit.body = interpolateVars(cfg.body, run.vars);
+        }
+        const resp = await fetch(url, reqInit);
+        const text = await resp.text();
+        if (cfg.response_var) {
+          let parsed: unknown;
+          try { parsed = JSON.parse(text); } catch { parsed = text; }
+          const newVars = { ...run.vars, [cfg.response_var]: parsed };
+          await prisma.flowRun.update({ where: { id: run.id }, data: { vars: newVars as Record<string, string> } });
+          run = { ...run, vars: newVars };
+        }
+        if (!resp.ok && cfg.error_node_key) {
+          await logEvent(run.id, "error", node.node_key, { reason: "http_non_ok", status: resp.status, url });
+          httpError = true;
+        } else {
+          await logEvent(run.id, "node_entered", node.node_key, { http_status: resp.status, url });
+        }
+      } catch (err) {
+        await logEvent(run.id, "error", node.node_key, {
+          reason: "http_request_failed",
+          detail: err instanceof Error ? err.message : String(err),
+          url,
+        });
+        httpError = true;
+      }
+      if (httpError && cfg.error_node_key) {
+        currentKey = cfg.error_node_key;
+      } else {
+        currentKey = cfg.next_node_key ?? "";
+      }
+      continue;
+    }
+
+    // link_chatbot — jump to another chatbot template by ending this run and
+    // starting a new one for the linked flow. Falls back to ending silently if
+    // the linked chatbot doesn't exist.
+    if (node.node_type === "link_chatbot") {
+      const cfg = node.config as { target_chatbot_id?: string };
+      await logEvent(run.id, "completed", node.node_key, {
+        reason: "link_chatbot",
+        target: cfg.target_chatbot_id ?? null,
+      });
+      await endRun(run.id, "completed", "link_chatbot");
+
+      if (cfg.target_chatbot_id) {
+        try {
+          const linkedFlow = await loadFlow(cfg.target_chatbot_id);
+          if (linkedFlow && linkedFlow.status === "active" && linkedFlow.entry_node_id) {
+            const linkedNodes = await loadAllNodes(linkedFlow.id);
+            // Create a new run for the linked chatbot, reusing the same conversation.
+            const inserted = await prisma.flowRun.create({
+              data: {
+                flow_id: linkedFlow.id,
+                account_id: run.account_id,
+                user_id: run.user_id,
+                contact_id: run.contact_id,
+                conversation_id: run.conversation_id,
+                status: "active",
+                current_node_key: linkedFlow.entry_node_id,
+              },
+            });
+            const linkedRun = toFlowRunRow(inserted);
+            await logEvent(linkedRun.id, "started", linkedFlow.entry_node_id, {
+              linked_from_flow_run: run.id,
+            });
+            await advanceFromNodeKey(linkedRun, linkedFlow.entry_node_id, linkedNodes);
+          }
+        } catch (err) {
+          console.error("[flows] link_chatbot failed:", err instanceof Error ? err.message : err);
+        }
+      }
+      return { outcome: "completed" };
+    }
+
+    // send_flow — send a Meta WhatsApp Flows interactive message to the customer,
+    // then auto-advance. The flow form submission arrives via the data-exchange
+    // webhook separately and is NOT connected to this run's advance loop.
+    if (node.node_type === "send_flow") {
+      const cfg = node.config as {
+        flow_id?: string;
+        button_text?: string;
+        body_text?: string;
+        header_text?: string;
+        footer_text?: string;
+        next_node_key?: string;
+      };
+      if (cfg.flow_id && run.conversation_id) {
+        try {
+          const { whatsapp_message_id } = await engineSendFlow({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id,
+            contactId: run.contact_id!,
+            flowId: cfg.flow_id,
+            flowCta: cfg.button_text ?? "Open form",
+            bodyText: cfg.body_text,
+            headerText: cfg.header_text,
+            footerText: cfg.footer_text,
+          });
+          const { emitToAccount } = await import("@/lib/socket");
+          emitToAccount(run.account_id, "message", { eventType: "INSERT" });
+          await logEvent(run.id, "message_sent", node.node_key, {
+            node_type: "send_flow",
+            flow_id: cfg.flow_id,
+            whatsapp_message_id,
+          });
+        } catch (err) {
+          await logEvent(run.id, "error", node.node_key, {
+            reason: "send_flow_failed",
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          await endRun(run.id, "failed", "send_flow_failed");
+          return { outcome: "completed" };
+        }
+      }
+      currentKey = cfg.next_node_key ?? "";
+      continue;
+    }
+
+    // send_to_number — send a WhatsApp message to an arbitrary phone number
+    // as a side-effect (admin notification). Failure is non-fatal: the flow
+    // continues to next_node_key regardless so the customer is never blocked.
+    if (node.node_type === "send_to_number") {
+      const cfg = node.config as { phone?: string; text?: string; next_node_key?: string };
+      // Fetch the contact so {{name}}, {{contact.name}} etc. can be substituted.
+      const contactForInterp = run.contact_id
+        ? await prisma.contact.findUnique({
+            where: { id: run.contact_id },
+            select: { name: true, phone: true },
+          }).catch(() => null)
+        : null;
+      const rawPhone = interpolateWithContact(cfg.phone ?? "", run.vars, contactForInterp);
+      const text = interpolateWithContact(cfg.text ?? "", run.vars, contactForInterp);
+      if (rawPhone && text) {
+        try {
+          await engineSendToNumber({ accountId: run.account_id, phone: rawPhone, text });
+          await logEvent(run.id, "message_sent", node.node_key, {
+            node_type: "send_to_number",
+            to: rawPhone,
+          });
+        } catch (err) {
+          await logEvent(run.id, "error", node.node_key, {
+            reason: "send_to_number_failed",
+            detail: err instanceof Error ? err.message : String(err),
+          });
+          // Non-fatal — advance anyway
+        }
+      } else {
+        await logEvent(run.id, "error", node.node_key, {
+          reason: "send_to_number_skipped",
+          detail: !rawPhone ? "phone is empty after interpolation" : "text is empty",
+        });
+      }
+      currentKey = cfg.next_node_key ?? "";
+      continue;
+    }
+
+    // Unknown node type — log and fail the run rather than spin forever.
     await logEvent(run.id, "error", node.node_key, {
       reason: `unknown_node_type:${node.node_type}`,
     });
@@ -1157,6 +1807,7 @@ export async function dispatchInboundToFlows(
       input.accountId,
       input.message,
       input.isFirstInboundMessage,
+      input.channel,
     );
     if (!flow || !flow.entry_node_id) {
       return { consumed: false, outcome: "no_match" };
@@ -1220,13 +1871,68 @@ async function handleReplyForActiveRun(
       currentNode.node_type === "send_list")
   ) {
     matched = matchReplyId(currentNode, message.reply_id);
+
+    // If save_reply_to is configured, persist the selected item's title to vars.
+    const saveVarKey = currentNode.config.save_reply_to as string | undefined;
+    if (matched && saveVarKey) {
+      let selectedTitle = message.reply_id;
+      if (currentNode.node_type === "send_buttons") {
+        const cfg = currentNode.config as unknown as SendButtonsNodeConfig;
+        const btn = cfg.buttons?.find((b) => b.reply_id === message.reply_id);
+        if (btn?.title) selectedTitle = btn.title;
+      } else {
+        const cfg = currentNode.config as unknown as SendListNodeConfig;
+        outer: for (const section of cfg.sections ?? []) {
+          for (const row of section.rows ?? []) {
+            if (row.reply_id === message.reply_id) { selectedTitle = row.title; break outer; }
+          }
+        }
+      }
+      try {
+        const newVars = { ...run.vars, [saveVarKey]: selectedTitle };
+        await prisma.flowRun.update({
+          where: { id: run.id },
+          data: { vars: newVars as Prisma.InputJsonValue },
+        });
+        run.vars = newVars;
+      } catch {
+        // non-fatal — proceed without saving
+      }
+    }
   } else if (
     message.kind === "text" &&
     currentNode.node_type === "collect_input"
   ) {
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
+    // The chatbot builder stores extra fields not in flows/types.ts
+    const rawCfg = currentNode.config as Record<string, unknown>;
+    const inputType = typeof rawCfg.input_type === "string" ? rawCfg.input_type : "text";
     const captured = message.text.trim();
+
     if (captured.length > 0 && cfg.var_key) {
+      // Validate against input_type before accepting the value.
+      const valid = validateCollectInputValue(inputType, captured, rawCfg);
+      if (!valid) {
+        // Send the custom or default error message and stay on this node.
+        const validation = rawCfg.validation as Record<string, unknown> | undefined;
+        const errMsg =
+          (typeof validation?.error_message === "string" && validation.error_message.trim())
+            ? validation.error_message.trim()
+            : (DEFAULT_VALIDATION_ERRORS[inputType] ?? "Invalid input. Please try again.");
+        try {
+          await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: errMsg,
+          });
+        } catch {
+          // non-fatal — keep the run alive
+        }
+        return { consumed: true, flow_run_id: run.id, outcome: "fallback_fired" };
+      }
+
       // Persist captured value + reset reprompt count atomically.
       const newVars = { ...run.vars, [cfg.var_key]: captured };
       try {
@@ -1384,10 +2090,13 @@ async function startNewRun(
   // surface "X runs since activation" on the flow card.
   // Atomic increment to avoid read-modify-write races with concurrent runs.
   try {
-    await prisma.flow.update({
+    const updated = await prisma.flow.update({
       where: { id: flow.id },
       data: { execution_count: { increment: 1 } },
+      select: { id: true, execution_count: true },
     });
+    const { emitToAccount } = await import("@/lib/socket");
+    emitToAccount(flow.account_id, "chatbot", { id: updated.id, execution_count: updated.execution_count });
   } catch (incErr) {
     // Non-fatal — the run itself succeeded; only the counter is off.
     console.error("[flows] execution_count increment error:", incErr instanceof Error ? incErr.message : incErr);

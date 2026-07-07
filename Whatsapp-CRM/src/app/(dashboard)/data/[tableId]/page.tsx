@@ -1,181 +1,179 @@
-'use client';
+"use client"
 
-import { useState, useEffect, useCallback, use } from 'react';
-import Link from 'next/link';
-import {
-  ChevronRight, Loader2, Pencil, Check, X, LayoutGrid,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { FieldEditor } from '@/components/data/field-editor';
-import { RecordGrid } from '@/components/data/record-grid';
-import type { DataTable, DataField } from '@/lib/data-store/types';
-import { getIconEmoji } from '@/lib/data-store/types';
+import { useCallback, useEffect, useState } from "react"
+import { useParams, useRouter } from "next/navigation"
+import { ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical, RefreshCw } from "lucide-react"
+import { toast } from "sonner"
+import { RecordForm } from "@/components/data/record-form"
+import type { DataTable, DataField, DataRecord } from "@/lib/data-store/types"
 
-export default function TablePage({ params }: { params: Promise<{ tableId: string }> }) {
-  const { tableId } = use(params);
+function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
-  const [table, setTable] = useState<DataTable | null>(null);
-  const [fields, setFields] = useState<DataField[]>([]);
-  const [allTables, setAllTables] = useState<DataTable[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'records' | 'fields'>('records');
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState('');
-  const [savingName, setSavingName] = useState(false);
+function formatValue(field: DataField, value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—"
+  const str = String(value)
+  if (field.field_type === "date") {
+    const d = /^\d{10}$/.test(str) ? new Date(parseInt(str) * 1000) : new Date(str)
+    return isNaN(d.getTime()) ? str : d.toLocaleDateString()
+  }
+  if (field.field_type === "boolean") return value ? "Yes" : "No"
+  return str.length > 60 ? str.slice(0, 60) + "…" : str
+}
+
+export default function DataTablePage() {
+  const { tableId } = useParams<{ tableId: string }>()
+  const router = useRouter()
+
+  const [table, setTable] = useState<DataTable | null>(null)
+  const [fields, setFields] = useState<DataField[]>([])
+  const [records, setRecords] = useState<DataRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingRecord, setEditingRecord] = useState<DataRecord | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true)
     try {
-      const [tableRes, tablesRes] = await Promise.all([
+      const [tRes, rRes] = await Promise.all([
         fetch(`/api/data-tables/${tableId}`),
-        fetch('/api/data-tables'),
-      ]);
-      const tableData = await tableRes.json();
-      const tablesData = await tablesRes.json();
-      if (tableRes.ok) {
-        setTable(tableData.table);
-        setFields(tableData.table.fields ?? []);
-      }
-      // Inject fields into allTables for relation resolution
-      const all: DataTable[] = tablesData.tables ?? [];
-      if (tableData.table) {
-        const idx = all.findIndex((t: DataTable) => t.id === tableId);
-        if (idx >= 0) all[idx] = { ...all[idx], fields: tableData.table.fields ?? [] };
-      }
-      setAllTables(all);
-    } finally {
-      setLoading(false);
-    }
-  }, [tableId]);
+        fetch(`/api/data-tables/${tableId}/records?limit=200`),
+      ])
+      if (!tRes.ok) { router.push("/data"); return }
+      const tData = await tRes.json()
+      const rData = await rRes.json()
+      setTable(tData.table)
+      setFields(tData.fields ?? [])
+      setRecords(rData.records ?? [])
+    } catch { toast.error("Failed to load table") }
+    finally { setLoading(false) }
+  }, [tableId, router])
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load() }, [load])
 
-  const startEditName = () => {
-    setNameInput(table?.name ?? '');
-    setEditingName(true);
-  };
-
-  const saveName = async () => {
-    if (!nameInput.trim() || !table) return;
-    setSavingName(true);
+  async function deleteRecord(id: string) {
+    setDeleting(id)
     try {
-      const res = await fetch(`/api/data-tables/${tableId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: nameInput.trim() }),
-      });
-      if (res.ok) {
-        setTable((t) => t ? { ...t, name: nameInput.trim() } : t);
-        setEditingName(false);
-      }
-    } finally {
-      setSavingName(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+      await fetch(`/api/data-tables/${tableId}/records/${id}`, { method: "DELETE" })
+      setRecords((p) => p.filter((r) => r.id !== id))
+      toast.success("Record deleted")
+    } catch { toast.error("Delete failed") }
+    finally { setDeleting(null); setMenuOpenId(null) }
   }
 
-  if (!table) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
-        <p>Table not found.</p>
-        <Link href="/data" className="text-sm text-primary hover:underline">← Back to Data Store</Link>
-      </div>
-    );
-  }
+  const filtered = records.filter((r) => {
+    if (!search) return true
+    return Object.values(r.data as Record<string, unknown>).some((v) =>
+      String(v ?? "").toLowerCase().includes(search.toLowerCase())
+    )
+  })
+
+  const visibleFields = fields.slice(0, 7)
 
   return (
-    <div className="space-y-5">
-      {/* Breadcrumb */}
-      <nav className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href="/data" className="flex items-center gap-1 hover:text-foreground transition-colors">
-          <LayoutGrid className="size-3.5" />
-          Data Store
-        </Link>
-        <ChevronRight className="size-3.5" />
-        <span className="text-foreground font-medium">{table.name}</span>
-      </nav>
-
-      {/* Table header */}
-      <div className="flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-2xl select-none shrink-0">
-          {getIconEmoji(table.icon)}
+    <div className="flex flex-col h-full bg-[#F4F6FA]">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100">
+        <button onClick={() => router.push("/data")}
+          className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
+          <ArrowLeft className="h-4 w-4 text-slate-500" />
+        </button>
+        <div className="flex-1">
+          <h1 className="text-[16px] font-bold text-slate-800">{table?.name ?? "Loading…"}</h1>
+          <p className="text-[12px] text-slate-400">{records.length} records · {fields.length} fields</p>
         </div>
-        <div className="flex-1 min-w-0">
-          {editingName ? (
-            <div className="flex items-center gap-2">
-              <Input
-                value={nameInput}
-                onChange={(e) => setNameInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') saveName();
-                  if (e.key === 'Escape') setEditingName(false);
-                }}
-                className="h-8 text-lg font-bold w-64"
-                autoFocus
-              />
-              <Button size="sm" variant="ghost" onClick={saveName} disabled={savingName} className="h-8 w-8 p-0">
-                {savingName ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4 text-primary" />}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setEditingName(false)} className="h-8 w-8 p-0">
-                <X className="size-4" />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 group">
-              <h1 className="text-xl font-bold text-foreground">{table.name}</h1>
-              <button
-                type="button"
-                onClick={startEditName}
-                className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-foreground transition-all rounded"
-              >
-                <Pencil className="size-3.5" />
-              </button>
-            </div>
-          )}
-          {table.description && (
-            <p className="text-sm text-muted-foreground mt-0.5">{table.description}</p>
-          )}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search records…"
+            className="h-8 pl-8 pr-3 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-400 w-52" />
         </div>
-        <div className="text-xs text-muted-foreground shrink-0">
-          {fields.length} fields · {table._count?.records ?? '–'} records
-        </div>
+        <button onClick={load} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
+          <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+        </button>
+        <button onClick={() => { setEditingRecord(null); setFormOpen(true) }}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700">
+          <Plus className="h-3.5 w-3.5" /> Add Record
+        </button>
       </div>
 
-      {/* Tabs: Records | Fields */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
-        <TabsList className="h-9">
-          <TabsTrigger value="records" className="text-xs px-4">Records</TabsTrigger>
-          <TabsTrigger value="fields" className="text-xs px-4">Fields</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="records" className="mt-4">
-          <RecordGrid
-            tableId={tableId}
-            fields={fields}
-            allTables={allTables}
-          />
-        </TabsContent>
-
-        <TabsContent value="fields" className="mt-4">
-          <div className="max-w-xl">
-            <FieldEditor
-              tableId={tableId}
-              fields={fields}
-              allTables={allTables}
-              onFieldsChange={setFields}
-            />
+      {/* Table */}
+      <div className="flex-1 overflow-auto p-6">
+        {loading ? (
+          <div className="space-y-2">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="h-10 bg-white rounded-lg animate-pulse" />
+            ))}
           </div>
-        </TabsContent>
-      </Tabs>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+            <p className="text-[14px] font-medium">No records yet. Add your first record!</p>
+          </div>
+        ) : (
+          <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-sm">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50">
+                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide w-8">#</th>
+                  {visibleFields.map((f) => (
+                    <th key={f.id} className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                      {f.label}
+                    </th>
+                  ))}
+                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((rec, idx) => {
+                  const data = rec.data as Record<string, unknown>
+                  return (
+                    <tr key={rec.id} className="border-b border-slate-50 hover:bg-indigo-50/20 transition-colors">
+                      <td className="px-4 py-2.5 text-slate-400">{idx + 1}</td>
+                      {visibleFields.map((f) => (
+                        <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[180px] truncate">
+                          {formatValue(f, data[f.field_key])}
+                        </td>
+                      ))}
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="relative inline-block">
+                          <button onClick={() => setMenuOpenId(menuOpenId === rec.id ? null : rec.id)}
+                            className="p-1 rounded hover:bg-slate-100">
+                            <MoreVertical className="h-4 w-4 text-slate-400" />
+                          </button>
+                          {menuOpenId === rec.id && (
+                            <div className="absolute right-0 top-6 z-20 w-36 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden">
+                              <button onClick={() => { setEditingRecord(rec); setFormOpen(true); setMenuOpenId(null) }}
+                                className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-slate-700 hover:bg-slate-50">
+                                <Edit2 className="h-3.5 w-3.5" /> Edit
+                              </button>
+                              <button onClick={() => deleteRecord(rec.id)} disabled={deleting === rec.id}
+                                className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-rose-600 hover:bg-rose-50">
+                                <Trash2 className="h-3.5 w-3.5" /> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {formOpen && (
+        <RecordForm
+          tableId={tableId}
+          fields={fields}
+          record={editingRecord ?? undefined}
+          onClose={() => { setFormOpen(false); setEditingRecord(null) }}
+          onSaved={() => { setFormOpen(false); setEditingRecord(null); load() }}
+        />
+      )}
     </div>
-  );
+  )
 }

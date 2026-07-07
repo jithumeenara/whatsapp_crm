@@ -1,62 +1,59 @@
-import { NextRequest, NextResponse } from "next/server"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
-import { prisma } from "@/lib/db"
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
+import { prisma } from '@/lib/db'
 
-/**
- * DELETE /api/pipelines/[id]
- * Deletes a pipeline (admin only).
- */
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireRole("admin")
+    const ctx = await requireRoleOrApiKey(req, 'viewer')
     const { id } = await params
 
     const pipeline = await prisma.pipeline.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true },
+      include: {
+        stages: { orderBy: { position: 'asc' } },
+        _count: { select: { deals: true } },
+      },
     })
-    if (!pipeline) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    }
+    if (!pipeline) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    await prisma.pipeline.delete({ where: { id } })
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    return toErrorResponse(err)
+    return NextResponse.json({ pipeline })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }
 
-/**
- * PATCH /api/pipelines/[id]
- * Updates a pipeline name (admin only).
- */
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireRole("admin")
+    const ctx = await requireRoleOrApiKey(req, 'admin')
     const { id } = await params
-    const body = await req.json().catch(() => null)
-    if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
+    const body = await req.json()
 
-    const pipeline = await prisma.pipeline.findFirst({
-      where: { id, account_id: ctx.accountId },
-      select: { id: true },
-    })
-    if (!pipeline) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    }
+    const exists = await prisma.pipeline.findFirst({ where: { id, account_id: ctx.accountId } })
+    if (!exists) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const updated = await prisma.pipeline.update({
+    const pipeline = await prisma.pipeline.update({
       where: { id },
-      data: { name: body.name },
+      data: { name: body.name ?? undefined },
+      include: { stages: { orderBy: { position: 'asc' } }, _count: { select: { deals: true } } },
     })
-    return NextResponse.json({ pipeline: updated })
-  } catch (err) {
-    return toErrorResponse(err)
+
+    return NextResponse.json({ pipeline })
+  } catch (e) {
+    return toErrorResponse(e)
+  }
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const ctx = await requireRoleOrApiKey(req, 'admin')
+    const { id } = await params
+
+    const exists = await prisma.pipeline.findFirst({ where: { id, account_id: ctx.accountId } })
+    if (!exists) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    await prisma.pipeline.delete({ where: { id } })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }

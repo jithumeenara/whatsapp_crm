@@ -25,7 +25,7 @@ interface InsertRow {
   parent_step_id: string | null
   branch: string | null
   step_type: string
-  step_config: Record<string, unknown>
+  step_config: Prisma.InputJsonValue
   position: number
 }
 
@@ -73,7 +73,7 @@ export async function insertSteps(
         parent_step_id: parentId,
         branch,
         step_type: s.step_type,
-        step_config: (s.step_config ?? {}) as Prisma.InputJsonValue,
+        step_config: (s.step_config ?? {}) as unknown as Prisma.InputJsonValue,
         position: idx,
       })
       if (s.step_type === 'condition' && s.branches) {

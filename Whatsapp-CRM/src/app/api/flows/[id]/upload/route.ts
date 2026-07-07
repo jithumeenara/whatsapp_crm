@@ -41,6 +41,8 @@ function cleanComponent(comp: Record<string, unknown>): Record<string, unknown> 
   for (const [key, val] of Object.entries(comp)) {
     // Strip CRM-internal fields (underscore-prefixed) — never sent to Meta
     if (key.startsWith('_')) continue
+    // required: false is Meta's default — omit it to keep JSON minimal
+    if (key === 'required' && val === false) continue
     // Strip optional fields that are empty/null/undefined
     if (OPTIONAL_STRING_FIELDS.has(key)) {
       if (val === '' || val === null || val === undefined) continue
@@ -193,54 +195,119 @@ function patchPayloads(screens: Record<string, unknown>[]): Record<string, unkno
   })
 }
 
+function makeDynamicDecl() {
+  return {
+    type: 'array',
+    items: { type: 'object', properties: { id: { type: 'string' }, title: { type: 'string' } } },
+    '__example__': [{ id: 'example_1', title: 'Example' }],
+  }
+}
+
 function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
   const idMap: Record<string, string> = {}
   for (const s of screens) {
     idMap[s.id] = sanitizeScreenId(s.id)
   }
 
+  // First pass: collect each screen's own dynamic vars (DB-backed dropdowns).
+  // Used so navigate source screens can pre-declare the target's vars and pass
+  // them in the payload as ${data.varName}.
+  const screenDynamicVars: Record<string, Record<string, unknown>> = {}
   let hasDynamicData = false
+  for (const screen of screens) {
+    const vars: Record<string, unknown> = {}
+    for (const comp of screen.components) {
+      const c = comp as Record<string, unknown>
+      if (c._source_table_id && c._source_field_key) {
+        vars[makeVarName(String(c._source_field_key))] = makeDynamicDecl()
+        hasDynamicData = true
+      }
+    }
+    screenDynamicVars[idMap[screen.id]] = vars
+  }
 
   const transformedScreens = screens.map((screen) => {
-    const dynamicDecls: Record<string, unknown> = {}
+    // dynamicDecls = data model entries for THIS screen:
+    //   • own dynamic vars (DB-backed components on this screen)
+    //   • vars needed by every screen this screen navigates TO
+    //     (so INIT can pre-load them and navigate payload can pass them forward)
+    const dynamicDecls: Record<string, unknown> = { ...screenDynamicVars[idMap[screen.id]] }
 
-    // Collect names of all named form fields on this screen (for payload refs)
+    // Collect names of all named form fields on this screen (for data_exchange payload refs only)
     const namedFields = screen.components
       .map((c) => (c as Record<string, unknown>).name as string | undefined)
       .filter((n): n is string => Boolean(n))
+
+    // If this screen has a filter trigger, footers that navigate to the next screen
+    // must be converted to data_exchange so the webhook can return filtered options.
+    const screenHasFilterTrigger = screen.components.some(
+      (c) => (c as Record<string, unknown>)._filter_trigger === true,
+    )
 
     const cleanedComps = screen.components.map((comp) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _id, ...raw } = comp
 
       // Dynamic data source — replace static array with ${data.VARNAME} reference.
-      // The webhook endpoint will serve fresh DB values at runtime.
+      // dynamicDecls is already pre-populated by the first pass above.
       if (raw._source_table_id && raw._source_field_key) {
-        const fieldKey = String(raw._source_field_key)
-        const varName = makeVarName(fieldKey)
-        hasDynamicData = true
-        dynamicDecls[varName] = {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: { id: { type: 'string' }, title: { type: 'string' } },
-          },
-          '__example__': [{ id: 'example_1', title: 'Example' }],
-        }
-        raw['data-source'] = `\${data.${varName}}`
+        raw['data-source'] = `\${data.${makeVarName(String(raw._source_field_key))}}`
       }
 
-      // Fix Footer navigate references to use sanitized screen IDs.
-      // For data_exchange Footers, auto-populate payload with ${form.field} refs
-      // so Meta includes all form field values in the webhook call.
+      // Dependent dropdown filter trigger: fires data_exchange on-select so the
+      // webhook can return filtered options for child dropdowns on the same screen.
+      // __filter_refresh is a static marker so the webhook can distinguish this
+      // on-select-action call from a footer data_exchange navigation.
+      if (raw._filter_trigger === true && raw.name) {
+        raw['on-select-action'] = {
+          name: 'data_exchange',
+          payload: {
+            [raw.name as string]: `\${form.${raw.name}}`,
+            __filter_refresh: '1',
+          },
+        }
+      }
+
+      // Fix Footer action references.
       if (raw['on-click-action']) {
         const action = raw['on-click-action'] as Record<string, unknown>
         if (action.name === 'navigate' && action.next) {
           const next = action.next as Record<string, unknown>
           if (typeof next.name === 'string') {
-            raw['on-click-action'] = {
-              ...action,
-              next: { ...next, name: idMap[next.name] ?? sanitizeScreenId(next.name) },
+            const targetId = idMap[next.name] ?? sanitizeScreenId(next.name)
+
+            if (screenHasFilterTrigger) {
+              // This screen has a filter trigger — convert to data_exchange so the webhook
+              // can return filtered options for the target screen at runtime.
+              // __target_screen tells the webhook which screen to navigate to.
+              const formRefs: Record<string, string> = {}
+              for (const name of namedFields) {
+                formRefs[name] = `\${form.${name}}`
+              }
+              raw['on-click-action'] = {
+                name: 'data_exchange',
+                payload: { ...formRefs, __target_screen: targetId },
+              }
+            } else {
+              const targetVars = screenDynamicVars[targetId] ?? {}
+
+              // Meta rule: every key in the target screen's `data` model must appear
+              // in the navigate payload. For DB-backed vars (arrays), we pass them as
+              // ${data.varName} — this works because the INIT response already delivered
+              // them to the first screen, and they're chained forward through each navigate.
+              const dynamicPayload: Record<string, string> = {}
+              for (const varName of Object.keys(targetVars)) {
+                dynamicPayload[varName] = `\${data.${varName}}`
+                // Also declare these vars on the current screen's data model so ${data.xxx}
+                // references resolve here before being passed to the target.
+                if (!dynamicDecls[varName]) dynamicDecls[varName] = makeDynamicDecl()
+              }
+
+              raw['on-click-action'] = {
+                ...action,
+                next: { ...next, name: targetId },
+                payload: dynamicPayload,
+              }
             }
           }
         } else if (action.name === 'data_exchange') {
@@ -256,9 +323,15 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
         }
       }
 
+      // Convert relative /api/files/ image URLs to absolute so Meta can fetch them
+      if (raw.type === 'Image' && typeof raw.src === 'string' && raw.src.startsWith('/')) {
+        const baseUrl = (process.env.NEXTAUTH_URL ?? '').replace(/\/$/, '')
+        raw.src = `${baseUrl}${raw.src}`
+      }
+
       // Strip empty optional fields + convert helper-text to object
       return cleanComponent(raw)
-    })
+    }).filter((c) => !(c.type === 'Image' && !c.src))
 
     // v7.3: Wrap all components inside a Form component (required for data_exchange
     // to receive form field values and for ${form.xxx} references to resolve).
@@ -276,14 +349,22 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
 
     let layoutChildren: Record<string, unknown>[]
     if (!isTerminalScreen && hasFormElements) {
-      // Wrap everything (including Footer) in a Form component as per v7.3 spec
+      // Meta v7.3 requires Footer to be the LAST child inside the Form.
+      // Users can place the Footer anywhere in the builder — sort it to the end here.
+      const footers = cleanedComps.filter((c) => c.type === 'Footer')
+      const nonFooters = cleanedComps.filter((c) => c.type !== 'Footer')
+      const orderedComps = [...nonFooters, ...footers]
+
       layoutChildren = [{
         type: 'Form',
         name: 'flow_path',
-        children: cleanedComps,
+        children: orderedComps,
       }]
     } else {
-      layoutChildren = cleanedComps
+      // Terminal / plain display screen — Footer stays at root level, also sorted last
+      const footers = cleanedComps.filter((c) => c.type === 'Footer')
+      const nonFooters = cleanedComps.filter((c) => c.type !== 'Footer')
+      layoutChildren = [...nonFooters, ...footers]
     }
 
     const result: Record<string, unknown> = {
@@ -294,6 +375,7 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
 
     if (screen.terminal || screen.id === 'SUCCESS') result.terminal = true
 
+    // Add data model for DB-backed dynamic data sources (served by the webhook at runtime)
     if (Object.keys(dynamicDecls).length > 0) {
       result.data = dynamicDecls
     }
@@ -551,9 +633,20 @@ export async function POST(
       })
 
       if (!assetRes.ok) {
-        // Non-fatal — flow was created, JSON upload failed.
-        // The user can edit it on Meta.
-        console.warn('[upload] flow JSON asset upload failed:', await assetRes.text())
+        const errText = await assetRes.text()
+        console.warn('[upload] flow JSON asset upload failed:', errText)
+        let errMsg = `Meta rejected the flow JSON (${assetRes.status})`
+        try {
+          const errBody = JSON.parse(errText) as { error?: { message?: string } }
+          if (errBody?.error?.message) errMsg = errBody.error.message
+        } catch { /* non-JSON */ }
+        // Save meta_flow_id before returning error so user can retry with Update on Meta
+        const partialCfg = { ...cfg, meta_flow_id: metaFlowId }
+        await prisma.flow.update({
+          where: { id },
+          data: { flow_type: 'whatsapp_flow', trigger_config: partialCfg as Prisma.InputJsonValue, status: 'draft' },
+        })
+        return NextResponse.json({ error: errMsg, meta_flow_id: metaFlowId, json_upload_failed: true }, { status: 502 })
       }
     }
 

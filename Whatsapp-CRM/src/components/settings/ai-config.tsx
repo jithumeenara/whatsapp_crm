@@ -240,7 +240,7 @@ export function AiConfig() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        <Loader2 className="size-5 animate-spin text-slate-500" />
       </div>
     );
   }
@@ -249,7 +249,7 @@ export function AiConfig() {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-semibold">AI Configuration</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">
+        <p className="text-sm text-slate-500 mt-0.5">
           Configure Google Gemini for AI-powered chatbot replies.
         </p>
       </div>
@@ -272,7 +272,7 @@ export function AiConfig() {
 
         {/* ── Configuration tab ── */}
         <TabsContent value="config" className="mt-4 space-y-5">
-          <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5">
 
             {/* API key field */}
             <div className="space-y-1.5">
@@ -302,7 +302,7 @@ export function AiConfig() {
                 />
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800"
                   onClick={() => setShowKey((v) => !v)}
                 >
                   {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -311,7 +311,7 @@ export function AiConfig() {
 
               {/* Validation feedback */}
               {validationStatus === 'checking' && (
-                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <p className="flex items-center gap-1.5 text-xs text-slate-500">
                   <Loader2 className="size-3 animate-spin" />
                   Validating key…
                 </p>
@@ -329,7 +329,7 @@ export function AiConfig() {
                 </p>
               )}
               {validationStatus === 'idle' && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-slate-500">
                   Get your API key from{' '}
                   <span className="font-mono text-primary">aistudio.google.com</span>
                 </p>
@@ -358,7 +358,7 @@ export function AiConfig() {
               <div className="space-y-1.5">
                 <Label htmlFor="temperature">
                   Temperature
-                  <span className="ml-2 text-xs text-muted-foreground font-normal">
+                  <span className="ml-2 text-xs text-slate-500 font-normal">
                     {temperature} (0 = precise, 1 = creative)
                   </span>
                 </Label>
@@ -391,7 +391,7 @@ export function AiConfig() {
 
         {/* ── Training tab ── */}
         <TabsContent value="training" className="mt-4 space-y-5">
-          <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="system-prompt">System Prompt</Label>
               <Textarea
@@ -402,17 +402,17 @@ export function AiConfig() {
                 rows={4}
                 className="resize-none text-sm"
               />
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-slate-500">
                 This tells the AI who it is and how to behave. Keep it short and clear.
               </p>
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium">Knowledge Base (Q&amp;A)</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Add question-answer pairs so the AI knows your business facts.
                 </p>
               </div>
@@ -426,17 +426,17 @@ export function AiConfig() {
               {trainingPairs.map((pair, i) => (
                 <div
                   key={i}
-                  className="rounded-lg border border-border bg-muted/30 p-3 space-y-2"
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-muted-foreground">
+                    <span className="text-xs font-medium text-slate-500">
                       Pair {i + 1}
                     </span>
                     {trainingPairs.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removePair(i)}
-                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        className="text-slate-500 hover:text-destructive transition-colors"
                       >
                         <Trash2 className="size-3.5" />
                       </button>
@@ -463,13 +463,13 @@ export function AiConfig() {
 
         {/* ── Test AI tab ── */}
         <TabsContent value="test" className="mt-4">
-          <div className="rounded-xl border border-border bg-card flex flex-col" style={{ height: 460 }}>
+          <div className="rounded-xl border border-slate-200 bg-white flex flex-col" style={{ height: 460 }}>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-2">
                 <Bot className="size-4 text-primary" />
                 <span className="text-sm font-medium">Test your AI</span>
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-slate-500">
                   — uses current (unsaved) settings
                 </span>
               </div>
@@ -477,7 +477,7 @@ export function AiConfig() {
                 <button
                   type="button"
                   onClick={() => { setChatMessages([]); setChatError(''); }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors"
                 >
                   <RotateCcw className="size-3" />
                   Clear
@@ -488,7 +488,7 @@ export function AiConfig() {
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
               {chatMessages.length === 0 && !chatLoading && (
-                <div className="flex flex-col items-center justify-center h-full text-center gap-2 text-muted-foreground">
+                <div className="flex flex-col items-center justify-center h-full text-center gap-2 text-slate-500">
                   <Bot className="size-8 opacity-30" />
                   <p className="text-sm">Send a message to test your AI configuration.</p>
                   {!apiKeySet && !apiKey && (
@@ -509,7 +509,7 @@ export function AiConfig() {
                       'max-w-[80%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap',
                       m.role === 'user'
                         ? 'bg-primary text-primary-foreground rounded-br-sm'
-                        : 'bg-muted text-foreground rounded-bl-sm',
+                        : 'bg-slate-100 text-slate-800 rounded-bl-sm',
                     ].join(' ')}
                   >
                     {m.text}
@@ -519,10 +519,10 @@ export function AiConfig() {
 
               {chatLoading && (
                 <div className="flex justify-start">
-                  <div className="bg-muted rounded-2xl rounded-bl-sm px-3.5 py-2.5 flex gap-1 items-center">
-                    <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:0ms]" />
-                    <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:150ms]" />
-                    <span className="size-1.5 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:300ms]" />
+                  <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5 flex gap-1 items-center">
+                    <span className="size-1.5 rounded-full bg-slate-100-foreground/60 animate-bounce [animation-delay:0ms]" />
+                    <span className="size-1.5 rounded-full bg-slate-100-foreground/60 animate-bounce [animation-delay:150ms]" />
+                    <span className="size-1.5 rounded-full bg-slate-100-foreground/60 animate-bounce [animation-delay:300ms]" />
                   </div>
                 </div>
               )}
@@ -540,7 +540,7 @@ export function AiConfig() {
             </div>
 
             {/* Input */}
-            <div className="px-4 py-3 border-t border-border shrink-0">
+            <div className="px-4 py-3 border-t border-slate-200 shrink-0">
               <div className="flex gap-2">
                 <Input
                   placeholder="Type a message to test…"

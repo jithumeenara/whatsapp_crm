@@ -32,6 +32,7 @@ import {
   Plus,
   Shield,
   Trash2,
+  UserCheck,
   UserCog,
   UserIcon,
   UsersRound,
@@ -60,6 +61,7 @@ import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import type { AccountRole } from '@/lib/auth/roles';
 import { InviteMemberDialog } from './invite-member-dialog';
+import { AddAgentDialog } from './add-agent-dialog';
 
 interface Member {
   user_id: string;
@@ -67,6 +69,7 @@ interface Member {
   email: string | null;
   avatar_url: string | null;
   role: AccountRole;
+  restrict_to_assigned: boolean;
   joined_at: string;
 }
 
@@ -81,8 +84,9 @@ interface Invitation {
 // Editable roles in the inline dropdown. Owner is never an option —
 // promotions go through the (deferred) Transfer Ownership flow.
 const EDITABLE_ROLES: { value: AccountRole; label: string; hint: string }[] = [
-  { value: 'admin', label: 'Admin', hint: 'Manage members + everything' },
-  { value: 'agent', label: 'Agent', hint: 'Use features; no settings' },
+  { value: 'admin', label: 'Admin', hint: 'Manage members + all settings' },
+  { value: 'supervisor', label: 'Supervisor', hint: 'Manage agents + view all leads' },
+  { value: 'agent', label: 'Agent', hint: 'Use features; limited settings' },
   { value: 'viewer', label: 'Viewer', hint: 'Read-only across the app' },
 ];
 
@@ -98,24 +102,28 @@ const ROLE_CHIP: Record<
 > = {
   owner: {
     icon: Crown,
-    label: 'Owner',
-    className:
-      'border-amber-500/40 bg-amber-500/10 text-amber-300',
+    label: 'Admin',
+    className: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
   },
   admin: {
     icon: Shield,
-    label: 'Admin',
+    label: 'Manager',
     className: 'border-primary/40 bg-primary/10 text-primary',
+  },
+  supervisor: {
+    icon: UserCheck,
+    label: 'Supervisor',
+    className: 'border-violet-500/40 bg-violet-500/10 text-violet-400',
   },
   agent: {
     icon: UserCog,
     label: 'Agent',
-    className: 'border-border bg-muted text-foreground/80',
+    className: 'border-slate-200 bg-slate-100 text-slate-800/80',
   },
   viewer: {
     icon: UserIcon,
     label: 'Viewer',
-    className: 'border-border bg-card text-muted-foreground',
+    className: 'border-slate-200 bg-white text-slate-500',
   },
 };
 
@@ -146,6 +154,7 @@ export function MembersTab() {
   const [loading, setLoading] = useState(true);
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [addAgentOpen, setAddAgentOpen] = useState(false);
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
     null,
@@ -190,6 +199,36 @@ export function MembersTab() {
   useEffect(() => {
     void loadEverything();
   }, [loadEverything]);
+
+  async function handleRestrictToggle(member: Member, nextValue: boolean) {
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === member.user_id ? { ...m, restrict_to_assigned: nextValue } : m,
+      ),
+    );
+    try {
+      const res = await fetch(`/api/account/members/${member.user_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restrict_to_assigned: nextValue }),
+      });
+      if (!res.ok) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            m.user_id === member.user_id ? { ...m, restrict_to_assigned: !nextValue } : m,
+          ),
+        );
+        toast.error('Failed to update chat restriction');
+      }
+    } catch {
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === member.user_id ? { ...m, restrict_to_assigned: !nextValue } : m,
+        ),
+      );
+      toast.error('Could not reach the server');
+    }
+  }
 
   async function handleRoleChange(member: Member, nextRole: AccountRole) {
     if (member.role === nextRole) return;
@@ -296,25 +335,35 @@ export function MembersTab() {
       {/* Header + invite button */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Account members</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-lg font-semibold text-slate-800">Account members</h2>
+          <p className="text-sm text-slate-500">
             People with access to this account. Roles control what each
             teammate can do.
           </p>
         </div>
         <RequireRole min="admin">
-          <Button
-            onClick={() => setInviteOpen(true)}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            <Plus className="size-4" />
-            Invite member
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setAddAgentOpen(true)}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              <Plus className="size-4" />
+              Add Agent
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setInviteOpen(true)}
+              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
+            >
+              <Mail className="size-4" />
+              Invite link
+            </Button>
+          </div>
         </RequireRole>
       </div>
 
       {/* Roster */}
-      <Card className="bg-card border-border ring-0 ring-transparent">
+      <Card className="bg-white border-slate-200 ring-0 ring-transparent">
         <CardContent className="p-0">
           <ul className="divide-y divide-slate-800">
             {members.map((member) => {
@@ -351,17 +400,17 @@ export function MembersTab() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-foreground">
+                        <span className="truncate text-sm font-medium text-slate-800">
                           {member.full_name || 'Unnamed'}
                         </span>
                         {isSelf && (
-                          <Badge className="bg-muted text-foreground/80 border-border text-[10px] uppercase tracking-wide">
+                          <Badge className="bg-slate-100 text-slate-800/80 border-slate-200 text-[10px] uppercase tracking-wide">
                             You
                           </Badge>
                         )}
                       </div>
                       {member.email && (
-                        <p className="truncate text-xs text-muted-foreground">
+                        <p className="truncate text-xs text-slate-500">
                           {member.email}
                         </p>
                       )}
@@ -370,9 +419,33 @@ export function MembersTab() {
 
                   {/* Joined date stays desktop-only. The mobile row's
                       vertical density makes the joined date noise. */}
-                  <div className="hidden sm:block text-right text-xs text-muted-foreground">
+                  <div className="hidden sm:block text-right text-xs text-slate-500">
                     Joined {fmtDate(member.joined_at)}
                   </div>
+
+                  {/* Restrict-to-assigned toggle — agents only, admin+ can flip */}
+                  {canManageMembers && member.role === 'agent' && (
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={member.restrict_to_assigned}
+                        onClick={() => handleRestrictToggle(member, !member.restrict_to_assigned)}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                          member.restrict_to_assigned ? 'bg-primary' : 'bg-slate-100-foreground/30'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                            member.restrict_to_assigned ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                      <span className="hidden sm:inline whitespace-nowrap">
+                        {member.restrict_to_assigned ? 'Assigned only' : 'All chats'}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Actions cluster. On mobile this is its own row
                       below the identity block; on desktop it sits
@@ -394,7 +467,7 @@ export function MembersTab() {
                         }
                       >
                         <SelectTrigger
-                          className="w-32 bg-muted border-border text-foreground/80"
+                          className="w-32 bg-slate-100 border-slate-200 text-slate-800/80"
                           disabled={isBusy}
                         >
                           <SelectValue />
@@ -446,11 +519,11 @@ export function MembersTab() {
       <RequireRole min="admin">
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <UsersRound className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">
+            <UsersRound className="size-4 text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-800">
               Pending invitations
             </h3>
-            <Badge className="bg-muted text-muted-foreground border-border">
+            <Badge className="bg-slate-100 text-slate-500 border-slate-200">
               {invitations.length}
             </Badge>
           </div>
@@ -460,7 +533,7 @@ export function MembersTab() {
               front (rather than letting the user discover it by
               looking for a button) keeps it from feeling like a bug. */}
           {invitations.length > 0 ? (
-            <p className="mb-3 text-xs text-muted-foreground">
+            <p className="mb-3 text-xs text-slate-500">
               The plaintext invite URL is only shown once at creation
               for security — to re-share, revoke the invite below and
               create a new one.
@@ -468,20 +541,20 @@ export function MembersTab() {
           ) : null}
 
           {invitations.length === 0 ? (
-            <Card className="bg-card border-border ring-0 ring-transparent">
+            <Card className="bg-white border-slate-200 ring-0 ring-transparent">
               <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                 <Mail className="size-6 text-slate-600" />
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p className="mt-2 text-sm text-slate-500">
                   No pending invitations.
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Click <span className="text-foreground/80">Invite member</span>{' '}
+                <p className="mt-1 text-xs text-slate-500">
+                  Click <span className="text-slate-800/80">Invite member</span>{' '}
                   above to generate a shareable link.
                 </p>
               </CardContent>
             </Card>
           ) : (
-            <Card className="bg-card border-border ring-0 ring-transparent">
+            <Card className="bg-white border-slate-200 ring-0 ring-transparent">
               <CardContent className="p-0">
                 <ul className="divide-y divide-slate-800">
                   {invitations.map((inv) => {
@@ -494,7 +567,7 @@ export function MembersTab() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
+                          <span className="text-sm font-medium text-slate-800">
                             {inv.label || 'Untitled invite'}
                           </span>
                           <span
@@ -504,7 +577,7 @@ export function MembersTab() {
                             {inviteRoleMeta.label}
                           </span>
                         </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
+                        <p className="mt-0.5 text-xs text-slate-500">
                           Created {fmtDate(inv.created_at)} · {fmtExpiresIn(inv.expires_at)}
                         </p>
                       </div>
@@ -532,6 +605,12 @@ export function MembersTab() {
         </div>
       </RequireRole>
 
+      <AddAgentDialog
+        open={addAgentOpen}
+        onOpenChange={setAddAgentOpen}
+        onCreated={loadEverything}
+      />
+
       <InviteMemberDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
@@ -544,15 +623,15 @@ export function MembersTab() {
           if (!open) setRemovingMember(null);
         }}
       >
-        <DialogContent className="bg-card border-border sm:max-w-sm">
+        <DialogContent className="bg-white border-slate-200 sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-foreground">
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
               <AlertTriangle className="size-4 text-amber-400" />
               Remove member
             </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
+            <DialogDescription className="text-slate-500">
               Remove{' '}
-              <span className="font-medium text-foreground/80">
+              <span className="font-medium text-slate-800/80">
                 {removingMember?.full_name || 'this teammate'}
               </span>{' '}
               from the account? They&apos;ll be signed out of this account
@@ -560,18 +639,18 @@ export function MembersTab() {
               login isn&apos;t deleted.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="bg-card border-border">
+          <DialogFooter className="bg-white border-slate-200">
             <Button
               variant="outline"
               onClick={() => setRemovingMember(null)}
-              className="border-border text-foreground/80 hover:bg-muted"
+              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
             >
               Cancel
             </Button>
             <Button
               onClick={handleRemove}
               disabled={!!pendingMemberAction}
-              className="bg-red-600 hover:bg-red-700 text-foreground"
+              className="bg-red-600 hover:bg-red-700 text-slate-800"
             >
               {pendingMemberAction ? (
                 <>

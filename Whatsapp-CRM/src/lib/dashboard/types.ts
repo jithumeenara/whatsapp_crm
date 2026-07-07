@@ -10,8 +10,6 @@ export interface MetricDelta {
 export interface MetricsBundle {
   activeConversations: MetricDelta
   newContactsToday: MetricDelta
-  openDealsValue: number
-  openDealsCount: number
   messagesSentToday: MetricDelta
 }
 
@@ -21,18 +19,6 @@ export interface ConversationsSeriesPoint {
   outgoing: number
 }
 
-export interface PipelineStageSlice {
-  id: string
-  name: string
-  color: string
-  dealCount: number
-  totalValue: number
-}
-
-export interface PipelineDonutData {
-  stages: PipelineStageSlice[]
-  totalValue: number
-}
 
 export interface ResponseTimeBucket {
   /** 0 = Mon … 6 = Sun (Monday-first). */
@@ -50,7 +36,6 @@ export interface ResponseTimeSummary {
 
 export type ActivityKind =
   | 'message'
-  | 'deal'
   | 'broadcast'
   | 'automation'
   | 'contact'
@@ -64,4 +49,19 @@ export interface ActivityItem {
   at: string
   /** Optional deep-link for the whole row (not all items have a target). */
   href?: string
+}
+
+export interface LeadStatusCount {
+  status: string
+  count: number
+}
+
+export interface CRMStats {
+  leadsByStatus: LeadStatusCount[]
+  totalLeads: number
+  hotLeads: number
+  pendingFollowUps: number
+  overdueFollowUps: number
+  pendingTasks: number
+  overdueTasks: number
 }

@@ -24,9 +24,7 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -61,7 +59,7 @@ function VarChips({
   if (vars.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1 pt-0.5">
-      <span className="text-[10px] text-muted-foreground self-center">Insert:</span>
+      <span className="text-[10px] text-slate-500 self-center">Insert:</span>
       {vars.map((v) => (
         <button
           key={v}
@@ -91,11 +89,11 @@ function Field({
   const id = useId();
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id} className="text-xs font-medium text-foreground/80">
+      <label htmlFor={id} className="text-xs font-medium text-slate-700">
         {label}
-      </Label>
+      </label>
       {children}
-      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-[10px] text-slate-500">{hint}</p>}
     </div>
   );
 }
@@ -126,7 +124,7 @@ function NodeSelect({
           <SelectValue placeholder="Select a node…" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__none__" className="text-xs text-muted-foreground">
+          <SelectItem value="__none__" className="text-xs text-slate-500">
             — none —
           </SelectItem>
           {opts.map((n) => (
@@ -189,15 +187,15 @@ function MediaUrlField({
   return (
     <div className="space-y-2">
       {/* Mode toggle */}
-      <div className="flex gap-1 rounded-lg border border-border bg-muted p-0.5 w-fit">
+      <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 w-fit">
         <button
           type="button"
           onClick={() => setMode("url")}
           className={cn(
             "flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium transition-colors",
             mode === "url"
-              ? "bg-card text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-900",
           )}
         >
           <Link2 className="h-3 w-3" />
@@ -209,8 +207,8 @@ function MediaUrlField({
           className={cn(
             "flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium transition-colors",
             mode === "upload"
-              ? "bg-card text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
+              ? "bg-white text-slate-900 shadow-sm"
+              : "text-slate-500 hover:text-slate-900",
           )}
         >
           <Upload className="h-3 w-3" />
@@ -239,7 +237,7 @@ function MediaUrlField({
 
       {/* Upload progress / preview */}
       {uploading && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Uploading…
         </div>
@@ -289,8 +287,8 @@ function StartForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 onClick={() => onChange({ ...cfg, trigger_match: m })}
                 className={`flex-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                   match === m
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                    : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-slate-900"
                 }`}
               >
                 {m === "exact" ? "Exact" : m === "contains" ? "Contains" : "Starts with"}
@@ -382,6 +380,11 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-[10px] text-indigo-700 leading-relaxed">
+        <span className="font-semibold">Instagram:</span> sent as Button Template (postback) — up to 3 buttons, max 20 chars per label, text up to 640 chars.
+        <br/>
+        <span className="font-semibold">WhatsApp:</span> sent as interactive buttons — up to 3 buttons.
+      </div>
       <Field label="Message text *" hint="Shown above the buttons.">
         <RichTextArea
           value={String(cfg.text ?? "")}
@@ -393,19 +396,19 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       </Field>
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-foreground/80">
+        <p className="text-xs font-medium text-slate-700">
           Buttons ({buttons.length}/3)
         </p>
         {buttons.map((btn, i) => (
-          <div key={i} className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+          <div key={i} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                 Button {i + 1}
               </span>
               {buttons.length > 1 && (
                 <button
                   onClick={() => removeButton(i)}
-                  className="text-muted-foreground hover:text-destructive"
+                  className="text-slate-400 hover:text-rose-500"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -428,16 +431,29 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           </div>
         ))}
         {buttons.length < 3 && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 gap-1 text-xs w-full"
+          <button
+            type="button"
+            className="flex h-7 w-full items-center justify-center gap-1 rounded-md border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
             onClick={addButton}
           >
             <Plus className="h-3.5 w-3.5" /> Add button
-          </Button>
+          </button>
         )}
       </div>
+
+      <Field
+        label="Save reply to variable"
+        hint="The tapped button's label is stored in this variable for use in later nodes."
+      >
+        <Input
+          className="h-8 text-xs font-mono"
+          value={String(cfg.save_reply_to ?? "")}
+          onChange={(e) =>
+            onChange({ ...cfg, save_reply_to: e.target.value.replace(/[^a-z0-9_]/gi, "_") || undefined })
+          }
+          placeholder="e.g. selected_option (optional)"
+        />
+      </Field>
     </div>
   );
 }
@@ -509,7 +525,7 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       </Field>
 
       {sections.map((sec, si) => (
-        <div key={si} className="rounded-lg border border-border bg-muted/20 p-3 space-y-2">
+        <div key={si} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
           <Input
             className="h-7 text-xs"
             value={String(sec.title ?? "")}
@@ -522,7 +538,7 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             placeholder="Section title (optional)"
           />
           {((sec.rows as Array<Record<string, unknown>>) ?? []).map((row, ri) => (
-            <div key={ri} className="rounded border border-border bg-card p-2 space-y-1.5">
+            <div key={ri} className="rounded border border-slate-200 bg-white p-2 space-y-1.5">
               <div className="flex gap-1.5">
                 <Input
                   className="h-7 flex-1 text-xs"
@@ -532,7 +548,7 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 />
                 <button
                   onClick={() => removeRow(si, ri)}
-                  className="text-muted-foreground hover:text-destructive"
+                  className="text-slate-400 hover:text-rose-500"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -553,17 +569,30 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             </div>
           ))}
           {totalRows < 10 && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 w-full gap-1 text-xs"
+            <button
+              type="button"
+              className="flex h-7 w-full items-center justify-center gap-1 rounded-md border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
               onClick={() => addRow(si)}
             >
               <Plus className="h-3.5 w-3.5" /> Add row
-            </Button>
+            </button>
           )}
         </div>
       ))}
+
+      <Field
+        label="Save reply to variable"
+        hint="The selected row's title is stored in this variable for use in later nodes (e.g. condition checks)."
+      >
+        <Input
+          className="h-8 text-xs font-mono"
+          value={String(cfg.save_reply_to ?? "")}
+          onChange={(e) =>
+            onChange({ ...cfg, save_reply_to: e.target.value.replace(/[^a-z0-9_]/gi, "_") || undefined })
+          }
+          placeholder="e.g. menu_choice (optional)"
+        />
+      </Field>
     </div>
   );
 }
@@ -688,7 +717,7 @@ function CollectInputForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label className="text-xs font-medium text-foreground/80">Input type</Label>
+        <label className="text-xs font-medium text-slate-700">Input type</label>
         <div className="grid grid-cols-3 gap-1.5">
           {INPUT_TYPES.map(({ value, label, icon: Icon }) => (
             <button
@@ -698,8 +727,8 @@ function CollectInputForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               className={cn(
                 "flex flex-col items-center gap-1 rounded-lg border p-2.5 text-[10px] font-medium transition-colors",
                 selectedType === value
-                  ? "border-primary bg-primary/5 text-primary"
-                  : "border-border bg-muted/30 text-muted-foreground hover:border-primary/30 hover:text-foreground",
+                  ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                  : "border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:text-slate-900",
               )}
             >
               <Icon className="h-4 w-4" />
@@ -708,9 +737,81 @@ function CollectInputForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           ))}
         </div>
         {selectedMeta && (
-          <p className="text-[10px] text-muted-foreground">{selectedMeta.hint}</p>
+          <p className="text-[10px] text-slate-500">{selectedMeta.hint}</p>
         )}
       </div>
+
+      {/* Validation error message — shown for types that have meaningful validation */}
+      {selectedType !== "text" && selectedType !== "file" && selectedType !== "location" && (
+        <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            Validation
+          </p>
+          <Field
+            label="Error message"
+            hint={`Sent to the user when their reply is not a valid ${selectedType}. Leave blank to use the default message.`}
+          >
+            <Input
+              className="h-8 text-xs"
+              value={String(
+                ((cfg.validation as Record<string, unknown> | undefined)?.error_message) ?? ""
+              )}
+              onChange={(e) =>
+                onChange({
+                  ...cfg,
+                  validation: {
+                    ...((cfg.validation as Record<string, unknown>) ?? {}),
+                    error_message: e.target.value,
+                  },
+                })
+              }
+              placeholder={`e.g. Please enter a valid ${selectedType}`}
+            />
+          </Field>
+          {selectedType === "number" && (
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Min value">
+                <Input
+                  type="number"
+                  className="h-8 text-xs"
+                  value={String(
+                    ((cfg.validation as Record<string, unknown> | undefined)?.min) ?? ""
+                  )}
+                  onChange={(e) =>
+                    onChange({
+                      ...cfg,
+                      validation: {
+                        ...((cfg.validation as Record<string, unknown>) ?? {}),
+                        min: e.target.value === "" ? undefined : Number(e.target.value),
+                      },
+                    })
+                  }
+                  placeholder="no min"
+                />
+              </Field>
+              <Field label="Max value">
+                <Input
+                  type="number"
+                  className="h-8 text-xs"
+                  value={String(
+                    ((cfg.validation as Record<string, unknown> | undefined)?.max) ?? ""
+                  )}
+                  onChange={(e) =>
+                    onChange({
+                      ...cfg,
+                      validation: {
+                        ...((cfg.validation as Record<string, unknown>) ?? {}),
+                        max: e.target.value === "" ? undefined : Number(e.target.value),
+                      },
+                    })
+                  }
+                  placeholder="no max"
+                />
+              </Field>
+            </div>
+          )}
+        </div>
+      )}
 
       <NodeSelect
         label="Next node"
@@ -832,12 +933,12 @@ function ConditionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
-            className="h-3.5 w-3.5 rounded border-border accent-primary"
+            className="h-3.5 w-3.5 rounded border-slate-200 accent-indigo-600"
             checked={cfg.case_sensitive !== false}
             onChange={(e) => onChange({ ...cfg, case_sensitive: e.target.checked })}
           />
-          <span className="text-xs text-muted-foreground">Case sensitive</span>
-          <span className="text-[10px] text-muted-foreground/60">
+          <span className="text-xs text-slate-500">Case sensitive</span>
+          <span className="text-[10px] text-slate-400">
             {cfg.case_sensitive !== false
               ? '("Jithu" ≠ "jithu")'
               : '("Jithu" = "jithu")'}
@@ -881,10 +982,10 @@ function AiReplyForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           minHeight={100}
         />
       </Field>
-      <div className="flex items-center justify-between rounded-lg border border-border p-3">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
         <div>
           <p className="text-xs font-medium">Include conversation history</p>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-[10px] text-slate-500">
             Sends recent messages as context
           </p>
         </div>
@@ -1050,10 +1151,10 @@ function DelayForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           </Select>
         </Field>
       </div>
-      <div className="flex items-center justify-between rounded-lg border border-border p-3">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
         <div>
           <p className="text-xs font-medium">Show typing indicator</p>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-[10px] text-slate-500">
             Displays "..." to the user during delay
           </p>
         </div>
@@ -1092,7 +1193,7 @@ function SetVariableForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <p className="text-xs font-medium text-foreground/80">Assignments</p>
+        <p className="text-xs font-medium text-slate-700">Assignments</p>
         {assignments.map((a, i) => (
           <div key={i} className="space-y-1">
             <div className="flex gap-1.5">
@@ -1102,7 +1203,7 @@ function SetVariableForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 onChange={(e) => update(i, "var_key", e.target.value)}
                 placeholder="var_key"
               />
-              <span className="flex items-center text-xs text-muted-foreground">=</span>
+              <span className="flex items-center text-xs text-slate-500">=</span>
               <Input
                 className="h-7 flex-1 text-xs"
                 value={String(a.value ?? "")}
@@ -1112,7 +1213,7 @@ function SetVariableForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               {assignments.length > 1 && (
                 <button
                   onClick={() => remove(i)}
-                  className="text-muted-foreground hover:text-destructive"
+                  className="text-slate-500 hover:text-rose-500"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -1124,14 +1225,13 @@ function SetVariableForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             />
           </div>
         ))}
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 w-full gap-1 text-xs"
+        <button
+          type="button"
+          className="flex h-7 w-full items-center justify-center gap-1 rounded-md border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
           onClick={add}
         >
           <Plus className="h-3.5 w-3.5" /> Add assignment
-        </Button>
+        </button>
       </div>
       <NodeSelect
         label="Next node"
@@ -1220,29 +1320,396 @@ function UpdateContactForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 }
 
 function HandoffForm({ cfg, onChange }: FormProps) {
+  const [agents, setAgents] = useState<{ user_id: string; full_name: string }[]>([]);
+
+  useEffect(() => {
+    fetch('/api/account/members')
+      .then((r) => r.ok ? r.json() : { members: [] })
+      .then((d) => {
+        const members = (d.members ?? []) as { user_id: string; full_name: string; role: string }[];
+        setAgents(members.filter((m) => m.role === 'agent'));
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="space-y-4">
+      {/* Agent assignment */}
+      <Field
+        label="Assign to agent"
+        hint="The conversation will be assigned to this agent when handoff occurs."
+      >
+        <Select
+          value={String(cfg.assign_to ?? "")}
+          onValueChange={(v) => onChange({ ...cfg, assign_to: v || undefined })}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="Select an agent (optional)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Unassigned</SelectItem>
+            {agents.map((a) => (
+              <SelectItem key={a.user_id} value={a.user_id}>
+                {a.full_name || a.user_id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {/* Notification message to agent's WhatsApp */}
+      <Field
+        label="Notify agent on WhatsApp"
+        hint="Send this message to the agent's registered WhatsApp number when transferring."
+      >
+        <RichTextArea
+          value={String(cfg.notify_message ?? "")}
+          onChange={(v) => onChange({ ...cfg, notify_message: v })}
+          placeholder={`New chat assigned for you\nName: {{name}} | Number: {{number}}\nLast message: {{last_message}}`}
+          minHeight={80}
+        />
+        <p className="mt-1 text-[10px] text-slate-500">
+          Variables: <code className="rounded bg-slate-100 px-1">{"{{name}}"}</code> customer name · <code className="rounded bg-slate-100 px-1">{"{{number}}"}</code> customer number · <code className="rounded bg-slate-100 px-1">{"{{last_message}}"}</code>
+        </p>
+      </Field>
+
+      {/* Internal note */}
       <Field
         label="Handoff note (optional)"
-        hint="Shown to the agent who receives the conversation."
+        hint="Internal note visible to the agent in the conversation."
       >
         <RichTextArea
           value={String(cfg.note ?? "")}
           onChange={(v) => onChange({ ...cfg, note: v })}
           placeholder="Summarize why this was escalated…"
-          minHeight={70}
+          minHeight={60}
         />
       </Field>
+
+      {/* Auto-reopen timeout */}
+      <Field
+        label="Auto-reopen after (optional)"
+        hint="If the agent doesn't respond, reopen the conversation after this many hours. Leave empty to disable."
+      >
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={720}
+            className="w-24 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            placeholder="e.g. 24"
+            value={(cfg.timeout_hours as number | undefined) ?? ""}
+            onChange={(e) => {
+              const v = e.target.value === "" ? undefined : Math.max(1, parseInt(e.target.value, 10) || 1);
+              onChange({ ...cfg, timeout_hours: v });
+            }}
+          />
+          <span className="text-xs text-slate-500">hours</span>
+          {(cfg.timeout_hours as number | undefined) && (cfg.timeout_hours as number) >= 24 && (
+            <span className="text-xs text-slate-500">
+              ({Math.round((cfg.timeout_hours as number) / 24)} day{Math.round((cfg.timeout_hours as number) / 24) !== 1 ? "s" : ""})
+            </span>
+          )}
+        </div>
+      </Field>
+    </div>
+  );
+}
+
+function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const vars = getFlowVars(allNodes, nodeKey);
+  const action = String(cfg.action ?? "create_lead");
+
+  const [members, setMembers] = useState<{ user_id: string; full_name: string }[]>([]);
+  const [segments, setSegments] = useState<{ id: string; name: string }[]>([]);
+  const [leadSources, setLeadSources] = useState<{ icon: string; label: string }[]>([
+    { icon: "", label: "WhatsApp" }, { icon: "", label: "Instagram" },
+    { icon: "🌐", label: "Website" }, { icon: "📣", label: "Campaign" },
+    { icon: "🔗", label: "Referral" }, { icon: "👤", label: "Manual" }, { icon: "📝", label: "Other" },
+  ]);
+
+  useEffect(() => {
+    fetch("/api/account/members")
+      .then((r) => r.ok ? r.json() : { members: [] })
+      .then((d) => setMembers((d.members ?? []) as { user_id: string; full_name: string }[]))
+      .catch(() => {});
+    fetch("/api/segments")
+      .then((r) => r.ok ? r.json() : { segments: [] })
+      .then((d) => setSegments((d.segments ?? []) as { id: string; name: string }[]))
+      .catch(() => {});
+    fetch("/api/leads/settings")
+      .then((r) => r.ok ? r.json() : {})
+      .then((d: Record<string, unknown>) => {
+        if (Array.isArray(d.lead_sources) && d.lead_sources.length > 0) {
+          setLeadSources(d.lead_sources.map((v: unknown) =>
+            typeof v === "string" ? { icon: "", label: v } : v as { icon: string; label: string }
+          ));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const MemberSelect = ({ label, fieldKey, hint }: { label: string; fieldKey: string; hint?: string }) => (
+    <Field label={label} hint={hint}>
+      <Select
+        value={String(cfg[fieldKey] ?? "")}
+        onValueChange={(v) => onChange({ ...cfg, [fieldKey]: v || undefined })}
+      >
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue placeholder="Unassigned" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="" className="text-xs text-slate-500">Unassigned</SelectItem>
+          {members.map((m) => (
+            <SelectItem key={m.user_id} value={m.user_id} className="text-xs">
+              {m.full_name || m.user_id}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Action type */}
+      <Field label="CRM Action">
+        <Select
+          value={action}
+          onValueChange={(v) => onChange({ action: v, next_node_key: cfg.next_node_key ?? "" })}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="create_lead" className="text-xs">Create Lead</SelectItem>
+            <SelectItem value="add_to_segment" className="text-xs">Add to Segment</SelectItem>
+            <SelectItem value="create_followup" className="text-xs">Create Follow-up</SelectItem>
+            <SelectItem value="create_task" className="text-xs">Create Task</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {/* ── CREATE LEAD ── */}
+      {action === "create_lead" && (
+        <>
+          {/* Mode: upsert vs always-new */}
+          <Field
+            label="Mode"
+            hint={
+              (cfg.lead_mode ?? "upsert") === "upsert"
+                ? "If the contact already has a lead, update it. Otherwise create a new one."
+                : "Always create a new lead, even if one already exists for this contact."
+            }
+          >
+            <div className="flex gap-1.5">
+              {(
+                [
+                  { value: "upsert", label: "Create or Update" },
+                  { value: "create_new", label: "Always Create New" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onChange({ ...cfg, lead_mode: opt.value })}
+                  className={`flex-1 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                    (cfg.lead_mode ?? "upsert") === opt.value
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                      : "border-slate-200 text-slate-500 hover:border-indigo-200 hover:text-slate-900"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Lead title" hint="Supports {{vars.x}}. Defaults to contact name if empty.">
+            <Input
+              className="h-8 text-xs"
+              value={String(cfg.lead_title ?? "")}
+              onChange={(e) => onChange({ ...cfg, lead_title: e.target.value })}
+              placeholder="e.g. Interested in product A"
+            />
+            <VarChips vars={vars} onInsert={(v) => onChange({ ...cfg, lead_title: String(cfg.lead_title ?? "") + v })} />
+          </Field>
+          <Field label="Source">
+            <Select
+              value={String(cfg.lead_source ?? leadSources[0]?.label ?? "WhatsApp")}
+              onValueChange={(v) => onChange({ ...cfg, lead_source: v })}
+            >
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {leadSources.map(({ icon, label }) => {
+                  const isUrl = icon.startsWith("data:") || icon.startsWith("http") || icon.startsWith("/")
+                  return (
+                    <SelectItem key={label} value={label} className="text-xs">
+                      <span className="flex items-center gap-1.5">
+                        {icon && (isUrl
+                          ? <img src={icon} alt="" className="h-3.5 w-3.5 object-contain shrink-0" />
+                          : <span className="leading-none">{icon}</span>
+                        )}
+                        {label}
+                      </span>
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Status">
+              <Select
+                value={String(cfg.lead_status ?? "new")}
+                onValueChange={(v) => onChange({ ...cfg, lead_status: v })}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new" className="text-xs">New</SelectItem>
+                  <SelectItem value="call_not_connected" className="text-xs">Not Connected</SelectItem>
+                  <SelectItem value="visited" className="text-xs">Visited</SelectItem>
+                  <SelectItem value="appointment_fixed" className="text-xs">Appointment Fixed</SelectItem>
+                  <SelectItem value="follow_up" className="text-xs">Follow-up</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Score">
+              <Select
+                value={String(cfg.lead_score ?? "warm")}
+                onValueChange={(v) => onChange({ ...cfg, lead_score: v })}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["hot", "warm", "cold"].map((s) => (
+                    <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <MemberSelect label="Assign to" fieldKey="lead_assigned_to" hint="Optional — assign lead to a team member." />
+        </>
+      )}
+
+      {/* ── ADD TO SEGMENT ── */}
+      {action === "add_to_segment" && (
+        <Field label="Segment" hint="The contact will be tagged with this segment.">
+          <Select
+            value={String(cfg.segment_id ?? "")}
+            onValueChange={(v) => onChange({ ...cfg, segment_id: v || undefined })}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Select a segment…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="" className="text-xs text-slate-500">— select —</SelectItem>
+              {segments.map((s) => (
+                <SelectItem key={s.id} value={s.id} className="text-xs">{s.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
+
+      {/* ── CREATE FOLLOW-UP ── */}
+      {action === "create_followup" && (
+        <>
+          <Field label="Title" hint="Supports {{vars.x}}. Defaults to 'Follow up with <name>'.">
+            <Input
+              className="h-8 text-xs"
+              value={String(cfg.followup_title ?? "")}
+              onChange={(e) => onChange({ ...cfg, followup_title: e.target.value })}
+              placeholder="e.g. Call back {{vars.name}}"
+            />
+            <VarChips vars={vars} onInsert={(v) => onChange({ ...cfg, followup_title: String(cfg.followup_title ?? "") + v })} />
+          </Field>
+          <Field label="Note (optional)">
+            <Input
+              className="h-8 text-xs"
+              value={String(cfg.followup_note ?? "")}
+              onChange={(e) => onChange({ ...cfg, followup_note: e.target.value })}
+              placeholder="e.g. Customer showed interest"
+            />
+          </Field>
+          <Field label="Due in (hours)" hint="Hours from now when the follow-up is due. Default: 24 hours.">
+            <input
+              type="number"
+              min={1}
+              className="h-8 w-24 rounded-md border border-slate-200 bg-white px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              value={(cfg.followup_due_hours as number | undefined) ?? 24}
+              onChange={(e) => onChange({ ...cfg, followup_due_hours: Math.max(1, parseInt(e.target.value, 10) || 24) })}
+            />
+          </Field>
+          <MemberSelect label="Assign to" fieldKey="followup_assigned_to" />
+        </>
+      )}
+
+      {/* ── CREATE TASK ── */}
+      {action === "create_task" && (
+        <>
+          <Field label="Title" hint="Supports {{vars.x}}. Defaults to 'Task for <name>'.">
+            <Input
+              className="h-8 text-xs"
+              value={String(cfg.task_title ?? "")}
+              onChange={(e) => onChange({ ...cfg, task_title: e.target.value })}
+              placeholder="e.g. Send quote to {{vars.name}}"
+            />
+            <VarChips vars={vars} onInsert={(v) => onChange({ ...cfg, task_title: String(cfg.task_title ?? "") + v })} />
+          </Field>
+          <Field label="Description (optional)">
+            <Input
+              className="h-8 text-xs"
+              value={String(cfg.task_description ?? "")}
+              onChange={(e) => onChange({ ...cfg, task_description: e.target.value })}
+              placeholder="Additional context…"
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Priority">
+              <Select
+                value={String(cfg.task_priority ?? "medium")}
+                onValueChange={(v) => onChange({ ...cfg, task_priority: v })}
+              >
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["low", "medium", "high", "urgent"].map((p) => (
+                    <SelectItem key={p} value={p} className="text-xs capitalize">{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Due in (days)" hint="Days from now.">
+              <input
+                type="number"
+                min={1}
+                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                value={(cfg.task_due_days as number | undefined) ?? 1}
+                onChange={(e) => onChange({ ...cfg, task_due_days: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+              />
+            </Field>
+          </div>
+          <MemberSelect label="Assign to" fieldKey="task_assigned_to" />
+        </>
+      )}
+
+      <NodeSelect
+        label="Next node"
+        value={String(cfg.next_node_key ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, next_node_key: v })}
+      />
     </div>
   );
 }
 
 function EndForm({ cfg, onChange }: FormProps) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-border p-3">
+    <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
       <div>
         <p className="text-xs font-medium">Close conversation</p>
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-[10px] text-slate-500">
           Mark as resolved when flow ends
         </p>
       </div>
@@ -1289,7 +1756,7 @@ function LinkChatbotForm({ cfg, onChange }: FormProps) {
             <SelectValue placeholder="Select chatbot…" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__none__" className="text-xs text-muted-foreground">
+            <SelectItem value="__none__" className="text-xs text-slate-500">
               — none —
             </SelectItem>
             {chatbots.map((c) => (
@@ -1367,7 +1834,7 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               <SelectValue placeholder="Select published flow…" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__none__" className="text-xs text-muted-foreground">
+              <SelectItem value="__none__" className="text-xs text-slate-500">
                 — none —
               </SelectItem>
               {flows.map((f) => (
@@ -1382,11 +1849,9 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               No published flows found. Sync from Meta to load them.
             </p>
           )}
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
-            className="h-6 text-[10px] gap-1 px-2"
+            className="flex h-6 items-center gap-1 rounded border border-slate-200 px-2 text-[10px] text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
             onClick={handleSync}
             disabled={syncing}
           >
@@ -1396,7 +1861,7 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               <RefreshCw className="h-3 w-3" />
             )}
             Sync from Meta
-          </Button>
+          </button>
         </div>
       </Field>
       <Field label="Button text *" hint="Text on the button the user taps to open the flow.">
@@ -1478,7 +1943,7 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         }
       >
         {loadingTpl ? (
-          <div className="flex h-8 items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex h-8 items-center gap-2 text-xs text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             Loading templates…
           </div>
@@ -1496,7 +1961,7 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               <SelectValue placeholder="Choose a template…" />
             </SelectTrigger>
             <SelectContent className="max-h-72">
-              <SelectItem value="__none__" className="text-xs text-muted-foreground">
+              <SelectItem value="__none__" className="text-xs text-slate-500">
                 — none —
               </SelectItem>
               {templates.map((t) => (
@@ -1507,11 +1972,11 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 >
                   <div className="flex items-center gap-2 py-0.5">
                     <span className="font-mono font-medium">{t.name}</span>
-                    <span className="text-muted-foreground">({t.language})</span>
+                    <span className="text-slate-500">({t.language})</span>
                     <span
                       className={cn(
                         "ml-auto rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
-                        STATUS_BADGE[t.status] ?? "bg-muted text-muted-foreground border-border",
+                        STATUS_BADGE[t.status] ?? "bg-slate-100 text-slate-500 border-slate-200",
                       )}
                     >
                       {t.status}
@@ -1526,14 +1991,14 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
       {/* Body preview */}
       {selected && selected.body_text && (
-        <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-1">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Template body
           </p>
-          <p className="text-[11px] leading-relaxed text-foreground whitespace-pre-wrap">
+          <p className="text-[11px] leading-relaxed text-slate-900 whitespace-pre-wrap">
             {selected.body_text}
           </p>
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-[10px] text-slate-500">
             Category: <span className="capitalize font-medium">{selected.category}</span>
           </p>
         </div>
@@ -1592,6 +2057,194 @@ function JoinForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   );
 }
 
+// ─── Switch / Case form ──────────────────────────────────────────
+
+function SwitchCaseForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const collectInputVars = allNodes
+    .filter((n) => n.node_key !== nodeKey && n.node_type === "collect_input")
+    .map((n) => (typeof n.config.var_key === "string" ? n.config.var_key : ""))
+    .filter(Boolean);
+
+  const cases = Array.isArray(cfg.cases)
+    ? (cfg.cases as Array<Record<string, unknown>>)
+    : [];
+
+  const updateCase = (i: number, key: string, val: string) => {
+    const updated = cases.map((c, idx) => (idx === i ? { ...c, [key]: val } : c));
+    onChange({ ...cfg, cases: updated });
+  };
+
+  const addCase = () => {
+    const next = cases.length + 1;
+    onChange({
+      ...cfg,
+      cases: [...cases, { value: String(next), label: `Option ${next}`, next_node_key: "" }],
+    });
+  };
+
+  const removeCase = (i: number) => {
+    onChange({ ...cfg, cases: cases.filter((_, idx) => idx !== i) });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Field
+        label="Variable to switch on"
+        hint="The collected variable whose value is matched against each case."
+      >
+        <Select
+          value={String(cfg.variable ?? "")}
+          onValueChange={(v) => onChange({ ...cfg, variable: v })}
+          disabled={collectInputVars.length === 0}
+        >
+          <SelectTrigger className="h-8 text-xs font-mono">
+            <SelectValue
+              placeholder={
+                collectInputVars.length === 0
+                  ? "No Collect Input nodes yet…"
+                  : "Pick a variable…"
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {collectInputVars.map((key) => (
+              <SelectItem key={key} value={key} className="font-mono text-xs">
+                {`{{vars.${key}}}`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      <label className="flex items-center gap-2 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 rounded border-slate-200 accent-indigo-600"
+          checked={cfg.case_sensitive === true}
+          onChange={(e) => onChange({ ...cfg, case_sensitive: e.target.checked })}
+        />
+        <span className="text-xs text-slate-500">Case sensitive matching</span>
+        <span className="text-[10px] text-slate-400">
+          {cfg.case_sensitive === true ? '("Yes" ≠ "yes")' : '("Yes" = "yes")'}
+        </span>
+      </label>
+
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-slate-700">
+          Cases ({cases.length}) — each becomes an output handle on the canvas
+        </p>
+        {cases.map((c, i) => (
+          <div
+            key={i}
+            className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2 last:mb-0"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                Case {i + 1}
+              </span>
+              {cases.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => removeCase(i)}
+                  className="text-slate-500 hover:text-rose-500"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Match value *">
+                <Input
+                  className="h-7 text-xs font-mono"
+                  value={String(c.value ?? "")}
+                  onChange={(e) => updateCase(i, "value", e.target.value)}
+                  placeholder="e.g. 1"
+                />
+              </Field>
+              <Field label="Label (on handle)">
+                <Input
+                  className="h-7 text-xs"
+                  value={String(c.label ?? "")}
+                  onChange={(e) => updateCase(i, "label", e.target.value)}
+                  placeholder="e.g. About us"
+                />
+              </Field>
+            </div>
+            <NodeSelect
+              label="Go to node"
+              value={String(c.next_node_key ?? "")}
+              allNodes={allNodes}
+              currentKey={nodeKey}
+              onChange={(v) => updateCase(i, "next_node_key", v)}
+            />
+          </div>
+        ))}
+        <button
+          type="button"
+          className="flex h-7 w-full items-center justify-center gap-1 rounded-md border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
+          onClick={addCase}
+        >
+          <Plus className="h-3.5 w-3.5" /> Add case
+        </button>
+      </div>
+
+      <NodeSelect
+        label="Default branch (no match)"
+        value={String(cfg.default_next ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, default_next: v })}
+        hint="Taken when the variable doesn't match any case above."
+      />
+    </div>
+  );
+}
+
+// ─── Send to Number form ──────────────────────────────────────────
+
+function SendToNumberForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const vars = getFlowVars(allNodes, nodeKey)
+  return (
+    <div className="space-y-4">
+      <Field
+        label="Destination phone number"
+        hint="E.164 format (+919876543210) or use {{vars.x}} to insert a collected number."
+      >
+        <Input
+          value={typeof cfg.phone === 'string' ? cfg.phone : ''}
+          onChange={(e) => onChange({ ...cfg, phone: e.target.value })}
+          placeholder="+919876543210 or {{vars.admin_phone}}"
+          className="h-8 text-xs font-mono"
+        />
+        <VarChips vars={vars} onInsert={(t) => onChange({ ...cfg, phone: `${cfg.phone ?? ''}${t}` })} />
+      </Field>
+
+      <Field
+        label="Message text"
+        hint="Supports {{name}}, {{phone}}, {{contact.name}}, {{contact.phone}}, and {{vars.x}}."
+      >
+        <Textarea
+          value={typeof cfg.text === 'string' ? cfg.text : ''}
+          onChange={(e) => onChange({ ...cfg, text: e.target.value })}
+          placeholder="New inquiry from {{contact.name}} ({{contact.phone}})"
+          rows={3}
+          className="text-xs resize-none"
+        />
+        <VarChips vars={vars} onInsert={(t) => onChange({ ...cfg, text: `${cfg.text ?? ''}${t}` })} />
+      </Field>
+
+      <NodeSelect
+        label="Next node"
+        value={typeof cfg.next_node_key === 'string' ? cfg.next_node_key : ''}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, next_node_key: v })}
+        hint="Flow continues here after the notification is sent."
+      />
+    </div>
+  )
+}
+
 // ─── Dispatcher ──────────────────────────────────────────────────
 
 interface FormProps {
@@ -1631,20 +2284,21 @@ export function NodeForm({ node, allNodes, onChange }: NodeFormProps) {
     set_variable:   SetVariableForm,
     set_tag:        SetTagForm,
     update_contact: UpdateContactForm,
+    crm_action:     CrmActionForm,
     handoff:        HandoffForm,
     end:            EndForm,
     link_chatbot:   LinkChatbotForm,
     send_flow:      SendFlowForm,
     send_template:  SendTemplateForm,
     join:           JoinForm,
+    switch_case:    SwitchCaseForm,
+    send_to_number: SendToNumberForm,
   };
 
   const Form = formMap[node.node_type];
   if (!Form)
     return (
-      <p className="text-xs text-muted-foreground">
-        No form for this node type.
-      </p>
+      <p className="text-xs text-slate-400 italic">No form for this node type.</p>
     );
 
   return <Form {...props} />;

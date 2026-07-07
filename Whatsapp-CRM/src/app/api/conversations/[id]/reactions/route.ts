@@ -15,7 +15,11 @@ export async function GET(
     const { id } = await params
 
     const conversation = await prisma.conversation.findFirst({
-      where: { id, account_id: ctx.accountId },
+      where: {
+        id,
+        account_id: ctx.accountId,
+        ...(ctx.role === "agent" ? { assigned_agent_id: ctx.userId } : {}),
+      },
       select: { id: true },
     })
     if (!conversation) {

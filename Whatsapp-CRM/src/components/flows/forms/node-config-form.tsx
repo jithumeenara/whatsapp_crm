@@ -134,7 +134,7 @@ export function NodeConfigForm({
             rows={2}
           />
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
+            <label className="mb-1 block text-xs text-slate-500">
               Variable key (stored in flow_runs.vars; alphanumeric + underscore)
             </label>
             <Input
@@ -145,11 +145,11 @@ export function NodeConfigForm({
                 })
               }
               placeholder="e.g. name, email, company"
-              className="bg-muted font-mono text-xs"
+              className="bg-slate-100 font-mono text-xs"
             />
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="mt-1 text-[10px] text-slate-500">
               Interpolate in downstream prompts and handoff notes with{" "}
-              <code className="rounded bg-muted px-1">
+              <code className="rounded bg-slate-100 px-1">
                 {"{{vars."}
                 {(cfg as { var_key?: string }).var_key || "name"}
                 {"}}"}
@@ -209,7 +209,7 @@ export function NodeConfigForm({
 
     case "end":
       return (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-slate-500">
           Terminal node. When the runner reaches this node the run is marked
           complete. No config needed.
         </p>
@@ -287,7 +287,7 @@ function SaveToTableForm({
     <>
       {/* Table picker */}
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">Target Table</label>
+        <label className="mb-1 block text-xs text-slate-500">Target Table</label>
         <Select
           value={cfg.table_id ?? ""}
           onValueChange={(v) => v && onUpdateConfig({ table_id: v, field_mappings: [] })}
@@ -304,15 +304,15 @@ function SaveToTableForm({
       {/* Field mappings */}
       {cfg.table_id && (
         <div className="space-y-2">
-          <label className="block text-xs text-muted-foreground">
+          <label className="block text-xs text-slate-500">
             Field Mappings
-            <span className="ml-1 text-muted-foreground/60">
-              — use <code className="rounded bg-muted px-1 text-[10px]">{"{{vars.name}}"}</code> to insert collected data
+            <span className="ml-1 text-slate-400">
+              — use <code className="rounded bg-slate-100 px-1 text-[10px]">{"{{vars.name}}"}</code> to insert collected data
             </span>
           </label>
 
           {loadingFields && (
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <Loader2 className="size-3 animate-spin" /> Loading fields…
             </div>
           )}
@@ -347,7 +347,7 @@ function SaveToTableForm({
               <button
                 type="button"
                 onClick={() => removeMapping(i)}
-                className="mt-1 text-muted-foreground hover:text-destructive transition-colors"
+                className="mt-1 text-slate-500 hover:text-destructive transition-colors"
               >
                 <Trash2 className="size-3.5" />
               </button>
@@ -436,7 +436,7 @@ function SendButtonsForm({
       />
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs text-muted-foreground">
+          <label className="text-xs text-slate-500">
             Buttons (1–3) — each one routes to a different next node
           </label>
         </div>
@@ -445,7 +445,7 @@ function SendButtonsForm({
             <div
               key={i}
               className={cn(
-                "grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/40 p-3",
+                "grid grid-cols-1 gap-2 rounded-md border border-slate-200 bg-slate-50 p-3",
                 showAdvanced
                   ? "md:grid-cols-[1fr_2fr_2fr_auto]"
                   : "md:grid-cols-[2fr_2fr_auto]",
@@ -460,14 +460,14 @@ function SendButtonsForm({
                     })
                   }
                   placeholder="reply_id"
-                  className="bg-muted font-mono text-xs"
+                  className="bg-slate-100 font-mono text-xs"
                 />
               )}
               <Input
                 value={b.title}
                 onChange={(e) => updateButton(i, { title: e.target.value })}
                 placeholder="Visible title (≤20 chars)"
-                className="bg-muted"
+                className="bg-slate-100"
                 maxLength={20}
               />
               <NodeKeySelect
@@ -632,13 +632,13 @@ function SendListForm({
       </div>
 
       <div className="mt-2">
-        <label className="mb-2 block text-xs text-muted-foreground">
+        <label className="mb-2 block text-xs text-slate-500">
           Rows (1–10 total across all sections)
         </label>
         {sections.map((section, sIdx) => (
           <div
             key={sIdx}
-            className="mb-3 rounded-md border border-border bg-muted/40 p-3"
+            className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3"
           >
             <div className="mb-2 flex items-center gap-2">
               <Input
@@ -647,7 +647,7 @@ function SendListForm({
                   updateSection(sIdx, { title: e.target.value })
                 }
                 placeholder={`Section ${sIdx + 1} title (optional)`}
-                className="bg-muted text-xs"
+                className="bg-slate-100 text-xs"
               />
               {sections.length > 1 && (
                 <Button
@@ -683,7 +683,7 @@ function SendListForm({
                       })
                     }
                     placeholder="reply_id"
-                    className="bg-muted font-mono text-xs"
+                    className="bg-slate-100 font-mono text-xs"
                   />
                 )}
                 <Input
@@ -692,7 +692,7 @@ function SendListForm({
                     updateRow(sIdx, rIdx, { title: e.target.value })
                   }
                   placeholder="Row title (≤24)"
-                  className="bg-muted"
+                  className="bg-slate-100"
                   maxLength={24}
                 />
                 <NodeKeySelect
@@ -787,14 +787,14 @@ function ConditionForm({
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">If</label>
+          <label className="mb-1 block text-xs text-slate-500">If</label>
           <Select
             value={subject}
             onValueChange={(v) =>
               onUpdateConfig({ subject: v as ConditionCfg["subject"] })
             }
           >
-            <SelectTrigger className="bg-muted">
+            <SelectTrigger className="bg-slate-100">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -805,7 +805,7 @@ function ConditionForm({
           </Select>
         </div>
         <div className="md:col-span-2">
-          <label className="mb-1 block text-xs text-muted-foreground">
+          <label className="mb-1 block text-xs text-slate-500">
             {subject === "var"
               ? "Variable key"
               : subject === "tag"
@@ -818,7 +818,7 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
               disabled={collectInputVars.length === 0}
             >
-              <SelectTrigger className="bg-muted font-mono text-xs">
+              <SelectTrigger className="bg-slate-100 font-mono text-xs">
                 <SelectValue placeholder={collectInputVars.length === 0 ? "No Collect Input nodes yet…" : "Pick a variable…"} />
               </SelectTrigger>
               <SelectContent>
@@ -835,7 +835,7 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
               disabled={tags.length === 0}
             >
-              <SelectTrigger className="bg-muted">
+              <SelectTrigger className="bg-slate-100">
                 <SelectValue placeholder={tags.length === 0 ? "No tags found…" : "Pick a tag…"} />
               </SelectTrigger>
               <SelectContent>
@@ -851,7 +851,7 @@ function ConditionForm({
               value={cfg.subject_key ?? ""}
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
-              <SelectTrigger className="bg-muted">
+              <SelectTrigger className="bg-slate-100">
                 <SelectValue placeholder="Pick a field…" />
               </SelectTrigger>
               <SelectContent>
@@ -872,14 +872,14 @@ function ConditionForm({
         )}
       >
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Operator</label>
+          <label className="mb-1 block text-xs text-slate-500">Operator</label>
           <Select
             value={operator}
             onValueChange={(v) =>
               onUpdateConfig({ operator: v as ConditionCfg["operator"] })
             }
           >
-            <SelectTrigger className="bg-muted">
+            <SelectTrigger className="bg-slate-100">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -892,11 +892,11 @@ function ConditionForm({
         </div>
         {showValue && (
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">Value</label>
+            <label className="mb-1 block text-xs text-slate-500">Value</label>
             <Input
               value={cfg.value ?? ""}
               onChange={(e) => onUpdateConfig({ value: e.target.value })}
-              className="bg-muted"
+              className="bg-slate-100"
             />
           </div>
         )}
@@ -949,14 +949,14 @@ function SetTagForm({
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Action</label>
+          <label className="mb-1 block text-xs text-slate-500">Action</label>
           <Select
             value={cfg.mode ?? "add"}
             onValueChange={(v) =>
               onUpdateConfig({ mode: v as SetTagCfg["mode"] })
             }
           >
-            <SelectTrigger className="bg-muted">
+            <SelectTrigger className="bg-slate-100">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -966,13 +966,13 @@ function SetTagForm({
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">Tag</label>
+          <label className="mb-1 block text-xs text-slate-500">Tag</label>
           {tags.length > 0 ? (
             <Select
               value={cfg.tag_id ?? ""}
               onValueChange={(v) => onUpdateConfig({ tag_id: v })}
             >
-              <SelectTrigger className="bg-muted">
+              <SelectTrigger className="bg-slate-100">
                 <SelectValue placeholder="Pick a tag…" />
               </SelectTrigger>
               <SelectContent>
@@ -988,7 +988,7 @@ function SetTagForm({
               value={cfg.tag_id ?? ""}
               onChange={(e) => onUpdateConfig({ tag_id: e.target.value })}
               placeholder="Tag UUID"
-              className="bg-muted font-mono text-xs"
+              className="bg-slate-100 font-mono text-xs"
             />
           )}
         </div>
@@ -1116,7 +1116,7 @@ function SendMediaForm({
   return (
     <>
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">Media type</label>
+        <label className="mb-1 block text-xs text-slate-500">Media type</label>
         <Select
           value={mediaType}
           onValueChange={(v) => {
@@ -1130,7 +1130,7 @@ function SendMediaForm({
             });
           }}
         >
-          <SelectTrigger className="bg-muted">
+          <SelectTrigger className="bg-slate-100">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1144,15 +1144,15 @@ function SendMediaForm({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">File</label>
+        <label className="mb-1 block text-xs text-slate-500">File</label>
         {cfg.media_url ? (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-xs">
             <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
             <a
               href={cfg.media_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate text-foreground/80 hover:text-cyan-300"
+              className="min-w-0 flex-1 truncate text-slate-800/80 hover:text-cyan-300"
               title={displayName || cfg.media_url}
             >
               {displayName || cfg.media_url}
@@ -1160,7 +1160,7 @@ function SendMediaForm({
             <button
               type="button"
               onClick={handleClear}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground/80"
+              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800/80"
               aria-label="Remove file"
               disabled={uploading}
             >
@@ -1172,7 +1172,7 @@ function SendMediaForm({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card px-3 py-4 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground/80 disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-slate-200 bg-white px-3 py-4 text-xs text-slate-500 transition-colors hover:border-slate-200 hover:bg-slate-100 hover:text-slate-800/80 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {uploading ? (
               <>
@@ -1210,14 +1210,14 @@ function SendMediaForm({
 
       {isDocument && (
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">
+          <label className="mb-1 block text-xs text-slate-500">
             Filename shown to the customer (documents only)
           </label>
           <Input
             value={cfg.filename ?? ""}
             onChange={(e) => onUpdateConfig({ filename: e.target.value })}
             placeholder="invoice.pdf"
-            className="bg-muted text-xs"
+            className="bg-slate-100 text-xs"
           />
         </div>
       )}

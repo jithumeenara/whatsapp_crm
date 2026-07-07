@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Loader2, Paperclip, X, ImageIcon, PenLine, Eraser,
 } from 'lucide-react';
+import DOMPurify from 'isomorphic-dompurify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -87,14 +88,14 @@ function FileUploadField({
         </Button>
         {value ? (
           <div className="flex items-center gap-1 min-w-0 flex-1">
-            <span className="text-xs text-muted-foreground truncate">{value.split('/').pop()}</span>
+            <span className="text-xs text-slate-500 truncate">{value.split('/').pop()}</span>
             <button type="button" onClick={clear}
-              className="shrink-0 p-0.5 rounded text-muted-foreground hover:text-destructive transition-colors">
+              className="shrink-0 p-0.5 rounded text-slate-500 hover:text-destructive transition-colors">
               <X className="size-3.5" />
             </button>
           </div>
         ) : !uploading && (
-          <span className="text-xs text-muted-foreground">No file selected</span>
+          <span className="text-xs text-slate-500">No file selected</span>
         )}
       </div>
       {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
@@ -193,7 +194,7 @@ function SignaturePad({
 
   return (
     <div className="space-y-2">
-      <div className="relative rounded-lg border border-border overflow-hidden bg-white">
+      <div className="relative rounded-lg border border-slate-200 overflow-hidden bg-white">
         <canvas
           ref={canvasRef}
           width={400}
@@ -209,7 +210,7 @@ function SignaturePad({
         />
         {!value && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="flex items-center gap-1.5 text-muted-foreground/40 text-xs">
+            <div className="flex items-center gap-1.5 text-slate-500/40 text-xs">
               <PenLine className="size-3.5" />
               Sign here
             </div>
@@ -217,7 +218,7 @@ function SignaturePad({
         )}
       </div>
       <button type="button" onClick={clear}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+        className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors">
         <Eraser className="size-3.5" /> Clear signature
       </button>
     </div>
@@ -449,9 +450,9 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
     // ── Display-only types ──────────────────────────────────
     if (field.field_type === 'section_header') {
       return (
-        <div className="pt-2 pb-1 border-b border-border">
-          <h4 className="font-semibold text-sm text-foreground">{field.label}</h4>
-          {cfg.content && <p className="text-xs text-muted-foreground mt-0.5">{cfg.content}</p>}
+        <div className="pt-2 pb-1 border-b border-slate-200">
+          <h4 className="font-semibold text-sm text-slate-800">{field.label}</h4>
+          {cfg.content && <p className="text-xs text-slate-500 mt-0.5">{cfg.content}</p>}
         </div>
       );
     }
@@ -459,8 +460,8 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
     if (field.field_type === 'html_block') {
       return cfg.content ? (
         <div
-          className="text-sm text-muted-foreground rounded-lg bg-muted/40 px-3 py-2 prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: cfg.content }}
+          className="text-sm text-slate-500 rounded-lg bg-slate-50 px-3 py-2 prose prose-sm max-w-none"
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(cfg.content, { USE_PROFILES: { html: true } }) }}
         />
       ) : null;
     }
@@ -526,8 +527,8 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
           <div className="flex items-center gap-2">
             <input type="checkbox" id={`f-${field.field_key}`}
               checked={!!value} onChange={(e) => set(field.field_key, e.target.checked)}
-              className="h-4 w-4 rounded border-border accent-primary" />
-            <label htmlFor={`f-${field.field_key}`} className="text-sm text-muted-foreground">Yes</label>
+              className="h-4 w-4 rounded border-slate-200 accent-primary" />
+            <label htmlFor={`f-${field.field_key}`} className="text-sm text-slate-500">Yes</label>
           </div>
         )}
 
@@ -551,7 +552,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
                   'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-all select-none',
                   selected
                     ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-muted-foreground hover:border-primary/50',
+                    : 'border-slate-200 text-slate-500 hover:border-primary/50',
                 )}>
                   <input type="checkbox" className="sr-only" checked={selected}
                     onChange={(e) => {
@@ -677,7 +678,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
                 )}
                 {rendered}
                 {cfg.help_text && !isHidden && (
-                  <p className="mt-1 text-xs text-muted-foreground">{cfg.help_text}</p>
+                  <p className="mt-1 text-xs text-slate-500">{cfg.help_text}</p>
                 )}
                 {fieldErrors[field.field_key] && (
                   <p className="mt-1 text-xs text-destructive">{fieldErrors[field.field_key]}</p>
@@ -687,7 +688,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
           })}
 
           {fields.filter((f) => DATA_FIELD_TYPES.has(f.field_type)).length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">
+            <p className="text-sm text-slate-500 text-center py-4">
               No fields defined yet. Add fields in the Fields tab first.
             </p>
           )}

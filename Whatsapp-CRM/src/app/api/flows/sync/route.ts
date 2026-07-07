@@ -181,9 +181,19 @@ export async function POST() {
 
     let inserted = 0
     let updated = 0
+    let skipped = 0
     const errors: { name: string; message: string }[] = []
 
     for (const mf of metaFlows) {
+      // Skip deprecated/blocked flows — remove them from CRM if they exist
+      if (['DEPRECATED', 'BLOCKED'].includes(mf.status.toUpperCase())) {
+        await prisma.flow.deleteMany({
+          where: { account_id: accountId, name: mf.name, flow_type: 'whatsapp_flow' },
+        }).catch(() => { /* non-fatal */ })
+        skipped++
+        continue
+      }
+
       const status = mapStatus(mf.status)
       const description = mf.categories?.length
         ? `Categories: ${mf.categories.join(', ')}`
@@ -239,6 +249,7 @@ export async function POST() {
       total: metaFlows.length,
       inserted,
       updated,
+      skipped,
       errors,
       truncated: pageCount >= PAGE_CAP && nextUrl !== null,
     })

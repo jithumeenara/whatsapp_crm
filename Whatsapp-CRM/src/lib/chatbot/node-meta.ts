@@ -12,12 +12,15 @@ import {
   ListPlus,
   MessageCircle,
   Paperclip,
+  PhoneCall,
   PlayCircle,
   Sparkles,
   Tag,
   UserCog,
   UserPlus,
   GitFork,
+  Briefcase,
+  Waypoints,
 } from 'lucide-react'
 import type { ChatbotNodeType } from './types'
 
@@ -149,6 +152,14 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     bg: 'bg-blue-50',
     group: 'CRM Actions',
   },
+  crm_action: {
+    label: 'CRM Action',
+    description: 'Create a lead, add to segment, create a follow-up, or add a task for this contact',
+    icon: Briefcase,
+    color: 'text-emerald-600',
+    bg: 'bg-emerald-50',
+    group: 'CRM Actions',
+  },
   handoff: {
     label: 'Handoff',
     description: 'Transfer the conversation to a human agent',
@@ -197,6 +208,22 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     bg: 'bg-indigo-50',
     group: 'Logic',
   },
+  switch_case: {
+    label: 'Switch / Case',
+    description: 'Route flow to different branches based on the exact value of a variable',
+    icon: Waypoints,
+    color: 'text-yellow-600',
+    bg: 'bg-yellow-50',
+    group: 'Logic',
+  },
+  send_to_number: {
+    label: 'Send to Number',
+    description: 'Send a WhatsApp message to a specific phone number (admin notification)',
+    icon: PhoneCall,
+    color: 'text-green-600',
+    bg: 'bg-green-50',
+    group: 'Messaging',
+  },
 }
 
 // ─── Palette groups in display order ────────────────────────────
@@ -222,11 +249,11 @@ export const PALETTE_GROUP_COLORS: Record<PaletteGroup, string> = {
 /** All node types that can be dragged from the palette (excludes 'start'). */
 export const PALETTE_NODES: ChatbotNodeType[] = [
   'send_text', 'send_buttons', 'send_list', 'send_media',
-  'send_flow', 'send_template',
+  'send_flow', 'send_template', 'send_to_number',
   'collect_input',
-  'condition', 'join', 'delay', 'set_variable',
+  'condition', 'switch_case', 'join', 'delay', 'set_variable',
   'ai_reply', 'http_request',
-  'set_tag', 'update_contact',
+  'set_tag', 'update_contact', 'crm_action',
   'handoff', 'link_chatbot', 'end',
 ]
 
@@ -282,6 +309,19 @@ export function getSourceHandles(
     case 'http_request': {
       const handles: Array<{ id: string; label?: string }> = [{ id: 'next', label: 'Success' }]
       if (config.error_node_key) handles.push({ id: 'error', label: 'Error' })
+      return handles
+    }
+    case 'switch_case': {
+      const cases = Array.isArray(config.cases)
+        ? (config.cases as Array<Record<string, unknown>>)
+        : []
+      const handles: Array<{ id: string; label?: string }> = cases.map((c, i) => ({
+        id: `case_${i}`,
+        label: (typeof c.label === 'string' && c.label)
+          || (typeof c.value === 'string' && c.value)
+          || `Case ${i + 1}`,
+      }))
+      handles.push({ id: 'default', label: 'Default' })
       return handles
     }
     default:
@@ -370,6 +410,19 @@ export function summarizeChatbotNode(
       const val = t(config.value, 30)
       return field ? `${field} = ${val ?? '…'}` : null
     }
+    case 'crm_action': {
+      const action = typeof config.action === 'string' ? config.action : ''
+      if (action === 'create_lead') {
+        const mode = config.lead_mode === 'create_new' ? 'Always create lead' : 'Create or update lead'
+        return mode
+      }
+      const labels: Record<string, string> = {
+        add_to_segment: 'Add to segment',
+        create_followup: 'Create follow-up',
+        create_task: 'Create task',
+      }
+      return labels[action] ?? 'CRM action'
+    }
     case 'handoff': {
       const note = t(config.note, 50)
       return note ?? 'Transfer to agent'
@@ -391,6 +444,18 @@ export function summarizeChatbotNode(
     case 'join': {
       const label = t(config.label, 40)
       return label ?? 'Merge branches here'
+    }
+    case 'switch_case': {
+      const varKey = typeof config.variable === 'string' ? config.variable : ''
+      const cases = Array.isArray(config.cases) ? config.cases as Array<Record<string, unknown>> : []
+      return varKey
+        ? `${varKey} → ${cases.length} case${cases.length !== 1 ? 's' : ''}`
+        : cases.length ? `${cases.length} cases` : null
+    }
+    case 'send_to_number': {
+      const phone = typeof config.phone === 'string' ? config.phone : ''
+      const txt = t(config.text, 30)
+      return phone ? (txt ? `→ ${phone}: ${txt}` : `→ ${phone}`) : txt ?? null
     }
   }
 }

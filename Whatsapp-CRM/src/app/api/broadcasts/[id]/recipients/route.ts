@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 
 /**
  * PATCH /api/broadcasts/[id]/recipients
@@ -9,11 +9,11 @@ import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
  *           whatsapp_message_id?: string; error_message?: string }> }
  */
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await getCurrentAccount();
+    const ctx = await requireRoleOrApiKey(request, "agent");
     const { id: broadcastId } = await params;
     const body = await request.json() as {
       updates: Array<{

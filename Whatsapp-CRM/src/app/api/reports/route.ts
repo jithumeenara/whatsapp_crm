@@ -63,7 +63,7 @@ export async function GET(_req: NextRequest) {
         orderBy: { created_at: 'desc' },
         take: 10,
         include: {
-          user: { select: { id: true, name: true } },
+          user: { select: { id: true, profile: { select: { full_name: true } } } },
           lead: { select: { id: true, title: true } },
           contact: { select: { id: true, name: true } },
         },

@@ -14,7 +14,7 @@ const MIME_CATEGORY: Record<string, string> = {
   "image/jpeg": "image",
   "image/webp": "image",
   "image/gif": "image",
-  "image/svg+xml": "image",
+  // SVG intentionally excluded — SVGs can embed JavaScript and become XSS vectors when served with image/svg+xml
   "video/mp4": "video",
   "video/3gpp": "video",
   "video/quicktime": "video",

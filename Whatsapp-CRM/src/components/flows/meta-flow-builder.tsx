@@ -46,6 +46,8 @@ import {
   RotateCcw,
   ChevronLeft as ChevronLeftIcon,
   CheckCircle2,
+  ArrowRight,
+  Flag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -68,6 +70,7 @@ import {
   genScreenId,
   type ComponentType,
   type DataSourceItem,
+  type ImageComp,
   type MetaFlowComponent,
   type MetaFlowDefinition,
   type MetaFlowScreen,
@@ -221,14 +224,14 @@ export function MetaFlowBuilder({
 
   return (
     <FlowBuilderContext.Provider value={{ flowId, saveTableId: value._save_table_id, saveTableFields }}>
-    <div className="flex h-full overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden bg-white">
       {/* ── LEFT: Screens list ──────────────────────────────── */}
-      <div className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">Screens</h2>
+      <div className="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <h2 className="text-sm font-semibold text-slate-800">Screens</h2>
           <button
             onClick={addScreen}
-            className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:text-primary transition-colors"
+            className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:text-primary transition-colors"
             title="Add screen"
           >
             <Plus className="h-4 w-4" />
@@ -245,10 +248,12 @@ export function MetaFlowBuilder({
               items={value.screens.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
-              {value.screens.map((screen) => (
+              {value.screens.map((screen, idx) => (
                 <SortableScreenItem
                   key={screen.id}
                   screen={screen}
+                  allScreens={value.screens}
+                  screenIndex={idx + 1}
                   isSelected={screen.id === selectedScreen?.id}
                   onSelect={() => setSelectedScreenId(screen.id)}
                   onRemove={() => removeScreen(screen.id)}
@@ -260,7 +265,7 @@ export function MetaFlowBuilder({
           </DndContext>
         </div>
 
-        <div className="border-t border-border px-4 py-2">
+        <div className="border-t border-slate-200 px-4 py-2">
           <button
             onClick={addScreen}
             className="flex w-full items-center gap-1.5 text-xs font-medium text-primary hover:underline"
@@ -272,11 +277,11 @@ export function MetaFlowBuilder({
       </div>
 
       {/* ── CENTER: Component editor ─────────────────────────── */}
-      <div className="flex flex-1 flex-col overflow-hidden border-r border-border">
+      <div className="flex flex-1 flex-col overflow-hidden border-r border-slate-200">
         {/* Sub-header */}
-        <div className="flex items-center gap-2 border-b border-border bg-card px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-foreground">Edit content</h2>
-          <div className="flex gap-0.5 rounded-md border border-border bg-muted p-0.5 text-xs ml-1">
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-slate-800">Edit content</h2>
+          <div className="flex gap-0.5 rounded-md border border-slate-200 bg-slate-100 p-0.5 text-xs ml-1">
             {(["edit", "json"] as const).map((t) => (
               <button
                 key={t}
@@ -284,8 +289,8 @@ export function MetaFlowBuilder({
                 className={cn(
                   "rounded px-2.5 py-0.5 transition-colors capitalize",
                   activeTab === t
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
+                    ? "bg-white text-slate-800 shadow-sm"
+                    : "text-slate-500 hover:text-slate-800",
                 )}
               >
                 {t === "json" ? "JSON" : "Edit"}
@@ -324,8 +329,8 @@ export function MetaFlowBuilder({
         </div>
 
         {activeTab === "json" ? (
-          <div className="flex-1 overflow-auto bg-background p-4">
-            <pre className="rounded-lg bg-muted p-4 text-[11px] font-mono text-foreground overflow-x-auto">
+          <div className="flex-1 overflow-auto bg-white p-4">
+            <pre className="rounded-lg bg-slate-100 p-4 text-[11px] font-mono text-slate-800 overflow-x-auto">
               {JSON.stringify(value, null, 2)}
             </pre>
           </div>
@@ -357,6 +362,8 @@ export function MetaFlowBuilder({
 
 function SortableScreenItem({
   screen,
+  allScreens,
+  screenIndex,
   isSelected,
   onSelect,
   onRemove,
@@ -364,6 +371,8 @@ function SortableScreenItem({
   canRemove,
 }: {
   screen: MetaFlowScreen;
+  allScreens: MetaFlowScreen[];
+  screenIndex: number;
   isSelected: boolean;
   onSelect: () => void;
   onRemove: () => void;
@@ -373,38 +382,75 @@ function SortableScreenItem({
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: screen.id });
 
+  // Derive navigation info from Footer's on-click-action
+  const footer = screen.components.find((c) => c.type === 'Footer') as
+    | { type: 'Footer'; 'on-click-action': { name: string; next?: { name: string } } }
+    | undefined;
+  const action = footer?.['on-click-action'];
+  const isTerminal = screen.terminal === true;
+  let navBadge: { label: string; kind: 'navigate' | 'complete' | 'terminal' } | null = null;
+  if (isTerminal) {
+    navBadge = { label: 'Terminal', kind: 'terminal' };
+  } else if (action?.name === 'navigate' && action.next?.name) {
+    const targetScreen = allScreens.find((s) => s.id === action.next!.name);
+    navBadge = { label: targetScreen?.title ?? action.next.name, kind: 'navigate' };
+  } else if (action?.name === 'complete') {
+    navBadge = { label: 'Complete', kind: 'complete' };
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "group flex cursor-pointer items-center gap-2 px-3 py-2.5 text-sm transition-colors",
+        "group cursor-pointer px-3 py-2 text-sm transition-colors",
         isSelected
           ? "bg-primary/10 text-primary font-medium"
-          : "text-foreground hover:bg-muted",
+          : "text-slate-800 hover:bg-slate-100",
         isDragging && "opacity-50",
       )}
       onClick={onSelect}
     >
-      <span
-        {...attributes}
-        {...listeners}
-        className="cursor-grab text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </span>
-      <span className="flex-1 truncate text-xs">{screen.title}</span>
-      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-        <button onClick={onDuplicate} className="rounded p-0.5 text-muted-foreground hover:text-foreground" title="Duplicate">
-          <Copy className="h-3 w-3" />
-        </button>
-        {canRemove && (
-          <button onClick={onRemove} className="rounded p-0.5 text-muted-foreground hover:text-destructive" title="Remove">
-            <X className="h-3 w-3" />
+      <div className="flex items-center gap-2">
+        <span
+          {...attributes}
+          {...listeners}
+          className="cursor-grab text-slate-500/40 hover:text-slate-500 active:cursor-grabbing shrink-0"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+        <span className={cn(
+          "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold",
+          isSelected ? "bg-primary text-primary-foreground" : "bg-slate-100 text-slate-500",
+        )}>
+          {screenIndex}
+        </span>
+        <span className="flex-1 truncate text-xs font-medium">{screen.title}</span>
+        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
+          <button onClick={onDuplicate} className="rounded p-0.5 text-slate-500 hover:text-slate-800" title="Duplicate">
+            <Copy className="h-3 w-3" />
           </button>
-        )}
+          {canRemove && (
+            <button onClick={onRemove} className="rounded p-0.5 text-slate-500 hover:text-destructive" title="Remove">
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
+      {navBadge && (
+        <div className={cn(
+          "ml-[30px] mt-0.5 flex items-center gap-1 text-[10px]",
+          navBadge.kind === 'navigate' && "text-blue-500",
+          navBadge.kind === 'complete' && "text-emerald-500",
+          navBadge.kind === 'terminal' && "text-amber-500",
+        )}>
+          {navBadge.kind === 'navigate' && <ArrowRight className="h-2.5 w-2.5 shrink-0" />}
+          {navBadge.kind === 'complete' && <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />}
+          {navBadge.kind === 'terminal' && <Flag className="h-2.5 w-2.5 shrink-0" />}
+          <span className="truncate">{navBadge.label}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -462,24 +508,24 @@ function ComponentEditorPanel({
   return (
     <div className="flex-1 overflow-y-auto">
       {/* Screen title */}
-      <div className="border-b border-border">
+      <div className="border-b border-slate-200">
         <button
-          className="flex w-full items-center justify-between px-5 py-3 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+          className="flex w-full items-center justify-between px-5 py-3 text-sm font-medium text-slate-800 hover:bg-slate-50 transition-colors"
           onClick={() => setExpandedId(expandedId === "__title" ? null : "__title")}
         >
           <span>Screen title</span>
           {expandedId === "__title" ? (
-            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+            <ChevronUp className="h-4 w-4 text-slate-500" />
           ) : (
-            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            <ChevronDown className="h-4 w-4 text-slate-500" />
           )}
         </button>
         {expandedId === "__title" && (
-          <div className="border-t border-border bg-muted/20 px-5 py-4">
+          <div className="border-t border-slate-200 bg-slate-100/20 px-5 py-4">
             <Input
               value={screen.title}
               onChange={(e) => onTitleChange(e.target.value)}
-              className="h-9 bg-card text-sm"
+              className="h-9 bg-white text-sm"
               placeholder="Screen title…"
             />
           </div>
@@ -518,12 +564,12 @@ function ComponentEditorPanel({
         (c) => c.type === 'Footer' &&
           (c as unknown as { 'on-click-action'?: { name: string } })['on-click-action']?.name === 'data_exchange'
       ) && (
-        <div className="border-t border-border px-5 py-4 space-y-3">
-          <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+        <div className="border-t border-slate-200 px-5 py-4 space-y-3">
+          <p className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
             💾 Save form data to
           </p>
           <select
-            className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
+            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
             value={saveTableId ?? ''}
             onChange={(e) => onSaveTableChange(e.target.value)}
           >
@@ -546,7 +592,7 @@ function ComponentEditorPanel({
 function AddComponentMenu({ onAdd }: { onAdd: (t: ComponentType) => void }) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border bg-background px-3 text-xs font-medium hover:bg-muted transition-colors">
+      <DropdownMenuTrigger className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-medium hover:bg-slate-100 transition-colors">
         <Plus className="h-3.5 w-3.5" />
         Add content
         <ChevronDown className="h-3.5 w-3.5 ml-auto" />
@@ -559,7 +605,7 @@ function AddComponentMenu({ onAdd }: { onAdd: (t: ComponentType) => void }) {
           if (types.length === 0) return null;
           return (
             <div key={group}>
-              <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <p className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                 {group}
               </p>
               {types.map(([type, meta]) => (
@@ -607,17 +653,17 @@ function SortableComponentItem({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn("border-b border-border", isDragging && "opacity-50")}
+      className={cn("border-b border-slate-200", isDragging && "opacity-50")}
     >
       {/* Header row */}
       <div
-        className="group flex cursor-pointer items-center gap-2 px-5 py-3 hover:bg-muted/40 transition-colors"
+        className="group flex cursor-pointer items-center gap-2 px-5 py-3 hover:bg-slate-50 transition-colors"
         onClick={onToggle}
       >
         <span
           {...attributes}
           {...listeners}
-          className="cursor-grab text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing"
+          className="cursor-grab text-slate-500/40 hover:text-slate-500 active:cursor-grabbing"
           onClick={(e) => e.stopPropagation()}
         >
           <GripVertical className="h-3.5 w-3.5" />
@@ -626,25 +672,25 @@ function SortableComponentItem({
           {meta.label}
         </span>
         {preview && (
-          <span className="flex-1 truncate text-xs text-muted-foreground">
+          <span className="flex-1 truncate text-xs text-slate-500">
             · {preview}
           </span>
         )}
         <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onRemove} className="rounded p-0.5 text-muted-foreground hover:text-destructive">
+          <button onClick={onRemove} className="rounded p-0.5 text-slate-500 hover:text-destructive">
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
         {isExpanded ? (
-          <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
+          <ChevronUp className="h-4 w-4 text-slate-500 shrink-0" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+          <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
         )}
       </div>
 
       {/* Expanded form */}
       {isExpanded && (
-        <div className="border-t border-border bg-muted/10 px-5 py-4">
+        <div className="border-t border-slate-200 bg-slate-100/10 px-5 py-4">
           <ComponentForm comp={comp} allScreens={allScreens} onUpdate={onUpdate} />
         </div>
       )}
@@ -662,7 +708,7 @@ function getCompPreview(comp: MetaFlowComponent): string {
     case 'Footer':
       return comp.label || ''
     case 'Image':
-      return comp.src ? 'Image' : '(no image)'
+      return comp.src ? 'Image (uploaded)' : '(no image)'
     default:
       return ''
   }
@@ -861,7 +907,7 @@ function SaveMappingTable({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold text-foreground">Field Mapping</p>
+        <p className="text-[11px] font-semibold text-slate-800">Field Mapping</p>
         <button
           type="button"
           onClick={autoMap}
@@ -871,10 +917,10 @@ function SaveMappingTable({
           <RefreshCw className="h-2.5 w-2.5" /> Auto-map
         </button>
       </div>
-      <div className="rounded-lg border border-border overflow-hidden text-xs">
-        <div className="grid grid-cols-[1fr_1fr_20px] bg-muted/60 border-b border-border px-3 py-1.5 gap-2">
-          <span className="font-medium text-muted-foreground">Table field</span>
-          <span className="font-medium text-muted-foreground">Form input</span>
+      <div className="rounded-lg border border-slate-200 overflow-hidden text-xs">
+        <div className="grid grid-cols-[1fr_1fr_20px] bg-slate-100 border-b border-slate-200 px-3 py-1.5 gap-2">
+          <span className="font-medium text-slate-500">Table field</span>
+          <span className="font-medium text-slate-500">Form input</span>
           <span />
         </div>
         {saveTableFields.map((field) => {
@@ -884,13 +930,13 @@ function SaveMappingTable({
           const compatInfo = compat ? COMPAT_ICONS[compat] : null
 
           return (
-            <div key={field.field_key} className="grid grid-cols-[1fr_1fr_20px] items-center gap-2 px-3 py-2 border-b border-border/50 last:border-0 hover:bg-muted/20">
+            <div key={field.field_key} className="grid grid-cols-[1fr_1fr_20px] items-center gap-2 px-3 py-2 border-b border-slate-200/50 last:border-0 hover:bg-slate-100/20">
               <div>
-                <div className="font-medium text-foreground truncate">{field.label}</div>
-                <div className="text-[10px] text-muted-foreground capitalize">{field.field_type}</div>
+                <div className="font-medium text-slate-800 truncate">{field.label}</div>
+                <div className="text-[10px] text-slate-500 capitalize">{field.field_type}</div>
               </div>
               <select
-                className="h-7 w-full rounded-md border border-border bg-card px-1.5 text-xs"
+                className="h-7 w-full rounded-md border border-slate-200 bg-white px-1.5 text-xs"
                 value={mappedName}
                 onChange={(e) => handleChange(field.field_key, e.target.value)}
               >
@@ -915,12 +961,12 @@ function SaveMappingTable({
           )
         })}
         {formInputs.length === 0 && (
-          <div className="px-3 py-3 text-[10px] text-muted-foreground text-center">
+          <div className="px-3 py-3 text-[10px] text-slate-500 text-center">
             No form inputs found on this screen. Add TextInput, DatePicker, or Dropdown components.
           </div>
         )}
       </div>
-      <div className="flex gap-3 text-[10px] text-muted-foreground">
+      <div className="flex gap-3 text-[10px] text-slate-500">
         <span className="text-emerald-500 font-bold">✓</span> Types match &nbsp;
         <span className="text-amber-500 font-bold">⚠</span> Saved as-is &nbsp;
         <span className="text-red-500 font-bold">✗</span> Type mismatch
@@ -1026,12 +1072,12 @@ function CompDataSource({
       <Label className="text-xs">Options</Label>
 
       {/* Mode toggle */}
-      <div className="flex gap-0.5 rounded-lg border border-border bg-muted p-0.5">
+      <div className="flex gap-0.5 rounded-lg border border-slate-200 bg-slate-100 p-0.5">
         {(['manual', 'table'] as const).map((m) => (
           <button key={m} type="button" onClick={() => setMode(m)}
             className={cn(
               'flex-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all',
-              mode === m ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+              mode === m ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-800',
             )}>
             {m === 'manual' ? 'Manual' : '⚡ Network Request'}
           </button>
@@ -1050,7 +1096,7 @@ function CompDataSource({
               />
               <button onClick={() => onChange(items.filter((_, j) => j !== i))}
                 disabled={items.length <= 1}
-                className="text-muted-foreground hover:text-destructive disabled:opacity-30">
+                className="text-slate-500 hover:text-destructive disabled:opacity-30">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -1063,11 +1109,11 @@ function CompDataSource({
       )}
 
       {mode === 'table' && (
-        <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+        <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <div className="space-y-1.5">
-            <label className="text-[11px] text-muted-foreground">Select Table</label>
+            <label className="text-[11px] text-slate-500">Select Table</label>
             <select
-              className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
+              className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
               value={selectedTable}
               onChange={(e) => { setSelectedTable(e.target.value); setSelectedField(''); }}
             >
@@ -1078,14 +1124,14 @@ function CompDataSource({
 
           {selectedTable && (
             <div className="space-y-1.5">
-              <label className="text-[11px] text-muted-foreground">Use Field Values as Options</label>
+              <label className="text-[11px] text-slate-500">Use Field Values as Options</label>
               {loadingFields ? (
-                <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground py-1">
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-500 py-1">
                   <Loader2 className="h-3 w-3 animate-spin" /> Loading fields…
                 </div>
               ) : (
                 <select
-                  className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
+                  className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
                   value={selectedField}
                   onChange={(e) => setSelectedField(e.target.value)}
                 >
@@ -1098,18 +1144,18 @@ function CompDataSource({
 
           {/* Live options preview — polls every 3 s, updates automatically */}
           {selectedTable && selectedField && (
-            <div className="rounded-md border border-border bg-card px-2.5 py-2 space-y-1.5">
+            <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2 space-y-1.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   {liveCount === null ? (
-                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                    <Loader2 className="h-3 w-3 animate-spin text-slate-500" />
                   ) : (
                     <span className="relative flex h-2 w-2">
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                       <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                     </span>
                   )}
-                  <span className="text-[10px] font-medium text-foreground">
+                  <span className="text-[10px] font-medium text-slate-800">
                     {liveCount === null
                       ? 'Loading…'
                       : liveCount === 0
@@ -1117,13 +1163,13 @@ function CompDataSource({
                         : `${liveCount} live option${liveCount > 1 ? 's' : ''}`}
                   </span>
                 </div>
-                <span className="text-[9px] text-muted-foreground/60">preview</span>
+                <span className="text-[9px] text-slate-400">preview</span>
               </div>
 
               {liveCount === null ? (
                 <div className="flex gap-1 pt-0.5">
                   {[1, 2, 3].map((n) => (
-                    <span key={n} className="h-5 w-14 animate-pulse rounded-full bg-muted" />
+                    <span key={n} className="h-5 w-14 animate-pulse rounded-full bg-slate-100" />
                   ))}
                 </div>
               ) : items.length > 0 ? (
@@ -1134,11 +1180,11 @@ function CompDataSource({
                     </span>
                   ))}
                   {items.length > 8 && (
-                    <span className="text-[10px] text-muted-foreground">+{items.length - 8} more</span>
+                    <span className="text-[10px] text-slate-500">+{items.length - 8} more</span>
                   )}
                 </div>
               ) : (
-                <p className="text-[10px] text-muted-foreground/60">
+                <p className="text-[10px] text-slate-400">
                   Add records to the &quot;{tableFields.find(f => f.field_key === selectedField)?.label ?? selectedField}&quot; field to see options here.
                 </p>
               )}
@@ -1153,6 +1199,53 @@ function CompDataSource({
       )}
     </div>
   );
+}
+
+// ── FilterFieldPicker ─────────────────────────────────────────────────────────
+// Loads fields from a DataStore table and shows a select so the user picks the
+// exact field_key (which may differ from the label due to slugify rules).
+function FilterFieldPicker({
+  tableId,
+  value,
+  onChange,
+}: {
+  tableId: string
+  value: string
+  onChange: (fieldKey: string) => void
+}) {
+  const [fields, setFields] = useState<TableField[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!tableId) { setFields([]); return }
+    setLoading(true)
+    fetch(`/api/data-tables/${tableId}`)
+      .then((r) => r.json())
+      .then((d) => setFields(
+        (d.table?.fields ?? []).filter(
+          (f: TableField) => !['section_header', 'html_block', 'signature', 'file', 'image'].includes(f.field_type)
+        )
+      ))
+      .catch(() => setFields([]))
+      .finally(() => setLoading(false))
+  }, [tableId])
+
+  if (loading) return <p className="text-[10px] text-slate-500">Loading columns…</p>
+
+  return (
+    <select
+      className="h-7 w-full rounded-md border border-input bg-white px-2 text-xs font-mono"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">— pick a column —</option>
+      {fields.map((f) => (
+        <option key={f.field_key} value={f.field_key}>
+          {f.label}  [{f.field_key}]
+        </option>
+      ))}
+    </select>
+  )
 }
 
 const BASE_URL_KEY = 'meta_flow_base_url'
@@ -1199,10 +1292,10 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
     <div className="rounded-md border border-sky-500/30 bg-sky-500/5 px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5">
         <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[9px] font-bold text-sky-600">⚡ LIVE</span>
-        <span className="text-[10px] font-medium text-foreground">Options fetched from database at runtime</span>
+        <span className="text-[10px] font-medium text-slate-800">Options fetched from database at runtime</span>
       </div>
       <div className="flex items-center justify-between">
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-[10px] text-slate-500">
           Meta &rsaquo; Flow Settings &rsaquo; Endpoint URI:
         </p>
         {baseUrl !== currentOrigin && currentOrigin && (
@@ -1219,7 +1312,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
 
       {editing ? (
         <div className="space-y-1">
-          <p className="text-[10px] text-muted-foreground/70">Enter your public URL (ngrok, domain…)</p>
+          <p className="text-[10px] text-slate-400">Enter your public URL (ngrok, domain…)</p>
           <div className="flex gap-1">
             <Input
               className="h-7 flex-1 text-[11px] font-mono"
@@ -1243,13 +1336,13 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
         </div>
       ) : (
         <div className="flex items-center gap-1">
-          <code className="flex-1 truncate rounded bg-muted px-2 py-1 text-[10px] font-mono text-foreground">
+          <code className="flex-1 truncate rounded bg-slate-100 px-2 py-1 text-[10px] font-mono text-slate-800">
             {fullUrl}
           </code>
           <button
             type="button"
             onClick={() => { setDraft(baseUrl); setEditing(true); }}
-            className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            className="rounded p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
             title="Change base URL (e.g. ngrok)"
           >
             <Settings className="h-3 w-3" />
@@ -1257,7 +1350,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
           <button
             type="button"
             onClick={() => navigator.clipboard.writeText(fullUrl).then(() => toast.success('Endpoint URL copied'))}
-            className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+            className="rounded p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
             title="Copy endpoint URL"
           >
             <Copy className="h-3 w-3" />
@@ -1279,7 +1372,7 @@ function CompFooterAction({ action, allScreens, onChange }: {
       <Label className="text-xs">Action type</Label>
       <div className="flex flex-col gap-1">
         {(['navigate', 'complete', 'data_exchange'] as const).map((act) => (
-          <label key={act} className="flex cursor-pointer items-center gap-2 rounded border border-border bg-card px-3 py-2 text-xs hover:bg-muted/50">
+          <label key={act} className="flex cursor-pointer items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-xs hover:bg-slate-50">
             <input
               type="radio"
               className="h-3 w-3 accent-[#25D366]"
@@ -1300,7 +1393,7 @@ function CompFooterAction({ action, allScreens, onChange }: {
         <div className="space-y-1.5 pt-1">
           <Label className="text-xs">Navigate to screen</Label>
           <select
-            className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
+            className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
             value={action?.next?.name ?? ''}
             onChange={(e) => onChange({ name: 'navigate', next: { type: 'screen', name: e.target.value }, payload: {} })}
           >
@@ -1310,6 +1403,89 @@ function CompFooterAction({ action, allScreens, onChange }: {
           </select>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Image upload form ───────────────────────────────────────────
+
+function CompImageForm({
+  comp,
+  onUpdate,
+}: {
+  comp: ImageComp;
+  onUpdate: (c: MetaFlowComponent) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const set = (patch: Partial<ImageComp>) => onUpdate({ ...comp, ...patch });
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs">Image</Label>
+        {comp.src ? (
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={comp.src} alt={comp['alt-text'] ?? ''} className="w-full rounded-md border border-slate-200 object-cover max-h-28" />
+            <button
+              onClick={() => set({ src: '' })}
+              className="absolute right-1 top-1 rounded bg-black/60 p-0.5 text-white hover:bg-black/80"
+              title="Remove image"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ) : (
+          <label className={cn(
+            "flex h-20 w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-slate-200 bg-slate-50 text-xs text-slate-500 transition-colors",
+            uploading ? "opacity-60 cursor-not-allowed" : "hover:border-primary/50 hover:text-primary",
+          )}>
+            {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+            <span>{uploading ? 'Uploading…' : 'Click to upload image'}</span>
+            <span className="text-[10px] text-slate-400">PNG, JPG, WEBP (hosted on your server)</span>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="sr-only"
+              disabled={uploading}
+              onChange={async (e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                e.target.value = ''
+                setUploading(true)
+                try {
+                  const formData = new FormData()
+                  formData.set('file', file)
+                  const res = await fetch('/api/upload', { method: 'POST', body: formData })
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => ({}))
+                    toast.error(err.error ?? 'Upload failed')
+                    return
+                  }
+                  const { url } = await res.json()
+                  set({ src: url })
+                } catch {
+                  toast.error('Upload failed')
+                } finally {
+                  setUploading(false)
+                }
+              }}
+            />
+          </label>
+        )}
+      </div>
+      <CompTextField label="Alt text" value={comp['alt-text'] ?? ''} onChange={(v) => set({ 'alt-text': v })} placeholder="Description…" />
+      <div className="space-y-1.5">
+        <Label className="text-xs">Scale type</Label>
+        <select
+          className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+          value={comp['scale-type'] ?? 'contain'}
+          onChange={(e) => set({ 'scale-type': e.target.value as 'cover' | 'contain' })}
+        >
+          <option value="contain">Contain</option>
+          <option value="cover">Cover</option>
+        </select>
+      </div>
     </div>
   );
 }
@@ -1351,7 +1527,7 @@ function ComponentForm({
           <div className="space-y-1.5">
             <Label className="text-xs">Input type</Label>
             <select
-              className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
+              className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
               value={comp['input-type'] ?? 'text'}
               onChange={(e) => set({ 'input-type': e.target.value })}
             >
@@ -1389,8 +1565,13 @@ function ComponentForm({
     case 'Dropdown': {
       // data-source may be a template string "${data.xxx}" after Meta upload —
       // treat it as empty array so CompDataSource doesn't crash on .map()
-      const rawDs = (comp as Record<string, unknown>)['data-source']
+      const rawDs = (comp as unknown as Record<string, unknown>)['data-source']
       const safeItems: DataSourceItem[] = Array.isArray(rawDs) ? (rawDs as DataSourceItem[]) : []
+      const cRec = comp as unknown as Record<string, unknown>
+      const hasDbSource = !!cRec._source_table_id
+      const isFilterTrigger = cRec._filter_trigger === true
+      const filterFormName = (cRec._filter_form_name as string) ?? ''
+      const filterByField = (cRec._filter_by_field as string) ?? ''
       return (
         <div className="space-y-3">
           <CompTextField label="Label" value={comp.label} onChange={(v) => set({ label: v })} />
@@ -1405,6 +1586,137 @@ function ComponentForm({
             }
           />
           <CompToggle label="Required" value={comp.required ?? false} onChange={(v) => set({ required: v })} />
+
+          {/* ── Dynamic Filter (only when a DB source is connected) ── */}
+          {hasDbSource && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-slate-200 bg-slate-50">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Dynamic Filter</span>
+              </div>
+
+              <div className="px-2.5 py-2.5 space-y-3">
+                {/* Role selector */}
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  <button
+                    onClick={() => set({ _filter_trigger: true, _filter_form_name: undefined, _filter_by_field: undefined })}
+                    className={cn(
+                      "rounded-md border px-2 py-1.5 text-left transition-colors",
+                      isFilterTrigger
+                        ? "border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold"
+                        : "border-slate-200 text-slate-500 hover:border-foreground/40",
+                    )}
+                  >
+                    <span className="block text-[9px] mb-0.5">PARENT</span>
+                    Filters another dropdown
+                  </button>
+                  <button
+                    onClick={() => set({ _filter_trigger: undefined })}
+                    className={cn(
+                      "rounded-md border px-2 py-1.5 text-left transition-colors",
+                      !isFilterTrigger && (filterFormName || filterByField)
+                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold"
+                        : !isFilterTrigger && !filterFormName
+                        ? "border-slate-200 text-slate-500 hover:border-foreground/40"
+                        : "border-slate-200 text-slate-500 hover:border-foreground/40",
+                    )}
+                  >
+                    <span className="block text-[9px] mb-0.5">CHILD</span>
+                    Filtered by parent
+                  </button>
+                </div>
+
+                {/* PARENT state: show field name to copy */}
+                {isFilterTrigger && (
+                  <div className="rounded-md bg-blue-500/8 border border-blue-400/30 p-2.5 space-y-1.5">
+                    <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
+                      ✓ This dropdown triggers filtering
+                    </p>
+                    <p className="text-[10px] text-slate-500">
+                      When user picks a value, the child dropdown refreshes automatically.
+                    </p>
+                    <div className="space-y-0.5">
+                      <p className="text-[9px] text-slate-500">Copy this name into the child dropdown:</p>
+                      <div className="flex items-center gap-1.5">
+                        <code className="flex-1 text-[11px] font-mono text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded">
+                          {comp.name || '(set a field name above)'}
+                        </code>
+                        {comp.name && (
+                          <button
+                            onClick={() => { navigator.clipboard.writeText(comp.name) }}
+                            className="text-[9px] text-blue-500 hover:text-blue-700 px-1.5 py-1 rounded border border-blue-300 dark:border-blue-700"
+                          >
+                            Copy
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* CHILD state: configure filter */}
+                {!isFilterTrigger && (
+                  <div className="space-y-2.5">
+                    {/* Step 1 */}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">1</span>
+                        <p className="text-[10px] font-medium text-slate-800">Parent field name</p>
+                      </div>
+                      <Input
+                        className="h-7 text-xs font-mono"
+                        value={filterFormName}
+                        onChange={(e) => set({ _filter_form_name: e.target.value || undefined })}
+                        placeholder="Paste from parent's blue box"
+                      />
+                      <p className="text-[9px] text-slate-500">
+                        The <em>Field name (internal)</em> of the parent/trigger dropdown
+                      </p>
+                    </div>
+
+                    {/* Step 2 */}
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">2</span>
+                        <p className="text-[10px] font-medium text-slate-800">Filter column (from DB table)</p>
+                      </div>
+                      {cRec._source_table_id ? (
+                        <FilterFieldPicker
+                          tableId={cRec._source_table_id as string}
+                          value={filterByField}
+                          onChange={(v) => set({ _filter_by_field: v || undefined })}
+                        />
+                      ) : (
+                        <Input
+                          className="h-7 text-xs font-mono"
+                          value={filterByField}
+                          onChange={(e) => set({ _filter_by_field: e.target.value || undefined })}
+                          placeholder="e.g. month"
+                        />
+                      )}
+                      <p className="text-[9px] text-slate-500">
+                        The column that stores the parent&apos;s value (e.g. month column in Training table).
+                      </p>
+                    </div>
+
+                    {/* Live rule preview */}
+                    {filterFormName && filterByField && (
+                      <div className="rounded bg-emerald-500/8 border border-emerald-400/30 p-2 text-[9px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                        <span className="font-semibold block mb-0.5">Filter rule:</span>
+                        Fetch rows where <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterByField}</code> = value selected in <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterFormName}</code>
+                      </div>
+                    )}
+
+                    {filterFormName && !filterByField && (
+                      <p className="text-[9px] text-amber-600 dark:text-amber-400">
+                        ↑ Pick a DB column to complete the filter setup
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       );
     }
@@ -1420,23 +1732,7 @@ function ComponentForm({
       );
 
     case 'Image':
-      return (
-        <div className="space-y-3">
-          <CompTextField label="Image URL" value={comp.src} onChange={(v) => set({ src: v })} placeholder="https://…" />
-          <CompTextField label="Alt text" value={comp['alt-text'] ?? ''} onChange={(v) => set({ 'alt-text': v })} placeholder="Description…" />
-          <div className="space-y-1.5">
-            <Label className="text-xs">Scale type</Label>
-            <select
-              className="h-8 w-full rounded-md border border-border bg-card px-2 text-xs"
-              value={comp['scale-type'] ?? 'contain'}
-              onChange={(e) => set({ 'scale-type': e.target.value })}
-            >
-              <option value="contain">Contain</option>
-              <option value="cover">Cover</option>
-            </select>
-          </div>
-        </div>
-      );
+      return <CompImageForm comp={comp} onUpdate={onUpdate} />;
 
     case 'Footer':
       return (
@@ -1453,7 +1749,7 @@ function ComponentForm({
       );
 
     default:
-      return <p className="text-xs text-muted-foreground">No form for this component type.</p>;
+      return <p className="text-xs text-slate-500">No form for this component type.</p>;
   }
 }
 
@@ -1461,6 +1757,67 @@ function ComponentForm({
 
 function sanitizeId(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z_]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '') || 'SCREEN'
+}
+
+// ── Client-side filter helper for the preview (mirrors webhook fetchOptions logic) ─
+function slugifyPreview(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+}
+async function fetchFilteredPreviewOptions(
+  tableId: string, fieldKey: string, filterByField: string, filterValue: string,
+): Promise<DataSourceItem[] | null> {
+  try {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const [recRes, tblRes] = await Promise.all([
+      fetch(`/api/data-tables/${tableId}/records?pageSize=500`),
+      fetch(`/api/data-tables/${tableId}`),
+    ])
+    if (!recRes.ok || !tblRes.ok) {
+      console.warn('[preview filter] API error:', recRes.status, tblRes.status)
+      return null
+    }
+
+    const recData = await recRes.json() as { records?: Array<{ data: unknown }> }
+    const tblData = await tblRes.json() as { table?: { fields?: Array<{ field_key: string; label: string }> } }
+    const records = recData.records ?? []
+    const fields = tblData.table?.fields ?? []
+
+    // Resolve filterByField → actual field_key (labels may differ from keys due to slugify)
+    let resolvedField = filterByField
+    const exactMatch = fields.find((f) => f.field_key === filterByField)
+    if (!exactMatch) {
+      const match = fields.find((f) => norm(f.label) === norm(filterByField) || norm(f.field_key) === norm(filterByField))
+      if (match) resolvedField = match.field_key
+    }
+
+    // CompDataSource generates option IDs with "ds_" prefix (e.g. "ds_april").
+    // Strip the prefix before comparing against slugified DataStore record values.
+    const cleanFilterValue = filterValue.replace(/^ds_/, '')
+    const filterSlug = slugifyPreview(cleanFilterValue)
+    console.log(`[preview filter] filterBy="${resolvedField}" filterValue="${filterValue}" filterSlug="${filterSlug}" fieldKey="${fieldKey}" records=${records.length}`)
+    if (records[0]) console.log('[preview filter] first record keys:', Object.keys(records[0].data as object ?? {}))
+
+    const seen = new Set<string>()
+    const opts: DataSourceItem[] = []
+    for (const r of records) {
+      const d = r.data as Record<string, unknown>
+      const filterRaw = d[resolvedField]
+      if (filterRaw == null) continue
+      const filterVals = (Array.isArray(filterRaw) ? filterRaw : [filterRaw]).map((v) => slugifyPreview(String(v).trim()))
+      if (!filterVals.includes(filterSlug)) continue
+      const raw = d[fieldKey]
+      if (raw == null) continue
+      for (const rv of (Array.isArray(raw) ? raw : [raw])) {
+        const val = String(rv).trim()
+        if (val && !seen.has(val)) { seen.add(val); opts.push({ id: slugifyPreview(val) || `opt_${seen.size}`, title: val }) }
+      }
+    }
+    console.log('[preview filter] result:', opts.length, 'options', opts.map(o => o.title))
+    return opts
+  } catch (err) {
+    console.error('[preview filter] fetch error:', err)
+    return null
+  }
 }
 
 function LivePreviewPanel({
@@ -1475,6 +1832,8 @@ function LivePreviewPanel({
   const [history, setHistory] = useState<string[]>([]);
   const [completed, setCompleted] = useState(false);
   const [simValues, setSimValues] = useState<Record<string, string>>({});
+  // previewData: comp.id → filtered options | null (error) | undefined (not yet fetched)
+  const [previewData, setPreviewData] = useState<Record<string, DataSourceItem[] | null>>({});
 
   // build a sanitized-ID → screen map
   const screenMap = Object.fromEntries(
@@ -1488,12 +1847,62 @@ function LivePreviewPanel({
     setHistory([]);
     setCompleted(false);
     setSimValues({});
+    setPreviewData({});
     setSimMode(true);
   };
 
   const stopSim = () => { setSimMode(false); setCompleted(false); };
 
   const currentSimScreen = simMode ? screenMap[simScreenId] : undefined;
+
+  // When simValues changes, check if any filter trigger changed and prefetch child options
+  useEffect(() => {
+    if (!simMode) return
+    for (const screen of screens) {
+      for (const comp of screen.components) {
+        const c = comp as unknown as Record<string, unknown>
+        if (c._filter_trigger !== true || !c.name) continue
+        const triggerName = c.name as string
+        const triggerValue = simValues[triggerName]
+        if (!triggerValue) {
+          // Reset children to undefined (waiting) when parent is cleared
+          for (const s2 of screens) {
+            for (const comp2 of s2.components) {
+              const c2 = comp2 as unknown as Record<string, unknown>
+              if (c2._filter_form_name !== triggerName) continue
+              setPreviewData((prev) => {
+                const next = { ...prev }
+                delete next[comp2.id as string]
+                return next
+              })
+            }
+          }
+          continue
+        }
+        console.log('[preview filter] trigger:', triggerName, '=', triggerValue)
+        // Find all filter children across all screens
+        for (const s2 of screens) {
+          for (const comp2 of s2.components) {
+            const c2 = comp2 as unknown as Record<string, unknown>
+            if (c2._filter_form_name !== triggerName) { continue }
+            if (!c2._source_table_id || !c2._source_field_key || !c2._filter_by_field) {
+              console.warn('[preview filter] child', comp2.id, 'missing _source_table_id/_source_field_key/_filter_by_field:', {
+                tableId: c2._source_table_id, fieldKey: c2._source_field_key, filterBy: c2._filter_by_field,
+              })
+              continue
+            }
+            console.log('[preview filter] child:', comp2.id, 'tableId:', c2._source_table_id, 'fieldKey:', c2._source_field_key, 'filterBy:', c2._filter_by_field)
+            fetchFilteredPreviewOptions(
+              c2._source_table_id as string,
+              c2._source_field_key as string,
+              c2._filter_by_field as string,
+              triggerValue,
+            ).then((opts) => setPreviewData((prev) => ({ ...prev, [comp2.id as string]: opts })))
+          }
+        }
+      }
+    }
+  }, [simValues, simMode, screens])
 
   // Handle footer button click in simulation
   const handleFooterClick = (action: Record<string, unknown>) => {
@@ -1520,12 +1929,12 @@ function LivePreviewPanel({
   const displayScreen = simMode ? currentSimScreen : selectedScreen;
 
   return (
-    <div className="flex w-[340px] shrink-0 flex-col bg-card">
+    <div className="flex w-[340px] shrink-0 flex-col bg-white">
       {/* Panel header */}
-      <div className="flex h-11 items-center justify-between border-b border-border px-4">
+      <div className="flex h-11 items-center justify-between border-b border-slate-200 px-4">
         <div className="flex items-center gap-2">
-          <SmartphoneIcon className="h-3.5 w-3.5 text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-foreground">
+          <SmartphoneIcon className="h-3.5 w-3.5 text-slate-500" />
+          <h2 className="text-sm font-semibold text-slate-800">
             {simMode ? 'Live Simulation' : 'Preview'}
           </h2>
           {simMode && (
@@ -1539,14 +1948,14 @@ function LivePreviewPanel({
             <>
               <button
                 onClick={() => { startSim(); }}
-                className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
                 title="Restart simulation"
               >
                 <RotateCcw className="h-3 w-3" /> Restart
               </button>
               <button
                 onClick={stopSim}
-                className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                className="flex items-center gap-1 rounded px-1.5 py-1 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition-colors"
               >
                 <X className="h-3 w-3" /> Stop
               </button>
@@ -1565,17 +1974,17 @@ function LivePreviewPanel({
 
       {/* Screen crumb */}
       {simMode && !completed && (
-        <div className="flex items-center gap-1 border-b border-border bg-muted/30 px-4 py-1.5">
+        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-4 py-1.5">
           {history.length > 0 && (
-            <button onClick={handleBack} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+            <button onClick={handleBack} className="rounded p-0.5 text-slate-500 hover:text-slate-800">
               <ChevronLeftIcon className="h-3.5 w-3.5" />
             </button>
           )}
-          <div className="flex items-center gap-1 text-[10px] text-muted-foreground overflow-x-auto">
+          <div className="flex items-center gap-1 text-[10px] text-slate-500 overflow-x-auto">
             {history.map((hid, i) => (
               <span key={i} className="shrink-0">{screenMap[hid]?.title ?? hid} › </span>
             ))}
-            <span className="shrink-0 font-medium text-foreground">{currentSimScreen?.title}</span>
+            <span className="shrink-0 font-medium text-slate-800">{currentSimScreen?.title}</span>
           </div>
         </div>
       )}
@@ -1625,10 +2034,11 @@ function LivePreviewPanel({
             simValues={simValues}
             onValueChange={(name, val) => setSimValues((v) => ({ ...v, [name]: val }))}
             onFooterClick={handleFooterClick}
+            previewData={previewData}
           />
         ) : (
           <div className="flex h-full items-center justify-center">
-            <p className="text-xs text-muted-foreground">Select a screen to preview</p>
+            <p className="text-xs text-slate-500">Select a screen to preview</p>
           </div>
         )}
       </div>
@@ -1644,12 +2054,14 @@ function SimPhonePreview({
   simValues,
   onValueChange,
   onFooterClick,
+  previewData,
 }: {
   screen: MetaFlowScreen;
   simMode: boolean;
   simValues: Record<string, string>;
   onValueChange: (name: string, val: string) => void;
   onFooterClick: (action: Record<string, unknown>) => void;
+  previewData: Record<string, DataSourceItem[] | null>;
 }) {
   const footer = screen.components.find((c) => c.type === 'Footer') as
     | (MetaFlowComponent & { type: 'Footer'; label: string; 'on-click-action'?: Record<string, unknown> }) | undefined;
@@ -1680,6 +2092,7 @@ function SimPhonePreview({
                 simMode={simMode}
                 simValues={simValues}
                 onValueChange={onValueChange}
+                previewData={previewData}
               />
             ))}
           </div>
@@ -1705,7 +2118,7 @@ function SimPhonePreview({
           )}
         </div>
       </div>
-      <p className="mt-3 text-center text-[10px] text-muted-foreground">
+      <p className="mt-3 text-center text-[10px] text-slate-500">
         Managed by the business. <span className="text-[#25D366]">Learn more</span>
       </p>
     </div>
@@ -1717,12 +2130,15 @@ function SimPreviewComponent({
   simMode,
   simValues,
   onValueChange,
+  previewData,
 }: {
   comp: MetaFlowComponent;
   simMode: boolean;
   simValues: Record<string, string>;
   onValueChange: (name: string, val: string) => void;
+  previewData: Record<string, DataSourceItem[] | null>;
 }) {
+  const req = (comp as { required?: boolean }).required === true
   switch (comp.type) {
     case 'TextHeading':
       return <p className="text-[15px] font-bold text-gray-900">{comp.text || <span className="text-gray-300">Heading</span>}</p>;
@@ -1737,7 +2153,7 @@ function SimPreviewComponent({
       const ti = comp as { name: string; label: string; 'helper-text'?: string };
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{ti.label}</label>
+          <label><FieldLabel label={ti.label} required={req} /></label>
           {simMode ? (
             <input
               className="h-8 w-full rounded border border-gray-300 bg-white px-2 text-[11px] text-gray-800 focus:border-[#25D366] focus:outline-none"
@@ -1758,7 +2174,7 @@ function SimPreviewComponent({
       const ta = comp as { name: string; label: string; 'max-length'?: number };
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{ta.label}</label>
+          <label><FieldLabel label={ta.label} required={req} /></label>
           {simMode ? (
             <textarea
               className="h-16 w-full resize-none rounded border border-gray-300 bg-white p-2 text-[11px] text-gray-800 focus:border-[#25D366] focus:outline-none"
@@ -1784,7 +2200,7 @@ function SimPreviewComponent({
       const selected = simValues[r.name] ?? '';
       return (
         <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold text-gray-800">{r.label}</p>
+          <p className="text-[11px] font-semibold text-gray-800">{r.label}{req && <span className="ml-0.5 text-red-500">*</span>}</p>
           {(Array.isArray(r['data-source']) ? r['data-source'] : []).map((opt) => (
             <label
               key={opt.id}
@@ -1817,7 +2233,7 @@ function SimPreviewComponent({
       };
       return (
         <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold text-gray-800">{cb.label}</p>
+          <p className="text-[11px] font-semibold text-gray-800">{cb.label}{req && <span className="ml-0.5 text-red-500">*</span>}</p>
           {(Array.isArray(cb['data-source']) ? cb['data-source'] : []).map((opt) => (
             <label
               key={opt.id}
@@ -1838,24 +2254,45 @@ function SimPreviewComponent({
     }
 
     case 'Dropdown': {
-      const dd = comp as { name: string; label: string; 'data-source': DataSourceItem[] };
+      const dd = comp as { name: string; label: string; 'data-source': DataSourceItem[]; _filter_form_name?: string };
+      // Use live-filtered options from previewData if this is a filter-child dropdown
+      const hasFilterParent = !!(dd._filter_form_name)
+      // filteredOpts is undefined = not yet fetched, null = fetch error, [] = loaded but empty, [...] = has results
+      const filteredOpts = previewData[comp.id] as DataSourceItem[] | null | undefined
+      const isWaitingForFilter = hasFilterParent && filteredOpts === undefined
+      const isFilterEmpty = hasFilterParent && Array.isArray(filteredOpts) && filteredOpts.length === 0
+      const ddOptions = Array.isArray(filteredOpts) ? filteredOpts : (Array.isArray(dd['data-source']) ? dd['data-source'] : [])
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{dd.label}</label>
+          <label><FieldLabel label={dd.label} required={req} /></label>
           {simMode ? (
-            <select
-              className="h-8 w-full rounded border border-gray-300 bg-white px-2 text-[11px] text-gray-800 focus:border-[#25D366] focus:outline-none"
-              value={simValues[dd.name] ?? ''}
-              onChange={(e) => onValueChange(dd.name, e.target.value)}
-            >
-              <option value="">Select an option</option>
-              {(Array.isArray(dd['data-source']) ? dd['data-source'] : []).map((opt) => (
-                <option key={opt.id} value={opt.id}>{opt.title}</option>
-              ))}
-            </select>
+            isWaitingForFilter ? (
+              <div className="flex h-8 items-center justify-between rounded border border-gray-300 bg-gray-50 px-2">
+                <span className="text-[10px] text-gray-400 italic">Select a value above first…</span>
+                <ChevronDown className="h-3 w-3 text-gray-400" />
+              </div>
+            ) : isFilterEmpty ? (
+              <div className="flex h-8 items-center justify-between rounded border border-orange-200 bg-orange-50 px-2">
+                <span className="text-[10px] text-orange-500 italic">No options for selected value</span>
+                <ChevronDown className="h-3 w-3 text-orange-400" />
+              </div>
+            ) : (
+              <select
+                className="h-8 w-full rounded border border-gray-300 bg-white px-2 text-[11px] text-gray-800 focus:border-[#25D366] focus:outline-none"
+                value={simValues[dd.name] ?? ''}
+                onChange={(e) => onValueChange(dd.name, e.target.value)}
+              >
+                <option value="">Select an option</option>
+                {ddOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>{opt.title}</option>
+                ))}
+              </select>
+            )
           ) : (
             <div className="flex h-8 items-center justify-between rounded border border-gray-300 bg-gray-50 px-2">
-              <span className="text-[10px] text-gray-400">Select an option</span>
+              <span className="text-[10px] text-gray-400">
+                {hasFilterParent ? 'Filtered by parent selection' : 'Select an option'}
+              </span>
               <ChevronDown className="h-3 w-3 text-gray-400" />
             </div>
           )}
@@ -1867,7 +2304,7 @@ function SimPreviewComponent({
       const dp = comp as { name: string; label: string };
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{dp.label}</label>
+          <label><FieldLabel label={dp.label} required={req} /></label>
           {simMode ? (
             <input
               type="date"
@@ -1963,7 +2400,7 @@ function PhonePreview({ screen }: { screen: MetaFlowScreen }) {
       </div>
 
       {/* "Managed by the business" note */}
-      <p className="mt-3 text-center text-[10px] text-muted-foreground">
+      <p className="mt-3 text-center text-[10px] text-slate-500">
         Managed by the business.{" "}
         <span className="text-[#25D366]">Learn more</span>
       </p>
@@ -1971,7 +2408,16 @@ function PhonePreview({ screen }: { screen: MetaFlowScreen }) {
   );
 }
 
+function FieldLabel({ label, required }: { label: string; required?: boolean }) {
+  return (
+    <span className="text-[10px] font-medium text-gray-600">
+      {label}{required && <span className="ml-0.5 text-red-500">*</span>}
+    </span>
+  )
+}
+
 function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
+  const req = (comp as { required?: boolean }).required === true
   switch (comp.type) {
     case 'TextHeading':
       return <p className="text-[15px] font-bold text-gray-900">{comp.text || <span className="text-gray-300">Heading</span>}</p>;
@@ -1985,7 +2431,7 @@ function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
     case 'TextInput':
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{comp.label}</label>
+          <label><FieldLabel label={comp.label} required={req} /></label>
           <div className="h-8 rounded border border-gray-300 bg-gray-50 px-2 flex items-center">
             <span className="text-[10px] text-gray-400">{(comp as {['helper-text']?: string})['helper-text'] || comp.label}</span>
           </div>
@@ -1996,7 +2442,7 @@ function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
       const ta = comp as { label: string; 'max-length'?: number };
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{ta.label}</label>
+          <label><FieldLabel label={ta.label} required={req} /></label>
           <div className="h-16 rounded border border-gray-300 bg-gray-50 p-2">
             <span className="text-[10px] text-gray-400">Leave a comment (optional)</span>
           </div>
@@ -2009,7 +2455,9 @@ function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
       const r = comp as { label: string; 'data-source': DataSourceItem[] };
       return (
         <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold text-gray-800">{r.label}</p>
+          <p className="text-[11px] font-semibold text-gray-800">
+            {r.label}{req && <span className="ml-0.5 text-red-500">*</span>}
+          </p>
           {(Array.isArray(r['data-source']) ? r['data-source'] : []).map((opt) => (
             <label key={opt.id} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0">
               <span className="text-[11px] text-gray-700">{opt.title}</span>
@@ -2024,7 +2472,9 @@ function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
       const cb = comp as { label: string; 'data-source': DataSourceItem[] };
       return (
         <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold text-gray-800">{cb.label}</p>
+          <p className="text-[11px] font-semibold text-gray-800">
+            {cb.label}{req && <span className="ml-0.5 text-red-500">*</span>}
+          </p>
           {(Array.isArray(cb['data-source']) ? cb['data-source'] : []).map((opt) => (
             <label key={opt.id} className="flex items-center gap-2 py-1 border-b border-gray-100 last:border-0">
               <div className="h-4 w-4 rounded border-2 border-gray-400" />
@@ -2039,7 +2489,7 @@ function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
       const dd = comp as { label: string };
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{dd.label}</label>
+          <label><FieldLabel label={dd.label} required={req} /></label>
           <div className="flex h-8 items-center justify-between rounded border border-gray-300 bg-gray-50 px-2">
             <span className="text-[10px] text-gray-400">Select an option</span>
             <ChevronDown className="h-3 w-3 text-gray-400" />
@@ -2052,7 +2502,7 @@ function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
       const dp = comp as { label: string };
       return (
         <div className="space-y-1">
-          <label className="text-[10px] font-medium text-gray-600">{dp.label}</label>
+          <label><FieldLabel label={dp.label} required={req} /></label>
           <div className="flex h-8 items-center justify-between rounded border border-gray-300 bg-gray-50 px-2">
             <span className="text-[10px] text-gray-400">MM / DD / YYYY</span>
             <span className="text-gray-400 text-xs">📅</span>

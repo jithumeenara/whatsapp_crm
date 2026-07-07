@@ -83,11 +83,11 @@ export async function GET(
 
     return NextResponse.json({
       ok: true,
-      accountId: invitation.account.id,
-      accountName: invitation.account.name,
+      account_id: invitation.account.id,
+      account_name: invitation.account.name,
       role: invitation.role,
       label: invitation.label,
-      expiresAt: invitation.expires_at,
+      expires_at: invitation.expires_at,
     });
   } catch (err) {
     console.error("[peek] error:", err);

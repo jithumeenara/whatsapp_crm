@@ -81,7 +81,7 @@ export function CreateTableDialog({ open, onClose, onCreated }: Props) {
                     'flex h-9 w-9 items-center justify-center rounded-lg border text-lg transition-colors',
                     icon === ic.value
                       ? 'border-primary bg-primary/10'
-                      : 'border-border bg-muted/40 hover:border-primary/50',
+                      : 'border-slate-200 bg-slate-50 hover:border-primary/50',
                   ].join(' ')}
                 >
                   {ic.emoji}

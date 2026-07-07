@@ -13,8 +13,10 @@ import { useSession, signOut as nextAuthSignOut } from "next-auth/react";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import {
   canEditSettings as canEditSettingsFor,
+  canEditWhatsAppConfig as canEditWhatsAppConfigFor,
   canManageMembers as canManageMembersFor,
   canSendMessages as canSendMessagesFor,
+  canViewAllLeads as canViewAllLeadsFor,
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
@@ -47,11 +49,14 @@ interface AuthContextValue {
   defaultCurrency: string;
   isOwner: boolean;
   isAdmin: boolean;
+  isSupervisor: boolean;
   isAgent: boolean;
   isViewer: boolean;
   canManageMembers: boolean;
   canEditSettings: boolean;
+  canEditWhatsAppConfig: boolean;
   canSendMessages: boolean;
+  canViewAllLeads: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -124,11 +129,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       accountId: profile?.account_id ?? null,
       isOwner: role === "owner",
       isAdmin: role === "admin",
+      isSupervisor: role === "supervisor",
       isAgent: role === "agent",
       isViewer: role === "viewer",
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
+      canEditWhatsAppConfig: role ? canEditWhatsAppConfigFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
+      canViewAllLeads: role ? canViewAllLeadsFor(role) : false,
     };
   }, [profile?.account_role, profile?.account_id]);
 
@@ -169,11 +177,14 @@ export function useAuth(): AuthContextValue {
       accountRole: null,
       isOwner: false,
       isAdmin: false,
+      isSupervisor: false,
       isAgent: false,
       isViewer: false,
       canManageMembers: false,
       canEditSettings: false,
+      canEditWhatsAppConfig: false,
       canSendMessages: false,
+      canViewAllLeads: false,
     };
   }
   return ctx;

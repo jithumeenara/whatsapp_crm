@@ -259,9 +259,16 @@ export function TemplateManager() {
 
   function openEdit(template: MessageTemplate) {
     setEditingId(template.id);
+    // Normalize category to title-case (synced templates from Meta may arrive
+    // as 'MARKETING'/'UTILITY'/'AUTHENTICATION' before the sync route normalizes).
+    const rawCat = template.category?.toUpperCase()
+    const normalizedCategory: MessageTemplate['category'] =
+      rawCat === 'UTILITY' ? 'Utility' :
+      rawCat === 'AUTHENTICATION' ? 'Authentication' :
+      'Marketing'
     setForm({
       name: template.name,
-      category: template.category,
+      category: normalizedCategory,
       language: template.language || 'en_US',
       header_format: (template.header_type ?? 'none') as HeaderFormat,
       header_content: template.header_content ?? '',
@@ -536,8 +543,8 @@ export function TemplateManager() {
     <div className="space-y-4 mt-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-foreground">Message Templates</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-lg font-semibold text-slate-800">Message Templates</h2>
+          <p className="text-sm text-slate-500">
             Create message templates and submit them to Meta for approval. Use
             &quot;Sync from Meta&quot; to pull templates approved elsewhere.
           </p>
@@ -547,7 +554,7 @@ export function TemplateManager() {
             variant="outline"
             onClick={handleSyncFromMeta}
             disabled={syncing}
-            className="border-border bg-transparent text-foreground/80 hover:bg-muted"
+            className="border-slate-200 bg-transparent text-slate-800/80 hover:bg-slate-100"
             title="Pull approved templates from your Meta WhatsApp Business Account"
           >
             <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
@@ -564,10 +571,10 @@ export function TemplateManager() {
       </div>
 
       {templates.length === 0 ? (
-        <Card className="bg-card border-border ring-0 ring-transparent">
+        <Card className="bg-white border-slate-200 ring-0 ring-transparent">
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-muted-foreground text-sm">No templates yet.</p>
-            <p className="text-muted-foreground text-xs mt-1">
+            <p className="text-slate-500 text-sm">No templates yet.</p>
+            <p className="text-slate-500 text-xs mt-1">
               Create your first message template to get started.
             </p>
           </CardContent>
@@ -580,12 +587,12 @@ export function TemplateManager() {
             return (
               <Card
                 key={template.id}
-                className="bg-card border-border ring-0 ring-transparent"
+                className="bg-white border-slate-200 ring-0 ring-transparent"
               >
                 <CardContent className="flex items-start justify-between pt-4">
                   <div className="space-y-2 min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-medium text-foreground">{template.name}</h3>
+                      <h3 className="font-medium text-slate-800">{template.name}</h3>
                       <Badge
                         className={`text-xs border ${categoryColors[template.category] || ''}`}
                       >
@@ -595,7 +602,7 @@ export function TemplateManager() {
                         {status.label}
                       </Badge>
                       {template.language && (
-                        <span className="text-xs text-muted-foreground uppercase">
+                        <span className="text-xs text-slate-500 uppercase">
                           {template.language}
                         </span>
                       )}
@@ -614,11 +621,11 @@ export function TemplateManager() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
+                    <p className="text-sm text-slate-500 line-clamp-2">
                       {template.body_text}
                     </p>
                     {template.footer_text && (
-                      <p className="text-xs text-muted-foreground italic">
+                      <p className="text-xs text-slate-500 italic">
                         {template.footer_text}
                       </p>
                     )}
@@ -639,7 +646,7 @@ export function TemplateManager() {
                         onClick={() => openEdit(template)}
                         title="Editing triggers Meta re-review — status flips to PENDING."
                         aria-label="Edit template"
-                        className="text-foreground/80 hover:text-primary hover:bg-primary/10 h-8 px-2"
+                        className="text-slate-800/80 hover:text-primary hover:bg-primary/10 h-8 px-2"
                       >
                         <Pencil className="size-3.5" />
                         Edit
@@ -652,7 +659,7 @@ export function TemplateManager() {
                         onClick={() => openEdit(template)}
                         title="Edit the template and resubmit to Meta for review."
                         aria-label="Edit and resubmit template"
-                        className="text-foreground/80 hover:text-primary hover:bg-primary/10 h-8 px-2"
+                        className="text-slate-800/80 hover:text-primary hover:bg-primary/10 h-8 px-2"
                       >
                         <RotateCcw className="size-3.5" />
                         Resubmit
@@ -673,7 +680,7 @@ export function TemplateManager() {
                           ? 'Delete from Meta and locally'
                           : 'Delete locally'
                       }
-                      className="text-muted-foreground hover:text-red-400 hover:bg-red-950/30 h-8 w-8"
+                      className="text-slate-500 hover:text-red-400 hover:bg-red-950/30 h-8 w-8"
                     >
                       {deletingId === template.id ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -699,12 +706,12 @@ export function TemplateManager() {
           }
         }}
       >
-        <DialogContent className="bg-card border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="bg-white border-slate-200 sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-foreground">
+            <DialogTitle className="text-slate-800">
               {editingId ? 'Edit Message Template' : 'New Message Template'}
             </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
+            <DialogDescription className="text-slate-500">
               {editingId
                 ? 'Save your changes to re-submit to Meta. Status will flip back to PENDING during review.'
                 : 'Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.'}
@@ -725,15 +732,15 @@ export function TemplateManager() {
 
           <div className="space-y-4 py-2">
             <div className="space-y-2">
-              <Label className="text-foreground/80">Template Name</Label>
+              <Label className="text-slate-800/80">Template Name</Label>
               <Input
                 placeholder="e.g. order_confirmation"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 disabled={editingId !== null}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+                className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 disabled:opacity-60 disabled:cursor-not-allowed"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-slate-500">
                 {editingId
                   ? 'Name is fixed once a template exists on Meta — create a new template to change it.'
                   : 'Lowercase letters, digits, and underscores only.'}
@@ -742,7 +749,7 @@ export function TemplateManager() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label className="text-foreground/80">Category</Label>
+                <Label className="text-slate-800/80">Category</Label>
                 <Select
                   value={form.category}
                   onValueChange={(val) =>
@@ -752,15 +759,15 @@ export function TemplateManager() {
                     })
                   }
                 >
-                  <SelectTrigger className="w-full bg-muted border-border text-foreground">
+                  <SelectTrigger className="w-full bg-slate-100 border-slate-200 text-slate-800">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="bg-muted border-border">
+                  <SelectContent className="bg-slate-100 border-slate-200">
                     {CATEGORIES.map((cat) => (
                       <SelectItem
                         key={cat}
                         value={cat}
-                        className="text-foreground focus:bg-muted focus:text-foreground"
+                        className="text-slate-800 focus:bg-slate-100 focus:text-slate-800"
                       >
                         {cat}
                       </SelectItem>
@@ -770,7 +777,7 @@ export function TemplateManager() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-foreground/80">Language</Label>
+                <Label className="text-slate-800/80">Language</Label>
                 <Input
                   list="template-language-codes"
                   placeholder="en_US"
@@ -779,14 +786,14 @@ export function TemplateManager() {
                     setForm({ ...form, language: e.target.value })
                   }
                   disabled={editingId !== null}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 disabled:opacity-60 disabled:cursor-not-allowed"
                 />
                 <datalist id="template-language-codes">
                   {COMMON_LANGUAGE_CODES.map((code) => (
                     <option key={code} value={code} />
                   ))}
                 </datalist>
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-slate-500">
                   {editingId
                     ? 'Language is fixed once a template exists on Meta.'
                     : (
@@ -800,7 +807,7 @@ export function TemplateManager() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground/80">Header</Label>
+              <Label className="text-slate-800/80">Header</Label>
               <Select
                 value={form.header_format}
                 onValueChange={(val) =>
@@ -816,15 +823,15 @@ export function TemplateManager() {
                   })
                 }
               >
-                <SelectTrigger className="w-full bg-muted border-border text-foreground">
+                <SelectTrigger className="w-full bg-slate-100 border-slate-200 text-slate-800">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-muted border-border">
+                <SelectContent className="bg-slate-100 border-slate-200">
                   {HEADER_FORMATS.map((type) => (
                     <SelectItem
                       key={type}
                       value={type}
-                      className="text-foreground focus:bg-muted focus:text-foreground"
+                      className="text-slate-800 focus:bg-slate-100 focus:text-slate-800"
                     >
                       {type === 'none'
                         ? 'None'
@@ -845,7 +852,7 @@ export function TemplateManager() {
                       setForm({ ...form, header_content: e.target.value })
                     }
                     maxLength={TEMPLATE_LIMITS.headerTextMaxLength}
-                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                    className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500"
                   />
                   {headerVarCount > 0 && (
                     <Input
@@ -856,7 +863,7 @@ export function TemplateManager() {
                       onChange={(e) =>
                         setForm({ ...form, header_sample: e.target.value })
                       }
-                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                      className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500"
                     />
                   )}
                 </div>
@@ -885,7 +892,7 @@ export function TemplateManager() {
                       onChange={(e) =>
                         setForm({ ...form, header_media_url: e.target.value })
                       }
-                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground flex-1"
+                      className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 flex-1"
                     />
                     <Button
                       type="button"
@@ -893,7 +900,7 @@ export function TemplateManager() {
                       size="sm"
                       disabled={uploadingMedia}
                       onClick={() => mediaFileRef.current?.click()}
-                      className="shrink-0 border-border bg-transparent text-foreground/80 hover:bg-muted"
+                      className="shrink-0 border-slate-200 bg-transparent text-slate-800/80 hover:bg-slate-100"
                     >
                       {uploadingMedia ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -903,7 +910,7 @@ export function TemplateManager() {
                       Browse
                     </Button>
                   </div>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
                     Paste a public URL or browse to upload. Meta fetches it once during review — file must stay live for ~24 hrs.
                     {form.header_format === 'image' &&
                       ' Recommended: JPEG or PNG, ≥800×418 px, ≤5 MB.'}
@@ -918,14 +925,14 @@ export function TemplateManager() {
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-foreground/80">Body Text</Label>
+                <Label className="text-slate-800/80">Body Text</Label>
                 <div className="flex items-center gap-1">
                   {/* Formatting toolbar */}
                   <button
                     type="button"
                     title="Bold (*text*)"
                     onClick={() => insertFormatting('*')}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                   >
                     <Bold className="size-3.5" />
                   </button>
@@ -933,7 +940,7 @@ export function TemplateManager() {
                     type="button"
                     title="Italic (_text_)"
                     onClick={() => insertFormatting('_')}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                   >
                     <Italic className="size-3.5" />
                   </button>
@@ -941,7 +948,7 @@ export function TemplateManager() {
                     type="button"
                     title="Strikethrough (~text~)"
                     onClick={() => insertFormatting('~')}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                   >
                     <Strikethrough className="size-3.5" />
                   </button>
@@ -949,7 +956,7 @@ export function TemplateManager() {
                     type="button"
                     title="Monospace (```text```)"
                     onClick={() => insertFormatting('```')}
-                    className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                   >
                     <Code className="size-3.5" />
                   </button>
@@ -957,7 +964,7 @@ export function TemplateManager() {
                     type="button"
                     title="Expand editor"
                     onClick={() => setBodyEditorOpen(true)}
-                    className="ml-1 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    className="ml-1 rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                   >
                     <Maximize2 className="size-3.5" />
                   </button>
@@ -972,16 +979,16 @@ export function TemplateManager() {
                 }
                 rows={4}
                 maxLength={TEMPLATE_LIMITS.bodyMaxLength}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground resize-none font-mono text-sm"
+                className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 resize-none font-mono text-sm"
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[11px] text-slate-500">
                 Use {`{{1}}`}, {`{{2}}`} for variables (must be contiguous
                 starting at {`{{1}}`}).
               </p>
 
               {bodyVarCount > 0 && (
                 <div className="space-y-1.5 pt-1">
-                  <Label className="text-[11px] text-muted-foreground">
+                  <Label className="text-[11px] text-slate-500">
                     Sample values (Meta uses these to review your template)
                   </Label>
                   {form.body_samples.map((val, i) => {
@@ -998,7 +1005,7 @@ export function TemplateManager() {
                           next[i] = e.target.value;
                           setForm({ ...form, body_samples: next });
                         }}
-                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                        className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500"
                       />
                     );
                   })}
@@ -1007,7 +1014,7 @@ export function TemplateManager() {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-foreground/80">Footer (optional)</Label>
+              <Label className="text-slate-800/80">Footer (optional)</Label>
               <Input
                 placeholder="Optional footer text (max 60 chars)"
                 value={form.footer_text}
@@ -1015,27 +1022,27 @@ export function TemplateManager() {
                   setForm({ ...form, footer_text: e.target.value })
                 }
                 maxLength={TEMPLATE_LIMITS.footerMaxLength}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500"
               />
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-foreground/80">Buttons (optional)</Label>
+                <Label className="text-slate-800/80">Buttons (optional)</Label>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={addButton}
                   disabled={form.buttons.length >= TEMPLATE_LIMITS.maxButtonsTotal}
-                  className="border-border bg-transparent text-foreground/80 hover:bg-muted h-7 text-xs"
+                  className="border-slate-200 bg-transparent text-slate-800/80 hover:bg-slate-100 h-7 text-xs"
                 >
                   <Plus className="size-3" />
                   Add Button
                 </Button>
               </div>
               {form.buttons.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[11px] text-slate-500">
                   Up to {TEMPLATE_LIMITS.maxButtonsTotal} buttons. QUICK_REPLY
                   buttons must come before URL / phone / copy-code buttons.
                 </p>
@@ -1044,7 +1051,7 @@ export function TemplateManager() {
                   {form.buttons.map((btn, i) => (
                     <div
                       key={i}
-                      className="space-y-2 rounded border border-border bg-muted/50 p-2"
+                      className="space-y-2 rounded border border-slate-200 bg-slate-100 p-2"
                     >
                       <div className="flex items-center gap-2">
                         <Select
@@ -1057,37 +1064,37 @@ export function TemplateManager() {
                             changeButtonType(i, val as TemplateButton['type']);
                           }}
                         >
-                          <SelectTrigger className="w-40 bg-muted border-border text-foreground h-8 text-xs">
+                          <SelectTrigger className="w-40 bg-slate-100 border-slate-200 text-slate-800 h-8 text-xs">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent className="bg-muted border-border">
+                          <SelectContent className="bg-slate-100 border-slate-200">
                             <SelectItem
                               value="QUICK_REPLY"
-                              className="text-foreground focus:bg-muted focus:text-foreground"
+                              className="text-slate-800 focus:bg-slate-100 focus:text-slate-800"
                             >
                               Quick Reply
                             </SelectItem>
                             <SelectItem
                               value="URL"
-                              className="text-foreground focus:bg-muted focus:text-foreground"
+                              className="text-slate-800 focus:bg-slate-100 focus:text-slate-800"
                             >
                               URL
                             </SelectItem>
                             <SelectItem
                               value="PHONE_NUMBER"
-                              className="text-foreground focus:bg-muted focus:text-foreground"
+                              className="text-slate-800 focus:bg-slate-100 focus:text-slate-800"
                             >
                               Phone
                             </SelectItem>
                             <SelectItem
                               value="COPY_CODE"
-                              className="text-foreground focus:bg-muted focus:text-foreground"
+                              className="text-slate-800 focus:bg-slate-100 focus:text-slate-800"
                             >
                               Copy Code
                             </SelectItem>
                             <SelectItem
                               value="FLOW"
-                              className="text-foreground focus:bg-muted focus:text-foreground"
+                              className="text-slate-800 focus:bg-slate-100 focus:text-slate-800"
                             >
                               Complete Flow
                             </SelectItem>
@@ -1100,14 +1107,14 @@ export function TemplateManager() {
                           onChange={(e) =>
                             updateButton(i, { text: e.target.value })
                           }
-                          className="flex-1 bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-xs"
+                          className="flex-1 bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 h-8 text-xs"
                         />
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           onClick={() => removeButton(i)}
-                          className="text-muted-foreground hover:text-red-400 hover:bg-red-950/30 size-7"
+                          className="text-slate-500 hover:text-red-400 hover:bg-red-950/30 size-7"
                         >
                           <X className="size-3.5" />
                         </Button>
@@ -1120,7 +1127,7 @@ export function TemplateManager() {
                             onChange={(e) =>
                               updateButton(i, { url: e.target.value })
                             }
-                            className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-xs"
+                            className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 h-8 text-xs"
                           />
                           {extractVariableIndices(btn.url).length > 0 && (
                             <Input
@@ -1129,7 +1136,7 @@ export function TemplateManager() {
                               onChange={(e) =>
                                 updateButton(i, { example: e.target.value })
                               }
-                              className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-xs"
+                              className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 h-8 text-xs"
                             />
                           )}
                         </div>
@@ -1141,7 +1148,7 @@ export function TemplateManager() {
                           onChange={(e) =>
                             updateButton(i, { phone_number: e.target.value })
                           }
-                          className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-xs"
+                          className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 h-8 text-xs"
                         />
                       )}
                       {btn.type === 'COPY_CODE' && (
@@ -1151,13 +1158,13 @@ export function TemplateManager() {
                           onChange={(e) =>
                             updateButton(i, { example: e.target.value })
                           }
-                          className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-xs"
+                          className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 h-8 text-xs"
                         />
                       )}
                       {btn.type === 'FLOW' && (
                         <div className="space-y-1.5 pl-1">
                           <div>
-                            <Label className="text-xs text-muted-foreground mb-1 block">Select flow (published only)</Label>
+                            <Label className="text-xs text-slate-500 mb-1 block">Select flow (published only)</Label>
                             <Select
                               value={btn.flow_id || '__none__'}
                               onValueChange={(val) => {
@@ -1177,12 +1184,12 @@ export function TemplateManager() {
                                 }
                               }}
                             >
-                              <SelectTrigger className="h-8 text-xs bg-muted border-border text-foreground">
+                              <SelectTrigger className="h-8 text-xs bg-slate-100 border-slate-200 text-slate-800">
                                 <SelectValue placeholder="Choose a published flow…" />
                               </SelectTrigger>
-                              <SelectContent className="bg-muted border-border">
+                              <SelectContent className="bg-slate-100 border-slate-200">
                                 {metaFlows.length === 0 && (
-                                  <SelectItem value="__none__" disabled className="text-muted-foreground text-xs">
+                                  <SelectItem value="__none__" disabled className="text-slate-500 text-xs">
                                     No published flows — sync first
                                   </SelectItem>
                                 )}
@@ -1190,7 +1197,7 @@ export function TemplateManager() {
                                   <SelectItem
                                     key={f.metaFlowId}
                                     value={f.metaFlowId}
-                                    className="text-foreground focus:bg-muted focus:text-foreground text-xs"
+                                    className="text-slate-800 focus:bg-slate-100 focus:text-slate-800 text-xs"
                                   >
                                     {f.name}
                                   </SelectItem>
@@ -1201,7 +1208,7 @@ export function TemplateManager() {
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="mt-1 h-6 gap-1 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                              className="mt-1 h-6 gap-1 px-2 text-[10px] text-slate-500 hover:text-slate-800"
                               onClick={handleSyncFlows}
                               disabled={syncingFlows}
                             >
@@ -1216,7 +1223,7 @@ export function TemplateManager() {
                           {btn.flow_id && (
                             <>
                               <div>
-                                <Label className="text-xs text-muted-foreground mb-1 block">Flow starts with</Label>
+                                <Label className="text-xs text-slate-500 mb-1 block">Flow starts with</Label>
                                 <Select
                                   value={btn.flow_action === 'data_exchange' ? 'data_exchange' : 'navigate'}
                                   onValueChange={(val) => {
@@ -1228,14 +1235,14 @@ export function TemplateManager() {
                                     }
                                   }}
                                 >
-                                  <SelectTrigger className="h-8 text-xs bg-muted border-border text-foreground">
+                                  <SelectTrigger className="h-8 text-xs bg-slate-100 border-slate-200 text-slate-800">
                                     <SelectValue />
                                   </SelectTrigger>
-                                  <SelectContent className="bg-muted border-border">
-                                    <SelectItem value="navigate" className="text-foreground focus:bg-muted focus:text-foreground text-xs">
+                                  <SelectContent className="bg-slate-100 border-slate-200">
+                                    <SelectItem value="navigate" className="text-slate-800 focus:bg-slate-100 focus:text-slate-800 text-xs">
                                       Pre-defined screen
                                     </SelectItem>
-                                    <SelectItem value="data_exchange" className="text-foreground focus:bg-muted focus:text-foreground text-xs">
+                                    <SelectItem value="data_exchange" className="text-slate-800 focus:bg-slate-100 focus:text-slate-800 text-xs">
                                       Network request
                                     </SelectItem>
                                   </SelectContent>
@@ -1243,7 +1250,7 @@ export function TemplateManager() {
                               </div>
                               {(btn.flow_action ?? 'navigate') === 'navigate' && (
                                 <div>
-                                  <Label className="text-xs text-muted-foreground mb-1 block">Screen</Label>
+                                  <Label className="text-xs text-slate-500 mb-1 block">Screen</Label>
                                   {flowScreens[btn.flow_id]?.length ? (
                                     <Select
                                       value={btn.navigate_screen || '__first__'}
@@ -1252,18 +1259,18 @@ export function TemplateManager() {
                                         updateButton(i, { navigate_screen: val === '__first__' ? '' : val });
                                       }}
                                     >
-                                      <SelectTrigger className="h-8 text-xs bg-muted border-border text-foreground">
+                                      <SelectTrigger className="h-8 text-xs bg-slate-100 border-slate-200 text-slate-800">
                                         <SelectValue placeholder="Select screen…" />
                                       </SelectTrigger>
-                                      <SelectContent className="bg-muted border-border">
-                                        <SelectItem value="__first__" className="text-muted-foreground text-xs">
+                                      <SelectContent className="bg-slate-100 border-slate-200">
+                                        <SelectItem value="__first__" className="text-slate-500 text-xs">
                                           — first screen (default) —
                                         </SelectItem>
                                         {flowScreens[btn.flow_id].map((screenId) => (
                                           <SelectItem
                                             key={screenId}
                                             value={screenId}
-                                            className="text-foreground focus:bg-muted focus:text-foreground text-xs"
+                                            className="text-slate-800 focus:bg-slate-100 focus:text-slate-800 text-xs"
                                           >
                                             {screenId}
                                           </SelectItem>
@@ -1277,7 +1284,7 @@ export function TemplateManager() {
                                       onChange={(e) =>
                                         updateButton(i, { navigate_screen: e.target.value })
                                       }
-                                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-xs"
+                                      className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 h-8 text-xs"
                                     />
                                   )}
                                 </div>
@@ -1293,11 +1300,11 @@ export function TemplateManager() {
             </div>
           </div>
 
-          <DialogFooter className="bg-card border-border">
+          <DialogFooter className="bg-white border-slate-200">
             <Button
               variant="outline"
               onClick={() => setDialogOpen(false)}
-              className="border-border text-foreground/80 hover:bg-muted"
+              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
             >
               Cancel
             </Button>
@@ -1323,14 +1330,14 @@ export function TemplateManager() {
 
       {/* Body text full-screen editor */}
       <Dialog open={bodyEditorOpen} onOpenChange={setBodyEditorOpen}>
-        <DialogContent className="bg-card border-border sm:max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogContent className="bg-white border-slate-200 sm:max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Edit Body Text</DialogTitle>
-            <DialogDescription className="text-muted-foreground text-xs">
+            <DialogTitle className="text-slate-800">Edit Body Text</DialogTitle>
+            <DialogDescription className="text-slate-500 text-xs">
               Use *bold*, _italic_, ~strikethrough~, ```mono```. Variables: {`{{1}}`} {`{{2}}`}…
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-1 border-b border-border pb-2">
+          <div className="flex items-center gap-1 border-b border-slate-200 pb-2">
             {([['*', 'Bold', Bold], ['_', 'Italic', Italic], ['~', 'Strike', Strikethrough], ['```', 'Mono', Code]] as const).map(([marker, label, Icon]) => (
               <button
                 key={marker}
@@ -1350,7 +1357,7 @@ export function TemplateManager() {
                     el.setSelectionRange(c, c);
                   });
                 }}
-                className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               >
                 <Icon className="size-3.5" />
                 {label}
@@ -1362,11 +1369,11 @@ export function TemplateManager() {
             value={form.body_text}
             onChange={(e) => setForm((p) => ({ ...p, body_text: e.target.value }))}
             maxLength={TEMPLATE_LIMITS.bodyMaxLength}
-            className="flex-1 min-h-[300px] bg-muted border-border text-foreground placeholder:text-muted-foreground font-mono text-sm resize-none"
+            className="flex-1 min-h-[300px] bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500 font-mono text-sm resize-none"
             placeholder="Hello {{1}}, your order {{2}} is confirmed."
           />
           <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-[11px] text-slate-500">
               {form.body_text.length} / {TEMPLATE_LIMITS.bodyMaxLength}
             </span>
             <Button
@@ -1388,28 +1395,28 @@ export function TemplateManager() {
           if (!open) setTemplateToDelete(null);
         }}
       >
-        <DialogContent className="bg-card border-border sm:max-w-sm">
+        <DialogContent className="bg-white border-slate-200 sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Delete template?</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
+            <DialogTitle className="text-slate-800">Delete template?</DialogTitle>
+            <DialogDescription className="text-slate-500">
               {templateToDelete?.meta_template_id
                 ? `"${templateToDelete?.name}" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.`
                 : `"${templateToDelete?.name}" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.`}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="bg-card border-border">
+          <DialogFooter className="bg-white border-slate-200">
             <Button
               variant="outline"
               onClick={() => setTemplateToDelete(null)}
               disabled={deletingId !== null}
-              className="border-border text-foreground/80 hover:bg-muted"
+              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
             >
               Cancel
             </Button>
             <Button
               onClick={confirmDelete}
               disabled={deletingId !== null}
-              className="bg-red-600 hover:bg-red-700 text-foreground"
+              className="bg-red-600 hover:bg-red-700 text-slate-800"
             >
               {deletingId !== null ? (
                 <>

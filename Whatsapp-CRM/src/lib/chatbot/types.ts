@@ -17,12 +17,15 @@ export type ChatbotNodeType =
   | 'set_variable'
   | 'set_tag'
   | 'update_contact'
+  | 'crm_action'
   | 'handoff'
   | 'end'
   | 'link_chatbot'
   | 'send_flow'
   | 'send_template'
   | 'join'
+  | 'switch_case'
+  | 'send_to_number'
 
 // ─── Shared primitives ──────────────────────────────────────────
 
@@ -67,6 +70,8 @@ export interface SendButtonsNodeCfg {
   footer_text?: string
   /** 1–3 buttons (Meta cap) */
   buttons: ChatbotButton[]
+  /** Optional: save the tapped button's title to this variable key */
+  save_reply_to?: string
 }
 
 export interface SendListNodeCfg {
@@ -76,6 +81,8 @@ export interface SendListNodeCfg {
   footer_text?: string
   /** ≤ 10 rows total across all sections */
   sections: ChatbotListSection[]
+  /** Optional: save the selected row's title to this variable key */
+  save_reply_to?: string
 }
 
 export interface SendMediaNodeCfg {
@@ -175,9 +182,48 @@ export interface UpdateContactNodeCfg {
   next_node_key: string
 }
 
+export type CrmSubAction = 'create_lead' | 'add_to_segment' | 'create_followup' | 'create_task'
+
+export interface CrmActionNodeCfg {
+  /** Which CRM operation to perform */
+  action: CrmSubAction
+  next_node_key: string
+
+  // ── create_lead ─────────────────────────────────────────────────
+  /** Lead title — supports {{vars.x}} interpolation; falls back to contact name */
+  lead_title?: string
+  lead_source?: string   // manual | whatsapp_flow | import | broadcast | referral
+  lead_status?: string   // new | contacted | qualified | converted | lost
+  lead_score?: string    // hot | warm | cold
+  lead_assigned_to?: string  // user_id
+  /** "upsert" (default) = update existing lead for contact if found, else create.
+   *  "create_new" = always create a fresh lead regardless. */
+  lead_mode?: 'upsert' | 'create_new'
+
+  // ── add_to_segment ──────────────────────────────────────────────
+  segment_id?: string
+
+  // ── create_followup ─────────────────────────────────────────────
+  followup_title?: string      // supports {{vars.x}}
+  followup_note?: string
+  /** Hours from now when the follow-up is due (default 24) */
+  followup_due_hours?: number
+  followup_assigned_to?: string
+
+  // ── create_task ─────────────────────────────────────────────────
+  task_title?: string          // supports {{vars.x}}
+  task_description?: string
+  task_priority?: string       // low | medium | high | urgent
+  /** Days from now when the task is due (default 1) */
+  task_due_days?: number
+  task_assigned_to?: string
+}
+
 export interface HandoffNodeCfg {
   note?: string
-  assign_to_user_id?: string    // optional specific agent
+  assign_to?: string            // user_id of the agent to assign
+  notify_message?: string       // WhatsApp message sent to the agent's registered number
+  timeout_hours?: number        // optional: auto-reopen conversation after N hours (0 = no timeout)
 }
 
 export interface EndNodeCfg {
@@ -215,6 +261,36 @@ export interface JoinNodeCfg {
   next_node_key: string
 }
 
+export interface SwitchCaseBranch {
+  /** Exact value to match against the variable (string comparison) */
+  value: string
+  /** Optional display label shown on the canvas handle */
+  label?: string
+  next_node_key: string
+}
+
+export interface SendToNumberNodeCfg {
+  /**
+   * Destination phone number in E.164 or local format.
+   * Supports {{vars.x}} interpolation so you can collect it from the user.
+   * Example: "+919876543210" or "{{vars.admin_phone}}"
+   */
+  phone: string
+  /** Message text — supports {{vars.x}} and {{contact.x}} interpolation */
+  text: string
+  next_node_key: string
+}
+
+export interface SwitchCaseNodeCfg {
+  /** Variable key to switch on — stored without {{vars.}} wrapper, e.g. "choice" */
+  variable: string
+  /** Default false — uppercase/lowercase treated as equal */
+  case_sensitive?: boolean
+  cases: SwitchCaseBranch[]
+  /** Node to go to when no case matches */
+  default_next: string
+}
+
 // ─── Discriminated union ────────────────────────────────────────
 
 export type ChatbotNodeConfig =
@@ -231,12 +307,15 @@ export type ChatbotNodeConfig =
   | ({ node_type: 'set_variable' } & SetVariableNodeCfg)
   | ({ node_type: 'set_tag' } & SetTagNodeCfg)
   | ({ node_type: 'update_contact' } & UpdateContactNodeCfg)
+  | ({ node_type: 'crm_action' } & CrmActionNodeCfg)
   | ({ node_type: 'handoff' } & HandoffNodeCfg)
   | ({ node_type: 'end' } & EndNodeCfg)
   | ({ node_type: 'link_chatbot' } & LinkChatbotNodeCfg)
   | ({ node_type: 'send_flow' } & SendFlowNodeCfg)
   | ({ node_type: 'send_template' } & SendTemplateNodeCfg)
   | ({ node_type: 'join' } & JoinNodeCfg)
+  | ({ node_type: 'switch_case' } & SwitchCaseNodeCfg)
+  | ({ node_type: 'send_to_number' } & SendToNumberNodeCfg)
 
 // ─── Builder node (client state) ───────────────────────────────
 
@@ -274,8 +353,8 @@ export interface KeywordTriggerConfig {
 export const CHATBOT_NODE_TYPES = [
   'start', 'send_text', 'send_buttons', 'send_list', 'send_media',
   'collect_input', 'condition', 'ai_reply', 'http_request', 'delay',
-  'set_variable', 'set_tag', 'update_contact', 'handoff', 'end',
-  'link_chatbot', 'send_flow', 'send_template', 'join',
+  'set_variable', 'set_tag', 'update_contact', 'crm_action', 'handoff', 'end',
+  'link_chatbot', 'send_flow', 'send_template', 'join', 'switch_case', 'send_to_number',
 ] as const satisfies readonly ChatbotNodeType[]
 
 export function isChatbotNodeType(v: unknown): v is ChatbotNodeType {
@@ -298,11 +377,22 @@ export function defaultConfigFor(type: ChatbotNodeType): Record<string, unknown>
     case 'set_variable': return { assignments: [{ var_key: '', value: '' }], next_node_key: '' }
     case 'set_tag':      return { mode: 'add', tag_id: '', next_node_key: '' }
     case 'update_contact': return { field: 'name', value: '', next_node_key: '' }
-    case 'handoff':      return { note: '' }
+    case 'crm_action':  return { action: 'create_lead', lead_title: '', lead_source: 'whatsapp', lead_status: 'new', lead_score: 'warm', next_node_key: '' }
+    case 'handoff':      return { note: '', assign_to: '', notify_message: '' }
     case 'end':          return { close_conversation: false }
     case 'link_chatbot': return { target_chatbot_id: '', target_chatbot_name: '' }
     case 'send_flow':    return { flow_id: '', flow_name: '', button_text: 'Open form', next_node_key: '' }
     case 'send_template': return { template_name: '', language_code: 'en_US', body_params: '', next_node_key: '' }
     case 'join':          return { label: '', next_node_key: '' }
+    case 'switch_case':   return {
+      variable: '',
+      case_sensitive: false,
+      cases: [
+        { value: '1', label: 'Option 1', next_node_key: '' },
+        { value: '2', label: 'Option 2', next_node_key: '' },
+      ],
+      default_next: '',
+    }
+    case 'send_to_number': return { phone: '', text: '', next_node_key: '' }
   }
 }

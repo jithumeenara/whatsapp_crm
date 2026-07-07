@@ -31,7 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       include: {
         contact: { select: { id: true, name: true, phone: true } },
         lead: { select: { id: true, title: true } },
-        assignee: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
 

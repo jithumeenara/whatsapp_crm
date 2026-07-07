@@ -21,8 +21,10 @@ export interface PlaygroundMsg {
   buttons?: Array<{ id: string; label: string; nextKey: string }>
   /** Rendered as a scrollable list picker */
   listOptions?: Array<{ id: string; label: string; description?: string; nextKey: string }>
+  /** If set, the selected button/list option's title is saved to this variable key */
+  saveVarKey?: string
   /** 'input' waits for the user to type a free-text reply */
-  awaitInput?: { varKey: string; nextKey: string; inputType: string }
+  awaitInput?: { varKey: string; nextKey: string; inputType: string; errorMessage?: string }
   /** Shows a media preview */
   media?: { type: string; url: string; caption?: string; filename?: string }
   /** Is this the last message? */
@@ -52,7 +54,11 @@ function interp(template: string, vars: Record<string, string>): string {
   return template
     .replace(/\{\{vars\.([^}]+)\}\}/g, (_, k) => vars[k] ?? `{{vars.${k}}}`)
     .replace(/\{\{contact\.([^}]+)\}\}/g, (_, k) => vars[`contact.${k}`] ?? `{{contact.${k}}}`)
-    // Short form {{name}} → resolves to vars.name if available
+    // Short forms: {{name}} → contact.name, {{phone}}/{{number}} → contact.phone
+    .replace(/\{\{name\}\}/gi, vars['contact.name'] ?? '{{name}}')
+    .replace(/\{\{phone\}\}/gi, vars['contact.phone'] ?? '{{phone}}')
+    .replace(/\{\{number\}\}/gi, vars['contact.phone'] ?? '{{number}}')
+    // Generic short form {{key}} → vars[key] if available
     .replace(/\{\{([^}.]+)\}\}/g, (match, k) => vars[k] ?? match)
 }
 
@@ -184,11 +190,15 @@ export function runUntilInteractive(
               nextKey: String(b.next_node_key ?? ''),
             }))
           : []
+        const btnSaveVar = typeof cfg.save_reply_to === 'string' && cfg.save_reply_to.trim()
+          ? cfg.save_reply_to.trim()
+          : undefined
         state.msgs.push({
           id: uid(),
           role: 'bot',
           text: interp(typeof cfg.text === 'string' ? cfg.text : 'Choose an option:', state.vars),
           buttons,
+          saveVarKey: btnSaveVar,
         })
         // Stop — wait for user button click
         state.currentKey = null
@@ -211,11 +221,15 @@ export function runUntilInteractive(
             })
           }
         }
+        const listSaveVar = typeof cfg.save_reply_to === 'string' && cfg.save_reply_to.trim()
+          ? cfg.save_reply_to.trim()
+          : undefined
         state.msgs.push({
           id: uid(),
           role: 'bot',
           text: interp(typeof cfg.text === 'string' ? cfg.text : 'Select an option:', state.vars),
           listOptions,
+          saveVarKey: listSaveVar,
         })
         state.currentKey = null
         return state
@@ -238,6 +252,11 @@ export function runUntilInteractive(
           state.vars,
         ) + (promptSuffix[inputType] ?? '')
 
+        const validation = cfg.validation as Record<string, unknown> | undefined
+        const customErrorMsg = typeof validation?.error_message === 'string' && validation.error_message.trim()
+          ? validation.error_message.trim()
+          : undefined
+
         state.msgs.push({
           id: uid(),
           role: 'bot',
@@ -246,6 +265,7 @@ export function runUntilInteractive(
             varKey: typeof cfg.var_key === 'string' ? cfg.var_key : 'input',
             nextKey: String(cfg.next_node_key ?? ''),
             inputType,
+            errorMessage: customErrorMsg,
           },
         })
         state.currentKey = null
@@ -431,6 +451,37 @@ export function runUntilInteractive(
         break
       }
 
+      case 'switch_case': {
+        const variable = typeof cfg.variable === 'string' ? cfg.variable : ''
+        const caseSensitive = cfg.case_sensitive === true
+        // Resolve the variable value (stored as plain key, e.g. "choice")
+        const rawValue = variable ? (state.vars[variable] ?? '') : ''
+        const matchValue = caseSensitive ? rawValue : rawValue.toLowerCase()
+
+        const cases = Array.isArray(cfg.cases)
+          ? (cfg.cases as Array<Record<string, unknown>>)
+          : []
+        const matched = cases.find((c) => {
+          const caseVal = typeof c.value === 'string' ? c.value : ''
+          return caseSensitive ? caseVal === rawValue : caseVal.toLowerCase() === matchValue
+        })
+
+        key = next(matched ? matched.next_node_key : cfg.default_next)
+        break
+      }
+
+      case 'send_to_number': {
+        const phone = interp(typeof cfg.phone === 'string' ? cfg.phone : '(no number)', state.vars)
+        const text = interp(typeof cfg.text === 'string' ? cfg.text : '', state.vars)
+        state.msgs.push({
+          id: uid(),
+          role: 'system',
+          text: `📲 Notification sent to ${phone}${text ? `: "${text}"` : ''}`,
+        })
+        key = next(cfg.next_node_key)
+        break
+      }
+
       default:
         key = null
     }
@@ -456,9 +507,11 @@ export function applyButtonTap(
   state: PlaygroundState,
   buttonLabel: string,
   nextKey: string,
+  saveVarKey?: string,
 ): PlaygroundState {
   const withUserMsg: PlaygroundState = {
     ...state,
+    vars: saveVarKey ? { ...state.vars, [saveVarKey]: buttonLabel } : state.vars,
     msgs: [
       ...state.msgs,
       { id: uid(), role: 'user', text: buttonLabel },
@@ -473,9 +526,11 @@ export function applyListSelect(
   state: PlaygroundState,
   optionLabel: string,
   nextKey: string,
+  saveVarKey?: string,
 ): PlaygroundState {
   const withUserMsg: PlaygroundState = {
     ...state,
+    vars: saveVarKey ? { ...state.vars, [saveVarKey]: optionLabel } : state.vars,
     msgs: [
       ...state.msgs,
       { id: uid(), role: 'user', text: optionLabel },
@@ -485,13 +540,55 @@ export function applyListSelect(
 }
 
 /** Apply a free-text user input, storing it in vars. */
+const SIM_VALIDATION_ERRORS: Record<string, string> = {
+  number:  'Please enter a valid number.',
+  email:   'Please enter a valid email address.',
+  website: 'Please enter a valid website URL (e.g. https://example.com).',
+  date:    'Please enter a date in YYYY-MM-DD format.',
+  time:    'Please enter a time in HH:MM format.',
+  phone:   'Please enter a valid phone number.',
+}
+
+function simValidate(inputType: string, value: string): boolean {
+  const v = value.trim()
+  switch (inputType) {
+    case 'number':  return v !== '' && !isNaN(Number(v))
+    case 'email':   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
+    case 'website': return /^(https?:\/\/|www\.).+\..+/.test(v)
+    case 'date':    return /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v))
+    case 'time':    return /^\d{1,2}:\d{2}(:\d{2})?$/.test(v)
+    case 'phone':   return /^[\d\s+\-().]{6,}$/.test(v)
+    default:        return true
+  }
+}
+
 export function applyTextInput(
   nodes: ChatbotBuilderNode[],
   state: PlaygroundState,
   text: string,
   varKey: string,
   nextKey: string,
+  inputType = 'text',
+  errorMessage?: string,
 ): PlaygroundState {
+  // Validate before accepting
+  if (!simValidate(inputType, text)) {
+    const errMsg = errorMessage || SIM_VALIDATION_ERRORS[inputType] || 'Invalid input. Please try again.'
+    const lastMsg = state.msgs[state.msgs.length - 1]
+    return {
+      ...state,
+      msgs: [
+        ...state.msgs,
+        { id: uid(), role: 'user', text },
+        { id: uid(), role: 'bot', text: errMsg },
+        // Re-show the same awaitInput prompt so the user can try again
+        ...(lastMsg?.awaitInput
+          ? [{ ...lastMsg, id: uid() }]
+          : []),
+      ],
+    }
+  }
+
   const withUserMsg: PlaygroundState = {
     ...state,
     vars: { ...state.vars, [varKey]: text },

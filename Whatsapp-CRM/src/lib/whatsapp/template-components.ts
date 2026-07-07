@@ -163,9 +163,16 @@ export function buildMetaTemplatePayload(
   const buttons = buildButtonsComponent(payload);
   if (buttons) components.push(buttons);
 
+  const metaCategory = CATEGORY_TO_META[payload.category as keyof typeof CATEGORY_TO_META]
+  if (!metaCategory) {
+    throw new Error(
+      `Unknown template category "${payload.category}". Expected Marketing, Utility, or Authentication.`,
+    )
+  }
+
   return {
     name: payload.name,
-    category: CATEGORY_TO_META[payload.category],
+    category: metaCategory,
     language: payload.language,
     components,
   };

@@ -1,295 +1,332 @@
-'use client'
+"use client"
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback } from "react"
+import { toast } from "sonner"
 import {
-  CheckSquare, Plus, MoreHorizontal, Loader2, AlertTriangle,
-  ArrowUp, Minus, ArrowDown, CheckCircle2,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { toast } from 'sonner'
+  CheckSquare, Plus, Check, Clock, AlertTriangle, MoreHorizontal,
+  Flame, ArrowUp, ArrowRight, ArrowDown, X,
+} from "lucide-react"
+
+const TASK_PRIORITIES = ["urgent", "high", "medium", "low"] as const
+
+function TaskFormDialog({ open, onOpenChange, onSave }: { open: boolean; onOpenChange: (v: boolean) => void; onSave: () => void }) {
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ title: "", description: "", priority: "medium", due_at: "" })
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const res = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, due_at: form.due_at || undefined }) })
+      if (!res.ok) throw new Error((await res.json() as { error?: string }).error ?? "Failed")
+      toast.success("Task created")
+      onOpenChange(false); onSave(); setForm({ title: "", description: "", priority: "medium", due_at: "" })
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed") }
+    finally { setSaving(false) }
+  }
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+        <h2 className="text-[15px] font-semibold text-slate-900 mb-4">New Task</h2>
+        <form onSubmit={submit} className="space-y-4">
+          <div>
+            <label className="block text-[12px] font-medium text-slate-600 mb-1">Title</label>
+            <input required placeholder="Task title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-slate-600 mb-1">Priority</label>
+            <select value={form.priority} onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none">
+              {TASK_PRIORITIES.map((p) => <option key={p} value={p} className="capitalize">{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-slate-600 mb-1">Due Date (optional)</label>
+            <input type="datetime-local" value={form.due_at} onChange={(e) => setForm((f) => ({ ...f, due_at: e.target.value }))}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
+          </div>
+          <div>
+            <label className="block text-[12px] font-medium text-slate-600 mb-1">Description (optional)</label>
+            <textarea rows={2} placeholder="Details…" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={() => onOpenChange(false)} className="flex-1 rounded-lg border border-slate-200 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={saving} className="flex-1 rounded-lg bg-indigo-600 py-2 text-[13px] font-medium text-white hover:bg-indigo-700 disabled:opacity-50">{saving ? "Saving…" : "Create Task"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function cn(...c: (string | boolean | undefined | null)[]) {
+  return c.filter(Boolean).join(" ")
+}
 
 interface Task {
   id: string
   title: string
-  description: string | null
-  priority: string
-  status: string
-  due_date: string | null
-  created_at: string
-  contact: { id: string; name: string | null; phone: string } | null
-  lead: { id: string; title: string } | null
-  assignee: { id: string; name: string | null; email: string } | null
+  description?: string | null
+  priority: "urgent" | "high" | "medium" | "low"
+  status: "pending" | "in_progress" | "done" | "cancelled"
+  due_at?: string | null
+  contact?: { name?: string | null; phone: string } | null
+  lead?: { title: string } | null
+  assigned_to_user?: { profile?: { full_name: string } | null } | null
 }
 
-const PRIORITY_ICONS: Record<string, React.ReactNode> = {
-  urgent: <AlertTriangle className="size-3.5 text-red-500" />,
-  high: <ArrowUp className="size-3.5 text-orange-500" />,
-  medium: <Minus className="size-3.5 text-amber-500" />,
-  low: <ArrowDown className="size-3.5 text-blue-400" />,
+type FilterKey = "pending" | "in_progress" | "done" | "all"
+
+const PRIORITY_CONFIG = {
+  urgent: { label: "Urgent",   color: "bg-rose-50 text-rose-700 border-rose-100",   icon: <Flame className="h-3 w-3" /> },
+  high:   { label: "High",     color: "bg-orange-50 text-orange-700 border-orange-100", icon: <ArrowUp className="h-3 w-3" /> },
+  medium: { label: "Medium",   color: "bg-amber-50 text-amber-700 border-amber-100",    icon: <ArrowRight className="h-3 w-3" /> },
+  low:    { label: "Low",      color: "bg-slate-50 text-slate-500 border-slate-200",    icon: <ArrowDown className="h-3 w-3" /> },
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  todo: 'bg-muted text-muted-foreground border-border',
-  in_progress: 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-  done: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
-  cancelled: 'bg-muted text-muted-foreground/60 border-border',
+const STATUS_CONFIG = {
+  pending:     { label: "Pending",     color: "bg-amber-50 text-amber-700 border-amber-100" },
+  in_progress: { label: "In Progress", color: "bg-sky-50 text-sky-700 border-sky-100" },
+  done:        { label: "Done",        color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
+  cancelled:   { label: "Cancelled",   color: "bg-slate-100 text-slate-500 border-slate-200" },
 }
 
-const PRIORITIES = ['urgent', 'high', 'medium', 'low']
-const STATUSES = ['todo', 'in_progress', 'done', 'cancelled']
-
-function TaskFormDialog({
-  open, onOpenChange, onSave,
-}: { open: boolean; onOpenChange: (v: boolean) => void; onSave: () => void }) {
-  const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ title: '', description: '', priority: 'medium', status: 'todo', due_date: '' })
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const res = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, due_date: form.due_date || undefined }),
-      })
-      if (!res.ok) throw new Error((await res.json() as { error?: string }).error ?? 'Failed')
-      toast.success('Task created')
-      onOpenChange(false)
-      onSave()
-      setForm({ title: '', description: '', priority: 'medium', status: 'todo', due_date: '' })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-card">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <CheckSquare className="size-4 text-primary" /> New Task
-          </DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Title *</label>
-            <Input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} placeholder="e.g. Send proposal to client" required />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Priority</label>
-              <select
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={form.priority}
-                onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
-              >
-                {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Status</label>
-              <select
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={form.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-              >
-                {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Due Date</label>
-            <Input type="date" value={form.due_date} onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))} />
-          </div>
-          <div className="space-y-1">
-            <label className="text-sm font-medium">Description</label>
-            <textarea
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[64px] resize-none"
-              value={form.description}
-              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Task details..."
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving} className="gap-2">
-              {saving && <Loader2 className="size-4 animate-spin" />} Create
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
+function isOverdue(due?: string | null, status?: string) {
+  if (!due || status === "done" || status === "cancelled") return false
+  return new Date(due) < new Date()
 }
 
-export default function TasksPage() {
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en", { month: "short", day: "numeric" })
+}
+
+export default function TasksV2() {
   const [tasks, setTasks] = useState<Task[]>([])
-  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('todo')
-  const [priorityFilter, setPriorityFilter] = useState('')
+  const [filter, setFilter] = useState<FilterKey>("pending")
   const [createOpen, setCreateOpen] = useState(false)
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
-  const fetchTasks = useCallback(async () => {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      if (statusFilter) params.set('status', statusFilter)
-      if (priorityFilter) params.set('priority', priorityFilter)
-      const res = await fetch(`/api/tasks?${params}`)
-      const data = await res.json() as { tasks: Task[]; total: number }
-      setTasks(data.tasks ?? [])
-      setTotal(data.total ?? 0)
+      if (filter !== "all") params.set("status", filter)
+      const data = await fetch(`/api/tasks?${params}`).then((r) => r.json())
+      setTasks(Array.isArray(data) ? data : (data?.tasks ?? []))
+    } catch {
+      toast.error("Failed to load tasks")
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, priorityFilter])
+  }, [filter])
 
-  useEffect(() => { void fetchTasks() }, [fetchTasks])
+  useEffect(() => { load() }, [load])
 
-  const updateStatus = async (id: string, status: string) => {
-    await fetch(`/api/tasks/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    })
-    void fetchTasks()
+  async function markDone(id: string) {
+    try {
+      await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "done" }),
+      })
+      toast.success("Task completed!")
+      load()
+    } catch {
+      toast.error("Failed to update")
+    }
   }
 
-  const deleteTask = async (id: string) => {
-    if (!confirm('Delete this task?')) return
-    await fetch(`/api/tasks/${id}`, { method: 'DELETE' })
-    toast.success('Task deleted')
-    void fetchTasks()
+  async function deleteTask(id: string) {
+    try {
+      await fetch(`/api/tasks/${id}`, { method: "DELETE" })
+      toast.success("Task deleted")
+      load()
+    } catch {
+      toast.error("Failed to delete")
+    }
   }
 
-  const isOverdue = (task: Task) =>
-    task.status !== 'done' && task.status !== 'cancelled' && task.due_date && new Date(task.due_date) < new Date()
+  const FILTERS: { key: FilterKey; label: string }[] = [
+    { key: "pending",     label: "Pending" },
+    { key: "in_progress", label: "In Progress" },
+    { key: "done",        label: "Done" },
+    { key: "all",         label: "All" },
+  ]
+
+  const priorityOrder = ["urgent", "high", "medium", "low"]
+  const sorted = [...tasks].sort((a, b) =>
+    priorityOrder.indexOf(a.priority) - priorityOrder.indexOf(b.priority),
+  )
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <CheckSquare className="size-6 text-primary" /> Tasks
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{total} task{total !== 1 ? 's' : ''}</p>
+    <div className="min-h-full">
+      {/* Header */}
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-6 py-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
+              <CheckSquare className="h-4 w-4 text-violet-600" />
+            </div>
+            <div>
+              <h1 className="text-[15px] font-semibold text-slate-900">Tasks</h1>
+              <p className="text-[11px] text-slate-500">{loading ? "Loading…" : `${tasks.length} task${tasks.length !== 1 ? "s" : ""}`}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-indigo-700 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" /> New Task
+          </button>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2 self-start sm:self-auto">
-          <Plus className="size-4" /> New Task
-        </Button>
-      </div>
 
-      <div className="flex flex-wrap gap-2">
-        <div className="flex gap-1">
-          {['', 'todo', 'in_progress', 'done', 'cancelled'].map((s) => (
+        <div className="mt-3 flex gap-0.5">
+          {FILTERS.map((f) => (
             <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                statusFilter === s ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              }`}
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                filter === f.key ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
+              )}
             >
-              {s === '' ? 'All' : s.replace('_', ' ')}
+              {f.label}
             </button>
           ))}
         </div>
-        <select
-          className="rounded-full border border-input bg-background px-3 py-1 text-sm"
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-        >
-          <option value="">All Priority</option>
-          {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : tasks.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-16 text-center">
-          <CheckSquare className="mx-auto size-10 text-muted-foreground/40 mb-3" />
-          <p className="text-sm font-medium text-muted-foreground">No tasks</p>
-          <Button className="mt-4 gap-2" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-4" /> New Task
-          </Button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {tasks.map((task) => {
-            const overdue = isOverdue(task)
+      <div className="p-6 space-y-2">
+        {loading ? (
+          [...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl border border-slate-100 p-4 animate-pulse">
+              <div className="flex items-start gap-3">
+                <div className="h-5 w-5 rounded-full bg-slate-100 shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 w-3/4 rounded bg-slate-100" />
+                  <div className="h-3 w-1/2 rounded bg-slate-100" />
+                </div>
+              </div>
+            </div>
+          ))
+        ) : sorted.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 mb-4">
+              <CheckSquare className="h-7 w-7 text-slate-400" />
+            </div>
+            <p className="text-[14px] font-semibold text-slate-700">No tasks</p>
+            <p className="mt-1 text-[12px] text-slate-400">Create a task to track your work</p>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="mt-4 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-indigo-700 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" /> New Task
+            </button>
+          </div>
+        ) : (
+          sorted.map((task) => {
+            const pri = PRIORITY_CONFIG[task.priority]
+            const stat = STATUS_CONFIG[task.status]
+            const overdue = isOverdue(task.due_at, task.status)
+
             return (
               <div
                 key={task.id}
-                className={`rounded-xl border p-4 flex items-start gap-3 transition-colors ${
-                  overdue ? 'border-red-500/30 bg-red-500/5' : 'border-border bg-card hover:bg-muted/20'
-                }`}
+                className={cn(
+                  "bg-white rounded-xl border p-4 transition-shadow",
+                  overdue ? "border-rose-200 bg-rose-50/20" : "border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)]",
+                )}
               >
-                <button
-                  onClick={() => updateStatus(task.id, task.status === 'done' ? 'todo' : 'done')}
-                  className="mt-0.5 shrink-0"
-                >
-                  <CheckCircle2 className={`size-5 ${task.status === 'done' ? 'text-emerald-500' : 'text-muted-foreground/40 hover:text-emerald-400'} transition-colors`} />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start gap-2 justify-between">
-                    <p className={`font-medium ${task.status === 'done' ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
-                      {task.title}
-                    </p>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="inline-flex items-center gap-1 text-xs font-medium capitalize">
-                        {PRIORITY_ICONS[task.priority]} {task.priority}
-                      </span>
-                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[task.status] ?? ''}`}>
-                        {task.status.replace('_', ' ')}
-                      </span>
+                <div className="flex items-start gap-3">
+                  {/* Complete button */}
+                  {task.status !== "done" && task.status !== "cancelled" ? (
+                    <button
+                      type="button"
+                      onClick={() => markDone(task.id)}
+                      className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-colors"
+                      title="Mark done"
+                    />
+                  ) : (
+                    <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500">
+                      <Check className="h-3 w-3 text-white" />
+                    </div>
+                  )}
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className={cn(
+                        "text-[14px] font-semibold",
+                        task.status === "done" ? "text-slate-400 line-through" : "text-slate-900",
+                      )}>
+                        {task.title}
+                      </p>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold", pri.color)}>
+                          {pri.icon}{pri.label}
+                        </span>
+                        <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", stat.color)}>
+                          {stat.label}
+                        </span>
+                      </div>
+                    </div>
+
+                    {task.description && (
+                      <p className="mt-1 text-[12px] text-slate-500">{task.description}</p>
+                    )}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3">
+                      {task.due_at && (
+                        <span className={cn("flex items-center gap-1 text-[11px] font-medium", overdue ? "text-rose-600" : "text-slate-500")}>
+                          {overdue && <AlertTriangle className="h-3 w-3" />}
+                          <Clock className="h-3 w-3" />
+                          {fmtDate(task.due_at)}
+                        </span>
+                      )}
+                      {task.contact && (
+                        <span className="text-[12px] text-slate-500">
+                          {task.contact.name ?? task.contact.phone}
+                        </span>
+                      )}
+                      {task.assigned_to_user?.profile && (
+                        <span className="text-[12px] text-slate-400">
+                          → {task.assigned_to_user.profile.full_name}
+                        </span>
+                      )}
                     </div>
                   </div>
-                  {task.description && <p className="text-sm text-muted-foreground mt-0.5">{task.description}</p>}
-                  <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                    {task.due_date && (
-                      <span className={overdue ? 'text-red-500 font-medium' : ''}>
-                        Due: {new Date(task.due_date).toLocaleDateString()}
-                      </span>
+
+                  {/* Menu */}
+                  <div className="relative shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setOpenMenuId((v) => v === task.id ? null : task.id)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                    {openMenuId === task.id && (
+                      <div className="absolute right-0 top-full mt-1 z-10 w-36 rounded-xl border border-slate-200 bg-white shadow-lg py-1">
+                        <button type="button" onClick={() => { deleteTask(task.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50">
+                          <X className="h-3.5 w-3.5" /> Delete
+                        </button>
+                      </div>
                     )}
-                    {task.contact && <span>· {task.contact.name ?? task.contact.phone}</span>}
-                    {task.lead && <span>· {task.lead.title}</span>}
-                    {task.assignee && <span>· Assigned: {task.assignee.name ?? task.assignee.email}</span>}
                   </div>
                 </div>
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="flex items-center justify-center size-8 shrink-0 rounded-md hover:bg-muted text-muted-foreground">
-                    <MoreHorizontal className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="bg-card">
-                    <p className="px-2 py-1.5 text-xs text-muted-foreground font-medium">Set status</p>
-                    {STATUSES.filter((s) => s !== task.status).map((s) => (
-                      <DropdownMenuItem key={s} onClick={() => updateStatus(task.id, s)} className="capitalize">
-                        {s.replace('_', ' ')}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => deleteTask(task.id)} className="text-destructive">Delete</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
             )
-          })}
-        </div>
-      )}
+          })
+        )}
+      </div>
 
-      <TaskFormDialog open={createOpen} onOpenChange={setCreateOpen} onSave={fetchTasks} />
+      <TaskFormDialog open={createOpen} onOpenChange={setCreateOpen} onSave={load} />
     </div>
   )
 }

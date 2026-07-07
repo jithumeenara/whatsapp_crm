@@ -24,14 +24,29 @@ export interface MetaPhoneInfo {
 }
 
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+  error?: {
+    message?: string
+    code?: number
+    error_subcode?: number
+    type?: string
+    error_user_title?: string
+    error_user_msg?: string
+    fbtrace_id?: string
+  }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
   let message = fallback
   try {
     const data = (await response.json()) as MetaErrorResponse
-    if (data.error?.message) message = data.error.message
+    const e = data.error
+    if (e) {
+      // Prefer the user-facing message Meta provides; fall back to the
+      // technical message. Include the error code so support can look it up.
+      const detail = e.error_user_msg || e.message || fallback
+      const code = e.code ? ` (code ${e.code}${e.error_subcode ? `.${e.error_subcode}` : ''})` : ''
+      message = `${detail}${code}`
+    }
   } catch {
     // response body wasn't JSON — keep the fallback
   }
@@ -344,6 +359,87 @@ export async function sendMediaMessage(
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface SendFlowMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  /** Meta WhatsApp Flow ID */
+  flowId: string
+  /** Button label the user taps to open the flow */
+  flowCta: string
+  /** Optional body text shown above the CTA button */
+  bodyText?: string
+  /** Optional header text */
+  headerText?: string
+  /** Optional footer text */
+  footerText?: string
+  /** Unique token per send — stored so you can correlate flow submissions back to this message. Auto-generated if omitted. */
+  flowToken?: string
+}
+
+/**
+ * Send a WhatsApp Flows interactive message.
+ * This opens the Meta Flow form when the user taps the CTA button.
+ * The flow submission arrives via the data-exchange webhook independently.
+ */
+export async function sendFlowMessage(
+  args: SendFlowMessageArgs
+): Promise<MetaSendResult> {
+  const {
+    phoneNumberId,
+    accessToken,
+    to,
+    flowId,
+    flowCta,
+    bodyText = 'Tap the button below to open the form.',
+    headerText,
+    footerText,
+    flowToken,
+  } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+
+  const interactive: Record<string, unknown> = {
+    type: 'flow',
+    body: { text: bodyText },
+    action: {
+      name: 'flow',
+      parameters: {
+        flow_message_version: '3',
+        flow_token: flowToken ?? crypto.randomUUID(),
+        flow_id: flowId,
+        flow_cta: flowCta,
+        flow_action: 'navigate',
+      },
+    },
+  }
+  if (headerText) {
+    interactive.header = { type: 'text', text: headerText }
+  }
+  if (footerText) {
+    interactive.footer = { text: footerText }
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive,
+    }),
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)

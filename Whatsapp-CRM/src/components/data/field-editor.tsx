@@ -264,7 +264,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
       </div>
 
       {fields.length === 0 && (
-        <div className="rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center text-sm text-slate-500">
           No fields yet. Add your first field to get started.
         </div>
       )}
@@ -273,11 +273,11 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
         {fields.map((field, idx) => {
           const cfg = getFieldConfig(field.options);
           return (
-            <div key={field.id} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2.5">
-              <GripVertical className="size-3.5 text-muted-foreground/40 shrink-0" />
+            <div key={field.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+              <GripVertical className="size-3.5 text-slate-500/40 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{field.label}</p>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
                   <span>{FIELD_TYPES.find((t) => t.value === field.field_type)?.label ?? field.field_type}</span>
                   {field.required && <span className="text-destructive">required</span>}
                   {cfg.field_width && cfg.field_width !== 'full' && (
@@ -287,19 +287,19 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button type="button" onClick={() => moveField(field.id, 'up')} disabled={idx === 0}
-                  className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors">
+                  className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 transition-colors">
                   <ChevronUp className="size-3.5" />
                 </button>
                 <button type="button" onClick={() => moveField(field.id, 'down')} disabled={idx === fields.length - 1}
-                  className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors">
+                  className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 transition-colors">
                   <ChevronDown className="size-3.5" />
                 </button>
                 <button type="button" onClick={() => openEdit(field)}
-                  className="p-1 text-muted-foreground hover:text-primary transition-colors">
+                  className="p-1 text-slate-500 hover:text-primary transition-colors">
                   <Settings2 className="size-3.5" />
                 </button>
                 <button type="button" onClick={() => deleteField(field.id)} disabled={deleting === field.id}
-                  className="p-1 text-muted-foreground hover:text-destructive transition-colors">
+                  className="p-1 text-slate-500 hover:text-destructive transition-colors">
                   {deleting === field.id
                     ? <Loader2 className="size-3.5 animate-spin" />
                     : <Trash2 className="size-3.5" />}
@@ -348,7 +348,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                   <SelectContent className="max-h-72">
                     {FIELD_GROUPS.map((group) => (
                       <SelectGroup key={group}>
-                        <SelectLabel className="text-xs text-muted-foreground py-1">{group}</SelectLabel>
+                        <SelectLabel className="text-xs text-slate-500 py-1">{group}</SelectLabel>
                         {FIELD_TYPES.filter((ft) => ft.group === group).map((ft) => (
                           <SelectItem key={ft.value} value={ft.value} className="text-sm">
                             {ft.label}
@@ -365,7 +365,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                 <div className="space-y-3">
                   <Label>Options Source</Label>
                   {/* Toggle: manual vs from table */}
-                  <div className="flex gap-1 bg-muted rounded-lg p-0.5">
+                  <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
                     {(['manual', 'table'] as const).map((src) => (
                       <button
                         key={src}
@@ -374,8 +374,8 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                         className={cn(
                           'flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
                           form.choice_source === src
-                            ? 'bg-background text-foreground shadow-sm'
-                            : 'text-muted-foreground hover:text-foreground',
+                            ? 'bg-white text-slate-800 shadow-sm'
+                            : 'text-slate-500 hover:text-slate-800',
                         )}
                       >
                         {src === 'manual' ? 'Manual options' : 'From a table'}
@@ -395,7 +395,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                           />
                           {form.select_items.length > 1 && (
                             <button type="button" onClick={() => removeOption(i)}
-                              className="text-muted-foreground hover:text-destructive transition-colors">
+                              className="text-slate-500 hover:text-destructive transition-colors">
                               <X className="size-4" />
                             </button>
                           )}
@@ -410,7 +410,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                   {form.choice_source === 'table' && (
                     <div className="space-y-2">
                       <div className="space-y-1.5">
-                        <Label className="text-xs text-muted-foreground">Source Table</Label>
+                        <Label className="text-xs text-slate-500">Source Table</Label>
                         <Select
                           value={form.source_table_id}
                           onValueChange={(v) => { if (v) { setForm((f) => ({ ...f, source_table_id: v, source_field_key: '' })); setSourceFields([]); } }}
@@ -425,9 +425,9 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                       </div>
                       {form.source_table_id && (
                         <div className="space-y-1.5">
-                          <Label className="text-xs text-muted-foreground">Use Field Values As Options</Label>
+                          <Label className="text-xs text-slate-500">Use Field Values As Options</Label>
                           {loadingSource ? (
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground py-1">
+                            <div className="flex items-center gap-1.5 text-xs text-slate-500 py-1">
                               <Loader2 className="size-3 animate-spin" /> Loading fields…
                             </div>
                           ) : (
@@ -447,7 +447,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                               </SelectContent>
                             </Select>
                           )}
-                          <p className="text-[11px] text-muted-foreground">
+                          <p className="text-[11px] text-slate-500">
                             Dropdown will show unique values from this field at record creation time.
                           </p>
                         </div>
@@ -528,7 +528,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                     type="checkbox"
                     checked={form.required}
                     onChange={(e) => set('required', e.target.checked)}
-                    className="h-4 w-4 rounded border-border accent-primary"
+                    className="h-4 w-4 rounded border-slate-200 accent-primary"
                   />
                   <span className="text-sm">Required field</span>
                 </label>
@@ -640,17 +640,17 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
               </div>
 
               {form.field_type === 'text' && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-slate-500">
                   Leave validation empty to accept any value.
                 </p>
               )}
               {form.field_type === 'number' && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-slate-500">
                   Leave Min/Max empty to allow any number.
                 </p>
               )}
               {isDisplayType && (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-slate-500">
                   Display fields don't support validation.
                 </p>
               )}

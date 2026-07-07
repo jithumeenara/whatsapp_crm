@@ -1,5 +1,3 @@
-import { spawn } from 'child_process'
-import { existsSync } from 'fs'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 
@@ -14,7 +12,14 @@ function parseDatabaseUrl(url: string) {
   }
 }
 
+/**
+ * Return the absolute path to a PostgreSQL client binary.
+ * Uses lazy require so Turbopack's static file tracer doesn't scan the
+ * entire project looking for files that existsSync might reference.
+ */
 function findPgBin(tool: string): string {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { existsSync } = require('node:fs') as typeof import('fs')
   const candidates = [
     ...Array.from({ length: 7 }, (_, i) => `C:\\Program Files\\PostgreSQL\\${14 + i}\\bin\\${tool}.exe`),
     `/usr/lib/postgresql/15/bin/${tool}`,
@@ -79,6 +84,8 @@ export async function POST(request: Request) {
   ]
 
   return new Promise<Response>((resolve) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { spawn } = require('node:child_process') as typeof import('child_process')
     const psql = spawn(findPgBin('psql'), args, {
       env: { ...process.env, PGPASSWORD: db.password },
     })

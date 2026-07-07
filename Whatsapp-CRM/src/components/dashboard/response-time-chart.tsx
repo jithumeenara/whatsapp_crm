@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { DOW_SHORT_MON_FIRST } from '@/lib/dashboard/date-utils'
 import type { ResponseTimeSummary } from '@/lib/dashboard/types'
@@ -30,6 +31,9 @@ export function ResponseTimeChart({
   loading,
   thresholdMinutes = 5,
 }: ResponseTimeChartProps) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
   const hasData = data?.buckets.some((b) => b.avgMinutes != null) ?? false
 
   // Map buckets → Tremor rows. Null `avgMinutes` (no samples)
@@ -44,10 +48,10 @@ export function ResponseTimeChart({
     })) ?? []
 
   return (
-    <section className="rounded-xl border border-border bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="text-sm font-semibold text-slate-800">
             Average First Response Time
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
@@ -63,9 +67,9 @@ export function ResponseTimeChart({
           )}
           {data && (data.thisWeekAvg != null || data.lastWeekAvg != null) && (
             <div>
-              <div className="text-muted-foreground">
+              <div className="text-slate-500">
                 This week:{' '}
-                <span className="font-medium text-foreground tabular-nums">
+                <span className="font-medium text-slate-800 tabular-nums">
                   {fmt(data.thisWeekAvg)}
                 </span>
               </div>
@@ -79,7 +83,7 @@ export function ResponseTimeChart({
       </header>
 
       <div className="p-5">
-        {loading || !data ? (
+        {loading || !data || !mounted ? (
           <Skeleton className="h-[260px] w-full" />
         ) : !hasData ? (
           <EmptyState
@@ -92,14 +96,10 @@ export function ResponseTimeChart({
             data={chartData}
             index="day"
             categories={[CATEGORY]}
-            // 'violet' maps to Tailwind's `fill-violet-500` — matches
-            // the brand accent the hand-rolled bars used (#7c3aed).
             colors={['violet']}
             valueFormatter={(value) => `${value.toFixed(1)}m`}
             showLegend={false}
             yAxisWidth={48}
-            // Compact height so the chart sits well inside the card
-            // without dominating the row alongside the donut + activity feed.
             className="h-[260px]"
           />
         )}

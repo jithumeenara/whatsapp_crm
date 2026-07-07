@@ -1,11 +1,5 @@
 "use client";
 
-/**
- * Rich text area for chatbot message fields.
- * Provides WhatsApp-compatible formatting (bold, italic, strikethrough,
- * bullets, numbers), emoji picker, variable dropdown, and an expand modal.
- */
-
 import { useRef, useState, useEffect, useCallback } from "react";
 import {
   Bold,
@@ -18,8 +12,10 @@ import {
   ChevronDown,
   X,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+
+function cn(...c: (string | boolean | undefined | null)[]) {
+  return c.filter(Boolean).join(" ");
+}
 
 // ─── Emoji data ──────────────────────────────────────────────────
 
@@ -104,8 +100,8 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
           title={title}
           onMouseDown={(e) => { e.preventDefault(); fn(); }}
           className={cn(
-            "flex items-center justify-center rounded text-muted-foreground",
-            "hover:bg-muted hover:text-foreground transition-colors",
+            "flex items-center justify-center rounded text-slate-400",
+            "hover:bg-slate-100 hover:text-slate-700 transition-colors",
             btnH,
           )}
         >
@@ -113,7 +109,7 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
         </button>
       ))}
 
-      <span className="mx-1 h-4 w-px shrink-0 bg-border" />
+      <span className="mx-1 h-4 w-px shrink-0 bg-slate-200" />
 
       {/* Emoji picker */}
       <div className="relative">
@@ -122,10 +118,10 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
           title="Insert emoji"
           onMouseDown={(e) => { e.preventDefault(); setShowEmoji((v) => !v); setShowVars(false); }}
           className={cn(
-            "flex items-center justify-center rounded text-muted-foreground",
-            "hover:bg-muted hover:text-foreground transition-colors",
+            "flex items-center justify-center rounded text-slate-400",
+            "hover:bg-slate-100 hover:text-slate-700 transition-colors",
             btnH,
-            showEmoji && "bg-muted text-foreground",
+            showEmoji && "bg-slate-100 text-slate-700",
           )}
         >
           <Smile className={iconH} />
@@ -133,16 +129,16 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
 
         {showEmoji && (
           <div
-            className="absolute bottom-full left-0 z-[100] mb-1 w-72 rounded-lg border border-border bg-card shadow-xl"
+            className="absolute bottom-full left-0 z-[100] mb-1 w-72 rounded-lg border border-slate-200 bg-white shadow-xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                 Emoji
               </span>
               <button
                 onMouseDown={(e) => { e.preventDefault(); setShowEmoji(false); }}
-                className="text-muted-foreground hover:text-foreground"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -150,7 +146,7 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
             <div className="max-h-52 overflow-y-auto p-2 space-y-1.5">
               {EMOJI_GROUPS.map((g) => (
                 <div key={g.label}>
-                  <p className="mb-0.5 px-0.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="mb-0.5 px-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-400">
                     {g.label}
                   </p>
                   <div className="flex flex-wrap">
@@ -159,7 +155,7 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
                         key={em}
                         type="button"
                         onMouseDown={(e) => { e.preventDefault(); onInsert(em); setShowEmoji(false); }}
-                        className="flex h-7 w-7 items-center justify-center rounded text-base hover:bg-muted transition-colors"
+                        className="flex h-7 w-7 items-center justify-center rounded text-base hover:bg-slate-100 transition-colors"
                       >
                         {em}
                       </button>
@@ -191,11 +187,11 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
 
           {showVars && (
             <div
-              className="absolute bottom-full left-0 z-[100] mb-1 min-w-[190px] overflow-hidden rounded-lg border border-border bg-card shadow-xl"
+              className="absolute bottom-full left-0 z-[100] mb-1 min-w-[190px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <div className="border-b border-border px-3 py-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              <div className="border-b border-slate-200 px-3 py-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                   Collected variables
                 </p>
               </div>
@@ -205,28 +201,27 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
                     key={v}
                     type="button"
                     onMouseDown={(e) => { e.preventDefault(); onInsert(`{{${v}}}`); setShowVars(false); }}
-                    className="flex w-full items-center px-3 py-1.5 hover:bg-muted transition-colors"
+                    className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
                   >
                     <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-700">
                       {`{{${v}}}`}
                     </span>
-                    <span className="ml-2 text-[10px] text-muted-foreground truncate">
+                    <span className="ml-2 text-[10px] text-slate-400 truncate">
                       → collected answer
                     </span>
                   </button>
                 ))}
-                {/* Contact fields */}
                 {["contact.name", "contact.phone", "contact.email"].map((cf) => (
                   <button
                     key={cf}
                     type="button"
                     onMouseDown={(e) => { e.preventDefault(); onInsert(`{{${cf}}}`); setShowVars(false); }}
-                    className="flex w-full items-center px-3 py-1.5 hover:bg-muted transition-colors"
+                    className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
                   >
                     <span className="rounded bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] text-sky-700">
                       {`{{${cf}}}`}
                     </span>
-                    <span className="ml-2 text-[10px] text-muted-foreground truncate">
+                    <span className="ml-2 text-[10px] text-slate-400 truncate">
                       contact field
                     </span>
                   </button>
@@ -300,22 +295,22 @@ function ExpandModal({
       onClick={onClose}
     >
       <div
-        className="flex w-[700px] max-w-[96vw] flex-col rounded-xl border border-border bg-card shadow-2xl"
+        className="flex w-[700px] max-w-[96vw] flex-col rounded-xl border border-slate-200 bg-white shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <p className="text-sm font-semibold text-foreground">Edit message</p>
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+          <p className="text-sm font-semibold text-slate-800">Edit message</p>
           <button
             onClick={onClose}
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-1 border-b border-border bg-muted/30 px-4 py-2">
+        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-4 py-2">
           <Toolbar
             onWrap={wrapWith}
             onPrefixLines={prefixLines}
@@ -324,7 +319,7 @@ function ExpandModal({
             size="md"
           />
           <div className="flex-1" />
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[10px] text-slate-400">
             *bold*&nbsp; _italic_&nbsp; ~strike~&nbsp; • bullet
           </span>
         </div>
@@ -337,21 +332,31 @@ function ExpandModal({
             onChange={(e) => onChange(e.target.value)}
             placeholder={placeholder}
             autoFocus
-            className="h-60 w-full resize-none rounded-lg border border-border bg-background p-3 text-sm leading-relaxed text-foreground outline-none transition-shadow focus:ring-2 focus:ring-primary/30"
+            className="h-60 w-full resize-none rounded-lg border border-slate-200 bg-white p-3 text-sm leading-relaxed text-slate-800 outline-none transition-shadow placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
           />
-          <p className="mt-1.5 text-[10px] text-muted-foreground">
-            WhatsApp formatting: *bold* · _italic_ · ~strikethrough~ · • bullet · 1. numbered
+          <p className="mt-1.5 text-[10px] text-slate-400">
+            Formatting: *bold* · _italic_ · ~strike~ · • bullet · 1. numbered
+            <span className="ml-2 text-slate-300">|</span>
+            <span className="ml-2 text-[9px] text-indigo-400">Instagram: bold/italic auto-converted to Unicode ✦</span>
           </p>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
-          <Button variant="ghost" size="sm" onClick={onClose}>
+        <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          >
             Cancel
-          </Button>
-          <Button size="sm" onClick={() => onApply(value)}>
+          </button>
+          <button
+            type="button"
+            onClick={() => onApply(value)}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-indigo-700 transition-colors"
+          >
             Apply
-          </Button>
+          </button>
         </div>
       </div>
     </div>
@@ -369,12 +374,10 @@ export function RichTextArea({
   className,
 }: RichTextAreaProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
-  // After a format action, we want to restore cursor position post-render
   const cursorRef = useRef<[number, number] | null>(null);
   const [showExpand, setShowExpand] = useState(false);
   const [expandValue, setExpandValue] = useState(value);
 
-  // Restore cursor after React updates textarea value
   useEffect(() => {
     if (cursorRef.current && taRef.current) {
       taRef.current.setSelectionRange(...cursorRef.current);
@@ -419,9 +422,9 @@ export function RichTextArea({
 
   return (
     <>
-      <div className={cn("overflow-visible rounded-md border border-border", className)}>
+      <div className={cn("overflow-visible rounded-md border border-slate-200", className)}>
         {/* Toolbar strip */}
-        <div className="flex items-center gap-1 border-b border-border bg-muted/40 px-1.5 py-1">
+        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-1.5 py-1">
           <Toolbar
             onWrap={wrapWith}
             onPrefixLines={prefixLines}
@@ -439,7 +442,7 @@ export function RichTextArea({
               setExpandValue(value);
               setShowExpand(true);
             }}
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
           >
             <Maximize2 className="h-3 w-3" />
           </button>
@@ -454,7 +457,7 @@ export function RichTextArea({
           style={{ minHeight }}
           className={cn(
             "w-full resize-y rounded-b-md bg-transparent px-3 py-2 text-xs leading-relaxed",
-            "text-foreground placeholder:text-muted-foreground/60",
+            "text-slate-800 placeholder:text-slate-400",
             "outline-none focus:ring-0",
           )}
         />
@@ -518,8 +521,8 @@ export function VarInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={cn(
-          "flex h-8 w-full rounded-md border border-border bg-background px-3 py-1 text-xs",
-          "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50",
+          "flex h-8 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-xs text-slate-800",
+          "placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100",
           className,
         )}
       />
@@ -534,8 +537,8 @@ export function VarInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={cn(
-          "flex h-8 flex-1 rounded-md border border-border bg-background px-3 py-1 text-xs",
-          "placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50",
+          "flex h-8 flex-1 rounded-md border border-slate-200 bg-white px-3 py-1 text-xs text-slate-800",
+          "placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100",
           className,
         )}
       />
@@ -544,7 +547,7 @@ export function VarInput({
           type="button"
           onMouseDown={(e) => { e.preventDefault(); setShowVars((v) => !v); }}
           className={cn(
-            "flex h-8 items-center gap-0.5 rounded-md border border-border bg-background px-2",
+            "flex h-8 items-center gap-0.5 rounded-md border border-slate-200 bg-white px-2",
             "font-mono text-[10px] font-semibold text-teal-700 hover:bg-teal-50 transition-colors shrink-0",
             showVars && "bg-teal-50",
           )}
@@ -554,9 +557,9 @@ export function VarInput({
           <ChevronDown className="h-2.5 w-2.5" />
         </button>
         {showVars && (
-          <div className="absolute right-0 top-full z-[100] mt-1 min-w-[200px] overflow-hidden rounded-lg border border-border bg-card shadow-xl">
-            <div className="border-b border-border px-3 py-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <div className="absolute right-0 top-full z-[100] mt-1 min-w-[200px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 px-3 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                 Variables
               </p>
             </div>
@@ -566,7 +569,7 @@ export function VarInput({
                   key={v}
                   type="button"
                   onMouseDown={(e) => { e.preventDefault(); insertAt(`{{${v}}}`); setShowVars(false); }}
-                  className="flex w-full items-center px-3 py-1.5 hover:bg-muted transition-colors"
+                  className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
                 >
                   <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-700">
                     {`{{${v}}}`}
@@ -578,7 +581,7 @@ export function VarInput({
                   key={cf}
                   type="button"
                   onMouseDown={(e) => { e.preventDefault(); insertAt(`{{${cf}}}`); setShowVars(false); }}
-                  className="flex w-full items-center px-3 py-1.5 hover:bg-muted transition-colors"
+                  className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
                 >
                   <span className="rounded bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] text-sky-700">
                     {`{{${cf}}}`}

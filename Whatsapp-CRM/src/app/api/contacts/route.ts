@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 
 const PAGE_SIZE = 25
@@ -17,10 +17,13 @@ const PAGE_SIZE = 25
  */
 export async function GET(req: NextRequest) {
   try {
-    const ctx = await requireRole("viewer")
+    const ctx = await requireRoleOrApiKey(req, "viewer")
     const { searchParams } = req.nextUrl
 
     const search = searchParams.get("search")?.trim() ?? ""
+    const channel = searchParams.get("channel")?.trim() ?? ""   // e.g. "whatsapp" | "instagram"
+    const tagIdsParam = searchParams.get("tagIds")?.trim() ?? ""
+    const tagIds = tagIdsParam ? tagIdsParam.split(",").filter(Boolean) : []
     const page = Math.max(0, parseInt(searchParams.get("page") ?? "0", 10) || 0)
     const limit = Math.min(
       100,
@@ -39,6 +42,12 @@ export async function GET(req: NextRequest) {
             ],
           }
         : {}),
+      ...(channel
+        ? { conversations: { some: { channel } } }
+        : {}),
+      ...(tagIds.length > 0
+        ? { tags: { some: { tag_id: { in: tagIds } } } }
+        : {}),
     }
 
     const [contacts, total] = await Promise.all([
@@ -48,18 +57,18 @@ export async function GET(req: NextRequest) {
         skip,
         take: limit,
         include: {
-          tags: {
-            include: { tag: true },
-          },
+          tags: { include: { tag: true } },
+          conversations: { select: { channel: true }, distinct: ["channel"] },
         },
       }),
       prisma.contact.count({ where }),
     ])
 
-    // Flatten tags relation → flat tag objects
-    const shaped = contacts.map(({ tags: contactTags, ...c }) => ({
+    // Flatten tags + derive channels array
+    const shaped = contacts.map(({ tags: contactTags, conversations, ...c }) => ({
       ...c,
       tags: contactTags.map((ct) => ct.tag),
+      channels: [...new Set(conversations.map((cv) => cv.channel))],
     }))
 
     return NextResponse.json({ contacts: shaped, total })
@@ -74,7 +83,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await requireRole("agent")
+    const ctx = await requireRoleOrApiKey(req, "agent")
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
 

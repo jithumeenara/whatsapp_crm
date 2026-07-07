@@ -1,105 +1,92 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { MessageSquare, CheckCircle, ArrowLeft, ShieldCheck } from "lucide-react";
+import { useState } from "react"
+import Link from "next/link"
+import { MessageSquare, Mail, ArrowLeft, CheckCircle } from "lucide-react"
 
-export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
+export default function ForgotPasswordV2() {
+  const [email, setEmail] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleReset = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    await new Promise((r) => setTimeout(r, 500));
-    setSuccess(true);
-    setLoading(false);
-  };
-
-  if (success) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F0F2F5] px-4">
-        <div className="w-full max-w-md rounded-2xl bg-white px-8 py-10 shadow-sm">
-          <div className="flex flex-col items-center text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366]/10">
-              <CheckCircle className="h-7 w-7 text-[#25D366]" />
-            </div>
-            <h2 className="mb-2 text-xl font-bold text-gray-900">Request received</h2>
-            <p className="mb-6 text-sm text-gray-500">
-              Contact your administrator to reset the password for{" "}
-              <span className="font-medium text-gray-800">{email}</span>.
-            </p>
-            <Link href="/login" className="w-full">
-              <Button className="h-11 w-full rounded-lg bg-[#25D366] font-semibold text-white hover:bg-[#1aad55]">
-                Back to sign in
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error ?? "Failed to send reset email")
+      }
+      setSent(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong")
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#F0F2F5] px-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="mb-6 flex items-center justify-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#25D366]">
-            <MessageSquare className="h-4 w-4 text-white" />
+    <div className="flex min-h-screen items-center justify-center p-4 bg-slate-50">
+      <div className="w-full max-w-[400px]">
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg mb-3">
+            <MessageSquare className="h-6 w-6 text-white" />
           </div>
-          <span className="text-base font-semibold text-[#075E54]">WhatsApp CRM Pro</span>
+          <h1 className="text-[22px] font-bold text-slate-900">Forgot Password</h1>
+          <p className="mt-1 text-[13px] text-slate-500">Enter your email to receive a reset link</p>
         </div>
 
-        <div className="rounded-2xl bg-white px-8 py-10 shadow-sm">
-          <h2 className="mb-1 text-2xl font-bold text-gray-900">Reset password</h2>
-          <p className="mb-7 text-sm text-gray-500">
-            Enter your email and contact your administrator to reset access.
-          </p>
-
-          <form onSubmit={handleReset} className="space-y-5">
-            <div className="space-y-1.5">
-              <Label htmlFor="email" className="text-sm font-medium text-gray-700">
-                Email Address
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="name@company.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="h-10 rounded-lg border-gray-200 bg-gray-50 text-gray-900 placeholder:text-gray-400 focus-visible:border-[#25D366] focus-visible:ring-[#25D366]/20"
-              />
+        <div className="rounded-2xl bg-white border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.08)] px-8 py-8">
+          {sent ? (
+            <div className="flex flex-col items-center text-center gap-3 py-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle className="h-6 w-6 text-emerald-600" />
+              </div>
+              <p className="text-[14px] font-semibold text-slate-900">Check your inbox</p>
+              <p className="text-[13px] text-slate-500">A reset link was sent to <strong>{email}</strong></p>
+              <Link href="/login" className="mt-3 flex items-center gap-1.5 text-[13px] text-indigo-600 font-medium hover:text-indigo-700">
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+              </Link>
             </div>
-
-            <Button
-              type="submit"
-              disabled={loading}
-              className="h-11 w-full rounded-lg bg-[#25D366] font-semibold text-white hover:bg-[#1aad55] disabled:opacity-50"
-            >
-              {loading ? "Sending..." : "Submit request"}
-            </Button>
-          </form>
-
-          <Link
-            href="/login"
-            className="mt-6 flex items-center justify-center gap-2 text-sm text-gray-500 hover:text-gray-700"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to sign in
-          </Link>
-
-          <div className="mt-8 flex items-center justify-center gap-1.5 text-xs text-gray-400">
-            <ShieldCheck className="h-3.5 w-3.5" />
-            <span>Security Verified: Enterprise SSL Encryption</span>
-          </div>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>
+              )}
+              <form onSubmit={handleSubmit} className="space-y-5">
+                <div>
+                  <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">Email Address</label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input type="email" placeholder="email@company.com" required value={email} onChange={(e) => setEmail(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100" />
+                  </div>
+                </div>
+                <button type="submit" disabled={loading}
+                  className="h-11 w-full rounded-xl bg-indigo-600 text-[14px] font-semibold text-white hover:bg-indigo-700 active:scale-[0.98] disabled:opacity-60 transition-all">
+                  {loading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />Sending…
+                    </span>
+                  ) : "Send Reset Link"}
+                </button>
+              </form>
+              <div className="mt-5 text-center">
+                <Link href="/login" className="flex items-center justify-center gap-1.5 text-[13px] text-slate-500 hover:text-indigo-600">
+                  <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+                </Link>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
-  );
+  )
 }

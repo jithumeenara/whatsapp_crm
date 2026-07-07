@@ -82,8 +82,8 @@ export interface SendListNodeConfig {
  * meaningful behavioural difference.
  */
 export interface SendMediaNodeConfig {
-  media_type: "image" | "video" | "document";
-  /** Public URL Meta will fetch. Uploaded via the builder's file picker. */
+  media_type: "image" | "video" | "document" | "audio";
+  /** Public URL Meta will fetch, or a local /api/files/… path. */
   media_url: string;
   /** Optional caption shown under the media (Meta caps at 1024 chars). */
   caption?: string;
@@ -138,9 +138,16 @@ export interface CollectInputNodeConfig {
 
 export type ConditionOperator =
   | "equals"
+  | "not_equals"
   | "contains"
+  | "starts_with"
+  | "ends_with"
   | "present"
-  | "absent";
+  | "absent"
+  | "gt"
+  | "lt"
+  | "gte"
+  | "lte";
 
 export type ConditionSubject = "var" | "tag" | "contact_field";
 
@@ -216,7 +223,22 @@ export type FlowNodeConfig =
   | { node_type: "save_to_table"; config: SaveToTableNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 
-export type FlowNodeType = FlowNodeConfig["node_type"];
+// Chatbot-builder node types handled by the same engine loop but not
+// part of the automations-style FlowNodeConfig discriminated union.
+export type FlowNodeType =
+  | FlowNodeConfig["node_type"]
+  | "send_text"
+  | "ai_reply"
+  | "set_variable"
+  | "update_contact"
+  | "crm_action"
+  | "delay"
+  | "join"
+  | "link_chatbot"
+  | "send_flow"
+  | "http_request"
+  | "switch_case"
+  | "send_to_number";
 
 // ============================================================
 // Triggers (matches `flows.trigger_type` + `trigger_config`)
@@ -360,6 +382,8 @@ export interface DispatchInboundInput {
   contactId: string;
   conversationId: string;
   message: ParsedInbound;
+  /** 'whatsapp' | 'instagram' — restricts flow matching to the same channel */
+  channel?: string;
 }
 
 export interface DispatchInboundResult {

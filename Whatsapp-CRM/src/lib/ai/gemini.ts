@@ -14,7 +14,7 @@ export async function generateAiReply(
   userMessage: string,
   conversationHistory: Array<{ role: 'user' | 'model'; text: string }> = [],
 ): Promise<string> {
-  const genAI = new GoogleGenerativeAI(config.apiKey, { apiVersion: 'v1' })
+  const genAI = new GoogleGenerativeAI(config.apiKey)
   const model = genAI.getGenerativeModel({
     model: config.model ?? 'gemini-2.0-flash',
     generationConfig: {

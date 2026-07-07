@@ -1,270 +1,221 @@
-'use client'
+"use client"
 
-import { useEffect, useState } from 'react'
-import { BarChart2, Loader2, TrendingUp, CalendarCheck, CheckSquare, Users, AlertCircle } from 'lucide-react'
+import { useEffect, useState } from "react"
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from "recharts"
+import {
+  BarChart2, TrendingUp, CalendarCheck, CheckSquare, Users,
+  ArrowUpRight, Activity,
+} from "lucide-react"
+
+function cn(...c: (string | boolean | undefined | null)[]) {
+  return c.filter(Boolean).join(" ")
+}
 
 interface ReportData {
-  leads: {
-    total: number
-    byStatus: { status: string; count: number }[]
-    byScore: { score: string; count: number }[]
-    byDay: Record<string, number>
-  }
-  followUps: {
-    total: number
-    overdue: number
-    byStatus: { status: string; count: number }[]
-  }
-  tasks: {
-    total: number
-    byStatus: { status: string; count: number }[]
-    byPriority: { priority: string; count: number }[]
-  }
-  contacts: { total: number }
-  recentActivities: {
-    id: string
-    type: string
-    title: string
-    created_at: string
-    user: { name: string | null } | null
-    lead: { title: string } | null
-    contact: { name: string | null } | null
-  }[]
+  leads: { total: number; byStatus: { status: string; count: number }[] }
+  followUps: { total: number; pending: number; done: number; overdue: number }
+  tasks: { total: number; pending: number; done: number; overdue: number }
+  contacts: { total: number; thisWeek: number }
+  recentActivity: { id: string; type: string; title: string; description?: string | null; created_at: string }[]
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  new: '#3b82f6',
-  contacted: '#8b5cf6',
-  qualified: '#f59e0b',
-  converted: '#10b981',
-  lost: '#ef4444',
-  pending: '#f59e0b',
-  done: '#10b981',
-  skipped: '#6b7280',
-  todo: '#6b7280',
-  in_progress: '#3b82f6',
-  cancelled: '#ef4444',
+const STATUS_LABEL: Record<string, string> = {
+  new:"New", call_not_connected:"Not Connected", visited:"Visited",
+  appointment_fixed:"Appt Fixed", follow_up:"Follow-up", closed:"Closed",
 }
 
-const SCORE_COLORS: Record<string, string> = {
-  hot: '#ef4444',
-  warm: '#f59e0b',
-  cold: '#3b82f6',
-}
+const STATUS_COLORS_CHART = ["#6366f1","#f59e0b","#0ea5e9","#8b5cf6","#f97316","#10b981"]
 
-function StatCard({ icon: Icon, label, value, sub, color = 'text-primary' }: {
-  icon: typeof BarChart2
-  label: string
-  value: number | string
-  sub?: string
-  color?: string
+const PIE_COLORS = ["#6366f1","#10b981","#f59e0b","#f43f5e"]
+
+function StatCard({ label, value, sub, icon, accent }: {
+  label: string; value: number | string; sub?: string;
+  icon: React.ReactNode; accent: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className={`text-3xl font-bold mt-1 ${color}`}>{value}</p>
-          {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-        </div>
-        <div className={`rounded-lg p-2 bg-primary/10`}>
-          <Icon className={`size-5 ${color}`} />
+    <div className="bg-white rounded-2xl border border-slate-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-5">
+      <div className="flex items-start justify-between mb-3">
+        <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl", accent)}>
+          {icon}
         </div>
       </div>
+      <p className="text-[28px] font-bold text-slate-900 leading-none">{value}</p>
+      <p className="mt-1 text-[13px] text-slate-500">{label}</p>
+      {sub && <p className="mt-0.5 text-[11px] text-slate-400">{sub}</p>}
     </div>
   )
 }
 
-function BarGroup({ items, colorMap }: { items: { label: string; count: number }[]; colorMap: Record<string, string> }) {
-  const max = Math.max(...items.map((i) => i.count), 1)
-  return (
-    <div className="space-y-2">
-      {items.map((item) => (
-        <div key={item.label} className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground w-20 shrink-0 capitalize">{item.label}</span>
-          <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${(item.count / max) * 100}%`,
-                backgroundColor: colorMap[item.label] ?? '#6b7280',
-              }}
-            />
-          </div>
-          <span className="text-xs font-medium text-foreground w-6 text-right">{item.count}</span>
-        </div>
-      ))}
-    </div>
-  )
+function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={cn("animate-pulse rounded-xl bg-slate-100", className)} />
 }
 
-function ActivityTimeline({ activities }: { activities: ReportData['recentActivities'] }) {
-  const TYPE_COLORS: Record<string, string> = {
-    created: 'bg-blue-500',
-    stage_change: 'bg-amber-500',
-    note: 'bg-purple-500',
-    call: 'bg-emerald-500',
-    whatsapp: 'bg-green-500',
-    follow_up: 'bg-orange-500',
-    flow_submitted: 'bg-teal-500',
-  }
-
-  return (
-    <div className="space-y-3">
-      {activities.map((a) => (
-        <div key={a.id} className="flex items-start gap-3">
-          <div className={`mt-1 size-2 rounded-full shrink-0 ${TYPE_COLORS[a.type] ?? 'bg-muted-foreground'}`} />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-foreground">{a.title}</p>
-            <p className="text-xs text-muted-foreground">
-              {a.user?.name ?? 'System'} ·{' '}
-              {a.lead?.title && <span>{a.lead.title} · </span>}
-              {new Date(a.created_at).toLocaleString()}
-            </p>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-export default function ReportsPage() {
+export default function ReportsV2() {
   const [data, setData] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/reports')
+    fetch("/api/reports")
       .then((r) => r.json())
-      .then((d) => setData(d as ReportData))
+      .then(setData)
+      .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="size-7 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  const leadChartData = (data?.leads.byStatus ?? []).map((row, i) => ({
+    name: STATUS_LABEL[row.status] ?? row.status,
+    count: row.count,
+    fill: STATUS_COLORS_CHART[i % STATUS_COLORS_CHART.length],
+  }))
 
-  if (!data) return null
+  const fuPieData = data ? [
+    { name: "Done",    value: data.followUps.done },
+    { name: "Pending", value: data.followUps.pending },
+    { name: "Overdue", value: data.followUps.overdue },
+  ].filter((d) => d.value > 0) : []
 
-  const convertedCount = data.leads.byStatus.find((s) => s.status === 'converted')?.count ?? 0
-  const conversionRate = data.leads.total > 0 ? Math.round((convertedCount / data.leads.total) * 100) : 0
-
-  const doneTasksCount = data.tasks.byStatus.find((s) => s.status === 'done')?.count ?? 0
-  const taskCompletion = data.tasks.total > 0 ? Math.round((doneTasksCount / data.tasks.total) * 100) : 0
+  const taskPieData = data ? [
+    { name: "Done",    value: data.tasks.done },
+    { name: "Pending", value: data.tasks.pending },
+    { name: "Overdue", value: data.tasks.overdue },
+  ].filter((d) => d.value > 0) : []
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          <BarChart2 className="size-6 text-primary" /> Reports & Analytics
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">Overview of your CRM performance</p>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={TrendingUp} label="Total Leads" value={data.leads.total} sub={`${conversionRate}% conversion rate`} />
-        <StatCard icon={Users} label="Total Contacts" value={data.contacts.total} color="text-purple-500" />
-        <StatCard
-          icon={CalendarCheck}
-          label="Follow-ups"
-          value={data.followUps.total}
-          sub={data.followUps.overdue > 0 ? `${data.followUps.overdue} overdue` : 'All on track'}
-          color={data.followUps.overdue > 0 ? 'text-red-500' : 'text-emerald-500'}
-        />
-        <StatCard
-          icon={CheckSquare}
-          label="Tasks"
-          value={data.tasks.total}
-          sub={`${taskCompletion}% completed`}
-          color="text-amber-500"
-        />
-      </div>
-
-      {/* Overdue Alert */}
-      {data.followUps.overdue > 0 && (
-        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 flex items-start gap-3">
-          <AlertCircle className="size-5 text-red-500 shrink-0 mt-0.5" />
+    <div className="min-h-full p-6 lg:p-8">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50">
+            <BarChart2 className="h-5 w-5 text-indigo-600" />
+          </div>
           <div>
-            <p className="text-sm font-medium text-red-500">
-              {data.followUps.overdue} overdue follow-up{data.followUps.overdue !== 1 ? 's' : ''}
-            </p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Check the Follow-ups page to action pending items
-            </p>
+            <h1 className="text-[20px] font-bold text-slate-900">Reports</h1>
+            <p className="text-[12px] text-slate-500">Overview of your CRM performance</p>
           </div>
-        </div>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Leads by Status */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4">Leads by Status</h2>
-          <BarGroup
-            items={data.leads.byStatus.map((s) => ({ label: s.status, count: s.count }))}
-            colorMap={STATUS_COLORS}
-          />
-        </div>
-
-        {/* Leads by Score */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4">Leads by Score</h2>
-          <BarGroup
-            items={data.leads.byScore.map((s) => ({ label: s.score, count: s.count }))}
-            colorMap={SCORE_COLORS}
-          />
-        </div>
-
-        {/* Tasks by Status */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4">Tasks by Status</h2>
-          <BarGroup
-            items={data.tasks.byStatus.map((s) => ({ label: s.status, count: s.count }))}
-            colorMap={STATUS_COLORS}
-          />
-        </div>
-
-        {/* Follow-ups by Status */}
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4">Follow-ups by Status</h2>
-          <BarGroup
-            items={data.followUps.byStatus.map((s) => ({ label: s.status, count: s.count }))}
-            colorMap={STATUS_COLORS}
-          />
         </div>
       </div>
 
-      {/* Leads over time (30 days) */}
-      {Object.keys(data.leads.byDay).length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <h2 className="text-sm font-semibold text-foreground mb-4">Leads — Last 30 Days</h2>
-          <div className="flex items-end gap-1 h-24">
-            {Object.entries(data.leads.byDay).map(([day, count]) => {
-              const maxDay = Math.max(...Object.values(data.leads.byDay), 1)
-              return (
-                <div
-                  key={day}
-                  title={`${day}: ${count} lead${count !== 1 ? 's' : ''}`}
-                  className="flex-1 rounded-t bg-primary/60 hover:bg-primary transition-colors min-w-[4px]"
-                  style={{ height: `${(count / maxDay) * 100}%` }}
-                />
-              )
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">Each bar = 1 day</p>
-        </div>
-      )}
-
-      {/* Recent Activity */}
-      <div className="rounded-xl border border-border bg-card p-5">
-        <h2 className="text-sm font-semibold text-foreground mb-4">Recent Activity</h2>
-        {data.recentActivities.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No activity recorded yet</p>
+      {/* Stat cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-8">
+        {loading ? (
+          [...Array(4)].map((_, i) => <SkeletonBlock key={i} className="h-[120px]" />)
         ) : (
-          <ActivityTimeline activities={data.recentActivities} />
+          <>
+            <StatCard
+              label="Total Leads"
+              value={data?.leads.total ?? 0}
+              icon={<TrendingUp className="h-5 w-5 text-indigo-600" />}
+              accent="bg-indigo-50"
+            />
+            <StatCard
+              label="Follow-ups"
+              value={data?.followUps.total ?? 0}
+              sub={`${data?.followUps.overdue ?? 0} overdue`}
+              icon={<CalendarCheck className="h-5 w-5 text-amber-600" />}
+              accent="bg-amber-50"
+            />
+            <StatCard
+              label="Tasks"
+              value={data?.tasks.total ?? 0}
+              sub={`${data?.tasks.overdue ?? 0} overdue`}
+              icon={<CheckSquare className="h-5 w-5 text-violet-600" />}
+              accent="bg-violet-50"
+            />
+            <StatCard
+              label="Total Contacts"
+              value={data?.contacts.total ?? 0}
+              sub={`+${data?.contacts.thisWeek ?? 0} this week`}
+              icon={<Users className="h-5 w-5 text-emerald-600" />}
+              accent="bg-emerald-50"
+            />
+          </>
+        )}
+      </div>
+
+      {/* Charts grid */}
+      <div className="grid gap-6 lg:grid-cols-2 mb-6">
+        {/* Lead status bar chart */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-5">
+          <h2 className="text-[14px] font-semibold text-slate-900 mb-4">Lead Status Breakdown</h2>
+          {loading ? (
+            <SkeletonBlock className="h-[200px]" />
+          ) : leadChartData.length === 0 ? (
+            <div className="flex h-[200px] items-center justify-center text-[13px] text-slate-400">No lead data</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={leadChartData} margin={{ top: 4, right: 0, left: -28, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "12px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+                  cursor={{ fill: "#f8fafc" }}
+                />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {leadChartData.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* Follow-up pie */}
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-5">
+          <h2 className="text-[14px] font-semibold text-slate-900 mb-4">Follow-up Status</h2>
+          {loading ? (
+            <SkeletonBlock className="h-[200px]" />
+          ) : fuPieData.length === 0 ? (
+            <div className="flex h-[200px] items-center justify-center text-[13px] text-slate-400">No follow-up data</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={fuPieData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" paddingAngle={3}>
+                  {fuPieData.map((_, idx) => (
+                    <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "8px", fontSize: "12px" }} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+
+      {/* Recent activity */}
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Activity className="h-4 w-4 text-slate-400" />
+          <h2 className="text-[14px] font-semibold text-slate-900">Recent Activity</h2>
+        </div>
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(5)].map((_, i) => <SkeletonBlock key={i} className="h-12" />)}
+          </div>
+        ) : (data?.recentActivity ?? []).length === 0 ? (
+          <p className="text-[13px] text-slate-400 py-4 text-center">No recent activity</p>
+        ) : (
+          <div className="divide-y divide-slate-50">
+            {(data?.recentActivity ?? []).map((item) => (
+              <div key={item.id} className="flex items-start gap-3 py-3">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 mt-0.5">
+                  <Activity className="h-3.5 w-3.5 text-indigo-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-slate-800">{item.title}</p>
+                  {item.description && <p className="text-[12px] text-slate-500">{item.description}</p>}
+                </div>
+                <span className="shrink-0 text-[11px] text-slate-400">
+                  {new Date(item.created_at).toLocaleDateString("en", { month: "short", day: "numeric" })}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

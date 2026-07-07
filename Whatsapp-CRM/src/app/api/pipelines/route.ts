@@ -1,70 +1,56 @@
-import { NextRequest, NextResponse } from "next/server"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
-import { prisma } from "@/lib/db"
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
+import { prisma } from '@/lib/db'
 
-const SPEC_DEFAULT_STAGES = [
-  { name: "New Lead", color: "#3b82f6", position: 0 },
-  { name: "Qualified", color: "#eab308", position: 1 },
-  { name: "Proposal Sent", color: "#f97316", position: 2 },
-  { name: "Negotiation", color: "#8b5cf6", position: 3 },
-  { name: "Won", color: "#22c55e", position: 4 },
-]
-
-/**
- * GET /api/pipelines
- * Returns all pipelines for the current account, ordered by created_at.
- * Also returns all stages and deals for the account.
- */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const ctx = await requireRole("viewer")
+    const ctx = await requireRoleOrApiKey(req, 'viewer')
 
     const pipelines = await prisma.pipeline.findMany({
       where: { account_id: ctx.accountId },
-      orderBy: { created_at: "asc" },
+      include: {
+        stages: { orderBy: { position: 'asc' } },
+        _count: { select: { deals: true } },
+      },
+      orderBy: { created_at: 'asc' },
     })
 
     return NextResponse.json({ pipelines })
-  } catch (err) {
-    return toErrorResponse(err)
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }
 
-/**
- * POST /api/pipelines
- * Creates a new pipeline with the default stages.
- * Body: { name: string }
- */
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await requireRole("admin")
-    const body = await req.json().catch(() => null)
-    if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
-
-    const { name } = body as { name?: string }
-    if (!name?.trim()) {
-      return NextResponse.json({ error: "name is required" }, { status: 400 })
-    }
+    const ctx = await requireRoleOrApiKey(req, 'admin')
+    const body = await req.json()
+    const name = (body.name ?? '').trim()
+    if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
 
     const pipeline = await prisma.pipeline.create({
-      data: {
-        user_id: ctx.userId,
-        account_id: ctx.accountId,
-        name: name.trim(),
-      },
+      data: { account_id: ctx.accountId, user_id: ctx.userId, name },
+      include: { stages: true, _count: { select: { deals: true } } },
     })
 
+    // Create default stages
+    const defaultStages = body.stages ?? ['New', 'In Progress', 'Won', 'Lost']
     await prisma.pipelineStage.createMany({
-      data: SPEC_DEFAULT_STAGES.map((s) => ({
+      data: defaultStages.map((name: string, i: number) => ({
         pipeline_id: pipeline.id,
-        name: s.name,
-        color: s.color,
-        position: s.position,
+        name,
+        position: i,
+        color: ['#6366f1', '#f59e0b', '#10b981', '#f43f5e'][i] ?? '#6366f1',
       })),
     })
 
-    return NextResponse.json({ pipeline }, { status: 201 })
-  } catch (err) {
-    return toErrorResponse(err)
+    const full = await prisma.pipeline.findUnique({
+      where: { id: pipeline.id },
+      include: { stages: { orderBy: { position: 'asc' } }, _count: { select: { deals: true } } },
+    })
+
+    return NextResponse.json({ pipeline: full }, { status: 201 })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }

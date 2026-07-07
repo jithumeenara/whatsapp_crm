@@ -32,13 +32,15 @@ export async function POST(request: Request) {
       return rateLimitResponse(limit);
     }
 
-    // Resolve the caller's account_id so conversation + whatsapp_config
-    // lookups work for teammates who didn't author the rows directly.
+    // Resolve the caller's account_id and role so conversation lookups
+    // work for teammates who didn't author the rows directly, and so
+    // agents are restricted to their assigned conversations.
     const profile = await prisma.profile.findUnique({
       where: { user_id: userId },
-      select: { account_id: true },
+      select: { account_id: true, account_role: true },
     });
     const accountId = profile?.account_id;
+    const isAgent = profile?.account_role === "agent";
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -77,7 +79,11 @@ export async function POST(request: Request) {
     }
 
     const conversation = await prisma.conversation.findFirst({
-      where: { id: targetMessage.conversation_id, account_id: accountId },
+      where: {
+        id: targetMessage.conversation_id,
+        account_id: accountId,
+        ...(isAgent ? { assigned_agent_id: userId } : {}),
+      },
       select: {
         id: true,
         account_id: true,

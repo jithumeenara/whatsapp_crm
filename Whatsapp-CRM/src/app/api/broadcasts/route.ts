@@ -1,15 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import type { AccountContext } from "@/lib/auth/account";
 import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-sending";
 
 /**
  * GET /api/broadcasts
  * Lists all broadcasts for the current account, newest first.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const ctx = await getCurrentAccount();
+    const ctx = await requireRoleOrApiKey(req, "viewer");
     const broadcasts = await ctx.db.broadcast.findMany({
       where: { account_id: ctx.accountId },
       orderBy: { created_at: "desc" },
@@ -31,9 +32,9 @@ export async function GET() {
  * This is intentionally one coarse endpoint: the hook drives the
  * per-batch Meta sends itself, updating recipient rows as it goes.
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const ctx = await getCurrentAccount();
+    const ctx = await requireRoleOrApiKey(request, "agent");
     const db = ctx.db;
 
     const body = await request.json() as {
@@ -159,8 +160,12 @@ type ContactRow = {
   account_id: string;
 };
 
+// Only contacts with at least one WhatsApp conversation are valid broadcast targets.
+// Instagram contacts store a PSID (not a real phone number) and will always fail.
+const WA_FILTER = { conversations: { some: { channel: "whatsapp" } } } as const;
+
 async function resolveAudience(
-  ctx: Awaited<ReturnType<typeof getCurrentAccount>>,
+  ctx: AccountContext,
   audience: AudienceConfig,
 ): Promise<ContactRow[]> {
   const db = ctx.db;
@@ -168,7 +173,7 @@ async function resolveAudience(
 
   if (audience.type === "all") {
     contacts = await db.contact.findMany({
-      where: { account_id: ctx.accountId },
+      where: { account_id: ctx.accountId, ...WA_FILTER },
     });
   } else if (
     audience.type === "tags" &&
@@ -182,7 +187,7 @@ async function resolveAudience(
     const uniqueContactIds = [...new Set(contactTags.map((ct) => ct.contact_id))];
     if (uniqueContactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: uniqueContactIds }, account_id: ctx.accountId },
+        where: { id: { in: uniqueContactIds }, account_id: ctx.accountId, ...WA_FILTER },
       });
     }
   } else if (audience.type === "custom_field" && audience.customField) {
@@ -199,11 +204,21 @@ async function resolveAudience(
     const contactIds = [...new Set(matches.map((m) => m.contact_id))];
     if (contactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: contactIds }, account_id: ctx.accountId },
+        where: { id: { in: contactIds }, account_id: ctx.accountId, ...WA_FILTER },
       });
     }
   } else if (audience.type === "csv" && audience.csvContacts) {
-    contacts = await upsertCsvContacts(ctx, audience.csvContacts);
+    // CSV numbers are user-supplied phone numbers — upsert as contacts then filter to WA.
+    const upserted = await upsertCsvContacts(ctx, audience.csvContacts);
+    const upsertedIds = upserted.map((c) => c.id);
+    contacts = upsertedIds.length > 0
+      ? await db.contact.findMany({ where: { id: { in: upsertedIds }, ...WA_FILTER } })
+      : [];
+  } else if (audience.type === "contacts" && audience.contactIds && audience.contactIds.length > 0) {
+    // Already WhatsApp-filtered via the picker — still enforce at DB level.
+    contacts = await db.contact.findMany({
+      where: { id: { in: audience.contactIds }, account_id: ctx.accountId, ...WA_FILTER },
+    });
   }
 
   // Apply exclude tags.
@@ -220,7 +235,7 @@ async function resolveAudience(
 }
 
 async function upsertCsvContacts(
-  ctx: Awaited<ReturnType<typeof getCurrentAccount>>,
+  ctx: AccountContext,
   csvRows: { phone: string; name?: string }[],
 ): Promise<ContactRow[]> {
   if (csvRows.length === 0) return [];

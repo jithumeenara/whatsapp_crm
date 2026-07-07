@@ -41,18 +41,18 @@ export function SessionsCard() {
 
   return (
     <>
-      <Card className="bg-card/40 border-border">
+      <Card className="bg-white/40 border-slate-200">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground">
+          <CardTitle className="flex items-center gap-2 text-slate-800">
             <LogOut className="size-4 text-primary" />
             Active sessions
           </CardTitle>
-          <CardDescription className="text-muted-foreground">
+          <CardDescription className="text-slate-500">
             {profile?.email && (
               <span className="block mb-1">
-                Signed in as <strong className="text-foreground/80">{profile.email}</strong>
+                Signed in as <strong className="text-slate-800/80">{profile.email}</strong>
                 {profile.account_role && (
-                  <span className="ml-2 text-xs text-muted-foreground">({profile.account_role})</span>
+                  <span className="ml-2 text-xs text-slate-500">({profile.account_role})</span>
                 )}
               </span>
             )}

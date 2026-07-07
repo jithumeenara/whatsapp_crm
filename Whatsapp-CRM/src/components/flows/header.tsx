@@ -53,11 +53,11 @@ export function EditorHeader() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-slate-500">
         <button
           type="button"
           onClick={() => router.push("/flows")}
-          className="inline-flex items-center gap-1 hover:text-foreground/80"
+          className="inline-flex items-center gap-1 hover:text-slate-800/80"
         >
           <ArrowLeft className="h-3 w-3" />
           Flows
@@ -72,7 +72,7 @@ export function EditorHeader() {
               setState((s) => ({ ...s, name: e.target.value }))
             }
             placeholder="Flow name"
-            className="max-w-md bg-card text-lg font-semibold"
+            className="max-w-md bg-white text-lg font-semibold"
           />
           <StatusBadge status={state.status} />
           {dirty && (
@@ -154,7 +154,7 @@ export function EditorHeader() {
           setState((s) => ({ ...s, description: e.target.value }))
         }
         placeholder="Optional description (internal — customers don't see this)"
-        className="bg-card text-sm"
+        className="bg-white text-sm"
       />
     </div>
   );
@@ -162,9 +162,9 @@ export function EditorHeader() {
 
 function StatusBadge({ status }: { status: BuilderState["status"] }) {
   const cls = {
-    draft: "border-border bg-muted text-foreground/80",
+    draft: "border-slate-200 bg-slate-100 text-slate-800/80",
     active: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
-    archived: "border-border bg-muted/50 text-muted-foreground",
+    archived: "border-slate-200 bg-slate-100 text-slate-500",
   }[status];
   return (
     <Badge variant="outline" className={cn("shrink-0", cls)}>

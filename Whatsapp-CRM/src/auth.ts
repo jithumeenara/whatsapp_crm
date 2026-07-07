@@ -7,15 +7,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
       credentials: {
-        email: { label: "Email", type: "email" },
+        email: { label: "Email / WhatsApp Number", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-        });
+        // Support phone-number login for agents.
+        // Agents are stored with email = "{fullDigits}@agent.local" (country code included).
+        // The agent may enter only the local number (without country code), so we
+        // search for any @agent.local email that ENDS WITH the entered digits.
+        let user;
+        const raw = credentials.email as string;
+        if (!raw.includes('@')) {
+          const digits = raw.replace(/\D/g, '');
+          // Try exact match first (entered number = stored number)
+          user = await prisma.user.findUnique({
+            where: { email: `${digits}@agent.local` },
+          });
+          // Fall back to suffix match for sufficiently long digit sequences.
+          if (!user && digits.length >= 7) {
+            user = await prisma.user.findFirst({
+              where: { email: { endsWith: `${digits}@agent.local` } },
+            });
+          }
+        } else {
+          user = await prisma.user.findUnique({ where: { email: raw } });
+        }
 
         if (!user || !user.password_hash) return null;
 
@@ -29,7 +47,29 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  session: { strategy: "jwt" },
+  session: {
+    strategy: "jwt",
+    // Absolute cap — even an active user must re-authenticate after 8 hours.
+    maxAge: 8 * 60 * 60,
+  },
+  cookies: {
+    sessionToken: {
+      // NextAuth v5 uses "__Secure-" prefix in production (HTTPS) and the
+      // bare name in development. Mirror that convention here.
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-authjs.session-token"
+          : "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax" as const,
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        // Deliberately NO maxAge / expires → browser treats this as a
+        // session cookie and deletes it when the window/tab is closed.
+      },
+    },
+  },
   pages: {
     signIn: "/login",
     newUser: "/signup",

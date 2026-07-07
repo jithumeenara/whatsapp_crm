@@ -25,6 +25,7 @@ export async function GET() {
         email: true,
         avatar_url: true,
         account_role: true,
+        restrict_to_assigned: true,
         created_at: true,
       },
       orderBy: { created_at: "asc" },
@@ -34,13 +35,22 @@ export async function GET() {
 
     const members: AccountMember[] = rows.flatMap((row) => {
       if (!isAccountRole(row.account_role)) return [];
+      // Agent accounts use "{digits}@agent.local" as their internal email.
+      // Strip the suffix so the roster shows just the WhatsApp number.
+      const emailStr = row.email ?? "";
+      const displayEmail = canSeeEmails
+        ? emailStr.endsWith("@agent.local")
+          ? `WhatsApp: ${emailStr.replace("@agent.local", "")}`
+          : emailStr || null
+        : null;
       return [
         {
           user_id: row.user_id,
           full_name: row.full_name ?? "",
-          email: canSeeEmails ? row.email : null,
+          email: displayEmail,
           avatar_url: row.avatar_url,
           role: row.account_role,
+          restrict_to_assigned: row.restrict_to_assigned,
           joined_at: row.created_at.toISOString(),
         },
       ];
@@ -48,6 +58,7 @@ export async function GET() {
 
     return NextResponse.json({ members });
   } catch (err) {
+    console.error("[GET /api/account/members] error:", err)
     return toErrorResponse(err);
   }
 }

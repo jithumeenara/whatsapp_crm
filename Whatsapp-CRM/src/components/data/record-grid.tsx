@@ -148,7 +148,7 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
       {/* Toolbar */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
           <Input
             placeholder="Search records…"
             value={search}
@@ -164,11 +164,11 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border overflow-hidden">
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/40">
+              <TableRow className="bg-slate-50">
                 <TableHead className="w-10 text-xs">#</TableHead>
                 {fields.map((f) => (
                   <TableHead key={f.id} className="text-xs whitespace-nowrap">
@@ -183,14 +183,14 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
               {loading && (
                 <TableRow>
                   <TableCell colSpan={fields.length + 2} className="text-center py-12">
-                    <Loader2 className="size-5 animate-spin mx-auto text-muted-foreground" />
+                    <Loader2 className="size-5 animate-spin mx-auto text-slate-500" />
                   </TableCell>
                 </TableRow>
               )}
               {!loading && records.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={fields.length + 2} className="text-center py-12">
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <div className="flex flex-col items-center gap-2 text-slate-500">
                       <FileX className="size-8 opacity-30" />
                       <p className="text-sm">{search ? 'No records match your search.' : 'No records yet. Add your first record!'}</p>
                     </div>
@@ -198,8 +198,8 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
                 </TableRow>
               )}
               {!loading && records.map((record, idx) => (
-                <TableRow key={record.id} className="hover:bg-muted/20 group">
-                  <TableCell className="text-xs text-muted-foreground font-mono">
+                <TableRow key={record.id} className="hover:bg-slate-100/20 group">
+                  <TableCell className="text-xs text-slate-500 font-mono">
                     {(page - 1) * PAGE_SIZE + idx + 1}
                   </TableCell>
                   {fields.map((field) => (
@@ -223,7 +223,7 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
                       <button
                         type="button"
                         onClick={() => openEdit(record)}
-                        className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                        className="p-1 rounded text-slate-500 hover:text-primary hover:bg-slate-100 transition-colors"
                       >
                         <Pencil className="size-3.5" />
                       </button>
@@ -231,7 +231,7 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
                         type="button"
                         onClick={() => setConfirmDeleteId(record.id)}
                         disabled={deleting === record.id}
-                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                        className="p-1 rounded text-slate-500 hover:text-destructive hover:bg-slate-100 transition-colors"
                       >
                         {deleting === record.id
                           ? <Loader2 className="size-3.5 animate-spin" />
@@ -248,7 +248,7 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <div className="flex items-center justify-between text-sm text-slate-500">
           <span>{total} records total</span>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" className="h-8 w-8 p-0"

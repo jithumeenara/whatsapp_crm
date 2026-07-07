@@ -61,6 +61,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeState(next);
     if (typeof document !== "undefined") {
       document.documentElement.dataset.theme = next;
+      // Mirror to cookie so the Server Component layout can read it on next
+      // request and set data-theme before hydration — no inline script needed.
+      document.cookie = `${STORAGE_KEY}=${next};path=/;max-age=${365 * 24 * 3600};SameSite=Lax`;
     }
     try {
       localStorage.setItem(STORAGE_KEY, next);

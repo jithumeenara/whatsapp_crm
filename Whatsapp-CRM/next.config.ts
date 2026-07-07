@@ -1,12 +1,13 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV === "development";
+
 /**
  * Baseline security headers applied to every response.
  *
- * CSP ships as `Content-Security-Policy-Report-Only` so the browser
- * surfaces violations in the console without blocking anything — once
- * we have confidence nothing legit trips it (two deploys, a pass on
- * every route), flip the key to `Content-Security-Policy` to enforce.
+ * CSP is enforced via `Content-Security-Policy`.
+ * `'unsafe-inline'` is required for Next.js hydration scripts and
+ * Tailwind inline styles; `'unsafe-eval'` is used in dev mode only.
  *
  * The rest of the headers are straight blocks, safe to enforce today:
  *   - HSTS: only meaningful on HTTPS (no-op on http://localhost).
@@ -29,13 +30,14 @@ const SECURITY_HEADERS = [
     value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
   },
   {
-    key: "Content-Security-Policy-Report-Only",
+    key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      // Next.js needs 'unsafe-inline' for its inline hydration script
-      // and 'unsafe-eval' in dev + some production optimisations.
-      // Nonce-based CSP is a later project.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // Next.js needs 'unsafe-inline' for its inline hydration script.
+      // 'unsafe-eval' is restricted to dev only — Turbopack uses it but
+      // production builds do not need it.
+      // Razorpay checkout.js and any scripts it loads dynamically
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://*.razorpay.com`,
       // Tailwind + inline style attributes on lots of components.
       "style-src 'self' 'unsafe-inline'",
       // Supabase public-bucket avatars, contact avatars (arbitrary
@@ -45,7 +47,12 @@ const SECURITY_HEADERS = [
       "font-src 'self' data:",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      // Razorpay: wildcard covers checkout.razorpay.com, api.razorpay.com,
+      // cdn.razorpay.com, lumberjack.razorpay.com and any other subdomains
+      // the checkout modal needs.
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com",
+      // Razorpay checkout modal renders as an iframe — wildcard covers all subdomains
+      "frame-src https://*.razorpay.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -54,6 +61,9 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  experimental: {
+    optimizePackageImports: ["lucide-react", "date-fns", "sonner"],
+  },
   /**
    * Cache-Control policy.
    *
@@ -103,7 +113,7 @@ const nextConfig: NextConfig = {
           {
             key: "Cache-Control",
             value:
-              "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+              "public, max-age=0, s-maxage=300",
           },
         ],
       },

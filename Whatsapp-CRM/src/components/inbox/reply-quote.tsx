@@ -27,7 +27,7 @@ export function ReplyQuote({
       className={cn(
         "flex items-start gap-2 border-l-2 border-primary px-2 py-1",
         isChip
-          ? "rounded-md bg-muted/80"
+          ? "rounded-md bg-slate-100"
           : "mb-1.5 rounded-md bg-black/20",
       )}
     >
@@ -42,7 +42,7 @@ export function ReplyQuote({
          *  layout wider, shoving the contact sidebar off-screen.
          *  `break-words` also wraps long URLs that have no whitespace
          *  to break on. Issue #165. */}
-        <div className="whitespace-pre-wrap break-words text-xs text-foreground/80/80">
+        <div className="whitespace-pre-wrap break-words text-xs text-slate-800/80/80">
           {preview}
         </div>
       </div>
@@ -51,7 +51,7 @@ export function ReplyQuote({
           type="button"
           onClick={onDismiss}
           aria-label="Cancel reply"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-slate-800"
         >
           <X className="h-3.5 w-3.5" />
         </button>

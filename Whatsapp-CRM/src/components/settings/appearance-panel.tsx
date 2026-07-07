@@ -23,8 +23,8 @@ export function AppearancePanel() {
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">Color theme</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h2 className="text-lg font-semibold text-slate-800">Color theme</h2>
+        <p className="mt-1 text-sm text-slate-500">
           Pick the accent color used across the app. All themes stay
           dark — only the primary color (buttons, active nav, badges)
           changes. Saved to this device.
@@ -70,10 +70,10 @@ function ThemeCard({
       aria-pressed={isActive}
       aria-label={`Use ${name} theme`}
       className={cn(
-        "flex flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-colors",
+        "flex flex-col gap-3 rounded-lg border bg-white p-4 text-left transition-colors",
         isActive
           ? "border-primary/60 ring-2 ring-primary/40"
-          : "border-border hover:border-border hover:bg-muted/40",
+          : "border-slate-200 hover:border-slate-200 hover:bg-slate-50",
       )}
     >
       <div className="flex items-center justify-between">
@@ -93,8 +93,8 @@ function ThemeCard({
         )}
       </div>
       <div>
-        <div className="text-sm font-semibold text-foreground">{name}</div>
-        <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        <div className="text-sm font-semibold text-slate-800">{name}</div>
+        <div className="mt-1 text-xs leading-relaxed text-slate-500">
           {tagline}
         </div>
       </div>
@@ -104,8 +104,8 @@ function ThemeCard({
       >
         <span className="flex-1" style={{ background: swatch }} />
         <span className="w-3 bg-slate-700" />
-        <span className="w-3 bg-muted" />
-        <span className="w-3 bg-card" />
+        <span className="w-3 bg-slate-100" />
+        <span className="w-3 bg-white" />
       </div>
       <span className="sr-only">Theme id: {id}</span>
     </button>

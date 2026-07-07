@@ -59,6 +59,7 @@ model User {
 
 enum AccountRole {
   owner
+  supervisor
   admin
   agent
   viewer
@@ -102,6 +103,11 @@ model Account {
   segments                     Segment[]
   tasks                        Task[]
   push_subscriptions           PushSubscription[]
+  capture_config               ContactCaptureConfig?
+  lead_settings                LeadSettings?
+  api_keys                     ApiKey[]
+  webhooks                     Webhook[]
+  integrations                 Integration[]
 
   @@unique([owner_user_id])
   @@map("accounts")
@@ -133,9 +139,10 @@ model Profile {
   email        String
   avatar_url   String?
   account_id   String      @db.Uuid
-  account_role AccountRole
-  created_at   DateTime    @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime    @updatedAt @db.Timestamptz(6)
+  account_role          AccountRole
+  restrict_to_assigned  Boolean     @default(false)
+  created_at            DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime    @updatedAt @db.Timestamptz(6)
 
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
@@ -153,10 +160,13 @@ model Contact {
   user_id          String   @db.Uuid
   phone            String
   phone_normalized String?
+  alternate_phone  String?
   name             String?
   email            String?
   company          String?
+  gender           String?
   avatar_url       String?
+  external_id      String?                        // dedup key for external integrations (HMS, LMS, etc.)
   created_at       DateTime @default(now()) @db.Timestamptz(6)
   updated_at       DateTime @updatedAt @db.Timestamptz(6)
 
@@ -281,6 +291,15 @@ model Conversation {
   deals            Deal[]
   flow_runs        FlowRun[]
 
+  // Channel that originated this conversation
+  channel         String   @default("whatsapp") // 'whatsapp' | 'instagram'
+
+  // Contact name capture flow state
+  capture_state   String?  // null | 'awaiting_confirm' | 'awaiting_name'
+  capture_wa_name String?  // WhatsApp profile name shown in the confirmation prompt
+
+  @@index([account_id, unread_count])
+  @@index([account_id, last_message_at])
   @@map("conversations")
 }
 
@@ -296,8 +315,9 @@ model Message {
   message_id          String?
   status              String   @default("sent")
   interactive_reply_id String?
-  reply_to_message_id String?  @db.Uuid
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  reply_to_message_id String?   @db.Uuid
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at          DateTime? @db.Timestamptz(6)
 
   conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
   reply_to        Message?     @relation("MessageReplies", fields: [reply_to_message_id], references: [id], onDelete: SetNull)
@@ -341,6 +361,9 @@ model WhatsAppConfig {
   subscribed_apps_at     DateTime? @db.Timestamptz(6)
   last_registration_error String?
   connected_at           DateTime? @db.Timestamptz(6)
+  /// AES-256-GCM encrypted RSA private key for Meta Flows decryption.
+  /// When set, takes priority over FLOWS_PRIVATE_KEY env var — no server restart needed.
+  flows_private_key      String?
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
 
@@ -448,7 +471,8 @@ model Deal {
   user_id             String    @db.Uuid
   pipeline_id         String    @db.Uuid
   stage_id            String    @db.Uuid
-  contact_id          String    @db.Uuid
+  contact_id          String?   @db.Uuid
+  lead_id             String?   @db.Uuid
   conversation_id     String?   @db.Uuid
   assigned_to         String?   @db.Uuid
   title               String
@@ -464,7 +488,8 @@ model Deal {
   user         User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
   pipeline     Pipeline      @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
   stage        PipelineStage @relation(fields: [stage_id], references: [id])
-  contact      Contact       @relation(fields: [contact_id], references: [id])
+  contact      Contact?      @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  lead         Lead?         @relation(fields: [lead_id], references: [id], onDelete: SetNull)
   conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
 
   @@map("deals")
@@ -624,6 +649,7 @@ model Flow {
   name             String
   description      String?
   flow_type        String    @default("flow")   // "flow" | "chatbot"
+  channel          String    @default("whatsapp") // 'whatsapp' | 'instagram'
   status           String    @default("draft")
   trigger_type     String
   trigger_config   Json      @default("{}")
@@ -718,6 +744,7 @@ model DataTable {
   fields           DataField[]  @relation("TableFields")
   relation_targets DataField[]  @relation("FieldRelation")
   records          DataRecord[]
+  webhooks         Webhook[]
 
   @@unique([account_id, slug])
   @@map("data_tables")
@@ -786,20 +813,28 @@ model FileUpload {
 // ============================================================
 
 model Lead {
-  id           String    @id @default(uuid()) @db.Uuid
-  account_id   String    @db.Uuid
-  user_id      String    @db.Uuid
-  contact_id   String?   @db.Uuid
-  title        String
-  source       String    @default("manual")  // manual, whatsapp_flow, import, broadcast, referral
-  status       String    @default("new")     // new, contacted, qualified, converted, lost
-  score        String    @default("warm")    // hot, warm, cold
-  notes        String?
-  assigned_to  String?   @db.Uuid
-  lost_reason  String?
-  converted_at DateTime? @db.Timestamptz(6)
-  created_at   DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at   DateTime  @updatedAt @db.Timestamptz(6)
+  id               String    @id @default(uuid()) @db.Uuid
+  account_id       String    @db.Uuid
+  user_id          String    @db.Uuid
+  contact_id       String?   @db.Uuid
+  title            String
+  source           String    @default("manual")  // whatsapp, instagram, website, campaign, referral, manual
+  status           String    @default("new")     // new, call_not_connected, visited, appointment_fixed, follow_up, closed
+  score            String    @default("warm")    // hot, warm, cold
+  lead_quality     String?                       // qualified, not_qualified, wrong_enquiry
+  call_outcome     String?                       // out_of_coverage, busy, switched_off, invalid_number
+  closing_remarks  String?
+  district         String?
+  place            String?
+  notes            String?
+  assigned_to      String?   @db.Uuid
+  claimed_at       DateTime? @db.Timestamptz(6)
+  lost_reason      String?
+  converted_at     DateTime? @db.Timestamptz(6)
+  external_id      String?                        // dedup key for external integrations (HMS, LMS, etc.)
+  is_hidden        Boolean   @default(false)       // hidden from agent view (set via raw SQL in PATCH)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 
   account    Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -808,8 +843,30 @@ model Lead {
   activities LeadActivity[]
   follow_ups FollowUp[]
   tasks      Task[]
+  deals      Deal[]
 
   @@map("leads")
+}
+
+// ============================================================
+// LEAD SETTINGS
+// ============================================================
+
+model LeadSettings {
+  id                        String  @id @default(uuid()) @db.Uuid
+  account_id                String  @unique @db.Uuid
+  auto_lead_creation        Boolean @default(false)
+  scoring_mode              String  @default("score")  // score | quality | both
+  score_options             Json?   // string[] — custom score level labels (replaces hardcoded Hot/Warm/Cold)
+  call_not_connected_labels Json?   // string[] — custom labels for not-connected outcomes
+  call_connected_labels     Json?   // string[] — custom labels for connected outcomes
+  close_enquiry_reasons     Json?   // string[] — reasons shown in close lead dropdown
+  lead_sources              Json?   // {icon,label}[] — customisable lead source list
+  webhook_secret            String? // plain-text secret for /api/external/webhook?secret=
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("lead_settings")
 }
 
 // ============================================================
@@ -934,4 +991,113 @@ model PushSubscription {
 
   @@unique([user_id, endpoint])
   @@map("push_subscriptions")
+}
+
+// ============================================================
+// CONTACT CAPTURE CONFIG
+// ============================================================
+
+model ContactCaptureConfig {
+  id               String   @id @default(uuid()) @db.Uuid
+  account_id       String   @unique @db.Uuid
+  enabled          Boolean  @default(false)
+  confirm_message  String   @default("Hi {{name}}! Is that your real name? Please reply *Yes* to confirm or *No* to enter a different name.")
+  ask_name_message String   @default("No problem! Please type your correct full name and I'll save it for you.")
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("contact_capture_configs")
+}
+
+// ============================================================
+// API KEYS  (external app access to Data Store)
+// ============================================================
+
+model ApiKey {
+  id           String    @id @default(uuid()) @db.Uuid
+  account_id   String    @db.Uuid
+  name         String
+  /// SHA-256 hex of the raw key — never store the raw key
+  key_hash     String    @unique
+  /// First 12 chars of the raw key shown in the UI for identification
+  key_prefix   String
+  last_used_at DateTime? @db.Timestamptz(6)
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+// ============================================================
+// WEBHOOKS  (outbound delivery on Data Store changes)
+// ============================================================
+
+model Webhook {
+  id                   String    @id @default(uuid()) @db.Uuid
+  account_id           String    @db.Uuid
+  name                 String
+  url                  String
+  /// 32-byte hex secret used to sign each delivery (HMAC-SHA256)
+  signing_secret       String
+  /// Array of event names: "record.created" | "record.updated" | "record.deleted"
+  events               String[]
+  /// Null = all tables; set to scope to one table
+  table_id             String?   @db.Uuid
+  is_active            Boolean   @default(true)
+  last_triggered_at    DateTime? @db.Timestamptz(6)
+  last_response_status Int?
+  /// Consecutive delivery failures; auto-disabled at 10
+  failure_count        Int       @default(0)
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account    @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  table   DataTable? @relation(fields: [table_id], references: [id], onDelete: SetNull)
+
+  @@map("webhooks")
+}
+
+// ============================================================
+// EXTERNAL API INTEGRATIONS
+// ============================================================
+
+model Integration {
+  id                    String    @id @default(uuid()) @db.Uuid
+  account_id            String    @db.Uuid
+  name                  String
+  category              String    @default("custom")  // "ecommerce"|"payment"|"crm"|"feedback"|"healthcare"|"inventory"|"custom"
+  source_type           String    @default("rest")    // "fhir" | "rest"
+  base_url              String
+  resource              String                         // e.g. "Patient" or "/api/orders"
+  auth_type             String    @default("none")    // "none" | "api_key" | "bearer" | "basic"
+  auth_config           Json?                          // { header, value } | { token } | { username, password }
+  table_name            String?                        // override auto-generated table name
+  sync_interval_minutes Int?                           // null=manual, 5/15/30/60/360/1440=auto
+  status                String    @default("active")  // "active" | "paused" | "error"
+  last_synced_at        DateTime? @db.Timestamptz(6)
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account           @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  syncs   IntegrationSync[]
+
+  @@map("integrations")
+}
+
+model IntegrationSync {
+  id             String    @id @default(uuid()) @db.Uuid
+  integration_id String    @db.Uuid
+  status         String                        // "running" | "success" | "error"
+  records_synced Int       @default(0)
+  contacts_created Int     @default(0)
+  error_message  String?
+  started_at     DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at   DateTime? @db.Timestamptz(6)
+
+  integration Integration @relation(fields: [integration_id], references: [id], onDelete: Cascade)
+
+  @@map("integration_syncs")
 }

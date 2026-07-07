@@ -1,159 +1,119 @@
-'use client';
+"use client"
 
-import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Plus, Trash2, Loader2, LayoutGrid, MoreVertical } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { CreateTableDialog } from '@/components/data/create-table-dialog';
-import type { DataTable } from '@/lib/data-store/types';
-import { getIconEmoji } from '@/lib/data-store/types';
+import { useCallback, useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { Plus, Trash2, LayoutGrid, MoreVertical } from "lucide-react"
+import { CreateTableDialog } from "@/components/data/create-table-dialog"
+import type { DataTable } from "@/lib/data-store/types"
+import { getIconEmoji } from "@/lib/data-store/types"
 
-export default function DataStorePage() {
-  const router = useRouter();
-  const [tables, setTables] = useState<DataTable[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
+function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
+
+export default function DataStoreV2() {
+  const router = useRouter()
+  const [tables, setTables] = useState<DataTable[]>([])
+  const [loading, setLoading] = useState(true)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true)
     try {
-      const res = await fetch('/api/data-tables');
-      const data = await res.json();
-      setTables(data.tables ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      const res = await fetch("/api/data-tables")
+      const data = await res.json()
+      setTables(data.tables ?? [])
+    } finally { setLoading(false) }
+  }, [])
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load() }, [load])
 
   const deleteTable = async (id: string) => {
-    if (!confirm('Delete this table and all its records? This cannot be undone.')) return;
-    setDeleting(id);
+    if (!confirm("Delete this table and all its records? This cannot be undone.")) return
+    setDeleting(id)
     try {
-      await fetch(`/api/data-tables/${id}`, { method: 'DELETE' });
-      setTables((prev) => prev.filter((t) => t.id !== id));
-    } finally {
-      setDeleting(null);
-    }
-  };
+      await fetch(`/api/data-tables/${id}`, { method: "DELETE" })
+      setTables((prev) => prev.filter((t) => t.id !== id))
+    } finally { setDeleting(null) }
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <LayoutGrid className="size-6 text-primary" />
-            Data Store
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Create custom tables to store any data — doctors, courses, products, and more.
-          </p>
+    <div className="min-h-full">
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-6 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-lg">🗄️</div>
+            <div>
+              <h1 className="text-[15px] font-semibold text-slate-900">Data Store</h1>
+              <p className="text-[11px] text-slate-500">Custom tables for any data</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => setCreateOpen(true)} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-indigo-700 transition-colors">
+            <Plus className="h-3.5 w-3.5" /> New Table
+          </button>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2">
-          <Plus className="size-4" />
-          New Table
-        </Button>
       </div>
 
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && tables.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-20 gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted text-4xl">
-            🗄️
+      <div className="p-6">
+        {loading ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {[...Array(6)].map((_, i) => <div key={i} className="bg-white rounded-xl border border-slate-100 h-[100px] animate-pulse" />)}
           </div>
-          <div className="text-center">
-            <p className="font-semibold text-foreground">No tables yet</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Create your first custom table to start organizing your data.
-            </p>
+        ) : tables.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 rounded-xl border border-dashed border-slate-200 text-center">
+            <div className="text-5xl mb-4">🗄️</div>
+            <p className="text-[14px] font-semibold text-slate-700">No tables yet</p>
+            <p className="mt-1 text-[12px] text-slate-400">Create custom tables — doctors, products, inventory, and more</p>
+            <button type="button" onClick={() => setCreateOpen(true)} className="mt-4 flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white hover:bg-indigo-700">
+              <Plus className="h-3.5 w-3.5" /> New Table
+            </button>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="size-4" />
-            Create First Table
-          </Button>
-        </div>
-      )}
-
-      {/* Table cards grid */}
-      {!loading && tables.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {tables.map((table) => (
-            <div key={table.id} className="group relative">
-              {/* Card is a proper Link for reliable navigation */}
-              <Link
-                href={`/data/${table.id}`}
-                className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 hover:border-primary/50 hover:shadow-sm transition-all block"
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {tables.map((table) => (
+              <div
+                key={table.id}
+                className="group relative bg-white rounded-xl border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.05)] p-5 cursor-pointer hover:border-indigo-200 hover:shadow-[0_2px_8px_rgba(99,102,241,0.1)] transition-all"
+                onClick={() => router.push(`/data/${table.id}`)}
               >
                 <div className="flex items-start justify-between">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-2xl select-none">
-                    {getIconEmoji(table.icon)}
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-xl">
+                      {getIconEmoji(table.icon)}
+                    </div>
+                    <div>
+                      <p className="text-[14px] font-semibold text-slate-900">{table.name}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{table.fields?.length ?? 0} field{(table.fields?.length ?? 0) !== 1 ? "s" : ""}</p>
+                    </div>
                   </div>
-                  {/* Spacer so name doesn't overlap dropdown */}
-                  <div className="w-8" />
-                </div>
-
-                <div className="flex-1">
-                  <h3 className="font-semibold text-foreground leading-tight">{table.name}</h3>
-                  {table.description && (
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{table.description}</p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-3 text-xs text-muted-foreground border-t border-border pt-3 mt-auto">
-                  <span>{table._count?.fields ?? 0} fields</span>
-                  <span className="text-border">·</span>
-                  <span>{table._count?.records ?? 0} records</span>
-                </div>
-              </Link>
-
-              {/* Dropdown positioned absolutely over the card — doesn't block the Link */}
-              <div className="absolute top-3 right-3">
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-all">
-                    <MoreVertical className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => deleteTable(table.id)}
-                      className="text-destructive focus:text-destructive"
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setMenuOpenId(menuOpenId === table.id ? null : table.id) }}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
-                      {deleting === table.id
-                        ? <Loader2 className="size-4 animate-spin" />
-                        : <Trash2 className="size-4" />}
-                      Delete Table
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      <MoreVertical className="h-3.5 w-3.5" />
+                    </button>
+                    {menuOpenId === table.id && (
+                      <div className="absolute right-0 top-8 z-10 w-36 rounded-xl border border-slate-200 bg-white py-1 shadow-lg" onClick={(e) => e.stopPropagation()}>
+                        <button type="button" onClick={() => { setMenuOpenId(null); deleteTable(table.id) }} disabled={deleting === table.id}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-[12px] text-rose-600 hover:bg-rose-50">
+                          <Trash2 className="h-3.5 w-3.5" /> {deleting === table.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {table.description && (
+                  <p className="mt-3 text-[12px] text-slate-500 line-clamp-2">{table.description}</p>
+                )}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
-      <CreateTableDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={(t) => {
-          router.push(`/data/${t.id}`);
-        }}
-      />
+      <CreateTableDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreated={(t) => { router.push(`/data/${t.id}`) }} />
     </div>
-  );
+  )
 }

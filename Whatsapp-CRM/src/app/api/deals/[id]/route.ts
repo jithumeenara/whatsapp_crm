@@ -1,75 +1,53 @@
-import { NextRequest, NextResponse } from "next/server"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
-import { prisma } from "@/lib/db"
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
+import { prisma } from '@/lib/db'
 
-/**
- * DELETE /api/deals/[id]
- */
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireRole("agent")
+    const ctx = await requireRoleOrApiKey(req, 'agent')
     const { id } = await params
+    const body = await req.json()
 
-    const deal = await prisma.deal.findFirst({
+    const existing = await prisma.deal.findFirst({ where: { id, account_id: ctx.accountId } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    const deal = await prisma.deal.update({
       where: { id },
-      include: { pipeline: { select: { account_id: true } } },
+      data: {
+        stage_id:            body.stage_id            ?? undefined,
+        title:               body.title               ?? undefined,
+        value:               body.value               ?? undefined,
+        currency:            body.currency            ?? undefined,
+        notes:               body.notes               ?? undefined,
+        expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : undefined,
+        status:              body.status              ?? undefined,
+        assigned_to:         body.assigned_to         ?? undefined,
+        contact_id:          body.contact_id          ?? undefined,
+      },
+      include: {
+        stage:   { select: { id: true, name: true, color: true } },
+        contact: { select: { id: true, name: true, phone: true } },
+        lead:    { select: { id: true, title: true, score: true, status: true } },
+      },
     })
-    if (!deal || deal.pipeline.account_id !== ctx.accountId) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    }
 
-    await prisma.deal.delete({ where: { id } })
-    return NextResponse.json({ ok: true })
-  } catch (err) {
-    return toErrorResponse(err)
+    return NextResponse.json({ deal })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }
 
-/**
- * PATCH /api/deals/[id]
- * Updates a deal (move stage, edit fields, etc).
- */
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireRole("agent")
+    const ctx = await requireRoleOrApiKey(req, 'agent')
     const { id } = await params
-    const body = await req.json().catch(() => null)
-    if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
 
-    // Verify deal belongs to this account via pipeline
-    const deal = await prisma.deal.findFirst({
-      where: { id },
-      include: { pipeline: { select: { account_id: true } } },
-    })
-    if (!deal || deal.pipeline.account_id !== ctx.accountId) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 })
-    }
+    const existing = await prisma.deal.findFirst({ where: { id, account_id: ctx.accountId } })
+    if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    const allowed = [
-      "stage_id",
-      "title",
-      "value",
-      "currency",
-      "notes",
-      "expected_close_date",
-      "status",
-      "assigned_to",
-      "contact_id",
-    ] as const
-    const data: Record<string, unknown> = {}
-    for (const k of allowed) {
-      if (k in body) data[k] = body[k]
-    }
-
-    const updated = await prisma.deal.update({ where: { id }, data })
-    return NextResponse.json({ deal: updated })
-  } catch (err) {
-    return toErrorResponse(err)
+    await prisma.deal.delete({ where: { id } })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }

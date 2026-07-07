@@ -1,26 +1,20 @@
 // ============================================================
 // Account role helpers — pure, unit-testable, no I/O.
 //
-// Mirrors the `account_role_enum` Postgres type from migration
-// 017_account_sharing.sql. The hierarchy is intentionally a flat
-// ordinal (owner=4 … viewer=1) — it matches the same CASE
-// expression the `is_account_member(account_id, min_role)` SQL
-// helper uses, so server-side TypeScript guards and database-side
-// RLS speak the same language.
+// Hierarchy (highest → lowest privilege):
+//   owner(5) → admin(4) → supervisor(3) → agent(2) → viewer(1)
 //
-// Predicates (`canManageMembers`, `canEditSettings`, …) are the
-// single source of truth for "what can this role do?" — both
-// API route guards and UI gates should call them rather than
-// open-coding their own role checks. That keeps role-policy
-// changes a one-file diff.
+// Predicates are the single source of truth for "what can this role do?"
+// Both API route guards and UI gates call them here.
 // ============================================================
 
-export type AccountRole = "owner" | "admin" | "agent" | "viewer";
+export type AccountRole = "owner" | "admin" | "supervisor" | "agent" | "viewer";
 
 /** Ordered list of every valid role, lowest privilege first. */
 export const ACCOUNT_ROLES: readonly AccountRole[] = [
   "viewer",
   "agent",
+  "supervisor",
   "admin",
   "owner",
 ] as const;
@@ -32,8 +26,10 @@ export const ACCOUNT_ROLES: readonly AccountRole[] = [
 export function roleRank(role: AccountRole): number {
   switch (role) {
     case "owner":
-      return 4;
+      return 5;
     case "admin":
+      return 4;
+    case "supervisor":
       return 3;
     case "agent":
       return 2;
@@ -60,29 +56,31 @@ export function isAccountRole(value: unknown): value is AccountRole {
 
 // ============================================================
 // Capability predicates
-//
-// Every UI gate and API route guard should call one of these
-// instead of comparing role strings inline. Adding a capability
-// = one new predicate here + one call site change per consumer.
 // ============================================================
 
-/** Owner / admin: invite, remove, change roles. */
+/** Owner / admin / supervisor: invite and remove members, change roles. */
 export function canManageMembers(role: AccountRole): boolean {
-  return hasMinRole(role, "admin");
+  return hasMinRole(role, "supervisor");
 }
 
 /**
- * Owner / admin: edit account-wide settings (WhatsApp config,
- * message templates, pipelines, tags, custom fields, account
- * name). Excludes per-user settings like avatar or own password.
+ * Owner / admin only: edit account-wide settings (WhatsApp config,
+ * API keys, webhooks, AI config, database).
  */
 export function canEditSettings(role: AccountRole): boolean {
   return hasMinRole(role, "admin");
 }
 
 /**
- * Owner / admin / agent: write operational data — send messages,
- * create contacts, move deals, run broadcasts, edit automations.
+ * Owner only: WhatsApp Config, API Keys, Webhooks tabs.
+ */
+export function canEditWhatsAppConfig(role: AccountRole): boolean {
+  return role === "owner";
+}
+
+/**
+ * Owner / admin / supervisor / agent: write operational data — send messages,
+ * create contacts, run broadcasts, edit automations.
  * Viewers are read-only.
  */
 export function canSendMessages(role: AccountRole): boolean {
@@ -90,9 +88,16 @@ export function canSendMessages(role: AccountRole): boolean {
 }
 
 /**
+ * Owner / admin / supervisor: see all leads across all agents.
+ * Agents only see leads assigned to them (or the unassigned pool).
+ */
+export function canViewAllLeads(role: AccountRole): boolean {
+  return hasMinRole(role, "supervisor");
+}
+
+/**
  * Viewer: read-only across everything. Provided as a positive
- * predicate so UI gates read naturally (`if (canViewOnly(role))`
- * shows the "Read-only" tooltip without inverting `canSendMessages`).
+ * predicate so UI gates read naturally.
  */
 export function canViewOnly(role: AccountRole): boolean {
   return role === "viewer";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction } from "@/types";
 import {
@@ -13,6 +13,9 @@ import {
   LayoutTemplate,
   ImageOff,
   CornerDownLeft,
+  Bot,
+  UserRound,
+  Ban,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -25,16 +28,18 @@ interface MessageBubbleProps {
   reactions?: MessageReaction[];
   currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /** Display name for the agent who sent this message (if known). */
+  agentName?: string;
 }
 
 function StatusIcon({ status }: { status: Message["status"] }) {
   switch (status) {
     case "sending":
-      return <Clock className="h-3 w-3 text-muted-foreground" />;
+      return <Clock className="h-3 w-3 text-slate-500" />;
     case "sent":
-      return <Check className="h-3 w-3 text-muted-foreground" />;
+      return <Check className="h-3 w-3 text-slate-500" />;
     case "delivered":
-      return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      return <CheckCheck className="h-3 w-3 text-slate-500" />;
     case "read":
       return <CheckCheck className="h-3 w-3 text-blue-400" />;
     case "failed":
@@ -47,7 +52,7 @@ function StatusIcon({ status }: { status: Message["status"] }) {
 function MediaUnavailable({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs text-white/80">
-      <ImageOff className="h-4 w-4 shrink-0 text-muted-foreground" />
+      <ImageOff className="h-4 w-4 shrink-0 text-slate-500" />
       <span>{label} unavailable</span>
     </div>
   );
@@ -58,49 +63,48 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const loadImage = useCallback(async () => {
+  useEffect(() => {
     if (!url) return;
+    let blobUrl: string | null = null;
+    let cancelled = false;
 
-    // Proxy URLs need auth fetch to create blob URL
     if (url.startsWith("/api/whatsapp/media/")) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to load media");
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        setSrc(blobUrl);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
+      fetch(url)
+        .then(async (res) => {
+          if (cancelled) return;
+          if (!res.ok) throw new Error("Failed to load media");
+          const blob = await res.blob();
+          blobUrl = URL.createObjectURL(blob);
+          if (!cancelled) setSrc(blobUrl);
+        })
+        .catch(() => {
+          if (!cancelled) setError(true);
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
     } else {
       setSrc(url);
       setLoading(false);
     }
-  }, [url]);
 
-  useEffect(() => {
-    loadImage();
     return () => {
-      if (src?.startsWith("blob:")) {
-        URL.revokeObjectURL(src);
-      }
+      cancelled = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadImage]);
+  }, [url]);
 
   if (error) {
     return (
-      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
-        <ImageOff className="h-8 w-8 text-muted-foreground" />
+      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-slate-100">
+        <ImageOff className="h-8 w-8 text-slate-500" />
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
+      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-slate-100">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
@@ -181,9 +185,9 @@ function MessageContent({ message }: { message: Message }) {
           href={message.media_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
+          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm hover:bg-slate-100"
         >
-          <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+          <FileText className="h-5 w-5 shrink-0 text-slate-500" />
           <span className="truncate">
             {message.content_text || "Document"}
           </span>
@@ -208,7 +212,7 @@ function MessageContent({ message }: { message: Message }) {
     case "location":
       return (
         <div className="flex items-center gap-2 text-sm">
-          <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <MapPin className="h-4 w-4 shrink-0 text-slate-500" />
           <span>{message.content_text || "Location shared"}</span>
         </div>
       );
@@ -221,7 +225,7 @@ function MessageContent({ message }: { message: Message }) {
       // tap rather than the customer typing the same words.
       return (
         <div className="flex flex-col gap-0.5">
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-slate-500">
             <CornerDownLeft className="h-3 w-3" />
             Button reply
           </span>
@@ -247,39 +251,76 @@ export function MessageBubble({
   reactions,
   currentUserId,
   onToggleReaction,
+  agentName,
 }: MessageBubbleProps) {
-  const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
+  const isOutbound = message.sender_type === "agent" || message.sender_type === "bot";
+  const isBot = message.sender_type === "bot";
+  const isAgent = message.sender_type === "agent";
+  // "You" = message sent by the currently logged-in user
+  const isSelf = isAgent && (message.sender_id === currentUserId || agentName === "You");
   const time = format(new Date(message.created_at), "HH:mm");
 
-  // Row alignment + width cap are owned by <MessageActions> so its hover
-  // group matches the bubble's content area, not the full row.
   return (
     <div
       className={cn(
         "flex flex-col",
-        isAgent ? "items-end" : "items-start",
+        isOutbound ? "items-end" : "items-start",
       )}
     >
+      {/* Sender label above the bubble */}
+      {isBot && (
+        <span className="mb-0.5 flex items-center gap-1 text-[10px] text-teal-400">
+          <Bot className="h-3 w-3" />
+          Chatbot
+        </span>
+      )}
+      {isAgent && agentName && (
+        <span
+          className={cn(
+            "mb-0.5 flex items-center gap-1 text-[10px]",
+            agentName === "You" ? "text-emerald-400" : "text-amber-400",
+          )}
+        >
+          <UserRound className="h-3 w-3" />
+          {agentName}
+        </span>
+      )}
+
       <div
         className={cn(
           "relative rounded-2xl px-3 py-2",
-          isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-zinc-700 text-white shadow-sm",
+          message.deleted_at
+            ? "rounded-br-md bg-slate-100 text-slate-400 border border-slate-200"
+            : isBot
+              ? "rounded-br-md bg-teal-700 text-white"
+              : isSelf
+                ? "rounded-br-md bg-primary text-primary-foreground"
+                : isAgent
+                  ? "rounded-br-md bg-amber-700 text-white"
+                  : "rounded-bl-md bg-zinc-700 text-white shadow-sm",
         )}
       >
-        {reply && (
-          <ReplyQuote authorLabel={reply.authorLabel} preview={reply.preview} />
+        {message.deleted_at ? (
+          <span className="flex items-center gap-1.5 text-[12px] italic text-slate-400">
+            <Ban className="h-3 w-3" />
+            {isOutbound ? "You deleted this message" : "This message was deleted"}
+          </span>
+        ) : (
+          <>
+            {reply && (
+              <ReplyQuote authorLabel={reply.authorLabel} preview={reply.preview} />
+            )}
+            <MessageContent message={message} />
+          </>
         )}
-        <MessageContent message={message} />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",
-            isAgent ? "justify-end" : "justify-start",
+            isOutbound ? "justify-end" : "justify-start",
           )}
         >
-          <span className="text-[10px] text-foreground/60">{time}</span>
-          {isAgent && <StatusIcon status={message.status} />}
+          <span className="text-[10px] text-slate-800/60">{time}</span>
+          {isOutbound && <StatusIcon status={message.status} />}
         </div>
       </div>
       {reactions && reactions.length > 0 && onToggleReaction && (

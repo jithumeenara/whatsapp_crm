@@ -117,7 +117,7 @@ export const NODE_META: Record<
     icon: LayoutGrid,
     color: "text-violet-400",
   },
-  end: { label: "End", icon: Flag, color: "text-muted-foreground" },
+  end: { label: "End", icon: Flag, color: "text-slate-500" },
 };
 
 // ============================================================

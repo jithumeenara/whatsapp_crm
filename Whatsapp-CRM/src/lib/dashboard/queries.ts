@@ -10,9 +10,8 @@ import {
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  CRMStats,
   MetricsBundle,
-  PipelineDonutData,
-  PipelineStageSlice,
   ResponseTimeBucket,
   ResponseTimeSummary,
 } from './types'
@@ -29,7 +28,6 @@ export async function loadMetrics(accountId: string): Promise<MetricsBundle> {
     newConvYesterday,
     newContactsToday,
     newContactsYesterday,
-    openDeals,
     messagesToday,
     messagesYesterday,
   ] = await Promise.all([
@@ -38,7 +36,6 @@ export async function loadMetrics(accountId: string): Promise<MetricsBundle> {
     prisma.conversation.count({ where: { account_id: accountId, status: 'open', created_at: { gte: yesterdayStart, lt: todayStart } } }),
     prisma.contact.count({ where: { account_id: accountId, created_at: { gte: todayStart } } }),
     prisma.contact.count({ where: { account_id: accountId, created_at: { gte: yesterdayStart, lt: todayStart } } }),
-    prisma.deal.findMany({ where: { account_id: accountId, status: 'open' }, select: { value: true } }),
     prisma.message.count({
       where: {
         sender_type: 'agent',
@@ -55,8 +52,6 @@ export async function loadMetrics(accountId: string): Promise<MetricsBundle> {
     }),
   ])
 
-  const openDealsValue = openDeals.reduce((sum, d) => sum + Number(d.value ?? 0), 0)
-
   return {
     activeConversations: {
       current: openConvCur,
@@ -66,8 +61,6 @@ export async function loadMetrics(accountId: string): Promise<MetricsBundle> {
       current: newContactsToday,
       previous: newContactsYesterday,
     },
-    openDealsValue,
-    openDealsCount: openDeals.length,
     messagesSentToday: {
       current: messagesToday,
       previous: messagesYesterday,
@@ -107,46 +100,7 @@ export async function loadConversationsSeries(
   return keys.map((day) => ({ day, ...(buckets.get(day) ?? { incoming: 0, outgoing: 0 }) }))
 }
 
-// --- 3. Pipeline donut -------------------------------------------------
-
-export async function loadPipelineDonut(accountId: string): Promise<PipelineDonutData> {
-  const [stages, deals] = await Promise.all([
-    prisma.pipelineStage.findMany({
-      where: { pipeline: { account_id: accountId } },
-      select: { id: true, name: true, color: true },
-      orderBy: { position: 'asc' },
-    }),
-    prisma.deal.findMany({
-      where: { account_id: accountId, status: 'open' },
-      select: { stage_id: true, value: true },
-    }),
-  ])
-
-  const byStage = new Map<string, { count: number; total: number }>()
-  for (const d of deals) {
-    const row = byStage.get(d.stage_id) ?? { count: 0, total: 0 }
-    row.count += 1
-    row.total += Number(d.value ?? 0)
-    byStage.set(d.stage_id, row)
-  }
-
-  const slices: PipelineStageSlice[] = stages
-    .map((s) => ({
-      id: s.id,
-      name: s.name,
-      color: s.color || '#64748b',
-      dealCount: byStage.get(s.id)?.count ?? 0,
-      totalValue: byStage.get(s.id)?.total ?? 0,
-    }))
-    .filter((s) => s.totalValue > 0 || s.dealCount > 0)
-
-  return {
-    stages: slices,
-    totalValue: slices.reduce((sum, s) => sum + s.totalValue, 0),
-  }
-}
-
-// --- 4. Response time by day of week ----------------------------------
+// --- 3. Response time by day of week ----------------------------------
 
 export async function loadResponseTime(accountId: string): Promise<ResponseTimeSummary> {
   const fourteenDaysAgo = daysAgoStart(13)
@@ -218,10 +172,10 @@ export async function loadResponseTime(accountId: string): Promise<ResponseTimeS
   }
 }
 
-// --- 5. Activity feed --------------------------------------------------
+// --- 4. Activity feed --------------------------------------------------
 
 export async function loadActivity(accountId: string, limit = 20): Promise<ActivityItem[]> {
-  const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
+  const [msgs, contacts, broadcasts, autoLogs] = await Promise.all([
     prisma.message.findMany({
       where: { sender_type: 'customer', conversation: { account_id: accountId } },
       select: {
@@ -238,12 +192,6 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
       where: { account_id: accountId },
       select: { id: true, name: true, phone: true, created_at: true },
       orderBy: { created_at: 'desc' },
-      take: 10,
-    }),
-    prisma.deal.findMany({
-      where: { account_id: accountId },
-      select: { id: true, title: true, updated_at: true, stage: { select: { name: true } } },
-      orderBy: { updated_at: 'desc' },
       take: 10,
     }),
     prisma.broadcast.findMany({
@@ -290,18 +238,6 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
     })
   }
 
-  for (const d of deals) {
-    items.push({
-      id: `deal-${d.id}`,
-      kind: 'deal',
-      text: d.stage?.name
-        ? `Deal "${d.title}" in ${d.stage.name}`
-        : `Deal "${d.title}" updated`,
-      at: d.updated_at.toISOString(),
-      href: '/pipelines',
-    })
-  }
-
   for (const b of broadcasts) {
     const label =
       b.status === 'sent'
@@ -330,4 +266,55 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
   return items
     .sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0))
     .slice(0, limit)
+}
+
+// --- 5. CRM stats -------------------------------------------------------
+
+export async function loadCRMStats(accountId: string): Promise<CRMStats> {
+  const now = new Date()
+
+  const [leadGroups, hotLeads, pendingFollowUps, overdueFollowUps, pendingTasks, overdueTasks] =
+    await Promise.all([
+      prisma.lead.groupBy({
+        by: ['status'],
+        where: { account_id: accountId },
+        _count: { _all: true },
+      }),
+      prisma.lead.count({
+        where: { account_id: accountId, score: 'hot', status: { notIn: ['converted', 'lost'] } },
+      }),
+      prisma.followUp.count({
+        where: { account_id: accountId, status: 'pending', due_at: { gte: now } },
+      }),
+      prisma.followUp.count({
+        where: { account_id: accountId, status: 'pending', due_at: { lt: now } },
+      }),
+      prisma.task.count({
+        where: {
+          account_id: accountId,
+          status: { in: ['todo', 'in_progress'] },
+          due_date: { not: null, gte: now },
+        },
+      }),
+      prisma.task.count({
+        where: {
+          account_id: accountId,
+          status: { in: ['todo', 'in_progress'] },
+          due_date: { not: null, lt: now },
+        },
+      }),
+    ])
+
+  const leadsByStatus = leadGroups.map((g) => ({ status: g.status, count: g._count._all }))
+  const totalLeads = leadsByStatus.reduce((sum, s) => sum + s.count, 0)
+
+  return {
+    leadsByStatus,
+    totalLeads,
+    hotLeads,
+    pendingFollowUps,
+    overdueFollowUps,
+    pendingTasks,
+    overdueTasks,
+  }
 }

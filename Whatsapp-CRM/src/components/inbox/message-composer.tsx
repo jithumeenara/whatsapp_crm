@@ -18,6 +18,7 @@ interface ReplyDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
+  channel?: string;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (mediaUrl: string, mediaType: 'image' | 'document' | 'audio' | 'video', filename?: string) => void;
   onOpenTemplates: () => void;
@@ -52,6 +53,7 @@ const ATTACH_OPTIONS = [
 export function MessageComposer({
   conversationId,
   sessionExpired,
+  channel,
   onSend,
   onSendMedia,
   onOpenTemplates,
@@ -62,6 +64,8 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentAttachType = useRef<typeof ATTACH_OPTIONS[number]['key']>('document');
@@ -122,28 +126,63 @@ export function MessageComposer({
     e.target.value = '';
 
     setUploading(true);
+    setUploadProgress(0);
+    setUploadingFilename(file.name);
+
     try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch('/api/upload', { method: 'POST', body: form });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || 'Upload failed');
-        return;
-      }
-      // Determine final media type from mime
-      let mediaType: 'image' | 'document' | 'audio' | 'video' = currentAttachType.current as 'image' | 'document' | 'audio';
+      const fileUrl = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload');
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            setUploadProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              resolve(data.url);
+            } catch {
+              reject(new Error('Invalid server response'));
+            }
+          } else {
+            try {
+              const data = JSON.parse(xhr.responseText);
+              reject(new Error(data.error || `Upload failed (${xhr.status})`));
+            } catch {
+              reject(new Error(`Upload failed (${xhr.status})`));
+            }
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.onabort = () => reject(new Error('Upload cancelled'));
+
+        const form = new FormData();
+        form.append('file', file);
+        xhr.send(form);
+      });
+
+      let mediaType: 'image' | 'document' | 'audio' | 'video' =
+        currentAttachType.current === 'audio' ? 'audio' :
+        currentAttachType.current === 'image' ? 'image' :
+        'document';
       if (file.type.startsWith('video/')) mediaType = 'video';
-      onSendMedia(data.url, mediaType, file.name);
+      onSendMedia(fileUrl, mediaType, file.name);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
+      setUploadingFilename(null);
     }
   }, [onSendMedia]);
 
   return (
-    <div className="border-t border-border bg-card p-3">
+    <div className="border-t border-slate-200 bg-white p-3">
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -162,7 +201,7 @@ export function MessageComposer({
         </div>
       )}
 
-      {sessionExpired && (
+      {sessionExpired && channel !== 'instagram' && channel !== 'facebook' && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
             24-hour session expired. Use a template to re-engage.
@@ -179,19 +218,40 @@ export function MessageComposer({
         </div>
       )}
 
+      {uploading && (
+        <div className="mb-2 space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="truncate text-xs text-slate-500">
+              {uploadingFilename ? `Uploading ${uploadingFilename}…` : 'Uploading…'}
+            </span>
+            <span className="ml-2 shrink-0 text-xs font-medium text-primary">
+              {uploadProgress ?? 0}%
+            </span>
+          </div>
+          <div className="h-1 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-150"
+              style={{ width: `${uploadProgress ?? 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex items-end gap-2">
-        {/* Template button */}
-        <GatedButton
-          variant="ghost"
-          size="sm"
-          canAct={!readOnly}
-          gateReason="send messages"
-          title={readOnly ? undefined : "Send template"}
-          className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-          onClick={onOpenTemplates}
-        >
-          <LayoutTemplate className="h-4 w-4" />
-        </GatedButton>
+        {/* Template button — WhatsApp only */}
+        {channel !== 'instagram' && channel !== 'facebook' && (
+          <GatedButton
+            variant="ghost"
+            size="sm"
+            canAct={!readOnly}
+            gateReason="send messages"
+            title={readOnly ? undefined : "Send template"}
+            className="h-9 w-9 shrink-0 p-0 text-slate-500 hover:text-slate-800"
+            onClick={onOpenTemplates}
+          >
+            <LayoutTemplate className="h-4 w-4" />
+          </GatedButton>
+        )}
 
         {/* Attachment button + popover */}
         <div className="relative shrink-0">
@@ -201,7 +261,7 @@ export function MessageComposer({
             canAct={!readOnly && !sessionExpired}
             gateReason="send messages"
             title="Attach file"
-            className="h-9 w-9 p-0 text-muted-foreground hover:text-foreground"
+            className="h-9 w-9 p-0 text-slate-500 hover:text-slate-800"
             onClick={() => setAttachOpen((o) => !o)}
             disabled={uploading}
           >
@@ -217,13 +277,13 @@ export function MessageComposer({
               {/* Backdrop */}
               <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
               {/* Menu */}
-              <div className="absolute bottom-11 left-0 z-20 w-48 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
+              <div className="absolute bottom-11 left-0 z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
                 {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
                   <button
                     key={key}
                     type="button"
                     onClick={() => openFilePicker(key, accept)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
                   >
                     <Icon className={cn("h-4 w-4 shrink-0", color)} />
                     {label}
@@ -250,7 +310,7 @@ export function MessageComposer({
           rows={1}
           title={readOnly ? "Read-only — your role can't send messages" : undefined}
           className={cn(
-            "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
+            "flex-1 resize-none rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
             (sessionExpired || readOnly) && "cursor-not-allowed opacity-50",
           )}
         />

@@ -12,13 +12,23 @@ export async function GET() {
     where: { user_id: session.user.id },
     include: {
       account: {
-        select: { id: true, name: true, default_currency: true },
+        select: { id: true, name: true, default_currency: true, owner_user_id: true },
       },
     },
   });
 
   if (!profile) {
     return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  }
+
+  // Self-healing: if this user owns the account but their role is wrong, fix it.
+  let accountRole = profile.account_role;
+  if (profile.account?.owner_user_id === session.user.id && accountRole !== "owner") {
+    await prisma.profile.update({
+      where: { user_id: session.user.id },
+      data: { account_role: "owner" },
+    });
+    accountRole = "owner";
   }
 
   return NextResponse.json({
@@ -28,7 +38,7 @@ export async function GET() {
       email: profile.email,
       avatar_url: profile.avatar_url,
       account_id: profile.account_id,
-      account_role: profile.account_role,
+      account_role: accountRole,
     },
     account: profile.account
       ? {

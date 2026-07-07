@@ -1,16 +1,16 @@
-import { NextResponse } from "next/server";
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { NextRequest, NextResponse } from "next/server";
+import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 
 /**
  * GET /api/broadcasts/[id]
  * Returns a single broadcast with its recipients (including contact join).
  */
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await getCurrentAccount();
+    const ctx = await requireRoleOrApiKey(request, "viewer");
     const { id } = await params;
 
     const broadcast = await ctx.db.broadcast.findFirst({
@@ -72,11 +72,11 @@ export async function GET(
  * Called by the hook after the send loop completes.
  */
 export async function PATCH(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await getCurrentAccount();
+    const ctx = await requireRoleOrApiKey(request, "agent");
     const { id } = await params;
     const body = await request.json() as { status: string };
 
@@ -96,11 +96,11 @@ export async function PATCH(
  * Deletes a broadcast and its recipients (cascade via DB FK).
  */
 export async function DELETE(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await getCurrentAccount();
+    const ctx = await requireRoleOrApiKey(request, "agent");
     const { id } = await params;
 
     const broadcast = await ctx.db.broadcast.findFirst({

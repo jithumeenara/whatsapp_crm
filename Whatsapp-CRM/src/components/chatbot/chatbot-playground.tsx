@@ -1,10 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, RotateCcw, Play, Bot } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { Send, RotateCcw, Play, Bot, Smartphone } from "lucide-react";
 import {
   startSimulation,
   runUntilInteractive,
@@ -15,6 +12,10 @@ import {
   type PlaygroundMsg,
 } from "@/lib/chatbot/simulator";
 import type { ChatbotBuilderNode } from "@/lib/chatbot/types";
+
+function cn(...c: (string | boolean | undefined | null)[]) {
+  return c.filter(Boolean).join(" ");
+}
 
 interface ChatbotPlaygroundProps {
   nodes: ChatbotBuilderNode[];
@@ -46,155 +47,170 @@ export function ChatbotPlayground({ nodes, entryNodeKey }: ChatbotPlaygroundProp
     setRunning(false);
   }
 
+  const lastMsg = state?.msgs[state.msgs.length - 1];
+
   function handleButtonTap(label: string, nextKey: string) {
     if (!state) return;
-    setState(applyButtonTap(nodes, state, label, nextKey));
+    setState(applyButtonTap(nodes, state, label, nextKey, lastMsg?.saveVarKey));
   }
 
   function handleListSelect(label: string, nextKey: string) {
     if (!state) return;
-    setState(applyListSelect(nodes, state, label, nextKey));
+    setState(applyListSelect(nodes, state, label, nextKey, lastMsg?.saveVarKey));
   }
 
   function handleTextSend() {
     if (!state || !inputText.trim() || !lastMsg?.awaitInput) return;
     const next = applyTextInput(
-      nodes,
-      state,
-      inputText.trim(),
-      lastMsg.awaitInput.varKey,
-      lastMsg.awaitInput.nextKey,
+      nodes, state, inputText.trim(),
+      lastMsg.awaitInput.varKey, lastMsg.awaitInput.nextKey,
+      lastMsg.awaitInput.inputType, lastMsg.awaitInput.errorMessage,
     );
     setState(next);
     setInputText("");
   }
 
-  const lastMsg = state?.msgs[state.msgs.length - 1];
   const awaitingInput = !!(lastMsg?.awaitInput);
   const isDone = state?.done;
 
   return (
-    <div className="flex h-full flex-col bg-[#ECE5DD]">
-      {/* Phone chrome top bar */}
-      <div className="flex items-center gap-3 bg-[#25D366] px-4 py-3 shadow-md">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
-          <Bot className="h-4 w-4 text-white" />
+    <div className="flex h-full flex-col bg-slate-100">
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-sm">
+            <Smartphone className="h-4 w-4 text-white" />
+          </div>
+          <div>
+            <p className="text-[12px] font-bold text-slate-800">Preview</p>
+            <p className="text-[10px] text-slate-400">
+              {state ? (isDone ? "Flow complete" : "Running…") : "Tap ▶ to start"}
+            </p>
+          </div>
         </div>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-white">Chatbot Preview</p>
-          <p className="text-[10px] text-white/70">
-            {state ? (isDone ? "Conversation ended" : "Online") : "Start to preview"}
-          </p>
-        </div>
-        <div className="flex gap-1.5">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-7 w-7 text-white hover:bg-white/20"
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
             onClick={reset}
             title="Reset"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
+          </button>
           {!state && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 text-white hover:bg-white/20"
+            <button
+              type="button"
               onClick={startFlow}
               disabled={running || nodes.length === 0}
-              title="Start flow"
+              title="Start preview"
+              className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors"
             >
               <Play className="h-3.5 w-3.5" />
-            </Button>
+            </button>
           )}
         </div>
       </div>
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
-        {!state && (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow">
-              <Bot className="h-7 w-7 text-[#25D366]" />
+      {/* Phone frame */}
+      <div className="flex flex-1 items-stretch justify-center overflow-hidden p-3">
+        <div className="flex w-full max-w-[320px] flex-col overflow-hidden rounded-3xl border border-slate-300 bg-[#ECE5DD] shadow-[0_8px_40px_rgba(0,0,0,0.15)]">
+
+          {/* WhatsApp-style top bar */}
+          <div className="flex items-center gap-2.5 bg-[#128C7E] px-4 py-2.5 shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20">
+              <Bot className="h-4 w-4 text-white" />
             </div>
-            <p className="text-sm font-medium text-gray-600">Tap ▶ to simulate your chatbot</p>
-            <p className="text-xs text-gray-400">
-              {nodes.length === 0
-                ? "Add nodes to the canvas first"
-                : `${nodes.length} node${nodes.length === 1 ? "" : "s"} ready`}
-            </p>
-            {nodes.length > 0 && (
-              <Button
-                onClick={startFlow}
-                className="bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs"
-                size="sm"
-              >
-                <Play className="h-3.5 w-3.5 mr-1" /> Start Preview
-              </Button>
+            <div className="flex-1">
+              <p className="text-[12px] font-semibold text-white leading-tight">Chatbot</p>
+              <p className="text-[10px] text-white/70">
+                {state ? (isDone ? "Conversation ended" : "Online") : "Offline"}
+              </p>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+            {!state ? (
+              <div className="flex h-full flex-col items-center justify-center gap-4 py-8 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/70 shadow-sm">
+                  <Bot className="h-8 w-8 text-[#25D366]" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-slate-700">Ready to preview</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {nodes.length === 0 ? "Add nodes to the canvas first" : `${nodes.length} node${nodes.length !== 1 ? "s" : ""} ready`}
+                  </p>
+                </div>
+                {nodes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={startFlow}
+                    disabled={running}
+                    className="flex items-center gap-2 rounded-xl bg-[#25D366] px-4 py-2 text-[12px] font-bold text-white shadow-sm hover:bg-[#20bd5a] disabled:opacity-50 transition-colors"
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    Start Preview
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                {state.msgs.map((msg) => (
+                  <MessageBubble
+                    key={msg.id}
+                    msg={msg}
+                    onButtonTap={handleButtonTap}
+                    onListSelect={handleListSelect}
+                    isDone={isDone ?? false}
+                  />
+                ))}
+                {isDone && (
+                  <div className="flex justify-center pt-1">
+                    <span className="rounded-full bg-white/60 px-3 py-1 text-[10px] font-medium text-slate-500 shadow-sm">
+                      Flow ended · tap ↺ to restart
+                    </span>
+                  </div>
+                )}
+                <div ref={bottomRef} />
+              </>
             )}
           </div>
-        )}
 
-        {state?.msgs.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            msg={msg}
-            onButtonTap={handleButtonTap}
-            onListSelect={handleListSelect}
-            isDone={isDone ?? false}
-          />
-        ))}
-
-        {isDone && (
-          <div className="flex justify-center">
-            <span className="rounded-full bg-black/10 px-3 py-1 text-[11px] text-gray-500">
-              Flow ended
-            </span>
+          {/* Input bar */}
+          <div className="shrink-0 border-t border-black/5 bg-[#F0F2F5] px-3 py-2">
+            {awaitingInput ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 rounded-full border-0 bg-white px-4 py-2 text-[13px] text-slate-800 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#25D366]/30"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  placeholder="Type a message…"
+                  onKeyDown={(e) => e.key === "Enter" && handleTextSend()}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleTextSend}
+                  disabled={!inputText.trim()}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white shadow-sm hover:bg-[#20bd5a] disabled:opacity-40 transition-colors"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <p className="py-1.5 text-center text-[11px] text-slate-400">
+                {isDone ? "Conversation complete — press ↺ to restart" : state ? "Waiting for bot…" : "Start the preview above"}
+              </p>
+            )}
           </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Input bar */}
-      <div className="border-t border-black/10 bg-[#F0F2F5] px-3 py-2">
-        {awaitingInput ? (
-          <div className="flex gap-2">
-            <Input
-              className="flex-1 h-9 rounded-full border-none bg-white text-sm shadow-sm focus-visible:ring-1 focus-visible:ring-[#25D366]"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Type a message…"
-              onKeyDown={(e) => e.key === "Enter" && handleTextSend()}
-              autoFocus
-            />
-            <Button
-              size="icon"
-              className="h-9 w-9 rounded-full bg-[#25D366] hover:bg-[#20bd5a] shrink-0"
-              onClick={handleTextSend}
-              disabled={!inputText.trim()}
-            >
-              <Send className="h-4 w-4 text-white" />
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-9">
-            <p className="text-[11px] text-gray-400">
-              {isDone
-                ? "Conversation complete — press ↺ to restart"
-                : state
-                ? "Waiting for bot response…"
-                : "Start the preview above"}
-            </p>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Message bubble renderer ─────────────────────────────────────
+// ─── Message bubble ──────────────────────────────────────────────
 
 function MessageBubble({
   msg,
@@ -212,36 +228,26 @@ function MessageBubble({
 
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start", "max-w-[80%]")}>
-        {/* Main bubble */}
+      <div className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start", "max-w-[85%]")}>
         <div
           className={cn(
-            "rounded-2xl px-3 py-2 text-sm shadow-sm",
+            "rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm",
             isBot
-              ? "rounded-tl-sm bg-white text-gray-800"
-              : "rounded-tr-sm bg-[#DCF8C6] text-gray-800",
-            msg.terminal && "italic text-gray-500",
+              ? "rounded-tl-sm bg-white text-slate-800"
+              : "rounded-tr-sm bg-[#DCF8C6] text-slate-800",
+            msg.terminal && "italic text-slate-500",
           )}
         >
           {msg.media && (
-            <div className="mb-2 rounded-lg overflow-hidden bg-gray-100 max-h-40">
-              {msg.media.type === "image" && (
+            <div className="mb-2 overflow-hidden rounded-xl bg-slate-100 max-h-36">
+              {msg.media.type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={msg.media.url} alt="media" className="w-full object-cover" />
-              )}
-              {msg.media.type === "document" && (
-                <div className="flex items-center gap-2 p-2 text-xs text-gray-600">
-                  📄 {msg.media.filename ?? "document"}
-                </div>
-              )}
-              {msg.media.type === "video" && (
-                <div className="flex items-center gap-2 p-2 text-xs text-gray-600">
-                  🎥 Video
-                </div>
-              )}
-              {msg.media.type === "audio" && (
-                <div className="flex items-center gap-2 p-2 text-xs text-gray-600">
-                  🎵 Audio
+              ) : (
+                <div className="flex items-center gap-2 p-2.5 text-xs text-slate-600">
+                  {msg.media.type === "document" && <>📄 {msg.media.filename ?? "document"}</>}
+                  {msg.media.type === "video" && <>🎥 Video</>}
+                  {msg.media.type === "audio" && <>🎵 Audio</>}
                 </div>
               )}
             </div>
@@ -251,12 +257,12 @@ function MessageBubble({
 
         {/* Quick-reply buttons */}
         {isBot && msg.buttons && msg.buttons.length > 0 && !isDone && (
-          <div className="flex flex-col gap-1.5 w-full">
+          <div className="flex w-full flex-col gap-1">
             {msg.buttons.map((btn) => (
               <button
                 key={btn.id}
                 onClick={() => onButtonTap(btn.label, btn.nextKey)}
-                className="w-full rounded-xl border border-[#25D366]/30 bg-white px-3 py-2 text-sm font-medium text-[#128C7E] shadow-sm hover:bg-[#25D366]/10 transition-colors"
+                className="w-full rounded-xl border border-[#25D366]/30 bg-white px-3 py-2 text-[12px] font-semibold text-[#128C7E] shadow-sm hover:bg-[#25D366]/8 transition-colors"
               >
                 {btn.label}
               </button>
@@ -285,25 +291,24 @@ function ListPicker({
   return (
     <div className="w-full">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
-        className="w-full rounded-xl border border-[#25D366]/30 bg-white px-3 py-2 text-sm font-medium text-[#128C7E] shadow-sm hover:bg-[#25D366]/10 transition-colors"
+        className="w-full rounded-xl border border-[#25D366]/30 bg-white px-3 py-2 text-[12px] font-semibold text-[#128C7E] shadow-sm hover:bg-[#25D366]/8 transition-colors"
       >
         View options ▾
       </button>
       {open && (
-        <div className="mt-1 rounded-xl border border-gray-200 bg-white shadow-lg overflow-hidden">
+        <div className="mt-1.5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
           {options.map((opt) => (
             <button
               key={opt.id}
-              onClick={() => {
-                onSelect(opt.label, opt.nextKey);
-                setOpen(false);
-              }}
-              className="flex w-full flex-col gap-0.5 px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors"
+              type="button"
+              onClick={() => { onSelect(opt.label, opt.nextKey); setOpen(false); }}
+              className="flex w-full flex-col gap-0.5 border-b border-slate-100 px-4 py-3 text-left last:border-0 hover:bg-slate-50 transition-colors"
             >
-              <span className="text-sm font-medium text-gray-800">{opt.label}</span>
+              <span className="text-[12px] font-semibold text-slate-800">{opt.label}</span>
               {opt.description && (
-                <span className="text-xs text-gray-400">{opt.description}</span>
+                <span className="text-[11px] text-slate-400">{opt.description}</span>
               )}
             </button>
           ))}

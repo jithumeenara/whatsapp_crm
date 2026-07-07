@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
         include: {
           contact: { select: { id: true, name: true, phone: true, avatar_url: true } },
           lead: { select: { id: true, title: true } },
-          assignee: { select: { id: true, name: true, email: true } },
+          assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
         },
       }),
       prisma.task.count({ where }),
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       include: {
         contact: { select: { id: true, name: true, phone: true } },
         lead: { select: { id: true, title: true } },
-        assignee: { select: { id: true, name: true, email: true } },
+        assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
 

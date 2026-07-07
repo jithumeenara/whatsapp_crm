@@ -69,43 +69,43 @@
  * project/Color Themes.html — change one, change the other.
  * ============================================================ */
 
-/* WhatsApp green — #25D366 primary, light (#F0F2F5) background */
+/* WhatsApp green — #25D366 primary, minimal white background */
 :root,
 html[data-theme="whatsapp"] {
-  --background: oklch(0.958 0.004 256);    /* ≈ #F0F2F5 */
-  --foreground: oklch(0.15 0.02 162);      /* near-black */
-  --card: oklch(1 0 0);                    /* white */
-  --card-foreground: oklch(0.15 0.02 162);
+  --background: oklch(0.975 0.001 256);    /* near-pure white page bg */
+  --foreground: oklch(0.16 0.015 256);     /* near-black text */
+  --card: oklch(1 0 0);                    /* pure white cards */
+  --card-foreground: oklch(0.16 0.015 256);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.02 162);
+  --popover-foreground: oklch(0.16 0.015 256);
   --primary: oklch(0.74 0.19 149);         /* #25D366 */
-  --primary-foreground: oklch(1 0 0);      /* white on green */
-  --primary-hover: oklch(0.67 0.19 149);   /* #1aad55 */
-  --primary-soft: oklch(0.74 0.19 149 / 0.12);
-  --primary-soft-2: oklch(0.74 0.19 149 / 0.22);
-  --secondary: oklch(0.935 0.005 256);
-  --secondary-foreground: oklch(0.15 0.02 162);
-  --muted: oklch(0.935 0.005 256);
-  --muted-foreground: oklch(0.48 0.018 162);
-  --accent: oklch(0.935 0.005 256);
-  --accent-foreground: oklch(0.15 0.02 162);
+  --primary-foreground: oklch(1 0 0);
+  --primary-hover: oklch(0.67 0.19 149);
+  --primary-soft: oklch(0.74 0.19 149 / 0.10);
+  --primary-soft-2: oklch(0.74 0.19 149 / 0.18);
+  --secondary: oklch(0.965 0.002 256);
+  --secondary-foreground: oklch(0.16 0.015 256);
+  --muted: oklch(0.965 0.002 256);
+  --muted-foreground: oklch(0.52 0.01 256);
+  --accent: oklch(0.965 0.002 256);
+  --accent-foreground: oklch(0.16 0.015 256);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.892 0.008 256);
-  --input: oklch(0.892 0.008 256);
+  --border: oklch(0.918 0.003 256);        /* very light border */
+  --input: oklch(0.918 0.003 256);
   --ring: oklch(0.74 0.19 149);
   --chart-1: oklch(0.74 0.19 149);
   --chart-2: oklch(0.52 0.10 175);
   --chart-3: oklch(0.7 0.14 195);
   --chart-4: oklch(0.62 0.16 162);
   --chart-5: oklch(0.39 0.09 162);
-  --radius: 0.625rem;
-  --sidebar: oklch(1 0 0);                 /* white sidebar */
-  --sidebar-foreground: oklch(0.15 0.02 162);
+  --radius: 0.75rem;                       /* softer rounded corners */
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.16 0.015 256);
   --sidebar-primary: oklch(0.74 0.19 149);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.935 0.005 256);
-  --sidebar-accent-foreground: oklch(0.15 0.02 162);
-  --sidebar-border: oklch(0.892 0.008 256);
+  --sidebar-accent: oklch(0.965 0.002 256);
+  --sidebar-accent-foreground: oklch(0.16 0.015 256);
+  --sidebar-border: oklch(0.918 0.003 256);
   --sidebar-ring: oklch(0.74 0.19 149);
 }
 
@@ -300,11 +300,61 @@ html[data-theme="rose"] {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
   html {
     @apply font-sans;
+    font-size: 18px;
   }
+}
+
+/* Minimal card shadow — used as a Tailwind utility class */
+@layer utilities {
+  .shadow-card {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.04);
+  }
+  .shadow-card-md {
+    box-shadow: 0 4px 12px 0 rgb(0 0 0 / 0.07), 0 1px 3px 0 rgb(0 0 0 / 0.05);
+  }
+}
+
+/* ── Auto-hide scrollbars: hidden at rest, thin on hover ────────────────────
+   Strategy: completely hide at rest (scrollbar-width:none / display:none),
+   then re-enable on :hover. This works reliably across Chrome, Firefox, Edge.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.scroll-styled,
+.sidebar-nav {
+  scrollbar-width: none;          /* Firefox: completely hidden */
+}
+.scroll-styled::-webkit-scrollbar,
+.sidebar-nav::-webkit-scrollbar {
+  display: none;                  /* Chrome/Safari: completely hidden */
+  width: 0;
+}
+
+/* Reveal on hover */
+.scroll-styled:hover,
+.sidebar-nav:hover {
+  scrollbar-width: thin;
+}
+.scroll-styled:hover::-webkit-scrollbar,
+.sidebar-nav:hover::-webkit-scrollbar {
+  display: block;
+  width: 4px;
+  height: 4px;
+}
+.scroll-styled:hover::-webkit-scrollbar-track,
+.sidebar-nav:hover::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-styled:hover::-webkit-scrollbar-thumb,
+.sidebar-nav:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.20);
+  border-radius: 99px;
+}
+.sidebar-nav:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.14);
 }
 
 /* ── Login page animations ─────────────────────────── */

@@ -3,9 +3,9 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
   loadMetrics,
   loadConversationsSeries,
-  loadPipelineDonut,
   loadResponseTime,
   loadActivity,
+  loadCRMStats,
 } from "@/lib/dashboard/queries";
 
 export async function GET(req: NextRequest) {
@@ -21,21 +21,20 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(await loadMetrics(ctx.accountId));
       case "series":
         return NextResponse.json(await loadConversationsSeries(ctx.accountId, rangeDays));
-      case "pipeline":
-        return NextResponse.json(await loadPipelineDonut(ctx.accountId));
       case "response-time":
         return NextResponse.json(await loadResponseTime(ctx.accountId));
       case "activity":
         return NextResponse.json(await loadActivity(ctx.accountId, limit));
+      case "crm":
+        return NextResponse.json(await loadCRMStats(ctx.accountId));
       default: {
-        const [metrics, series, pipeline, responseTime, activity] = await Promise.all([
+        const [metrics, series, responseTime, activity] = await Promise.all([
           loadMetrics(ctx.accountId),
           loadConversationsSeries(ctx.accountId, rangeDays),
-          loadPipelineDonut(ctx.accountId),
           loadResponseTime(ctx.accountId),
           loadActivity(ctx.accountId, limit),
         ]);
-        return NextResponse.json({ metrics, series, pipeline, responseTime, activity });
+        return NextResponse.json({ metrics, series, responseTime, activity });
       }
     }
   } catch (err) {

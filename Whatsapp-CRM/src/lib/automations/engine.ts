@@ -11,7 +11,6 @@ import type {
   TagStepConfig,
   UpdateContactFieldStepConfig,
   WaitStepConfig,
-  CreateDealStepConfig,
   AssignConversationStepConfig,
 } from '@/types'
 import { Prisma } from '@prisma/client'
@@ -344,29 +343,6 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         data: { [cfg.field]: cfg.value },
       })
       return `${cfg.field} updated`
-    }
-
-    case 'create_deal': {
-      const cfg = step.step_config as CreateDealStepConfig
-      if (!cfg.pipeline_id || !cfg.stage_id) throw new Error('create_deal needs pipeline + stage')
-      const acct = await prisma.account.findUnique({
-        where: { id: args.automation.account_id },
-        select: { default_currency: true },
-      })
-      await prisma.deal.create({
-        data: {
-          account_id: args.automation.account_id,
-          user_id: args.automation.user_id,
-          pipeline_id: cfg.pipeline_id,
-          stage_id: cfg.stage_id,
-          contact_id: args.contactId!,
-          title: interpolate(cfg.title, args),
-          value: cfg.value ?? 0,
-          currency: acct?.default_currency ?? 'USD',
-          status: 'open',
-        },
-      })
-      return 'deal created'
     }
 
     case 'send_webhook': {

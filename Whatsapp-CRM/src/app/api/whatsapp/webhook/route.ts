@@ -10,6 +10,7 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { emitToAccount } from '@/lib/socket'
 
 interface WhatsAppMessage {
   id: string
@@ -157,7 +158,6 @@ export async function POST(request: Request) {
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
     // rather than silently eating events.
-    console.warn('[webhook] rejected request with invalid signature')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
@@ -268,7 +268,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
-          decryptedAccessToken
+          decryptedAccessToken,
+          config.phone_number_id
         )
       }
     }
@@ -514,7 +515,8 @@ async function processMessage(
   accountId: string,
   // Sender-of-record for inserts that need a NOT NULL user_id FK.
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  phoneNumberId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -590,7 +592,7 @@ async function processMessage(
   const isFirstInboundMessage = priorCustomerMsgCount === 0
 
   try {
-    await prisma.message.create({
+    const savedMsg = await prisma.message.create({
       data: {
         conversation_id: conversation.id,
         sender_type: 'customer',
@@ -604,6 +606,7 @@ async function processMessage(
         interactive_reply_id: interactiveReplyId,
       },
     })
+    emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
   } catch (err) {
     console.error('Error inserting message:', err)
     return
@@ -611,7 +614,7 @@ async function processMessage(
 
   // Update conversation
   try {
-    await prisma.conversation.update({
+    const updatedConv = await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         last_message_text: contentText || `[${message.type}]`,
@@ -619,12 +622,76 @@ async function processMessage(
         unread_count: (conversation.unread_count || 0) + 1,
       },
     })
+    emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
   } catch (err) {
     console.error('Error updating conversation:', err)
   }
 
   // If this contact was a recent broadcast recipient, flag the reply.
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+
+  // ============================================================
+  // Auto lead creation — if enabled, create a lead for brand-new
+  // contacts on their very first message so agents can pick them
+  // up from the New Leads pool.
+  // ============================================================
+  if (contactOutcome.wasCreated) {
+    try {
+      const leadSettings = await prisma.leadSettings.findUnique({
+        where: { account_id: accountId },
+        select: { auto_lead_creation: true },
+      })
+      if (leadSettings?.auto_lead_creation) {
+        const existingLead = await prisma.lead.findFirst({
+          where: { contact_id: contactRecord.id, account_id: accountId },
+          select: { id: true },
+        })
+        if (!existingLead) {
+          const newLead = await prisma.lead.create({
+            data: {
+              account_id: accountId,
+              user_id: configOwnerUserId,
+              contact_id: contactRecord.id,
+              title: contactName || senderPhone,
+              source: 'whatsapp',
+              status: 'new',
+            },
+          })
+          await prisma.leadActivity.create({
+            data: {
+              account_id: accountId,
+              lead_id: newLead.id,
+              contact_id: contactRecord.id,
+              type: 'created',
+              title: 'Lead auto-created',
+              description: 'Lead created automatically from first WhatsApp message',
+            },
+          })
+        }
+      }
+    } catch (err) {
+      console.error('[webhook] auto lead creation failed:', err instanceof Error ? err.message : err)
+    }
+  }
+
+  // ============================================================
+  // Contact name capture flow — runs before chatbot/automations.
+  // If a new contact is in the middle of the name verification
+  // dialog, we handle their reply here and skip the normal engines.
+  // ============================================================
+  const inboundText = contentText ?? message.text?.body ?? ''
+  const captureHandled = await handleContactCapture({
+    accountId,
+    conversation: conversation as ConvWithCapture,
+    contactId: contactRecord.id,
+    waProfileName: contactName,
+    inboundText,
+    wasCreated: contactOutcome.wasCreated,
+    phoneNumberId,
+    accessToken,
+    senderPhone,
+  })
+  if (captureHandled) return
 
   // ============================================================
   // Flow runner dispatch.
@@ -634,6 +701,7 @@ async function processMessage(
     userId: configOwnerUserId,
     contactId: contactRecord.id,
     conversationId: conversation.id,
+    channel: 'whatsapp',
     message:
       interactiveReplyId
         ? {
@@ -651,7 +719,6 @@ async function processMessage(
   })
   const flowConsumed = flowResult.consumed
 
-  const inboundText = contentText ?? message.text?.body ?? ''
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'
@@ -807,6 +874,206 @@ async function parseMessageContent(
   }
 }
 
+// ============================================================
+// Contact name capture flow
+// ============================================================
+
+type ConvWithCapture = {
+  id: string
+  capture_state: string | null
+  capture_wa_name: string | null
+  [key: string]: unknown
+}
+
+/**
+ * Send a text message via WhatsApp and persist it as a bot message
+ * in the conversation so the inbox reflects the full dialog.
+ */
+async function sendCaptureMessage(
+  text: string,
+  conversationId: string,
+  senderPhone: string,
+  phoneNumberId: string,
+  accessToken: string
+) {
+  let waMessageId: string | undefined
+  try {
+    const { sendTextMessage } = await import('@/lib/whatsapp/meta-api')
+    const result = await sendTextMessage({ phoneNumberId, accessToken, to: senderPhone, text })
+    waMessageId = result.messageId
+  } catch (err) {
+    console.error('[capture] sendTextMessage failed:', err instanceof Error ? err.message : err)
+  }
+  await prisma.message.create({
+    data: {
+      conversation_id: conversationId,
+      sender_type: 'bot',
+      content_type: 'text',
+      content_text: text,
+      message_id: waMessageId ?? null,
+      status: 'sent',
+    },
+  }).catch((e: unknown) =>
+    console.error('[capture] persist bot msg failed:', e instanceof Error ? e.message : e)
+  )
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { last_message_text: text, last_message_at: new Date() },
+  }).catch((e: unknown) =>
+    console.error('[capture] update conv failed:', e instanceof Error ? e.message : e)
+  )
+}
+
+async function loadCaptureConfig(accountId: string) {
+  const DEFAULT_CONFIRM =
+    "Hi {{name}}! Is that your real name? Please reply *Yes* to confirm or *No* to enter a different name."
+  const DEFAULT_ASK_NAME =
+    "No problem! Please type your correct full name and I'll save it for you."
+  const cfg = await prisma.contactCaptureConfig
+    .findUnique({ where: { account_id: accountId } })
+    .catch(() => null)
+  return {
+    enabled: cfg?.enabled ?? false,
+    confirm_message: cfg?.confirm_message || DEFAULT_CONFIRM,
+    ask_name_message: cfg?.ask_name_message || DEFAULT_ASK_NAME,
+  }
+}
+
+/**
+ * Returns true if the message was consumed by the name capture dialog.
+ * When true, the caller must skip the normal chatbot / automation engines.
+ */
+async function handleContactCapture({
+  accountId,
+  conversation,
+  contactId,
+  waProfileName,
+  inboundText,
+  wasCreated,
+  phoneNumberId,
+  accessToken,
+  senderPhone,
+}: {
+  accountId: string
+  conversation: ConvWithCapture
+  contactId: string
+  waProfileName: string
+  inboundText: string
+  wasCreated: boolean
+  phoneNumberId: string
+  accessToken: string
+  senderPhone: string
+}): Promise<boolean> {
+  const { id: conversationId, capture_state, capture_wa_name } = conversation
+
+  // If feature is now disabled but conversation is mid-flow, clear state and pass through.
+  if (capture_state === 'awaiting_confirm' || capture_state === 'awaiting_name') {
+    const cfg = await loadCaptureConfig(accountId)
+    if (!cfg.enabled) {
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { capture_state: null, capture_wa_name: null },
+      }).catch(() => {})
+      return false
+    }
+  }
+
+  // ── State: waiting for YES / NO confirmation ──────────────────
+  if (capture_state === 'awaiting_confirm') {
+    const reply = inboundText.trim().toLowerCase()
+    const isYes = ['yes', 'y', 'yeah', 'yep', 'ok', 'okay', 'sure'].includes(reply)
+    const isNo = ['no', 'n', 'nope', 'nah'].includes(reply)
+
+    if (isYes) {
+      // Name already saved from the WhatsApp profile — just clear the state.
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { capture_state: null, capture_wa_name: null },
+      }).catch((e: unknown) =>
+        console.error('[capture] clear confirm state failed:', e instanceof Error ? e.message : e)
+      )
+      return true
+    }
+
+    if (isNo) {
+      const cfg = await loadCaptureConfig(accountId)
+      await sendCaptureMessage(cfg.ask_name_message, conversationId, senderPhone, phoneNumberId, accessToken)
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { capture_state: 'awaiting_name' },
+      }).catch((e: unknown) =>
+        console.error('[capture] set awaiting_name state failed:', e instanceof Error ? e.message : e)
+      )
+      return true
+    }
+
+    // Unrecognised reply — resend the confirmation prompt.
+    const cfg = await loadCaptureConfig(accountId)
+    const nameForMsg = capture_wa_name || waProfileName
+    const msg = cfg.confirm_message.replace(/\{\{name\}\}/gi, nameForMsg)
+    await sendCaptureMessage(msg, conversationId, senderPhone, phoneNumberId, accessToken)
+    return true
+  }
+
+  // ── State: waiting for the contact to type their correct name ─
+  if (capture_state === 'awaiting_name') {
+    const newName = inboundText.trim()
+    let savedOk = false
+    if (newName) {
+      try {
+        await prisma.contact.update({
+          where: { id: contactId },
+          data: { name: newName },
+        })
+        savedOk = true
+      } catch (e: unknown) {
+        console.error('[capture] name update failed:', e instanceof Error ? e.message : e)
+      }
+    }
+    // Clear capture state regardless of whether the name save succeeded.
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { capture_state: null, capture_wa_name: null },
+    }).catch((e: unknown) =>
+      console.error('[capture] clear awaiting_name state failed:', e instanceof Error ? e.message : e)
+    )
+    // Send a confirmation so the contact knows their name was recorded.
+    if (savedOk && newName) {
+      await sendCaptureMessage(
+        `Thank you! Your name has been saved as *${newName}*.`,
+        conversationId,
+        senderPhone,
+        phoneNumberId,
+        accessToken,
+      )
+    }
+    return true
+  }
+
+  // ── No active capture state: start the flow for brand-new contacts ─
+  if (!wasCreated) return false
+
+  const cfg = await loadCaptureConfig(accountId)
+  if (!cfg.enabled) return false
+
+  // Skip if the WA profile name looks like a raw phone number (nothing to confirm).
+  const nameToShow =
+    waProfileName && !/^\+?\d[\d\s\-().]+$/.test(waProfileName.trim())
+      ? waProfileName.trim()
+      : null
+  if (!nameToShow) return false
+
+  const msg = cfg.confirm_message.replace(/\{\{name\}\}/gi, nameToShow)
+  await sendCaptureMessage(msg, conversationId, senderPhone, phoneNumberId, accessToken)
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { capture_state: 'awaiting_confirm', capture_wa_name: nameToShow },
+  }).catch((e: unknown) =>
+    console.error('[capture] set awaiting_confirm state failed:', e instanceof Error ? e.message : e)
+  )
+  return true
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ContactRow = any
 
@@ -830,8 +1097,13 @@ async function findOrCreateContact(
   )
 
   if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
+    // Only update the contact name with the WA profile name when the existing
+    // name is unset or looks like a raw phone number. Once a real name has been
+    // saved (e.g. via the contact-capture flow), we must not overwrite it with
+    // whatever the WA profile header happens to say.
+    const existingLooksLikePhone =
+      !existingContact.name || /^[\+\d\s\-(). ]+$/.test(existingContact.name.trim())
+    if (name && name !== existingContact.name && existingLooksLikePhone) {
       await prisma.contact.update({
         where: { id: existingContact.id },
         data: { name },
@@ -887,6 +1159,7 @@ async function findOrCreateConversation(
         account_id: accountId,
         user_id: configOwnerUserId,
         contact_id: contactId,
+        channel: 'whatsapp',
       },
     })
   } catch (err) {

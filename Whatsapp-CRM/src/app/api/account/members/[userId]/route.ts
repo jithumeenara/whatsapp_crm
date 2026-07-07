@@ -25,7 +25,7 @@
 import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
-import { isAccountRole } from "@/lib/auth/roles";
+import { isAccountRole, type AccountRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db";
 import {
   checkRateLimit,
@@ -49,32 +49,41 @@ export async function PATCH(
     const { userId } = await params;
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown }
+      | { role?: unknown; restrict_to_assigned?: unknown }
       | null;
     const role = body?.role;
+    const restrictToAssigned = body?.restrict_to_assigned;
 
-    if (!isAccountRole(role)) {
+    // Allow patching restrict_to_assigned alone (without a role change)
+    const isRoleChange = role !== undefined;
+    const isRestrictionChange = typeof restrictToAssigned === 'boolean';
+
+    if (!isRoleChange && !isRestrictionChange) {
       return NextResponse.json(
-        { error: "'role' must be one of owner, admin, agent, viewer" },
+        { error: "Provide 'role' or 'restrict_to_assigned'" },
         { status: 400 },
       );
     }
 
-    if (role === "owner") {
-      return NextResponse.json(
-        {
-          error:
-            "Use POST /api/account/transfer-ownership to promote a member to owner",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (userId === ctx.userId) {
-      return NextResponse.json(
-        { error: "You cannot change your own role" },
-        { status: 400 },
-      );
+    if (isRoleChange) {
+      if (!isAccountRole(role)) {
+        return NextResponse.json(
+          { error: "'role' must be one of owner, admin, agent, viewer" },
+          { status: 400 },
+        );
+      }
+      if (role === "owner") {
+        return NextResponse.json(
+          { error: "Use POST /api/account/transfer-ownership to promote a member to owner" },
+          { status: 400 },
+        );
+      }
+      if (userId === ctx.userId) {
+        return NextResponse.json(
+          { error: "You cannot change your own role" },
+          { status: 400 },
+        );
+      }
     }
 
     // Verify the target is a member of the caller's account and is not the owner
@@ -90,7 +99,7 @@ export async function PATCH(
       );
     }
 
-    if (target.account_role === "owner") {
+    if (isRoleChange && target.account_role === "owner") {
       return NextResponse.json(
         { error: "Cannot change the role of the account owner" },
         { status: 403 },
@@ -99,7 +108,10 @@ export async function PATCH(
 
     await prisma.profile.update({
       where: { user_id: userId },
-      data: { account_role: role },
+      data: {
+        ...(isRoleChange ? { account_role: role as AccountRole } : {}),
+        ...(isRestrictionChange ? { restrict_to_assigned: restrictToAssigned } : {}),
+      },
     });
 
     return NextResponse.json({ ok: true });
@@ -150,7 +162,19 @@ export async function DELETE(
       );
     }
 
-    // Create a new personal account for the removed user and reassign
+    // Agent accounts ({digits}@agent.local) have no external identity —
+    // hard-delete the profile and user so the same number can be re-added.
+    const isAgentAccount = (target.email ?? "").endsWith("@agent.local");
+
+    if (isAgentAccount) {
+      await prisma.$transaction(async (tx) => {
+        await tx.profile.delete({ where: { user_id: userId } });
+        await tx.user.delete({ where: { id: userId } });
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // For regular members: create a new personal account and reassign
     // their profile to it. Done in a transaction so the user is never
     // left account-less.
     const newPersonalAccount = await prisma.$transaction(async (tx) => {

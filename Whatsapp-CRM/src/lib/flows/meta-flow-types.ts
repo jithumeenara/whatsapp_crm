@@ -155,9 +155,9 @@ export function defaultComponent(type: ComponentType): MetaFlowComponent {
     case 'TextCaption':    return { id, type, text: 'Caption text' }
     case 'TextInput':      return { id, type, label: 'Label', name: `input_${id}`, 'input-type': 'text', required: false }
     case 'TextArea':       return { id, type, label: 'Label', name: `textarea_${id}`, required: false, 'max-length': 600 }
-    case 'RadioButtonsGroup': return { id, type, label: 'Choose one', name: `radio_${id}`, 'data-source': [{ id: 'opt_1', title: 'Option 1' }, { id: 'opt_2', title: 'Option 2' }] }
-    case 'CheckboxGroup':  return { id, type, label: 'Choose options', name: `check_${id}`, 'data-source': [{ id: 'opt_1', title: 'Option 1' }] }
-    case 'Dropdown':       return { id, type, label: 'Select', name: `dropdown_${id}`, 'data-source': [{ id: 'opt_1', title: 'Option 1' }] }
+    case 'RadioButtonsGroup': return { id, type, label: 'Choose one', name: `radio_${id}`, required: false, 'data-source': [{ id: 'opt_1', title: 'Option 1' }, { id: 'opt_2', title: 'Option 2' }] }
+    case 'CheckboxGroup':  return { id, type, label: 'Choose options', name: `check_${id}`, required: false, 'data-source': [{ id: 'opt_1', title: 'Option 1' }] }
+    case 'Dropdown':       return { id, type, label: 'Select', name: `dropdown_${id}`, required: false, 'data-source': [{ id: 'opt_1', title: 'Option 1' }] }
     case 'DatePicker':     return { id, type, label: 'Select date', name: `date_${id}`, required: false }
     case 'Image':          return { id, type, src: '', 'scale-type': 'contain' }
     case 'Footer':         return { id, type, label: 'Continue', 'on-click-action': { name: 'complete', payload: {} } }

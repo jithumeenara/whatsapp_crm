@@ -107,16 +107,16 @@ export function DatabasePanel() {
     <div className="space-y-6">
 
       {/* Backup card */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
         <div className="flex items-start gap-3">
           <div className="rounded-lg bg-primary/10 p-2 mt-0.5">
             <Download className="size-5 text-primary" />
           </div>
           <div className="flex-1">
-            <h3 className="font-semibold text-foreground">PostgreSQL Backup</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Downloads a complete <code className="text-xs bg-muted px-1 py-0.5 rounded">.sql</code> dump
-              of the entire database using <code className="text-xs bg-muted px-1 py-0.5 rounded">pg_dump</code>.
+            <h3 className="font-semibold text-slate-800">PostgreSQL Backup</h3>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Downloads a complete <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">.sql</code> dump
+              of the entire database using <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">pg_dump</code>.
               Includes all tables, data, and schema.
             </p>
           </div>
@@ -143,27 +143,27 @@ export function DatabasePanel() {
           </p>
         )}
 
-        <div className="rounded-lg bg-muted/50 border border-border p-3 text-sm text-muted-foreground flex items-start gap-2">
+        <div className="rounded-lg bg-slate-100 border border-slate-200 p-3 text-sm text-slate-500 flex items-start gap-2">
           <Database className="size-4 shrink-0 mt-0.5" />
           <span>
             The backup is a plain SQL file generated with{' '}
-            <code className="text-xs bg-muted px-1 rounded">pg_dump --clean --if-exists</code>.
-            It can be restored here or manually with <code className="text-xs bg-muted px-1 rounded">psql</code>.
+            <code className="text-xs bg-slate-100 px-1 rounded">pg_dump --clean --if-exists</code>.
+            It can be restored here or manually with <code className="text-xs bg-slate-100 px-1 rounded">psql</code>.
           </span>
         </div>
       </div>
 
       {/* Restore card */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-4">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
         <div className="flex items-start gap-3">
           <div className="rounded-lg bg-destructive/10 p-2 mt-0.5">
             <Upload className="size-5 text-destructive" />
           </div>
           <div className="flex-1">
-            <h3 className="font-semibold text-foreground">Restore Database</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Upload a <code className="text-xs bg-muted px-1 py-0.5 rounded">.sql</code> backup file to restore the database.
-              Uses <code className="text-xs bg-muted px-1 py-0.5 rounded">psql</code> in a single transaction — rolls back on error.
+            <h3 className="font-semibold text-slate-800">Restore Database</h3>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Upload a <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">.sql</code> backup file to restore the database.
+              Uses <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">psql</code> in a single transaction — rolls back on error.
             </p>
           </div>
         </div>
@@ -202,11 +202,11 @@ export function DatabasePanel() {
         {/* Confirm dialog */}
         {confirmRestore && pendingFile && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-3">
-            <p className="text-sm font-medium text-foreground">
+            <p className="text-sm font-medium text-slate-800">
               Are you sure you want to restore from{' '}
               <span className="font-semibold">{pendingFile.name}</span>?
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-slate-500">
               This will drop and recreate all database tables. All current data will be replaced
               with the backup contents. This cannot be undone.
             </p>
@@ -234,7 +234,7 @@ export function DatabasePanel() {
               Database restored successfully.
             </p>
             {restoreLog && (
-              <pre className="text-xs bg-muted rounded-lg p-3 overflow-auto max-h-40 text-muted-foreground">
+              <pre className="text-xs bg-slate-100 rounded-lg p-3 overflow-auto max-h-40 text-slate-500">
                 {restoreLog}
               </pre>
             )}
@@ -249,7 +249,7 @@ export function DatabasePanel() {
               {restoreError ?? 'Restore failed'}
             </p>
             {restoreLog && (
-              <pre className="text-xs bg-muted rounded-lg p-3 overflow-auto max-h-40 text-muted-foreground">
+              <pre className="text-xs bg-slate-100 rounded-lg p-3 overflow-auto max-h-40 text-slate-500">
                 {restoreLog}
               </pre>
             )}
@@ -258,12 +258,12 @@ export function DatabasePanel() {
       </div>
 
       {/* Manual restore instructions */}
-      <div className="rounded-xl border border-border bg-card p-6 space-y-3">
-        <h3 className="font-semibold text-foreground text-sm">Manual Restore (CLI)</h3>
-        <p className="text-sm text-muted-foreground">
+      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
+        <h3 className="font-semibold text-slate-800 text-sm">Manual Restore (CLI)</h3>
+        <p className="text-sm text-slate-500">
           You can also restore the backup directly from a terminal:
         </p>
-        <pre className="text-xs bg-muted rounded-lg p-3 overflow-auto text-muted-foreground leading-relaxed">
+        <pre className="text-xs bg-slate-100 rounded-lg p-3 overflow-auto text-slate-500 leading-relaxed">
 {`# Restore to the same database
 psql -h HOST -U USER -d DATABASE -f crm-db-backup-YYYY-MM-DD.sql
 

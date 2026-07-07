@@ -141,6 +141,17 @@ export const RATE_LIMITS = {
    *  while still bounding accidental abuse from a script run in a
    *  loop or a compromised admin session spamming role flips. */
   adminAction: { limit: 30, windowMs: 60_000 },
+  /** Login attempts per IP. 10 per 15 min = enough for a human who
+   *  mistyped their password a few times; blocks credential stuffing
+   *  and brute-force at the source. Window is per-IP so a shared NAT
+   *  is treated as one client (acceptable trade-off vs. no limit). */
+  login: { limit: 10, windowMs: 15 * 60_000 },
+  /** External API key reads. 120 req/min per key — comfortable for
+   *  polling integrations (HMS, LMS, etc.) without enabling abuse. */
+  apiRead:  { limit: 120, windowMs: 60_000 },
+  /** External API key writes. 60 req/min per key — one write per
+   *  second sustained; tight enough to prevent mass-create abuse. */
+  apiWrite: { limit:  60, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

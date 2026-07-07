@@ -42,7 +42,9 @@ export async function GET(request: Request) {
     const flows = await prisma.flow.findMany({
       where: {
         account_id: accountId,
-        ...(flowType ? { flow_type: flowType } : {}),
+        // When no explicit flow_type filter is passed, exclude chatbot flows —
+        // they are managed separately under /chatbot and should not appear here.
+        ...(flowType ? { flow_type: flowType } : { flow_type: { not: 'chatbot' } }),
         ...(status ? { status } : {}),
       },
       orderBy: { created_at: 'desc' },

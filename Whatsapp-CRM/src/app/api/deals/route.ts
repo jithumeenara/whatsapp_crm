@@ -1,66 +1,79 @@
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
-import { prisma } from "@/lib/db"
-import { NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from 'next/server'
+import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
+import { prisma } from '@/lib/db'
 
-/**
- * POST /api/deals
- * Creates a new deal for the current account.
- */
+export async function GET(req: NextRequest) {
+  try {
+    const ctx = await requireRoleOrApiKey(req, 'viewer')
+    const { searchParams } = req.nextUrl
+
+    const pipeline_id = searchParams.get('pipeline_id') ?? undefined
+    const stage_id    = searchParams.get('stage_id')    ?? undefined
+    const status      = searchParams.get('status')      ?? undefined
+
+    const deals = await prisma.deal.findMany({
+      where: {
+        account_id:  ctx.accountId,
+        pipeline_id: pipeline_id ?? undefined,
+        stage_id:    stage_id    ?? undefined,
+        status:      status      ?? undefined,
+      },
+      include: {
+        stage:   { select: { id: true, name: true, color: true } },
+        contact: { select: { id: true, name: true, phone: true } },
+        lead:    { select: { id: true, title: true, score: true, status: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    })
+
+    return NextResponse.json({ deals })
+  } catch (e) {
+    return toErrorResponse(e)
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const ctx = await requireRole("agent")
-    const body = await req.json().catch(() => null)
-    if (!body) {
-      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
-    }
+    const ctx = await requireRoleOrApiKey(req, 'agent')
+    const body = await req.json()
 
-    const {
-      title,
-      value,
-      currency,
-      contact_id,
-      pipeline_id,
-      stage_id,
-      assigned_to,
-      notes,
-      expected_close_date,
-    } = body as Record<string, unknown>
+    const title = (body.title ?? '').trim()
+    if (!title)              return NextResponse.json({ error: 'title required' },       { status: 400 })
+    if (!body.pipeline_id)   return NextResponse.json({ error: 'pipeline_id required' }, { status: 400 })
+    if (!body.stage_id)      return NextResponse.json({ error: 'stage_id required' },    { status: 400 })
 
-    if (!title || !contact_id || !stage_id || !pipeline_id) {
-      return NextResponse.json(
-        { error: "title, contact_id, pipeline_id, and stage_id are required" },
-        { status: 400 },
-      )
-    }
-
-    // Verify pipeline belongs to this account
+    // Verify pipeline belongs to account
     const pipeline = await prisma.pipeline.findFirst({
-      where: { id: String(pipeline_id), account_id: ctx.accountId },
-      select: { id: true },
+      where: { id: body.pipeline_id, account_id: ctx.accountId },
     })
-    if (!pipeline) {
-      return NextResponse.json({ error: "Pipeline not found" }, { status: 404 })
-    }
+    if (!pipeline) return NextResponse.json({ error: 'Pipeline not found' }, { status: 404 })
 
     const deal = await prisma.deal.create({
       data: {
-        user_id: ctx.userId,
-        account_id: ctx.accountId,
-        title: String(title),
-        value: value !== undefined ? Number(value) || 0 : 0,
-        currency: currency ? String(currency) : null,
-        contact_id: String(contact_id),
-        pipeline_id: String(pipeline_id),
-        stage_id: String(stage_id),
-        assigned_to: assigned_to ? String(assigned_to) : null,
-        notes: notes ? String(notes) : null,
-        expected_close_date: expected_close_date ? String(expected_close_date) : null,
-        status: "open",
+        account_id:          ctx.accountId,
+        user_id:             ctx.userId,
+        pipeline_id:         body.pipeline_id,
+        stage_id:            body.stage_id,
+        contact_id:          body.contact_id   ?? null,
+        lead_id:             body.lead_id      ?? null,
+        conversation_id:     body.conversation_id ?? null,
+        assigned_to:         body.assigned_to  ?? null,
+        title,
+        value:               body.value ?? 0,
+        currency:            body.currency ?? 'USD',
+        notes:               body.notes ?? null,
+        expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : null,
+        status:              'open',
+      },
+      include: {
+        stage:   { select: { id: true, name: true, color: true } },
+        contact: { select: { id: true, name: true, phone: true } },
+        lead:    { select: { id: true, title: true, score: true, status: true } },
       },
     })
 
     return NextResponse.json({ deal }, { status: 201 })
-  } catch (err) {
-    return toErrorResponse(err)
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }

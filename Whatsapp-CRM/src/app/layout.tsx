@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
-import Script from "next/script";
+import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { Providers } from "@/components/providers";
 import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from "@/lib/themes";
+import type { ThemeId } from "@/lib/themes";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -37,56 +38,26 @@ export const viewport: Viewport = {
   colorScheme: "light",
 };
 
-// Inline boot script — runs before React hydrates so the user's
-// chosen theme is on the <html> element before first paint. Without
-// this every page load flashes the default Violet for a frame before
-// the React tree mounts and applies the picked theme.
-//
-// Kept dependency-free (no imports, no JSX) — must be a string the
-// browser can run as a single <script>. Knowledge of valid theme IDs
-// is sourced from the THEME_IDS constant so adding a theme doesn't
-// silently break the boot path.
-const THEME_BOOT_SCRIPT = `
-(function(){
-  try {
-    var STORAGE_KEY = ${JSON.stringify(STORAGE_KEY)};
-    var DEFAULT = ${JSON.stringify(DEFAULT_THEME)};
-    var ALLOWED = ${JSON.stringify(THEME_IDS)};
-    var saved = localStorage.getItem(STORAGE_KEY);
-    var theme = ALLOWED.indexOf(saved) !== -1 ? saved : DEFAULT;
-    document.documentElement.dataset.theme = theme;
-  } catch (_e) {
-    document.documentElement.dataset.theme = ${JSON.stringify(DEFAULT_THEME)};
-  }
-})();
-`;
+async function getThemeCookie(): Promise<ThemeId> {
+  const jar = await cookies();
+  const val = jar.get(STORAGE_KEY)?.value;
+  return (THEME_IDS as readonly string[]).includes(val ?? "") ? (val as ThemeId) : DEFAULT_THEME;
+}
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const theme = await getThemeCookie();
+
   return (
     <html
       lang="en"
-      data-theme={DEFAULT_THEME}
+      data-theme={theme}
       className={`${inter.variable} h-full antialiased`}
-      // The `theme-boot` script below rewrites `data-theme` on <html>
-      // from localStorage before React hydrates, so for any non-default
-      // theme the client DOM intentionally differs from the server-
-      // rendered `DEFAULT_THEME`. suppressHydrationWarning silences the
-      // expected mismatch — it only applies to this element's own
-      // attributes, so genuine mismatches in children still surface.
-      suppressHydrationWarning
     >
-      <head>
-        <Script
-          id="theme-boot"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
-        />
-      </head>
-      <body className="min-h-full bg-background text-foreground font-sans">
+      <body className="min-h-full bg-white text-slate-900 font-sans">
         <Providers>
         <ThemeProvider>
           {children}

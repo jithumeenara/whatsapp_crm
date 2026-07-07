@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import type { Message, Conversation } from "@/types";
+import type { Message, Conversation, Lead } from "@/types";
 import { useAuth } from "./use-auth";
 
 interface RealtimeEvent<T> {
@@ -11,10 +11,17 @@ interface RealtimeEvent<T> {
   old: Partial<T>;
 }
 
+interface ChatbotRunEvent {
+  id: string;
+  execution_count: number;
+}
+
 interface UseRealtimeOptions {
   channelName: string;
   onMessageEvent?: (event: RealtimeEvent<Message>) => void;
   onConversationEvent?: (event: RealtimeEvent<Conversation>) => void;
+  onLeadEvent?: (event: RealtimeEvent<Lead>) => void;
+  onChatbotEvent?: (event: ChatbotRunEvent) => void;
   enabled?: boolean;
 }
 
@@ -30,6 +37,8 @@ function getSocket(): Socket {
 export function useRealtime({
   onMessageEvent,
   onConversationEvent,
+  onLeadEvent,
+  onChatbotEvent,
   enabled = true,
 }: UseRealtimeOptions) {
   const { accountId } = useAuth();
@@ -37,9 +46,13 @@ export function useRealtime({
 
   const onMessageRef = useRef(onMessageEvent);
   const onConversationRef = useRef(onConversationEvent);
+  const onLeadRef = useRef(onLeadEvent);
+  const onChatbotRef = useRef(onChatbotEvent);
   useEffect(() => {
     onMessageRef.current = onMessageEvent;
     onConversationRef.current = onConversationEvent;
+    onLeadRef.current = onLeadEvent;
+    onChatbotRef.current = onChatbotEvent;
   });
 
   useEffect(() => {
@@ -62,6 +75,14 @@ export function useRealtime({
       onConversationRef.current?.(event);
     };
 
+    const handleLead = (event: RealtimeEvent<Lead>) => {
+      onLeadRef.current?.(event);
+    };
+
+    const handleChatbot = (event: ChatbotRunEvent) => {
+      onChatbotRef.current?.(event);
+    };
+
     if (socket.connected) {
       handleConnect();
     }
@@ -70,12 +91,16 @@ export function useRealtime({
     socket.on("disconnect", handleDisconnect);
     socket.on("message", handleMessage);
     socket.on("conversation", handleConversation);
+    socket.on("lead", handleLead);
+    socket.on("chatbot", handleChatbot);
 
     return () => {
       socket.off("connect", handleConnect);
       socket.off("disconnect", handleDisconnect);
       socket.off("message", handleMessage);
       socket.off("conversation", handleConversation);
+      socket.off("lead", handleLead);
+      socket.off("chatbot", handleChatbot);
       socket.emit("leave_account", accountId);
       setIsConnected(false);
     };

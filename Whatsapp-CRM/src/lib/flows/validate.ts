@@ -37,7 +37,7 @@ export interface ValidationIssue {
 
 interface FlowInput {
   name: string;
-  trigger_type: "keyword" | "first_inbound_message" | "manual";
+  trigger_type: "keyword" | "first_inbound_message" | "manual" | "always";
   trigger_config: Record<string, unknown>;
   entry_node_id: string | null;
 }
@@ -588,11 +588,19 @@ function validateNode(
       const cfg = node.config as {
         subject?: "var" | "tag" | "contact_field";
         subject_key?: string;
-        operator?: "equals" | "contains" | "present" | "absent";
+        operator?: string;
         value?: string;
         true_next?: string;
         false_next?: string;
       };
+      const VALID_OPERATORS = [
+        "equals", "not_equals", "contains", "starts_with", "ends_with",
+        "present", "absent", "gt", "lt", "gte", "lte",
+      ];
+      const VALUE_REQUIRED_OPERATORS = [
+        "equals", "not_equals", "contains", "starts_with", "ends_with",
+        "gt", "lt", "gte", "lte",
+      ];
       if (!cfg.subject || !["var", "tag", "contact_field"].includes(cfg.subject)) {
         issues.push({
           severity: "error",
@@ -611,10 +619,7 @@ function validateNode(
           message: "Condition needs a subject_key (var name, tag id, or field name).",
         });
       }
-      if (
-        !cfg.operator ||
-        !["equals", "contains", "present", "absent"].includes(cfg.operator)
-      ) {
+      if (!cfg.operator || !VALID_OPERATORS.includes(cfg.operator)) {
         issues.push({
           severity: "error",
           scope: "node",
@@ -623,7 +628,7 @@ function validateNode(
           message: "Condition needs an operator.",
         });
       } else if (
-        (cfg.operator === "equals" || cfg.operator === "contains") &&
+        VALUE_REQUIRED_OPERATORS.includes(cfg.operator) &&
         (cfg.value === undefined || cfg.value === "")
       ) {
         issues.push({
@@ -703,16 +708,198 @@ function validateNode(
 
     case "handoff":
     case "end":
-      // Terminal nodes have no outgoing edges; nothing to validate
-      // beyond their existence.
+    case "link_chatbot":
+      // Terminal / jump nodes have no outgoing next_node_key.
       break;
 
+    // ── Chatbot-builder node types ──────────────────────────────
+    case "send_text": {
+      const cfg = node.config as { text?: string; next_node_key?: string };
+      if (!cfg.text?.trim()) {
+        issues.push({
+          severity: "error", scope: "node", node_key: node.node_key, field: "text",
+          message: "Send-text node needs a text body.",
+        });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Send-text node must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Send-text points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "set_variable": {
+      const cfg = node.config as { assignments?: Array<{ var_key?: string; value?: string }>; next_node_key?: string };
+      const assignments = cfg.assignments ?? [];
+      if (assignments.length === 0) {
+        issues.push({ severity: "warning", scope: "node", node_key: node.node_key, field: "assignments", message: "Set-variable has no assignments." });
+      }
+      assignments.forEach((a, i) => {
+        if (!a.var_key?.trim()) {
+          issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: `assignments.${i}.var_key`, message: `Assignment ${i + 1} needs a variable name.` });
+        }
+      });
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Set-variable must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Set-variable points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "update_contact": {
+      const cfg = node.config as { field?: string; value?: string; next_node_key?: string };
+      if (!cfg.field?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "field", message: "Update-contact needs a field name." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Update-contact must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Update-contact points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "delay": {
+      const cfg = node.config as { duration?: number; unit?: string; next_node_key?: string };
+      if (!cfg.duration || cfg.duration <= 0) {
+        issues.push({ severity: "warning", scope: "node", node_key: node.node_key, field: "duration", message: "Delay duration should be greater than 0." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Delay must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Delay points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "join": {
+      const cfg = node.config as { next_node_key?: string };
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Join must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Join points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "ai_reply": {
+      const cfg = node.config as { system_prompt?: string; next_node_key?: string };
+      if (!cfg.system_prompt?.trim()) {
+        issues.push({ severity: "warning", scope: "node", node_key: node.node_key, field: "system_prompt", message: "AI-reply has no system prompt — the model will use its default behaviour." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "AI-reply must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `AI-reply points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "http_request": {
+      const cfg = node.config as { method?: string; url?: string; next_node_key?: string; error_node_key?: string };
+      if (!cfg.url?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "url", message: "HTTP-request needs a URL." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "HTTP-request must point to a next node (success path)." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `HTTP-request success path points to non-existent node "${cfg.next_node_key}".` });
+      }
+      if (cfg.error_node_key && !knownKeys.has(cfg.error_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "error_node_key", message: `HTTP-request error path points to non-existent node "${cfg.error_node_key}".` });
+      }
+      break;
+    }
+
+    case "crm_action": {
+      const cfg = node.config as { action?: string; segment_id?: string; next_node_key?: string };
+      const VALID_ACTIONS = ["create_lead", "add_to_segment", "create_followup", "create_task"];
+      if (!cfg.action || !VALID_ACTIONS.includes(cfg.action)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "action", message: `CRM-action needs a valid action (${VALID_ACTIONS.join(", ")}).` });
+      }
+      if (cfg.action === "add_to_segment" && !cfg.segment_id) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "segment_id", message: "Add-to-segment action needs a segment." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "CRM-action must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `CRM-action points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "send_flow": {
+      const cfg = node.config as { flow_id?: string; button_text?: string; next_node_key?: string };
+      if (!cfg.flow_id?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "flow_id", message: "Send-flow needs a Meta Flow ID." });
+      }
+      if (!cfg.button_text?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "button_text", message: "Send-flow needs a button label." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Send-flow must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Send-flow points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "send_template": {
+      const cfg = node.config as { template_name?: string; language_code?: string; next_node_key?: string };
+      if (!cfg.template_name?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "template_name", message: "Send-template needs a template name." });
+      }
+      if (!cfg.language_code?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "language_code", message: "Send-template needs a language code (e.g. en_US)." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Send-template must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Send-template points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    case "send_to_number": {
+      const cfg = node.config as { phone?: string; text?: string; next_node_key?: string };
+      if (!cfg.phone?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "phone", message: "Send-to-number needs a destination phone number." });
+      }
+      if (!cfg.text?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "text", message: "Send-to-number needs a message text." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Send-to-number must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Send-to-number points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
+    // save_to_table is a legacy node type from the data-store builder.
+    case "save_to_table": {
+      const cfg = node.config as { table_id?: string; next_node_key?: string };
+      if (!cfg.table_id?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "table_id", message: "Save-to-table needs a table." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Save-to-table must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Save-to-table points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
     default:
+      // Don't block unknown types with an error — future node types added
+      // to the builder would break all existing flows on next save.
       issues.push({
-        severity: "error",
+        severity: "warning",
         scope: "node",
         node_key: node.node_key,
-        message: `Unknown node type "${node.node_type}".`,
+        message: `Unrecognised node type "${node.node_type}" — it may not execute correctly.`,
       });
   }
 
@@ -747,13 +934,38 @@ export function reachableFromEntry(
 
 function outgoingEdges(node: NodeInput): string[] {
   switch (node.node_type) {
+    // Single next_node_key nodes
     case "start":
     case "send_message":
+    case "send_text":
     case "send_media":
+    case "send_template":
     case "collect_input":
-    case "set_tag": {
+    case "set_tag":
+    case "set_variable":
+    case "update_contact":
+    case "delay":
+    case "join":
+    case "ai_reply":
+    case "crm_action":
+    case "save_to_table":
+    case "send_flow":
+    case "send_to_number": {
       const cfg = node.config as { next_node_key?: string };
       return cfg.next_node_key ? [cfg.next_node_key] : [];
+    }
+    case "http_request": {
+      const cfg = node.config as { next_node_key?: string; error_node_key?: string };
+      const out: string[] = [];
+      if (cfg.next_node_key) out.push(cfg.next_node_key);
+      if (cfg.error_node_key) out.push(cfg.error_node_key);
+      return out;
+    }
+    case "switch_case": {
+      const cfg = node.config as { cases?: Array<{ next_node_key?: string }>; default_next?: string };
+      const out: string[] = (cfg.cases ?? []).map((c) => c.next_node_key).filter((k): k is string => !!k);
+      if (cfg.default_next) out.push(cfg.default_next);
+      return out;
     }
     case "condition": {
       const cfg = node.config as {
@@ -785,8 +997,10 @@ function outgoingEdges(node: NodeInput): string[] {
       }
       return out;
     }
+    // Terminal nodes — no outgoing edges
     case "handoff":
     case "end":
+    case "link_chatbot":
     default:
       return [];
   }

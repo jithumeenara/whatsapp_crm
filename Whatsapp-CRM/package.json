@@ -21,7 +21,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "next build",
-    "start": "NODE_ENV=production tsx server.ts",
+    "start": "tsx server.ts",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
@@ -48,12 +48,14 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
+    "isomorphic-dompurify": "^3.18.0",
     "lucide-react": "^1.17.0",
     "mime-types": "^3.0.2",
     "next": "16.2.6",
     "next-auth": "^5.0.0-beta",
     "pg": "^8.21.0",
     "prisma": "^5.22.0",
+    "razorpay": "^2.9.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
@@ -86,6 +88,10 @@
     "postcss": "^8.5.10",
     "ip-address": "^10.1.1",
     "fast-uri": "^3.1.2",
-    "hono": "^4.12.21"
+    "hono": "^4.12.27"
+  },
+  "overrides": {
+    "ws": "^8.21.0",
+    "esbuild": ">=0.25.0"
   }
 }
