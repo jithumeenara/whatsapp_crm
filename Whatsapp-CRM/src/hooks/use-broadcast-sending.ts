@@ -49,12 +49,14 @@ interface UseBroadcastSendingReturn {
 }
 
 /**
- * Meta rate-limit buffer. 10 per batch + 1 s pause matches the spec
- * and keeps us comfortably under Meta's per-phone-number messaging
- * rate so a large broadcast never trips the upstream limiter.
+ * Batch size of 5 + 4 s pause between batches.
+ * The API route already adds 300 ms between individual sends, so each
+ * batch of 5 takes ~1.5 s internally, then we wait another 4 s before
+ * the next — giving ~5.5 s per 5 messages (~1 msg/sec sustained).
+ * This stays well within Meta's Tier-1 rate limits.
  */
-const SEND_BATCH_SIZE = 10;
-const SEND_BATCH_DELAY_MS = 1000;
+const SEND_BATCH_SIZE = 5;
+const SEND_BATCH_DELAY_MS = 4000;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

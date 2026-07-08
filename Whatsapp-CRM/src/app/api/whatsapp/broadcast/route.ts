@@ -17,6 +17,23 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit'
 
+/** Pause between each individual message send to avoid Meta rate limiting. */
+const INTER_MESSAGE_DELAY_MS = 300
+
+/** How long to back off when a rate-limit error is returned by Meta. */
+const RATE_LIMIT_BACKOFF_MS = 8000
+
+/** Number of retry attempts on rate-limit before giving up. */
+const RATE_LIMIT_MAX_RETRIES = 2
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+function isRateLimitError(msg: string): boolean {
+  return /rate.?limit|too many|131048|80007/i.test(msg)
+}
+
 interface BroadcastResult {
   phone: string
   status: 'sent' | 'failed'
@@ -158,8 +175,12 @@ export async function POST(request: Request) {
     let sentCount = 0
     let failedCount = 0
 
-    for (const recipient of recipients) {
+    for (let ri = 0; ri < recipients.length; ri++) {
+      const recipient = recipients[ri]
       const sanitized = sanitizePhoneForMeta(recipient.phone)
+
+      // Throttle: pause between each message to stay under Meta rate limits.
+      if (ri > 0) await sleep(INTER_MESSAGE_DELAY_MS)
 
       if (!isValidE164(sanitized)) {
         results.push({
@@ -171,36 +192,47 @@ export async function POST(request: Request) {
         continue
       }
 
-      // Retry with phone variants on "not in allowed list"
+      // Retry with phone variants on "not in allowed list".
+      // Also retry the whole send on rate-limit errors with backoff.
       const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
 
       for (const variant of variants) {
-        try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
-            to: variant,
-            templateName: template_name,
-            language: template_language || 'en_US',
-            template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
-          })
-          sentMessageId = result.messageId
-          lastError = null
-          break
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : 'Unknown error'
-          if (!isRecipientNotAllowedError(errorMessage)) {
-            lastError = errorMessage
+        let attempt = 0
+        while (attempt <= RATE_LIMIT_MAX_RETRIES) {
+          try {
+            const result = await sendTemplateMessage({
+              phoneNumberId: config.phone_number_id,
+              accessToken,
+              to: variant,
+              templateName: template_name,
+              language: template_language || 'en_US',
+              template: templateRow ?? undefined,
+              messageParams: recipient.messageParams,
+              params: recipient.params ?? [],
+            })
+            sentMessageId = result.messageId
+            lastError = null
             break
+          } catch (error) {
+            const errorMessage =
+              error instanceof Error ? error.message : 'Unknown error'
+            if (isRateLimitError(errorMessage) && attempt < RATE_LIMIT_MAX_RETRIES) {
+              // Back off and retry same variant
+              await sleep(RATE_LIMIT_BACKOFF_MS * (attempt + 1))
+              attempt++
+              continue
+            }
+            if (!isRecipientNotAllowedError(errorMessage)) {
+              lastError = errorMessage
+              break
+            }
+            lastError = errorMessage
+            break // try next variant
           }
-          lastError = errorMessage
-          // retry with next variant
         }
+        if (sentMessageId) break
       }
 
       if (sentMessageId) {
