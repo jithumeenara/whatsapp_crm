@@ -453,9 +453,20 @@ async function findEntryFlow(
   isFirstInbound: boolean,
   channel?: string,
 ): Promise<FlowRow | null> {
-  // Only text messages can match an entry trigger. Interactive replies
-  // are responses to existing prompts; they never start a new flow.
-  if (message.kind !== "text") return null;
+  // Text messages and button replies (from templates or external flows) can
+  // both match an entry keyword trigger. For interactive replies we match
+  // against reply_title so "Know More" button taps start the right chatbot.
+  const triggerText =
+    message.kind === "text"
+      ? message.text
+      : message.kind === "interactive_reply"
+        ? message.reply_title
+        : null;
+  if (!triggerText && message.kind !== "text") return null;
+  // Always-on / first_inbound flows should only fire on true text messages,
+  // not button taps, to avoid re-starting a flow when the user taps a button
+  // that belongs to a template outside this chatbot.
+  const allowNonKeyword = message.kind === "text";
 
   // Pull active flows for this account, filtered by channel so Instagram
   // messages only match Instagram chatbots and vice versa.
@@ -477,15 +488,15 @@ async function findEntryFlow(
 
     for (const flow of flows) {
       if (flow.trigger_type === "keyword") {
-        if (matchesKeywordTrigger(
-          message.text,
+        if (triggerText && matchesKeywordTrigger(
+          triggerText,
           flow.trigger_config as KeywordTriggerConfig,
         )) {
           return flow;
         }
-      } else if (flow.trigger_type === "first_inbound_message" && isFirstInbound) {
+      } else if (flow.trigger_type === "first_inbound_message" && isFirstInbound && allowNonKeyword) {
         return flow;
-      } else if (flow.trigger_type === "always") {
+      } else if (flow.trigger_type === "always" && allowNonKeyword) {
         return flow;
       }
       // 'manual' triggers do not auto-start from inbound messages.

@@ -265,7 +265,7 @@ function StartForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         label="Trigger keyword"
         hint={
           keyword
-            ? `Chatbot starts when a message ${match === "exact" ? "exactly matches" : match === "contains" ? "contains" : "starts with"} "${keyword}".`
+            ? `Chatbot starts when a message or button reply ${match === "exact" ? "exactly matches" : match === "contains" ? "contains" : "starts with"} any keyword. Separate multiple keywords with |.`
             : "Leave blank to trigger on every message (always-on)."
         }
       >
@@ -273,7 +273,7 @@ function StartForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           className="h-8 text-xs"
           value={keyword}
           onChange={(e) => onChange({ ...cfg, trigger_keyword: e.target.value })}
-          placeholder='e.g. "Hi" or "Start"'
+          placeholder='e.g. "Hi" or "Know More|Start|Hello"'
         />
       </Field>
 

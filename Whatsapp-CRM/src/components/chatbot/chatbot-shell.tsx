@@ -90,9 +90,12 @@ export function ChatbotShell({
       const startNode = nodesRef.current.find((n) => n.node_type === "start");
       const startCfg = startNode?.config as { trigger_keyword?: string; trigger_match?: string } | undefined;
       const keyword = startCfg?.trigger_keyword?.trim() ?? "";
-      const triggerType = keyword ? "keyword" : "always";
+      const keywords = keyword
+        ? keyword.split("|").map((k) => k.trim()).filter(Boolean)
+        : [];
+      const triggerType = keywords.length > 0 ? "keyword" : "always";
       const triggerConfig = {
-        ...(keyword ? { keywords: [keyword], match_type: startCfg?.trigger_match ?? "exact" } : {}),
+        ...(keywords.length > 0 ? { keywords, match_type: startCfg?.trigger_match ?? "exact" } : {}),
         no_reply_delay_enabled: noReplyEnabledRef.current,
         no_reply_delay_minutes: noReplyMinutesRef.current,
         no_reply_message: noReplyMessageRef.current,
