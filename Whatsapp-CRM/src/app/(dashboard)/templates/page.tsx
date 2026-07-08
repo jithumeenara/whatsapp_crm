@@ -349,7 +349,7 @@ function ButtonRow({ btn, onChange, onRemove }: {
 
 // â”€â”€â”€ Template canvas (3-step wizard, edit-mode aware) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-export function TemplateCanvas({ onBack, onCreated, editTemplate }: {
+function TemplateCanvas({ onBack, onCreated, editTemplate }: {
   onBack: () => void
   onCreated: () => void
   editTemplate?: MessageTemplate
