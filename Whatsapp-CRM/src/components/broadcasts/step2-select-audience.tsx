@@ -4,12 +4,12 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Tag, Contact } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
-  Users, Loader2, ArrowRight, ArrowLeft, X, Search, Phone,
-  CheckCheck, Tag as TagIcon,
+  Users, ArrowRight, ArrowLeft, X, Search, Phone,
+  CheckCheck, Tag as TagIcon, FileSpreadsheet, Upload, AlertCircle, Trash2,
 } from 'lucide-react';
 
 /* ── types ─────────────────────────────────────────────────────── */
-type AudienceMode = 'all' | 'tags' | 'pick';
+type AudienceMode = 'all' | 'tags' | 'pick' | 'excel';
 
 export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
@@ -54,12 +54,34 @@ function WaBadge() {
   );
 }
 
+/* ── Excel parser ────────────────────────────────────────────────── */
+async function parseExcelFile(file: File): Promise<{ phone: string; name?: string }[]> {
+  const xlsx = await import('xlsx')
+  const buffer = await file.arrayBuffer()
+  const wb = xlsx.read(buffer, { type: 'array' })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  const rows = xlsx.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
+
+  return rows
+    .map((row) => {
+      const keys = Object.keys(row)
+      const phoneKey = keys.find((k) => /phone|mobile|number|whatsapp/i.test(k))
+      const nameKey  = keys.find((k) => /name/i.test(k))
+      const raw = phoneKey ? String(row[phoneKey]).trim().replace(/\s+/g, '') : ''
+      const phone = raw.startsWith('+') ? raw : raw ? `+${raw}` : ''
+      const name  = nameKey  ? String(row[nameKey]).trim() : undefined
+      return { phone, name }
+    })
+    .filter((r) => r.phone.length >= 7)
+}
+
 /* ── Main component ─────────────────────────────────────────────── */
 export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step2Props) {
   /* Derive which UI mode we're in */
   const initMode = (): AudienceMode => {
     if (audience.type === 'tags') return 'tags';
     if (audience.type === 'contacts') return 'pick';
+    if (audience.type === 'csv') return 'excel';
     return 'all';
   };
   const [mode, setMode] = useState<AudienceMode>(initMode);
@@ -87,6 +109,16 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   );
   /* Full contact objects for preview */
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
+
+  /* Excel import */
+  const [excelContacts, setExcelContacts] = useState<{ phone: string; name?: string }[]>(
+    audience.type === 'csv' ? (audience.csvContacts ?? []) : []
+  );
+  const [excelFileName, setExcelFileName] = useState('');
+  const [excelError, setExcelError]       = useState('');
+  const [excelLoading, setExcelLoading]   = useState(false);
+  const [isDragging, setIsDragging]       = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* ── Fetch WhatsApp contacts (paginated) ─────────────────────── */
   const loadContacts = useCallback(async () => {
@@ -153,7 +185,47 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setSearch('');
     if (m === 'all') onUpdate({ type: 'all' });
     else if (m === 'tags') onUpdate({ type: 'tags', tagIds: selectedTagIds });
+    else if (m === 'excel') onUpdate({ type: 'csv', csvContacts: excelContacts });
     else onUpdate({ type: 'contacts', contactIds: [...selectedIds] });
+  }
+
+  /* ── Excel file handler ──────────────────────────────────────── */
+  async function handleExcelFile(file: File) {
+    if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
+      setExcelError('Please upload an Excel file (.xlsx, .xls) or CSV (.csv)');
+      return;
+    }
+    setExcelLoading(true);
+    setExcelError('');
+    try {
+      const contacts = await parseExcelFile(file);
+      if (contacts.length === 0) {
+        setExcelError('No valid phone numbers found. Make sure your file has a column named "phone", "mobile", or "number".');
+        return;
+      }
+      setExcelContacts(contacts);
+      setExcelFileName(file.name);
+      onUpdate({ type: 'csv', csvContacts: contacts });
+    } catch {
+      setExcelError('Failed to read file. Make sure it is a valid Excel or CSV file.');
+    } finally {
+      setExcelLoading(false);
+    }
+  }
+
+  function handleFileDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleExcelFile(file);
+  }
+
+  function clearExcel() {
+    setExcelContacts([]);
+    setExcelFileName('');
+    setExcelError('');
+    onUpdate({ type: 'csv', csvContacts: [] });
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   /* ── Tag toggle ──────────────────────────────────────────────── */
@@ -212,7 +284,8 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const isValid =
     mode === 'all' ||
     (mode === 'tags' && selectedTagIds.length > 0) ||
-    (mode === 'pick' && selectedIds.size > 0);
+    (mode === 'pick' && selectedIds.size > 0) ||
+    (mode === 'excel' && excelContacts.length > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
   const summaryLabel =
@@ -222,6 +295,10 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       ? selectedTagIds.length === 0
         ? 'Select at least one tag'
         : `Contacts with ${selectedTagIds.length} tag${selectedTagIds.length !== 1 ? 's' : ''}`
+      : mode === 'excel'
+      ? excelContacts.length === 0
+        ? 'Upload an Excel file to continue'
+        : `${excelContacts.length} contacts imported from ${excelFileName || 'Excel'}`
       : `${selectedIds.size} contact${selectedIds.size !== 1 ? 's' : ''} selected`;
 
   return (
@@ -234,9 +311,10 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       {/* ── Mode tabs ── */}
       <div className="flex gap-1.5 rounded-xl bg-slate-100 p-1">
         {([
-          { key: 'all',  label: 'All WhatsApp', icon: Users },
-          { key: 'tags', label: 'By Tag',        icon: TagIcon },
-          { key: 'pick', label: 'Pick Contacts', icon: CheckCheck },
+          { key: 'all',   label: 'All WhatsApp',   icon: Users },
+          { key: 'tags',  label: 'By Tag',          icon: TagIcon },
+          { key: 'pick',  label: 'Pick Contacts',   icon: CheckCheck },
+          { key: 'excel', label: 'Import Excel',    icon: FileSpreadsheet },
         ] as { key: AudienceMode; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -277,6 +355,119 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 );
               })}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Excel import (excel mode) ── */}
+      {mode === 'excel' && (
+        <div className="space-y-4">
+          {/* Drop zone */}
+          {excelContacts.length === 0 && (
+            <div
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleFileDrop}
+              className={cn(
+                'rounded-xl border-2 border-dashed p-10 text-center transition-all cursor-pointer',
+                isDragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/30'
+              )}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExcelFile(f); }}
+              />
+              {excelLoading ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                  <p className="text-[13px] text-slate-500">Reading file…</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
+                    <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-semibold text-slate-700">Drop your Excel file here</p>
+                    <p className="mt-0.5 text-[12px] text-slate-400">or click to browse — .xlsx, .xls, .csv supported</p>
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white">
+                    <Upload className="h-3.5 w-3.5" /> Choose File
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Error */}
+          {excelError && (
+            <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+              <p className="text-[13px] text-rose-700">{excelError}</p>
+            </div>
+          )}
+
+          {/* Format hint */}
+          {excelContacts.length === 0 && !excelLoading && (
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <p className="text-[12px] font-semibold text-slate-600 mb-2">Expected column names:</p>
+              <div className="flex flex-wrap gap-2">
+                {['phone', 'mobile', 'number', 'name'].map((col) => (
+                  <span key={col} className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600">{col}</span>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-slate-400">Column names are case-insensitive. Phone numbers without + will have it added automatically.</p>
+            </div>
+          )}
+
+          {/* Preview table */}
+          {excelContacts.length > 0 && (
+            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                  <span className="text-[13px] font-semibold text-slate-700">{excelFileName}</span>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                    {excelContacts.length} contacts
+                  </span>
+                </div>
+                <button type="button" onClick={clearExcel}
+                  className="flex items-center gap-1 text-[12px] text-rose-500 hover:text-rose-700 font-medium">
+                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                </button>
+              </div>
+              {/* Table header */}
+              <div className="grid grid-cols-2 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Phone</p>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Name</p>
+              </div>
+              {/* Rows (max 8 preview) */}
+              <div className="divide-y divide-slate-50 max-h-52 overflow-y-auto">
+                {excelContacts.slice(0, 50).map((c, i) => (
+                  <div key={i} className="grid grid-cols-2 gap-4 px-4 py-2.5">
+                    <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
+                    <p className="text-[13px] text-slate-500 truncate">{c.name || <span className="italic text-slate-300">—</span>}</p>
+                  </div>
+                ))}
+                {excelContacts.length > 50 && (
+                  <div className="px-4 py-2 bg-slate-50">
+                    <p className="text-[12px] text-slate-400">+{excelContacts.length - 50} more contacts not shown</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Re-upload button if already has contacts */}
+          {excelContacts.length > 0 && (
+            <button type="button" onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 text-[13px] text-indigo-600 hover:text-indigo-800 font-medium">
+              <Upload className="h-3.5 w-3.5" /> Upload a different file
+            </button>
           )}
         </div>
       )}
