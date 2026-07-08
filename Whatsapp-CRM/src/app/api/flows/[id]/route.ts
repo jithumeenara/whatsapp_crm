@@ -13,12 +13,18 @@ import { prisma } from '@/lib/db'
  * All three require a signed-in caller who belongs to the flow's account.
  */
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 async function requireOwnership(
   flowId: string,
 ): Promise<
   | { ok: true; userId: string; accountId: string }
   | { ok: false; status: number; body: { error: string } }
 > {
+  if (!UUID_RE.test(flowId)) {
+    return { ok: false, status: 404, body: { error: 'Not found' } }
+  }
+
   const session = await auth()
   if (!session?.user?.id) {
     return { ok: false, status: 401, body: { error: 'Unauthorized' } }
