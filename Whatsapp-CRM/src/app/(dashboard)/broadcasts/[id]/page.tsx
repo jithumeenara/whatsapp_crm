@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft, Users, CheckCircle2, XCircle, AlertCircle,
-  Eye, MessageCircle, Send, Search, Clock, RefreshCw, FileText, Radio,
+  Eye, MessageCircle, Send, Search, Clock, RefreshCw, FileText, Radio, Download,
 } from "lucide-react"
 import { toast } from "sonner"
 import { format, formatDistanceToNow } from "date-fns"
@@ -110,6 +110,7 @@ export default function BroadcastDetailPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState("")
   const [filterTab, setFilterTab] = useState<FilterTab>("all")
+  const [exporting, setExporting] = useState(false)
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
@@ -129,6 +130,41 @@ export default function BroadcastDetailPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  async function exportToExcel() {
+    if (!broadcast) return
+    setExporting(true)
+    try {
+      const xlsx = await import("xlsx")
+      const sent: Record<string, string>[] = []
+      const skipped: Record<string, string>[] = []
+
+      for (const r of recipients) {
+        const row = {
+          Name: r.contact?.name ?? "",
+          Phone: r.contact?.phone ?? "",
+          Email: r.contact?.email ?? "",
+          Status: r.status,
+          "Sent At": r.sent_at ? format(new Date(r.sent_at), "yyyy-MM-dd HH:mm") : "",
+          "Delivered At": r.delivered_at ? format(new Date(r.delivered_at), "yyyy-MM-dd HH:mm") : "",
+          "Read At": r.read_at ? format(new Date(r.read_at), "yyyy-MM-dd HH:mm") : "",
+          "Replied At": r.replied_at ? format(new Date(r.replied_at), "yyyy-MM-dd HH:mm") : "",
+          "Error": r.error_message ?? "",
+        }
+        if (r.status === "failed") skipped.push(row)
+        else sent.push(row)
+      }
+
+      const wb = xlsx.utils.book_new()
+      xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(sent), "Sent")
+      xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(skipped), "Failed")
+      xlsx.writeFile(wb, `broadcast-${broadcast.name.replace(/[^a-z0-9]/gi, "_")}.xlsx`)
+    } catch {
+      toast.error("Export failed")
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const filtered = useMemo(() => {
     let list = recipients
@@ -215,6 +251,14 @@ export default function BroadcastDetailPage() {
               <span>Created {format(new Date(broadcast.created_at), "MMM d, yyyy 'at' h:mm a")}</span>
             </div>
           </div>
+          <button
+            onClick={exportToExcel}
+            disabled={exporting || recipients.length === 0}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
+          >
+            <Download className={cn("h-3.5 w-3.5", exporting && "animate-bounce")} />
+            Export
+          </button>
           <button
             onClick={() => load(true)}
             disabled={refreshing}

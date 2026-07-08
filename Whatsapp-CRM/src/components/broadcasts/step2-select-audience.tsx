@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   Users, ArrowRight, ArrowLeft, X, Search, Phone,
   CheckCheck, Tag as TagIcon, FileSpreadsheet, Upload, AlertCircle, Trash2,
+  ShieldCheck, Loader2, CheckCircle2, XCircle,
 } from 'lucide-react';
 
 /* ── types ─────────────────────────────────────────────────────── */
@@ -120,6 +121,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const [isDragging, setIsDragging]       = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  /* WhatsApp validation */
+  type ValidationStatus = 'idle' | 'validating' | 'done';
+  const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle');
+  const [validationMap, setValidationMap] = useState<Map<string, 'valid' | 'invalid' | 'unknown'>>(new Map());
+  const [validationProgress, setValidationProgress] = useState(0);
+
   /* ── Fetch WhatsApp contacts (paginated) ─────────────────────── */
   const loadContacts = useCallback(async () => {
     setLoadingContacts(true);
@@ -224,8 +231,46 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setExcelContacts([]);
     setExcelFileName('');
     setExcelError('');
+    setValidationStatus('idle');
+    setValidationMap(new Map());
+    setValidationProgress(0);
     onUpdate({ type: 'csv', csvContacts: [] });
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function validateWhatsApp() {
+    if (excelContacts.length === 0) return;
+    setValidationStatus('validating');
+    setValidationProgress(0);
+    const CHUNK = 50;
+    const map = new Map<string, 'valid' | 'invalid' | 'unknown'>();
+    for (let i = 0; i < excelContacts.length; i += CHUNK) {
+      const batch = excelContacts.slice(i, i + CHUNK).map((c) => c.phone);
+      try {
+        const res = await fetch('/api/whatsapp/validate-contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phones: batch }),
+        });
+        if (res.ok) {
+          const data = await res.json() as { results: { phone: string; status: 'valid' | 'invalid' | 'unknown' }[] };
+          for (const r of data.results) map.set(r.phone, r.status);
+        } else {
+          for (const phone of batch) map.set(phone, 'unknown');
+        }
+      } catch {
+        for (const phone of batch) map.set(phone, 'unknown');
+      }
+      setValidationProgress(Math.min(i + CHUNK, excelContacts.length));
+    }
+    setValidationMap(map);
+    setValidationStatus('done');
+    // Only pass valid (or unknown if API unavailable) contacts forward
+    const validContacts = excelContacts.filter((c) => {
+      const s = map.get(c.phone);
+      return s === 'valid' || s === 'unknown';
+    });
+    onUpdate({ type: 'csv', csvContacts: validContacts });
   }
 
   /* ── Tag toggle ──────────────────────────────────────────────── */
@@ -281,11 +326,18 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
 
   const totalPages = Math.ceil(pageTotal / PAGE);
 
+  const validCount = validationStatus === 'done'
+    ? excelContacts.filter((c) => { const s = validationMap.get(c.phone); return s === 'valid' || s === 'unknown'; }).length
+    : 0;
+  const invalidCount = validationStatus === 'done'
+    ? excelContacts.filter((c) => validationMap.get(c.phone) === 'invalid').length
+    : 0;
+
   const isValid =
     mode === 'all' ||
     (mode === 'tags' && selectedTagIds.length > 0) ||
     (mode === 'pick' && selectedIds.size > 0) ||
-    (mode === 'excel' && excelContacts.length > 0);
+    (mode === 'excel' && validationStatus === 'done' && validCount > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
   const summaryLabel =
@@ -298,7 +350,11 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       : mode === 'excel'
       ? excelContacts.length === 0
         ? 'Upload an Excel file to continue'
-        : `${excelContacts.length} contacts imported from ${excelFileName || 'Excel'}`
+        : validationStatus === 'idle'
+          ? `${excelContacts.length} contacts imported — validate WhatsApp numbers to continue`
+          : validationStatus === 'validating'
+            ? `Validating ${excelContacts.length} numbers…`
+            : `${validCount} valid WhatsApp numbers (${invalidCount} skipped)`
       : `${selectedIds.size} contact${selectedIds.size !== 1 ? 's' : ''} selected`;
 
   return (
@@ -459,6 +515,95 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* WhatsApp validation */}
+          {excelContacts.length > 0 && validationStatus === 'idle' && (
+            <button type="button" onClick={validateWhatsApp}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-indigo-300 bg-indigo-50 py-3 text-[14px] font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors">
+              <ShieldCheck className="h-4.5 w-4.5" />
+              Verify WhatsApp Numbers
+            </button>
+          )}
+
+          {validationStatus === 'validating' && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                <p className="text-[13px] font-semibold text-indigo-800">
+                  Checking {excelContacts.length} numbers on WhatsApp…
+                </p>
+              </div>
+              <div className="h-2 rounded-full bg-indigo-100 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-indigo-500 transition-all duration-300"
+                  style={{ width: `${Math.round((validationProgress / excelContacts.length) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-indigo-600">{validationProgress} / {excelContacts.length} checked</p>
+            </div>
+          )}
+
+          {validationStatus === 'done' && (
+            <div className="space-y-3">
+              {/* Summary */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="text-[15px] font-bold text-emerald-800">{validCount}</p>
+                    <p className="text-[11px] text-emerald-600">On WhatsApp</p>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 flex items-center gap-3">
+                  <XCircle className="h-5 w-5 text-rose-500 shrink-0" />
+                  <div>
+                    <p className="text-[15px] font-bold text-rose-700">{invalidCount}</p>
+                    <p className="text-[11px] text-rose-500">Not on WhatsApp</p>
+                  </div>
+                </div>
+              </div>
+              {/* Validated list */}
+              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Phone</p>
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Name</p>
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</p>
+                </div>
+                <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto">
+                  {excelContacts.slice(0, 100).map((c, i) => {
+                    const s = validationMap.get(c.phone) ?? 'unknown';
+                    return (
+                      <div key={i} className={cn(
+                        'grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-2.5 items-center',
+                        s === 'invalid' ? 'bg-rose-50/50' : ''
+                      )}>
+                        <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
+                        <p className="text-[13px] text-slate-500 truncate">{c.name || '—'}</p>
+                        <span className={cn(
+                          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                          s === 'valid' ? 'bg-emerald-100 text-emerald-700' :
+                          s === 'invalid' ? 'bg-rose-100 text-rose-700' :
+                          'bg-slate-100 text-slate-500'
+                        )}>
+                          {s === 'valid' ? <CheckCircle2 className="h-3 w-3" /> : s === 'invalid' ? <XCircle className="h-3 w-3" /> : null}
+                          {s === 'valid' ? 'Valid' : s === 'invalid' ? 'Invalid' : 'Unknown'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {excelContacts.length > 100 && (
+                    <div className="px-4 py-2 bg-slate-50">
+                      <p className="text-[12px] text-slate-400">+{excelContacts.length - 100} more not shown</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button type="button" onClick={() => { setValidationStatus('idle'); setValidationMap(new Map()); onUpdate({ type: 'csv', csvContacts: excelContacts }); }}
+                className="text-[12px] text-slate-500 hover:text-slate-700 underline underline-offset-2">
+                Re-validate
+              </button>
             </div>
           )}
 
