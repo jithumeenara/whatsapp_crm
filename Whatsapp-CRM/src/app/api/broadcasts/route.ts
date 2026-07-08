@@ -208,11 +208,13 @@ async function resolveAudience(
       });
     }
   } else if (audience.type === "csv" && audience.csvContacts) {
-    // CSV numbers are user-supplied phone numbers — upsert as contacts then filter to WA.
+    // CSV/Excel numbers are user-supplied and assumed to be valid WhatsApp numbers.
+    // Skip WA_FILTER — newly upserted contacts have no conversations yet and would
+    // be incorrectly excluded if we required an existing WhatsApp conversation.
     const upserted = await upsertCsvContacts(ctx, audience.csvContacts);
     const upsertedIds = upserted.map((c) => c.id);
     contacts = upsertedIds.length > 0
-      ? await db.contact.findMany({ where: { id: { in: upsertedIds }, ...WA_FILTER } })
+      ? await db.contact.findMany({ where: { id: { in: upsertedIds }, account_id: ctx.accountId } })
       : [];
   } else if (audience.type === "contacts" && audience.contactIds && audience.contactIds.length > 0) {
     // Already WhatsApp-filtered via the picker — still enforce at DB level.
@@ -234,6 +236,11 @@ async function resolveAudience(
   return contacts;
 }
 
+/** Strip everything except digits for phone deduplication. */
+function digitsOnly(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
 async function upsertCsvContacts(
   ctx: AccountContext,
   csvRows: { phone: string; name?: string }[],
@@ -241,44 +248,57 @@ async function upsertCsvContacts(
   if (csvRows.length === 0) return [];
   const db = ctx.db;
 
-  // De-duplicate by phone within the CSV.
-  const uniqueByPhone = new Map<string, { phone: string; name?: string }>();
+  // De-duplicate CSV rows by digits-only phone so "+91..." and "91..." are the same.
+  const uniqueByDigits = new Map<string, { phone: string; name?: string }>();
   for (const row of csvRows) {
-    if (row.phone) uniqueByPhone.set(row.phone, row);
+    if (!row.phone) continue;
+    const digits = digitsOnly(row.phone);
+    if (digits && !uniqueByDigits.has(digits)) {
+      uniqueByDigits.set(digits, row);
+    }
   }
-  const phones = [...uniqueByPhone.keys()];
+  if (uniqueByDigits.size === 0) return [];
 
+  // Build all phone variants we should match against: original, digits-only, +digits.
+  const phoneVariants = new Set<string>();
+  for (const [digits, row] of uniqueByDigits) {
+    phoneVariants.add(row.phone);
+    phoneVariants.add(digits);
+    phoneVariants.add(`+${digits}`);
+  }
+
+  // Find any existing contacts whose stored phone matches any variant.
   const existing = await db.contact.findMany({
-    where: { account_id: ctx.accountId, phone: { in: phones } },
+    where: { account_id: ctx.accountId, phone: { in: [...phoneVariants] } },
   });
 
-  const byPhone = new Map<string, ContactRow>();
-  for (const c of existing) byPhone.set(c.phone, c);
+  // Index existing contacts by their digits-only phone for O(1) lookup.
+  const byDigits = new Map<string, ContactRow>();
+  for (const c of existing) {
+    byDigits.set(digitsOnly(c.phone), c);
+  }
 
-  const missing = phones
-    .filter((p) => !byPhone.has(p))
-    .map((phone) => ({
+  // Only create contacts that have no match on digits-only phone.
+  const toCreate = [...uniqueByDigits.entries()]
+    .filter(([digits]) => !byDigits.has(digits))
+    .map(([, row]) => ({
       user_id: ctx.userId,
       account_id: ctx.accountId,
-      phone,
-      name: uniqueByPhone.get(phone)?.name ?? null,
+      phone: row.phone,
+      name: row.name ?? null,
     }));
 
   const INSERT_CHUNK = 200;
-  for (let i = 0; i < missing.length; i += INSERT_CHUNK) {
-    const chunk = missing.slice(i, i + INSERT_CHUNK);
+  for (let i = 0; i < toCreate.length; i += INSERT_CHUNK) {
+    const chunk = toCreate.slice(i, i + INSERT_CHUNK);
     await db.contact.createMany({ data: chunk, skipDuplicates: true });
-    // Re-fetch to get the IDs of newly created contacts.
     const created = await db.contact.findMany({
-      where: {
-        account_id: ctx.accountId,
-        phone: { in: chunk.map((c) => c.phone) },
-      },
+      where: { account_id: ctx.accountId, phone: { in: chunk.map((c) => c.phone) } },
     });
-    for (const c of created) byPhone.set(c.phone, c);
+    for (const c of created) byDigits.set(digitsOnly(c.phone), c);
   }
 
-  return phones
-    .map((p) => byPhone.get(p))
+  return [...uniqueByDigits.keys()]
+    .map((digits) => byDigits.get(digits))
     .filter((c): c is ContactRow => Boolean(c));
 }

@@ -762,7 +762,7 @@ export function MessageThread({
     : "Assign";
 
   return (
-    <div className={cn("flex flex-1 flex-col", DOODLE_BG_CLASSES)}>
+    <div className={cn("flex flex-1 flex-col overflow-hidden", DOODLE_BG_CLASSES)}>
       {/* Header */}
       <div className="flex h-14 items-center justify-between gap-2 border-b border-slate-200 bg-white px-4">
         <div className="flex min-w-0 items-center gap-3">

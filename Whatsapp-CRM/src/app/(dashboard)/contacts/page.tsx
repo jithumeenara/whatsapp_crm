@@ -133,6 +133,48 @@ function DeleteConfirm({ contactName, deleting, onCancel, onConfirm }: {
   )
 }
 
+function BulkDeleteConfirm({ count, deleting, onCancel, onConfirm }: {
+  count: number
+  deleting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={() => !deleting && onCancel()} />
+      <div className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200/60 overflow-hidden">
+        <div className="h-1.5 bg-gradient-to-r from-rose-500 to-rose-400" />
+        <div className="p-6">
+          <div className="flex flex-col items-center text-center gap-4 mb-6">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-50 border border-rose-100 shadow-sm">
+              <Trash2 className="h-7 w-7 text-rose-500" />
+            </div>
+            <div>
+              <h2 className="text-[16px] font-bold text-slate-900">Delete {count} Contact{count !== 1 ? "s" : ""}?</h2>
+              <p className="mt-2 text-[13px] text-slate-500 leading-relaxed max-w-[260px]">
+                These <span className="font-semibold text-slate-700">{count} contacts</span> and all their messages will be permanently deleted. This cannot be undone.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button type="button" onClick={onCancel} disabled={deleting}
+              className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="button" onClick={onConfirm} disabled={deleting}
+              className="flex-1 rounded-xl bg-rose-600 py-2.5 text-[13px] font-semibold text-white hover:bg-rose-700 active:bg-rose-800 transition-colors disabled:opacity-60 flex items-center justify-center gap-2 shadow-sm shadow-rose-200">
+              {deleting
+                ? <><div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" /> Deleting…</>
+                : <><Trash2 className="h-3.5 w-3.5" /> Delete All</>
+              }
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ContactsV2() {
   const { accountRole } = useAuth()
   const canManage = hasMinRole(accountRole ?? "viewer", "agent")
@@ -159,6 +201,11 @@ export default function ContactsV2() {
   const [deleting, setDeleting] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
+  // Bulk selection
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
+
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sortRef = useRef<HTMLDivElement>(null)
   const tagRef = useRef<HTMLDivElement>(null)
@@ -174,6 +221,7 @@ export default function ContactsV2() {
   }, [])
 
   const loadContacts = useCallback(async () => {
+    setCheckedIds(new Set())
     setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
@@ -220,6 +268,21 @@ export default function ContactsV2() {
     }
   }
 
+  async function handleBulkDelete() {
+    setBulkDeleting(true)
+    try {
+      await Promise.all([...checkedIds].map((id) => fetch(`/api/contacts/${id}`, { method: "DELETE" })))
+      toast.success(`${checkedIds.size} contact${checkedIds.size !== 1 ? "s" : ""} deleted`)
+      setCheckedIds(new Set())
+      setBulkDeleteConfirm(false)
+      loadContacts()
+    } catch {
+      toast.error("Failed to delete some contacts")
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
   // Client-side sort + tag filter on the already-fetched page
   const displayed = useMemo(() => {
     let list = contacts
@@ -232,6 +295,9 @@ export default function ContactsV2() {
     }
     return list
   }, [contacts, sortKey, filterTagId])
+
+  const allChecked = displayed.length > 0 && displayed.every((c) => checkedIds.has(c.id))
+  const someChecked = displayed.some((c) => checkedIds.has(c.id))
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
   const filterTag = filterTagId ? allTags.find((t) => t.id === filterTagId) : null
@@ -260,6 +326,16 @@ export default function ContactsV2() {
 
           {/* Right: action buttons */}
           <div className="flex items-center gap-2">
+            {checkedIds.size > 0 && (
+              <button
+                type="button"
+                onClick={() => setBulkDeleteConfirm(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] font-medium text-rose-600 shadow-sm hover:bg-rose-100 transition-colors"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete {checkedIds.size}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setImportOpen(true)}
@@ -394,6 +470,18 @@ export default function ContactsV2() {
         <table className="w-full text-[13px] border-separate border-spacing-0">
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-100/80 backdrop-blur-sm">
+              <th className="pl-4 pr-2 py-2.5 border-b border-slate-200 w-10">
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked }}
+                  onChange={() => {
+                    if (allChecked) setCheckedIds(new Set())
+                    else setCheckedIds(new Set(displayed.map((c) => c.id)))
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                />
+              </th>
               <th className="px-6 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200">Contact</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 hidden sm:table-cell">Phone</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 hidden md:table-cell">Email</th>
@@ -406,6 +494,7 @@ export default function ContactsV2() {
             {loading ? (
               [...Array(7)].map((_, i) => (
                 <tr key={i} className="animate-pulse">
+                  <td className="pl-4 pr-2 py-4" />
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3.5">
                       <div className="h-11 w-11 rounded-xl bg-slate-100 shrink-0" />
@@ -424,7 +513,7 @@ export default function ContactsV2() {
               ))
             ) : displayed.length === 0 ? (
               <tr>
-                <td colSpan={6}>
+                <td colSpan={7}>
                   <div className="flex flex-col items-center justify-center py-24 text-center">
                     <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 mb-4">
                       <Users className="h-8 w-8 text-slate-300" />
@@ -458,6 +547,22 @@ export default function ContactsV2() {
                   onClick={() => setSelectedId(contact.id)}
                   className="group cursor-pointer hover:bg-indigo-50/40 transition-colors"
                 >
+                  {/* Checkbox column */}
+                  <td className="pl-4 pr-2 py-4" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={checkedIds.has(contact.id)}
+                      onChange={(e) => {
+                        setCheckedIds((prev) => {
+                          const next = new Set(prev)
+                          if (e.target.checked) next.add(contact.id)
+                          else next.delete(contact.id)
+                          return next
+                        })
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                  </td>
                   {/* Contact column */}
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3.5">
@@ -681,6 +786,16 @@ export default function ContactsV2() {
           open={importOpen}
           onOpenChange={setImportOpen}
           onImported={loadContacts}
+        />
+      )}
+
+      {/* Bulk delete confirm dialog */}
+      {bulkDeleteConfirm && (
+        <BulkDeleteConfirm
+          count={checkedIds.size}
+          deleting={bulkDeleting}
+          onCancel={() => setBulkDeleteConfirm(false)}
+          onConfirm={handleBulkDelete}
         />
       )}
 

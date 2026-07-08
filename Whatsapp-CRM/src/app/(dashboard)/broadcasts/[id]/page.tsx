@@ -1,118 +1,385 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Users, CheckCircle2, XCircle, Clock, AlertCircle, Send } from "lucide-react"
+import {
+  ArrowLeft, Users, CheckCircle2, XCircle, AlertCircle,
+  Eye, MessageCircle, Send, Search, Clock, RefreshCw, FileText, Radio,
+} from "lucide-react"
 import { toast } from "sonner"
+import { format, formatDistanceToNow } from "date-fns"
+
+function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
 interface Broadcast {
-  id: string; name: string; status: string; message?: string; template_id?: string
-  scheduled_at?: string; sent_at?: string; created_at: string
-  recipients_count?: number; sent_count?: number; failed_count?: number
+  id: string
+  name: string
+  status: string
+  template_name: string
+  template_language?: string
+  audience_filter?: Record<string, unknown>
+  created_at: string
+  scheduled_at?: string
+  total_recipients: number
+  sent_count: number
+  delivered_count: number
+  read_count: number
+  replied_count: number
+  failed_count: number
+}
+
+interface Recipient {
+  id: string
+  status: string
+  sent_at?: string | null
+  delivered_at?: string | null
+  read_at?: string | null
+  replied_at?: string | null
+  error_message?: string | null
+  contact?: {
+    id: string
+    name?: string | null
+    phone: string
+    email?: string | null
+  } | null
+}
+
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ElementType }> = {
+  pending:   { label: "Pending",   color: "text-slate-500",   bg: "bg-slate-100",   icon: Clock },
+  sent:      { label: "Sent",      color: "text-blue-600",    bg: "bg-blue-50",     icon: Send },
+  delivered: { label: "Delivered", color: "text-indigo-600",  bg: "bg-indigo-50",   icon: CheckCircle2 },
+  read:      { label: "Read",      color: "text-emerald-600", bg: "bg-emerald-50",  icon: Eye },
+  replied:   { label: "Replied",   color: "text-violet-600",  bg: "bg-violet-50",   icon: MessageCircle },
+  failed:    { label: "Failed",    color: "text-rose-600",    bg: "bg-rose-50",     icon: XCircle },
+}
+
+const BROADCAST_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  draft:     { label: "Draft",     color: "text-slate-600",   bg: "bg-slate-100" },
+  scheduled: { label: "Scheduled", color: "text-amber-700",   bg: "bg-amber-100" },
+  sending:   { label: "Sending",   color: "text-blue-700",    bg: "bg-blue-100" },
+  sent:      { label: "Sent",      color: "text-emerald-700", bg: "bg-emerald-100" },
+  failed:    { label: "Failed",    color: "text-rose-700",    bg: "bg-rose-100" },
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    draft: "bg-slate-100 text-slate-600",
-    scheduled: "bg-amber-100 text-amber-700",
-    sending: "bg-blue-100 text-blue-700",
-    sent: "bg-emerald-100 text-emerald-700",
-    failed: "bg-rose-100 text-rose-700",
-  }
+  const cfg = BROADCAST_STATUS_CONFIG[status] ?? BROADCAST_STATUS_CONFIG.draft
   return (
-    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${map[status] ?? "bg-slate-100 text-slate-600"}`}>
-      {status}
+    <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize", cfg.bg, cfg.color)}>
+      {cfg.label}
     </span>
   )
 }
+
+function RecipientStatusBadge({ status }: { status: string }) {
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending
+  const Icon = cfg.icon
+  return (
+    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold", cfg.bg, cfg.color)}>
+      <Icon className="h-3 w-3" />
+      {cfg.label}
+    </span>
+  )
+}
+
+function StatCard({ icon: Icon, label, value, color, sub }: {
+  icon: React.ElementType; label: string; value: number; color: string; sub?: string
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", color)}>
+        <Icon className="h-5 w-5" />
+      </div>
+      <div>
+        <p className="text-[22px] font-bold text-slate-800 leading-none">{value.toLocaleString()}</p>
+        <p className="text-[11px] text-slate-400 mt-0.5">{label}</p>
+        {sub && <p className="text-[10px] text-slate-300">{sub}</p>}
+      </div>
+    </div>
+  )
+}
+
+const FILTER_TABS = ["all", "sent", "delivered", "read", "replied", "failed", "pending"] as const
+type FilterTab = typeof FILTER_TABS[number]
 
 export default function BroadcastDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null)
-  const [recipients, setRecipients] = useState<unknown[]>([])
+  const [recipients, setRecipients] = useState<Recipient[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [search, setSearch] = useState("")
+  const [filterTab, setFilterTab] = useState<FilterTab>("all")
 
-  useEffect(() => {
-    Promise.all([
-      fetch(`/api/broadcasts/${id}`).then((r) => r.json()),
-      fetch(`/api/broadcasts/${id}/recipients`).then((r) => r.json()),
-    ])
-      .then(([b, r]) => { setBroadcast(b.broadcast ?? b); setRecipients(r.recipients ?? []) })
-      .catch(() => toast.error("Failed to load broadcast"))
-      .finally(() => setLoading(false))
-  }, [id])
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
+    else setRefreshing(true)
+    try {
+      const res = await fetch(`/api/broadcasts/${id}`)
+      if (!res.ok) throw new Error("Not found")
+      const data = await res.json()
+      setBroadcast(data.broadcast ?? null)
+      setRecipients(data.recipients ?? [])
+    } catch {
+      toast.error("Failed to load broadcast")
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }
+
+  useEffect(() => { load() }, [id])
+
+  const filtered = useMemo(() => {
+    let list = recipients
+    if (filterTab !== "all") list = list.filter((r) => r.status === filterTab)
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter((r) =>
+        r.contact?.name?.toLowerCase().includes(q) ||
+        r.contact?.phone?.includes(q) ||
+        r.contact?.email?.toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [recipients, filterTab, search])
+
+  const tabCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: recipients.length }
+    for (const r of recipients) counts[r.status] = (counts[r.status] ?? 0) + 1
+    return counts
+  }, [recipients])
 
   if (loading) return (
-    <div className="flex flex-col h-full bg-[#F4F6FA]">
+    <div className="flex flex-col h-full bg-slate-50">
       <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100">
-        <div className="h-8 w-48 bg-slate-100 rounded animate-pulse" />
+        <div className="h-8 w-8 rounded-lg bg-slate-100 animate-pulse" />
+        <div className="space-y-1.5">
+          <div className="h-4 w-40 rounded bg-slate-100 animate-pulse" />
+          <div className="h-3 w-24 rounded bg-slate-100 animate-pulse" />
+        </div>
       </div>
-      <div className="p-6 space-y-3">{[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-white rounded-xl animate-pulse" />)}</div>
+      <div className="p-6 space-y-3 max-w-5xl">
+        <div className="grid grid-cols-3 gap-3">
+          {[...Array(6)].map((_, i) => <div key={i} className="h-20 bg-white rounded-xl animate-pulse" />)}
+        </div>
+        <div className="h-64 bg-white rounded-xl animate-pulse" />
+      </div>
     </div>
   )
 
   if (!broadcast) return (
-    <div className="flex items-center justify-center h-full bg-[#F4F6FA]">
+    <div className="flex items-center justify-center h-full bg-slate-50">
       <div className="text-center">
-        <AlertCircle className="h-8 w-8 text-slate-300 mx-auto mb-2" />
-        <p className="text-[14px] text-slate-400">Broadcast not found</p>
-        <button onClick={() => router.push("/broadcasts")} className="mt-2 text-[13px] text-indigo-600 hover:underline">Back</button>
+        <AlertCircle className="h-10 w-10 text-slate-300 mx-auto mb-3" />
+        <p className="text-[15px] font-semibold text-slate-600">Broadcast not found</p>
+        <button onClick={() => router.push("/broadcasts")} className="mt-3 text-[13px] text-indigo-600 hover:underline">
+          ← Back to Broadcasts
+        </button>
       </div>
     </div>
   )
 
+  const total = broadcast.total_recipients || recipients.length || 1
+  const sentPct     = Math.round((broadcast.sent_count / total) * 100)
+  const deliveredPct = Math.round((broadcast.delivered_count / total) * 100)
+  const readPct     = Math.round((broadcast.read_count / total) * 100)
+  const repliedPct  = Math.round((broadcast.replied_count / total) * 100)
+  const failedPct   = Math.round((broadcast.failed_count / total) * 100)
+
   return (
-    <div className="flex flex-col h-full bg-[#F4F6FA]">
-      <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100">
-        <button onClick={() => router.push("/broadcasts")} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
-          <ArrowLeft className="h-4 w-4 text-slate-500" />
-        </button>
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-[16px] font-bold text-slate-800">{broadcast.name}</h1>
-            <StatusBadge status={broadcast.status} />
+    <div className="flex flex-col h-full bg-slate-50">
+      {/* ── Header ── */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push("/broadcasts")}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
+            <Radio className="h-4 w-4 text-indigo-600" />
           </div>
-          <p className="text-[12px] text-slate-400">Created {new Date(broadcast.created_at).toLocaleString()}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-[16px] font-bold text-slate-900 truncate">{broadcast.name}</h1>
+              <StatusBadge status={broadcast.status} />
+            </div>
+            <div className="flex items-center gap-3 text-[12px] text-slate-400 mt-0.5">
+              <span className="flex items-center gap-1">
+                <FileText className="h-3 w-3" />
+                {broadcast.template_name}
+              </span>
+              <span>·</span>
+              <span>Created {format(new Date(broadcast.created_at), "MMM d, yyyy 'at' h:mm a")}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => load(true)}
+            disabled={refreshing}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-6 space-y-4 max-w-3xl">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { icon: Users, label: "Recipients", value: broadcast.recipients_count ?? recipients.length, color: "text-indigo-600 bg-indigo-50" },
-            { icon: CheckCircle2, label: "Sent", value: broadcast.sent_count ?? 0, color: "text-emerald-600 bg-emerald-50" },
-            { icon: XCircle, label: "Failed", value: broadcast.failed_count ?? 0, color: "text-rose-600 bg-rose-50" },
-          ].map(({ icon: Icon, label, value, color }) => (
-            <div key={label} className="bg-white rounded-xl border border-slate-100 p-4 shadow-sm flex items-center gap-3">
-              <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${color}`}>
-                <Icon className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-[20px] font-bold text-slate-800">{value}</p>
-                <p className="text-[11px] text-slate-400">{label}</p>
-              </div>
-            </div>
-          ))}
+      <div className="flex-1 overflow-auto p-6 space-y-5 max-w-5xl w-full">
+
+        {/* ── Stat Cards ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatCard icon={Users}        label="Recipients" value={broadcast.total_recipients} color="text-indigo-600 bg-indigo-50" />
+          <StatCard icon={Send}         label="Sent"       value={broadcast.sent_count}       color="text-blue-600 bg-blue-50" />
+          <StatCard icon={CheckCircle2} label="Delivered"  value={broadcast.delivered_count}  color="text-indigo-600 bg-indigo-50" />
+          <StatCard icon={Eye}          label="Read"       value={broadcast.read_count}        color="text-emerald-600 bg-emerald-50" />
+          <StatCard icon={MessageCircle}label="Replied"    value={broadcast.replied_count}     color="text-violet-600 bg-violet-50" />
+          <StatCard icon={XCircle}      label="Failed"     value={broadcast.failed_count}      color="text-rose-600 bg-rose-50" />
         </div>
 
-        {/* Message */}
-        {broadcast.message && (
-          <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Message</p>
-            <p className="text-[13px] text-slate-700 whitespace-pre-wrap">{broadcast.message}</p>
+        {/* ── Delivery Funnel ── */}
+        <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-4">Delivery Funnel</p>
+          <div className="space-y-3">
+            {[
+              { label: "Sent",      pct: sentPct,      count: broadcast.sent_count,       color: "bg-blue-500" },
+              { label: "Delivered", pct: deliveredPct, count: broadcast.delivered_count,  color: "bg-indigo-500" },
+              { label: "Read",      pct: readPct,      count: broadcast.read_count,        color: "bg-emerald-500" },
+              { label: "Replied",   pct: repliedPct,   count: broadcast.replied_count,     color: "bg-violet-500" },
+              { label: "Failed",    pct: failedPct,    count: broadcast.failed_count,      color: "bg-rose-500" },
+            ].map(({ label, pct, count, color }) => (
+              <div key={label} className="flex items-center gap-3">
+                <p className="w-16 shrink-0 text-[12px] text-slate-500">{label}</p>
+                <div className="flex-1 h-2.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className={cn("h-full rounded-full transition-all duration-500", color)}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <div className="w-20 shrink-0 text-right">
+                  <span className="text-[12px] font-semibold text-slate-700">{count.toLocaleString()}</span>
+                  <span className="text-[11px] text-slate-400 ml-1">({pct}%)</span>
+                </div>
+              </div>
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* Schedule info */}
-        <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-3">Schedule</p>
-          <div className="grid grid-cols-2 gap-3 text-[13px]">
-            <div><span className="text-slate-400">Status</span><p className="font-medium text-slate-700 capitalize">{broadcast.status}</p></div>
-            {broadcast.scheduled_at && <div><span className="text-slate-400">Scheduled</span><p className="font-medium text-slate-700">{new Date(broadcast.scheduled_at).toLocaleString()}</p></div>}
-            {broadcast.sent_at && <div><span className="text-slate-400">Sent At</span><p className="font-medium text-slate-700">{new Date(broadcast.sent_at).toLocaleString()}</p></div>}
+        {/* ── Recipients List ── */}
+        <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
+          {/* List header */}
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3">
+            <p className="text-[13px] font-semibold text-slate-800">
+              Recipients
+              <span className="ml-1.5 text-[12px] font-normal text-slate-400">({recipients.length})</span>
+            </p>
+            <div className="relative w-56">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name or phone…"
+                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-[12px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
           </div>
+
+          {/* Filter tabs */}
+          <div className="flex items-center gap-0.5 overflow-x-auto border-b border-slate-100 px-4 py-2 scrollbar-none">
+            {FILTER_TABS.map((tab) => {
+              const count = tabCounts[tab] ?? 0
+              if (tab !== "all" && count === 0) return null
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setFilterTab(tab)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors capitalize shrink-0",
+                    filterTab === tab
+                      ? "bg-indigo-50 text-indigo-700"
+                      : "text-slate-500 hover:bg-slate-50"
+                  )}
+                >
+                  {tab === "all" ? "All" : tab}
+                  <span className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                    filterTab === tab ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"
+                  )}>
+                    {count}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Table */}
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Users className="h-8 w-8 text-slate-200 mb-2" />
+              <p className="text-[13px] text-slate-400">No recipients match</p>
+            </div>
+          ) : (
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-100">
+                  <th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">Contact</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 hidden sm:table-cell">Phone</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 hidden md:table-cell">Sent At</th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 hidden lg:table-cell">Last Update</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {filtered.map((r) => {
+                  const name = r.contact?.name || r.contact?.phone || "Unknown"
+                  const phone = r.contact?.phone ?? "—"
+                  const initials = name.slice(0, 2).toUpperCase()
+                  const lastUpdate = r.replied_at || r.read_at || r.delivered_at || r.sent_at
+                  return (
+                    <tr key={r.id} className="hover:bg-slate-50/60 transition-colors">
+                      {/* Contact */}
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-[11px] font-bold text-indigo-600">
+                            {initials}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-800 truncate leading-tight">{name}</p>
+                            {r.contact?.email && (
+                              <p className="text-[11px] text-slate-400 truncate sm:hidden">{phone}</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      {/* Phone */}
+                      <td className="px-4 py-3 hidden sm:table-cell text-slate-500">{phone}</td>
+                      {/* Status */}
+                      <td className="px-4 py-3">
+                        <div>
+                          <RecipientStatusBadge status={r.status} />
+                          {r.status === "failed" && r.error_message && (
+                            <p className="mt-1 text-[10px] text-rose-400 max-w-[160px] truncate" title={r.error_message}>
+                              {r.error_message}
+                            </p>
+                          )}
+                        </div>
+                      </td>
+                      {/* Sent At */}
+                      <td className="px-4 py-3 text-slate-400 hidden md:table-cell text-[12px]">
+                        {r.sent_at ? format(new Date(r.sent_at), "MMM d, h:mm a") : "—"}
+                      </td>
+                      {/* Last Update */}
+                      <td className="px-4 py-3 text-slate-400 hidden lg:table-cell text-[12px]">
+                        {lastUpdate
+                          ? formatDistanceToNow(new Date(lastUpdate), { addSuffix: true })
+                          : "—"}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>
