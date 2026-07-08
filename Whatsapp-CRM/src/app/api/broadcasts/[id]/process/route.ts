@@ -18,22 +18,22 @@ export async function POST(
     const ctx = await requireRoleOrApiKey(req, "agent");
     const { id } = await params;
 
-    const broadcast = await ctx.db.broadcast.findFirst({
-      where: { id, account_id: ctx.accountId },
-      select: { id: true, status: true },
-    });
-
-    if (!broadcast) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    if (broadcast.status === "sending") {
-      return NextResponse.json({ ok: true, message: "Already sending" });
-    }
-
-    await ctx.db.broadcast.update({
-      where: { id },
+    // Atomic check-and-set: only one concurrent request will flip the row
+    // from a non-sending state to "sending" — prevents double-send.
+    const claimed = await ctx.db.broadcast.updateMany({
+      where: { id, account_id: ctx.accountId, status: { not: "sending" } },
       data: { status: "sending" },
     });
+
+    if (claimed.count === 0) {
+      // Either not found (wrong account) or already sending.
+      const exists = await ctx.db.broadcast.findFirst({
+        where: { id, account_id: ctx.accountId },
+        select: { id: true },
+      });
+      if (!exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({ ok: true, message: "Already sending" });
+    }
 
     // Fire and forget — runs in Node.js event loop after response is sent.
     setImmediate(() => {

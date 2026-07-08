@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { ConfirmProvider } from "@/hooks/use-confirm";
@@ -45,7 +45,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileBarHidden, setMobileBarHidden] = useState(false);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
-  const mobileBarCtx = { hide: () => setMobileBarHidden(true), show: () => setMobileBarHidden(false) };
+  const hideBar = useCallback(() => setMobileBarHidden(true), []);
+  const showBar = useCallback(() => setMobileBarHidden(false), []);
+  const mobileBarCtx = useMemo(() => ({ hide: hideBar, show: showBar }), [hideBar, showBar]);
 
   // Apply light CSS vars to document.body so portal-rendered elements
   // (Dialog, Popover, DropdownMenu, etc.) also get the light palette.

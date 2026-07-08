@@ -197,8 +197,10 @@ export async function POST(request: Request) {
       const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
+      let permanentError = false
 
       for (const variant of variants) {
+        if (permanentError) break
         let attempt = 0
         while (attempt <= RATE_LIMIT_MAX_RETRIES) {
           try {
@@ -219,17 +221,13 @@ export async function POST(request: Request) {
             const errorMessage =
               error instanceof Error ? error.message : 'Unknown error'
             if (isRateLimitError(errorMessage) && attempt < RATE_LIMIT_MAX_RETRIES) {
-              // Back off and retry same variant
               await sleep(RATE_LIMIT_BACKOFF_MS * (attempt + 1))
               attempt++
               continue
             }
-            if (!isRecipientNotAllowedError(errorMessage)) {
-              lastError = errorMessage
-              break
-            }
             lastError = errorMessage
-            break // try next variant
+            if (!isRecipientNotAllowedError(errorMessage)) permanentError = true
+            break
           }
         }
         if (sentMessageId) break

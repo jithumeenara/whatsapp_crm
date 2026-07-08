@@ -8,7 +8,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from "@/lib/whatsapp/phone-utils";
-import { resolveVariables } from "@/hooks/use-broadcast-sending";
+import { resolveVariables } from "@/lib/broadcasts/resolve-variables";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 10_000;
@@ -130,8 +130,13 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     const variants = phoneVariants(sanitized);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
+    // Stop trying additional phone variants on permanent errors (bad template,
+    // suspended account, etc.). Only continue to the next variant for
+    // "recipient not in allowed list" errors, which indicate a format mismatch.
+    let permanentError = false;
 
     for (const variant of variants) {
+      if (permanentError) break;
       let attempt = 0;
       while (attempt <= RATE_LIMIT_MAX_RETRIES) {
         try {
@@ -154,11 +159,8 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
             attempt++;
             continue;
           }
-          if (!isRecipientNotAllowedError(msg)) {
-            lastError = msg;
-            break;
-          }
           lastError = msg;
+          if (!isRecipientNotAllowedError(msg)) permanentError = true;
           break;
         }
       }
@@ -182,6 +184,13 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     }
   }
 
-  const finalStatus = failedCount > 0 && sentCount === 0 ? "failed" : "sent";
+  // C4 fix: use the DB's accumulated sent_count (not local counter) so that
+  // a retry run which itself sends 0 doesn't mark a previously-partially-sent
+  // broadcast as "failed".
+  const finalRow = await prisma.broadcast.findFirst({
+    where: { id: broadcastId },
+    select: { sent_count: true },
+  });
+  const finalStatus = (finalRow?.sent_count ?? 0) > 0 ? "sent" : "failed";
   await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: finalStatus } });
 }
