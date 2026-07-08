@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical, RefreshCw } from "lucide-react"
+import { ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical, RefreshCw, Settings2, X } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
+import { FieldEditor } from "@/components/data/field-editor"
 import type { DataTable, DataField, DataRecord } from "@/lib/data-store/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
@@ -33,6 +34,8 @@ export default function DataTablePage() {
   const [editingRecord, setEditingRecord] = useState<DataRecord | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
+  const [allTables, setAllTables] = useState<DataTable[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -52,6 +55,17 @@ export default function DataTablePage() {
   }, [tableId, router])
 
   useEffect(() => { load() }, [load])
+
+  const openFieldPanel = useCallback(async () => {
+    setFieldPanelOpen(true)
+    if (allTables.length === 0) {
+      try {
+        const res = await fetch("/api/data-tables")
+        const data = await res.json()
+        setAllTables(data.tables ?? [])
+      } catch { /* ignore */ }
+    }
+  }, [allTables.length])
 
   async function deleteRecord(id: string) {
     setDeleting(id)
@@ -92,6 +106,10 @@ export default function DataTablePage() {
         </div>
         <button onClick={load} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
           <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+        </button>
+        <button onClick={openFieldPanel}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 text-slate-700 text-[13px] font-medium hover:bg-slate-50">
+          <Settings2 className="h-3.5 w-3.5" /> Fields
         </button>
         <button onClick={() => { setEditingRecord(null); setFormOpen(true) }}
           className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700">
@@ -174,6 +192,32 @@ export default function DataTablePage() {
           onClose={() => { setFormOpen(false); setEditingRecord(null) }}
           onSaved={() => { setFormOpen(false); setEditingRecord(null); load() }}
         />
+      )}
+
+      {/* Fields slide-over panel */}
+      {fieldPanelOpen && (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setFieldPanelOpen(false)} />
+          <div className="relative z-50 w-full max-w-md bg-white shadow-xl flex flex-col h-full">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h2 className="text-[15px] font-semibold text-slate-800">Manage Fields</h2>
+                <p className="text-[11px] text-slate-400">{fields.length} field{fields.length !== 1 ? "s" : ""} in {table?.name}</p>
+              </div>
+              <button onClick={() => setFieldPanelOpen(false)} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
+                <X className="h-4 w-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <FieldEditor
+                tableId={tableId}
+                fields={fields}
+                allTables={allTables}
+                onFieldsChange={(updated) => { setFields(updated) }}
+              />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
