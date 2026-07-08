@@ -61,6 +61,7 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["exceljs"],
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns", "sonner"],
   },

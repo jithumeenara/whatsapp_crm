@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2 } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
 import { cn } from "@/lib/utils";
 import { ReplyQuote } from "./reply-quote";
 import { toast } from "sonner";
+import { FileManagerPicker } from "./file-manager-picker";
 
 interface ReplyDraft {
   id: string;
@@ -63,6 +64,7 @@ export function MessageComposer({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
+  const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
@@ -277,7 +279,11 @@ export function MessageComposer({
               {/* Backdrop */}
               <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
               {/* Menu */}
-              <div className="absolute bottom-11 left-0 z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+              <div className="absolute bottom-11 left-0 z-20 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                {/* Device options */}
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  From Device
+                </div>
                 {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
                   <button
                     key={key}
@@ -289,6 +295,19 @@ export function MessageComposer({
                     {label}
                   </button>
                 ))}
+                {/* File Manager option */}
+                <div className="mx-3 my-1 border-t border-slate-100" />
+                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  From File Manager
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setAttachOpen(false); setFilePickerOpen(true); }}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0 text-indigo-500" />
+                  Browse Files
+                </button>
               </div>
             </>
           )}
@@ -330,6 +349,18 @@ export function MessageComposer({
       <p className="mt-1 pl-[88px] text-[10px] text-slate-600">
         Type &apos;/&apos; for quick replies
       </p>
+
+      <FileManagerPicker
+        open={filePickerOpen}
+        onClose={() => setFilePickerOpen(false)}
+        onSelect={(file) => {
+          const mediaType: 'image' | 'document' | 'audio' | 'video' =
+            file.file_category === 'image' ? 'image' :
+            file.file_category === 'video' ? 'video' :
+            file.file_category === 'audio' ? 'audio' : 'document';
+          onSendMedia(file.url, mediaType, file.original_name);
+        }}
+      />
     </div>
   );
 }

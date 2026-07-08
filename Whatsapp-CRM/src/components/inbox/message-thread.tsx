@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import type React from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type {
@@ -28,7 +29,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MessageComposer } from "./message-composer";
@@ -103,7 +103,7 @@ function groupMessagesByDate(messages: Message[]) {
       currentDate = day;
       groups.push({ date: msg.created_at, messages: [msg] });
     } else {
-      groups[groups.length - 1].messages.push(msg);
+      groups.at(-1)!.messages.push(msg);
     }
   }
 
@@ -115,6 +115,77 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
   { label: "Pending", value: "pending", color: "text-amber-400" },
   { label: "Closed", value: "closed", color: "text-slate-500" },
 ];
+
+function findReactionByMessage(
+  reactions: MessageReaction[],
+  messageId: string,
+  userId: string | null,
+): MessageReaction | undefined {
+  return reactions.find(
+    (r) => r.message_id === messageId && r.actor_type === "agent" && r.actor_id === userId,
+  );
+}
+
+function findOwnReaction(
+  reactions: MessageReaction[] | undefined,
+  userId: string | null,
+): MessageReaction | undefined {
+  return reactions?.find((r) => r.actor_type === "agent" && r.actor_id === userId);
+}
+
+function AssignAgentDropdown({
+  assignedAgentId,
+  profiles,
+  userId,
+  onAssignChange,
+  trigger,
+  align = "end",
+}: Readonly<{
+  assignedAgentId: string | null;
+  profiles: Profile[];
+  userId: string | null;
+  onAssignChange: (agentId: string | null) => void;
+  trigger: React.ReactNode;
+  align?: "start" | "end";
+}>) {
+  return (
+    <DropdownMenu>
+      {trigger}
+      <DropdownMenuContent align={align} className="border-slate-200 bg-white">
+        {profiles.length === 0 ? (
+          <DropdownMenuItem disabled className="text-sm text-slate-500">
+            No teammates available
+          </DropdownMenuItem>
+        ) : (
+          profiles.map((p) => {
+            const isSelected = p.user_id === assignedAgentId;
+            return (
+              <DropdownMenuItem
+                key={p.id}
+                onClick={() => onAssignChange(p.user_id)}
+                className={cn("text-sm", isSelected ? "text-primary" : "text-slate-800/80")}
+              >
+                <span className="flex-1">
+                  {p.full_name}
+                  {p.user_id === userId ? " (me)" : ""}
+                </span>
+                {isSelected && <Check className="ml-2 h-3 w-3" />}
+              </DropdownMenuItem>
+            );
+          })
+        )}
+        {assignedAgentId && (
+          <>
+            <DropdownMenuSeparator className="bg-border" />
+            <DropdownMenuItem onClick={() => onAssignChange(null)} className="text-sm text-slate-500">
+              Unassign
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 /**
  * WhatsApp-style doodle background applied to the chat area (both the
@@ -140,7 +211,7 @@ export function MessageThread({
   onBack,
   resyncToken = 0,
   onRefresh,
-}: MessageThreadProps) {
+}: Readonly<MessageThreadProps>) {
   const { userId } = useAuth();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -428,13 +499,12 @@ export function MessageThread({
     async (mediaUrl: string, mediaType: 'image' | 'document' | 'audio' | 'video', filename?: string) => {
       if (!conversation) return;
       const tempId = `temp-${Date.now()}`;
-      const contentType = mediaType === 'image' ? 'image' : mediaType === 'audio' ? 'audio' : mediaType === 'video' ? 'video' : 'document';
       const optimisticMsg: Message = {
         id: tempId,
         conversation_id: conversation.id,
         sender_type: 'agent',
         sender_id: userId ?? undefined,
-        content_type: contentType,
+        content_type: mediaType,
         content_text: filename ?? undefined,
         media_url: mediaUrl,
         status: 'sending',
@@ -669,12 +739,7 @@ export function MessageThread({
       // stale closure. Snapshot stored for rollback on POST failure.
       setReactions((prev) => {
         snapshot = prev;
-        const own = prev.find(
-          (r) =>
-            r.message_id === messageId &&
-            r.actor_type === "agent" &&
-            r.actor_id === userId,
-        );
+        const own = findReactionByMessage(prev, messageId, userId);
         if (emoji === "") return own ? prev.filter((r) => r !== own) : prev;
         if (own) return prev.map((r) => (r === own ? { ...own, emoji } : r));
         return [
@@ -757,9 +822,82 @@ export function MessageThread({
   );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
-  const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? "Assigned")
-    : "Assign";
+
+  let messagesContent: React.ReactNode;
+  if (loading) {
+    messagesContent = (
+      <div className="flex items-center justify-center py-12">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  } else if (messages.length === 0) {
+    messagesContent = (
+      <div className="flex flex-col items-center justify-center py-12">
+        <p className="text-sm text-slate-500">No messages yet</p>
+        <p className="text-xs text-slate-600">
+          Send a template to start the conversation
+        </p>
+      </div>
+    );
+  } else {
+    messagesContent = (
+      <div className="space-y-4">
+        {messageGroups.map((group) => (
+          <div key={group.date}>
+            <div className="mb-3 flex items-center justify-center">
+              <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-500 shadow-sm backdrop-blur-sm select-none">
+                {formatDateSeparator(group.date)}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {group.messages.map((msg) => {
+                const parent = msg.reply_to_message_id && msg.content_type !== 'interactive'
+                  ? messagesById.get(msg.reply_to_message_id)
+                  : null;
+                const reply = parent
+                  ? { authorLabel: authorLabelFor(parent), preview: buildReplyPreview(parent) }
+                  : null;
+                const msgReactions = reactionsByMessageId.get(msg.id);
+                const handlePillToggle = (emoji: string) => {
+                  const own = findOwnReaction(msgReactions, userId);
+                  const next = own?.emoji === emoji ? "" : emoji;
+                  void postReaction(msg.id, next);
+                };
+                return (
+                  <MessageActions
+                    key={msg.id}
+                    message={msg}
+                    onReply={() => handleStartReply(msg)}
+                    onReact={(emoji) => {
+                      if (emoji) void postReaction(msg.id, emoji);
+                    }}
+                    onDelete={
+                      (msg.sender_type === "agent" || msg.sender_type === "bot") && !msg.deleted_at
+                        ? () => void handleDeleteMessage(msg)
+                        : undefined
+                    }
+                  >
+                    <MessageBubble
+                      message={msg}
+                      reply={reply}
+                      reactions={msgReactions}
+                      currentUserId={userId ?? undefined}
+                      onToggleReaction={handlePillToggle}
+                      agentName={
+                        msg.sender_type === "agent"
+                          ? agentLabelFor(msg)
+                          : undefined
+                      }
+                    />
+                  </MessageActions>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className={cn("flex flex-1 flex-col overflow-hidden", DOODLE_BG_CLASSES)}>
@@ -789,33 +927,21 @@ export function MessageThread({
           </h2>
           {/* Sub-row: assignment + session timer */}
           <div className="flex items-center gap-1.5 mt-0.5">
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-0.5 text-[11.5px] text-slate-400 hover:text-slate-700 leading-none">
-                <span className="truncate max-w-[100px]">
-                  {currentAssignee ? currentAssignee.full_name : "Unassigned"}
-                </span>
-                <ChevronDown className="h-3 w-3 shrink-0" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="border-slate-200 bg-white">
-                <DropdownMenuItem onClick={() => handleAssignChange(null)} className="text-sm text-slate-500">
-                  Unassign
-                </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-border" />
-                {profiles.map((p) => {
-                  const isSelected = p.user_id === assignedAgentId;
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => handleAssignChange(p.user_id)}
-                      className={cn("text-sm", isSelected ? "text-primary" : "text-slate-800/80")}
-                    >
-                      <span className="flex-1">{p.full_name}{p.user_id === userId ? " (me)" : ""}</span>
-                      {isSelected && <Check className="ml-2 h-3 w-3" />}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <AssignAgentDropdown
+              assignedAgentId={assignedAgentId}
+              profiles={profiles}
+              userId={userId}
+              onAssignChange={handleAssignChange}
+              align="start"
+              trigger={
+                <DropdownMenuTrigger className="flex items-center gap-0.5 text-[11.5px] text-slate-400 hover:text-slate-700 leading-none">
+                  <span className="truncate max-w-[100px]">
+                    {currentAssignee ? currentAssignee.full_name : "Unassigned"}
+                  </span>
+                  <ChevronDown className="h-3 w-3 shrink-0" />
+                </DropdownMenuTrigger>
+              }
+            />
             {sessionInfo.remaining && (
               <span className={cn(
                 "shrink-0 text-[11px] leading-none",
@@ -866,133 +992,27 @@ export function MessageThread({
           </DropdownMenu>
 
           {/* Assign agent */}
-          <DropdownMenu>
-            <DropdownMenuTrigger title="Assign agent" className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100",
-              assignedAgentId ? "text-primary" : "text-slate-500"
-            )}>
-              <UserPlus className="h-[17px] w-[17px]" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="border-slate-200 bg-white">
-              {profiles.length === 0 ? (
-                <DropdownMenuItem disabled className="text-sm text-slate-500">
-                  No teammates available
-                </DropdownMenuItem>
-              ) : (
-                profiles.map((p) => {
-                  const isSelected = p.user_id === assignedAgentId;
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => handleAssignChange(p.user_id)}
-                      className={cn("text-sm", isSelected ? "text-primary" : "text-slate-800/80")}
-                    >
-                      <span className="flex-1">{p.full_name}{p.user_id === userId ? " (me)" : ""}</span>
-                      {isSelected && <Check className="ml-2 h-3 w-3" />}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-              {assignedAgentId && (
-                <>
-                  <DropdownMenuSeparator className="bg-border" />
-                  <DropdownMenuItem onClick={() => handleAssignChange(null)} className="text-sm text-slate-500">
-                    Unassign
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <AssignAgentDropdown
+            assignedAgentId={assignedAgentId}
+            profiles={profiles}
+            userId={userId}
+            onAssignChange={handleAssignChange}
+            align="end"
+            trigger={
+              <DropdownMenuTrigger title="Assign agent" className={cn(
+                "flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100",
+                assignedAgentId ? "text-primary" : "text-slate-500"
+              )}>
+                <UserPlus className="h-[17px] w-[17px]" />
+              </DropdownMenuTrigger>
+            }
+          />
         </div>
       </div>
 
       {/* Messages Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-styled px-3 py-3 sm:px-4 sm:py-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-slate-500">No messages yet</p>
-            <p className="text-xs text-slate-600">
-              Send a template to start the conversation
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {messageGroups.map((group) => (
-              <div key={group.date}>
-                {/* Date separator — WhatsApp style */}
-                <div className="mb-3 flex items-center justify-center">
-                  <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-500 shadow-sm backdrop-blur-sm select-none">
-                    {formatDateSeparator(group.date)}
-                  </span>
-                </div>
-                {/* Messages */}
-                <div className="flex flex-col gap-1.5">
-                  {group.messages.map((msg) => {
-                    // Interactive button-reply messages carry a context.id from
-                    // WhatsApp pointing to the bot's button prompt. Showing that
-                    // as a reply-quote makes the chatbot question appear inside the
-                    // customer's left-side bubble, creating a confusing "chatbot on
-                    // the wrong side" illusion. Button context is already visible
-                    // in the thread above, so we skip the quote for interactive msgs.
-                    const parent = msg.reply_to_message_id && msg.content_type !== 'interactive'
-                      ? messagesById.get(msg.reply_to_message_id)
-                      : null;
-                    const reply = parent
-                      ? {
-                          authorLabel: authorLabelFor(parent),
-                          preview: buildReplyPreview(parent),
-                        }
-                      : null;
-                    const msgReactions = reactionsByMessageId.get(msg.id);
-                    // Toggle is computed at the call site — `msgReactions`
-                    // and `user?.id` are already in scope, no extra hook.
-                    const handlePillToggle = (emoji: string) => {
-                      const own = msgReactions?.find(
-                        (r) =>
-                          r.actor_type === "agent" &&
-                          r.actor_id === userId,
-                      );
-                      const next = own?.emoji === emoji ? "" : emoji;
-                      void postReaction(msg.id, next);
-                    };
-                    return (
-                      <MessageActions
-                        key={msg.id}
-                        message={msg}
-                        onReply={() => handleStartReply(msg)}
-                        onReact={(emoji) => {
-                          if (emoji) void postReaction(msg.id, emoji);
-                        }}
-                        onDelete={
-                          (msg.sender_type === "agent" || msg.sender_type === "bot") && !msg.deleted_at
-                            ? () => void handleDeleteMessage(msg)
-                            : undefined
-                        }
-                      >
-                        <MessageBubble
-                          message={msg}
-                          reply={reply}
-                          reactions={msgReactions}
-                          currentUserId={userId ?? undefined}
-                          onToggleReaction={handlePillToggle}
-                          agentName={
-                            msg.sender_type === "agent"
-                              ? agentLabelFor(msg)
-                              : undefined
-                          }
-                        />
-                      </MessageActions>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {messagesContent}
       </div>
 
       {/* Composer */}

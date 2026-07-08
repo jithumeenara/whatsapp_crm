@@ -1,14 +1,20 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
-import { ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical, RefreshCw, Settings2, X } from "lucide-react"
+import {
+  ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical,
+  RefreshCw, Settings2, X, Upload, Download, Loader2,
+  Database, AlertTriangle, ChevronRight,
+} from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
 import type { DataTable, DataField, DataRecord } from "@/lib/data-store/types"
 
-function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
+function cn(...c: (string | boolean | undefined | null)[]) {
+  return c.filter(Boolean).join(" ")
+}
 
 function formatValue(field: DataField, value: unknown): string {
   if (value === null || value === undefined || value === "") return "—"
@@ -18,7 +24,42 @@ function formatValue(field: DataField, value: unknown): string {
     return isNaN(d.getTime()) ? str : d.toLocaleDateString()
   }
   if (field.field_type === "boolean") return value ? "Yes" : "No"
-  return str.length > 60 ? str.slice(0, 60) + "…" : str
+  if (Array.isArray(value)) return (value as string[]).join(", ")
+  return str.length > 56 ? str.slice(0, 56) + "…" : str
+}
+
+// ── Confirm Dialog ──────────────────────────────────────────────
+function ConfirmDialog({ open, title, message, confirmLabel = "Delete", onConfirm, onCancel }: {
+  open: boolean; title: string; message: string; confirmLabel?: string
+  onConfirm: () => void; onCancel: () => void
+}) {
+  if (!open) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={onCancel} />
+      <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-100 p-6">
+        <div className="flex items-start gap-3 mb-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50">
+            <AlertTriangle className="h-4 w-4 text-rose-500" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[15px] font-semibold text-slate-900 leading-snug">{title}</p>
+            <p className="mt-1 text-[13px] text-slate-500 leading-relaxed">{message}</p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel}
+            className="h-8 px-3 rounded-lg border border-slate-200 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+          <button onClick={onConfirm}
+            className="h-8 px-3 rounded-lg bg-rose-500 text-[13px] font-medium text-white hover:bg-rose-600 transition-colors">
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export default function DataTablePage() {
@@ -36,19 +77,22 @@ export default function DataTablePage() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
   const [allTables, setAllTables] = useState<DataTable[]>([])
+  const [importing, setImporting] = useState(false)
+  const importRef = useRef<HTMLInputElement>(null)
+  const [confirmRecordId, setConfirmRecordId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const [tRes, rRes] = await Promise.all([
         fetch(`/api/data-tables/${tableId}`),
-        fetch(`/api/data-tables/${tableId}/records?limit=200`),
+        fetch(`/api/data-tables/${tableId}/records?pageSize=200`),
       ])
       if (!tRes.ok) { router.push("/data"); return }
       const tData = await tRes.json()
       const rData = await rRes.json()
       setTable(tData.table)
-      setFields(tData.fields ?? [])
+      setFields(tData.table?.fields ?? [])
       setRecords(rData.records ?? [])
     } catch { toast.error("Failed to load table") }
     finally { setLoading(false) }
@@ -67,14 +111,45 @@ export default function DataTablePage() {
     }
   }, [allTables.length])
 
-  async function deleteRecord(id: string) {
+  async function downloadTemplate() {
+    try {
+      const res = await fetch(`/api/data-tables/${tableId}/import`)
+      if (!res.ok) { toast.error("Failed to generate template"); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${table?.name ?? "template"}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { toast.error("Failed to generate template") }
+  }
+
+  async function handleImport(file: File) {
+    setImporting(true)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch(`/api/data-tables/${tableId}/import`, { method: "POST", body: form })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error ?? "Import failed"); return }
+      toast.success(`Imported ${data.count} record${data.count !== 1 ? "s" : ""}`)
+      load()
+    } catch { toast.error("Import failed") }
+    finally { setImporting(false) }
+  }
+
+  async function confirmDelete() {
+    if (!confirmRecordId) return
+    const id = confirmRecordId
+    setConfirmRecordId(null)
     setDeleting(id)
     try {
       await fetch(`/api/data-tables/${tableId}/records/${id}`, { method: "DELETE" })
       setRecords((p) => p.filter((r) => r.id !== id))
       toast.success("Record deleted")
     } catch { toast.error("Delete failed") }
-    finally { setDeleting(null); setMenuOpenId(null) }
+    finally { setDeleting(null) }
   }
 
   const filtered = records.filter((r) => {
@@ -88,124 +163,248 @@ export default function DataTablePage() {
 
   return (
     <div className="flex flex-col h-full bg-[#F4F6FA]">
+
+      {/* Backdrop — closes any open row menu */}
+      {menuOpenId && (
+        <div
+          className="fixed inset-0 z-20"
+          onClick={() => setMenuOpenId(null)}
+        />
+      )}
+
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100">
-        <button onClick={() => router.push("/data")}
-          className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
-          <ArrowLeft className="h-4 w-4 text-slate-500" />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-[16px] font-bold text-slate-800">{table?.name ?? "Loading…"}</h1>
-          <p className="text-[12px] text-slate-400">{records.length} records · {fields.length} fields</p>
+      <div className="bg-white border-b border-slate-200">
+        <div className="flex items-center gap-2 px-4 h-14 flex-wrap">
+          <button
+            onClick={() => router.push("/data")}
+            className="flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+
+          <div className="flex items-center gap-1.5 text-[13px] text-slate-400 min-w-0">
+            <Database className="h-3.5 w-3.5 shrink-0" />
+            <span className="hidden sm:inline">Data Store</span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-semibold text-slate-800 truncate">{table?.name ?? "…"}</span>
+          </div>
+
+          {!loading && (
+            <div className="hidden md:flex items-center gap-3 text-[12px] text-slate-400 ml-1">
+              <span><span className="font-semibold text-slate-600">{records.length}</span> records</span>
+              <span><span className="font-semibold text-slate-600">{fields.length}</span> fields</span>
+            </div>
+          )}
+
+          <div className="flex-1" />
+
+          {/* Action strip */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search…"
+                className="h-8 w-36 sm:w-44 pl-8 pr-3 text-[13px] rounded-lg border border-slate-200 bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
+              />
+            </div>
+
+            <div className="h-5 w-px bg-slate-200" />
+
+            <button onClick={load} title="Refresh"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
+
+            <button onClick={openFieldPanel}
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+              <Settings2 className="h-3.5 w-3.5" /> Fields
+            </button>
+
+            <button onClick={downloadTemplate} title="Download Excel template"
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
+              <Download className="h-3.5 w-3.5" /> Template
+            </button>
+
+            <button onClick={() => importRef.current?.click()} disabled={importing}
+              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors">
+              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              Import
+            </button>
+            <input ref={importRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleImport(f); e.target.value = "" } }} />
+
+            <div className="h-5 w-px bg-slate-200" />
+
+            <button
+              onClick={() => { setEditingRecord(null); setFormOpen(true) }}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 active:scale-95 transition-all"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add Record
+            </button>
+          </div>
         </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search records…"
-            className="h-8 pl-8 pr-3 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-400 w-52" />
-        </div>
-        <button onClick={load} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
-          <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
-        </button>
-        <button onClick={openFieldPanel}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 text-slate-700 text-[13px] font-medium hover:bg-slate-50">
-          <Settings2 className="h-3.5 w-3.5" /> Fields
-        </button>
-        <button onClick={() => { setEditingRecord(null); setFormOpen(true) }}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700">
-          <Plus className="h-3.5 w-3.5" /> Add Record
-        </button>
       </div>
 
-      {/* Table */}
-      <div className="flex-1 overflow-auto p-6">
+      {/* Table grid */}
+      <div className="flex-1 overflow-auto">
         {loading ? (
-          <div className="space-y-2">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="h-10 bg-white rounded-lg animate-pulse" />
-            ))}
-          </div>
+          <TableSkeleton />
+        ) : fields.length === 0 ? (
+          <NoFieldsState onFields={openFieldPanel} />
+        ) : filtered.length === 0 && records.length === 0 ? (
+          <NoRecordsState onAdd={() => { setEditingRecord(null); setFormOpen(true) }} />
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-            <p className="text-[14px] font-medium">No records yet. Add your first record!</p>
+          <div className="flex flex-col items-center justify-center py-20">
+            <Search className="h-8 w-8 mb-3 text-slate-300" />
+            <p className="text-[14px] font-medium text-slate-500">No records match</p>
+            <button onClick={() => setSearch("")} className="mt-1.5 text-[12px] text-indigo-600 hover:underline">
+              Clear search
+            </button>
           </div>
         ) : (
-          <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-sm">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50">
-                  <th className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide w-8">#</th>
-                  {visibleFields.map((f) => (
-                    <th key={f.id} className="px-4 py-2.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                      {f.label}
-                    </th>
-                  ))}
-                  <th className="px-4 py-2.5 text-right text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((rec, idx) => {
-                  const data = rec.data as Record<string, unknown>
-                  return (
-                    <tr key={rec.id} className="border-b border-slate-50 hover:bg-indigo-50/20 transition-colors">
-                      <td className="px-4 py-2.5 text-slate-400">{idx + 1}</td>
+          <div className="p-4">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.05)]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-10 border-r border-slate-100">
+                        #
+                      </th>
                       {visibleFields.map((f) => (
-                        <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[180px] truncate">
-                          {formatValue(f, data[f.field_key])}
-                        </td>
+                        <th key={f.id} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">
+                          {f.label}
+                          <span className="ml-1.5 font-normal normal-case text-slate-300">{f.field_type}</span>
+                        </th>
                       ))}
-                      <td className="px-4 py-2.5 text-right">
-                        <div className="relative inline-block">
-                          <button onClick={() => setMenuOpenId(menuOpenId === rec.id ? null : rec.id)}
-                            className="p-1 rounded hover:bg-slate-100">
-                            <MoreVertical className="h-4 w-4 text-slate-400" />
-                          </button>
-                          {menuOpenId === rec.id && (
-                            <div className="absolute right-0 top-6 z-20 w-36 bg-white border border-slate-100 rounded-xl shadow-lg overflow-hidden">
-                              <button onClick={() => { setEditingRecord(rec); setFormOpen(true); setMenuOpenId(null) }}
-                                className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-slate-700 hover:bg-slate-50">
-                                <Edit2 className="h-3.5 w-3.5" /> Edit
-                              </button>
-                              <button onClick={() => deleteRecord(rec.id)} disabled={deleting === rec.id}
-                                className="flex items-center gap-2 w-full px-3 py-2 text-[12px] text-rose-600 hover:bg-rose-50">
-                                <Trash2 className="h-3.5 w-3.5" /> Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </td>
+                      <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-14">
+                        Actions
+                      </th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {filtered.map((rec, idx) => {
+                      const data = rec.data as Record<string, unknown>
+                      const isMenuOpen = menuOpenId === rec.id
+                      return (
+                        <tr
+                          key={rec.id}
+                          className={cn(
+                            "group border-b border-slate-100 last:border-0 hover:bg-indigo-50/30 transition-colors",
+                            idx % 2 !== 0 && "bg-slate-50/40"
+                          )}
+                        >
+                          <td className={cn(
+                            "px-3 py-2.5 text-[11px] font-mono text-slate-300 border-r border-slate-100 w-10",
+                            idx % 2 !== 0 ? "bg-slate-50/40" : "bg-white",
+                            "group-hover:bg-indigo-50/30 transition-colors"
+                          )}>
+                            {idx + 1}
+                          </td>
+                          {visibleFields.map((f) => (
+                            <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[200px]">
+                              <span className={cn(
+                                "block truncate",
+                                (f.field_type === "email" || f.field_type === "url" || f.field_type === "phone") && "font-mono text-[12px] text-slate-600",
+                                f.field_type === "number" && "font-mono text-[12px] tabular-nums",
+                              )}>
+                                {formatValue(f, data[f.field_key])}
+                              </span>
+                            </td>
+                          ))}
+                          <td className="px-3 py-2.5 text-right">
+                            {/* z-30 sits above the z-20 backdrop */}
+                            <div className="relative z-30 inline-flex justify-end">
+                              <button
+                                onClick={() => setMenuOpenId(isMenuOpen ? null : rec.id)}
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all"
+                              >
+                                <MoreVertical className="h-3.5 w-3.5" />
+                              </button>
+
+                              {isMenuOpen && (
+                                <div className="absolute right-0 top-8 w-40 rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
+                                  <button
+                                    onClick={() => {
+                                      setMenuOpenId(null)
+                                      setEditingRecord(rec)
+                                      setFormOpen(true)
+                                    }}
+                                    className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                                  >
+                                    <Edit2 className="h-3.5 w-3.5 text-slate-400" />
+                                    Edit record
+                                  </button>
+                                  <div className="mx-2 my-0.5 h-px bg-slate-100" />
+                                  <button
+                                    onClick={() => {
+                                      setMenuOpenId(null)
+                                      setConfirmRecordId(rec.id)
+                                    }}
+                                    className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between mt-3 px-1">
+              <p className="text-[11px] text-slate-400">
+                {filtered.length === records.length
+                  ? `${records.length} record${records.length !== 1 ? "s" : ""}`
+                  : `${filtered.length} of ${records.length} records`}
+              </p>
+              {visibleFields.length < fields.length && (
+                <p className="text-[11px] text-slate-400">
+                  Showing {visibleFields.length} of {fields.length} fields
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>
 
+      {/* Record form dialog */}
       {formOpen && (
         <RecordForm
           open={formOpen}
           tableId={tableId}
           fields={fields}
-          record={editingRecord ?? undefined}
+          record={editingRecord}
           onClose={() => { setFormOpen(false); setEditingRecord(null) }}
           onSaved={() => { setFormOpen(false); setEditingRecord(null); load() }}
         />
       )}
 
-      {/* Fields slide-over panel */}
+      {/* Fields slide-over */}
       {fieldPanelOpen && (
         <div className="fixed inset-0 z-40 flex justify-end">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setFieldPanelOpen(false)} />
-          <div className="relative z-50 w-full max-w-md bg-white shadow-xl flex flex-col h-full">
+          <div className="absolute inset-0 bg-black/25 backdrop-blur-[1px]" onClick={() => setFieldPanelOpen(false)} />
+          <div className="relative z-50 w-full max-w-[420px] bg-white flex flex-col h-full shadow-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
               <div>
-                <h2 className="text-[15px] font-semibold text-slate-800">Manage Fields</h2>
-                <p className="text-[11px] text-slate-400">{fields.length} field{fields.length !== 1 ? "s" : ""} in {table?.name}</p>
+                <h2 className="text-[15px] font-semibold text-slate-900">Manage Fields</h2>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {fields.length} field{fields.length !== 1 ? "s" : ""} · {table?.name}
+                </p>
               </div>
-              <button onClick={() => setFieldPanelOpen(false)} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
-                <X className="h-4 w-4 text-slate-500" />
+              <button
+                onClick={() => setFieldPanelOpen(false)}
+                className="flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <X className="h-4 w-4" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
@@ -213,12 +412,85 @@ export default function DataTablePage() {
                 tableId={tableId}
                 fields={fields}
                 allTables={allTables}
-                onFieldsChange={(updated) => { setFields(updated) }}
+                onFieldsChange={(updated) => setFields(updated)}
               />
             </div>
           </div>
         </div>
       )}
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!confirmRecordId}
+        title="Delete record?"
+        message="This record will be permanently deleted and cannot be recovered."
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmRecordId(null)}
+      />
+    </div>
+  )
+}
+
+function TableSkeleton() {
+  return (
+    <div className="p-4">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="h-10 bg-slate-50 border-b border-slate-200" />
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className={cn("h-11 border-b border-slate-100 last:border-0", i % 2 !== 0 && "bg-slate-50/40")}>
+            <div className="flex items-center gap-4 px-4 h-full">
+              <div className="h-3 w-4 rounded bg-slate-100 animate-pulse" />
+              <div className="h-3 w-28 rounded bg-slate-100 animate-pulse" />
+              <div className="h-3 w-20 rounded bg-slate-100 animate-pulse" />
+              <div className="h-3 w-16 rounded bg-slate-100 animate-pulse" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function NoFieldsState({ onFields }: { onFields: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full py-20">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 mb-4">
+        <Settings2 className="h-6 w-6 text-slate-400" />
+      </div>
+      <h3 className="text-[15px] font-semibold text-slate-700 mb-1">No fields defined</h3>
+      <p className="text-[13px] text-slate-400 text-center max-w-xs mb-5">
+        Add fields to define the structure of your table before adding records.
+      </p>
+      <button onClick={onFields}
+        className="flex items-center gap-1.5 h-8 px-4 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 transition-colors">
+        <Settings2 className="h-3.5 w-3.5" /> Add Fields
+      </button>
+    </div>
+  )
+}
+
+function NoRecordsState({ onAdd }: { onAdd: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full py-20">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 mb-4">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect x="3" y="6" width="22" height="16" rx="2" stroke="#4F46E5" strokeWidth="1.5" fill="none" />
+          <line x1="3" y1="11" x2="25" y2="11" stroke="#4F46E5" strokeWidth="1.5" />
+          <line x1="10" y1="6" x2="10" y2="22" stroke="#4F46E5" strokeWidth="1.5" />
+          <circle cx="21" cy="21" r="4.5" fill="#4F46E5" />
+          <line x1="21" y1="19.2" x2="21" y2="22.8" stroke="white" strokeWidth="1.3" strokeLinecap="round" />
+          <line x1="19.2" y1="21" x2="22.8" y2="21" stroke="white" strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      </div>
+      <h3 className="text-[15px] font-semibold text-slate-700 mb-1">No records yet</h3>
+      <p className="text-[13px] text-slate-400 text-center max-w-xs mb-5">
+        Add your first record manually, or import from an Excel file using the Import button above.
+      </p>
+      <button onClick={onAdd}
+        className="flex items-center gap-1.5 h-8 px-4 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 transition-colors">
+        <Plus className="h-3.5 w-3.5" /> Add Record
+      </button>
     </div>
   )
 }
