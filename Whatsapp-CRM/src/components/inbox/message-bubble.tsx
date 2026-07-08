@@ -263,13 +263,13 @@ export function MessageBubble({
   return (
     <div
       className={cn(
-        "flex flex-col",
-        isOutbound ? "items-end" : "items-start",
+        "flex flex-col max-w-[85%] sm:max-w-[75%]",
+        isOutbound ? "items-end self-end" : "items-start self-start",
       )}
     >
       {/* Sender label above the bubble */}
       {isBot && (
-        <span className="mb-0.5 flex items-center gap-1 text-[10px] text-teal-400">
+        <span className="mb-0.5 flex items-center gap-1 text-[10px] text-teal-600">
           <Bot className="h-3 w-3" />
           Chatbot
         </span>
@@ -278,7 +278,7 @@ export function MessageBubble({
         <span
           className={cn(
             "mb-0.5 flex items-center gap-1 text-[10px]",
-            agentName === "You" ? "text-emerald-400" : "text-amber-400",
+            agentName === "You" ? "text-emerald-600" : "text-amber-600",
           )}
         >
           <UserRound className="h-3 w-3" />
@@ -288,16 +288,19 @@ export function MessageBubble({
 
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
+          "relative px-3 py-2 shadow-sm",
+          isOutbound
+            ? "rounded-[18px] rounded-tr-[4px]"
+            : "rounded-[18px] rounded-tl-[4px]",
           message.deleted_at
-            ? "rounded-br-md bg-slate-100 text-slate-400 border border-slate-200"
+            ? "bg-slate-100 text-slate-400 border border-slate-200"
             : isBot
-              ? "rounded-br-md bg-teal-700 text-white"
+              ? "bg-teal-50 text-teal-900 border border-teal-100"
               : isSelf
-                ? "rounded-br-md bg-primary text-primary-foreground"
+                ? "bg-[#DCF8C6] text-slate-800"
                 : isAgent
-                  ? "rounded-br-md bg-amber-700 text-white"
-                  : "rounded-bl-md bg-zinc-700 text-white shadow-sm",
+                  ? "bg-amber-50 text-amber-900 border border-amber-100"
+                  : "bg-white text-slate-800 border border-slate-100",
         )}
       >
         {message.deleted_at ? (
@@ -315,11 +318,11 @@ export function MessageBubble({
         )}
         <div
           className={cn(
-            "mt-1 flex items-center gap-1",
+            "mt-0.5 flex items-center gap-1",
             isOutbound ? "justify-end" : "justify-start",
           )}
         >
-          <span className="text-[10px] text-slate-800/60">{time}</span>
+          <span className="text-[10px] text-slate-500/70">{time}</span>
           {isOutbound && <StatusIcon status={message.status} />}
         </div>
       </div>

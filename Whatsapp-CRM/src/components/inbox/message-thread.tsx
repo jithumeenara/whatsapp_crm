@@ -763,66 +763,94 @@ export function MessageThread({
 
   return (
     <div className={cn("flex flex-1 flex-col overflow-hidden", DOODLE_BG_CLASSES)}>
-      {/* Header */}
-      <div className="flex h-14 items-center justify-between gap-2 border-b border-slate-200 bg-white px-4">
-        <div className="flex min-w-0 items-center gap-3">
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label="Back to conversations"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-          )}
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary">
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0">
-            <h2 className="truncate text-[16px] font-semibold text-slate-800">{displayName}</h2>
-            <div className="flex items-center gap-1.5">
-              <DropdownMenu>
-                <DropdownMenuTrigger className="flex items-center gap-1 text-[13.5px] text-slate-500 hover:text-slate-800">
-                  <span>{currentAssignee ? `Assigned to ${currentAssignee.full_name}` : "Unassigned"}</span>
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="border-slate-200 bg-white">
-                  <DropdownMenuItem onClick={() => handleAssignChange(null)} className="text-sm text-slate-500">
-                    Unassign
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator className="bg-border" />
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {sessionInfo.remaining && (
-                <span className={cn("text-[12.5px]", sessionInfo.expired ? "text-red-400" : "text-primary/60")}>
-                  · {sessionInfo.remaining}
+      {/* ── Header — WhatsApp-style on mobile ── */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:px-4 lg:py-0 lg:h-14">
+        {/* Back arrow (mobile) */}
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back to conversations"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 lg:hidden"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </button>
+        )}
+
+        {/* Avatar */}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[15px] font-semibold text-primary">
+          {displayName.charAt(0).toUpperCase()}
+        </div>
+
+        {/* Name + sub-row */}
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-[15px] font-semibold leading-tight text-slate-900">
+            {displayName}
+          </h2>
+          {/* Sub-row: assignment + session timer */}
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-0.5 text-[11.5px] text-slate-400 hover:text-slate-700 leading-none">
+                <span className="truncate max-w-[100px]">
+                  {currentAssignee ? currentAssignee.full_name : "Unassigned"}
                 </span>
-              )}
-            </div>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="border-slate-200 bg-white">
+                <DropdownMenuItem onClick={() => handleAssignChange(null)} className="text-sm text-slate-500">
+                  Unassign
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-border" />
+                {profiles.map((p) => {
+                  const isSelected = p.user_id === assignedAgentId;
+                  return (
+                    <DropdownMenuItem
+                      key={p.id}
+                      onClick={() => handleAssignChange(p.user_id)}
+                      className={cn("text-sm", isSelected ? "text-primary" : "text-slate-800/80")}
+                    >
+                      <span className="flex-1">{p.full_name}{p.user_id === userId ? " (me)" : ""}</span>
+                      {isSelected && <Check className="ml-2 h-3 w-3" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {sessionInfo.remaining && (
+              <span className={cn(
+                "shrink-0 text-[11px] leading-none",
+                sessionInfo.expired ? "text-red-400" : "text-slate-400"
+              )}>
+                · {sessionInfo.remaining}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
+        {/* Action buttons (right side) */}
+        <div className="flex items-center gap-0.5 shrink-0">
           {onRefresh && (
             <button
               type="button"
               onClick={handleRefreshClick}
               disabled={isRefreshing}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
+              title="Refresh"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
             >
-              <RefreshCw className={cn("h-[18px] w-[18px]", isRefreshing && "animate-spin")} />
+              <RefreshCw className={cn("h-[17px] w-[17px]", isRefreshing && "animate-spin")} />
             </button>
           )}
 
-          {/* Status */}
+          {/* Status — compact pill on mobile, labeled on desktop */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
-              "flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[13px] font-medium hover:bg-slate-100",
-              currentStatus?.color ?? "text-slate-500"
+              "flex h-7 items-center gap-1 rounded-full border px-2.5 text-[12px] font-medium",
+              "lg:h-8 lg:rounded-lg lg:px-3 lg:text-[13px]",
+              currentStatus?.color ?? "text-slate-500",
+              "border-current/30 hover:bg-slate-50"
             )}>
               {currentStatus?.label ?? "Status"}
-              <ChevronDown className="h-3.5 w-3.5" />
+              <ChevronDown className="h-3 w-3 shrink-0" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="border-slate-200 bg-white">
               {STATUS_OPTIONS.map((opt) => (
@@ -837,18 +865,15 @@ export function MessageThread({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Assign */}
+          {/* Assign agent */}
           <DropdownMenu>
-            <DropdownMenuTrigger className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100",
-              assignedAgentId && "text-primary"
+            <DropdownMenuTrigger title="Assign agent" className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100",
+              assignedAgentId ? "text-primary" : "text-slate-500"
             )}>
-              <UserPlus className="h-[18px] w-[18px]" />
+              <UserPlus className="h-[17px] w-[17px]" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-slate-200 bg-slate-100"
-            >
+            <DropdownMenuContent align="end" className="border-slate-200 bg-white">
               {profiles.length === 0 ? (
                 <DropdownMenuItem disabled className="text-sm text-slate-500">
                   No teammates available
@@ -860,15 +885,9 @@ export function MessageThread({
                     <DropdownMenuItem
                       key={p.id}
                       onClick={() => handleAssignChange(p.user_id)}
-                      className={cn(
-                        "text-sm",
-                        isSelected ? "text-primary" : "text-slate-800/80"
-                      )}
+                      className={cn("text-sm", isSelected ? "text-primary" : "text-slate-800/80")}
                     >
-                      <span className="flex-1">
-                        {p.full_name}
-                        {p.user_id === userId ? " (me)" : ""}
-                      </span>
+                      <span className="flex-1">{p.full_name}{p.user_id === userId ? " (me)" : ""}</span>
                       {isSelected && <Check className="ml-2 h-3 w-3" />}
                     </DropdownMenuItem>
                   );
@@ -877,10 +896,7 @@ export function MessageThread({
               {assignedAgentId && (
                 <>
                   <DropdownMenuSeparator className="bg-border" />
-                  <DropdownMenuItem
-                    onClick={() => handleAssignChange(null)}
-                    className="text-sm text-slate-500"
-                  >
+                  <DropdownMenuItem onClick={() => handleAssignChange(null)} className="text-sm text-slate-500">
                     Unassign
                   </DropdownMenuItem>
                 </>
@@ -891,7 +907,7 @@ export function MessageThread({
       </div>
 
       {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-styled px-4 py-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-styled px-3 py-3 sm:px-4 sm:py-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -914,7 +930,7 @@ export function MessageThread({
                   </span>
                 </div>
                 {/* Messages */}
-                <div className="space-y-2">
+                <div className="flex flex-col gap-1.5">
                   {group.messages.map((msg) => {
                     // Interactive button-reply messages carry a context.id from
                     // WhatsApp pointing to the bot's button prompt. Showing that

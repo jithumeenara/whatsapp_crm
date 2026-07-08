@@ -7,6 +7,7 @@ import { useRealtime } from "@/hooks/use-realtime"
 import { ConversationListV2 } from "@/components/inbox/conversation-list-v2"
 import { MessageThread } from "@/components/inbox/message-thread"
 import { ContactSidebarV2 } from "@/components/inbox/contact-sidebar-v2"
+import { useMobileBar } from "@/components/layout-v2/dashboard-shell-v2"
 import { WifiOff } from "lucide-react"
 
 function InboxV2Content() {
@@ -22,6 +23,14 @@ function InboxV2Content() {
   const [resyncToken, setResyncToken] = useState(0)
   // Mobile: show list or thread
   const [mobileView, setMobileView] = useState<"list" | "thread">("list")
+
+  const { hide: hideBar, show: showBar } = useMobileBar()
+
+  // Hide the shell's 48px mobile top bar when a thread is open (full-screen like WhatsApp)
+  useEffect(() => {
+    if (mobileView === "thread") { hideBar(); return () => showBar(); }
+    showBar()
+  }, [mobileView, hideBar, showBar])
 
   const autoSelectedForDeepLinkRef = useRef<string | null>(null)
   const hydratingConvIdsRef = useRef<Set<string>>(new Set())

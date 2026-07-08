@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { ConfirmProvider } from "@/hooks/use-confirm";
 import { SidebarV2 } from "./sidebar-v2";
 import { Menu } from "lucide-react";
 import type React from "react";
+
+/** Lets child pages hide the mobile shell top bar (e.g. inbox thread view). */
+const MobileBarCtx = createContext<{ hide: () => void; show: () => void }>({
+  hide: () => {},
+  show: () => {},
+});
+export function useMobileBar() { return useContext(MobileBarCtx); }
 
 // Force all shadcn CSS-var tokens to light values inside the V2 shell,
 // regardless of the global data-theme (which may be a dark palette).
@@ -36,7 +43,9 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileBarHidden, setMobileBarHidden] = useState(false);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const mobileBarCtx = { hide: () => setMobileBarHidden(true), show: () => setMobileBarHidden(false) };
 
   // Apply light CSS vars to document.body so portal-rendered elements
   // (Dialog, Popover, DropdownMenu, etc.) also get the light palette.
@@ -68,31 +77,35 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   if (!userId) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: "Inter, sans-serif", ...LIGHT_VARS }}>
-      <SidebarV2
-        open={sidebarOpen}
-        onClose={closeSidebar}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((v) => !v)}
-      />
+    <MobileBarCtx.Provider value={mobileBarCtx}>
+      <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: "Inter, sans-serif", ...LIGHT_VARS }}>
+        <SidebarV2
+          open={sidebarOpen}
+          onClose={closeSidebar}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((v) => !v)}
+        />
 
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        {/* Mobile top bar — visible only on sm */}
-        <div className="flex h-[48px] shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="text-[14px] font-semibold text-slate-900">WhatsApp CRM</span>
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          {/* Mobile top bar — hidden when a page requests it (e.g. inbox thread) */}
+          {!mobileBarHidden && (
+            <div className="flex h-[48px] shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Open menu"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <span className="text-[14px] font-semibold text-slate-900">WhatsApp CRM</span>
+            </div>
+          )}
+
+          <main className="flex-1 overflow-y-auto scroll-styled">{children}</main>
         </div>
-
-        <main className="flex-1 overflow-y-auto scroll-styled">{children}</main>
       </div>
-    </div>
+    </MobileBarCtx.Provider>
   );
 }
 
