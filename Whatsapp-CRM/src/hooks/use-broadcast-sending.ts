@@ -49,27 +49,6 @@ interface UseBroadcastSendingReturn {
 }
 
 /**
- * Batch size of 5 + 4 s pause between batches.
- * The API route already adds 300 ms between individual sends, so each
- * batch of 5 takes ~1.5 s internally, then we wait another 4 s before
- * the next — giving ~5.5 s per 5 messages (~1 msg/sec sustained).
- * This stays well within Meta's Tier-1 rate limits.
- */
-const SEND_BATCH_SIZE = 5;
-const SEND_BATCH_DELAY_MS = 4000;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-interface BroadcastApiResult {
-  phone: string;
-  status: 'sent' | 'failed';
-  whatsapp_message_id?: string;
-  error?: string;
-}
-
-/**
  * Per-contact resolution of custom-field placeholders. Static and
  * built-in-field mappings resolve synchronously; custom fields read
  * from a pre-built index to avoid N+1 queries during the send loop.
@@ -124,23 +103,18 @@ interface BroadcastSetupResult {
 }
 
 export function useBroadcastSending(): UseBroadcastSendingReturn {
-  // accountId is available from useAuth for any remaining checks, but
-  // the actual account resolution happens server-side via getCurrentAccount.
   const { accountId } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
 
   async function createAndSendBroadcast(payload: BroadcastPayload): Promise<string> {
     setIsProcessing(true);
-    setProgress(0);
+    setProgress(10);
 
-    if (!accountId) {
-      throw new Error('Your profile is not linked to an account.');
-    }
+    if (!accountId) throw new Error('Your profile is not linked to an account.');
 
     try {
       // ── Step 1: Create broadcast + resolve audience (server-side) ──
-      setProgress(10);
       const setupRes = await fetch('/api/broadcasts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -156,146 +130,24 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       if (!setupRes.ok) {
         const err = await setupRes.json().catch(() => ({}));
         throw new Error(
-          (err as { error?: string }).error ??
-            `Failed to create broadcast (${setupRes.status})`,
+          (err as { error?: string }).error ?? `Failed to create broadcast (${setupRes.status})`,
         );
       }
 
       const setup = (await setupRes.json()) as BroadcastSetupResult;
-      const { broadcastId, recipients } = setup;
+      const { broadcastId } = setup;
+      setProgress(50);
 
-      setProgress(30);
-
-      let failedCount = 0;
-      const totalRecipients = recipients.length;
-
-      for (let i = 0; i < recipients.length; i += SEND_BATCH_SIZE) {
-        const batch = recipients.slice(i, i + SEND_BATCH_SIZE);
-
-        const apiRecipients = batch
-          .filter((r) => r.contact?.phone)
-          .map((r) => ({
-            phone: r.contact!.phone,
-            params: resolveVariables(
-              payload.variables,
-              r.contact!,
-              r.customValues,
-            ),
-          }));
-
-        // Collect per-recipient updates to write back in one call.
-        const recipientUpdates: Array<{
-          id: string;
-          status: string;
-          sent_at?: string;
-          whatsapp_message_id?: string;
-          error_message?: string;
-        }> = [];
-
-        if (apiRecipients.length === 0) {
-          // No phone numbers in this batch — mark all as failed.
-          for (const recipient of batch) {
-            failedCount++;
-            recipientUpdates.push({
-              id: recipient.id,
-              status: 'failed',
-              error_message: 'No phone number on contact',
-            });
-          }
-        } else {
-          try {
-            const res = await fetch('/api/whatsapp/broadcast', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                recipients: apiRecipients,
-                template_name: payload.template.name,
-                template_language: payload.template.language ?? 'en_US',
-              }),
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-              throw new Error(
-                (data as { error?: string }).error ?? 'Broadcast API request failed',
-              );
-            }
-
-            const resultsByPhone = new Map<string, BroadcastApiResult>();
-            for (const r of (data.results ?? []) as BroadcastApiResult[]) {
-              resultsByPhone.set(r.phone, r);
-            }
-
-            for (const recipient of batch) {
-              const phone = recipient.contact?.phone;
-              const result = phone ? resultsByPhone.get(phone) : undefined;
-
-              if (!result) {
-                failedCount++;
-                recipientUpdates.push({
-                  id: recipient.id,
-                  status: 'failed',
-                  error_message: 'No phone number on contact',
-                });
-                continue;
-              }
-
-              if (result.status === 'sent') {
-                recipientUpdates.push({
-                  id: recipient.id,
-                  status: 'sent',
-                  sent_at: new Date().toISOString(),
-                  whatsapp_message_id: result.whatsapp_message_id ?? undefined,
-                  error_message: undefined,
-                });
-              } else {
-                failedCount++;
-                recipientUpdates.push({
-                  id: recipient.id,
-                  status: 'failed',
-                  error_message: result.error ?? 'Unknown error',
-                });
-              }
-            }
-          } catch (err) {
-            for (const recipient of batch) {
-              failedCount++;
-              recipientUpdates.push({
-                id: recipient.id,
-                status: 'failed',
-                error_message: err instanceof Error ? err.message : 'Unknown error',
-              });
-            }
-          }
-        }
-
-        // Persist recipient status updates for this batch.
-        if (recipientUpdates.length > 0) {
-          await fetch(`/api/broadcasts/${broadcastId}/recipients`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ updates: recipientUpdates }),
-          });
-        }
-
-        const progressPct =
-          30 + Math.round(((i + batch.length) / totalRecipients) * 60);
-        setProgress(progressPct);
-
-        if (i + SEND_BATCH_SIZE < recipients.length) {
-          await sleep(SEND_BATCH_DELAY_MS);
-        }
-      }
-
-      // ── Finalize broadcast status ─────────────────────────────
-      setProgress(95);
-      const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
-      await fetch(`/api/broadcasts/${broadcastId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: finalStatus }),
+      // ── Step 2: Kick off server-side background processing ──
+      // Returns 202 immediately; sending continues on the server
+      // even if the browser tab is closed.
+      const processRes = await fetch(`/api/broadcasts/${broadcastId}/process`, {
+        method: 'POST',
       });
+      if (!processRes.ok) {
+        const err = await processRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error ?? 'Failed to start sending');
+      }
 
       setProgress(100);
       return broadcastId;
