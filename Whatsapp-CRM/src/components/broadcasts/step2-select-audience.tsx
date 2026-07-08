@@ -57,23 +57,32 @@ function WaBadge() {
 
 /* ── Excel parser ────────────────────────────────────────────────── */
 async function parseExcelFile(file: File): Promise<{ phone: string; name?: string }[]> {
-  const xlsx = await import('xlsx')
+  const { Workbook } = await import('exceljs')
   const buffer = await file.arrayBuffer()
-  const wb = xlsx.read(buffer, { type: 'array' })
-  const ws = wb.Sheets[wb.SheetNames[0]]
-  const rows = xlsx.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
+  const wb = new Workbook()
+  await wb.xlsx.load(buffer)
+  const ws = wb.worksheets[0]
+  if (!ws) return []
 
-  return rows
-    .map((row) => {
-      const keys = Object.keys(row)
-      const phoneKey = keys.find((k) => /phone|mobile|number|whatsapp/i.test(k))
-      const nameKey  = keys.find((k) => /name/i.test(k))
-      const raw = phoneKey ? String(row[phoneKey]).trim().replace(/\s+/g, '') : ''
-      const phone = raw.startsWith('+') ? raw : raw ? `+${raw}` : ''
-      const name  = nameKey  ? String(row[nameKey]).trim() : undefined
-      return { phone, name }
-    })
-    .filter((r) => r.phone.length >= 7)
+  const results: { phone: string; name?: string }[] = []
+  let headers: string[] = []
+
+  ws.eachRow((row, rowIndex) => {
+    // exceljs row.values is 1-indexed; index 0 is always undefined
+    const values = (row.values as unknown[]).slice(1)
+    if (rowIndex === 1) {
+      headers = values.map((v) => String(v ?? ''))
+      return
+    }
+    const phoneIdx = headers.findIndex((k) => /phone|mobile|number|whatsapp/i.test(k))
+    const nameIdx  = headers.findIndex((k) => /name/i.test(k))
+    const raw = phoneIdx >= 0 ? String(values[phoneIdx] ?? '').trim().replace(/\s+/g, '') : ''
+    const phone = raw.startsWith('+') ? raw : raw ? `+${raw}` : ''
+    const name  = nameIdx  >= 0 ? String(values[nameIdx] ?? '').trim() : undefined
+    if (phone.length >= 7) results.push({ phone, name })
+  })
+
+  return results
 }
 
 /* ── Main component ─────────────────────────────────────────────── */

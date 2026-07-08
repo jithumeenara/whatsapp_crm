@@ -183,7 +183,7 @@ export default function BroadcastDetailPage() {
     if (!broadcast) return
     setExporting(true)
     try {
-      const xlsx = await import("xlsx")
+      const { Workbook } = await import("exceljs")
       const sent: Record<string, string>[] = []
       const skipped: Record<string, string>[] = []
 
@@ -203,10 +203,24 @@ export default function BroadcastDetailPage() {
         else sent.push(row)
       }
 
-      const wb = xlsx.utils.book_new()
-      xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(sent), "Sent")
-      xlsx.utils.book_append_sheet(wb, xlsx.utils.json_to_sheet(skipped), "Failed")
-      xlsx.writeFile(wb, `broadcast-${broadcast.name.replace(/[^a-z0-9]/gi, "_")}.xlsx`)
+      const COLS = ["Name", "Phone", "Email", "Status", "Sent At", "Delivered At", "Read At", "Replied At", "Error"]
+      const wb = new Workbook()
+      const sentSheet = wb.addWorksheet("Sent")
+      sentSheet.columns = COLS.map((k) => ({ header: k, key: k, width: 20 }))
+      sent.forEach((row) => sentSheet.addRow(row))
+      const failedSheet = wb.addWorksheet("Failed")
+      failedSheet.columns = COLS.map((k) => ({ header: k, key: k, width: 20 }))
+      skipped.forEach((row) => failedSheet.addRow(row))
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `broadcast-${broadcast.name.replace(/[^a-z0-9]/gi, "_")}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
     } catch {
       toast.error("Export failed")
     } finally {
