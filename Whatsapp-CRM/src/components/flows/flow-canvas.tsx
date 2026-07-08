@@ -128,14 +128,11 @@ function FlowNodeCard({ data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        "relative min-w-[220px] max-w-[260px] rounded-lg border bg-white/95 px-3 py-2 text-left shadow-lg backdrop-blur transition-colors",
+        "relative min-w-[220px] max-w-[260px] rounded-xl border bg-white px-3 py-2.5 text-left shadow-sm transition-all",
         selected
-          ? "border-primary ring-1 ring-primary/40"
-          : "border-slate-200 hover:border-slate-200",
-        // Flash overrides hover/selected colors briefly. Tailwind's
-        // built-in `animate-pulse` is too gentle; a ring with the
-        // amber accent matches the list view's flash semantics.
-        isFlashed && "!border-amber-400 ring-2 ring-amber-400/60",
+          ? "border-indigo-300 shadow-md ring-2 ring-indigo-100"
+          : "border-slate-200 hover:border-slate-300 hover:shadow-md",
+        isFlashed && "!border-amber-400 ring-2 ring-amber-100",
       )}
     >
       {hasTarget && (
@@ -152,7 +149,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           {meta.label}
         </span>
         {isEntry && (
-          <span className="ml-auto rounded bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-300">
+          <span className="ml-auto rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-700">
             Entry
           </span>
         )}
@@ -319,11 +316,11 @@ function FlowCanvasInner() {
       target: e.target,
       sourceHandle: e.sourceHandle,
       label: e.label,
-      labelStyle: { fill: "#cbd5e1", fontSize: 11 },
-      labelBgStyle: { fill: "#0f172a" },
+      labelStyle: { fill: "#64748b", fontSize: 10 },
+      labelBgStyle: { fill: "#f8fafc" },
       labelBgPadding: [4, 2] as [number, number],
       labelBgBorderRadius: 4,
-      style: { stroke: "#475569", strokeWidth: 1.5 },
+      style: { stroke: "#94a3b8", strokeWidth: 1.5 },
     }));
 
     return rfEdges;
@@ -456,16 +453,27 @@ function FlowCanvasInner() {
 
   if (rfNodes.length === 0) {
     return (
-      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-slate-200 bg-white text-sm text-slate-500">
-        <p>No nodes yet.</p>
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-[#F8FAFC] text-sm text-slate-400">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-slate-300">
+            <rect x="3" y="3" width="7" height="7" rx="1.5" />
+            <rect x="14" y="3" width="7" height="7" rx="1.5" />
+            <rect x="3" y="14" width="7" height="7" rx="1.5" />
+            <path d="M17.5 14v3m0 3v-3m0 0h-3m3 0h3" strokeLinecap="round" />
+          </svg>
+        </div>
+        <div className="text-center">
+          <p className="text-[14px] font-semibold text-slate-600">No nodes yet</p>
+          <p className="mt-0.5 text-[12px] text-slate-400">Add your first node to get started</p>
+        </div>
         <CanvasAddNodeButton />
       </div>
     );
   }
 
   return (
-    <>
-      <div className="h-[70vh] w-full overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div className="h-full w-full">
+      <div className="h-full w-full overflow-hidden bg-[#F8FAFC]">
         <ReactFlow
           nodes={rfNodes}
           edges={rfEdges}
@@ -479,31 +487,26 @@ function FlowCanvasInner() {
           onConnect={handleConnect}
           onNodesDelete={handleNodesDelete}
           onEdgesDelete={handleEdgesDelete}
-          // Default is "Backspace" only — accept both so Mac users
-          // hitting Delete (Fn+Backspace) get the same behavior.
           deleteKeyCode={["Backspace", "Delete"]}
           nodesConnectable={true}
           edgesFocusable={true}
           elementsSelectable={true}
-          // Lower default min/max zoom than the lib's defaults; the
-          // tiles already truncate their summary at a reasonable
-          // size, so we don't need to zoom past 1.5x.
           minZoom={0.2}
           maxZoom={1.5}
         >
-          <Background gap={24} size={1} color="#1e293b" />
+          <Background gap={20} size={1} color="#cbd5e1" />
           <Controls
-            className="!border-slate-200 !bg-white [&_button]:!border-slate-200 [&_button]:!bg-white [&_button:hover]:!bg-slate-100"
+            className="!border-slate-200 !bg-white [&_button]:!border-slate-200 [&_button]:!bg-white [&_button:hover]:!bg-slate-50"
             showInteractive={false}
           />
           <MiniMap
             pannable
             zoomable
-            nodeColor="#334155"
-            maskColor="rgba(15, 23, 42, 0.7)"
+            nodeColor="#818cf8"
+            maskColor="rgba(241, 245, 249, 0.8)"
             className="!border !border-slate-200 !bg-white"
           />
-          <Panel position="bottom-right" className="!bottom-4 !right-4">
+          <Panel position="bottom-right" className="!bottom-16 !right-4">
             <CanvasAddNodeButton />
           </Panel>
         </ReactFlow>
@@ -518,7 +521,7 @@ function FlowCanvasInner() {
         onDelete={handleDeleteSelected}
         onSetEntry={handleSetEntry}
       />
-    </>
+    </div>
   );
 }
 
@@ -568,7 +571,7 @@ function NodeEditSheet({
             <Icon className={cn("h-4 w-4 shrink-0", meta.color)} />
             <span>{meta.label}</span>
             {isEntry && (
-              <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
                 Entry
               </span>
             )}
