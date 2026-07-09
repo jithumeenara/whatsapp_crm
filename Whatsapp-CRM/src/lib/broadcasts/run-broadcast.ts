@@ -11,8 +11,8 @@ import {
 import { resolveVariables } from "@/lib/broadcasts/resolve-variables";
 
 const INTER_MESSAGE_MS = 350;
-const RATE_LIMIT_BACKOFF_MS = 10_000;
-const RATE_LIMIT_MAX_RETRIES = 3;
+const RATE_LIMIT_BACKOFF_MS = 5_000;
+const RATE_LIMIT_MAX_RETRIES = 2;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));

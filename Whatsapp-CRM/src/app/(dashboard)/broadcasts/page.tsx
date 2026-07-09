@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import { toast } from "sonner"
 import {
   Radio, Plus, RefreshCw, Send, CheckCircle2, XCircle,
-  Eye, MessageCircle, Users,
+  Eye, MessageCircle, Users, Trash2,
 } from "lucide-react"
 import type { Broadcast } from "@/types"
 
@@ -34,6 +34,7 @@ function DeliveryRing({ pct, color }: { pct: number; color: string }) {
 export default function BroadcastsV2() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState<Set<string>>(new Set())
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
@@ -46,6 +47,24 @@ export default function BroadcastsV2() {
       setLoading(false)
     }
   }, [])
+
+  async function handleDelete(e: React.MouseEvent, id: string) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!confirm("Delete this broadcast? This cannot be undone.")) return
+    setDeleting((prev) => new Set(prev).add(id))
+    try {
+      const res = await fetch(`/api/broadcasts/${id}`, { method: "DELETE" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Delete failed")
+      setBroadcasts((prev) => prev.filter((b) => b.id !== id))
+      toast.success("Broadcast deleted")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed")
+    } finally {
+      setDeleting((prev) => { const s = new Set(prev); s.delete(id); return s })
+    }
+  }
 
   useEffect(() => {
     load()
@@ -138,10 +157,21 @@ export default function BroadcastsV2() {
                             <p className="text-[14px] font-semibold text-slate-900 truncate leading-snug">{b.name}</p>
                             <p className="text-[12px] text-slate-400 truncate mt-0.5">{b.template_name}</p>
                           </div>
-                          <span className={cn("shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold", cfg.badge)}>
-                            <span className={cn("h-1.5 w-1.5 rounded-full", cfg.dot)} />
-                            {cfg.label}
-                          </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold", cfg.badge)}>
+                              <span className={cn("h-1.5 w-1.5 rounded-full", cfg.dot)} />
+                              {cfg.label}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDelete(e, b.id)}
+                              disabled={deleting.has(b.id) || b.status === "sending"}
+                              title={b.status === "sending" ? "Cannot delete while sending" : "Delete broadcast"}
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-500 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Sending progress bar */}

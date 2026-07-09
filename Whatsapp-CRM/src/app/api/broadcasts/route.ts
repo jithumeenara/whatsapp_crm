@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
           customField: body.audience.customField,
           excludeTagIds: body.audience.excludeTagIds,
         } as Prisma.InputJsonValue,
-        status: "sending",
+        status: "draft",
         total_recipients: contacts.length,
         sent_count: 0,
         delivered_count: 0,

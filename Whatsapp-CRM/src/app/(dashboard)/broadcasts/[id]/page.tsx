@@ -3,9 +3,9 @@
 import { useEffect, useState, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
-  ArrowLeft, Users, CheckCircle2, XCircle, AlertCircle,
+  ArrowLeft, Users, CheckCircle2, XCircle,
   Eye, MessageCircle, Send, Search, Clock, RefreshCw, FileText, Radio, Download,
-  Square, RotateCcw,
+  RotateCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 import { format, formatDistanceToNow } from "date-fns"
@@ -55,13 +55,11 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 }
 
 const BROADCAST_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  draft:      { label: "Draft",      color: "text-slate-600",   bg: "bg-slate-100" },
-  scheduled:  { label: "Scheduled",  color: "text-amber-700",   bg: "bg-amber-100" },
-  sending:    { label: "Sending…",   color: "text-blue-700",    bg: "bg-blue-100" },
-  cancelling: { label: "Stopping…",  color: "text-orange-700",  bg: "bg-orange-100" },
-  cancelled:  { label: "Stopped",    color: "text-slate-600",   bg: "bg-slate-100" },
-  sent:       { label: "Sent",       color: "text-emerald-700", bg: "bg-emerald-100" },
-  failed:     { label: "Failed",     color: "text-rose-700",    bg: "bg-rose-100" },
+  draft:     { label: "Draft",    color: "text-slate-600",   bg: "bg-slate-100" },
+  scheduled: { label: "Scheduled", color: "text-amber-700",  bg: "bg-amber-100" },
+  sending:   { label: "Sending…", color: "text-blue-700",    bg: "bg-blue-100" },
+  sent:      { label: "Sent",     color: "text-emerald-700", bg: "bg-emerald-100" },
+  failed:    { label: "Failed",   color: "text-rose-700",    bg: "bg-rose-100" },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -114,7 +112,6 @@ export default function BroadcastDetailPage() {
   const [search, setSearch] = useState("")
   const [filterTab, setFilterTab] = useState<FilterTab>("all")
   const [exporting, setExporting] = useState(false)
-  const [stopping, setStopping] = useState(false)
   const [retrying, setRetrying] = useState(false)
 
   async function load(silent = false) {
@@ -136,32 +133,13 @@ export default function BroadcastDetailPage() {
 
   useEffect(() => { load() }, [id])
 
-  // Auto-poll while broadcast is actively sending or stopping
+  // Auto-poll while broadcast is actively sending
   useEffect(() => {
     if (!broadcast) return
-    if (broadcast.status !== "sending" && broadcast.status !== "cancelling") return
+    if (broadcast.status !== "sending") return
     const timer = setInterval(() => load(true), 4000)
     return () => clearInterval(timer)
   }, [broadcast?.status])
-
-  async function handleStop() {
-    if (!broadcast) return
-    setStopping(true)
-    try {
-      const res = await fetch(`/api/broadcasts/${id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: "cancelling" }),
-      })
-      if (!res.ok) throw new Error("Failed to stop")
-      setBroadcast((b) => b ? { ...b, status: "cancelling" } : b)
-      toast.success("Stopping broadcast — in-flight messages will finish")
-    } catch {
-      toast.error("Failed to stop broadcast")
-    } finally {
-      setStopping(false)
-    }
-  }
 
   async function handleRetryFailed() {
     if (!broadcast) return
@@ -322,17 +300,6 @@ export default function BroadcastDetailPage() {
             >
               <RotateCcw className={cn("h-3.5 w-3.5", retrying && "animate-spin")} />
               Retry Failed ({broadcast.failed_count})
-            </button>
-          )}
-          {/* Stop — shown while sending */}
-          {broadcast.status === "sending" && (
-            <button
-              onClick={handleStop}
-              disabled={stopping}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-orange-200 bg-orange-50 text-[13px] font-medium text-orange-600 hover:bg-orange-100 transition-colors disabled:opacity-40"
-            >
-              <Square className="h-3.5 w-3.5 fill-current" />
-              {stopping ? "Stopping…" : "Stop"}
             </button>
           )}
           <button

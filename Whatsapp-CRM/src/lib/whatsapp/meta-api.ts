@@ -553,6 +553,9 @@ export async function sendTemplateMessage(
 
   const response = await fetch(url, {
     method: 'POST',
+    // 30-second timeout prevents runBroadcast from hanging indefinitely
+    // when Meta's API is unreachable or slow (expired token, network issue).
+    signal: AbortSignal.timeout(30_000),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
