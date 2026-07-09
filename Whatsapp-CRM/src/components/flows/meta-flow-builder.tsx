@@ -74,6 +74,7 @@ import {
   type MetaFlowComponent,
   type MetaFlowDefinition,
   type MetaFlowScreen,
+  type TextLabelComp,
 } from "@/lib/flows/meta-flow-types";
 
 // ─── Builder context ─────────────────────────────────────────────
@@ -1201,6 +1202,91 @@ function CompDataSource({
   );
 }
 
+// ── CompLabelSource ───────────────────────────────────────────────────────────
+// Simplified table+field picker for TextLabel Network Request mode.
+function CompLabelSource({
+  tableId,
+  fieldKey,
+  onSourceChange,
+}: {
+  tableId?: string
+  fieldKey?: string
+  onSourceChange: (tableId: string, fieldKey: string) => void
+}) {
+  const [tables, setTables] = useState<TableInfo[]>([])
+  const [tableFields, setTableFields] = useState<TableField[]>([])
+  const [selectedTable, setSelectedTable] = useState(tableId ?? '')
+  const [selectedField, setSelectedField] = useState(fieldKey ?? '')
+  const [loadingFields, setLoadingFields] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/data-tables').then((r) => r.json()).then((d) => setTables(d.tables ?? [])).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!selectedTable) { setTableFields([]); return }
+    setLoadingFields(true)
+    fetch(`/api/data-tables/${selectedTable}`)
+      .then((r) => r.json())
+      .then((d) => setTableFields(
+        (d.table?.fields ?? []).filter(
+          (f: TableField) => !['section_header', 'html_block', 'signature', 'file', 'image'].includes(f.field_type)
+        )
+      ))
+      .catch(() => setTableFields([]))
+      .finally(() => setLoadingFields(false))
+  }, [selectedTable])
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1.5">
+        <Label className="text-xs">Table</Label>
+        <select
+          className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+          value={selectedTable}
+          onChange={(e) => {
+            setSelectedTable(e.target.value)
+            setSelectedField('')
+          }}
+        >
+          <option value="">— choose table —</option>
+          {tables.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+      </div>
+      {selectedTable && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Field</Label>
+          {loadingFields
+            ? <p className="text-[10px] text-slate-500">Loading fields…</p>
+            : (
+              <select
+                className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
+                value={selectedField}
+                onChange={(e) => {
+                  setSelectedField(e.target.value)
+                  if (e.target.value) onSourceChange(selectedTable, e.target.value)
+                }}
+              >
+                <option value="">— choose field —</option>
+                {tableFields.map((f) => (
+                  <option key={f.field_key} value={f.field_key}>{f.label}</option>
+                ))}
+              </select>
+            )
+          }
+        </div>
+      )}
+      {selectedTable && selectedField && (
+        <p className="text-[10px] text-teal-600">
+          ✓ Fetches first matching value from <span className="font-mono">{selectedField}</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ── FilterFieldPicker ─────────────────────────────────────────────────────────
 // Loads fields from a DataStore table and shows a select so the user picks the
 // exact field_key (which may differ from the label due to slugify rules).
@@ -1560,6 +1646,119 @@ function ComponentForm({
         </div>
       );
 
+    case 'TextLabel': {
+      const tl = comp as TextLabelComp
+      const hasSource = !!(tl._source_table_id)
+      const filterFormName = tl._filter_form_name ?? ''
+      const filterByField = tl._filter_by_field ?? ''
+      return (
+        <div className="space-y-3">
+          <CompTextField
+            label="Variable name (internal)"
+            value={tl.name}
+            onChange={(v) => set({ name: v })}
+            placeholder="label_name"
+          />
+
+          {/* Mode toggle */}
+          <div className="space-y-1.5">
+            <Label className="text-xs">Data source</Label>
+            <div className="flex gap-0.5 rounded-lg border border-slate-200 bg-slate-100 p-0.5">
+              {(['static', 'network'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    if (m === 'static') {
+                      set({ _source_table_id: undefined, _source_field_key: undefined,
+                            _filter_form_name: undefined, _filter_by_field: undefined })
+                    }
+                  }}
+                  className={cn(
+                    "flex-1 rounded-md px-3 py-1 text-[11px] font-medium transition-colors",
+                    (m === 'static' ? !hasSource : hasSource)
+                      ? "bg-white shadow-sm text-slate-800"
+                      : "text-slate-500 hover:text-slate-700",
+                  )}
+                >
+                  {m === 'static' ? 'Static text' : '⚡ Network Request'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {!hasSource && (
+            <CompTextField label="Text" value={tl.text} onChange={(v) => set({ text: v })} multiline />
+          )}
+
+          {hasSource && (
+            <CompLabelSource
+              tableId={tl._source_table_id}
+              fieldKey={tl._source_field_key}
+              onSourceChange={(tableId, fieldKey) =>
+                set({ _source_table_id: tableId, _source_field_key: fieldKey })
+              }
+            />
+          )}
+
+          {/* Dynamic filter — label can only be a CHILD (filtered by a parent Dropdown) */}
+          {hasSource && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 overflow-hidden">
+              <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-slate-200">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Dynamic Filter</span>
+              </div>
+              <div className="px-2.5 py-2.5 space-y-2.5">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">1</span>
+                    <p className="text-[10px] font-medium text-slate-800">Parent field name</p>
+                  </div>
+                  <Input
+                    className="h-7 text-xs font-mono"
+                    value={filterFormName}
+                    onChange={(e) => set({ _filter_form_name: e.target.value || undefined })}
+                    placeholder="Paste from parent dropdown's field name"
+                  />
+                  <p className="text-[9px] text-slate-500">
+                    The <em>Field name (internal)</em> of the trigger dropdown
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">2</span>
+                    <p className="text-[10px] font-medium text-slate-800">Filter column (from DB table)</p>
+                  </div>
+                  {tl._source_table_id ? (
+                    <FilterFieldPicker
+                      tableId={tl._source_table_id}
+                      value={filterByField}
+                      onChange={(v) => set({ _filter_by_field: v || undefined })}
+                    />
+                  ) : (
+                    <Input
+                      className="h-7 text-xs font-mono"
+                      value={filterByField}
+                      onChange={(e) => set({ _filter_by_field: e.target.value || undefined })}
+                      placeholder="e.g. month"
+                    />
+                  )}
+                  <p className="text-[9px] text-slate-500">
+                    Column whose value must match the parent dropdown&apos;s selection.
+                  </p>
+                </div>
+                {filterFormName && filterByField && (
+                  <div className="rounded bg-teal-500/8 border border-teal-400/30 p-2 text-[9px] text-teal-700 leading-relaxed">
+                    <span className="font-semibold block mb-0.5">Filter rule:</span>
+                    Fetch row where <code className="font-mono bg-teal-100 px-1 rounded">{filterByField}</code> = value from <code className="font-mono bg-teal-100 px-1 rounded">{filterFormName}</code>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
     case 'RadioButtonsGroup':
     case 'CheckboxGroup':
     case 'Dropdown': {
@@ -1820,6 +2019,48 @@ async function fetchFilteredPreviewOptions(
   }
 }
 
+/** Fetches a single label value from DataStore for TextLabel preview. */
+async function fetchPreviewLabelValue(
+  tableId: string, fieldKey: string, filterByField?: string, filterValue?: string,
+): Promise<string | null> {
+  try {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const [recRes, tblRes] = await Promise.all([
+      fetch(`/api/data-tables/${tableId}/records?pageSize=500`),
+      fetch(`/api/data-tables/${tableId}`),
+    ])
+    if (!recRes.ok || !tblRes.ok) return null
+    const recData = await recRes.json() as { records?: Array<{ data: unknown }> }
+    const tblData = await tblRes.json() as { table?: { fields?: Array<{ field_key: string; label: string }> } }
+    const records = recData.records ?? []
+    const fields = tblData.table?.fields ?? []
+
+    let resolvedFilter = filterByField
+    if (filterByField) {
+      const exact = fields.find((f) => f.field_key === filterByField)
+      if (!exact) {
+        const match = fields.find((f) => norm(f.label) === norm(filterByField) || norm(f.field_key) === norm(filterByField))
+        if (match) resolvedFilter = match.field_key
+      }
+    }
+
+    for (const r of records) {
+      const d = r.data as Record<string, unknown>
+      if (resolvedFilter && filterValue) {
+        const cleanVal = filterValue.replace(/^ds_/, '')
+        const filterSlug = slugifyPreview(cleanVal)
+        const filterRaw = d[resolvedFilter]
+        if (filterRaw == null) continue
+        const filterVals = (Array.isArray(filterRaw) ? filterRaw : [filterRaw]).map((v) => slugifyPreview(String(v).trim()))
+        if (!filterVals.includes(filterSlug)) continue
+      }
+      const raw = d[fieldKey]
+      if (raw != null) return String(Array.isArray(raw) ? raw[0] : raw).trim()
+    }
+    return ''
+  } catch { return null }
+}
+
 function LivePreviewPanel({
   screens,
   selectedScreen,
@@ -1832,8 +2073,8 @@ function LivePreviewPanel({
   const [history, setHistory] = useState<string[]>([]);
   const [completed, setCompleted] = useState(false);
   const [simValues, setSimValues] = useState<Record<string, string>>({});
-  // previewData: comp.id → filtered options | null (error) | undefined (not yet fetched)
-  const [previewData, setPreviewData] = useState<Record<string, DataSourceItem[] | null>>({});
+  // previewData: comp.id → filtered options (array) | label value (string) | null (error) | undefined (not yet fetched)
+  const [previewData, setPreviewData] = useState<Record<string, DataSourceItem[] | string | null>>({});
 
   // build a sanitized-ID → screen map
   const screenMap = Object.fromEntries(
@@ -1891,18 +2132,43 @@ function LivePreviewPanel({
               })
               continue
             }
-            console.log('[preview filter] child:', comp2.id, 'tableId:', c2._source_table_id, 'fieldKey:', c2._source_field_key, 'filterBy:', c2._filter_by_field)
-            fetchFilteredPreviewOptions(
-              c2._source_table_id as string,
-              c2._source_field_key as string,
-              c2._filter_by_field as string,
-              triggerValue,
-            ).then((opts) => setPreviewData((prev) => ({ ...prev, [comp2.id as string]: opts })))
+            console.log('[preview filter] child:', comp2.id, 'type:', c2.type, 'tableId:', c2._source_table_id, 'fieldKey:', c2._source_field_key, 'filterBy:', c2._filter_by_field)
+            if (c2.type === 'TextLabel' && c2.name) {
+              fetchPreviewLabelValue(
+                c2._source_table_id as string,
+                c2._source_field_key as string,
+                c2._filter_by_field as string,
+                triggerValue,
+              ).then((val) => setPreviewData((prev) => ({ ...prev, [comp2.id as string]: val })))
+            } else {
+              fetchFilteredPreviewOptions(
+                c2._source_table_id as string,
+                c2._source_field_key as string,
+                c2._filter_by_field as string,
+                triggerValue,
+              ).then((opts) => setPreviewData((prev) => ({ ...prev, [comp2.id as string]: opts })))
+            }
           }
         }
       }
     }
   }, [simValues, simMode, screens])
+
+  // Fetch initial values for non-filtered TextLabel components when simulation starts
+  useEffect(() => {
+    if (!simMode) return
+    for (const screen of screens) {
+      for (const comp of screen.components) {
+        const c = comp as unknown as Record<string, unknown>
+        if (c.type !== 'TextLabel' || !c._source_table_id || !c._source_field_key) continue
+        if (c._filter_form_name) continue  // filtered: wait for parent dropdown
+        fetchPreviewLabelValue(
+          c._source_table_id as string,
+          c._source_field_key as string,
+        ).then((val) => setPreviewData((prev) => ({ ...prev, [comp.id as string]: val })))
+      }
+    }
+  }, [simMode, screens])
 
   // Handle footer button click in simulation
   const handleFooterClick = (action: Record<string, unknown>) => {
@@ -2061,7 +2327,7 @@ function SimPhonePreview({
   simValues: Record<string, string>;
   onValueChange: (name: string, val: string) => void;
   onFooterClick: (action: Record<string, unknown>) => void;
-  previewData: Record<string, DataSourceItem[] | null>;
+  previewData: Record<string, DataSourceItem[] | string | null>;
 }) {
   const footer = screen.components.find((c) => c.type === 'Footer') as
     | (MetaFlowComponent & { type: 'Footer'; label: string; 'on-click-action'?: Record<string, unknown> }) | undefined;
@@ -2136,7 +2402,7 @@ function SimPreviewComponent({
   simMode: boolean;
   simValues: Record<string, string>;
   onValueChange: (name: string, val: string) => void;
-  previewData: Record<string, DataSourceItem[] | null>;
+  previewData: Record<string, DataSourceItem[] | string | null>;
 }) {
   const req = (comp as { required?: boolean }).required === true
   switch (comp.type) {
@@ -2258,7 +2524,8 @@ function SimPreviewComponent({
       // Use live-filtered options from previewData if this is a filter-child dropdown
       const hasFilterParent = !!(dd._filter_form_name)
       // filteredOpts is undefined = not yet fetched, null = fetch error, [] = loaded but empty, [...] = has results
-      const filteredOpts = previewData[comp.id] as DataSourceItem[] | null | undefined
+      const rawPreviewVal = previewData[comp.id]
+      const filteredOpts = Array.isArray(rawPreviewVal) ? rawPreviewVal : (rawPreviewVal === null ? null : undefined)
       const isWaitingForFilter = hasFilterParent && filteredOpts === undefined
       const isFilterEmpty = hasFilterParent && Array.isArray(filteredOpts) && filteredOpts.length === 0
       const ddOptions = Array.isArray(filteredOpts) ? filteredOpts : (Array.isArray(dd['data-source']) ? dd['data-source'] : [])
@@ -2320,6 +2587,30 @@ function SimPreviewComponent({
           )}
         </div>
       );
+    }
+
+    case 'TextLabel': {
+      const tl = comp as { text?: string; _source_table_id?: string; _filter_form_name?: string }
+      const hasSource = !!(tl._source_table_id)
+      const hasFilter = !!(tl._filter_form_name)
+      const rawVal = previewData[comp.id]
+      let displayText: string | React.ReactNode
+      if (hasSource) {
+        if (rawVal === undefined && hasFilter) {
+          displayText = <span className="italic text-gray-400">(select above to load)</span>
+        } else if (rawVal === undefined) {
+          displayText = <span className="italic text-gray-400">Loading…</span>
+        } else if (rawVal === null) {
+          displayText = <span className="italic text-orange-400">(load failed)</span>
+        } else if (typeof rawVal === 'string') {
+          displayText = rawVal || <span className="italic text-gray-400">(empty)</span>
+        } else {
+          displayText = tl.text || <span className="italic text-gray-400">Label</span>
+        }
+      } else {
+        displayText = tl.text || <span className="text-gray-300">Label text</span>
+      }
+      return <p className="text-[12px] text-gray-700 leading-relaxed">{displayText}</p>
     }
 
     case 'Image': {
@@ -2509,6 +2800,18 @@ function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
           </div>
         </div>
       );
+    }
+
+    case 'TextLabel': {
+      const tl = comp as { text?: string; _source_table_id?: string }
+      return (
+        <p className="text-[12px] text-gray-700 leading-relaxed">
+          {tl._source_table_id
+            ? <span className="italic text-teal-600">[Dynamic label from DataStore]</span>
+            : (tl.text || <span className="text-gray-300">Label text</span>)
+          }
+        </p>
+      )
     }
 
     case 'Image': {

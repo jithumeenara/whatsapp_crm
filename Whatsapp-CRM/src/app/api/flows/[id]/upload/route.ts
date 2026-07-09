@@ -1,8 +1,53 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
+import { readFile } from 'fs/promises'
+import { join as pathJoin, extname } from 'path'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
+
+const UPLOADS_DIR = pathJoin(process.cwd(), 'uploads')
+
+const IMAGE_EXT_MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg',
+  png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+}
+
+/** Converts a /api/files/... URL to a base64 data URI by reading from disk. */
+async function imageUrlToBase64(src: string): Promise<string> {
+  if (!src || src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://')) {
+    return src
+  }
+  if (src.startsWith('/api/files/')) {
+    const relativePath = src.replace(/^\/api\/files\//, '')
+    const filePath = pathJoin(UPLOADS_DIR, relativePath)
+    try {
+      const data = await readFile(filePath)
+      const ext = extname(filePath).replace('.', '').toLowerCase()
+      const mime = IMAGE_EXT_MIME[ext] ?? 'image/jpeg'
+      return `data:${mime};base64,${data.toString('base64')}`
+    } catch (err) {
+      console.warn('[upload] Cannot read image for base64:', filePath, (err as Error).message)
+    }
+  }
+  // Fallback: make relative URL absolute
+  const baseUrl = (process.env.NEXTAUTH_URL ?? '').replace(/\/$/, '')
+  return `${baseUrl}${src}`
+}
+
+/** Pre-processes all Image components in screens, converting stored URLs to base64. */
+async function resolveScreenImages(screens: InternalScreen[]): Promise<InternalScreen[]> {
+  return Promise.all(screens.map(async (screen) => ({
+    ...screen,
+    components: await Promise.all(screen.components.map(async (comp) => {
+      const c = comp as Record<string, unknown>
+      if (c.type === 'Image' && typeof c.src === 'string' && c.src) {
+        return { ...comp, src: await imageUrlToBase64(c.src as string) }
+      }
+      return comp
+    })),
+  })))
+}
 
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
@@ -82,6 +127,10 @@ function cleanComponent(comp: Record<string, unknown>): Record<string, unknown> 
 
 function makeVarName(fieldKey: string): string {
   return fieldKey.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_options'
+}
+
+function makeLabelVarName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
 }
 
 // If the flow uses data_exchange (endpoint submit) but has no terminal screen,
@@ -209,29 +258,38 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     idMap[s.id] = sanitizeScreenId(s.id)
   }
 
-  // First pass: collect each screen's own dynamic vars (DB-backed dropdowns).
-  // Used so navigate source screens can pre-declare the target's vars and pass
-  // them in the payload as ${data.varName}.
+  // First pass: collect each screen's own dynamic vars.
+  // screenDynamicVars: dropdown/selection sources (array type) — chained through navigate payloads.
+  // screenLabelVars: TextLabel sources (string type) — declared only on their own screen.
   const screenDynamicVars: Record<string, Record<string, unknown>> = {}
+  const screenLabelVars: Record<string, Record<string, unknown>> = {}
   let hasDynamicData = false
   for (const screen of screens) {
     const vars: Record<string, unknown> = {}
+    const labelVars: Record<string, unknown> = {}
     for (const comp of screen.components) {
       const c = comp as Record<string, unknown>
       if (c._source_table_id && c._source_field_key) {
-        vars[makeVarName(String(c._source_field_key))] = makeDynamicDecl()
+        if (c.type === 'TextLabel' && c.name) {
+          labelVars[makeLabelVarName(String(c.name))] = { type: 'string', '__example__': 'Label text' }
+        } else {
+          vars[makeVarName(String(c._source_field_key))] = makeDynamicDecl()
+        }
         hasDynamicData = true
       }
     }
     screenDynamicVars[idMap[screen.id]] = vars
+    screenLabelVars[idMap[screen.id]] = labelVars
   }
 
   const transformedScreens = screens.map((screen) => {
     // dynamicDecls = data model entries for THIS screen:
-    //   • own dynamic vars (DB-backed components on this screen)
-    //   • vars needed by every screen this screen navigates TO
-    //     (so INIT can pre-load them and navigate payload can pass them forward)
-    const dynamicDecls: Record<string, unknown> = { ...screenDynamicVars[idMap[screen.id]] }
+    //   • own dropdown vars + own label vars (both declared on this screen's data model)
+    //   • dropdown vars needed by every screen this screen navigates TO (chained in payload)
+    const dynamicDecls: Record<string, unknown> = {
+      ...screenDynamicVars[idMap[screen.id]],
+      ...screenLabelVars[idMap[screen.id]],
+    }
 
     // Collect names of all named form fields on this screen (for data_exchange payload refs only)
     const namedFields = screen.components
@@ -247,6 +305,16 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     const cleanedComps = screen.components.map((comp) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _id, ...raw } = comp
+
+      // TextLabel: CRM-only component — convert to TextBody for Meta.
+      // If it has a data source, inject the dynamic ${data.varName} reference.
+      if (raw.type === 'TextLabel') {
+        const labelName = raw.name as string | undefined
+        if (raw._source_table_id && raw._source_field_key && labelName) {
+          return { type: 'TextBody', text: `\${data.${makeLabelVarName(labelName)}}` }
+        }
+        return { type: 'TextBody', text: String(raw.text ?? '') }
+      }
 
       // Dynamic data source — replace static array with ${data.VARNAME} reference.
       // dynamicDecls is already pre-populated by the first pass above.
@@ -321,12 +389,6 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
             payload: { ...formRefs, ...((action.payload as Record<string, unknown>) ?? {}) },
           }
         }
-      }
-
-      // Convert relative /api/files/ image URLs to absolute so Meta can fetch them
-      if (raw.type === 'Image' && typeof raw.src === 'string' && raw.src.startsWith('/')) {
-        const baseUrl = (process.env.NEXTAUTH_URL ?? '').replace(/\/$/, '')
-        raw.src = `${baseUrl}${raw.src}`
       }
 
       // Strip empty optional fields + convert helper-text to object
@@ -432,7 +494,8 @@ export async function GET(
       return NextResponse.json({ error: 'No screens in trigger_config' }, { status: 400 })
     }
 
-    const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(cfg.screens as InternalScreen[])
+    const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[])
+    const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(preparedScreens)
     const routingModel: Record<string, string[]> = {}
     for (const screen of metaScreens) {
       const sid = (screen as Record<string, unknown>).id as string
@@ -509,7 +572,8 @@ export async function POST(
       // ── Already on Meta: update assets only (skip create) ────────
       const hasScreens = Array.isArray(cfg?.screens) && (cfg.screens as unknown[]).length > 0
       if (hasScreens) {
-        const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(cfg.screens as InternalScreen[])
+        const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[])
+        const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(preparedScreens)
         const routingModel: Record<string, string[]> = {}
         for (const screen of metaScreens) {
           const sid = (screen as Record<string, unknown>).id as string
@@ -586,7 +650,8 @@ export async function POST(
     const hasScreens = Array.isArray(cfg?.screens) && (cfg.screens as unknown[]).length > 0
 
     if (hasScreens) {
-      const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(cfg.screens as InternalScreen[])
+      const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[])
+      const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(preparedScreens)
 
       // Build routing_model: screen → list of screens it navigates to
       // Flatten through Form wrapper when looking for navigate actions.

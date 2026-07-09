@@ -9,6 +9,7 @@ export type ComponentType =
   | 'TextSubheading'
   | 'TextBody'
   | 'TextCaption'
+  | 'TextLabel'
   | 'TextInput'
   | 'TextArea'
   | 'RadioButtonsGroup'
@@ -36,6 +37,17 @@ export interface TextHeadingComp  { id: string; type: 'TextHeading';    text: st
 export interface TextSubheadingComp { id: string; type: 'TextSubheading'; text: string }
 export interface TextBodyComp     { id: string; type: 'TextBody';       text: string }
 export interface TextCaptionComp  { id: string; type: 'TextCaption';    text: string }
+
+/** CRM-only: displays a single text value fetched dynamically from a DataStore table. */
+export interface TextLabelComp {
+  id: string; type: 'TextLabel'
+  text: string              // static fallback / display text
+  name: string              // internal variable name for dynamic data (e.g. "prog_label")
+  _source_table_id?: string
+  _source_field_key?: string
+  _filter_form_name?: string  // name of parent Dropdown that triggers filter
+  _filter_by_field?: string   // DataStore column that stores the parent's value
+}
 
 export interface TextInputComp {
   id: string; type: 'TextInput'
@@ -118,6 +130,7 @@ export type MetaFlowComponent =
   | TextSubheadingComp
   | TextBodyComp
   | TextCaptionComp
+  | TextLabelComp
   | TextInputComp
   | TextAreaComp
   | RadioButtonsGroupComp
@@ -153,6 +166,7 @@ export function defaultComponent(type: ComponentType): MetaFlowComponent {
     case 'TextSubheading': return { id, type, text: 'Subheading' }
     case 'TextBody':       return { id, type, text: 'Body text' }
     case 'TextCaption':    return { id, type, text: 'Caption text' }
+    case 'TextLabel':      return { id, type, text: 'Label text', name: `label_${id}` }
     case 'TextInput':      return { id, type, label: 'Label', name: `input_${id}`, 'input-type': 'text', required: false }
     case 'TextArea':       return { id, type, label: 'Label', name: `textarea_${id}`, required: false, 'max-length': 600 }
     case 'RadioButtonsGroup': return { id, type, label: 'Choose one', name: `radio_${id}`, required: false, 'data-source': [{ id: 'opt_1', title: 'Option 1' }, { id: 'opt_2', title: 'Option 2' }] }
@@ -194,6 +208,7 @@ export const COMPONENT_META: Record<ComponentType, { label: string; group: strin
   TextSubheading:    { label: 'Subheading',     group: 'Text',        color: 'bg-blue-50 text-blue-600' },
   TextBody:          { label: 'Body text',      group: 'Text',        color: 'bg-slate-100 text-slate-600' },
   TextCaption:       { label: 'Caption',        group: 'Text',        color: 'bg-slate-100 text-slate-500' },
+  TextLabel:         { label: 'Label (dynamic)', group: 'Text',       color: 'bg-teal-100 text-teal-700' },
   TextInput:         { label: 'Text input',     group: 'Input',       color: 'bg-violet-100 text-violet-700' },
   TextArea:          { label: 'Text area',      group: 'Input',       color: 'bg-violet-100 text-violet-700' },
   RadioButtonsGroup: { label: 'Single choice',  group: 'Selection',   color: 'bg-emerald-100 text-emerald-700' },

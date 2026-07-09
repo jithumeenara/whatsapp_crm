@@ -28,6 +28,10 @@ function makeVarName(fieldKey: string): string {
   return fieldKey.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_options'
 }
 
+function makeLabelVarName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
+}
+
 function slugify(val: string): string {
   return val.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
@@ -109,6 +113,61 @@ async function fetchOptions(
   }
 
   return options
+}
+
+/** Fetches a single text value from a DataStore table for TextLabel components. */
+async function fetchLabelValue(
+  tableId: string, fieldKey: string, filterField?: string, filterValue?: string,
+): Promise<string> {
+  let resolvedFilterField = filterField
+  if (filterField) {
+    try {
+      const dbFields = await prisma.dataField.findMany({
+        where: { table_id: tableId },
+        select: { field_key: true, label: true },
+      })
+      const exact = dbFields.find((f) => f.field_key === filterField)
+      if (!exact) {
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const byLabel = dbFields.find(
+          (f) => norm(f.label) === norm(filterField) || norm(f.field_key) === norm(filterField)
+        )
+        if (byLabel) resolvedFilterField = byLabel.field_key
+      }
+    } catch { /* ignore */ }
+  }
+
+  const records = await prisma.dataRecord.findMany({
+    where: { table_id: tableId },
+    select: { data: true },
+    orderBy: { created_at: 'asc' },
+    take: 2000,
+  })
+
+  for (const r of records) {
+    let dataObj: Record<string, unknown>
+    if (typeof r.data === 'string') {
+      try { dataObj = JSON.parse(r.data) as Record<string, unknown> } catch { continue }
+    } else if (r.data && typeof r.data === 'object' && !Array.isArray(r.data)) {
+      dataObj = r.data as Record<string, unknown>
+    } else {
+      continue
+    }
+
+    if (resolvedFilterField && filterValue) {
+      const filterRaw = dataObj[resolvedFilterField]
+      if (filterRaw == null) continue
+      const filterVals = (Array.isArray(filterRaw) ? filterRaw : [filterRaw])
+        .map((v) => slugify(String(v).trim()))
+      if (!filterVals.includes(filterValue)) continue
+    }
+
+    const raw = dataObj[fieldKey]
+    if (raw != null) {
+      return String(Array.isArray(raw) ? raw[0] : raw).trim()
+    }
+  }
+  return ''
 }
 
 // ── Meta Flows AES-128-GCM encryption protocol ────────────────────
@@ -357,15 +416,26 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .map(async (c) => {
             const tableId = c._source_table_id as string
             const fieldKey = c._source_field_key as string
-            const varName = makeVarName(fieldKey)
             const filterByField = c._filter_by_field as string | undefined
             const filterFormName = c._filter_form_name as string | undefined
+            const isLabel = c.type === 'TextLabel' && !!c.name
 
-            if (filterByField && filterFormName === triggerName) {
-              freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
-              console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
+            if (isLabel) {
+              const varName = makeLabelVarName(String(c.name))
+              if (filterByField && filterFormName === triggerName) {
+                freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, triggerValue)
+                console.log('[data_exchange:filter]', varName, '→ label:', freshData[varName])
+              } else {
+                freshData[varName] = await fetchLabelValue(tableId, fieldKey)
+              }
             } else {
-              freshData[varName] = await fetchOptions(tableId, fieldKey)
+              const varName = makeVarName(fieldKey)
+              if (filterByField && filterFormName === triggerName) {
+                freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
+                console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
+              } else {
+                freshData[varName] = await fetchOptions(tableId, fieldKey)
+              }
             }
           }),
       )
@@ -402,19 +472,31 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .map(async (c) => {
             const tableId = c._source_table_id as string
             const fieldKey = c._source_field_key as string
-            const varName = makeVarName(fieldKey)
             const filterByField = c._filter_by_field as string | undefined
             const filterFormName = c._filter_form_name as string | undefined
+            const isLabel = c.type === 'TextLabel' && !!c.name
 
-            if (filterByField && filterFormName && filterFormName in formData) {
-              const triggerValue = slugify(String(formData[filterFormName] ?? ''))
-              const opts = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
-              freshData[varName] = opts
-              console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
+            if (isLabel) {
+              const varName = makeLabelVarName(String(c.name))
+              if (filterByField && filterFormName && filterFormName in formData) {
+                const triggerValue = slugify(String(formData[filterFormName] ?? ''))
+                freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, triggerValue)
+              } else {
+                freshData[varName] = await fetchLabelValue(tableId, fieldKey)
+              }
+              console.log('[data_exchange:load] label', varName, '=', freshData[varName])
             } else {
-              const opts = await fetchOptions(tableId, fieldKey)
-              freshData[varName] = opts
-              console.log('[data_exchange:load]', varName, '→', opts.length, 'options')
+              const varName = makeVarName(fieldKey)
+              if (filterByField && filterFormName && filterFormName in formData) {
+                const triggerValue = slugify(String(formData[filterFormName] ?? ''))
+                const opts = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
+                freshData[varName] = opts
+                console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
+              } else {
+                const opts = await fetchOptions(tableId, fieldKey)
+                freshData[varName] = opts
+                console.log('[data_exchange:load]', varName, '→', opts.length, 'options')
+              }
             }
           }),
       )
@@ -500,7 +582,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     })
   }
 
-  type SourceEntry = { tableId: string; fieldKey: string; varName: string; isFiltered: boolean }
+  type SourceEntry = { tableId: string; fieldKey: string; varName: string; isFiltered: boolean; isLabel?: boolean }
   const sources = new Map<string, SourceEntry>()
 
   function collectSources(comps: Array<Record<string, unknown>>) {
@@ -508,13 +590,17 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       const tableId = comp._source_table_id as string | undefined
       const fieldKey = comp._source_field_key as string | undefined
       if (tableId && fieldKey) {
-        const key = `${tableId}::${fieldKey}`
+        const isLabel = comp.type === 'TextLabel' && !!comp.name
+        // Use a unique key that includes the label name so multiple labels on same
+        // table+field get separate entries
+        const key = isLabel ? `label::${tableId}::${fieldKey}::${comp.name}` : `${tableId}::${fieldKey}`
         if (!sources.has(key)) {
           sources.set(key, {
             tableId,
             fieldKey,
-            varName: makeVarName(fieldKey),
+            varName: isLabel ? makeLabelVarName(String(comp.name)) : makeVarName(fieldKey),
             isFiltered: !!(comp._filter_form_name),
+            isLabel,
           })
         }
       }
@@ -529,14 +615,25 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
 
   const responseData: Record<string, unknown> = {}
   await Promise.all(
-    Array.from(sources.values()).map(async ({ tableId, fieldKey, varName, isFiltered }) => {
-      if (isFiltered) {
-        console.log(`[webhook] ${varName}: filtered child → [] (empty until parent selected)`)
-        responseData[varName] = []
+    Array.from(sources.values()).map(async ({ tableId, fieldKey, varName, isFiltered, isLabel }) => {
+      if (isLabel) {
+        if (isFiltered) {
+          console.log(`[webhook] ${varName}: filtered label → '' (empty until parent selected)`)
+          responseData[varName] = ''
+        } else {
+          const val = await fetchLabelValue(tableId, fieldKey)
+          console.log(`[webhook] ${varName}: label value = "${val}"`)
+          responseData[varName] = val
+        }
       } else {
-        const opts = await fetchOptions(tableId, fieldKey)
-        console.log(`[webhook] ${varName}: ${opts.length} options`)
-        responseData[varName] = opts
+        if (isFiltered) {
+          console.log(`[webhook] ${varName}: filtered child → [] (empty until parent selected)`)
+          responseData[varName] = []
+        } else {
+          const opts = await fetchOptions(tableId, fieldKey)
+          console.log(`[webhook] ${varName}: ${opts.length} options`)
+          responseData[varName] = opts
+        }
       }
     }),
   )
