@@ -6,14 +6,27 @@ import {
   ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical,
   RefreshCw, Settings2, X, Upload, Download, Loader2,
   Database, AlertTriangle, ChevronRight,
+  Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock,
+  CalendarClock, ToggleLeft, ChevronDown, ListChecks, CircleDot, Globe,
+  MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon, PenLine, EyeOff,
+  Heading, Code2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
-import type { DataTable, DataField, DataRecord } from "@/lib/data-store/types"
+import type { DataTable, DataField, DataRecord, FieldType } from "@/lib/data-store/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) {
   return c.filter(Boolean).join(" ")
+}
+
+const FIELD_TYPE_ICONS: Record<FieldType, React.ComponentType<{ className?: string }>> = {
+  text: Type, textarea: AlignLeft, number: Hash, email: Mail, password: KeyRound,
+  phone: Phone, url: Link2, date: Calendar, time: Clock, datetime: CalendarClock,
+  boolean: ToggleLeft, select: ChevronDown, multiselect: ListChecks, radio: CircleDot,
+  country: Globe, state: MapPin, district: MapPin, address: Home, relation: LinkIcon,
+  file: Paperclip, image: ImageIcon, signature: PenLine, hidden: EyeOff,
+  section_header: Heading, html_block: Code2,
 }
 
 function formatValue(field: DataField, value: unknown): string {
@@ -159,7 +172,9 @@ export default function DataTablePage() {
     )
   })
 
-  const visibleFields = fields.slice(0, 7)
+  // The table wrapper below already scrolls horizontally (overflow-x-auto),
+  // so every field can render as its own column instead of being capped.
+  const visibleFields = fields
 
   return (
     <div className="flex flex-col h-full bg-[#F4F6FA]">
@@ -269,17 +284,22 @@ export default function DataTablePage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-[13px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
                   <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-10 border-r border-slate-100">
+                    <tr>
+                      <th className="sticky top-0 left-0 z-20 bg-slate-50 px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-10 border-b border-r border-slate-200">
                         #
                       </th>
-                      {visibleFields.map((f) => (
-                        <th key={f.id} className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">
-                          {f.label}
-                          <span className="ml-1.5 font-normal normal-case text-slate-300">{f.field_type}</span>
-                        </th>
-                      ))}
-                      <th className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-14">
+                      {visibleFields.map((f) => {
+                        const TypeIcon = FIELD_TYPE_ICONS[f.field_type] ?? Type
+                        return (
+                          <th key={f.id} title={f.field_type} className="sticky top-0 z-10 bg-slate-50 px-4 py-2.5 text-left border-b border-r border-slate-200 whitespace-nowrap last:border-r-0">
+                            <div className="flex items-center gap-1.5">
+                              <TypeIcon className="h-3 w-3 text-slate-400 shrink-0" />
+                              <span className="text-[11px] font-semibold text-slate-600">{f.label}</span>
+                            </div>
+                          </th>
+                        )
+                      })}
+                      <th className="sticky top-0 right-0 z-20 bg-slate-50 px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-14 border-b border-l border-slate-200">
                         Actions
                       </th>
                     </tr>
@@ -289,37 +309,40 @@ export default function DataTablePage() {
                       const data = rec.data as Record<string, unknown>
                       const isMenuOpen = menuOpenId === rec.id
                       return (
-                        <tr
-                          key={rec.id}
-                          className={cn(
-                            "group border-b border-slate-100 last:border-0 hover:bg-indigo-50/30 transition-colors",
-                            idx % 2 !== 0 && "bg-slate-50/40"
-                          )}
-                        >
-                          <td className={cn(
-                            "px-3 py-2.5 text-[11px] font-mono text-slate-300 border-r border-slate-100 w-10",
-                            idx % 2 !== 0 ? "bg-slate-50/40" : "bg-white",
-                            "group-hover:bg-indigo-50/30 transition-colors"
-                          )}>
+                        <tr key={rec.id} className="group border-b border-slate-100 last:border-0 hover:bg-indigo-50/30 transition-colors">
+                          <td className="sticky left-0 z-10 bg-white group-hover:bg-indigo-50/40 px-3 py-2.5 text-[11px] font-mono text-slate-300 border-r border-slate-100 w-10 transition-colors">
                             {idx + 1}
                           </td>
-                          {visibleFields.map((f) => (
-                            <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[200px]">
-                              <span className={cn(
-                                "block truncate",
-                                (f.field_type === "email" || f.field_type === "url" || f.field_type === "phone") && "font-mono text-[12px] text-slate-600",
-                                f.field_type === "number" && "font-mono text-[12px] tabular-nums",
-                              )}>
-                                {formatValue(f, data[f.field_key])}
-                              </span>
-                            </td>
-                          ))}
-                          <td className="px-3 py-2.5 text-right">
+                          {visibleFields.map((f) => {
+                            const raw = data[f.field_key]
+                            return (
+                              <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[220px] border-r border-slate-50">
+                                {f.field_type === "boolean" ? (
+                                  <span className={cn(
+                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                    raw ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500",
+                                  )}>
+                                    {raw ? "Yes" : "No"}
+                                  </span>
+                                ) : (
+                                  <span className={cn(
+                                    "block truncate",
+                                    (f.field_type === "email" || f.field_type === "url" || f.field_type === "phone") && "font-mono text-[12px] text-slate-600",
+                                    f.field_type === "number" && "font-mono text-[12px] tabular-nums",
+                                    (raw === null || raw === undefined || raw === "") && "text-slate-300",
+                                  )}>
+                                    {formatValue(f, raw)}
+                                  </span>
+                                )}
+                              </td>
+                            )
+                          })}
+                          <td className="sticky right-0 z-10 bg-white group-hover:bg-indigo-50/40 px-3 py-2.5 text-right border-l border-slate-100 transition-colors">
                             {/* z-30 sits above the z-20 backdrop */}
                             <div className="relative z-30 inline-flex justify-end">
                               <button
                                 onClick={() => setMenuOpenId(isMenuOpen ? null : rec.id)}
-                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all"
+                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-200 hover:text-slate-600 transition-all"
                               >
                                 <MoreVertical className="h-3.5 w-3.5" />
                               </button>
@@ -366,11 +389,6 @@ export default function DataTablePage() {
                   ? `${records.length} record${records.length !== 1 ? "s" : ""}`
                   : `${filtered.length} of ${records.length} records`}
               </p>
-              {visibleFields.length < fields.length && (
-                <p className="text-[11px] text-slate-400">
-                  Showing {visibleFields.length} of {fields.length} fields
-                </p>
-              )}
             </div>
           </div>
         )}

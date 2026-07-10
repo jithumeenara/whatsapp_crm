@@ -318,6 +318,126 @@ describe("validateFlowForActivation — nodes", () => {
     ).toBe(true);
   });
 
+  it("accepts a well-formed cta-mode send_buttons node", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
+      {
+        node_key: "b",
+        node_type: "send_buttons",
+        config: {
+          text: "Hi",
+          mode: "cta",
+          buttons: [],
+          cta_button: { title: "Visit", url: "https://example.com", next_node_key: "h" },
+        },
+      },
+      { node_key: "h", node_type: "handoff", config: {} },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+    expect(issues.filter((i) => i.node_key === "b")).toEqual([]);
+  });
+
+  it("flags cta-mode send_buttons missing a title", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
+      {
+        node_key: "b",
+        node_type: "send_buttons",
+        config: {
+          text: "Hi",
+          mode: "cta",
+          buttons: [],
+          cta_button: { title: "", url: "https://example.com", next_node_key: "h" },
+        },
+      },
+      { node_key: "h", node_type: "handoff", config: {} },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+    expect(
+      issues.some((i) => i.node_key === "b" && i.field === "cta_button.title"),
+    ).toBe(true);
+  });
+
+  it("flags cta-mode send_buttons with a non-http(s) url", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
+      {
+        node_key: "b",
+        node_type: "send_buttons",
+        config: {
+          text: "Hi",
+          mode: "cta",
+          buttons: [],
+          cta_button: { title: "Call", url: "tel:+15551234567", next_node_key: "h" },
+        },
+      },
+      { node_key: "h", node_type: "handoff", config: {} },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+    expect(
+      issues.some((i) => i.node_key === "b" && i.field === "cta_button.url"),
+    ).toBe(true);
+  });
+
+  it("flags cta-mode send_buttons missing a next node", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
+      {
+        node_key: "b",
+        node_type: "send_buttons",
+        config: {
+          text: "Hi",
+          mode: "cta",
+          buttons: [],
+          cta_button: { title: "Visit", url: "https://example.com", next_node_key: "" },
+        },
+      },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+    expect(
+      issues.some(
+        (i) => i.node_key === "b" && i.field === "cta_button.next_node_key",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not require normal-mode button fields when mode is cta", () => {
+    const nodes = [
+      { node_key: "s", node_type: "start", config: { next_node_key: "b" } },
+      {
+        node_key: "b",
+        node_type: "send_buttons",
+        config: {
+          text: "Hi",
+          mode: "cta",
+          buttons: [],
+          cta_button: { title: "Visit", url: "https://example.com", next_node_key: "h" },
+        },
+      },
+      { node_key: "h", node_type: "handoff", config: {} },
+    ];
+    const issues = validateFlowForActivation(
+      { ...validFlow, entry_node_id: "s" },
+      nodes,
+    );
+    // The "needs at least one button" rule is normal-mode only.
+    expect(
+      issues.some((i) => i.field === "buttons"),
+    ).toBe(false);
+  });
+
   it("flags send_list with more than 10 rows total", () => {
     const eleven = Array.from({ length: 11 }, (_, i) => ({
       reply_id: `r${i}`,
@@ -545,5 +665,24 @@ describe("reachableFromEntry", () => {
     ];
     const set = reachableFromEntry("a", nodes);
     expect(set).toEqual(new Set(["a", "b"]));
+  });
+
+  it("follows cta_button.next_node_key for a cta-mode send_buttons node", () => {
+    const nodes = [
+      { node_key: "a", node_type: "start", config: { next_node_key: "b" } },
+      {
+        node_key: "b",
+        node_type: "send_buttons",
+        config: {
+          text: "Visit our site",
+          mode: "cta",
+          buttons: [],
+          cta_button: { title: "Visit", url: "https://example.com", next_node_key: "c" },
+        },
+      },
+      { node_key: "c", node_type: "handoff", config: {} },
+    ];
+    const set = reachableFromEntry("a", nodes);
+    expect(set).toEqual(new Set(["a", "b", "c"]));
   });
 });

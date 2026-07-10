@@ -20,6 +20,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
+  ArrowDownUp,
+  ArrowRightLeft,
   ChevronDown,
   Flag,
   LayoutGrid,
@@ -44,6 +46,7 @@ import {
   type ChatbotNodeType,
 } from "@/lib/chatbot/types";
 import { useConfirm } from "@/hooks/use-confirm";
+import { autoLayout, type LayoutEdge, type LayoutNode } from "@/lib/flows/layout";
 import { ChatbotNode } from "./chatbot-node";
 import { NodeForm } from "./forms/node-form";
 
@@ -53,6 +56,12 @@ function cn(...c: (string | boolean | undefined | null)[]) {
 
 /** Channel context so any nested component (nodes, palette) can read the current chatbot's channel */
 export const ChatbotChannelContext = createContext<string>('whatsapp')
+
+/** Layout direction context so node cards know which edge to put handles on */
+export const ChatbotDirectionContext = createContext<'TB' | 'LR'>('TB')
+
+const NODE_CARD_WIDTH = 230
+const NODE_CARD_HEIGHT = 140
 
 const NODE_TYPES = { chatbot: ChatbotNode };
 
@@ -81,6 +90,8 @@ function deriveEdges(nodes: ChatbotBuilderNode[]): Edge[] {
       let targetKey: string | undefined;
       if (node.node_type === "condition") {
         targetKey = h.id === "true" ? (cfg.true_next as string) : (cfg.false_next as string);
+      } else if (node.node_type === "send_buttons" && cfg.mode === "cta") {
+        targetKey = (cfg.cta_button as Record<string, unknown> | undefined)?.next_node_key as string | undefined;
       } else if (node.node_type === "send_buttons") {
         const buttons = (cfg.buttons as Array<Record<string, unknown>>) ?? [];
         const btn = buttons.find((b) => String(b.reply_id) === h.id.replace(/^btn_/, ""));
@@ -163,7 +174,46 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
   const [rfEdges, setRfEdges] = useEdgesState(deriveEdges(builderNodes));
   const [interactionMode, setInteractionMode] = useState<"pan" | "select">("pan");
   const [sheetKey, setSheetKey] = useState<string | null>(null);
+  const [direction, setDirection] = useState<"TB" | "LR">("TB");
   const sheetNode = builderNodes.find((n) => n.node_key === sheetKey) ?? null;
+
+  const toggleDirection = useCallback(async () => {
+    const nextDirection = direction === "TB" ? "LR" : "TB";
+    const yes = await confirm({
+      title: `Switch to ${nextDirection === "LR" ? "left-to-right" : "top-to-bottom"} layout?`,
+      description: "This automatically re-arranges every node's position. Any manual dragging you've done will be replaced.",
+      confirmLabel: "Switch",
+    });
+    if (!yes) return;
+
+    const layoutNodes: LayoutNode[] = builderNodes.map((n) => {
+      // Mirrors chatbot-node.tsx's width-growth formula for switch_case /
+      // send_list in TB mode so dagre spaces wide nodes apart correctly.
+      const growsWithHandles =
+        nextDirection === "TB" && (n.node_type === "switch_case" || n.node_type === "send_list");
+      const width = growsWithHandles
+        ? Math.min(230 + Math.max(0, getSourceHandles(n.node_type, n.config).length - 3) * 60, 420)
+        : NODE_CARD_WIDTH;
+      return { id: n.node_key, width, height: NODE_CARD_HEIGHT };
+    });
+    const layoutEdges: LayoutEdge[] = deriveEdges(builderNodes).map((e) => ({
+      source: e.source,
+      target: e.target,
+    }));
+    const positions = autoLayout(layoutNodes, layoutEdges, {
+      direction: nextDirection,
+      defaultWidth: NODE_CARD_WIDTH,
+      defaultHeight: NODE_CARD_HEIGHT,
+    });
+    const updated = builderNodes.map((n) => {
+      const pos = positions.get(n.node_key);
+      if (!pos) return n;
+      return { ...n, position_x: Math.round(pos.x), position_y: Math.round(pos.y) };
+    });
+    setDirection(nextDirection);
+    onChange(updated);
+    requestAnimationFrame(() => fitView({ padding: 0.25, duration: 400 }));
+  }, [builderNodes, confirm, direction, fitView, onChange]);
 
   const prevBuilderRef = useRef(builderNodes);
   useEffect(() => {
@@ -181,6 +231,8 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
       const cfg = { ...n.config };
       if (n.node_type === "condition") {
         if (sourceHandle === "true") cfg.true_next = target; else cfg.false_next = target;
+      } else if (n.node_type === "send_buttons" && n.config.mode === "cta") {
+        cfg.cta_button = { ...((cfg.cta_button as object) ?? {}), next_node_key: target };
       } else if (n.node_type === "send_buttons") {
         const replyId = (sourceHandle ?? "").replace(/^btn_/, "");
         const buttons = [...((cfg.buttons as Array<Record<string, unknown>>) ?? [])];
@@ -295,6 +347,7 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
   }, [builderNodes, onChange, setRfEdges]);
 
   return (
+    <ChatbotDirectionContext.Provider value={direction}>
     <div className="relative h-full w-full outline-none" tabIndex={-1} onKeyDown={handleKeyDown}>
       <ReactFlow
         nodes={rfNodes}
@@ -336,8 +389,12 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
           }}
         />
 
-        {/* Pan / Select / Fit toolbar */}
-        <Panel position="top-right" className="flex items-center gap-2 !top-3 !right-3">
+        {/* Pan / Select / Fit toolbar — shifted left when the node edit
+            panel (z-20, 380px wide, right-0) is open so it isn't covered. */}
+        <Panel
+          position="top-right"
+          className={cn("flex items-center gap-2 !top-3", sheetNode ? "!right-[396px]" : "!right-3")}
+        >
           <div className="flex gap-0.5 rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
             <button
               type="button"
@@ -375,6 +432,19 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
           >
             <LayoutGrid className="h-3.5 w-3.5" />
             Fit view
+          </button>
+          <button
+            type="button"
+            onClick={() => void toggleDirection()}
+            title="Switch node flow direction — re-arranges every node"
+            className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+          >
+            {direction === "TB" ? (
+              <ArrowDownUp className="h-3.5 w-3.5" />
+            ) : (
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+            )}
+            {direction === "TB" ? "Top-Bottom" : "Left-Right"}
           </button>
         </Panel>
 
@@ -470,6 +540,7 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
         </div>
       )}
     </div>
+    </ChatbotDirectionContext.Provider>
   );
 }
 

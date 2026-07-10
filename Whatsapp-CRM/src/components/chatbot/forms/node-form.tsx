@@ -20,7 +20,7 @@ import {
   MapPin,
   Link2,
   Upload,
-  Image,
+  Image as ImageIcon,
   Loader2,
   RefreshCw,
 } from "lucide-react";
@@ -35,17 +35,36 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { RichTextArea } from "./rich-text-area";
+import { RichTextArea, VarInput } from "./rich-text-area";
 import type { ChatbotBuilderNode, ChatbotNodeType } from "@/lib/chatbot/types";
 
 // ─── Variable helpers ────────────────────────────────────────────
 
-/** Extract all {{vars.x}} keys set by collect_input nodes (excluding current node). */
+/**
+ * Extract every {{vars.x}} key created anywhere else in this chatbot —
+ * collect_input's var_key, set_variable's assignments, and send_buttons /
+ * send_list's save_reply_to all write into run.vars at runtime.
+ */
 function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string[] {
-  return allNodes
-    .filter((n) => n.node_key !== currentKey && n.node_type === "collect_input")
-    .map((n) => (typeof n.config.var_key === "string" ? n.config.var_key : ""))
-    .filter(Boolean);
+  const keys = new Set<string>();
+  for (const n of allNodes) {
+    if (n.node_key === currentKey) continue;
+    if (n.node_type === "collect_input") {
+      if (typeof n.config.var_key === "string" && n.config.var_key) keys.add(n.config.var_key);
+    } else if (n.node_type === "set_variable") {
+      const assignments = Array.isArray(n.config.assignments)
+        ? (n.config.assignments as Array<Record<string, unknown>>)
+        : [];
+      for (const a of assignments) {
+        if (typeof a.var_key === "string" && a.var_key) keys.add(a.var_key);
+      }
+    } else if (n.node_type === "send_buttons" || n.node_type === "send_list") {
+      if (typeof n.config.save_reply_to === "string" && n.config.save_reply_to) {
+        keys.add(n.config.save_reply_to);
+      }
+    }
+  }
+  return [...keys];
 }
 
 /** Small clickable chips that insert {{vars.x}} into a field. */
@@ -244,7 +263,7 @@ function MediaUrlField({
       )}
       {!uploading && value && mode === "url" && (
         <div className="flex items-center gap-1.5 text-[10px] text-emerald-600">
-          <Image className="h-3 w-3" />
+          <ImageIcon className="h-3 w-3" />
           <span className="max-w-[200px] truncate font-mono">{value}</span>
         </div>
       )}
@@ -320,7 +339,7 @@ function SendTextForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           <p className="text-[10px] text-teal-600 leading-relaxed">
             Use <span className="font-mono bg-teal-100 px-1 rounded">{"{{name}}"}</span> or <span className="font-mono bg-teal-100 px-1 rounded">{"{{vars.name}}"}</span> in your message to insert a collected value.
           </p>
-          <p className="text-[10px] text-teal-500 italic">e.g. "Hello {"{{name}}"}, how can I help?" → "Hello Jithu, how can I help?"</p>
+          <p className="text-[10px] text-teal-500 italic">e.g. &quot;Hello {"{{name}}"}, how can I help?&quot; → &quot;Hello Jithu, how can I help?&quot;</p>
         </div>
       )}
       <Field label="Header text (optional)" hint="Bold text above the message body.">
@@ -361,9 +380,11 @@ function SendTextForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
 function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const vars = getFlowVars(allNodes, nodeKey);
+  const isCta = cfg.mode === "cta";
   const buttons = Array.isArray(cfg.buttons)
     ? (cfg.buttons as Array<Record<string, unknown>>)
     : [];
+  const cta = (cfg.cta_button ?? {}) as Record<string, unknown>;
 
   const updateButton = (i: number, key: string, val: string) => {
     const updated = buttons.map((b, idx) => (idx === i ? { ...b, [key]: val } : b));
@@ -377,6 +398,9 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const removeButton = (i: number) => {
     onChange({ ...cfg, buttons: buttons.filter((_, idx) => idx !== i) });
   };
+  const updateCta = (key: string, val: string) => {
+    onChange({ ...cfg, cta_button: { ...cta, [key]: val } });
+  };
 
   return (
     <div className="space-y-4">
@@ -385,7 +409,27 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         <br/>
         <span className="font-semibold">WhatsApp:</span> sent as interactive buttons — up to 3 buttons.
       </div>
-      <Field label="Message text *" hint="Shown above the buttons.">
+
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
+        <div>
+          <p className="text-xs font-medium">CTA URL button</p>
+          <p className="text-[10px] text-slate-500">
+            Send a single &quot;open link&quot; button instead of quick-reply buttons. WhatsApp never reports a tap — the flow auto-advances immediately.
+          </p>
+        </div>
+        <Switch
+          checked={isCta}
+          onCheckedChange={(v) =>
+            onChange({
+              ...cfg,
+              mode: v ? "cta" : "normal",
+              cta_button: v ? (cfg.cta_button ?? { title: "", url: "", next_node_key: "" }) : cfg.cta_button,
+            })
+          }
+        />
+      </div>
+
+      <Field label="Message text *" hint="Shown above the button(s).">
         <RichTextArea
           value={String(cfg.text ?? "")}
           onChange={(v) => onChange({ ...cfg, text: v })}
@@ -395,65 +439,93 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         />
       </Field>
 
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-slate-700">
-          Buttons ({buttons.length}/3)
-        </p>
-        {buttons.map((btn, i) => (
-          <div key={i} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Button {i + 1}
-              </span>
-              {buttons.length > 1 && (
-                <button
-                  onClick={() => removeButton(i)}
-                  className="text-slate-400 hover:text-rose-500"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            <Input
-              className="h-7 text-xs"
-              value={String(btn.title ?? "")}
-              onChange={(e) => updateButton(i, "title", e.target.value)}
-              placeholder="Button label (max 20 chars)"
-              maxLength={20}
-            />
-            <NodeSelect
-              label="Go to node"
-              value={String(btn.next_node_key ?? "")}
-              allNodes={allNodes}
-              currentKey={nodeKey}
-              onChange={(v) => updateButton(i, "next_node_key", v)}
-            />
+      {isCta ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+          <Input
+            className="h-7 text-xs"
+            value={String(cta.title ?? "")}
+            onChange={(e) => updateCta("title", e.target.value)}
+            placeholder="Button label (max 20 chars), e.g. Visit our site"
+            maxLength={20}
+          />
+          <Input
+            className="h-7 text-xs font-mono"
+            value={String(cta.url ?? "")}
+            onChange={(e) => updateCta("url", e.target.value)}
+            placeholder="https://example.com"
+          />
+          <p className="text-[10px] text-slate-500">URL must start with https:// (or http://).</p>
+          <NodeSelect
+            label="Next node"
+            value={String(cta.next_node_key ?? "")}
+            allNodes={allNodes}
+            currentKey={nodeKey}
+            onChange={(v) => updateCta("next_node_key", v)}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-slate-700">
+              Buttons ({buttons.length}/3)
+            </p>
+            {buttons.map((btn, i) => (
+              <div key={i} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    Button {i + 1}
+                  </span>
+                  {buttons.length > 1 && (
+                    <button
+                      onClick={() => removeButton(i)}
+                      className="text-slate-400 hover:text-rose-500"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                <Input
+                  className="h-7 text-xs"
+                  value={String(btn.title ?? "")}
+                  onChange={(e) => updateButton(i, "title", e.target.value)}
+                  placeholder="Button label (max 20 chars)"
+                  maxLength={20}
+                />
+                <NodeSelect
+                  label="Go to node"
+                  value={String(btn.next_node_key ?? "")}
+                  allNodes={allNodes}
+                  currentKey={nodeKey}
+                  onChange={(v) => updateButton(i, "next_node_key", v)}
+                />
+              </div>
+            ))}
+            {buttons.length < 3 && (
+              <button
+                type="button"
+                className="flex h-7 w-full items-center justify-center gap-1 rounded-md border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
+                onClick={addButton}
+              >
+                <Plus className="h-3.5 w-3.5" /> Add button
+              </button>
+            )}
           </div>
-        ))}
-        {buttons.length < 3 && (
-          <button
-            type="button"
-            className="flex h-7 w-full items-center justify-center gap-1 rounded-md border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
-            onClick={addButton}
-          >
-            <Plus className="h-3.5 w-3.5" /> Add button
-          </button>
-        )}
-      </div>
 
-      <Field
-        label="Save reply to variable"
-        hint="The tapped button's label is stored in this variable for use in later nodes."
-      >
-        <Input
-          className="h-8 text-xs font-mono"
-          value={String(cfg.save_reply_to ?? "")}
-          onChange={(e) =>
-            onChange({ ...cfg, save_reply_to: e.target.value.replace(/[^a-z0-9_]/gi, "_") || undefined })
-          }
-          placeholder="e.g. selected_option (optional)"
-        />
-      </Field>
+          <Field
+            label="Save reply to variable"
+            hint="The tapped button's label is stored in this variable for use in later nodes."
+          >
+            <Input
+              className="h-8 text-xs font-mono"
+              value={String(cfg.save_reply_to ?? "")}
+              onChange={(e) =>
+                onChange({ ...cfg, save_reply_to: e.target.value.replace(/[^a-z0-9_]/gi, "_") || undefined })
+              }
+              placeholder="e.g. selected_option (optional)"
+            />
+          </Field>
+        </>
+      )}
     </div>
   );
 }
@@ -544,7 +616,8 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                   className="h-7 flex-1 text-xs"
                   value={String(row.title ?? "")}
                   onChange={(e) => updateRow(si, ri, "title", e.target.value)}
-                  placeholder="Row title"
+                  placeholder="Row title (max 24 chars)"
+                  maxLength={24}
                 />
                 <button
                   onClick={() => removeRow(si, ri)}
@@ -557,7 +630,8 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 className="h-7 text-xs"
                 value={String(row.description ?? "")}
                 onChange={(e) => updateRow(si, ri, "description", e.target.value)}
-                placeholder="Description (optional)"
+                placeholder="Description (optional, max 72 chars)"
+                maxLength={72}
               />
               <NodeSelect
                 label="Go to node"
@@ -598,6 +672,7 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 }
 
 function SendMediaForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const vars = getFlowVars(allNodes, nodeKey);
   return (
     <div className="space-y-4">
       <Field label="Media type">
@@ -635,11 +710,12 @@ function SendMediaForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         </Field>
       )}
       <Field label="Caption (optional)">
-        <Input
+        <VarInput
           className="h-8 text-xs"
           value={String(cfg.caption ?? "")}
-          onChange={(e) => onChange({ ...cfg, caption: e.target.value })}
+          onChange={(v) => onChange({ ...cfg, caption: v })}
           placeholder="Optional caption text…"
+          vars={vars}
         />
       </Field>
       <NodeSelect
@@ -711,7 +787,7 @@ function CollectInputForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             {`{{${String(cfg.var_key ?? "key")}}}`}
           </code>
           <p className="text-[10px] text-teal-500 italic">
-            e.g. message "Hello {"{{" + String(cfg.var_key || "name") + "}}"}" → "Hello Jithu" (user's answer)
+            e.g. message &quot;Hello {"{{" + String(cfg.var_key || "name") + "}}"}&quot; → &quot;Hello Jithu&quot; (user&apos;s answer)
           </p>
         </div>
       )}
@@ -1155,7 +1231,7 @@ function DelayForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         <div>
           <p className="text-xs font-medium">Show typing indicator</p>
           <p className="text-[10px] text-slate-500">
-            Displays "..." to the user during delay
+            Displays &quot;...&quot; to the user during delay
           </p>
         </div>
         <Switch
@@ -1416,6 +1492,38 @@ function HandoffForm({ cfg, onChange }: FormProps) {
   );
 }
 
+function MemberSelectField({
+  label,
+  hint,
+  value,
+  members,
+  onValueChange,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  members: { user_id: string; full_name: string }[];
+  onValueChange: (v: string) => void;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <Select value={value} onValueChange={(v) => onValueChange(v ?? "")}>
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue placeholder="Unassigned" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="" className="text-xs text-slate-500">Unassigned</SelectItem>
+          {members.map((m) => (
+            <SelectItem key={m.user_id} value={m.user_id} className="text-xs">
+              {m.full_name || m.user_id}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+}
+
 function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const vars = getFlowVars(allNodes, nodeKey);
   const action = String(cfg.action ?? "create_lead");
@@ -1448,27 +1556,6 @@ function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       })
       .catch(() => {});
   }, []);
-
-  const MemberSelect = ({ label, fieldKey, hint }: { label: string; fieldKey: string; hint?: string }) => (
-    <Field label={label} hint={hint}>
-      <Select
-        value={String(cfg[fieldKey] ?? "")}
-        onValueChange={(v) => onChange({ ...cfg, [fieldKey]: v || undefined })}
-      >
-        <SelectTrigger className="h-8 text-xs">
-          <SelectValue placeholder="Unassigned" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="" className="text-xs text-slate-500">Unassigned</SelectItem>
-          {members.map((m) => (
-            <SelectItem key={m.user_id} value={m.user_id} className="text-xs">
-              {m.full_name || m.user_id}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </Field>
-  );
 
   return (
     <div className="space-y-4">
@@ -1588,7 +1675,13 @@ function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               </Select>
             </Field>
           </div>
-          <MemberSelect label="Assign to" fieldKey="lead_assigned_to" hint="Optional — assign lead to a team member." />
+          <MemberSelectField
+            label="Assign to"
+            hint="Optional — assign lead to a team member."
+            value={String(cfg.lead_assigned_to ?? "")}
+            members={members}
+            onValueChange={(v) => onChange({ ...cfg, lead_assigned_to: v || undefined })}
+          />
         </>
       )}
 
@@ -1641,7 +1734,12 @@ function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               onChange={(e) => onChange({ ...cfg, followup_due_hours: Math.max(1, parseInt(e.target.value, 10) || 24) })}
             />
           </Field>
-          <MemberSelect label="Assign to" fieldKey="followup_assigned_to" />
+          <MemberSelectField
+            label="Assign to"
+            value={String(cfg.followup_assigned_to ?? "")}
+            members={members}
+            onValueChange={(v) => onChange({ ...cfg, followup_assigned_to: v || undefined })}
+          />
         </>
       )}
 
@@ -1689,7 +1787,12 @@ function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               />
             </Field>
           </div>
-          <MemberSelect label="Assign to" fieldKey="task_assigned_to" />
+          <MemberSelectField
+            label="Assign to"
+            value={String(cfg.task_assigned_to ?? "")}
+            members={members}
+            onValueChange={(v) => onChange({ ...cfg, task_assigned_to: v || undefined })}
+          />
         </>
       )}
 
@@ -2033,7 +2136,7 @@ function JoinForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3 space-y-1">
         <p className="text-[10px] font-semibold text-indigo-700">Merge node</p>
         <p className="text-[10px] text-indigo-600 leading-relaxed">
-          Connect multiple nodes to this node's input handle. Every branch that
+          Connect multiple nodes to this node&apos;s input handle. Every branch that
           reaches here will continue to the single next node below.
         </p>
       </div>

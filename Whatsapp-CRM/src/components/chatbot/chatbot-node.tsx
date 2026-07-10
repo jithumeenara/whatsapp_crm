@@ -5,7 +5,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { AlertTriangle } from "lucide-react";
 import { NODE_META, summarizeChatbotNode, getSourceHandles } from "@/lib/chatbot/node-meta";
 import type { ChatbotNodeType } from "@/lib/chatbot/types";
-import { ChatbotChannelContext } from "./chatbot-canvas";
+import { ChatbotChannelContext, ChatbotDirectionContext } from "./chatbot-canvas";
 
 const INSTAGRAM_INCOMPATIBLE = new Set([
   // send_buttons works via Instagram Quick Replies API
@@ -26,10 +26,13 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
   const nodeData = data as unknown as ChatbotNodeData;
   const { node_type, config, isEntry } = nodeData;
   const meta = NODE_META[node_type];
-  if (!meta) return null;
 
   const channel = useContext(ChatbotChannelContext)
+  const direction = useContext(ChatbotDirectionContext)
+  if (!meta) return null;
+
   const isIncompatible = channel === 'instagram' && INSTAGRAM_INCOMPATIBLE.has(node_type)
+  const isLR = direction === 'LR'
 
   const Icon = meta.icon;
   const summary = summarizeChatbotNode(node_type, config);
@@ -37,10 +40,19 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
   const isTerminal = node_type === "end" || node_type === "handoff";
   const isStart = node_type === "start";
 
+  // switch_case (many case branches) and send_list (many rows) can grow a
+  // lot wider than the default card — widen in TB mode so their footer of
+  // handles has room instead of clipping against the fixed 230px card.
+  const growsWithHandles = !isLR && (node_type === "switch_case" || node_type === "send_list");
+  const cardWidth = growsWithHandles
+    ? Math.min(230 + Math.max(0, sourceHandles.length - 3) * 60, 420)
+    : 230;
+
   return (
     <div
+      style={{ width: cardWidth }}
       className={cn(
-        "relative w-[230px] overflow-hidden rounded-2xl bg-white transition-all duration-150",
+        "relative overflow-hidden rounded-2xl bg-white transition-all duration-150",
         isIncompatible
           ? "border-2 border-rose-400 shadow-[0_0_0_3px_rgba(244,63,94,0.15),0_4px_16px_rgba(0,0,0,0.13)]"
           : selected
@@ -53,8 +65,11 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
       {!isStart && (
         <Handle
           type="target"
-          position={Position.Top}
-          className="!-top-[7px] !h-3.5 !w-3.5 !rounded-full !border-2 !border-white !bg-indigo-500 !shadow-sm"
+          position={isLR ? Position.Left : Position.Top}
+          className={cn(
+            "!h-3.5 !w-3.5 !rounded-full !border-2 !border-white !bg-indigo-500 !shadow-sm",
+            isLR ? "!-left-[7px]" : "!-top-[7px]",
+          )}
         />
       )}
 
@@ -103,11 +118,22 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
         <div
           className={cn(
             "flex border-t border-slate-100 px-3 py-2",
-            sourceHandles.length === 1 ? "justify-center" : "justify-around",
+            isLR
+              ? "flex-col items-end gap-2"
+              : cn(
+                  "flex-row flex-wrap gap-x-2 gap-y-2",
+                  sourceHandles.length === 1 ? "justify-center" : "justify-around",
+                ),
           )}
         >
           {sourceHandles.map((h) => (
-            <div key={h.id} className="flex flex-col items-center gap-1">
+            <div
+              key={h.id}
+              className={cn(
+                "flex items-center gap-1.5",
+                isLR ? "w-full justify-between" : "flex-col",
+              )}
+            >
               {h.label && (
                 <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">
                   {h.label}
@@ -115,7 +141,7 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
               )}
               <Handle
                 type="source"
-                position={Position.Bottom}
+                position={isLR ? Position.Right : Position.Bottom}
                 id={h.id}
                 className="!relative !bottom-auto !left-auto !right-auto !top-auto !h-3.5 !w-3.5 !translate-x-0 !translate-y-0 !rounded-full !border-2 !border-white !bg-indigo-400 !shadow-sm"
               />

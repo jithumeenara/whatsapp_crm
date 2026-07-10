@@ -43,6 +43,8 @@ export interface TextLabelComp {
   id: string; type: 'TextLabel'
   text: string              // static fallback / display text
   name: string              // internal variable name for dynamic data (e.g. "prog_label")
+  /** CRM-only: which Data source tab is selected — independent of whether a table has been picked yet */
+  _source_mode?: 'static' | 'network'
   _source_table_id?: string
   _source_field_key?: string
   _filter_form_name?: string  // name of parent Dropdown that triggers filter

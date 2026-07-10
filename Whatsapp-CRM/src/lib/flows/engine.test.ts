@@ -6,6 +6,7 @@ import {
   isSuspending,
   isTerminal,
   evaluateConditionPredicate,
+  interpolateWithContact,
 } from "./engine";
 
 describe("matchReplyId", () => {
@@ -295,5 +296,66 @@ describe("evaluateConditionPredicate", () => {
         configValue: "anything",
       }),
     ).toBe(false);
+  });
+});
+
+describe("interpolateWithContact", () => {
+  const contact = {
+    name: "Alice",
+    phone: "+15551234567",
+    email: "alice@example.com",
+    company: "Acme Inc",
+  };
+
+  it("substitutes {{vars.X}}", () => {
+    expect(
+      interpolateWithContact("Hi {{vars.city}}!", { city: "Kochi" }, null),
+    ).toBe("Hi Kochi!");
+  });
+
+  it("substitutes {{contact.name}} and {{contact.phone}}", () => {
+    expect(
+      interpolateWithContact(
+        "Hello {{contact.name}}, we'll call {{contact.phone}}.",
+        {},
+        contact,
+      ),
+    ).toBe("Hello Alice, we'll call +15551234567.");
+  });
+
+  it("substitutes {{contact.email}} and {{contact.company}}", () => {
+    expect(
+      interpolateWithContact(
+        "{{contact.email}} at {{contact.company}}",
+        {},
+        contact,
+      ),
+    ).toBe("alice@example.com at Acme Inc");
+  });
+
+  it("renders missing contact fields as empty string", () => {
+    expect(
+      interpolateWithContact(
+        "email={{contact.email}} company={{contact.company}}",
+        {},
+        { name: "Bob", phone: null, email: null, company: null },
+      ),
+    ).toBe("email= company=");
+  });
+
+  it("supports {{name}}, {{phone}}, {{number}} shorthands", () => {
+    expect(
+      interpolateWithContact("{{name}} / {{phone}} / {{number}}", {}, contact),
+    ).toBe("Alice / +15551234567 / +15551234567");
+  });
+
+  it("returns empty string for a null/empty template", () => {
+    expect(interpolateWithContact("", {}, contact)).toBe("");
+  });
+
+  it("handles a null contact without throwing", () => {
+    expect(
+      interpolateWithContact("Hi {{contact.name}}, {{vars.x}}", { x: "y" }, null),
+    ).toBe("Hi , y");
   });
 });

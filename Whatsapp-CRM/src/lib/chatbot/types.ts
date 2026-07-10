@@ -64,14 +64,24 @@ export interface SendTextNodeCfg {
   next_node_key: string
 }
 
+export interface ChatbotCtaButton {
+  title: string          // ≤ 20 chars (Meta limit)
+  url: string             // must be http:// or https://
+  next_node_key: string  // single auto-advance target — WhatsApp never reports a tap
+}
+
 export interface SendButtonsNodeCfg {
   text: string
   header_text?: string
   footer_text?: string
-  /** 1–3 buttons (Meta cap) */
+  /** 'normal' (default, quick-reply buttons, suspends) | 'cta' (single URL button, auto-advances). Omitted = 'normal'. */
+  mode?: 'normal' | 'cta'
+  /** 1–3 buttons (Meta cap). Used when mode !== 'cta'. */
   buttons: ChatbotButton[]
-  /** Optional: save the tapped button's title to this variable key */
+  /** Optional: save the tapped button's title to this variable key. 'normal' mode only. */
   save_reply_to?: string
+  /** Used when mode === 'cta'. */
+  cta_button?: ChatbotCtaButton
 }
 
 export interface SendListNodeCfg {

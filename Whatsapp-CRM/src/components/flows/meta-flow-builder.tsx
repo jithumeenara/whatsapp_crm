@@ -39,7 +39,6 @@ import {
   Upload,
   Send,
   Loader2,
-  LayoutGrid,
   RefreshCw,
   Check,
   Play,
@@ -66,7 +65,6 @@ import {
   COMPONENT_GROUPS,
   COMPONENT_META,
   defaultComponent,
-  blankFlow,
   genScreenId,
   type ComponentType,
   type DataSourceItem,
@@ -127,7 +125,9 @@ export function MetaFlowBuilder({
   }, [])
 
   useEffect(() => {
-    if (!value._save_table_id) { setSaveTableFields([]); return }
+    // No table selected — consumers already gate on saveTableId being
+    // truthy, so a stale saveTableFields value here is never rendered.
+    if (!value._save_table_id) return
     fetch(`/api/data-tables/${value._save_table_id}`).then(r => r.json()).then((d: { table?: { fields?: SaveField[] } }) => {
       setSaveTableFields(d.table?.fields ?? [])
     }).catch(() => { setSaveTableFields([]) })
@@ -999,24 +999,30 @@ function CompDataSource({
   const [loadingFields, setLoadingFields] = useState(false);
   const [liveCount, setLiveCount] = useState<number | null>(null); // null = not yet loaded
 
-  // Stable refs so the polling interval never goes stale
+  // Stable refs so the polling interval never goes stale. Synced in an
+  // effect (not directly during render) — mutating a ref during render is
+  // not allowed under React's rules, since render must stay pure.
   const selectedTableRef = useRef(selectedTable);
-  selectedTableRef.current = selectedTable;
   const selectedFieldRef = useRef(selectedField);
-  selectedFieldRef.current = selectedField;
   const itemsRef = useRef(items);
-  itemsRef.current = items;
   const onSourceChangeRef = useRef(onSourceChange);
-  onSourceChangeRef.current = onSourceChange;
+  useEffect(() => {
+    selectedTableRef.current = selectedTable;
+    selectedFieldRef.current = selectedField;
+    itemsRef.current = items;
+    onSourceChangeRef.current = onSourceChange;
+  });
 
   // Load tables list once
   useEffect(() => {
     fetch('/api/data-tables').then((r) => r.json()).then((d) => setTables(d.tables ?? [])).catch(() => {});
   }, []);
 
-  // Load fields when table changes; clear field selection
+  // Load fields when table changes. No explicit reset needed when
+  // selectedTable is empty — the field picker is only rendered when
+  // selectedTable is truthy, so a stale tableFields value is never shown.
   useEffect(() => {
-    if (!selectedTable) { setTableFields([]); return; }
+    if (!selectedTable) return;
     setLoadingFields(true);
     fetch(`/api/data-tables/${selectedTable}`)
       .then((r) => r.json())
@@ -1224,7 +1230,9 @@ function CompLabelSource({
   }, [])
 
   useEffect(() => {
-    if (!selectedTable) { setTableFields([]); return }
+    // No explicit reset needed — the field picker below is only rendered
+    // when selectedTable is truthy, so a stale tableFields value is never shown.
+    if (!selectedTable) return
     setLoadingFields(true)
     fetch(`/api/data-tables/${selectedTable}`)
       .then((r) => r.json())
@@ -1287,6 +1295,52 @@ function CompLabelSource({
   )
 }
 
+// ── FilterParentPicker ────────────────────────────────────────────────────────
+// Lists every component across all screens marked as a filter "PARENT"
+// (_filter_trigger === true), by its human label. Prevents the class of bug
+// where a child's _filter_form_name is hand-typed/pasted and ends up
+// pointing at the wrong dropdown's internal name (or a name that no longer
+// matches any parent) with no way to notice from the UI.
+function FilterParentPicker({
+  allScreens,
+  value,
+  onChange,
+}: {
+  allScreens: MetaFlowScreen[]
+  value: string
+  onChange: (name: string) => void
+}) {
+  const options: { name: string; label: string }[] = []
+  for (const s of allScreens) {
+    for (const c of s.components) {
+      const rec = c as unknown as Record<string, unknown>
+      if (rec._filter_trigger === true && typeof rec.name === 'string' && rec.name) {
+        options.push({ name: rec.name, label: (rec.label as string) || rec.name })
+      }
+    }
+  }
+  // The saved value may not match any current PARENT (stale reference, or
+  // typed before this picker existed) — keep it selectable so it's visible
+  // rather than silently reverting to blank.
+  const hasUnknownValue = value && !options.some((o) => o.name === value)
+
+  return (
+    <select
+      className="h-7 w-full rounded-md border border-input bg-white px-2 text-xs"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">— pick a parent dropdown —</option>
+      {hasUnknownValue && (
+        <option value={value}>⚠ {value} (not found — check it&apos;s marked PARENT)</option>
+      )}
+      {options.map((o) => (
+        <option key={o.name} value={o.name}>{o.label} [{o.name}]</option>
+      ))}
+    </select>
+  )
+}
+
 // ── FilterFieldPicker ─────────────────────────────────────────────────────────
 // Loads fields from a DataStore table and shows a select so the user picks the
 // exact field_key (which may differ from the label due to slugify rules).
@@ -1303,7 +1357,9 @@ function FilterFieldPicker({
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!tableId) { setFields([]); return }
+    // Parent only mounts this component once tableId is truthy, so this
+    // is defensive only — no need to reset fields here.
+    if (!tableId) return
     setLoading(true)
     fetch(`/api/data-tables/${tableId}`)
       .then((r) => r.json())
@@ -1609,7 +1665,7 @@ function ComponentForm({
       return (
         <div className="space-y-3">
           <CompTextField label="Label" value={comp.label} onChange={(v) => set({ label: v })} />
-          <CompTextField label="Field name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
+          <CompTextField label="Variable name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
           <div className="space-y-1.5">
             <Label className="text-xs">Input type</Label>
             <select
@@ -1631,7 +1687,7 @@ function ComponentForm({
       return (
         <div className="space-y-3">
           <CompTextField label="Label" value={comp.label} onChange={(v) => set({ label: v })} />
-          <CompTextField label="Field name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
+          <CompTextField label="Variable name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
           <CompTextField label="Helper text (optional)" value={comp['helper-text'] ?? ''} onChange={(v) => set({ 'helper-text': v })} />
           <div className="space-y-1.5">
             <Label className="text-xs">Max length (characters)</Label>
@@ -1648,7 +1704,8 @@ function ComponentForm({
 
     case 'TextLabel': {
       const tl = comp as TextLabelComp
-      const hasSource = !!(tl._source_table_id)
+      const sourceMode = tl._source_mode ?? (tl._source_table_id ? 'network' : 'static')
+      const hasSource = sourceMode === 'network'
       const filterFormName = tl._filter_form_name ?? ''
       const filterByField = tl._filter_by_field ?? ''
       return (
@@ -1670,8 +1727,10 @@ function ComponentForm({
                   type="button"
                   onClick={() => {
                     if (m === 'static') {
-                      set({ _source_table_id: undefined, _source_field_key: undefined,
+                      set({ _source_mode: 'static', _source_table_id: undefined, _source_field_key: undefined,
                             _filter_form_name: undefined, _filter_by_field: undefined })
+                    } else {
+                      set({ _source_mode: 'network' })
                     }
                   }}
                   className={cn(
@@ -1713,14 +1772,13 @@ function ComponentForm({
                     <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">1</span>
                     <p className="text-[10px] font-medium text-slate-800">Parent field name</p>
                   </div>
-                  <Input
-                    className="h-7 text-xs font-mono"
+                  <FilterParentPicker
+                    allScreens={allScreens}
                     value={filterFormName}
-                    onChange={(e) => set({ _filter_form_name: e.target.value || undefined })}
-                    placeholder="Paste from parent dropdown's field name"
+                    onChange={(v) => set({ _filter_form_name: v || undefined })}
                   />
                   <p className="text-[9px] text-slate-500">
-                    The <em>Field name (internal)</em> of the trigger dropdown
+                    Pick the dropdown marked <em>PARENT</em> whose selection should trigger this label.
                   </p>
                 </div>
                 <div className="space-y-1">
@@ -1774,7 +1832,7 @@ function ComponentForm({
       return (
         <div className="space-y-3">
           <CompTextField label="Label" value={comp.label} onChange={(v) => set({ label: v })} />
-          <CompTextField label="Field name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
+          <CompTextField label="Variable name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
           <CompDataSource
             items={safeItems}
             onChange={(items) => set({ 'data-source': items })}
@@ -1795,47 +1853,26 @@ function ComponentForm({
               </div>
 
               <div className="px-2.5 py-2.5 space-y-3">
-                {/* Role selector */}
-                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                  <button
-                    onClick={() => set({ _filter_trigger: true, _filter_form_name: undefined, _filter_by_field: undefined })}
-                    className={cn(
-                      "rounded-md border px-2 py-1.5 text-left transition-colors",
-                      isFilterTrigger
-                        ? "border-blue-500 bg-blue-500/10 text-blue-600 dark:text-blue-400 font-semibold"
-                        : "border-slate-200 text-slate-500 hover:border-foreground/40",
-                    )}
-                  >
-                    <span className="block text-[9px] mb-0.5">PARENT</span>
-                    Filters another dropdown
-                  </button>
-                  <button
-                    onClick={() => set({ _filter_trigger: undefined })}
-                    className={cn(
-                      "rounded-md border px-2 py-1.5 text-left transition-colors",
-                      !isFilterTrigger && (filterFormName || filterByField)
-                        ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold"
-                        : !isFilterTrigger && !filterFormName
-                        ? "border-slate-200 text-slate-500 hover:border-foreground/40"
-                        : "border-slate-200 text-slate-500 hover:border-foreground/40",
-                    )}
-                  >
-                    <span className="block text-[9px] mb-0.5">CHILD</span>
-                    Filtered by parent
-                  </button>
-                </div>
+                {/* These two roles are independent — a middle field in a chain
+                    (e.g. Month → Programme → Date) needs to be BOTH a trigger
+                    for its own children AND filtered by its own parent. */}
 
-                {/* PARENT state: show field name to copy */}
+                {/* Trigger role — other fields can filter by this one's selection */}
+                <CompToggle
+                  label="Other fields can filter by this selection"
+                  value={isFilterTrigger}
+                  onChange={(v) => set({ _filter_trigger: v || undefined })}
+                />
                 {isFilterTrigger && (
                   <div className="rounded-md bg-blue-500/8 border border-blue-400/30 p-2.5 space-y-1.5">
                     <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400">
-                      ✓ This dropdown triggers filtering
+                      ✓ This triggers filtering in other fields
                     </p>
                     <p className="text-[10px] text-slate-500">
-                      When user picks a value, the child dropdown refreshes automatically.
+                      When the user picks a value here, fields pointing at this as their parent refresh automatically.
                     </p>
                     <div className="space-y-0.5">
-                      <p className="text-[9px] text-slate-500">Copy this name into the child dropdown:</p>
+                      <p className="text-[9px] text-slate-500">Pick this as the parent on the child field:</p>
                       <div className="flex items-center gap-1.5">
                         <code className="flex-1 text-[11px] font-mono text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded">
                           {comp.name || '(set a field name above)'}
@@ -1853,66 +1890,66 @@ function ComponentForm({
                   </div>
                 )}
 
-                {/* CHILD state: configure filter */}
-                {!isFilterTrigger && (
-                  <div className="space-y-2.5">
-                    {/* Step 1 */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">1</span>
-                        <p className="text-[10px] font-medium text-slate-800">Parent field name</p>
-                      </div>
+                {/* Child role — this field's own options are filtered by a parent */}
+                <div className="space-y-2.5 border-t border-slate-200 pt-3">
+                  <p className="text-[10px] font-semibold text-slate-600">
+                    Filter this field&apos;s options by a parent (optional)
+                  </p>
+                  {/* Step 1 */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">1</span>
+                      <p className="text-[10px] font-medium text-slate-800">Parent field name</p>
+                    </div>
+                    <FilterParentPicker
+                      allScreens={allScreens}
+                      value={filterFormName}
+                      onChange={(v) => set({ _filter_form_name: v || undefined })}
+                    />
+                    <p className="text-[9px] text-slate-500">
+                      Pick the field marked as a trigger whose selection should filter this one.
+                    </p>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">2</span>
+                      <p className="text-[10px] font-medium text-slate-800">Filter column (from DB table)</p>
+                    </div>
+                    {cRec._source_table_id ? (
+                      <FilterFieldPicker
+                        tableId={cRec._source_table_id as string}
+                        value={filterByField}
+                        onChange={(v) => set({ _filter_by_field: v || undefined })}
+                      />
+                    ) : (
                       <Input
                         className="h-7 text-xs font-mono"
-                        value={filterFormName}
-                        onChange={(e) => set({ _filter_form_name: e.target.value || undefined })}
-                        placeholder="Paste from parent's blue box"
+                        value={filterByField}
+                        onChange={(e) => set({ _filter_by_field: e.target.value || undefined })}
+                        placeholder="e.g. month"
                       />
-                      <p className="text-[9px] text-slate-500">
-                        The <em>Field name (internal)</em> of the parent/trigger dropdown
-                      </p>
-                    </div>
-
-                    {/* Step 2 */}
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">2</span>
-                        <p className="text-[10px] font-medium text-slate-800">Filter column (from DB table)</p>
-                      </div>
-                      {cRec._source_table_id ? (
-                        <FilterFieldPicker
-                          tableId={cRec._source_table_id as string}
-                          value={filterByField}
-                          onChange={(v) => set({ _filter_by_field: v || undefined })}
-                        />
-                      ) : (
-                        <Input
-                          className="h-7 text-xs font-mono"
-                          value={filterByField}
-                          onChange={(e) => set({ _filter_by_field: e.target.value || undefined })}
-                          placeholder="e.g. month"
-                        />
-                      )}
-                      <p className="text-[9px] text-slate-500">
-                        The column that stores the parent&apos;s value (e.g. month column in Training table).
-                      </p>
-                    </div>
-
-                    {/* Live rule preview */}
-                    {filterFormName && filterByField && (
-                      <div className="rounded bg-emerald-500/8 border border-emerald-400/30 p-2 text-[9px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
-                        <span className="font-semibold block mb-0.5">Filter rule:</span>
-                        Fetch rows where <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterByField}</code> = value selected in <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterFormName}</code>
-                      </div>
                     )}
-
-                    {filterFormName && !filterByField && (
-                      <p className="text-[9px] text-amber-600 dark:text-amber-400">
-                        ↑ Pick a DB column to complete the filter setup
-                      </p>
-                    )}
+                    <p className="text-[9px] text-slate-500">
+                      The column that stores the parent&apos;s value (e.g. month column in Training table).
+                    </p>
                   </div>
-                )}
+
+                  {/* Live rule preview */}
+                  {filterFormName && filterByField && (
+                    <div className="rounded bg-emerald-500/8 border border-emerald-400/30 p-2 text-[9px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                      <span className="font-semibold block mb-0.5">Filter rule:</span>
+                      Fetch rows where <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterByField}</code> = value selected in <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterFormName}</code>
+                    </div>
+                  )}
+
+                  {filterFormName && !filterByField && (
+                    <p className="text-[9px] text-amber-600 dark:text-amber-400">
+                      ↑ Pick a DB column to complete the filter setup
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -1924,7 +1961,7 @@ function ComponentForm({
       return (
         <div className="space-y-3">
           <CompTextField label="Label" value={comp.label} onChange={(v) => set({ label: v })} />
-          <CompTextField label="Field name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
+          <CompTextField label="Variable name (internal)" value={comp.name} onChange={(v) => set({ name: v })} placeholder="field_name" />
           <CompTextField label="Helper text (optional)" value={comp['helper-text'] ?? ''} onChange={(v) => set({ 'helper-text': v })} />
           <CompToggle label="Required" value={comp.required ?? false} onChange={(v) => set({ required: v })} />
         </div>
@@ -2106,17 +2143,23 @@ function LivePreviewPanel({
         const triggerName = c.name as string
         const triggerValue = simValues[triggerName]
         if (!triggerValue) {
-          // Reset children to undefined (waiting) when parent is cleared
+          // Reset children to undefined (waiting) when parent is cleared —
+          // collect ids first so this is a single batched update, not one
+          // setState call per matching child.
+          const idsToClear: string[] = []
           for (const s2 of screens) {
             for (const comp2 of s2.components) {
               const c2 = comp2 as unknown as Record<string, unknown>
               if (c2._filter_form_name !== triggerName) continue
-              setPreviewData((prev) => {
-                const next = { ...prev }
-                delete next[comp2.id as string]
-                return next
-              })
+              idsToClear.push(comp2.id as string)
             }
+          }
+          if (idsToClear.length > 0) {
+            setPreviewData((prev) => {
+              const next = { ...prev }
+              for (const id of idsToClear) delete next[id]
+              return next
+            })
           }
           continue
         }
@@ -2630,203 +2673,10 @@ function SimPreviewComponent({
   }
 }
 
-// ─── Phone preview (static, kept for compatibility) ──────────────
-
-function PhonePreview({ screen }: { screen: MetaFlowScreen }) {
-  const footer = screen.components.find((c) => c.type === 'Footer') as
-    | (MetaFlowComponent & { type: 'Footer'; label: string }) | undefined;
-  const bodyComponents = screen.components.filter((c) => c.type !== 'Footer');
-
-  return (
-    <div className="mx-auto max-w-[280px]">
-      {/* Phone frame */}
-      <div className="overflow-hidden rounded-[2rem] border-4 border-gray-800 bg-white shadow-2xl">
-        {/* Status bar */}
-        <div className="bg-gray-800 px-4 py-1 text-center text-[9px] text-white/60">
-          9:41 AM
-        </div>
-
-        {/* WhatsApp header */}
-        <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-400/30">
-            <span className="text-[9px] text-white font-bold">B</span>
-          </div>
-          <div className="flex-1">
-            <p className="text-[10px] font-semibold text-white">{screen.title}</p>
-          </div>
-          <X className="h-3.5 w-3.5 text-white/70" />
-        </div>
-
-        {/* Content area */}
-        <div className="flex min-h-[420px] flex-col overflow-hidden bg-white">
-          {/* Title bar */}
-          <div className="border-b border-gray-100 px-4 py-3">
-            <p className="text-[13px] font-semibold text-gray-900">{screen.title}</p>
-          </div>
-
-          {/* Components */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-            {bodyComponents.map((comp) => (
-              <PreviewComponent key={comp.id} comp={comp} />
-            ))}
-          </div>
-
-          {/* Footer button */}
-          {footer && (
-            <div className="border-t border-gray-100 px-4 py-3">
-              <button
-                disabled
-                className="w-full rounded-full bg-[#0ACC73] py-2.5 text-[12px] font-semibold text-white opacity-60 cursor-not-allowed"
-              >
-                {footer.label}
-              </button>
-              {(footer as MetaFlowComponent & {'center-caption'?: string; 'left-caption'?: string})['center-caption'] && (
-                <p className="mt-1.5 text-center text-[9px] text-gray-400">
-                  {(footer as MetaFlowComponent & {'center-caption'?: string})['center-caption']}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* "Managed by the business" note */}
-      <p className="mt-3 text-center text-[10px] text-slate-500">
-        Managed by the business.{" "}
-        <span className="text-[#25D366]">Learn more</span>
-      </p>
-    </div>
-  );
-}
-
 function FieldLabel({ label, required }: { label: string; required?: boolean }) {
   return (
     <span className="text-[10px] font-medium text-gray-600">
       {label}{required && <span className="ml-0.5 text-red-500">*</span>}
     </span>
   )
-}
-
-function PreviewComponent({ comp }: { comp: MetaFlowComponent }) {
-  const req = (comp as { required?: boolean }).required === true
-  switch (comp.type) {
-    case 'TextHeading':
-      return <p className="text-[15px] font-bold text-gray-900">{comp.text || <span className="text-gray-300">Heading</span>}</p>;
-    case 'TextSubheading':
-      return <p className="text-[13px] font-semibold text-gray-800">{comp.text || <span className="text-gray-300">Subheading</span>}</p>;
-    case 'TextBody':
-      return <p className="text-[12px] text-gray-700 leading-relaxed">{comp.text || <span className="text-gray-300">Body text</span>}</p>;
-    case 'TextCaption':
-      return <p className="text-[10px] text-gray-500">{comp.text || <span className="text-gray-300">Caption</span>}</p>;
-
-    case 'TextInput':
-      return (
-        <div className="space-y-1">
-          <label><FieldLabel label={comp.label} required={req} /></label>
-          <div className="h-8 rounded border border-gray-300 bg-gray-50 px-2 flex items-center">
-            <span className="text-[10px] text-gray-400">{(comp as {['helper-text']?: string})['helper-text'] || comp.label}</span>
-          </div>
-        </div>
-      );
-
-    case 'TextArea': {
-      const ta = comp as { label: string; 'max-length'?: number };
-      return (
-        <div className="space-y-1">
-          <label><FieldLabel label={ta.label} required={req} /></label>
-          <div className="h-16 rounded border border-gray-300 bg-gray-50 p-2">
-            <span className="text-[10px] text-gray-400">Leave a comment (optional)</span>
-          </div>
-          <p className="text-right text-[9px] text-gray-400">0 / {ta['max-length'] ?? 600}</p>
-        </div>
-      );
-    }
-
-    case 'RadioButtonsGroup': {
-      const r = comp as { label: string; 'data-source': DataSourceItem[] };
-      return (
-        <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold text-gray-800">
-            {r.label}{req && <span className="ml-0.5 text-red-500">*</span>}
-          </p>
-          {(Array.isArray(r['data-source']) ? r['data-source'] : []).map((opt) => (
-            <label key={opt.id} className="flex items-center justify-between py-1 border-b border-gray-100 last:border-0">
-              <span className="text-[11px] text-gray-700">{opt.title}</span>
-              <div className="h-4 w-4 rounded-full border-2 border-gray-400" />
-            </label>
-          ))}
-        </div>
-      );
-    }
-
-    case 'CheckboxGroup': {
-      const cb = comp as { label: string; 'data-source': DataSourceItem[] };
-      return (
-        <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold text-gray-800">
-            {cb.label}{req && <span className="ml-0.5 text-red-500">*</span>}
-          </p>
-          {(Array.isArray(cb['data-source']) ? cb['data-source'] : []).map((opt) => (
-            <label key={opt.id} className="flex items-center gap-2 py-1 border-b border-gray-100 last:border-0">
-              <div className="h-4 w-4 rounded border-2 border-gray-400" />
-              <span className="text-[11px] text-gray-700">{opt.title}</span>
-            </label>
-          ))}
-        </div>
-      );
-    }
-
-    case 'Dropdown': {
-      const dd = comp as { label: string };
-      return (
-        <div className="space-y-1">
-          <label><FieldLabel label={dd.label} required={req} /></label>
-          <div className="flex h-8 items-center justify-between rounded border border-gray-300 bg-gray-50 px-2">
-            <span className="text-[10px] text-gray-400">Select an option</span>
-            <ChevronDown className="h-3 w-3 text-gray-400" />
-          </div>
-        </div>
-      );
-    }
-
-    case 'DatePicker': {
-      const dp = comp as { label: string };
-      return (
-        <div className="space-y-1">
-          <label><FieldLabel label={dp.label} required={req} /></label>
-          <div className="flex h-8 items-center justify-between rounded border border-gray-300 bg-gray-50 px-2">
-            <span className="text-[10px] text-gray-400">MM / DD / YYYY</span>
-            <span className="text-gray-400 text-xs">📅</span>
-          </div>
-        </div>
-      );
-    }
-
-    case 'TextLabel': {
-      const tl = comp as { text?: string; _source_table_id?: string }
-      return (
-        <p className="text-[12px] text-gray-700 leading-relaxed">
-          {tl._source_table_id
-            ? <span className="italic text-teal-600">[Dynamic label from DataStore]</span>
-            : (tl.text || <span className="text-gray-300">Label text</span>)
-          }
-        </p>
-      )
-    }
-
-    case 'Image': {
-      const img = comp as { src: string; 'alt-text'?: string };
-      return img.src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={img.src} alt={img['alt-text'] ?? ''} className="w-full rounded object-cover max-h-32" />
-      ) : (
-        <div className="flex h-16 items-center justify-center rounded border-2 border-dashed border-gray-300 text-[10px] text-gray-400">
-          No image URL set
-        </div>
-      );
-    }
-
-    default:
-      return null;
-  }
 }

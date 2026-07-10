@@ -39,7 +39,9 @@ export interface SendButtonsNodeConfig {
   /** Optional header / footer lines around the buttons. */
   header_text?: string;
   footer_text?: string;
-  /** 1-3 buttons; Meta cap enforced in meta-api validation. */
+  /** 'normal' (default, quick-reply, suspends) | 'cta' (single URL button, auto-advances). Omitted = 'normal'. */
+  mode?: 'normal' | 'cta';
+  /** 1-3 buttons; Meta cap enforced in meta-api validation. Used when mode !== 'cta'. */
   buttons: Array<{
     /** Stable id sent back by Meta when this button is tapped. */
     reply_id: string;
@@ -48,6 +50,15 @@ export interface SendButtonsNodeConfig {
     /** node_key the runner advances to when this button is tapped. */
     next_node_key: string;
   }>;
+  /** Used when mode === 'cta' — WhatsApp allows exactly one CTA URL button. */
+  cta_button?: {
+    /** Visible label (≤ 20 chars per Meta). */
+    title: string;
+    /** Destination URL — must be http:// or https://. */
+    url: string;
+    /** Node to auto-advance to immediately after the message is sent — WhatsApp never reports a tap on this button type. */
+    next_node_key: string;
+  };
 }
 
 export interface SendListNodeConfig {

@@ -155,7 +155,7 @@ export default function DataStorePage() {
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
               <Search className="h-8 w-8 mb-3 opacity-40" />
-              <p className="text-[14px] font-medium text-slate-600">No tables match "{search}"</p>
+              <p className="text-[14px] font-medium text-slate-600">No tables match &quot;{search}&quot;</p>
               <button onClick={() => setSearch("")} className="mt-2 text-[12px] text-indigo-600 hover:underline">
                 Clear search
               </button>

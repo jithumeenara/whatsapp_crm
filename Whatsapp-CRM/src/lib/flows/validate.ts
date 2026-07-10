@@ -304,11 +304,13 @@ function validateNode(
     case "send_buttons": {
       const cfg = node.config as {
         text?: string;
+        mode?: "normal" | "cta";
         buttons?: Array<{
           reply_id?: string;
           title?: string;
           next_node_key?: string;
         }>;
+        cta_button?: { title?: string; url?: string; next_node_key?: string };
       };
       if (!cfg.text?.trim()) {
         issues.push({
@@ -319,6 +321,63 @@ function validateNode(
           message: "Send-buttons node needs a text body.",
         });
       }
+
+      if (cfg.mode === "cta") {
+        const cta = cfg.cta_button;
+        if (!cta?.title?.trim()) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "cta_button.title",
+            message: "CTA button needs a label.",
+          });
+        } else if (cta.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "cta_button.title",
+            message: `CTA button label is over ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars (WhatsApp limit).`,
+          });
+        }
+        if (!cta?.url?.trim()) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "cta_button.url",
+            message: "CTA button needs a URL.",
+          });
+        } else if (!/^https?:\/\//i.test(cta.url)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "cta_button.url",
+            message: "CTA button URL must start with http:// or https://.",
+          });
+        }
+        if (!cta?.next_node_key) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "cta_button.next_node_key",
+            message: "CTA button needs a next node.",
+          });
+        } else if (!knownKeys.has(cta.next_node_key)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "cta_button.next_node_key",
+            message: `CTA button points to non-existent node "${cta.next_node_key}".`,
+          });
+        }
+        break;
+      }
+
       const btns = cfg.buttons ?? [];
       if (btns.length < 1) {
         issues.push({
@@ -979,8 +1038,13 @@ function outgoingEdges(node: NodeInput): string[] {
     }
     case "send_buttons": {
       const cfg = node.config as {
+        mode?: "normal" | "cta";
         buttons?: Array<{ next_node_key?: string }>;
+        cta_button?: { next_node_key?: string };
       };
+      if (cfg.mode === "cta") {
+        return cfg.cta_button?.next_node_key ? [cfg.cta_button.next_node_key] : [];
+      }
       return (cfg.buttons ?? [])
         .map((b) => b.next_node_key)
         .filter((k): k is string => !!k);

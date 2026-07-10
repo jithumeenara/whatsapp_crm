@@ -21,6 +21,8 @@ export interface PlaygroundMsg {
   buttons?: Array<{ id: string; label: string; nextKey: string }>
   /** Rendered as a scrollable list picker */
   listOptions?: Array<{ id: string; label: string; description?: string; nextKey: string }>
+  /** Rendered as a single "open link" button — WhatsApp never reports a tap on this type */
+  ctaButton?: { title: string; url: string }
   /** If set, the selected button/list option's title is saved to this variable key */
   saveVarKey?: string
   /** 'input' waits for the user to type a free-text reply */
@@ -183,6 +185,21 @@ export function runUntilInteractive(
       }
 
       case 'send_buttons': {
+        if (cfg.mode === 'cta') {
+          const cta = (cfg.cta_button ?? {}) as Record<string, unknown>
+          state.msgs.push({
+            id: uid(),
+            role: 'bot',
+            text: interp(typeof cfg.text === 'string' ? cfg.text : 'Please tap below:', state.vars),
+            ctaButton: {
+              title: typeof cta.title === 'string' && cta.title ? cta.title : 'Open link',
+              url: typeof cta.url === 'string' ? cta.url : '',
+            },
+          })
+          // Auto-advance — WhatsApp never reports a tap on this button type.
+          key = next(cta.next_node_key)
+          break
+        }
         const buttons = Array.isArray(cfg.buttons)
           ? (cfg.buttons as Array<Record<string, unknown>>).map((b) => ({
               id: String(b.reply_id ?? uid()),

@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises'
 import { join, basename } from 'path'
 import { lookup as mimeLookup } from 'mime-types'
 import {
+  sendCtaUrlButton,
   sendInteractiveButtons,
   sendInteractiveList,
   sendMediaMessage,
@@ -72,6 +73,18 @@ interface SendInteractiveListEngineArgs {
   bodyText: string
   buttonLabel: string
   sections: InteractiveListSection[]
+  headerText?: string
+  footerText?: string
+}
+
+interface SendCtaUrlButtonEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  bodyText: string
+  displayText: string
+  url: string
   headerText?: string
   footerText?: string
 }
@@ -664,6 +677,46 @@ async function sendInteractiveViaMeta(
   await prisma.conversation.update({
     where: { id: input.conversationId },
     data: { last_message_text: input.bodyText, last_message_at: new Date() },
+  })
+  return { whatsapp_message_id: waMessageId }
+}
+
+export async function engineSendCtaUrlButton(
+  args: SendCtaUrlButtonEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  // Instagram has no CTA-URL-button equivalent — fall back to plain text
+  // with the link appended, same strategy used for the list-message IG fallback.
+  const convRows = await prisma.$queryRaw<{ channel: string | null }[]>`
+    SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
+  `.catch(() => [] as { channel: string | null }[])
+  if (convRows[0]?.channel === 'instagram') {
+    const fallbackText = `${args.bodyText ?? ''}\n\n${args.displayText}: ${args.url}`.trim()
+    return engineSendText({ ...args, text: fallbackText })
+  }
+
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const accessToken = decrypt(config.access_token)
+
+  const { waMessageId } = await retryWithVariants(sanitized, contact.id, async (phone) => {
+    const r = await sendCtaUrlButton({
+      phoneNumberId: config.phone_number_id,
+      accessToken,
+      to: phone,
+      bodyText: args.bodyText,
+      headerText: args.headerText,
+      footerText: args.footerText,
+      displayText: args.displayText,
+      url: args.url,
+    })
+    return r.messageId
+  })
+
+  await prisma.message.create({
+    data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'interactive', content_text: args.bodyText, message_id: waMessageId, status: 'sent' },
+  })
+  await prisma.conversation.update({
+    where: { id: args.conversationId },
+    data: { last_message_text: args.bodyText, last_message_at: new Date() },
   })
   return { whatsapp_message_id: waMessageId }
 }

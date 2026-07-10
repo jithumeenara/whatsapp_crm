@@ -2,12 +2,10 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Loader2, Paperclip, X, ImageIcon, PenLine, Eraser,
+  Loader2, Paperclip, X, ImageIcon, PenLine, Eraser, FilePlus2, AlertTriangle,
 } from 'lucide-react';
 import DOMPurify from 'isomorphic-dompurify';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
@@ -16,13 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
 import type { DataField, DataRecord, FieldValidation, SelectOption } from '@/lib/data-store/types';
 import {
   getSelectItems, getFieldConfig, DATA_FIELD_TYPES,
@@ -79,34 +70,35 @@ function FileUploadField({
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
       />
       <div className="flex items-center gap-2">
-        <Button type="button" variant="outline" size="sm" disabled={uploading}
-          onClick={() => inputRef.current?.click()} className="gap-2 shrink-0">
+        <button type="button" disabled={uploading}
+          onClick={() => inputRef.current?.click()}
+          className="flex items-center gap-1.5 h-8 px-3 shrink-0 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors">
           {uploading
-            ? <Loader2 className="size-3.5 animate-spin" />
-            : <Paperclip className="size-3.5" />}
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <Paperclip className="h-3.5 w-3.5" />}
           {uploading ? 'Uploading…' : imageOnly ? 'Browse image' : 'Browse file'}
-        </Button>
+        </button>
         {value ? (
           <div className="flex items-center gap-1 min-w-0 flex-1">
-            <span className="text-xs text-slate-500 truncate">{value.split('/').pop()}</span>
+            <span className="text-[12px] text-slate-500 truncate">{value.split('/').pop()}</span>
             <button type="button" onClick={clear}
-              className="shrink-0 p-0.5 rounded text-slate-500 hover:text-destructive transition-colors">
-              <X className="size-3.5" />
+              className="shrink-0 p-0.5 rounded text-slate-400 hover:text-rose-500 transition-colors">
+              <X className="h-3.5 w-3.5" />
             </button>
           </div>
         ) : !uploading && (
-          <span className="text-xs text-slate-500">No file selected</span>
+          <span className="text-[12px] text-slate-400">No file selected</span>
         )}
       </div>
-      {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
+      {uploadError && <p className="text-[11px] text-rose-500">{uploadError}</p>}
       {value && (isImage ? (
         <img src={value} alt="preview"
-          className="h-24 w-auto rounded-lg border object-cover"
+          className="h-24 w-auto rounded-lg border border-slate-200 object-cover"
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       ) : (
         <a href={value} target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-          <ImageIcon className="size-3" /> View file
+          className="inline-flex items-center gap-1 text-[12px] text-indigo-600 hover:underline">
+          <ImageIcon className="h-3 w-3" /> View file
         </a>
       ))}
     </div>
@@ -445,14 +437,17 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
     const placeholder = cfg.placeholder || `Enter ${field.label.toLowerCase()}…`;
     const err = fieldErrors[field.field_key];
 
-    const inputCls = cn('text-sm', err && 'border-destructive focus-visible:ring-destructive');
+    const inputCls = cn(
+      'h-9 text-[13px] rounded-lg border-slate-200 focus-visible:border-indigo-400 focus-visible:ring-indigo-100',
+      err && 'border-rose-300 focus-visible:border-rose-400 focus-visible:ring-rose-100',
+    );
 
     // ── Display-only types ──────────────────────────────────
     if (field.field_type === 'section_header') {
       return (
         <div className="pt-2 pb-1 border-b border-slate-200">
-          <h4 className="font-semibold text-sm text-slate-800">{field.label}</h4>
-          {cfg.content && <p className="text-xs text-slate-500 mt-0.5">{cfg.content}</p>}
+          <h4 className="font-semibold text-[13px] text-slate-800">{field.label}</h4>
+          {cfg.content && <p className="text-[11px] text-slate-400 mt-0.5">{cfg.content}</p>}
         </div>
       );
     }
@@ -460,7 +455,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
     if (field.field_type === 'html_block') {
       return cfg.content ? (
         <div
-          className="text-sm text-slate-500 rounded-lg bg-slate-50 px-3 py-2 prose prose-sm max-w-none"
+          className="text-[13px] text-slate-500 rounded-lg bg-slate-50 px-3 py-2 prose prose-sm max-w-none"
           dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(cfg.content, { USE_PROFILES: { html: true } }) }}
         />
       ) : null;
@@ -479,7 +474,10 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
         )}
 
         {field.field_type === 'textarea' && (
-          <Textarea value={strVal} placeholder={placeholder} rows={3} className={cn('resize-none text-sm', err && 'border-destructive')}
+          <Textarea value={strVal} placeholder={placeholder} rows={3} className={cn(
+            'resize-none text-[13px] rounded-lg border-slate-200 focus-visible:border-indigo-400 focus-visible:ring-indigo-100',
+            err && 'border-rose-300 focus-visible:border-rose-400 focus-visible:ring-rose-100',
+          )}
             onChange={(e) => set(field.field_key, e.target.value)} />
         )}
 
@@ -527,8 +525,8 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
           <div className="flex items-center gap-2">
             <input type="checkbox" id={`f-${field.field_key}`}
               checked={!!value} onChange={(e) => set(field.field_key, e.target.checked)}
-              className="h-4 w-4 rounded border-slate-200 accent-primary" />
-            <label htmlFor={`f-${field.field_key}`} className="text-sm text-slate-500">Yes</label>
+              className="h-4 w-4 rounded border-slate-300 accent-indigo-600" />
+            <label htmlFor={`f-${field.field_key}`} className="text-[13px] text-slate-600">Yes</label>
           </div>
         )}
 
@@ -549,10 +547,10 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
               const selected = Array.isArray(value) ? (value as string[]).includes(opt.value) : false;
               return (
                 <label key={opt.value} className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-all select-none',
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[12px] cursor-pointer transition-all select-none',
                   selected
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-slate-200 text-slate-500 hover:border-primary/50',
+                    ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                    : 'border-slate-200 text-slate-500 hover:border-indigo-300',
                 )}>
                   <input type="checkbox" className="sr-only" checked={selected}
                     onChange={(e) => {
@@ -571,11 +569,11 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
         {field.field_type === 'radio' && (
           <div className="flex flex-col gap-2">
             {(tableSourceOptions[field.field_key] ?? getSelectItems(field.options)).map((opt) => (
-              <label key={opt.value} className="flex items-center gap-2 cursor-pointer text-sm">
+              <label key={opt.value} className="flex items-center gap-2 cursor-pointer text-[13px] text-slate-700">
                 <input type="radio" name={`radio-${field.field_key}`} value={opt.value}
                   checked={strVal === opt.value}
                   onChange={() => set(field.field_key, opt.value)}
-                  className="accent-primary" />
+                  className="accent-indigo-600" />
                 {opt.label}
               </label>
             ))}
@@ -647,14 +645,35 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
     );
   };
 
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{record ? 'Edit Record' : 'Add Record'}</DialogTitle>
-        </DialogHeader>
+  if (!open) return null;
 
-        <div className="space-y-4 py-2">
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={() => !saving && onClose()} />
+      <div className="relative z-10 flex w-full max-w-lg max-h-[90vh] flex-col rounded-2xl bg-white shadow-2xl border border-slate-100">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 shrink-0">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+            <FilePlus2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold text-slate-900 leading-snug">
+              {record ? 'Edit Record' : 'Add Record'}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {dataFields.length} field{dataFields.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <button
+            onClick={() => !saving && onClose()}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Fields */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
           {fields.map((field) => {
             const cfg = getFieldConfig(field.options);
             const isDisplay = field.field_type === 'section_header' || field.field_type === 'html_block';
@@ -671,41 +690,55 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
                 )}
               >
                 {!isDisplay && !isHidden && (
-                  <Label className="mb-1.5 block">
+                  <label className="mb-1.5 block text-[12.5px] font-medium text-slate-700">
                     {field.label}
-                    {field.required && <span className="ml-1 text-destructive">*</span>}
-                  </Label>
+                    {field.required && <span className="ml-0.5 text-rose-500">*</span>}
+                  </label>
                 )}
                 {rendered}
                 {cfg.help_text && !isHidden && (
-                  <p className="mt-1 text-xs text-slate-500">{cfg.help_text}</p>
+                  <p className="mt-1 text-[11px] text-slate-400">{cfg.help_text}</p>
                 )}
                 {fieldErrors[field.field_key] && (
-                  <p className="mt-1 text-xs text-destructive">{fieldErrors[field.field_key]}</p>
+                  <p className="mt-1 text-[11px] text-rose-500">{fieldErrors[field.field_key]}</p>
                 )}
               </div>
             );
           })}
 
           {fields.filter((f) => DATA_FIELD_TYPES.has(f.field_type)).length === 0 && (
-            <p className="text-sm text-slate-500 text-center py-4">
+            <p className="text-[13px] text-slate-400 text-center py-4">
               No fields defined yet. Add fields in the Fields tab first.
             </p>
           )}
 
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          {error && (
+            <div className="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-rose-500 shrink-0 mt-0.5" />
+              <p className="text-[12px] text-rose-600 leading-relaxed">{error}</p>
+            </div>
+          )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={submit}
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="h-8 px-3 rounded-lg border border-slate-200 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
             disabled={saving || dataFields.length === 0}
-            className="gap-2">
-            {saving && <Loader2 className="size-3.5 animate-spin" />}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 active:scale-95 disabled:opacity-50 disabled:active:scale-100 transition-all"
+          >
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {record ? 'Save Changes' : 'Add Record'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

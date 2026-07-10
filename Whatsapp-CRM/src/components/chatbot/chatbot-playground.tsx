@@ -274,6 +274,18 @@ function MessageBubble({
         {isBot && msg.listOptions && msg.listOptions.length > 0 && !isDone && (
           <ListPicker options={msg.listOptions} onSelect={onListSelect} />
         )}
+
+        {/* CTA URL button — informational, the flow already auto-advanced past this node */}
+        {isBot && msg.ctaButton && (
+          <a
+            href={msg.ctaButton.url || "#"}
+            target="_blank"
+            rel="noreferrer"
+            className="flex w-full items-center justify-center gap-1 rounded-xl border border-[#25D366]/30 bg-white px-3 py-2 text-[12px] font-semibold text-[#128C7E] shadow-sm hover:bg-[#25D366]/8 transition-colors"
+          >
+            🔗 {msg.ctaButton.title}
+          </a>
+        )}
       </div>
     </div>
   );

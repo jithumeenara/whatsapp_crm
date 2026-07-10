@@ -279,6 +279,7 @@ export function getSourceHandles(
       ]
     }
     case 'send_buttons': {
+      if (config.mode === 'cta') return [{ id: 'next' }]
       const buttons = Array.isArray(config.buttons)
         ? (config.buttons as Array<Record<string, unknown>>)
         : []
@@ -347,6 +348,11 @@ export function summarizeChatbotNode(
       return t(config.text)
     case 'send_buttons': {
       const text = t(config.text, 30)
+      if (config.mode === 'cta') {
+        const cta = (config.cta_button ?? {}) as Record<string, unknown>
+        const label = typeof cta.title === 'string' && cta.title ? `🔗 ${cta.title}` : ''
+        return text ? (label ? `${text} · ${label}` : text) : label || null
+      }
       const btns = Array.isArray(config.buttons)
         ? (config.buttons as Array<Record<string, unknown>>)
             .map((b) => (typeof b.title === 'string' ? b.title : ''))

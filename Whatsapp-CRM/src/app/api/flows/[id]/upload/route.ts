@@ -168,9 +168,12 @@ function ensureTerminalScreen(
   }
 
   // No terminal screen at all — auto-add SUCCESS if any screen uses data_exchange.
+  // Components since v7.3 are wrapped in a Form component, so this must unwrap
+  // that wrapper (flattenLayoutChildren) — checking layout.children directly
+  // only ever sees the single Form node, never its data_exchange children.
   const hasDataExchange = screens.some((s) => {
     const children = (((s as Record<string, unknown>).layout as Record<string, unknown>)?.children ?? []) as Record<string, unknown>[]
-    return children.some((c) => (c['on-click-action'] as Record<string, unknown>)?.name === 'data_exchange')
+    return flattenLayoutChildren(children).some((c) => (c['on-click-action'] as Record<string, unknown>)?.name === 'data_exchange')
   })
   if (!hasDataExchange) return
 
@@ -291,8 +294,12 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       ...screenLabelVars[idMap[screen.id]],
     }
 
-    // Collect names of all named form fields on this screen (for data_exchange payload refs only)
+    // Collect names of all named form fields on this screen (for data_exchange payload refs only).
+    // TextLabel is excluded — it's converted to a display-only TextBody below (no `name`
+    // survives in the Meta JSON), so referencing it as ${form.x} points at a component
+    // that doesn't exist and Meta rejects the whole flow ("Missing Form component").
     const namedFields = screen.components
+      .filter((c) => (c as Record<string, unknown>).type !== 'TextLabel')
       .map((c) => (c as Record<string, unknown>).name as string | undefined)
       .filter((n): n is string => Boolean(n))
 
@@ -358,6 +365,7 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
               }
             } else {
               const targetVars = screenDynamicVars[targetId] ?? {}
+              const targetLabelVars = screenLabelVars[targetId] ?? {}
 
               // Meta rule: every key in the target screen's `data` model must appear
               // in the navigate payload. For DB-backed vars (arrays), we pass them as
@@ -369,6 +377,14 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
                 // Also declare these vars on the current screen's data model so ${data.xxx}
                 // references resolve here before being passed to the target.
                 if (!dynamicDecls[varName]) dynamicDecls[varName] = makeDynamicDecl()
+              }
+              // Label vars are filtered by a dropdown ON the target screen itself, so
+              // there's no real value to chain forward yet — send an empty placeholder
+              // just to satisfy Meta's "key must be present" check. The real value
+              // arrives via the target screen's own filter-trigger data_exchange call
+              // once the user picks that dropdown's value.
+              for (const varName of Object.keys(targetLabelVars)) {
+                dynamicPayload[varName] = ''
               }
 
               raw['on-click-action'] = {

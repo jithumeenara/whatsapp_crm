@@ -38,6 +38,7 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { generateAiReply } from "@/lib/ai/gemini";
 import {
+  engineSendCtaUrlButton,
   engineSendFlow,
   engineSendInteractiveButtons,
   engineSendInteractiveList,
@@ -516,11 +517,16 @@ async function findEntryFlow(
 async function sendButtonsAndSuspend(
   run: FlowRunRow,
   node: FlowNodeRow,
+  contact: InterpContact,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
   // WhatsApp API requires a non-empty body — fall back to a generic prompt
   // so a node with an empty text field doesn't crash the run.
-  const bodyText = cfg.text?.trim() || "Please choose an option:";
+  const bodyText = interpolateWithContact(
+    cfg.text?.trim() || "Please choose an option:",
+    run.vars,
+    contact,
+  );
   try {
     const { whatsapp_message_id } = await engineSendInteractiveButtons({
       accountId: run.account_id,
@@ -528,9 +534,16 @@ async function sendButtonsAndSuspend(
       conversationId: run.conversation_id!,
       contactId: run.contact_id!,
       bodyText,
-      headerText: cfg.header_text,
-      footerText: cfg.footer_text,
-      buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
+      headerText: cfg.header_text
+        ? interpolateWithContact(cfg.header_text, run.vars, contact)
+        : undefined,
+      footerText: cfg.footer_text
+        ? interpolateWithContact(cfg.footer_text, run.vars, contact)
+        : undefined,
+      buttons: cfg.buttons.map((b) => ({
+        id: b.reply_id,
+        title: interpolateWithContact(b.title, run.vars, contact),
+      })),
     });
     await logEvent(run.id, "message_sent", node.node_key, {
       node_type: "send_buttons",
@@ -554,13 +567,76 @@ async function sendButtonsAndSuspend(
   return { outcome: "advanced", node_key: node.node_key };
 }
 
+/**
+ * CTA-mode `send_buttons`: sends a single WhatsApp "cta_url" button. Unlike
+ * the reply-buttons path above, WhatsApp never reports a tap on this button
+ * type, so the caller must NOT suspend — advance immediately to
+ * `cta_button.next_node_key` once the message is sent.
+ */
+async function sendCtaButtonAndAdvance(
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  contact: InterpContact,
+): Promise<{ next_node_key: string | null }> {
+  const cfg = node.config as unknown as SendButtonsNodeConfig;
+  const cta = cfg.cta_button;
+  const bodyText = interpolateWithContact(
+    cfg.text?.trim() || "Please tap below:",
+    run.vars,
+    contact,
+  );
+  if (!cta?.title?.trim() || !cta?.url?.trim()) {
+    await logEvent(run.id, "error", node.node_key, {
+      reason: "cta_button_misconfigured",
+      detail: "cta_button.title or cta_button.url is empty",
+    });
+    await endRun(run.id, "failed", "cta_button_misconfigured");
+    return { next_node_key: null };
+  }
+  try {
+    const { whatsapp_message_id } = await engineSendCtaUrlButton({
+      accountId: run.account_id,
+      userId: run.user_id,
+      conversationId: run.conversation_id!,
+      contactId: run.contact_id!,
+      bodyText,
+      displayText: interpolateWithContact(cta.title, run.vars, contact),
+      url: interpolateWithContact(cta.url, run.vars, contact),
+      headerText: cfg.header_text
+        ? interpolateWithContact(cfg.header_text, run.vars, contact)
+        : undefined,
+      footerText: cfg.footer_text
+        ? interpolateWithContact(cfg.footer_text, run.vars, contact)
+        : undefined,
+    });
+    await logEvent(run.id, "message_sent", node.node_key, {
+      node_type: "send_buttons",
+      mode: "cta",
+      whatsapp_message_id,
+    });
+  } catch (err) {
+    await logEvent(run.id, "error", node.node_key, {
+      reason: "send_cta_button_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    await endRun(run.id, "failed", "send_cta_button_failed");
+    return { next_node_key: null };
+  }
+  return { next_node_key: cta.next_node_key || null };
+}
+
 async function sendListAndSuspend(
   run: FlowRunRow,
   node: FlowNodeRow,
+  contact: InterpContact,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
   // WhatsApp API requires a non-empty body — fall back to a generic prompt.
-  const bodyText = cfg.text?.trim() || "Please select an option:";
+  const bodyText = interpolateWithContact(
+    cfg.text?.trim() || "Please select an option:",
+    run.vars,
+    contact,
+  );
   try {
     const { whatsapp_message_id } = await engineSendInteractiveList({
       accountId: run.account_id,
@@ -568,15 +644,25 @@ async function sendListAndSuspend(
       conversationId: run.conversation_id!,
       contactId: run.contact_id!,
       bodyText,
-      buttonLabel: cfg.button_label || "View options",
-      headerText: cfg.header_text,
-      footerText: cfg.footer_text,
+      buttonLabel: interpolateWithContact(
+        cfg.button_label || "View options",
+        run.vars,
+        contact,
+      ),
+      headerText: cfg.header_text
+        ? interpolateWithContact(cfg.header_text, run.vars, contact)
+        : undefined,
+      footerText: cfg.footer_text
+        ? interpolateWithContact(cfg.footer_text, run.vars, contact)
+        : undefined,
       sections: cfg.sections.map((s) => ({
         title: s.title,
         rows: s.rows.map((r) => ({
           id: r.reply_id,
-          title: r.title,
-          description: r.description,
+          title: interpolateWithContact(r.title, run.vars, contact),
+          description: r.description
+            ? interpolateWithContact(r.description, run.vars, contact)
+            : r.description,
         })),
       })),
     });
@@ -755,35 +841,30 @@ async function evaluateConditionNode(
 }
 
 /**
- * Tiny `{{vars.foo}}` interpolation. Used by send_message + collect_input
- * prompt text so a captured `name` can show up in the next prompt
- * ("Thanks {{vars.name}}, what's your email?"). Missing vars render as
- * empty string — the same behavior as the automations engine.
- */
-function interpolateVars(template: string, vars: Record<string, unknown>): string {
-  if (!template) return "";
-  return template.replace(/\{\{vars\.([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
-    const v = vars[key];
-    return v === undefined || v === null ? "" : String(v);
-  });
-}
-
-/**
  * Full interpolation for nodes that need contact fields:
- *   {{vars.X}}         → flow run variable
- *   {{contact.name}}   → contact's saved name
- *   {{contact.phone}}  → contact's phone number
- *   {{name}}           → shorthand for {{contact.name}}
+ *   {{vars.X}}          → flow run variable
+ *   {{contact.name}}    → contact's saved name
+ *   {{contact.phone}}   → contact's phone number
+ *   {{contact.email}}   → contact's email
+ *   {{contact.company}} → contact's company
+ *   {{name}}            → shorthand for {{contact.name}}
  *   {{phone}} / {{number}} → shorthand for {{contact.phone}}
  */
-function interpolateWithContact(
+export function interpolateWithContact(
   template: string,
   vars: Record<string, unknown>,
-  contact: { name?: string | null; phone?: string | null } | null,
+  contact: {
+    name?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    company?: string | null;
+  } | null,
 ): string {
   if (!template) return "";
   const name = contact?.name ?? contact?.phone ?? "";
   const phone = contact?.phone ?? "";
+  const email = contact?.email ?? "";
+  const company = contact?.company ?? "";
   return template
     .replace(/\{\{vars\.([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
       const v = vars[key];
@@ -791,9 +872,47 @@ function interpolateWithContact(
     })
     .replace(/\{\{contact\.name\}\}/gi, name)
     .replace(/\{\{contact\.phone\}\}/gi, phone)
+    .replace(/\{\{contact\.email\}\}/gi, email)
+    .replace(/\{\{contact\.company\}\}/gi, company)
     .replace(/\{\{name\}\}/gi, name)
     .replace(/\{\{phone\}\}/gi, phone)
     .replace(/\{\{number\}\}/gi, phone);
+}
+
+/** Contact shape used by interpolation call sites — see interpolateWithContact. */
+type InterpContact = {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  company: string | null;
+} | null;
+
+/**
+ * Memoized per-invocation contact fetcher — a single call site (e.g. one
+ * `advanceFromNodeKey` pass) can visit many nodes that each want
+ * `{{contact.x}}` interpolation; this fetches at most once and lets
+ * `update_contact` keep the cache in sync via `patch()` so a later node in
+ * the same pass doesn't read a stale value.
+ */
+function createContactGetter(contactId: string | null) {
+  let cache: InterpContact | undefined;
+  return {
+    async get(): Promise<InterpContact> {
+      if (cache !== undefined) return cache;
+      cache = contactId
+        ? await prisma.contact.findUnique({
+            where: { id: contactId },
+            select: { name: true, phone: true, email: true, company: true },
+          })
+        : null;
+      return cache;
+    },
+    patch(partial: Record<string, unknown>): void {
+      if (cache !== undefined && cache !== null) {
+        cache = { ...cache, ...partial } as InterpContact;
+      }
+    },
+  };
 }
 
 /**
@@ -869,6 +988,10 @@ async function advanceFromNodeKey(
   inboundMessage?: ParsedInbound,
 ): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
   let currentKey: string | null = startNodeKey;
+  // Fetched at most once per call — many auto-advancing nodes can be
+  // visited in a single pass, so this avoids a redundant query per node.
+  const contactGetter = createContactGetter(run.contact_id);
+  const getContact = (): Promise<InterpContact> => contactGetter.get();
   // Defensive cap — if a flow has a cycle (which the validator
   // SHOULD catch but doesn't yet in v1), we bail rather than loop.
   for (let safety = 0; safety < 64; safety += 1) {
@@ -903,7 +1026,7 @@ async function advanceFromNodeKey(
           userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
-          text: interpolateVars(cfg.text, run.vars),
+          text: interpolateWithContact(cfg.text, run.vars, await getContact()),
         });
         await logEvent(run.id, "message_sent", node.node_key, {
           node_type: "send_message",
@@ -939,7 +1062,7 @@ async function advanceFromNodeKey(
           kind: (cfg.media_type ?? "image") as import("@/lib/whatsapp/meta-api").MediaKind,
           link: cfg.media_url,
           caption: cfg.caption
-            ? interpolateVars(cfg.caption, run.vars)
+            ? interpolateWithContact(cfg.caption, run.vars, await getContact())
             : undefined,
           filename: cfg.filename,
         });
@@ -969,7 +1092,7 @@ async function advanceFromNodeKey(
           userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
-          text: interpolateVars(cfg.prompt_text, run.vars),
+          text: interpolateWithContact(cfg.prompt_text, run.vars, await getContact()),
         });
         await logEvent(run.id, "message_sent", node.node_key, {
           node_type: "collect_input",
@@ -1114,7 +1237,20 @@ async function advanceFromNodeKey(
       continue;
     }
     if (node.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(run, node);
+      const cfg = node.config as unknown as SendButtonsNodeConfig;
+      if (cfg.mode === "cta") {
+        const { next_node_key } = await sendCtaButtonAndAdvance(
+          run,
+          node,
+          await getContact(),
+        );
+        if (!next_node_key) {
+          return { outcome: "completed" };
+        }
+        currentKey = next_node_key;
+        continue;
+      }
+      await sendButtonsAndSuspend(run, node, await getContact());
       // Persist the new current_node_key via optimistic UPDATE.
       const advanced = await advanceCurrentNodeKey(
         run.id,
@@ -1129,7 +1265,7 @@ async function advanceFromNodeKey(
       return { outcome: "advanced" };
     }
     if (node.node_type === "send_list") {
-      await sendListAndSuspend(run, node);
+      await sendListAndSuspend(run, node, await getContact());
       const advanced = await advanceCurrentNodeKey(
         run.id,
         run.current_node_key,
@@ -1162,7 +1298,7 @@ async function advanceFromNodeKey(
           userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
-          text: interpolateVars(cfg.text ?? "", run.vars),
+          text: interpolateWithContact(cfg.text ?? "", run.vars, await getContact()),
         });
         await logEvent(run.id, "message_sent", node.node_key, {
           node_type: "send_text",
@@ -1184,8 +1320,9 @@ async function advanceFromNodeKey(
     if (node.node_type === "set_variable") {
       const cfg = node.config as { assignments?: Array<{ var_key: string; value: string }>; next_node_key?: string };
       const newVars: Record<string, unknown> = { ...run.vars };
+      const contactForVars = await getContact();
       for (const a of cfg.assignments ?? []) {
-        if (a.var_key) newVars[a.var_key] = interpolateVars(a.value ?? "", run.vars);
+        if (a.var_key) newVars[a.var_key] = interpolateWithContact(a.value ?? "", run.vars, contactForVars);
       }
       await prisma.flowRun.update({ where: { id: run.id }, data: { vars: newVars as Record<string, string> } });
       run = { ...run, vars: newVars };
@@ -1198,12 +1335,15 @@ async function advanceFromNodeKey(
       const cfg = node.config as { field?: string; value?: string; next_node_key?: string };
       if (cfg.field && run.contact_id) {
         const STANDARD = ["name", "email", "company"] as const;
-        const val = interpolateVars(cfg.value ?? "", run.vars);
+        const val = interpolateWithContact(cfg.value ?? "", run.vars, await getContact());
         if ((STANDARD as readonly string[]).includes(cfg.field)) {
           await prisma.contact.update({
             where: { id: run.contact_id },
             data: { [cfg.field]: val },
           }).catch(() => {/* non-fatal */});
+          // Keep the cached contact in sync so a later node in the same
+          // pass that reads {{contact.x}} doesn't see a stale value.
+          contactGetter.patch({ [cfg.field]: val });
         }
       }
       currentKey = cfg.next_node_key ?? "";
@@ -1297,9 +1437,10 @@ async function advanceFromNodeKey(
       if (cfg.table_id) {
         try {
           const recordData: Record<string, unknown> = {};
+          const contactForTable = await getContact();
           for (const m of cfg.field_mappings ?? []) {
             if (m.field_key) {
-              recordData[m.field_key] = interpolateVars(m.value ?? "", run.vars);
+              recordData[m.field_key] = interpolateWithContact(m.value ?? "", run.vars, contactForTable);
             }
           }
           await prisma.dataRecord.create({
@@ -1352,16 +1493,13 @@ async function advanceFromNodeKey(
 
       if (run.contact_id) {
         try {
-          const contact = await prisma.contact.findUnique({
-            where: { id: run.contact_id },
-            select: { id: true, name: true, phone: true },
-          });
+          const contact = await getContact();
           const contactName = contact?.name ?? contact?.phone ?? "Contact";
 
           const action = cfg.action ?? "create_lead";
 
           if (action === "create_lead") {
-            const title = interpolateVars(cfg.lead_title || contactName, run.vars) || contactName;
+            const title = interpolateWithContact(cfg.lead_title || contactName, run.vars, contact) || contactName;
             const leadMode = cfg.lead_mode ?? "upsert";
 
             // "upsert" (default): update the most-recent lead for this contact
@@ -1477,7 +1615,7 @@ async function advanceFromNodeKey(
           } else if (action === "create_followup") {
             const dueHours = cfg.followup_due_hours ?? 24;
             const dueAt = new Date(Date.now() + dueHours * 60 * 60 * 1000);
-            const title = interpolateVars(cfg.followup_title || `Follow up with ${contactName}`, run.vars);
+            const title = interpolateWithContact(cfg.followup_title || `Follow up with ${contactName}`, run.vars, contact);
             // Link the follow-up to the contact's most recent lead so it shows in the lead timeline
             const recentLeadForFollowup = await prisma.lead.findFirst({
               where: { account_id: run.account_id, contact_id: run.contact_id, status: { not: "closed" } },
@@ -1492,7 +1630,7 @@ async function advanceFromNodeKey(
                 lead_id: recentLeadForFollowup?.id ?? null,
                 title,
                 note: cfg.followup_note
-                  ? interpolateVars(cfg.followup_note, run.vars)
+                  ? interpolateWithContact(cfg.followup_note, run.vars, contact)
                   : null,
                 due_at: dueAt,
                 status: "pending",
@@ -1519,7 +1657,7 @@ async function advanceFromNodeKey(
             const dueDays = cfg.task_due_days ?? 1;
             const dueDate = new Date();
             dueDate.setDate(dueDate.getDate() + dueDays);
-            const title = interpolateVars(cfg.task_title || `Task for ${contactName}`, run.vars);
+            const title = interpolateWithContact(cfg.task_title || `Task for ${contactName}`, run.vars, contact);
             // Link task to the contact's most recent active lead
             const recentLeadForTask = await prisma.lead.findFirst({
               where: { account_id: run.account_id, contact_id: run.contact_id, status: { not: "closed" } },
@@ -1534,7 +1672,7 @@ async function advanceFromNodeKey(
                 lead_id: recentLeadForTask?.id ?? null,
                 title,
                 description: cfg.task_description
-                  ? interpolateVars(cfg.task_description, run.vars)
+                  ? interpolateWithContact(cfg.task_description, run.vars, contact)
                   : null,
                 priority: cfg.task_priority || "medium",
                 status: "todo",
@@ -1569,7 +1707,8 @@ async function advanceFromNodeKey(
         error_node_key?: string;
       };
       const method = cfg.method ?? "GET";
-      const url = interpolateVars(cfg.url ?? "", run.vars);
+      const contactForHttp = await getContact();
+      const url = interpolateWithContact(cfg.url ?? "", run.vars, contactForHttp);
       let httpError = false;
       try {
         const reqInit: RequestInit = {
@@ -1577,7 +1716,7 @@ async function advanceFromNodeKey(
           headers: { "Content-Type": "application/json", ...(cfg.headers ?? {}) },
         };
         if (cfg.body && method !== "GET" && method !== "HEAD") {
-          reqInit.body = interpolateVars(cfg.body, run.vars);
+          reqInit.body = interpolateWithContact(cfg.body, run.vars, contactForHttp);
         }
         const resp = await fetch(url, reqInit);
         const text = await resp.text();
@@ -1701,13 +1840,8 @@ async function advanceFromNodeKey(
     // continues to next_node_key regardless so the customer is never blocked.
     if (node.node_type === "send_to_number") {
       const cfg = node.config as { phone?: string; text?: string; next_node_key?: string };
-      // Fetch the contact so {{name}}, {{contact.name}} etc. can be substituted.
-      const contactForInterp = run.contact_id
-        ? await prisma.contact.findUnique({
-            where: { id: run.contact_id },
-            select: { name: true, phone: true },
-          }).catch(() => null)
-        : null;
+      // {{name}}, {{contact.name}} etc. are substituted via the shared getContact() cache.
+      const contactForInterp = await getContact();
       const rawPhone = interpolateWithContact(cfg.phone ?? "", run.vars, contactForInterp);
       const text = interpolateWithContact(cfg.text ?? "", run.vars, contactForInterp);
       if (rawPhone && text) {
@@ -1839,6 +1973,10 @@ async function handleReplyForActiveRun(
   message: ParsedInbound,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
+  // Fetched at most once per call — separate cache from advanceFromNodeKey's,
+  // since this is a different function invocation.
+  const contactGetter = createContactGetter(run.contact_id);
+  const getContact = (): Promise<InterpContact> => contactGetter.get();
   // Note: we intentionally do NOT persist the raw customer text. A
   // `collect_input` prompt that asks "what's your card number?" would
   // otherwise leave the PAN sitting in flow_run_events.payload forever,
@@ -2013,9 +2151,9 @@ async function handleReplyForActiveRun(
   if (action.type === "reprompt") {
     // Re-send the same prompt. Same node, no current_node_key change.
     if (currentNode.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(run, currentNode);
+      await sendButtonsAndSuspend(run, currentNode, await getContact());
     } else if (currentNode.node_type === "send_list") {
-      await sendListAndSuspend(run, currentNode);
+      await sendListAndSuspend(run, currentNode, await getContact());
     } else if (currentNode.node_type === "collect_input") {
       // Customer typed something we couldn't accept (empty after trim,
       // or var_key missing — rare). Re-send the prompt so they try again.
@@ -2026,7 +2164,7 @@ async function handleReplyForActiveRun(
           userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
-          text: interpolateVars(cfg.prompt_text, run.vars),
+          text: interpolateWithContact(cfg.prompt_text, run.vars, await getContact()),
         });
       } catch (err) {
         await logEvent(run.id, "error", currentNode.node_key, {

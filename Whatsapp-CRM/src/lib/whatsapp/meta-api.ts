@@ -874,6 +874,83 @@ export async function sendInteractiveButtons(
   return { messageId: data.messages[0].id }
 }
 
+export interface SendCtaUrlButtonArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  bodyText: string
+  headerText?: string
+  footerText?: string
+  /** Visible label on the button (≤ 20 chars, same cap as reply buttons). */
+  displayText: string
+  /** Destination URL — must be http:// or https://. */
+  url: string
+  contextMessageId?: string
+}
+
+/**
+ * Send a single WhatsApp "CTA URL" button — opens `url` in the customer's
+ * browser when tapped. Unlike sendInteractiveButtons, WhatsApp never
+ * delivers a webhook when this button is tapped (no button_reply event),
+ * so callers must not wait for a reply — treat the send as fire-and-forget
+ * and advance the flow immediately.
+ */
+export async function sendCtaUrlButton(
+  args: SendCtaUrlButtonArgs
+): Promise<MetaSendResult> {
+  const {
+    phoneNumberId, accessToken, to,
+    bodyText, headerText, footerText, displayText, url, contextMessageId,
+  } = args
+  validateInteractiveBody(bodyText)
+  validateInteractiveHeaderFooter(headerText, footerText)
+  if (!displayText) throw new Error('CTA URL button missing displayText.')
+  if (displayText.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
+    throw new Error(
+      `CTA URL button displayText exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`
+    )
+  }
+  if (!url) throw new Error('CTA URL button missing url.')
+  if (!/^https?:\/\//i.test(url)) {
+    throw new Error(`CTA URL button url must start with http:// or https:// (got "${url}").`)
+  }
+
+  const interactive: Record<string, unknown> = {
+    type: 'cta_url',
+    body: { text: bodyText },
+    action: {
+      name: 'cta_url',
+      parameters: { display_text: displayText, url },
+    },
+  }
+  if (headerText) interactive.header = { type: 'text', text: headerText }
+  if (footerText) interactive.footer = { text: footerText }
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const requestUrl = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(requestUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 export interface InteractiveListRow {
   /** Stable id sent back in the webhook when tapped (≤ 200 chars). */
   id: string

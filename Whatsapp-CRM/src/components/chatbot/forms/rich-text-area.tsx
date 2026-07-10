@@ -168,69 +168,73 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
         )}
       </div>
 
-      {/* Variables dropdown */}
-      {vars.length > 0 && (
-        <div className="relative">
-          <button
-            type="button"
-            title="Insert variable"
-            onMouseDown={(e) => { e.preventDefault(); setShowVars((v) => !v); setShowEmoji(false); }}
-            className={cn(
-              "flex h-6 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] font-semibold",
-              "text-teal-700 hover:bg-teal-50 transition-colors",
-              showVars && "bg-teal-50",
-            )}
-          >
-            {"{{x}}"}
-            <ChevronDown className="h-2.5 w-2.5" />
-          </button>
-
-          {showVars && (
-            <div
-              className="absolute bottom-full left-0 z-[100] mb-1 min-w-[190px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
-              onMouseDown={(e) => e.stopPropagation()}
-            >
-              <div className="border-b border-slate-200 px-3 py-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                  Collected variables
-                </p>
-              </div>
-              <div className="py-1 max-h-48 overflow-y-auto">
-                {vars.map((v) => (
-                  <button
-                    key={v}
-                    type="button"
-                    onMouseDown={(e) => { e.preventDefault(); onInsert(`{{${v}}}`); setShowVars(false); }}
-                    className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
-                  >
-                    <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-700">
-                      {`{{${v}}}`}
-                    </span>
-                    <span className="ml-2 text-[10px] text-slate-400 truncate">
-                      → collected answer
-                    </span>
-                  </button>
-                ))}
-                {["contact.name", "contact.phone", "contact.email"].map((cf) => (
-                  <button
-                    key={cf}
-                    type="button"
-                    onMouseDown={(e) => { e.preventDefault(); onInsert(`{{${cf}}}`); setShowVars(false); }}
-                    className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
-                  >
-                    <span className="rounded bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] text-sky-700">
-                      {`{{${cf}}}`}
-                    </span>
-                    <span className="ml-2 text-[10px] text-slate-400 truncate">
-                      contact field
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+      {/* Variables dropdown — always available since contact fields don't
+          depend on any variable existing yet in this chatbot. */}
+      <div className="relative">
+        <button
+          type="button"
+          title="Insert variable"
+          onMouseDown={(e) => { e.preventDefault(); setShowVars((v) => !v); setShowEmoji(false); }}
+          className={cn(
+            "flex h-6 items-center gap-0.5 rounded px-1.5 font-mono text-[10px] font-semibold",
+            "text-teal-700 hover:bg-teal-50 transition-colors",
+            showVars && "bg-teal-50",
           )}
-        </div>
-      )}
+        >
+          {"{{x}}"}
+          <ChevronDown className="h-2.5 w-2.5" />
+        </button>
+
+        {showVars && (
+          <div
+            className="absolute bottom-full left-0 z-[100] mb-1 min-w-[190px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {vars.length > 0 && (
+              <>
+                <div className="border-b border-slate-200 px-3 py-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Chatbot variables
+                  </p>
+                </div>
+                <div className="max-h-40 overflow-y-auto py-1">
+                  {vars.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); onInsert(`{{vars.${v}}}`); setShowVars(false); }}
+                      className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
+                    >
+                      <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-700">
+                        {`{{vars.${v}}}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="border-b border-t border-slate-200 px-3 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Contact fields
+              </p>
+            </div>
+            <div className="py-1 max-h-40 overflow-y-auto">
+              {["contact.name", "contact.phone", "contact.email", "contact.company"].map((cf) => (
+                <button
+                  key={cf}
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); onInsert(`{{${cf}}}`); setShowVars(false); }}
+                  className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
+                >
+                  <span className="rounded bg-sky-500/10 px-1.5 py-0.5 font-mono text-[10px] text-sky-700">
+                    {`{{${cf}}}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -513,22 +517,6 @@ export function VarInput({
     }, 0);
   }
 
-  if (vars.length === 0) {
-    return (
-      <input
-        ref={inputRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={cn(
-          "flex h-8 w-full rounded-md border border-slate-200 bg-white px-3 py-1 text-xs text-slate-800",
-          "placeholder:text-slate-400 focus:outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100",
-          className,
-        )}
-      />
-    );
-  }
-
   return (
     <div className="relative flex items-center gap-1">
       <input
@@ -558,25 +546,36 @@ export function VarInput({
         </button>
         {showVars && (
           <div className="absolute right-0 top-full z-[100] mt-1 min-w-[200px] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-200 px-3 py-1.5">
+            {vars.length > 0 && (
+              <>
+                <div className="border-b border-slate-200 px-3 py-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Chatbot variables
+                  </p>
+                </div>
+                <div className="max-h-40 overflow-y-auto py-1">
+                  {vars.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); insertAt(`{{vars.${v}}}`); setShowVars(false); }}
+                      className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
+                    >
+                      <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-700">
+                        {`{{vars.${v}}}`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="border-b border-t border-slate-200 px-3 py-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Variables
+                Contact fields
               </p>
             </div>
-            <div className="max-h-48 overflow-y-auto py-1">
-              {vars.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); insertAt(`{{${v}}}`); setShowVars(false); }}
-                  className="flex w-full items-center px-3 py-1.5 hover:bg-slate-50 transition-colors"
-                >
-                  <span className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-700">
-                    {`{{${v}}}`}
-                  </span>
-                </button>
-              ))}
-              {["contact.name", "contact.phone", "contact.email"].map((cf) => (
+            <div className="max-h-40 overflow-y-auto py-1">
+              {["contact.name", "contact.phone", "contact.email", "contact.company"].map((cf) => (
                 <button
                   key={cf}
                   type="button"

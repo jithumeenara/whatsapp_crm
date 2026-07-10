@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useCallback, useEffect, useState, useMemo } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft, Users, CheckCircle2, XCircle,
@@ -114,7 +114,7 @@ export default function BroadcastDetailPage() {
   const [exporting, setExporting] = useState(false)
   const [retrying, setRetrying] = useState(false)
 
-  async function load(silent = false) {
+  const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
     else setRefreshing(true)
     try {
@@ -129,9 +129,9 @@ export default function BroadcastDetailPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }
+  }, [id])
 
-  useEffect(() => { load() }, [id])
+  useEffect(() => { load() }, [load])
 
   // Auto-poll while broadcast is actively sending
   useEffect(() => {
@@ -139,7 +139,7 @@ export default function BroadcastDetailPage() {
     if (broadcast.status !== "sending") return
     const timer = setInterval(() => load(true), 4000)
     return () => clearInterval(timer)
-  }, [broadcast?.status])
+  }, [broadcast, load])
 
   async function handleRetryFailed() {
     if (!broadcast) return
