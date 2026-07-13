@@ -75,6 +75,8 @@ import {
   type TextLabelComp,
 } from "@/lib/flows/meta-flow-types";
 
+const MAX_IMAGE_BYTES = 300 * 1024; // Meta's recommended max for base64-embedded Flow images
+
 // ─── Builder context ─────────────────────────────────────────────
 
 interface SaveField { field_key: string; label: string; field_type: string }
@@ -1279,7 +1281,9 @@ function CompLabelSource({
               >
                 <option value="">— choose field —</option>
                 {tableFields.map((f) => (
-                  <option key={f.field_key} value={f.field_key}>{f.label}</option>
+                  <option key={f.field_key} value={f.field_key}>
+                    {f.label} ({f.field_type})
+                  </option>
                 ))}
               </select>
             )
@@ -1289,6 +1293,11 @@ function CompLabelSource({
       {selectedTable && selectedField && (
         <p className="text-[10px] text-teal-600">
           ✓ Fetches first matching value from <span className="font-mono">{selectedField}</span>
+        </p>
+      )}
+      {selectedTable && selectedField && tableFields.find((f) => f.field_key === selectedField)?.field_type === 'boolean' && (
+        <p className="text-[10px] text-amber-600">
+          ⚠ This is a Yes/No field — it will display as literal &quot;true&quot;/&quot;false&quot; text, which is rarely what you want for a label. Pick a text-type field instead.
         </p>
       )}
     </div>
@@ -1584,7 +1593,7 @@ function CompImageForm({
           )}>
             {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
             <span>{uploading ? 'Uploading…' : 'Click to upload image'}</span>
-            <span className="text-[10px] text-slate-400">PNG, JPG, WEBP (hosted on your server)</span>
+            <span className="text-[10px] text-slate-400">PNG, JPG, WEBP · max 300KB (hosted on your server)</span>
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
@@ -1594,6 +1603,10 @@ function CompImageForm({
                 const file = e.target.files?.[0]
                 if (!file) return
                 e.target.value = ''
+                if (file.size > MAX_IMAGE_BYTES) {
+                  toast.error(`Image is ${(file.size / 1024).toFixed(0)}KB — Meta recommends keeping Flow images under 300KB to avoid slow loads or publish failures.`)
+                  return
+                }
                 setUploading(true)
                 try {
                   const formData = new FormData()
@@ -1621,7 +1634,7 @@ function CompImageForm({
         <Label className="text-xs">Scale type</Label>
         <select
           className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs"
-          value={comp['scale-type'] ?? 'contain'}
+          value={comp['scale-type'] ?? 'cover'}
           onChange={(e) => set({ 'scale-type': e.target.value as 'cover' | 'contain' })}
         >
           <option value="contain">Contain</option>

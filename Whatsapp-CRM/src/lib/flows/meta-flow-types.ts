@@ -175,7 +175,7 @@ export function defaultComponent(type: ComponentType): MetaFlowComponent {
     case 'CheckboxGroup':  return { id, type, label: 'Choose options', name: `check_${id}`, required: false, 'data-source': [{ id: 'opt_1', title: 'Option 1' }] }
     case 'Dropdown':       return { id, type, label: 'Select', name: `dropdown_${id}`, required: false, 'data-source': [{ id: 'opt_1', title: 'Option 1' }] }
     case 'DatePicker':     return { id, type, label: 'Select date', name: `date_${id}`, required: false }
-    case 'Image':          return { id, type, src: '', 'scale-type': 'contain' }
+    case 'Image':          return { id, type, src: '', 'scale-type': 'cover' }
     case 'Footer':         return { id, type, label: 'Continue', 'on-click-action': { name: 'complete', payload: {} } }
   }
 }

@@ -164,7 +164,13 @@ async function fetchLabelValue(
 
     const raw = dataObj[fieldKey]
     if (raw != null) {
-      return String(Array.isArray(raw) ? raw[0] : raw).trim()
+      const val = Array.isArray(raw) ? raw[0] : raw
+      // A boolean-type DataStore field mistakenly wired to a TextLabel would
+      // otherwise render the literal word "true"/"false" — format it as
+      // Yes/No instead so a misconfigured field reads sensibly rather than
+      // looking like a JS internal leaking into the UI.
+      if (typeof val === 'boolean') return val ? 'Yes' : 'No'
+      return String(val).trim()
     }
   }
   return ''
