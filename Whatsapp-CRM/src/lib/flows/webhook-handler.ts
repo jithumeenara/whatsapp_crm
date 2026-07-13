@@ -419,20 +419,33 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             const filterByField = c._filter_by_field as string | undefined
             const filterFormName = c._filter_form_name as string | undefined
             const isLabel = c.type === 'TextLabel' && !!c.name
+            // Same rule as the "load" branch below: a component filtered by
+            // a field OTHER than the one that just changed must still resolve
+            // against formData (its own parent may already have a value from
+            // earlier on this screen) rather than only matching the current
+            // trigger — and if its parent has no value yet, show empty, not
+            // an arbitrary unfiltered fallback.
+            const isFiltered = !!(filterByField && filterFormName)
 
             if (isLabel) {
               const varName = makeLabelVarName(String(c.name))
-              if (filterByField && filterFormName === triggerName) {
-                freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, triggerValue)
+              if (isFiltered && filterFormName! in formData) {
+                const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!] ?? ''))
+                freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, ownTriggerValue)
                 console.log('[data_exchange:filter]', varName, '→ label:', freshData[varName])
+              } else if (isFiltered) {
+                freshData[varName] = ''
               } else {
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey)
               }
             } else {
               const varName = makeVarName(fieldKey)
-              if (filterByField && filterFormName === triggerName) {
-                freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
+              if (isFiltered && filterFormName! in formData) {
+                const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!] ?? ''))
+                freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, ownTriggerValue)
                 console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
+              } else if (isFiltered) {
+                freshData[varName] = []
               } else {
                 freshData[varName] = await fetchOptions(tableId, fieldKey)
               }
@@ -476,22 +489,36 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             const filterFormName = c._filter_form_name as string | undefined
             const isLabel = c.type === 'TextLabel' && !!c.name
 
+            // A field with filterByField+filterFormName is *designed* to be
+            // filtered — if the parent's value isn't in formData yet (parent
+            // not selected), it must show empty/waiting, never an unfiltered
+            // fallback (which would surface an arbitrary record's value, as
+            // if that field weren't filtered at all). Unfiltered fetches are
+            // only correct for fields that have no filter config at all.
+            const isFiltered = !!(filterByField && filterFormName)
             if (isLabel) {
               const varName = makeLabelVarName(String(c.name))
-              if (filterByField && filterFormName && filterFormName in formData) {
-                const triggerValue = slugify(String(formData[filterFormName] ?? ''))
+              if (isFiltered && filterFormName! in formData) {
+                const triggerValue = slugify(String(formData[filterFormName!] ?? ''))
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, triggerValue)
+                console.log('[data_exchange:load] filtered label', varName, '=', freshData[varName])
+              } else if (isFiltered) {
+                freshData[varName] = ''
+                console.log('[data_exchange:load]', varName, "→ '' (empty until parent selected)")
               } else {
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey)
+                console.log('[data_exchange:load] label', varName, '=', freshData[varName])
               }
-              console.log('[data_exchange:load] label', varName, '=', freshData[varName])
             } else {
               const varName = makeVarName(fieldKey)
-              if (filterByField && filterFormName && filterFormName in formData) {
-                const triggerValue = slugify(String(formData[filterFormName] ?? ''))
+              if (isFiltered && filterFormName! in formData) {
+                const triggerValue = slugify(String(formData[filterFormName!] ?? ''))
                 const opts = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
                 freshData[varName] = opts
                 console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
+              } else if (isFiltered) {
+                freshData[varName] = []
+                console.log('[data_exchange:load]', varName, '→ [] (empty until parent selected)')
               } else {
                 const opts = await fetchOptions(tableId, fieldKey)
                 freshData[varName] = opts
