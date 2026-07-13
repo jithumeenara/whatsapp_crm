@@ -27,12 +27,14 @@ interface WhatsAppMessage {
   reaction?: { message_id: string; emoji: string }
   /**
    * Set when the customer taps a button or list row on an interactive
-   * message we sent.
+   * message we sent, OR completes a WhatsApp Flow we sent (nfm_reply).
    */
   interactive?: {
-    type: 'button_reply' | 'list_reply'
+    type: 'button_reply' | 'list_reply' | 'nfm_reply'
     button_reply?: { id: string; title: string }
     list_reply?: { id: string; title: string; description?: string }
+    /** Present when the customer submits a WhatsApp Flow's final screen. */
+    nfm_reply?: { response_json: string; body?: string; name?: string }
   }
   /**
    * Present when the customer taps a quick-reply button on a template message.
@@ -546,7 +548,7 @@ async function processMessage(
   }
 
   // Parse message content based on type
-  const { contentText, mediaUrl, mediaType, interactiveReplyId } =
+  const { contentText, mediaUrl, mediaType, interactiveReplyId, flowReply } =
     await parseMessageContent(message, accessToken)
 
   // Resolve swipe-reply context if present.
@@ -703,7 +705,14 @@ async function processMessage(
     conversationId: conversation.id,
     channel: 'whatsapp',
     message:
-      interactiveReplyId
+      flowReply
+        ? {
+            kind: 'flow_reply',
+            flow_token: flowReply.token,
+            response: flowReply.response,
+            meta_message_id: message.id,
+          }
+        : interactiveReplyId
         ? {
             kind: 'interactive_reply',
             reply_id: interactiveReplyId,
@@ -754,6 +763,8 @@ async function parseMessageContent(
   mediaUrl: string | null
   mediaType: string | null
   interactiveReplyId: string | null
+  /** Present only for a completed WhatsApp Flow submission (nfm_reply). */
+  flowReply: { token: string; response: Record<string, unknown> } | null
 }> {
   // Return a proxy URL without calling Meta at webhook time.
   // The /api/whatsapp/media/[mediaId] route fetches the real download URL
@@ -766,6 +777,7 @@ async function parseMessageContent(
     mediaUrl: null,
     mediaType: null,
     interactiveReplyId: null,
+    flowReply: null,
   }
 
   switch (message.type) {
@@ -848,6 +860,23 @@ async function parseMessageContent(
           contentText: reply.title || reply.id,
           interactiveReplyId: reply.id,
         }
+      }
+      const nfm = message.interactive?.nfm_reply
+      if (nfm?.response_json) {
+        try {
+          const parsed = JSON.parse(nfm.response_json) as Record<string, unknown>
+          const { flow_token, ...response } = parsed
+          if (typeof flow_token === 'string' && flow_token) {
+            return {
+              ...empty,
+              contentText: 'Flow submitted',
+              flowReply: { token: flow_token, response },
+            }
+          }
+        } catch (err) {
+          console.warn('[webhook] failed to parse nfm_reply.response_json:', err instanceof Error ? err.message : err)
+        }
+        return { ...empty, contentText: 'Flow submitted' }
       }
       return { ...empty, contentText: '[Interactive reply]' }
     }

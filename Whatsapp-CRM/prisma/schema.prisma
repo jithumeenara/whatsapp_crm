@@ -694,6 +694,11 @@ model FlowRun {
   status                String    @default("active")
   current_node_key      String?
   last_prompt_message_id String?  @db.Uuid
+  /// Set while suspended on a send_flow node, waiting for the customer to
+  /// submit that WhatsApp Flow. Matched against the flow_token WhatsApp
+  /// echoes back in the completed Flow's nfm_reply message so the reply can
+  /// be routed to the correct paused run. Cleared once consumed.
+  pending_flow_token    String?   @unique
   vars                  Json      @default("{}")
   reprompt_count        Int       @default(0)
   started_at            DateTime  @default(now()) @db.Timestamptz(6)

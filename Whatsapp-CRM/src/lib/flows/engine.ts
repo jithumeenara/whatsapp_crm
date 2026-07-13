@@ -32,6 +32,7 @@
  *     INSERT raises P2002 and the runner catches & exits.
  */
 
+import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
@@ -233,6 +234,7 @@ function toFlowRunRow(row: {
   status: string;
   current_node_key: string | null;
   last_prompt_message_id: string | null;
+  pending_flow_token?: string | null;
   vars: unknown;
   reprompt_count: number;
   started_at: Date;
@@ -250,6 +252,7 @@ function toFlowRunRow(row: {
     status: row.status as FlowRunRow["status"],
     current_node_key: row.current_node_key,
     last_prompt_message_id: row.last_prompt_message_id,
+    pending_flow_token: row.pending_flow_token ?? null,
     vars: (row.vars as Record<string, unknown>) ?? {},
     reprompt_count: row.reprompt_count,
     started_at: row.started_at.toISOString(),
@@ -1790,9 +1793,12 @@ async function advanceFromNodeKey(
       return { outcome: "completed" };
     }
 
-    // send_flow — send a Meta WhatsApp Flows interactive message to the customer,
-    // then auto-advance. The flow form submission arrives via the data-exchange
-    // webhook separately and is NOT connected to this run's advance loop.
+    // send_flow — send a Meta WhatsApp Flows interactive message, then
+    // suspend (same pattern as collect_input): current_node_key is pinned
+    // to this node's own key, and a random flow_token is minted and sent
+    // to WhatsApp along with the Flow so the completed submission (an
+    // nfm_reply on the main webhook) can be matched back to this exact
+    // paused run and resumed with the answers loaded into run.vars.
     if (node.node_type === "send_flow") {
       const cfg = node.config as {
         flow_id?: string;
@@ -1804,6 +1810,7 @@ async function advanceFromNodeKey(
       };
       if (cfg.flow_id && run.conversation_id) {
         try {
+          const flowToken = crypto.randomUUID();
           const { whatsapp_message_id } = await engineSendFlow({
             accountId: run.account_id,
             userId: run.user_id,
@@ -1814,6 +1821,11 @@ async function advanceFromNodeKey(
             bodyText: cfg.body_text,
             headerText: cfg.header_text,
             footerText: cfg.footer_text,
+            flowToken,
+          });
+          await prisma.flowRun.update({
+            where: { id: run.id },
+            data: { pending_flow_token: flowToken },
           });
           const { emitToAccount } = await import("@/lib/socket");
           emitToAccount(run.account_id, "message", { eventType: "INSERT" });
@@ -1830,7 +1842,20 @@ async function advanceFromNodeKey(
           await endRun(run.id, "failed", "send_flow_failed");
           return { outcome: "completed" };
         }
+        const advanced = await advanceCurrentNodeKey(
+          run.id,
+          run.current_node_key,
+          node.node_key,
+        );
+        if (!advanced) {
+          await logEvent(run.id, "error", node.node_key, {
+            reason: "lost_race_during_advance",
+          });
+        }
+        return { outcome: "advanced" };
       }
+      // No flow_id configured, or no conversation to send into — nothing
+      // was sent, so there's nothing to wait for; fall through as before.
       currentKey = cfg.next_node_key ?? "";
       continue;
     }
@@ -2099,6 +2124,40 @@ async function handleReplyForActiveRun(
           captured_length: captured.length,
         });
         matched = cfg.next_node_key;
+      } catch {
+        // capture update failed — fall through to fallback
+      }
+    }
+  } else if (
+    message.kind === "flow_reply" &&
+    currentNode.node_type === "send_flow"
+  ) {
+    // Only accept a submission whose token matches the one we minted when
+    // this specific send_flow suspended — guards against a stale/duplicate
+    // nfm_reply (e.g. Meta retry, or a reply to a Flow sent by an earlier,
+    // already-superseded run) being applied to the wrong node.
+    if (run.pending_flow_token && message.flow_token === run.pending_flow_token) {
+      const cfg = currentNode.config as {
+        next_node_key?: string;
+      };
+      // Namespaced with a "flow_" prefix so these sit alongside other
+      // {{vars.x}} without colliding with variables set elsewhere in the
+      // chatbot (e.g. by set_variable or collect_input).
+      const flowVars: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(message.response)) {
+        flowVars[`flow_${key}`] = value;
+      }
+      const newVars = { ...run.vars, ...flowVars };
+      try {
+        await prisma.flowRun.update({
+          where: { id: run.id },
+          data: { vars: newVars as Prisma.InputJsonValue, pending_flow_token: null },
+        });
+        run.vars = newVars;
+        await logEvent(run.id, "node_entered", currentNode.node_key, {
+          captured_flow_vars: Object.keys(flowVars),
+        });
+        matched = cfg.next_node_key ?? null;
       } catch {
         // capture update failed — fall through to fallback
       }

@@ -6,6 +6,7 @@
  */
 
 import { useId, useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import {
   Plus,
   Trash2,
@@ -23,6 +24,8 @@ import {
   Image as ImageIcon,
   Loader2,
   RefreshCw,
+  Copy,
+  Code2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1882,6 +1885,26 @@ function LinkChatbotForm({ cfg, onChange }: FormProps) {
 interface MetaFlowOption {
   metaFlowId: string;
   name: string;
+  /** Every named input field across all of this flow's screens (Labels/Footers/Images excluded). */
+  namedFields: string[];
+}
+
+// Mirrors the same exclusions upload/route.ts uses when building the
+// published JSON's namedFields — TextLabel/Footer/Image never carry a
+// user-entered value, so they can't become a {{vars.flow_x}} either.
+function extractNamedFields(screens: unknown): string[] {
+  if (!Array.isArray(screens)) return [];
+  const names = new Set<string>();
+  for (const screen of screens) {
+    const comps = (screen as Record<string, unknown> | null)?.components;
+    if (!Array.isArray(comps)) continue;
+    for (const comp of comps) {
+      const c = comp as Record<string, unknown>;
+      if (c.type === "TextLabel" || c.type === "Footer" || c.type === "Image") continue;
+      if (typeof c.name === "string" && c.name) names.add(c.name);
+    }
+  }
+  return Array.from(names);
 }
 
 function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
@@ -1897,6 +1920,7 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           .map((f) => ({
             metaFlowId: String(f.trigger_config.meta_flow_id),
             name: f.name,
+            namedFields: extractNamedFields(f.trigger_config?.screens),
           }));
         setFlows(opts);
       })
@@ -1981,8 +2005,55 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         allNodes={allNodes}
         currentKey={nodeKey}
         onChange={(v) => onChange({ ...cfg, next_node_key: v })}
-        hint="Runs after the user submits the flow."
+        hint="Runs after the user submits the flow, with the customer's answers already loaded — see variables below."
       />
+      {(() => {
+        const selected = flows.find((f) => f.metaFlowId === String(cfg.flow_id ?? ""));
+        if (!selected || selected.namedFields.length === 0) return null;
+        const tokenFor = (name: string) => `{{vars.flow_${name}}}`;
+        const copy = (text: string, label: string) => {
+          navigator.clipboard.writeText(text);
+          toast.success(`Copied ${label}`);
+        };
+        return (
+          <div className="rounded-md border border-teal-200 bg-teal-50/50 overflow-hidden">
+            <div className="flex items-center gap-1.5 px-2.5 py-2 border-b border-teal-200">
+              <Code2 className="h-3.5 w-3.5 text-teal-700" />
+              <span className="text-[11px] font-semibold text-teal-800">Available after this flow completes</span>
+            </div>
+            <div className="px-2.5 py-2.5 space-y-2">
+              <p className="text-[10px] text-slate-600">
+                Once the customer submits this flow, use these in any later step (e.g. a &quot;Send Text&quot; node) to show back what they entered — click a token to copy it.
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {selected.namedFields.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => copy(tokenFor(name), tokenFor(name))}
+                    className="flex items-center gap-1 rounded-full border border-teal-300 bg-white px-2 py-0.5 font-mono text-[10px] text-teal-700 hover:bg-teal-100 transition-colors"
+                    title="Click to copy"
+                  >
+                    <Copy className="h-2.5 w-2.5" />
+                    {tokenFor(name)}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const sample: Record<string, string> = {};
+                  for (const name of selected.namedFields) sample[`flow_${name}`] = "<value the customer entered>";
+                  copy(JSON.stringify(sample, null, 2), "sample JSON");
+                }}
+                className="flex h-7 items-center gap-1 rounded border border-teal-300 bg-white px-2 text-[10px] text-teal-700 hover:bg-teal-100 transition-colors"
+              >
+                <Code2 className="h-3 w-3" /> Copy sample JSON
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

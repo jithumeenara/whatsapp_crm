@@ -327,6 +327,8 @@ export interface FlowRunRow {
     | "failed";
   current_node_key: string | null;
   last_prompt_message_id: string | null;
+  /** Set while suspended on a send_flow node — see FlowRun.pending_flow_token. */
+  pending_flow_token: string | null;
   vars: Record<string, unknown>;
   reprompt_count: number;
   started_at: string;
@@ -380,6 +382,15 @@ export type ParsedInbound =
       reply_id: string;
       /** The visible title of the tapped option (for logging). */
       reply_title: string;
+      meta_message_id: string;
+    }
+  | {
+      kind: "flow_reply";
+      /** The flow_token WhatsApp echoes back from nfm_reply — correlates
+       *  this submission to the FlowRun.pending_flow_token that sent it. */
+      flow_token: string;
+      /** The completed Flow's submitted field values (parsed response_json). */
+      response: Record<string, unknown>;
       meta_message_id: string;
     };
 
