@@ -32,6 +32,72 @@ function makeLabelVarName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
 }
 
+// A Label component can now bind MULTIPLE named data sources into one text
+// template (plain text + several {{token}} placeholders). Each source gets
+// its own data-model variable, namespaced by both the label's name and the
+// token id so two different labels can reuse the same token name.
+function makeMultiLabelVarName(labelName: string, sourceId: string): string {
+  const a = labelName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  const b = sourceId.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  return `${a}_${b}_label`
+}
+
+interface LabelSourceConfig {
+  id: string
+  table_id: string
+  field_key: string
+  filter_form_name?: string
+  filter_by_field?: string
+}
+
+interface ResolvedSource {
+  varName: string
+  tableId: string
+  fieldKey: string
+  filterByField?: string
+  filterFormName?: string
+  isLabel: boolean
+}
+
+// Reads a component's data bindings — either the new multi-source `_sources`
+// array (Label components with plain text + multiple {{token}} values), or
+// the legacy single-source fields every other dynamic component (and older
+// Label components saved before multi-source existed) still use. Returns one
+// entry per binding, so callers can treat "one component, several sources"
+// and "one component, one source" identically.
+function flattenComponentSources(c: Record<string, unknown>): ResolvedSource[] {
+  const isLabel = c.type === 'TextLabel' && !!c.name
+  const name = c.name as string | undefined
+
+  if (isLabel && name) {
+    const sources = c._sources as LabelSourceConfig[] | undefined
+    if (Array.isArray(sources) && sources.length > 0) {
+      return sources
+        .filter((s) => s.table_id && s.field_key)
+        .map((s) => ({
+          varName: makeMultiLabelVarName(name, s.id),
+          tableId: s.table_id,
+          fieldKey: s.field_key,
+          filterByField: s.filter_by_field,
+          filterFormName: s.filter_form_name,
+          isLabel: true,
+        }))
+    }
+  }
+
+  const tableId = c._source_table_id as string | undefined
+  const fieldKey = c._source_field_key as string | undefined
+  if (!tableId || !fieldKey) return []
+  return [{
+    varName: isLabel ? makeLabelVarName(String(name)) : makeVarName(fieldKey),
+    tableId,
+    fieldKey,
+    filterByField: c._filter_by_field as string | undefined,
+    filterFormName: c._filter_form_name as string | undefined,
+    isLabel,
+  }]
+}
+
 function slugify(val: string): string {
   return val.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
@@ -450,15 +516,11 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           // its parent missing and wrongly collapse it back to the empty
           // placeholder-only list, wiping out the selection the user just
           // made (dropdown resets right after picking a value).
-          .filter((c) => c._source_table_id && c._source_field_key && c !== filterTrigger)
-          .map(async (c) => {
-            const tableId = c._source_table_id as string
-            const fieldKey = c._source_field_key as string
-            const filterByField = c._filter_by_field as string | undefined
-            const filterFormName = c._filter_form_name as string | undefined
-            const isLabel = c.type === 'TextLabel' && !!c.name
-            // Same rule as the "load" branch below: a component filtered by
-            // a field OTHER than the one that just changed must still resolve
+          .filter((c) => c !== filterTrigger)
+          .flatMap((c) => flattenComponentSources(c))
+          .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel }) => {
+            // Same rule as the "load" branch below: a source filtered by a
+            // field OTHER than the one that just changed must still resolve
             // against formData (its own parent may already have a value from
             // earlier on this screen) rather than only matching the current
             // trigger — and if its parent has no value yet, show empty, not
@@ -466,7 +528,6 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             const isFiltered = !!(filterByField && filterFormName)
 
             if (isLabel) {
-              const varName = makeLabelVarName(String(c.name))
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, ownTriggerValue)
@@ -477,7 +538,6 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey)
               }
             } else {
-              const varName = makeVarName(fieldKey)
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
                 freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, ownTriggerValue)
@@ -506,7 +566,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
         : screens.find((s) => {
             if (s.id === submittedScreen?.id) return false
             const comps = flatComps(s.components ?? [])
-            return comps.some((c) => c._source_table_id || c._save_field_key)
+            return comps.some((c) => c._source_table_id || c._save_field_key || (Array.isArray(c._sources) && (c._sources as unknown[]).length > 0))
           }) ?? screens.find((s) => s.id !== submittedScreen?.id)
 
       if (!formScreen) {
@@ -519,15 +579,9 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       const freshData: Record<string, unknown> = {}
       await Promise.all(
         flatComps(formScreen.components ?? [])
-          .filter((c) => c._source_table_id && c._source_field_key)
-          .map(async (c) => {
-            const tableId = c._source_table_id as string
-            const fieldKey = c._source_field_key as string
-            const filterByField = c._filter_by_field as string | undefined
-            const filterFormName = c._filter_form_name as string | undefined
-            const isLabel = c.type === 'TextLabel' && !!c.name
-
-            // A field with filterByField+filterFormName is *designed* to be
+          .flatMap((c) => flattenComponentSources(c))
+          .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel }) => {
+            // A source with filterByField+filterFormName is *designed* to be
             // filtered — if the parent's value isn't in formData yet (parent
             // not selected), it must show empty/waiting, never an unfiltered
             // fallback (which would surface an arbitrary record's value, as
@@ -535,7 +589,6 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             // only correct for fields that have no filter config at all.
             const isFiltered = !!(filterByField && filterFormName)
             if (isLabel) {
-              const varName = makeLabelVarName(String(c.name))
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, triggerValue)
@@ -548,7 +601,6 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
                 console.log('[data_exchange:load] label', varName, '=', freshData[varName])
               }
             } else {
-              const varName = makeVarName(fieldKey)
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
                 const opts = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
@@ -652,20 +704,16 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
 
   function collectSources(comps: Array<Record<string, unknown>>) {
     for (const comp of comps) {
-      const tableId = comp._source_table_id as string | undefined
-      const fieldKey = comp._source_field_key as string | undefined
-      if (tableId && fieldKey) {
-        const isLabel = comp.type === 'TextLabel' && !!comp.name
-        // Use a unique key that includes the label name so multiple labels on same
-        // table+field get separate entries
-        const key = isLabel ? `label::${tableId}::${fieldKey}::${comp.name}` : `${tableId}::${fieldKey}`
-        if (!sources.has(key)) {
-          sources.set(key, {
-            tableId,
-            fieldKey,
-            varName: isLabel ? makeLabelVarName(String(comp.name)) : makeVarName(fieldKey),
-            isFiltered: !!(comp._filter_form_name),
-            isLabel,
+      for (const src of flattenComponentSources(comp)) {
+        // varName is already unique per label+token (or table+field for
+        // options), so it doubles as the dedup key.
+        if (!sources.has(src.varName)) {
+          sources.set(src.varName, {
+            tableId: src.tableId,
+            fieldKey: src.fieldKey,
+            varName: src.varName,
+            isFiltered: !!src.filterFormName,
+            isLabel: src.isLabel,
           })
         }
       }

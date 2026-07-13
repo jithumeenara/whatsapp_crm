@@ -146,6 +146,22 @@ function makeLabelVarName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
 }
 
+// Mirrors the naming scheme in webhook-handler.ts — must stay in sync so the
+// ${data.X} tokens generated here match the keys the webhook populates.
+function makeMultiLabelVarName(labelName: string, sourceId: string): string {
+  const a = labelName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  const b = sourceId.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  return `${a}_${b}_label`
+}
+
+interface LabelSourceConfig {
+  id: string
+  table_id: string
+  field_key: string
+  filter_form_name?: string
+  filter_by_field?: string
+}
+
 // If the flow uses data_exchange (endpoint submit) but has no terminal screen,
 // auto-append a SUCCESS screen so Meta's "Terminal screen is required" error is avoided.
 function ensureTerminalScreen(
@@ -285,12 +301,20 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     const labelVars: Record<string, unknown> = {}
     for (const comp of screen.components) {
       const c = comp as Record<string, unknown>
-      if (c._source_table_id && c._source_field_key) {
-        if (c.type === 'TextLabel' && c.name) {
+      if (c.type === 'TextLabel' && c.name) {
+        const sources = c._sources as LabelSourceConfig[] | undefined
+        if (Array.isArray(sources) && sources.length > 0) {
+          for (const s of sources) {
+            if (!s.table_id || !s.field_key) continue
+            labelVars[makeMultiLabelVarName(String(c.name), s.id)] = { type: 'string', '__example__': 'Label text' }
+            hasDynamicData = true
+          }
+        } else if (c._source_table_id && c._source_field_key) {
           labelVars[makeLabelVarName(String(c.name))] = { type: 'string', '__example__': 'Label text' }
-        } else {
-          vars[makeVarName(String(c._source_field_key))] = makeDynamicDecl()
+          hasDynamicData = true
         }
+      } else if (c._source_table_id && c._source_field_key) {
+        vars[makeVarName(String(c._source_field_key))] = makeDynamicDecl()
         hasDynamicData = true
       }
     }
@@ -327,9 +351,21 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       const { id: _id, ...raw } = comp
 
       // TextLabel: CRM-only component — convert to TextBody for Meta.
-      // If it has a data source, inject the dynamic ${data.varName} reference.
       if (raw.type === 'TextLabel') {
         const labelName = raw.name as string | undefined
+        const sources = raw._sources as LabelSourceConfig[] | undefined
+        if (Array.isArray(sources) && sources.length > 0 && labelName) {
+          // Multi-source: replace each {{token}} in the template with its own
+          // ${data.X} reference, leaving surrounding plain text untouched.
+          let text = String(raw.text ?? '')
+          for (const s of sources) {
+            if (!s.table_id || !s.field_key) continue
+            const token = new RegExp(`\\{\\{\\s*${s.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}\\}`, 'g')
+            text = text.replace(token, `\${data.${makeMultiLabelVarName(labelName, s.id)}}`)
+          }
+          return { type: 'TextBody', text }
+        }
+        // Legacy single-source: the whole text is replaced by one reference.
         if (raw._source_table_id && raw._source_field_key && labelName) {
           return { type: 'TextBody', text: `\${data.${makeLabelVarName(labelName)}}` }
         }

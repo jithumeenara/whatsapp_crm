@@ -38,17 +38,36 @@ export interface TextSubheadingComp { id: string; type: 'TextSubheading'; text: 
 export interface TextBodyComp     { id: string; type: 'TextBody';       text: string }
 export interface TextCaptionComp  { id: string; type: 'TextCaption';    text: string }
 
-/** CRM-only: displays a single text value fetched dynamically from a DataStore table. */
+/** One named data binding inside a Label's text template — matches a {{token}} in `text`. */
+export interface LabelSource {
+  id: string                  // token name — {{id}} in `text` gets replaced by this source's value
+  table_id: string
+  field_key: string
+  filter_form_name?: string   // name of parent Dropdown that triggers filter, for this source only
+  filter_by_field?: string    // DataStore column that stores the parent's value, for this source only
+}
+
+/**
+ * CRM-only: displays text dynamically fetched from DataStore. `text` can be
+ * plain static copy, or a template mixing plain text with {{token}}
+ * placeholders — one per entry in `_sources`, each independently bound to
+ * its own table/field/filter (e.g. "Coordinator: {{coordinator}}, Phone:
+ * {{phone}}" with two sources named "coordinator" and "phone").
+ */
 export interface TextLabelComp {
   id: string; type: 'TextLabel'
-  text: string              // static fallback / display text
+  text: string              // static text, or a template with {{token}} placeholders
   name: string              // internal variable name for dynamic data (e.g. "prog_label")
   /** CRM-only: which Data source tab is selected — independent of whether a table has been picked yet */
   _source_mode?: 'static' | 'network'
+  /** New multi-source bindings. When present and non-empty, this takes priority over the legacy single-source fields below. */
+  _sources?: LabelSource[]
+  // Legacy single-source fields — kept so labels created before multi-source
+  // existed keep working unchanged. New labels should use `_sources` instead.
   _source_table_id?: string
   _source_field_key?: string
-  _filter_form_name?: string  // name of parent Dropdown that triggers filter
-  _filter_by_field?: string   // DataStore column that stores the parent's value
+  _filter_form_name?: string
+  _filter_by_field?: string
 }
 
 export interface TextInputComp {
