@@ -443,7 +443,14 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       const freshData: Record<string, unknown> = {}
       await Promise.all(
         submittedComps
-          .filter((c) => c._source_table_id && c._source_field_key)
+          // Exclude the trigger itself: when a component is BOTH a filtered
+          // child (of e.g. Month) AND a filter trigger (for e.g. Coordinator),
+          // its own on-select payload only carries ITS OWN field — not its
+          // parent's value. Recomputing its own data-source here would see
+          // its parent missing and wrongly collapse it back to the empty
+          // placeholder-only list, wiping out the selection the user just
+          // made (dropdown resets right after picking a value).
+          .filter((c) => c._source_table_id && c._source_field_key && c !== filterTrigger)
           .map(async (c) => {
             const tableId = c._source_table_id as string
             const fieldKey = c._source_field_key as string
