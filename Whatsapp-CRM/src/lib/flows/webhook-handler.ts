@@ -40,9 +40,25 @@ function slugify(val: string): string {
 // payload, even ones the user hasn't touched yet — as an empty string, not
 // an absent key. So `key in formData` is true long before the user actually
 // picks a value; only a genuinely non-empty value means the parent is set.
+//
+// Worse: when a Dropdown's data-source is refreshed dynamically (e.g. a
+// filtered child whose options just changed because its own parent changed),
+// the WhatsApp client can silently bind that Dropdown's internal form value
+// to the FIRST item of the new list — and if that Dropdown also has its own
+// on-select-action (because it's itself a filter trigger for something else),
+// the action fires for real with this phantom value, with no visible
+// selection in the UI and no genuine user tap. UNSELECTED_OPTION_ID is
+// prepended to every dynamic options list specifically so this phantom
+// default lands on an inert placeholder instead of a real record.
+const UNSELECTED_OPTION_ID = '__unselected__'
+// Used in place of a bare [] wherever a filtered dropdown has no parent value
+// yet — keeps the field a usable, non-empty (but non-selectable) dropdown
+// rather than one with zero options.
+const EMPTY_FILTERED_OPTIONS = [{ id: UNSELECTED_OPTION_ID, title: 'Select…', enabled: false }]
+
 function hasFormValue(formData: Record<string, unknown>, key: string): boolean {
   const v = formData[key]
-  return v != null && String(v).trim() !== ''
+  return v != null && String(v).trim() !== '' && v !== UNSELECTED_OPTION_ID
 }
 
 async function fetchOptions(
@@ -50,7 +66,7 @@ async function fetchOptions(
   fieldKey: string,
   filterField?: string,
   filterValue?: string,
-): Promise<Array<{ id: string; title: string }>> {
+): Promise<Array<{ id: string; title: string; enabled?: boolean }>> {
   let resolvedFilterField = filterField
   if (filterField) {
     try {
@@ -121,7 +137,7 @@ async function fetchOptions(
     }
   }
 
-  return options
+  return [{ id: UNSELECTED_OPTION_ID, title: 'Select…', enabled: false }, ...options]
 }
 
 /** Fetches a single text value from a DataStore table for TextLabel components. */
@@ -460,7 +476,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
                 freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, ownTriggerValue)
                 console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
               } else if (isFiltered) {
-                freshData[varName] = []
+                freshData[varName] = EMPTY_FILTERED_OPTIONS
               } else {
                 freshData[varName] = await fetchOptions(tableId, fieldKey)
               }
@@ -532,7 +548,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
                 freshData[varName] = opts
                 console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
               } else if (isFiltered) {
-                freshData[varName] = []
+                freshData[varName] = EMPTY_FILTERED_OPTIONS
                 console.log('[data_exchange:load]', varName, '→ [] (empty until parent selected)')
               } else {
                 const opts = await fetchOptions(tableId, fieldKey)
@@ -670,7 +686,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       } else {
         if (isFiltered) {
           console.log(`[webhook] ${varName}: filtered child → [] (empty until parent selected)`)
-          responseData[varName] = []
+          responseData[varName] = EMPTY_FILTERED_OPTIONS
         } else {
           const opts = await fetchOptions(tableId, fieldKey)
           console.log(`[webhook] ${varName}: ${opts.length} options`)
