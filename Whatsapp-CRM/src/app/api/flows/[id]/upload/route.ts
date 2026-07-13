@@ -1,36 +1,49 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { readFile } from 'fs/promises'
-import { join as pathJoin, extname } from 'path'
+import { join as pathJoin } from 'path'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
 const UPLOADS_DIR = pathJoin(process.cwd(), 'uploads')
 
-const IMAGE_EXT_MIME: Record<string, string> = {
-  jpg: 'image/jpeg', jpeg: 'image/jpeg',
-  png: 'image/png', webp: 'image/webp', gif: 'image/gif',
-}
-
-/** Converts a /api/files/... URL to a base64 data URI by reading from disk. */
+/**
+ * Converts a /api/files/... URL to a raw base64 string by reading from disk.
+ *
+ * Meta's Image component spec defines `src` as "Base64 of an image" — a
+ * bare base64 string, NOT a `data:<mime>;base64,` URI. Sending the data-URI
+ * form (which is what a browser <img src> needs) makes Meta's renderer show
+ * a broken-image placeholder — confirmed via a real Flow JSON upload where
+ * the with-prefix form failed to render in both Meta's own preview and the
+ * live WhatsApp client, while the same file displays fine in this app's own
+ * local editor preview (which uses a plain <img> tag, where the prefix IS
+ * required — different consumer, different format).
+ */
 async function imageUrlToBase64(src: string): Promise<string> {
-  if (!src || src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://')) {
-    return src
+  if (!src) return src
+  if (src.startsWith('data:')) {
+    // Already a data URI (e.g. a legacy/manually-set value) — strip the
+    // prefix down to the raw base64 payload Meta expects.
+    const commaIdx = src.indexOf(',')
+    return commaIdx === -1 ? src : src.slice(commaIdx + 1)
   }
   if (src.startsWith('/api/files/')) {
     const relativePath = src.replace(/^\/api\/files\//, '')
     const filePath = pathJoin(UPLOADS_DIR, relativePath)
     try {
       const data = await readFile(filePath)
-      const ext = extname(filePath).replace('.', '').toLowerCase()
-      const mime = IMAGE_EXT_MIME[ext] ?? 'image/jpeg'
-      return `data:${mime};base64,${data.toString('base64')}`
+      return data.toString('base64')
     } catch (err) {
       console.warn('[upload] Cannot read image for base64:', filePath, (err as Error).message)
     }
   }
-  // Fallback: make relative URL absolute
+  // Fallback: make relative URL absolute. Not valid per Meta's schema
+  // (src must be base64, not a URL) — this only avoids crashing when the
+  // file genuinely can't be read; the Image component itself gets dropped
+  // downstream (transformScreensForMeta strips Image components with a
+  // falsy src, but an absolute URL is truthy, so this path still uploads
+  // an invalid src). Surfacing this as a hard failure is tracked separately.
   const baseUrl = (process.env.NEXTAUTH_URL ?? '').replace(/\/$/, '')
   return `${baseUrl}${src}`
 }

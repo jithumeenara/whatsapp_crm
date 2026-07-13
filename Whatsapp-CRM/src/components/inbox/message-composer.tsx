@@ -332,7 +332,7 @@ export function MessageComposer({
               ? "Read-only — viewers can browse but not reply"
               : sessionExpired
                 ? "Session expired - use a template"
-                : "Type a message... (Shift+Enter for new line)"
+                : "Type a message..."
           }
           disabled={sessionExpired || readOnly}
           rows={1}
@@ -356,7 +356,7 @@ export function MessageComposer({
       </div>
 
       <p className="mt-1 pl-[46px] text-[10px] text-slate-600 hidden sm:block">
-        Type &apos;/&apos; for quick replies
+        Type &apos;/&apos; for quick replies · Shift+Enter for new line
       </p>
 
       <FileManagerPicker
