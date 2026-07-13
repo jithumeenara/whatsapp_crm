@@ -36,6 +36,15 @@ function slugify(val: string): string {
   return val.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 }
 
+// Meta's client includes every declared form field in the data_exchange
+// payload, even ones the user hasn't touched yet — as an empty string, not
+// an absent key. So `key in formData` is true long before the user actually
+// picks a value; only a genuinely non-empty value means the parent is set.
+function hasFormValue(formData: Record<string, unknown>, key: string): boolean {
+  const v = formData[key]
+  return v != null && String(v).trim() !== ''
+}
+
 async function fetchOptions(
   tableId: string,
   fieldKey: string,
@@ -435,8 +444,8 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
 
             if (isLabel) {
               const varName = makeLabelVarName(String(c.name))
-              if (isFiltered && filterFormName! in formData) {
-                const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!] ?? ''))
+              if (isFiltered && hasFormValue(formData, filterFormName!)) {
+                const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, ownTriggerValue)
                 console.log('[data_exchange:filter]', varName, '→ label:', freshData[varName])
               } else if (isFiltered) {
@@ -446,8 +455,8 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
               }
             } else {
               const varName = makeVarName(fieldKey)
-              if (isFiltered && filterFormName! in formData) {
-                const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!] ?? ''))
+              if (isFiltered && hasFormValue(formData, filterFormName!)) {
+                const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
                 freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, ownTriggerValue)
                 console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
               } else if (isFiltered) {
@@ -504,8 +513,8 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             const isFiltered = !!(filterByField && filterFormName)
             if (isLabel) {
               const varName = makeLabelVarName(String(c.name))
-              if (isFiltered && filterFormName! in formData) {
-                const triggerValue = slugify(String(formData[filterFormName!] ?? ''))
+              if (isFiltered && hasFormValue(formData, filterFormName!)) {
+                const triggerValue = slugify(String(formData[filterFormName!]))
                 freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, triggerValue)
                 console.log('[data_exchange:load] filtered label', varName, '=', freshData[varName])
               } else if (isFiltered) {
@@ -517,8 +526,8 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
               }
             } else {
               const varName = makeVarName(fieldKey)
-              if (isFiltered && filterFormName! in formData) {
-                const triggerValue = slugify(String(formData[filterFormName!] ?? ''))
+              if (isFiltered && hasFormValue(formData, filterFormName!)) {
+                const triggerValue = slugify(String(formData[filterFormName!]))
                 const opts = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
                 freshData[varName] = opts
                 console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
