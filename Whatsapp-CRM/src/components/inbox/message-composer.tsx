@@ -184,7 +184,10 @@ export function MessageComposer({
   }, [onSendMedia]);
 
   return (
-    <div className="border-t border-slate-200 bg-white p-3">
+    <div
+      className="border-t border-slate-200 bg-white p-2.5 sm:p-3"
+      style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
+    >
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -239,30 +242,15 @@ export function MessageComposer({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
-        {/* Template button — WhatsApp only */}
-        {channel !== 'instagram' && channel !== 'facebook' && (
+      <div className="flex items-end gap-1.5 sm:gap-2">
+        {/* Attachment button + popover — hosts file uploads and (WhatsApp only) message templates */}
+        <div className="relative shrink-0">
           <GatedButton
             variant="ghost"
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            title={readOnly ? undefined : "Send template"}
-            className="h-9 w-9 shrink-0 p-0 text-slate-500 hover:text-slate-800"
-            onClick={onOpenTemplates}
-          >
-            <LayoutTemplate className="h-4 w-4" />
-          </GatedButton>
-        )}
-
-        {/* Attachment button + popover */}
-        <div className="relative shrink-0">
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly && !sessionExpired}
-            gateReason="send messages"
-            title="Attach file"
+            title="Attach"
             className="h-9 w-9 p-0 text-slate-500 hover:text-slate-800"
             onClick={() => setAttachOpen((o) => !o)}
             disabled={uploading}
@@ -279,8 +267,25 @@ export function MessageComposer({
               {/* Backdrop */}
               <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
               {/* Menu */}
-              <div className="absolute bottom-11 left-0 z-20 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                {/* Device options */}
+              <div className="absolute bottom-11 left-0 z-20 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                {/* Message template — always available, WhatsApp only. This is the
+                    one way to message a contact once the 24h session has expired,
+                    so it must stay reachable even while everything below is gated. */}
+                {channel !== 'instagram' && channel !== 'facebook' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { setAttachOpen(false); onOpenTemplates(); }}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
+                    >
+                      <LayoutTemplate className="h-4 w-4 shrink-0 text-amber-500" />
+                      Message Template
+                    </button>
+                    <div className="mx-3 my-1 border-t border-slate-100" />
+                  </>
+                )}
+                {/* Device / File Manager options — need an open 24h session, same
+                    restriction as free text, so these are disabled once it expires. */}
                 <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                   From Device
                 </div>
@@ -288,10 +293,12 @@ export function MessageComposer({
                   <button
                     key={key}
                     type="button"
+                    disabled={sessionExpired}
                     onClick={() => openFilePicker(key, accept)}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
+                    title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
                   >
-                    <Icon className={cn("h-4 w-4 shrink-0", color)} />
+                    <Icon className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : color)} />
                     {label}
                   </button>
                 ))}
@@ -302,10 +309,12 @@ export function MessageComposer({
                 </div>
                 <button
                   type="button"
+                  disabled={sessionExpired}
                   onClick={() => { setAttachOpen(false); setFilePickerOpen(true); }}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
+                  title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
+                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
                 >
-                  <FolderOpen className="h-4 w-4 shrink-0 text-indigo-500" />
+                  <FolderOpen className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : "text-indigo-500")} />
                   Browse Files
                 </button>
               </div>
@@ -346,7 +355,7 @@ export function MessageComposer({
         </GatedButton>
       </div>
 
-      <p className="mt-1 pl-[88px] text-[10px] text-slate-600">
+      <p className="mt-1 pl-[46px] text-[10px] text-slate-600 hidden sm:block">
         Type &apos;/&apos; for quick replies
       </p>
 

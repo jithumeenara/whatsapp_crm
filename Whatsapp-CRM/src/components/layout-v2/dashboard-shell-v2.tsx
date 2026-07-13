@@ -8,10 +8,18 @@ import { SidebarV2 } from "./sidebar-v2";
 import { Menu } from "lucide-react";
 import type React from "react";
 
-/** Lets child pages hide the mobile shell top bar (e.g. inbox thread view). */
-const MobileBarCtx = createContext<{ hide: () => void; show: () => void }>({
+/**
+ * Lets child pages hide the mobile shell top bar (e.g. inbox thread view)
+ * and close the mobile nav drawer. The drawer close is needed because the
+ * drawer's own auto-close effect only watches the route's pathname —
+ * navigating within the same page (e.g. inbox switching `?c=<id>` between
+ * conversations) doesn't change the pathname, so a drawer left open before
+ * that switch would otherwise stay open, floating over the new content.
+ */
+const MobileBarCtx = createContext<{ hide: () => void; show: () => void; closeSidebar: () => void }>({
   hide: () => {},
   show: () => {},
+  closeSidebar: () => {},
 });
 export function useMobileBar() { return useContext(MobileBarCtx); }
 
@@ -47,7 +55,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const hideBar = useCallback(() => setMobileBarHidden(true), []);
   const showBar = useCallback(() => setMobileBarHidden(false), []);
-  const mobileBarCtx = useMemo(() => ({ hide: hideBar, show: showBar }), [hideBar, showBar]);
+  const mobileBarCtx = useMemo(
+    () => ({ hide: hideBar, show: showBar, closeSidebar }),
+    [hideBar, showBar, closeSidebar],
+  );
 
   // Apply light CSS vars to document.body so portal-rendered elements
   // (Dialog, Popover, DropdownMenu, etc.) also get the light palette.
@@ -67,7 +78,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
+      <div className="flex h-dvh items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-3">
           <div className="h-8 w-8 animate-spin rounded-full border-[2.5px] border-indigo-600 border-t-transparent" />
           <p className="text-[13px] text-slate-500">Loading…</p>
@@ -80,7 +91,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
   return (
     <MobileBarCtx.Provider value={mobileBarCtx}>
-      <div className="flex h-screen overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: "Inter, sans-serif", ...LIGHT_VARS }}>
+      <div className="flex h-dvh overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: "Inter, sans-serif", ...LIGHT_VARS }}>
         <SidebarV2
           open={sidebarOpen}
           onClose={closeSidebar}

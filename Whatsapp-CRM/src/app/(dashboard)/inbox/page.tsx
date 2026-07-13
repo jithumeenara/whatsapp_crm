@@ -24,7 +24,7 @@ function InboxV2Content() {
   // Mobile: show list or thread
   const [mobileView, setMobileView] = useState<"list" | "thread">("list")
 
-  const { hide: hideBar, show: showBar } = useMobileBar()
+  const { hide: hideBar, show: showBar, closeSidebar } = useMobileBar()
 
   // Hide the shell's 48px mobile top bar when a thread is open (full-screen like WhatsApp)
   useEffect(() => {
@@ -202,13 +202,14 @@ function InboxV2Content() {
       setActiveContact(conv.contact ?? null)
       setMessages([])
       setMobileView("thread")
+      closeSidebar()
       setConversations((prev) =>
         prev.map((c) => (c.id === conv.id && c.unread_count > 0 ? { ...c, unread_count: 0 } : c)),
       )
       autoSelectedForDeepLinkRef.current = conv.id
       router.replace(`/inbox?c=${conv.id}`, { scroll: false })
     },
-    [activeConversation?.id, router],
+    [activeConversation?.id, router, closeSidebar],
   )
 
   const handleCloseConversation = useCallback(() => {

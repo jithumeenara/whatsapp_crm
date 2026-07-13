@@ -902,27 +902,27 @@ export function MessageThread({
   return (
     <div className={cn("flex flex-1 flex-col overflow-hidden", DOODLE_BG_CLASSES)}>
       {/* ── Header — WhatsApp-style on mobile ── */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:px-4 lg:py-0 lg:h-14">
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 border-b border-slate-200 bg-white px-2 py-2 sm:px-3 lg:px-4 lg:py-0 lg:h-14">
         {/* Back arrow (mobile) */}
         {onBack && (
           <button
             type="button"
             onClick={onBack}
             aria-label="Back to conversations"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 lg:hidden"
+            className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 lg:hidden"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
         )}
 
         {/* Avatar */}
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[15px] font-semibold text-primary">
+        <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[14px] sm:text-[15px] font-semibold text-primary">
           {displayName.charAt(0).toUpperCase()}
         </div>
 
         {/* Name + sub-row */}
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[15px] font-semibold leading-tight text-slate-900">
+          <h2 className="truncate text-[14px] sm:text-[15px] font-semibold leading-tight text-slate-900">
             {displayName}
           </h2>
           {/* Sub-row: assignment + session timer */}
@@ -934,8 +934,8 @@ export function MessageThread({
               onAssignChange={handleAssignChange}
               align="start"
               trigger={
-                <DropdownMenuTrigger className="flex items-center gap-0.5 text-[11.5px] text-slate-400 hover:text-slate-700 leading-none">
-                  <span className="truncate max-w-[100px]">
+                <DropdownMenuTrigger className="flex items-center gap-0.5 text-[11px] sm:text-[11.5px] text-slate-400 hover:text-slate-700 leading-none">
+                  <span className="truncate max-w-[80px] sm:max-w-[140px]">
                     {currentAssignee ? currentAssignee.full_name : "Unassigned"}
                   </span>
                   <ChevronDown className="h-3 w-3 shrink-0" />
@@ -955,13 +955,14 @@ export function MessageThread({
 
         {/* Action buttons (right side) */}
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Manual refresh — desktop only; mobile relies on realtime + focus resync */}
           {onRefresh && (
             <button
               type="button"
               onClick={handleRefreshClick}
               disabled={isRefreshing}
               title="Refresh"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+              className="hidden lg:flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
             >
               <RefreshCw className={cn("h-[17px] w-[17px]", isRefreshing && "animate-spin")} />
             </button>
@@ -970,7 +971,7 @@ export function MessageThread({
           {/* Status — compact pill on mobile, labeled on desktop */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
-              "flex h-7 items-center gap-1 rounded-full border px-2.5 text-[12px] font-medium",
+              "flex h-7 items-center gap-1 rounded-full border px-2 sm:px-2.5 text-[11px] sm:text-[12px] font-medium",
               "lg:h-8 lg:rounded-lg lg:px-3 lg:text-[13px]",
               currentStatus?.color ?? "text-slate-500",
               "border-current/30 hover:bg-slate-50"
@@ -991,7 +992,7 @@ export function MessageThread({
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Assign agent */}
+          {/* Assign agent — desktop only; mobile uses the assignee dropdown under the name */}
           <AssignAgentDropdown
             assignedAgentId={assignedAgentId}
             profiles={profiles}
@@ -1000,7 +1001,7 @@ export function MessageThread({
             align="end"
             trigger={
               <DropdownMenuTrigger title="Assign agent" className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100",
+                "hidden lg:flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100",
                 assignedAgentId ? "text-primary" : "text-slate-500"
               )}>
                 <UserPlus className="h-[17px] w-[17px]" />
