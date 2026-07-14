@@ -772,6 +772,9 @@ const FORM_INPUT_TYPES = new Set([
 ])
 
 interface FormInputMeta {
+  /** For a regular input or a legacy single-source label: the component's
+   *  own name. For one token inside a multi-source label: a synthetic
+   *  `componentName::tokenId` identifier — see labelToken. */
   name: string
   label: string
   type: string
@@ -782,6 +785,10 @@ interface FormInputMeta {
   /** True for a Label (dynamic) component — its value comes from a fetched
    *  DataStore lookup, not something the customer typed. */
   isLabel?: boolean
+  /** Present only for one token inside a multi-source label — the value to
+   *  save is that token's own raw value (before it's mixed with any
+   *  surrounding static text), not the label's combined display string. */
+  labelToken?: { componentName: string; tokenId: string }
 }
 
 function collectFormInputs(components: MetaFlowComponent[], screenId: string, screenTitle: string): FormInputMeta[] {
@@ -798,12 +805,30 @@ function collectFormInputs(components: MetaFlowComponent[], screenId: string, sc
         screenTitle,
       })
     } else if (comp.type === 'TextLabel' && raw.name) {
-      // Only list a Label if it actually has a resolvable value — a static-
-      // text label has nothing meaningful to save.
       const sources = raw._sources as LabelSource[] | undefined
-      const hasSource = (Array.isArray(sources) && sources.some((s) => s.table_id && s.field_key))
-        || (raw._source_table_id && raw._source_field_key)
-      if (hasSource) {
+      const validSources = Array.isArray(sources) ? sources.filter((s) => s.table_id && s.field_key) : []
+      if (validSources.length > 0) {
+        // Multi-source: one entry PER TOKEN — each token has its own
+        // independently save-able raw value, distinct from the label's
+        // combined display string (which may mix in static text, e.g.
+        // "Target Group : {{token}}" — only "{{token}}"'s own value
+        // should ever be saved, never "Target Group : ...").
+        for (const s of validSources) {
+          result.push({
+            name: `${raw.name}::${s.id}`,
+            label: `${raw.name} → {{${s.id}}}`,
+            type: 'TextLabel',
+            _save_field_key: s._save_field_key,
+            screenId,
+            screenTitle,
+            isLabel: true,
+            labelToken: { componentName: raw.name as string, tokenId: s.id },
+          })
+        }
+      } else if (raw._source_table_id && raw._source_field_key) {
+        // Legacy single-source: the whole text IS the resolved value (no
+        // static text mixed in), so the component-level mapping is
+        // already correct as-is.
         result.push({
           name: raw.name as string,
           label: raw.name as string,
@@ -886,12 +911,14 @@ function SaveMappingTable({
     if (inp._save_field_key) currentMapping[inp._save_field_key] = inp.name
   }
 
-  // Clears _save_field_key from whichever component currently holds
-  // fieldKey, wherever it lives — the previous holder may be on a
-  // different screen than the one being newly mapped.
-  function clearHolder(fieldKey: string, exceptScreenId?: string, exceptCompName?: string) {
+  // Clears _save_field_key from whichever component (or, for a multi-source
+  // label, whichever token inside its _sources) currently holds fieldKey,
+  // wherever it lives — the previous holder may be on a different screen
+  // than the one being newly mapped. exceptName is the FormInputMeta.name
+  // (a synthetic `label::token` string for a label token) of the entry
+  // about to receive fieldKey, so it isn't cleared right back out.
+  function clearHolder(fieldKey: string, exceptScreenId?: string, exceptName?: string) {
     for (const s of allScreens) {
-      if (s.id === exceptScreenId) continue
       function applyToComps(comps: MetaFlowComponent[]): { comps: MetaFlowComponent[]; changed: boolean } {
         let changed = false
         const next = comps.map((comp) => {
@@ -901,13 +928,30 @@ function SaveMappingTable({
             if (r.changed) changed = true
             return { ...comp, children: r.comps } as unknown as MetaFlowComponent
           }
-          if ((raw.name as string | undefined) === exceptCompName && s.id === exceptScreenId) return comp
-          if ((raw._save_field_key as string | undefined) === fieldKey) {
-            changed = true
-            const updated = { ...raw }
+          const compName = raw.name as string | undefined
+          let updated: Record<string, unknown> = raw
+          let compChanged = false
+          const isExceptComp = s.id === exceptScreenId && compName === exceptName
+          if (!isExceptComp && (raw._save_field_key as string | undefined) === fieldKey) {
+            updated = { ...updated }
             delete updated._save_field_key
-            return updated as unknown as MetaFlowComponent
+            compChanged = true
           }
+          const sources = raw._sources as Array<{ id: string; _save_field_key?: string }> | undefined
+          if (Array.isArray(sources)) {
+            let sourcesChanged = false
+            const newSources = sources.map((src) => {
+              const isExceptToken = s.id === exceptScreenId && exceptName === `${compName}::${src.id}`
+              if (!isExceptToken && src._save_field_key === fieldKey) {
+                sourcesChanged = true
+                const { _save_field_key, ...rest } = src
+                return rest
+              }
+              return src
+            })
+            if (sourcesChanged) { updated = { ...updated, _sources: newSources }; compChanged = true }
+          }
+          if (compChanged) { changed = true; return updated as unknown as MetaFlowComponent }
           return comp
         })
         return { comps: next, changed }
@@ -917,20 +961,30 @@ function SaveMappingTable({
     }
   }
 
-  const handleChange = (fieldKey: string, compName: string) => {
-    clearHolder(fieldKey, compName ? formInputs.find((i) => i.name === compName)?.screenId : undefined, compName)
-    if (!compName) return
-    const target = formInputs.find((i) => i.name === compName)
+  const handleChange = (fieldKey: string, name: string) => {
+    clearHolder(fieldKey, name ? formInputs.find((i) => i.name === name)?.screenId : undefined, name)
+    if (!name) return
+    const target = formInputs.find((i) => i.name === name)
     if (!target) return
     const targetScreen = screensById.get(target.screenId)
     if (!targetScreen) return
+    const labelToken = target.labelToken
     function applyToComps(comps: MetaFlowComponent[]): MetaFlowComponent[] {
       return comps.map((comp) => {
         const raw = comp as unknown as Record<string, unknown>
         if (raw.type === 'Form' && Array.isArray(raw.children)) {
           return { ...comp, children: applyToComps(raw.children as MetaFlowComponent[]) } as unknown as MetaFlowComponent
         }
-        if ((raw.name as string | undefined) === compName) {
+        if (labelToken) {
+          if ((raw.name as string | undefined) !== labelToken.componentName) return comp
+          const sources = raw._sources as Array<{ id: string; _save_field_key?: string }> | undefined
+          if (!Array.isArray(sources)) return comp
+          const newSources = sources.map((src) =>
+            src.id === labelToken.tokenId ? { ...src, _save_field_key: fieldKey } : src
+          )
+          return { ...comp, _sources: newSources } as unknown as MetaFlowComponent
+        }
+        if ((raw.name as string | undefined) === name) {
           return { ...comp, _save_field_key: fieldKey } as MetaFlowComponent
         }
         return comp
@@ -954,6 +1008,11 @@ function SaveMappingTable({
       let bestComp: FormInputMeta | null = null
       let bestScore = 0
       for (const inp of formInputs) {
+        // Skip multi-source label tokens — their synthetic composite name
+        // isn't meaningful for fuzzy matching, and they'd need the same
+        // nested-source write handleChange does. Still fully mappable by
+        // hand via the dropdown below.
+        if (inp.labelToken) continue
         if (Object.values(newMapping).includes(inp.name)) continue // already claimed
         const score = Math.max(similarity(field.label, inp.label), similarity(field.field_key, inp.name))
         if (score > bestScore) { bestScore = score; bestComp = inp }

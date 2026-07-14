@@ -153,12 +153,22 @@ function makeSaveCarryVarName(saveFieldKey: string): string {
   return saveFieldKey.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_carried'
 }
 
+// Mirrors webhook-handler.ts's copy — one token's RAW resolved value,
+// distinct from makeLabelVarName's combined display string.
+function makeMultiLabelVarName(labelName: string, sourceId: string): string {
+  const a = labelName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  const b = sourceId.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  return `${a}_${b}_raw`
+}
+
 interface LabelSourceConfig {
   id: string
   table_id: string
   field_key: string
   filter_form_name?: string
   filter_by_field?: string
+  /** DataStore field_key this ONE token's raw value should be saved into. */
+  _save_field_key?: string
 }
 
 // If the flow uses data_exchange (endpoint submit) but has no terminal screen,
@@ -321,15 +331,25 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
   // actually performs the save. Keyed by DataStore field_key (stable and
   // unique per table) rather than component name, since the same table
   // field can only be mapped to one component across the whole flow.
+  // A field can be mapped either on a component itself (regular inputs,
+  // legacy single-source labels) or on one specific token inside a multi-
+  // source label's _sources — both are scanned here.
   const allSaveFields: Array<{ fieldKey: string; carryVar: string }> = []
   {
     const seen = new Set<string>()
+    const add = (fk: string | undefined) => {
+      if (fk && !seen.has(fk)) {
+        seen.add(fk)
+        allSaveFields.push({ fieldKey: fk, carryVar: makeSaveCarryVarName(fk) })
+      }
+    }
     for (const screen of screens) {
       for (const comp of screen.components) {
-        const fk = (comp as Record<string, unknown>)._save_field_key as string | undefined
-        if (fk && !seen.has(fk)) {
-          seen.add(fk)
-          allSaveFields.push({ fieldKey: fk, carryVar: makeSaveCarryVarName(fk) })
+        const c = comp as Record<string, unknown>
+        add(c._save_field_key as string | undefined)
+        const sources = c._sources as LabelSourceConfig[] | undefined
+        if (Array.isArray(sources)) {
+          for (const s of sources) add(s._save_field_key)
         }
       }
     }
@@ -348,13 +368,21 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       const c = comp as Record<string, unknown>
       if (c.type === 'TextLabel' && c.name) {
         // Both multi-source (composed server-side into one string) and
-        // legacy single-source labels resolve to exactly one variable per
-        // label component — see webhook-handler.ts's flattenComponentSources.
+        // legacy single-source labels resolve to exactly one COMBINED
+        // display variable — see webhook-handler.ts's flattenComponentSources.
         const sources = c._sources as LabelSourceConfig[] | undefined
-        const hasMultiSource = Array.isArray(sources) && sources.some((s) => s.table_id && s.field_key)
+        const validSources = Array.isArray(sources) ? sources.filter((s) => s.table_id && s.field_key) : []
+        const hasMultiSource = validSources.length > 0
         if (hasMultiSource || (c._source_table_id && c._source_field_key)) {
           labelVars[makeLabelVarName(String(c.name))] = { type: 'string', '__example__': 'Label text' }
           hasDynamicData = true
+        }
+        // Each token's own RAW value (no surrounding static text) is
+        // always resolved and sent by the webhook alongside the combined
+        // string, so Field Mapping can target one token's real value
+        // independent of the label's display formatting.
+        for (const s of validSources) {
+          labelVars[makeMultiLabelVarName(String(c.name), s.id)] = { type: 'string', '__example__': '' }
         }
       } else if (c._source_table_id && c._source_field_key) {
         vars[makeVarName(String(c._source_field_key))] = makeDynamicDecl()
@@ -398,38 +426,49 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     )
 
     // Which of the globally save-mapped fields does THIS screen actually
-    // collect, and via what kind of component? A regular input's live
-    // value is already covered by ${form.x} (namedFields below) — but a
-    // Label has no Meta form `name` at all (converted to a display-only
-    // TextBody), so its live value can only be forwarded via its OWN
-    // ${data.x} resolved var, same as a pass-through.
-    const screenSaveFieldKeys = new Set(
-      screen.components
-        .map((c) => (c as Record<string, unknown>)._save_field_key as string | undefined)
-        .filter((fk): fk is string => Boolean(fk)),
-    )
-    const labelCollectorByFieldKey = new Map<string, Record<string, unknown>>()
-    for (const c of screen.components) {
-      const raw = c as Record<string, unknown>
-      const fk = raw._save_field_key as string | undefined
-      if (fk && raw.type === 'TextLabel') labelCollectorByFieldKey.set(fk, raw)
+    // collect, and via what reference? A regular (non-label) input's live
+    // value is already covered by ${form.x} (namedFields below). A Label
+    // has no Meta form `name` at all (converted to a display-only
+    // TextBody), so its value can only be forwarded via a ${data.x} var —
+    // either the label's own combined var (a legacy single-source label,
+    // where the text is entirely replaced so combined === raw), or one
+    // token's own RAW var (a multi-source label — NOT the combined display
+    // var, which may have surrounding static text the saved value must
+    // exclude).
+    const screenFieldRefs = new Map<string, string>() // fieldKey → ${form.x} or ${data.x}
+    for (const comp of screen.components) {
+      const c = comp as Record<string, unknown>
+      const compFieldKey = c._save_field_key as string | undefined
+      if (compFieldKey && c.name) {
+        screenFieldRefs.set(
+          compFieldKey,
+          c.type === 'TextLabel' ? `\${data.${makeLabelVarName(String(c.name))}}` : `\${form.${String(c.name)}}`,
+        )
+      }
+      const sources = c._sources as LabelSourceConfig[] | undefined
+      if (Array.isArray(sources) && c.name) {
+        for (const s of sources) {
+          if (s._save_field_key) {
+            screenFieldRefs.set(s._save_field_key, `\${data.${makeMultiLabelVarName(String(c.name), s.id)}}`)
+          }
+        }
+      }
     }
+    const screenSaveFieldKeys = new Set(screenFieldRefs.keys())
+
     // Carry-var entries this screen's OWN outgoing data_exchange payload
-    // needs explicitly: a Label collected here (namedFields excludes
-    // labels, so its value would otherwise never reach the webhook), or
-    // anything not collected on this screen at all (pass-through). A
-    // regular input collected here needs nothing extra — formRefs below
-    // already sends its live ${form.x} value under its own name.
+    // needs explicitly: a Label (or label token) collected here —
+    // namedFields excludes labels entirely, so its value would otherwise
+    // never reach the webhook — or anything not collected on this screen
+    // at all (pass-through). A regular input collected here needs nothing
+    // extra — formRefs below already sends its live ${form.x} value under
+    // its own name.
     const carryVarPayloadEntries: Array<{ carryVar: string; ref: string }> = allSaveFields
       .map((sf) => {
-        const labelComp = labelCollectorByFieldKey.get(sf.fieldKey)
-        if (labelComp) {
-          return { carryVar: sf.carryVar, ref: `\${data.${makeLabelVarName(String(labelComp.name))}}` }
-        }
-        if (!screenSaveFieldKeys.has(sf.fieldKey)) {
-          return { carryVar: sf.carryVar, ref: `\${data.${sf.carryVar}}` }
-        }
-        return null
+        const ref = screenFieldRefs.get(sf.fieldKey)
+        if (ref?.startsWith('${data.')) return { carryVar: sf.carryVar, ref }
+        if (!ref) return { carryVar: sf.carryVar, ref: `\${data.${sf.carryVar}}` }
+        return null // regular ${form.x} input — already covered by formRefs below
       })
       .filter((e): e is { carryVar: string; ref: string } => e !== null)
 
@@ -440,15 +479,7 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     // response_json comes back with meaningful keys the chatbot's Send
     // Flow node variable list can reference directly.
     function saveFieldLiveOrCarriedRef(sf: { fieldKey: string; carryVar: string }): string {
-      const labelComp = labelCollectorByFieldKey.get(sf.fieldKey)
-      if (labelComp) return `\${data.${makeLabelVarName(String(labelComp.name))}}`
-      if (screenSaveFieldKeys.has(sf.fieldKey)) {
-        const collector = screen.components.find(
-          (c) => (c as Record<string, unknown>)._save_field_key === sf.fieldKey,
-        ) as Record<string, unknown> | undefined
-        return `\${form.${String(collector?.name)}}`
-      }
-      return `\${data.${sf.carryVar}}`
+      return screenFieldRefs.get(sf.fieldKey) ?? `\${data.${sf.carryVar}}`
     }
 
     const cleanedComps = screen.components.flatMap((comp): Record<string, unknown>[] => {

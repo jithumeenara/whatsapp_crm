@@ -45,6 +45,11 @@ export interface LabelSource {
   field_key: string
   filter_form_name?: string   // name of parent Dropdown that triggers filter, for this source only
   filter_by_field?: string    // DataStore column that stores the parent's value, for this source only
+  /** CRM-only: DataStore field_key to save this ONE token's raw resolved
+   *  value into — independent of the label's own combined display string
+   *  (which may mix static text around it), and independent of any other
+   *  token in the same label. */
+  _save_field_key?: string
 }
 
 /**

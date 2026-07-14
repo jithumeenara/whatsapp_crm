@@ -32,6 +32,17 @@ function makeLabelVarName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
 }
 
+// One token's RAW resolved value (no surrounding static text) — distinct
+// from makeLabelVarName's combined display string, since a label mixing
+// "Target Group : {{token}}" needs its own display var for the TextBody
+// ("Target Group : ministerial") AND a separate save-able var holding just
+// "ministerial" for Field Mapping to target.
+function makeMultiLabelVarName(labelName: string, sourceId: string): string {
+  const a = labelName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  const b = sourceId.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  return `${a}_${b}_raw`
+}
+
 // Mirrors upload/route.ts's copy — must stay in sync so the ${data.X}
 // pass-through references Meta sends match the keys read/written here.
 function makeSaveCarryVarName(saveFieldKey: string): string {
@@ -41,21 +52,73 @@ function makeSaveCarryVarName(saveFieldKey: string): string {
 // Every save-mapped field (Field Mapping in "Save form data to"), across
 // ALL screens in the flow — keyed by DataStore field_key, which is stable
 // and unique per table regardless of which screen's component collects it.
+// A field can be mapped either on a component itself (regular inputs,
+// legacy single-source labels) or on one specific token inside a multi-
+// source label's _sources — both are scanned here.
 function collectAllSaveFields(
   screens: Array<{ components: Array<Record<string, unknown>> }>,
 ): Array<{ fieldKey: string; carryVar: string }> {
   const seen = new Set<string>()
   const out: Array<{ fieldKey: string; carryVar: string }> = []
+  const add = (fk: string | undefined) => {
+    if (fk && !seen.has(fk)) {
+      seen.add(fk)
+      out.push({ fieldKey: fk, carryVar: makeSaveCarryVarName(fk) })
+    }
+  }
   for (const s of screens) {
     for (const c of flatCompsShallow(s.components ?? [])) {
-      const fk = c._save_field_key as string | undefined
-      if (fk && !seen.has(fk)) {
-        seen.add(fk)
-        out.push({ fieldKey: fk, carryVar: makeSaveCarryVarName(fk) })
+      add(c._save_field_key as string | undefined)
+      const sources = c._sources as Array<{ _save_field_key?: string }> | undefined
+      if (Array.isArray(sources)) {
+        for (const src of sources) add(src._save_field_key)
       }
     }
   }
   return out
+}
+
+// Finds the data-model variable holding a save-mapped field's live value on
+// a given set of components — a component-level match (regular input or
+// legacy single-source label) returns its own name (plus the component
+// itself, so the caller can resolve a static Dropdown/RadioButtonsGroup/
+// CheckboxGroup option id back to its title); a match on one token inside
+// a multi-source label's _sources returns that token's own raw var
+// (makeMultiLabelVarName), NOT the label's combined display var, since the
+// combined string includes surrounding static text the saved value must not
+// — labels have no option-id concept, so no collector is returned for them.
+function findSaveFieldVarKey(
+  comps: Array<Record<string, unknown>>,
+  fieldKey: string,
+): { varKey: string; collector?: Record<string, unknown> } | undefined {
+  for (const c of comps) {
+    if (c._save_field_key === fieldKey && c.name) return { varKey: String(c.name), collector: c }
+    const sources = c._sources as Array<{ id: string; _save_field_key?: string }> | undefined
+    if (Array.isArray(sources)) {
+      const src = sources.find((s) => s._save_field_key === fieldKey)
+      if (src && c.name) return { varKey: makeMultiLabelVarName(String(c.name), src.id) }
+    }
+  }
+  return undefined
+}
+
+// WhatsApp submits a Dropdown/RadioButtonsGroup/CheckboxGroup's selected
+// option `id`, not its human-readable `title` — fine for filtering (our own
+// DB-backed dropdowns resolve titles server-side), but wrong for STATIC
+// option lists (e.g. a fixed "Select District" dropdown), where the id is
+// often just an arbitrary "opt_1"-style placeholder. Resolves it back to
+// the option's title before saving, so the DataStore record shows
+// "Alappuzha" instead of "opt_1". DB-backed dropdowns are unaffected —
+// their data-source is a "${data.x}" template string at this point, not an
+// array, so this is a no-op for them.
+function resolveStaticOptionValue(comp: Record<string, unknown>, submittedValue: unknown): unknown {
+  const dataSource = comp['data-source']
+  if (!Array.isArray(dataSource)) return submittedValue
+  const titleFor = (id: unknown) => {
+    const match = (dataSource as Array<Record<string, unknown>>).find((opt) => opt?.id === id)
+    return match ? match.title : id
+  }
+  return Array.isArray(submittedValue) ? submittedValue.map(titleFor) : titleFor(submittedValue)
 }
 
 // Non-recursive Form-unwrap — same shape as the in-scope flatComps() used
@@ -83,6 +146,8 @@ interface LabelSourceConfig {
   field_key: string
   filter_form_name?: string
   filter_by_field?: string
+  /** DataStore field_key this ONE token's raw value should be saved into. */
+  _save_field_key?: string
 }
 
 interface ResolvedSource {
@@ -99,8 +164,10 @@ interface ResolvedSource {
   // a token mid-string), so a label mixing plain text with several
   // {{token}}s can't be composed client-side by Meta at all — we resolve
   // every token's value here and substitute them into the template
-  // ourselves, exposing ONE fully-formatted string as a single variable.
-  multi?: { template: string; sources: LabelSourceConfig[] }
+  // ourselves, exposing ONE fully-formatted string as a single variable —
+  // plus each token's own raw (unsubstituted) value under its own var, for
+  // Field Mapping / save purposes.
+  multi?: { name: string; template: string; sources: LabelSourceConfig[] }
 }
 
 // Reads a component's data bindings — either the new multi-source `_sources`
@@ -121,7 +188,7 @@ function flattenComponentSources(c: Record<string, unknown>): ResolvedSource[] {
       return [{
         varName: makeLabelVarName(name),
         isLabel: true,
-        multi: { template: String(c.text ?? ''), sources: validSources },
+        multi: { name, template: String(c.text ?? ''), sources: validSources },
       }]
     }
   }
@@ -157,8 +224,9 @@ async function resolveLabelTemplate(
   formData: Record<string, unknown>,
   triggerName: string | null,
   triggerValue: string | null,
-): Promise<string> {
+): Promise<{ text: string; tokenValues: Record<string, string> }> {
   let result = template
+  const tokenValues: Record<string, string> = {}
   for (const s of sources) {
     const isFiltered = !!(s.filter_by_field && s.filter_form_name)
     let value = ''
@@ -173,10 +241,11 @@ async function resolveLabelTemplate(
     } else {
       value = await fetchLabelValue(s.table_id, s.field_key)
     }
+    tokenValues[s.id] = value
     const tokenRe = new RegExp(`\\{\\{\\s*${s.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}\\}`, 'g')
     result = result.replace(tokenRe, value)
   }
-  return result
+  return { text: result, tokenValues }
 }
 
 function slugify(val: string): string {
@@ -611,8 +680,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .flatMap((c) => flattenComponentSources(c))
           .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
             if (multi) {
-              freshData[varName] = await resolveLabelTemplate(multi.template, multi.sources, formData, triggerName, triggerValue)
-              console.log('[data_exchange:filter]', varName, '→ multi-source label:', freshData[varName])
+              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, triggerName, triggerValue)
+              freshData[varName] = text
+              for (const [tokenId, val] of Object.entries(tokenValues)) {
+                freshData[makeMultiLabelVarName(multi.name, tokenId)] = val
+              }
+              console.log('[data_exchange:filter]', varName, '→ multi-source label:', text)
               return
             }
             // Same rule as the "load" branch below: a source filtered by a
@@ -683,8 +756,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .flatMap((c) => flattenComponentSources(c))
           .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
             if (multi) {
-              freshData[varName] = await resolveLabelTemplate(multi.template, multi.sources, formData, null, null)
-              console.log('[data_exchange:load] multi-source label', varName, '=', freshData[varName])
+              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, null, null)
+              freshData[varName] = text
+              for (const [tokenId, val] of Object.entries(tokenValues)) {
+                freshData[makeMultiLabelVarName(multi.name, tokenId)] = val
+              }
+              console.log('[data_exchange:load] multi-source label', varName, '=', text)
               return
             }
             // A source with filterByField+filterFormName is *designed* to be
@@ -729,9 +806,10 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       // use its just-submitted live value; otherwise pass through
       // whatever was already carried (from an even earlier screen).
       for (const sf of allSaveFields) {
-        const collector = submittedComps.find((c) => c._save_field_key === sf.fieldKey)
-        if (collector?.name && String(collector.name) in formData) {
-          freshData[sf.carryVar] = formData[String(collector.name)]
+        const found = findSaveFieldVarKey(submittedComps, sf.fieldKey)
+        if (found && found.varKey in formData) {
+          const raw = formData[found.varKey]
+          freshData[sf.carryVar] = found.collector ? resolveStaticOptionValue(found.collector, raw) : raw
         } else {
           freshData[sf.carryVar] = formData[sf.carryVar] ?? ''
         }
@@ -758,18 +836,19 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
 
     if (saveTableId) {
       const record: Record<string, unknown> = {}
-      // Fields collected on THIS (final) screen: read their live value.
-      for (const comp of submittedComps) {
-        const compName = comp.name as string | undefined
-        const saveFieldKey = comp._save_field_key as string | undefined
-        if (compName && saveFieldKey && compName in formData) {
-          record[saveFieldKey] = formData[compName]
-        }
-      }
-      // Fields collected on an EARLIER screen: read the carried-forward
-      // value the "load" branch chained through every hop since then.
       for (const sf of allSaveFields) {
-        if (sf.fieldKey in record) continue
+        // Collected on THIS (final) screen — component-level (regular
+        // input, legacy single-source label) or one token inside a multi-
+        // source label's _sources: read its live value directly.
+        const found = findSaveFieldVarKey(submittedComps, sf.fieldKey)
+        if (found && found.varKey in formData) {
+          const raw = formData[found.varKey]
+          record[sf.fieldKey] = found.collector ? resolveStaticOptionValue(found.collector, raw) : raw
+          continue
+        }
+        // Collected on an EARLIER screen: the "load" branch already
+        // resolved any static option id to its title before carrying it
+        // forward, so this is used as-is.
         if (sf.carryVar in formData) record[sf.fieldKey] = formData[sf.carryVar]
       }
 
@@ -852,8 +931,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
         // No formData exists yet at INIT — every filtered token in the
         // template correctly resolves to '' via resolveLabelTemplate's own
         // hasFormValue check, unfiltered tokens still resolve to a real value.
-        responseData[varName] = await resolveLabelTemplate(multi.template, multi.sources, {}, null, null)
-        console.log(`[webhook] ${varName}: multi-source label = "${responseData[varName]}"`)
+        const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, {}, null, null)
+        responseData[varName] = text
+        for (const [tokenId, val] of Object.entries(tokenValues)) {
+          responseData[makeMultiLabelVarName(multi.name, tokenId)] = val
+        }
+        console.log(`[webhook] ${varName}: multi-source label = "${text}"`)
         return
       }
       const isFiltered = !!filterFormName
