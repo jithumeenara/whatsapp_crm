@@ -265,27 +265,6 @@ export default function DataTablePage() {
             </div>
           )}
 
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-1.5 rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 h-8 ml-1">
-              <span className="text-[12px] font-medium text-indigo-700">{selectedIds.size} selected</span>
-              <button
-                onClick={() => setSelectedIds(new Set())}
-                className="text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors"
-              >
-                Clear
-              </button>
-              <div className="h-4 w-px bg-indigo-200" />
-              <button
-                onClick={() => setConfirmBulkDelete(true)}
-                disabled={bulkDeleting}
-                className="flex items-center gap-1 text-[12px] font-medium text-rose-600 hover:text-rose-700 disabled:opacity-50 transition-colors"
-              >
-                {bulkDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                Delete
-              </button>
-            </div>
-          )}
-
           <div className="flex-1" />
 
           {/* Action strip */}
@@ -335,6 +314,30 @@ export default function DataTablePage() {
             </button>
           </div>
         </div>
+
+        {/* Selection bar — its own row, never squeezed into the main
+            toolbar, so it can never force that fixed-height row to wrap
+            and overlap the table below it. */}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 px-4 h-10 border-t border-indigo-100 bg-indigo-50">
+            <span className="text-[12px] font-medium text-indigo-700">{selectedIds.size} selected</span>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors"
+            >
+              Clear
+            </button>
+            <div className="flex-1" />
+            <button
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={bulkDeleting}
+              className="flex items-center gap-1.5 text-[12px] font-medium text-rose-600 hover:text-rose-700 disabled:opacity-50 transition-colors"
+            >
+              {bulkDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              Delete
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table grid */}
