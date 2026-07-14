@@ -433,6 +433,24 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       })
       .filter((e): e is { carryVar: string; ref: string } => e !== null)
 
+    // Same "live value if collected here, otherwise whatever's already
+    // been carried" resolution as carryVarPayloadEntries above, but keyed
+    // by the DataStore field_key itself (not the carry-var name) — used to
+    // build the terminal 'complete' action's payload, so nfm_reply.
+    // response_json comes back with meaningful keys the chatbot's Send
+    // Flow node variable list can reference directly.
+    function saveFieldLiveOrCarriedRef(sf: { fieldKey: string; carryVar: string }): string {
+      const labelComp = labelCollectorByFieldKey.get(sf.fieldKey)
+      if (labelComp) return `\${data.${makeLabelVarName(String(labelComp.name))}}`
+      if (screenSaveFieldKeys.has(sf.fieldKey)) {
+        const collector = screen.components.find(
+          (c) => (c as Record<string, unknown>)._save_field_key === sf.fieldKey,
+        ) as Record<string, unknown> | undefined
+        return `\${form.${String(collector?.name)}}`
+      }
+      return `\${data.${sf.carryVar}}`
+    }
+
     const cleanedComps = screen.components.flatMap((comp): Record<string, unknown>[] => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _id, ...raw } = comp
@@ -531,17 +549,7 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
               // else already carried (from an earlier screen, or this
               // screen's static ${data.x} declaration) passes straight through.
               for (const sf of allSaveFields) {
-                const labelComp = labelCollectorByFieldKey.get(sf.fieldKey)
-                if (labelComp) {
-                  dynamicPayload[sf.carryVar] = `\${data.${makeLabelVarName(String(labelComp.name))}}`
-                } else if (screenSaveFieldKeys.has(sf.fieldKey)) {
-                  const collector = screen.components.find(
-                    (c) => (c as Record<string, unknown>)._save_field_key === sf.fieldKey,
-                  ) as Record<string, unknown> | undefined
-                  dynamicPayload[sf.carryVar] = `\${form.${String(collector?.name)}}`
-                } else {
-                  dynamicPayload[sf.carryVar] = `\${data.${sf.carryVar}}`
-                }
+                dynamicPayload[sf.carryVar] = saveFieldLiveOrCarriedRef(sf)
               }
 
               raw['on-click-action'] = {
@@ -565,6 +573,22 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
           raw['on-click-action'] = {
             ...action,
             payload: { ...formRefs, ...((action.payload as Record<string, unknown>) ?? {}) },
+          }
+        } else if (action.name === 'complete' && allSaveFields.length > 0) {
+          // The terminal screen's payload becomes nfm_reply.response_json —
+          // the ONLY way a completed Flow's data reaches the chatbot engine
+          // (see engine.ts's send_flow resume). Meta does not aggregate
+          // every screen's fields automatically; only what's explicitly
+          // listed here comes back. Every save-mapped field (Field Mapping)
+          // is included, keyed by its DataStore field_key, so the chatbot's
+          // "Send Flow" node can reference {{vars.flow_<field_key>}}.
+          const completePayload: Record<string, string> = {}
+          for (const sf of allSaveFields) {
+            completePayload[sf.fieldKey] = saveFieldLiveOrCarriedRef(sf)
+          }
+          raw['on-click-action'] = {
+            ...action,
+            payload: { ...completePayload, ...((action.payload as Record<string, unknown>) ?? {}) },
           }
         }
       }
