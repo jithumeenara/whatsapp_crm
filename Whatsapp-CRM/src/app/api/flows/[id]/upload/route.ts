@@ -146,14 +146,6 @@ function makeLabelVarName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
 }
 
-// Mirrors the naming scheme in webhook-handler.ts — must stay in sync so the
-// ${data.X} tokens generated here match the keys the webhook populates.
-function makeMultiLabelVarName(labelName: string, sourceId: string): string {
-  const a = labelName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-  const b = sourceId.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-  return `${a}_${b}_label`
-}
-
 interface LabelSourceConfig {
   id: string
   table_id: string
@@ -302,14 +294,12 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     for (const comp of screen.components) {
       const c = comp as Record<string, unknown>
       if (c.type === 'TextLabel' && c.name) {
+        // Both multi-source (composed server-side into one string) and
+        // legacy single-source labels resolve to exactly one variable per
+        // label component — see webhook-handler.ts's flattenComponentSources.
         const sources = c._sources as LabelSourceConfig[] | undefined
-        if (Array.isArray(sources) && sources.length > 0) {
-          for (const s of sources) {
-            if (!s.table_id || !s.field_key) continue
-            labelVars[makeMultiLabelVarName(String(c.name), s.id)] = { type: 'string', '__example__': 'Label text' }
-            hasDynamicData = true
-          }
-        } else if (c._source_table_id && c._source_field_key) {
+        const hasMultiSource = Array.isArray(sources) && sources.some((s) => s.table_id && s.field_key)
+        if (hasMultiSource || (c._source_table_id && c._source_field_key)) {
           labelVars[makeLabelVarName(String(c.name))] = { type: 'string', '__example__': 'Label text' }
           hasDynamicData = true
         }
@@ -354,42 +344,14 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       if (raw.type === 'TextLabel') {
         const labelName = raw.name as string | undefined
         const sources = raw._sources as LabelSourceConfig[] | undefined
-        if (Array.isArray(sources) && sources.length > 0 && labelName) {
-          // Multi-source: Meta only substitutes ${data.X} when a TextBody's
-          // `text` is EXACTLY that reference — it does not interpolate a
-          // token embedded inside a longer string. So a template mixing
-          // plain text with {{token}}s must become SEVERAL TextBody
-          // components: static segments verbatim, each dynamic segment
-          // holding nothing but its own ${data.X} reference.
-          const template = String(raw.text ?? '')
-          const validSources = sources.filter((s) => s.table_id && s.field_key)
-          const tokenIds = new Set(validSources.map((s) => s.id))
-          const re = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g
-          const segments: Record<string, unknown>[] = []
-          let lastIndex = 0
-          let m: RegExpExecArray | null
-          while ((m = re.exec(template)) !== null) {
-            if (m.index > lastIndex) {
-              const staticPart = template.slice(lastIndex, m.index)
-              if (staticPart) segments.push({ type: 'TextBody', text: staticPart })
-            }
-            if (tokenIds.has(m[1])) {
-              segments.push({ type: 'TextBody', text: `\${data.${makeMultiLabelVarName(labelName, m[1])}}` })
-            } else {
-              // Unknown token (no matching source) — leave the raw {{x}} text as-is.
-              segments.push({ type: 'TextBody', text: m[0] })
-            }
-            lastIndex = m.index + m[0].length
-          }
-          if (lastIndex < template.length) {
-            const tail = template.slice(lastIndex)
-            if (tail) segments.push({ type: 'TextBody', text: tail })
-          }
-          return segments.length > 0 ? segments : [{ type: 'TextBody', text: '' }]
-        }
-        // Legacy single-source: the whole text is replaced by one reference —
-        // already the "entire value is ${data.X}" shape Meta requires.
-        if (raw._source_table_id && raw._source_field_key && labelName) {
+        const hasMultiSource = Array.isArray(sources) && sources.some((s) => s.table_id && s.field_key)
+        // Multi-source AND legacy single-source both resolve to ONE
+        // ${data.X} reference — the full string (static text + every
+        // {{token}}'s value already substituted in) is composed server-side
+        // in webhook-handler.ts, because Meta only substitutes ${data.X}
+        // when a TextBody's `text` is EXACTLY that reference; it does not
+        // interpolate a token embedded inside a longer string.
+        if ((hasMultiSource || (raw._source_table_id && raw._source_field_key)) && labelName) {
           return [{ type: 'TextBody', text: `\${data.${makeLabelVarName(labelName)}}` }]
         }
         return [{ type: 'TextBody', text: String(raw.text ?? '') }]

@@ -36,12 +36,6 @@ function makeLabelVarName(name: string): string {
 // template (plain text + several {{token}} placeholders). Each source gets
 // its own data-model variable, namespaced by both the label's name and the
 // token id so two different labels can reuse the same token name.
-function makeMultiLabelVarName(labelName: string, sourceId: string): string {
-  const a = labelName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-  const b = sourceId.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
-  return `${a}_${b}_label`
-}
-
 interface LabelSourceConfig {
   id: string
   table_id: string
@@ -52,19 +46,28 @@ interface LabelSourceConfig {
 
 interface ResolvedSource {
   varName: string
-  tableId: string
-  fieldKey: string
+  isLabel: boolean
+  // Simple shape — legacy single-source labels, and every non-label
+  // dynamic component (Dropdown/RadioButtonsGroup/etc. options).
+  tableId?: string
+  fieldKey?: string
   filterByField?: string
   filterFormName?: string
-  isLabel: boolean
+  // Multi-source label shape — mutually exclusive with the above. Meta only
+  // accepts ${data.X} as a component's ENTIRE text value (no interpolating
+  // a token mid-string), so a label mixing plain text with several
+  // {{token}}s can't be composed client-side by Meta at all — we resolve
+  // every token's value here and substitute them into the template
+  // ourselves, exposing ONE fully-formatted string as a single variable.
+  multi?: { template: string; sources: LabelSourceConfig[] }
 }
 
 // Reads a component's data bindings — either the new multi-source `_sources`
 // array (Label components with plain text + multiple {{token}} values), or
 // the legacy single-source fields every other dynamic component (and older
-// Label components saved before multi-source existed) still use. Returns one
-// entry per binding, so callers can treat "one component, several sources"
-// and "one component, one source" identically.
+// Label components saved before multi-source existed) still use. Always
+// returns exactly one entry per component (a multi-source label composes
+// down to a single variable, not one per token).
 function flattenComponentSources(c: Record<string, unknown>): ResolvedSource[] {
   const isLabel = c.type === 'TextLabel' && !!c.name
   const name = c.name as string | undefined
@@ -72,16 +75,13 @@ function flattenComponentSources(c: Record<string, unknown>): ResolvedSource[] {
   if (isLabel && name) {
     const sources = c._sources as LabelSourceConfig[] | undefined
     if (Array.isArray(sources) && sources.length > 0) {
-      return sources
-        .filter((s) => s.table_id && s.field_key)
-        .map((s) => ({
-          varName: makeMultiLabelVarName(name, s.id),
-          tableId: s.table_id,
-          fieldKey: s.field_key,
-          filterByField: s.filter_by_field,
-          filterFormName: s.filter_form_name,
-          isLabel: true,
-        }))
+      const validSources = sources.filter((s) => s.table_id && s.field_key)
+      if (validSources.length === 0) return []
+      return [{
+        varName: makeLabelVarName(name),
+        isLabel: true,
+        multi: { template: String(c.text ?? ''), sources: validSources },
+      }]
     }
   }
 
@@ -96,6 +96,46 @@ function flattenComponentSources(c: Record<string, unknown>): ResolvedSource[] {
     filterFormName: c._filter_form_name as string | undefined,
     isLabel,
   }]
+}
+
+// Substitutes every {{token}} in a multi-source label's template with its
+// own DataStore value, respecting each source's independent parent filter.
+// A token whose parent hasn't been selected yet (or that has no filter at
+// all and simply has no matching record) resolves to an empty string —
+// same "stay blank until ready" rule as every other filtered field in this
+// file, just applied per-token within one combined string instead of
+// gating the whole component.
+//
+// triggerName/triggerValue are only meaningful for the same-screen filter-
+// refresh call (a specific field's on-select just fired) — pass null/null
+// from INIT and the screen-navigate "load" branch, where there's no single
+// "the field that just changed" to shortcut against.
+async function resolveLabelTemplate(
+  template: string,
+  sources: LabelSourceConfig[],
+  formData: Record<string, unknown>,
+  triggerName: string | null,
+  triggerValue: string | null,
+): Promise<string> {
+  let result = template
+  for (const s of sources) {
+    const isFiltered = !!(s.filter_by_field && s.filter_form_name)
+    let value = ''
+    if (isFiltered) {
+      if (hasFormValue(formData, s.filter_form_name!)) {
+        const ownTriggerValue = (triggerName !== null && s.filter_form_name === triggerName)
+          ? (triggerValue ?? '')
+          : slugify(String(formData[s.filter_form_name!]))
+        value = await fetchLabelValue(s.table_id, s.field_key, s.filter_by_field, ownTriggerValue)
+      }
+      // else: parent not yet selected — token resolves to '' below.
+    } else {
+      value = await fetchLabelValue(s.table_id, s.field_key)
+    }
+    const tokenRe = new RegExp(`\\{\\{\\s*${s.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}\\}`, 'g')
+    result = result.replace(tokenRe, value)
+  }
+  return result
 }
 
 function slugify(val: string): string {
@@ -527,7 +567,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           // made (dropdown resets right after picking a value).
           .filter((c) => c !== filterTrigger)
           .flatMap((c) => flattenComponentSources(c))
-          .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel }) => {
+          .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
+            if (multi) {
+              freshData[varName] = await resolveLabelTemplate(multi.template, multi.sources, formData, triggerName, triggerValue)
+              console.log('[data_exchange:filter]', varName, '→ multi-source label:', freshData[varName])
+              return
+            }
             // Same rule as the "load" branch below: a source filtered by a
             // field OTHER than the one that just changed must still resolve
             // against formData (its own parent may already have a value from
@@ -539,22 +584,22 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             if (isLabel) {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, ownTriggerValue)
+                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, ownTriggerValue)
                 console.log('[data_exchange:filter]', varName, '→ label:', freshData[varName])
               } else if (isFiltered) {
                 freshData[varName] = ''
               } else {
-                freshData[varName] = await fetchLabelValue(tableId, fieldKey)
+                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!)
               }
             } else {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchOptions(tableId, fieldKey, filterByField, ownTriggerValue)
+                freshData[varName] = await fetchOptions(tableId!, fieldKey!, filterByField, ownTriggerValue)
                 console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
               } else if (isFiltered) {
                 freshData[varName] = EMPTY_FILTERED_OPTIONS
               } else {
-                freshData[varName] = await fetchOptions(tableId, fieldKey)
+                freshData[varName] = await fetchOptions(tableId!, fieldKey!)
               }
             }
           }),
@@ -594,7 +639,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       await Promise.all(
         flatComps(formScreen.components ?? [])
           .flatMap((c) => flattenComponentSources(c))
-          .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel }) => {
+          .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
+            if (multi) {
+              freshData[varName] = await resolveLabelTemplate(multi.template, multi.sources, formData, null, null)
+              console.log('[data_exchange:load] multi-source label', varName, '=', freshData[varName])
+              return
+            }
             // A source with filterByField+filterFormName is *designed* to be
             // filtered — if the parent's value isn't in formData yet (parent
             // not selected), it must show empty/waiting, never an unfiltered
@@ -605,26 +655,26 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             if (isLabel) {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchLabelValue(tableId, fieldKey, filterByField, triggerValue)
+                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, triggerValue)
                 console.log('[data_exchange:load] filtered label', varName, '=', freshData[varName])
               } else if (isFiltered) {
                 freshData[varName] = ''
                 console.log('[data_exchange:load]', varName, "→ '' (empty until parent selected)")
               } else {
-                freshData[varName] = await fetchLabelValue(tableId, fieldKey)
+                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!)
                 console.log('[data_exchange:load] label', varName, '=', freshData[varName])
               }
             } else {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
-                const opts = await fetchOptions(tableId, fieldKey, filterByField, triggerValue)
+                const opts = await fetchOptions(tableId!, fieldKey!, filterByField, triggerValue)
                 freshData[varName] = opts
                 console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
               } else if (isFiltered) {
                 freshData[varName] = EMPTY_FILTERED_OPTIONS
                 console.log('[data_exchange:load]', varName, '→ [] (empty until parent selected)')
               } else {
-                const opts = await fetchOptions(tableId, fieldKey)
+                const opts = await fetchOptions(tableId!, fieldKey!)
                 freshData[varName] = opts
                 console.log('[data_exchange:load]', varName, '→', opts.length, 'options')
               }
@@ -713,22 +763,15 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     })
   }
 
-  type SourceEntry = { tableId: string; fieldKey: string; varName: string; isFiltered: boolean; isLabel?: boolean }
-  const sources = new Map<string, SourceEntry>()
+  const sources = new Map<string, ResolvedSource>()
 
   function collectSources(comps: Array<Record<string, unknown>>) {
     for (const comp of comps) {
       for (const src of flattenComponentSources(comp)) {
-        // varName is already unique per label+token (or table+field for
+        // varName is already unique per label (or table+field for
         // options), so it doubles as the dedup key.
         if (!sources.has(src.varName)) {
-          sources.set(src.varName, {
-            tableId: src.tableId,
-            fieldKey: src.fieldKey,
-            varName: src.varName,
-            isFiltered: !!src.filterFormName,
-            isLabel: src.isLabel,
-          })
+          sources.set(src.varName, src)
         }
       }
       if (comp.type === 'Form' && Array.isArray(comp.children)) {
@@ -742,13 +785,22 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
 
   const responseData: Record<string, unknown> = {}
   await Promise.all(
-    Array.from(sources.values()).map(async ({ tableId, fieldKey, varName, isFiltered, isLabel }) => {
+    Array.from(sources.values()).map(async ({ tableId, fieldKey, varName, filterFormName, isLabel, multi }) => {
+      if (multi) {
+        // No formData exists yet at INIT — every filtered token in the
+        // template correctly resolves to '' via resolveLabelTemplate's own
+        // hasFormValue check, unfiltered tokens still resolve to a real value.
+        responseData[varName] = await resolveLabelTemplate(multi.template, multi.sources, {}, null, null)
+        console.log(`[webhook] ${varName}: multi-source label = "${responseData[varName]}"`)
+        return
+      }
+      const isFiltered = !!filterFormName
       if (isLabel) {
         if (isFiltered) {
           console.log(`[webhook] ${varName}: filtered label → '' (empty until parent selected)`)
           responseData[varName] = ''
         } else {
-          const val = await fetchLabelValue(tableId, fieldKey)
+          const val = await fetchLabelValue(tableId!, fieldKey!)
           console.log(`[webhook] ${varName}: label value = "${val}"`)
           responseData[varName] = val
         }
@@ -757,7 +809,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           console.log(`[webhook] ${varName}: filtered child → [] (empty until parent selected)`)
           responseData[varName] = EMPTY_FILTERED_OPTIONS
         } else {
-          const opts = await fetchOptions(tableId, fieldKey)
+          const opts = await fetchOptions(tableId!, fieldKey!)
           console.log(`[webhook] ${varName}: ${opts.length} options`)
           responseData[varName] = opts
         }
