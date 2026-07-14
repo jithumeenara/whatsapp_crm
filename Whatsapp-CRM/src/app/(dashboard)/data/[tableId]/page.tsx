@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical,
   RefreshCw, Settings2, X, Upload, Download, Loader2,
-  Database, AlertTriangle, ChevronRight,
+  Database, AlertTriangle, ChevronRight, ChevronLeft,
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock,
   CalendarClock, ToggleLeft, ChevronDown, ListChecks, CircleDot, Globe,
   MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon, PenLine, EyeOff,
@@ -93,6 +93,11 @@ export default function DataTablePage() {
   const [importing, setImporting] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
   const [confirmRecordId, setConfirmRecordId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [page, setPage] = useState(1)
+  const PAGE_SIZE = 20
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -165,12 +170,61 @@ export default function DataTablePage() {
     finally { setDeleting(null) }
   }
 
+  async function confirmBulkDeleteRecords() {
+    const ids = Array.from(selectedIds)
+    setConfirmBulkDelete(false)
+    setBulkDeleting(true)
+    try {
+      const results = await Promise.allSettled(
+        ids.map((id) => fetch(`/api/data-tables/${tableId}/records/${id}`, { method: "DELETE" })),
+      )
+      const failed = results.filter((r) => r.status === "rejected").length
+      setRecords((p) => p.filter((r) => !selectedIds.has(r.id)))
+      setSelectedIds(new Set())
+      if (failed > 0) toast.error(`${failed} record${failed !== 1 ? "s" : ""} failed to delete`)
+      else toast.success(`${ids.length} record${ids.length !== 1 ? "s" : ""} deleted`)
+    } catch { toast.error("Bulk delete failed") }
+    finally { setBulkDeleting(false) }
+  }
+
   const filtered = records.filter((r) => {
     if (!search) return true
     return Object.values(r.data as Record<string, unknown>).some((v) =>
       String(v ?? "").toLowerCase().includes(search.toLowerCase())
     )
   })
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const pageRecords = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  // Reset to page 1 whenever the search narrows/widens the result set —
+  // otherwise a stale page number could point past the new last page.
+  useEffect(() => { setPage(1) }, [search])
+
+  // "Select all" scopes to the current page, matching the visible rows.
+  const allPageSelected = pageRecords.length > 0 && pageRecords.every((r) => selectedIds.has(r.id))
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allPageSelected) {
+        for (const r of pageRecords) next.delete(r.id)
+      } else {
+        for (const r of pageRecords) next.add(r.id)
+      }
+      return next
+    })
+  }
+
+  function toggleSelectOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   // The table wrapper below already scrolls horizontally (overflow-x-auto),
   // so every field can render as its own column instead of being capped.
@@ -208,6 +262,27 @@ export default function DataTablePage() {
             <div className="hidden md:flex items-center gap-3 text-[12px] text-slate-400 ml-1">
               <span><span className="font-semibold text-slate-600">{records.length}</span> records</span>
               <span><span className="font-semibold text-slate-600">{fields.length}</span> fields</span>
+            </div>
+          )}
+
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-1.5 rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 h-8 ml-1">
+              <span className="text-[12px] font-medium text-indigo-700">{selectedIds.size} selected</span>
+              <button
+                onClick={() => setSelectedIds(new Set())}
+                className="text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors"
+              >
+                Clear
+              </button>
+              <div className="h-4 w-px bg-indigo-200" />
+              <button
+                onClick={() => setConfirmBulkDelete(true)}
+                disabled={bulkDeleting}
+                className="flex items-center gap-1 text-[12px] font-medium text-rose-600 hover:text-rose-700 disabled:opacity-50 transition-colors"
+              >
+                {bulkDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                Delete
+              </button>
             </div>
           )}
 
@@ -279,116 +354,161 @@ export default function DataTablePage() {
             </button>
           </div>
         ) : (
-          <div className="p-4">
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.05)]">
-              <div className="overflow-x-auto">
-                <table className="w-full text-[13px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-                  <thead>
-                    <tr>
-                      <th className="sticky top-0 left-0 z-20 bg-slate-50 px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-10 border-b border-r border-slate-200">
-                        #
-                      </th>
-                      {visibleFields.map((f) => {
-                        const TypeIcon = FIELD_TYPE_ICONS[f.field_type] ?? Type
-                        return (
-                          <th key={f.id} title={f.field_type} className="sticky top-0 z-10 bg-slate-50 px-4 py-2.5 text-left border-b border-r border-slate-200 whitespace-nowrap last:border-r-0">
-                            <div className="flex items-center gap-1.5">
-                              <TypeIcon className="h-3 w-3 text-slate-400 shrink-0" />
-                              <span className="text-[11px] font-semibold text-slate-600">{f.label}</span>
-                            </div>
-                          </th>
-                        )
-                      })}
-                      <th className="sticky top-0 right-0 z-20 bg-slate-50 px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-400 w-14 border-b border-l border-slate-200">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filtered.map((rec, idx) => {
-                      const data = rec.data as Record<string, unknown>
-                      const isMenuOpen = menuOpenId === rec.id
+          <div className="flex h-full flex-col">
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-[13px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                <thead>
+                  <tr>
+                    <th className="sticky top-0 left-0 z-20 bg-indigo-50/70 backdrop-blur-sm px-3 py-2.5 text-left w-10 border-b-2 border-indigo-100">
+                      <input
+                        type="checkbox"
+                        checked={allPageSelected}
+                        onChange={toggleSelectAll}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400 cursor-pointer"
+                        aria-label="Select all rows on this page"
+                      />
+                    </th>
+                    {visibleFields.map((f) => {
+                      const TypeIcon = FIELD_TYPE_ICONS[f.field_type] ?? Type
                       return (
-                        <tr key={rec.id} className="group border-b border-slate-100 last:border-0 hover:bg-indigo-50/30 transition-colors">
-                          <td className="sticky left-0 z-10 bg-white group-hover:bg-indigo-50/40 px-3 py-2.5 text-[11px] font-mono text-slate-300 border-r border-slate-100 w-10 transition-colors">
-                            {idx + 1}
-                          </td>
-                          {visibleFields.map((f) => {
-                            const raw = data[f.field_key]
-                            return (
-                              <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[220px] border-r border-slate-50">
-                                {f.field_type === "boolean" ? (
-                                  <span className={cn(
-                                    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-                                    raw ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500",
-                                  )}>
-                                    {raw ? "Yes" : "No"}
-                                  </span>
-                                ) : (
-                                  <span className={cn(
-                                    "block truncate",
-                                    (f.field_type === "email" || f.field_type === "url" || f.field_type === "phone") && "font-mono text-[12px] text-slate-600",
-                                    f.field_type === "number" && "font-mono text-[12px] tabular-nums",
-                                    (raw === null || raw === undefined || raw === "") && "text-slate-300",
-                                  )}>
-                                    {formatValue(f, raw)}
-                                  </span>
-                                )}
-                              </td>
-                            )
-                          })}
-                          <td className="sticky right-0 z-10 bg-white group-hover:bg-indigo-50/40 px-3 py-2.5 text-right border-l border-slate-100 transition-colors">
-                            {/* z-30 sits above the z-20 backdrop */}
-                            <div className="relative z-30 inline-flex justify-end">
-                              <button
-                                onClick={() => setMenuOpenId(isMenuOpen ? null : rec.id)}
-                                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-slate-200 hover:text-slate-600 transition-all"
-                              >
-                                <MoreVertical className="h-3.5 w-3.5" />
-                              </button>
-
-                              {isMenuOpen && (
-                                <div className="absolute right-0 top-8 w-40 rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
-                                  <button
-                                    onClick={() => {
-                                      setMenuOpenId(null)
-                                      setEditingRecord(rec)
-                                      setFormOpen(true)
-                                    }}
-                                    className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
-                                  >
-                                    <Edit2 className="h-3.5 w-3.5 text-slate-400" />
-                                    Edit record
-                                  </button>
-                                  <div className="mx-2 my-0.5 h-px bg-slate-100" />
-                                  <button
-                                    onClick={() => {
-                                      setMenuOpenId(null)
-                                      setConfirmRecordId(rec.id)
-                                    }}
-                                    className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                        <th key={f.id} title={f.field_type} className="sticky top-0 z-10 bg-indigo-50/70 backdrop-blur-sm px-4 py-2.5 text-left border-b-2 border-indigo-100 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <TypeIcon className="h-3 w-3 text-indigo-400 shrink-0" />
+                            <span className="text-[11px] font-semibold text-indigo-900/80 tracking-wide">{f.label}</span>
+                          </div>
+                        </th>
                       )
                     })}
-                  </tbody>
-                </table>
-              </div>
+                    <th className="sticky top-0 right-0 z-20 bg-indigo-50/70 backdrop-blur-sm px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-indigo-400 w-14 border-b-2 border-indigo-100">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pageRecords.map((rec, idx) => {
+                    const data = rec.data as Record<string, unknown>
+                    const isMenuOpen = menuOpenId === rec.id
+                    const isSelected = selectedIds.has(rec.id)
+                    const zebra = idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"
+                    const rowBg = isSelected ? "bg-indigo-50" : zebra
+                    return (
+                      <tr key={rec.id} className={cn("group border-b border-slate-100 last:border-0 hover:bg-indigo-50/50 transition-colors", rowBg)}>
+                        <td className={cn("sticky left-0 z-10 px-3 py-2.5 border-r border-slate-100 w-10 transition-colors", isSelected ? "bg-indigo-50" : zebra, "group-hover:bg-indigo-50/50")}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectOne(rec.id)}
+                            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400 cursor-pointer"
+                            aria-label={`Select row ${(currentPage - 1) * PAGE_SIZE + idx + 1}`}
+                          />
+                        </td>
+                        {visibleFields.map((f) => {
+                          const raw = data[f.field_key]
+                          return (
+                            <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[220px] border-r border-slate-50/80">
+                              {f.field_type === "boolean" ? (
+                                <span className={cn(
+                                  "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                  raw ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500",
+                                )}>
+                                  {raw ? "Yes" : "No"}
+                                </span>
+                              ) : (
+                                <span className={cn(
+                                  "block truncate",
+                                  (f.field_type === "email" || f.field_type === "url" || f.field_type === "phone") && "font-mono text-[12px] text-slate-600",
+                                  f.field_type === "number" && "font-mono text-[12px] tabular-nums",
+                                  (raw === null || raw === undefined || raw === "") && "text-slate-300",
+                                )}>
+                                  {formatValue(f, raw)}
+                                </span>
+                              )}
+                            </td>
+                          )
+                        })}
+                        <td className={cn(
+                          "sticky right-0 px-3 py-2.5 text-right border-l border-slate-100 transition-colors group-hover:bg-indigo-50/50",
+                          isSelected ? "bg-indigo-50" : zebra,
+                          // Boosted above every other row's sticky cell (which all sit at
+                          // z-10) only while its own menu is open — otherwise later rows
+                          // in the DOM win z-index ties and swallow clicks meant for this
+                          // row's open dropdown.
+                          isMenuOpen ? "z-40" : "z-10",
+                        )}>
+                          <div className="relative z-30 inline-flex justify-end">
+                            <button
+                              onClick={() => setMenuOpenId(isMenuOpen ? null : rec.id)}
+                              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-100 hover:text-indigo-600 transition-all"
+                            >
+                              <MoreVertical className="h-3.5 w-3.5" />
+                            </button>
+
+                            {isMenuOpen && (
+                              <div className="absolute right-0 top-8 w-40 rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
+                                <button
+                                  onClick={() => {
+                                    setMenuOpenId(null)
+                                    setEditingRecord(rec)
+                                    setFormOpen(true)
+                                  }}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                                >
+                                  <Edit2 className="h-3.5 w-3.5 text-slate-400" />
+                                  Edit record
+                                </button>
+                                <div className="mx-2 my-0.5 h-px bg-slate-100" />
+                                <button
+                                  onClick={() => {
+                                    setMenuOpenId(null)
+                                    setConfirmRecordId(rec.id)
+                                  }}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
 
-            <div className="flex items-center justify-between mt-3 px-1">
+            {/* Pagination footer */}
+            <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-2.5 shrink-0">
               <p className="text-[11px] text-slate-400">
                 {filtered.length === records.length
                   ? `${records.length} record${records.length !== 1 ? "s" : ""}`
                   : `${filtered.length} of ${records.length} records`}
+                {pageCount > 1 && ` · Page ${currentPage} of ${pageCount}`}
               </p>
+              {pageCount > 1 && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-[11px] font-medium text-slate-600 px-1 tabular-nums">
+                    {currentPage} / {pageCount}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                    disabled={currentPage >= pageCount}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -446,17 +566,27 @@ export default function DataTablePage() {
         onConfirm={confirmDelete}
         onCancel={() => setConfirmRecordId(null)}
       />
+
+      {/* Bulk delete confirm */}
+      <ConfirmDialog
+        open={confirmBulkDelete}
+        title={`Delete ${selectedIds.size} record${selectedIds.size !== 1 ? "s" : ""}?`}
+        message="These records will be permanently deleted and cannot be recovered."
+        confirmLabel="Delete"
+        onConfirm={confirmBulkDeleteRecords}
+        onCancel={() => setConfirmBulkDelete(false)}
+      />
     </div>
   )
 }
 
 function TableSkeleton() {
   return (
-    <div className="p-4">
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="h-10 bg-slate-50 border-b border-slate-200" />
+    <div className="h-full">
+      <div className="h-10 bg-indigo-50/70 border-b-2 border-indigo-100" />
+      <div>
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className={cn("h-11 border-b border-slate-100 last:border-0", i % 2 !== 0 && "bg-slate-50/40")}>
+          <div key={i} className={cn("h-11 border-b border-slate-100 last:border-0", i % 2 !== 0 && "bg-slate-50/60")}>
             <div className="flex items-center gap-4 px-4 h-full">
               <div className="h-3 w-4 rounded bg-slate-100 animate-pulse" />
               <div className="h-3 w-28 rounded bg-slate-100 animate-pulse" />
