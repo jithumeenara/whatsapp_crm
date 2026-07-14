@@ -779,6 +779,9 @@ interface FormInputMeta {
   /** Which screen this input lives on — needed once mapping spans all screens. */
   screenId: string
   screenTitle: string
+  /** True for a Label (dynamic) component — its value comes from a fetched
+   *  DataStore lookup, not something the customer typed. */
+  isLabel?: boolean
 }
 
 function collectFormInputs(components: MetaFlowComponent[], screenId: string, screenTitle: string): FormInputMeta[] {
@@ -794,6 +797,23 @@ function collectFormInputs(components: MetaFlowComponent[], screenId: string, sc
         screenId,
         screenTitle,
       })
+    } else if (comp.type === 'TextLabel' && raw.name) {
+      // Only list a Label if it actually has a resolvable value — a static-
+      // text label has nothing meaningful to save.
+      const sources = raw._sources as LabelSource[] | undefined
+      const hasSource = (Array.isArray(sources) && sources.some((s) => s.table_id && s.field_key))
+        || (raw._source_table_id && raw._source_field_key)
+      if (hasSource) {
+        result.push({
+          name: raw.name as string,
+          label: raw.name as string,
+          type: 'TextLabel',
+          _save_field_key: raw._save_field_key as string | undefined,
+          screenId,
+          screenTitle,
+          isLabel: true,
+        })
+      }
     }
     // Walk Form container children (Meta Flows Form component)
     if (raw.type === 'Form' && Array.isArray(raw.children)) {
@@ -820,16 +840,17 @@ function collectAllScreensFormInputs(allScreens: MetaFlowScreen[]): FormInputMet
 // Type compatibility: DataStore field_type × Flow component type
 function getTypeCompat(fieldType: string, compType: string): 'ok' | 'warn' | 'error' {
   const rules: Record<string, Record<string, 'ok' | 'warn' | 'error'>> = {
-    // text field accepts any component that submits a string value
-    text:    { TextInput: 'ok', TextArea: 'ok', Dropdown: 'ok', RadioButtonsGroup: 'ok', CheckboxGroup: 'warn', DatePicker: 'warn' },
+    // text field accepts any component that submits a string value —
+    // TextLabel included, since its resolved DataStore value is a string too.
+    text:    { TextInput: 'ok', TextArea: 'ok', Dropdown: 'ok', RadioButtonsGroup: 'ok', CheckboxGroup: 'warn', DatePicker: 'warn', TextLabel: 'ok' },
     // date field — only DatePicker gives a proper ISO date string
-    date:    { DatePicker: 'ok', TextInput: 'warn', TextArea: 'error', Dropdown: 'error', RadioButtonsGroup: 'error', CheckboxGroup: 'error' },
+    date:    { DatePicker: 'ok', TextInput: 'warn', TextArea: 'error', Dropdown: 'error', RadioButtonsGroup: 'error', CheckboxGroup: 'error', TextLabel: 'warn' },
     // number field — TextInput with number type works; others submit strings
-    number:  { TextInput: 'ok', TextArea: 'warn', Dropdown: 'error', RadioButtonsGroup: 'error', CheckboxGroup: 'error', DatePicker: 'error' },
+    number:  { TextInput: 'ok', TextArea: 'warn', Dropdown: 'error', RadioButtonsGroup: 'error', CheckboxGroup: 'error', DatePicker: 'error', TextLabel: 'warn' },
     // select field — choice components are a natural match; TextInput works but unusual
-    select:  { Dropdown: 'ok', RadioButtonsGroup: 'ok', CheckboxGroup: 'ok', TextInput: 'warn', TextArea: 'warn' },
+    select:  { Dropdown: 'ok', RadioButtonsGroup: 'ok', CheckboxGroup: 'ok', TextInput: 'warn', TextArea: 'warn', TextLabel: 'warn' },
     // boolean — checkbox/radio group submit selected values; TextInput is a stretch
-    boolean: { CheckboxGroup: 'ok', RadioButtonsGroup: 'ok', TextInput: 'warn', Dropdown: 'warn', TextArea: 'error', DatePicker: 'error' },
+    boolean: { CheckboxGroup: 'ok', RadioButtonsGroup: 'ok', TextInput: 'warn', Dropdown: 'warn', TextArea: 'error', DatePicker: 'error', TextLabel: 'warn' },
   }
   return rules[fieldType]?.[compType] ?? 'warn'
 }
@@ -1016,7 +1037,7 @@ function SaveMappingTable({
                       <optgroup key={s.id} label={s.title || s.id}>
                         {opts.map((inp) => (
                           <option key={inp.name} value={inp.name}>
-                            {inp.label} ({inp.type.replace(/Comp$/, '')})
+                            {inp.label} ({inp.isLabel ? 'Label (dynamic)' : inp.type.replace(/Comp$/, '')})
                           </option>
                         ))}
                       </optgroup>
