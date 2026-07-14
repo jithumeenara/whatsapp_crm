@@ -245,6 +245,30 @@ function flattenLayoutChildren(layoutChildren: Record<string, unknown>[]): Recor
   return out
 }
 
+// A screen's Footer "navigate" action gets converted to a `data_exchange`
+// action carrying `__target_screen` in its payload whenever the screen has
+// a filter trigger (see transformScreensForMeta's screenHasFilterTrigger
+// branch) — the actual navigation still happens, just via a different
+// action name. routing_model must list that target too, or Meta rejects
+// the transition at runtime ("doesn't satisfy provided routing_model")
+// even though the published JSON itself has 0 validation errors, since
+// routing_model is checked separately from the JSON schema.
+function extractNavigationTargets(flat: Record<string, unknown>[]): string[] {
+  const targets: string[] = []
+  for (const c of flat) {
+    const action = c['on-click-action'] as Record<string, unknown> | undefined
+    if (!action) continue
+    if (action.name === 'navigate') {
+      const next = (action.next as Record<string, unknown>)?.name as string | undefined
+      if (next) targets.push(next)
+    } else if (action.name === 'data_exchange') {
+      const targetScreen = (action.payload as Record<string, unknown>)?.__target_screen as string | undefined
+      if (targetScreen) targets.push(targetScreen)
+    }
+  }
+  return targets
+}
+
 /** Ensure every on-click-action has payload: {} (required by Meta). Handles Form wrapper. */
 function patchPayloads(screens: Record<string, unknown>[]): Record<string, unknown>[] {
   const patchComp = (c: Record<string, unknown>) => {
@@ -551,10 +575,7 @@ export async function GET(
       const sid = (screen as Record<string, unknown>).id as string
       const raw = ((screen as Record<string, unknown>).layout as Record<string, unknown>)?.children as Record<string, unknown>[] ?? []
       const flat = flattenLayoutChildren(raw)
-      routingModel[sid] = flat
-        .filter((c) => (c['on-click-action'] as Record<string, unknown>)?.name === 'navigate')
-        .map((c) => ((c['on-click-action'] as Record<string, unknown>).next as Record<string, unknown>)?.name as string)
-        .filter(Boolean)
+      routingModel[sid] = extractNavigationTargets(flat)
     }
     const finalScreens = metaScreens.map((screen) => {
       const s = screen as Record<string, unknown>
@@ -629,10 +650,7 @@ export async function POST(
           const sid = (screen as Record<string, unknown>).id as string
           const raw = ((screen as Record<string, unknown>).layout as Record<string, unknown>)?.children as Record<string, unknown>[] ?? []
           const flat = flattenLayoutChildren(raw)
-          routingModel[sid] = flat
-            .filter((c) => (c['on-click-action'] as Record<string, unknown>)?.name === 'navigate')
-            .map((c) => ((c['on-click-action'] as Record<string, unknown>).next as Record<string, unknown>)?.name as string)
-            .filter(Boolean)
+          routingModel[sid] = extractNavigationTargets(flat)
         }
         const finalScreens = metaScreens.map((screen) => {
           const s = screen as Record<string, unknown>
@@ -710,10 +728,7 @@ export async function POST(
         const sid = (screen as Record<string, unknown>).id as string
         const raw = ((screen as Record<string, unknown>).layout as Record<string, unknown>)?.children as Record<string, unknown>[] ?? []
         const flat = flattenLayoutChildren(raw)
-        routingModel[sid] = flat
-          .filter((c) => (c['on-click-action'] as Record<string, unknown>)?.name === 'navigate')
-          .map((c) => ((c['on-click-action'] as Record<string, unknown>).next as Record<string, unknown>)?.name as string)
-          .filter(Boolean)
+        routingModel[sid] = extractNavigationTargets(flat)
       }
 
       // Mark terminal screens (those with a complete action footer)
