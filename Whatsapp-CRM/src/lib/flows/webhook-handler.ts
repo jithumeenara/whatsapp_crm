@@ -501,7 +501,16 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       (c) => c._filter_trigger === true && c.name && (c.name as string) in formData,
     )
     const isFooterNavigation = !!formData.__target_screen
-    if (filterTrigger && !hasSaveFields && !isFooterNavigation) {
+    // __filter_refresh is a marker we set on EVERY filter-trigger's own
+    // on-select payload specifically so this request type is unambiguous —
+    // it must win over hasSaveFields. Without this, a screen that has BOTH
+    // a filter trigger AND "Save form data to" configured (e.g. Month is
+    // itself save-mapped for the final submission, but also triggers
+    // Programme's filter) would misroute every filter refresh into a
+    // premature partial save + terminal SUCCESS, closing the flow the
+    // instant the user picks the first field.
+    const isFilterRefresh = formData.__filter_refresh === '1'
+    if (filterTrigger && isFilterRefresh) {
       const triggerName = filterTrigger.name as string
       const triggerValue = slugify(String(formData[triggerName] ?? ''))
       console.log('[data_exchange:filter] trigger:', triggerName, '=', triggerValue)
@@ -558,7 +567,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       })
     }
 
-    if (!hasSaveFields) {
+    // Same priority rule as above: an explicit navigation request
+    // (__target_screen, set when a filter-trigger screen's footer is
+    // converted to data_exchange) must win over hasSaveFields too — a
+    // screen can have both a filter trigger's save-mapped field AND a
+    // "Continue" button that needs to actually navigate forward.
+    if (isFooterNavigation || !hasSaveFields) {
       const requestedScreenId = formData.__target_screen as string | undefined
 
       const formScreen = requestedScreenId
