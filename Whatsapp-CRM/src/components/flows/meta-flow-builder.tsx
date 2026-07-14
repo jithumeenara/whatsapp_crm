@@ -347,6 +347,7 @@ export function MetaFlowBuilder({
               onComponentsChange={(c) =>
                 updateScreenComponents(selectedScreen.id, c)
               }
+              onAnyScreenComponentsChange={updateScreenComponents}
               allTables={allTables}
               saveTableId={value._save_table_id}
               onSaveTableChange={(id) => onChange({ ...value, _save_table_id: id || undefined })}
@@ -466,6 +467,7 @@ function ComponentEditorPanel({
   allScreens,
   onTitleChange,
   onComponentsChange,
+  onAnyScreenComponentsChange,
   allTables,
   saveTableId,
   onSaveTableChange,
@@ -474,6 +476,7 @@ function ComponentEditorPanel({
   allScreens: MetaFlowScreen[];
   onTitleChange: (t: string) => void;
   onComponentsChange: (c: MetaFlowComponent[]) => void;
+  onAnyScreenComponentsChange: (screenId: string, c: MetaFlowComponent[]) => void;
   allTables: { id: string; name: string }[];
   saveTableId?: string;
   onSaveTableChange: (id: string) => void;
@@ -583,7 +586,7 @@ function ComponentEditorPanel({
             ))}
           </select>
           {saveTableId && (
-            <SaveMappingTable screen={screen} onComponentsChange={onComponentsChange} />
+            <SaveMappingTable allScreens={allScreens} onScreenComponentsChange={onAnyScreenComponentsChange} />
           )}
         </div>
       )}
@@ -773,9 +776,12 @@ interface FormInputMeta {
   label: string
   type: string
   _save_field_key?: string
+  /** Which screen this input lives on — needed once mapping spans all screens. */
+  screenId: string
+  screenTitle: string
 }
 
-function collectFormInputs(components: MetaFlowComponent[]): FormInputMeta[] {
+function collectFormInputs(components: MetaFlowComponent[], screenId: string, screenTitle: string): FormInputMeta[] {
   const result: FormInputMeta[] = []
   for (const comp of components) {
     const raw = comp as unknown as Record<string, unknown>
@@ -785,12 +791,28 @@ function collectFormInputs(components: MetaFlowComponent[]): FormInputMeta[] {
         label: (raw.label as string) || (raw.name as string),
         type: comp.type,
         _save_field_key: raw._save_field_key as string | undefined,
+        screenId,
+        screenTitle,
       })
     }
     // Walk Form container children (Meta Flows Form component)
     if (raw.type === 'Form' && Array.isArray(raw.children)) {
-      result.push(...collectFormInputs(raw.children as MetaFlowComponent[]))
+      result.push(...collectFormInputs(raw.children as MetaFlowComponent[], screenId, screenTitle))
     }
+  }
+  return result
+}
+
+// Every screen's form inputs, in screen order — this is what powers the
+// "Field Mapping" dropdown showing fields from EVERY screen, not just the
+// one where "Save form data to" is configured. A field collected on an
+// earlier screen is carried forward to wherever the save actually happens
+// (see webhook-handler.ts's save-carry-var chaining), so mapping across
+// screens genuinely works, not just displays.
+function collectAllScreensFormInputs(allScreens: MetaFlowScreen[]): FormInputMeta[] {
+  const result: FormInputMeta[] = []
+  for (const s of allScreens) {
+    result.push(...collectFormInputs(s.components, s.id, s.title || s.id))
   }
   return result
 }
@@ -819,17 +841,23 @@ const COMPAT_ICONS: Record<'ok' | 'warn' | 'error', { icon: string; cls: string;
 }
 
 // ── Unified save mapping table ────────────────────────────────────
+// Field Mapping spans EVERY screen in the flow, not just the one where
+// "Save form data to" is configured — a field collected on an earlier
+// screen is carried forward through every navigation to wherever the save
+// actually happens (see webhook-handler.ts), so mapping to it here
+// genuinely works, not just for display.
 function SaveMappingTable({
-  screen,
-  onComponentsChange,
+  allScreens,
+  onScreenComponentsChange,
 }: {
-  screen: MetaFlowScreen
-  onComponentsChange: (c: MetaFlowComponent[]) => void
+  allScreens: MetaFlowScreen[]
+  onScreenComponentsChange: (screenId: string, c: MetaFlowComponent[]) => void
 }) {
   const { saveTableId, saveTableFields } = useContext(FlowBuilderContext)
   if (!saveTableId || saveTableFields.length === 0) return null
 
-  const formInputs = collectFormInputs(screen.components)
+  const formInputs = collectAllScreensFormInputs(allScreens)
+  const screensById = new Map(allScreens.map((s) => [s.id, s]))
 
   // Build reverse map: field_key → component name (current mapping)
   const currentMapping: Record<string, string> = {}
@@ -837,36 +865,62 @@ function SaveMappingTable({
     if (inp._save_field_key) currentMapping[inp._save_field_key] = inp.name
   }
 
+  // Clears _save_field_key from whichever component currently holds
+  // fieldKey, wherever it lives — the previous holder may be on a
+  // different screen than the one being newly mapped.
+  function clearHolder(fieldKey: string, exceptScreenId?: string, exceptCompName?: string) {
+    for (const s of allScreens) {
+      if (s.id === exceptScreenId) continue
+      function applyToComps(comps: MetaFlowComponent[]): { comps: MetaFlowComponent[]; changed: boolean } {
+        let changed = false
+        const next = comps.map((comp) => {
+          const raw = comp as unknown as Record<string, unknown>
+          if (raw.type === 'Form' && Array.isArray(raw.children)) {
+            const r = applyToComps(raw.children as MetaFlowComponent[])
+            if (r.changed) changed = true
+            return { ...comp, children: r.comps } as unknown as MetaFlowComponent
+          }
+          if ((raw.name as string | undefined) === exceptCompName && s.id === exceptScreenId) return comp
+          if ((raw._save_field_key as string | undefined) === fieldKey) {
+            changed = true
+            const updated = { ...raw }
+            delete updated._save_field_key
+            return updated as unknown as MetaFlowComponent
+          }
+          return comp
+        })
+        return { comps: next, changed }
+      }
+      const { comps, changed } = applyToComps(s.components)
+      if (changed) onScreenComponentsChange(s.id, comps)
+    }
+  }
+
   const handleChange = (fieldKey: string, compName: string) => {
-    // Walk all components (including nested), set/clear _save_field_key
+    clearHolder(fieldKey, compName ? formInputs.find((i) => i.name === compName)?.screenId : undefined, compName)
+    if (!compName) return
+    const target = formInputs.find((i) => i.name === compName)
+    if (!target) return
+    const targetScreen = screensById.get(target.screenId)
+    if (!targetScreen) return
     function applyToComps(comps: MetaFlowComponent[]): MetaFlowComponent[] {
       return comps.map((comp) => {
         const raw = comp as unknown as Record<string, unknown>
-        const name = raw.name as string | undefined
-
-        // Recurse into Form.children
         if (raw.type === 'Form' && Array.isArray(raw.children)) {
           return { ...comp, children: applyToComps(raw.children as MetaFlowComponent[]) } as unknown as MetaFlowComponent
         }
-
-        if (!name) return comp
-        if (name === compName) {
-          return { ...comp, _save_field_key: fieldKey || undefined } as MetaFlowComponent
-        }
-        // Clear from the previous holder of this fieldKey
-        if ((raw._save_field_key as string | undefined) === fieldKey && fieldKey !== '') {
-          const updated = { ...raw }
-          delete updated._save_field_key
-          return updated as unknown as MetaFlowComponent
+        if ((raw.name as string | undefined) === compName) {
+          return { ...comp, _save_field_key: fieldKey } as MetaFlowComponent
         }
         return comp
       })
     }
-    onComponentsChange(applyToComps(screen.components))
+    onScreenComponentsChange(target.screenId, applyToComps(targetScreen.components))
   }
 
   function autoMap() {
-    // For each table field, find the best-matching form input by label similarity
+    // For each table field, find the best-matching form input (across ALL
+    // screens) by label similarity.
     function similarity(a: string, b: string) {
       const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
       const na = norm(a); const nb = norm(b)
@@ -874,7 +928,6 @@ function SaveMappingTable({
       if (na.includes(nb) || nb.includes(na)) return 0.8
       return 0
     }
-    let comps = [...screen.components]
     const newMapping: Record<string, string> = {} // fieldKey → compName
     for (const field of saveTableFields) {
       let bestComp: FormInputMeta | null = null
@@ -886,26 +939,36 @@ function SaveMappingTable({
       }
       if (bestComp && bestScore > 0) newMapping[field.field_key] = bestComp.name
     }
-    // Apply mapping to components
-    function applyAll(c: MetaFlowComponent[]): MetaFlowComponent[] {
-      return c.map((comp) => {
-        const raw = comp as unknown as Record<string, unknown>
-        if (raw.type === 'Form' && Array.isArray(raw.children)) {
-          return { ...comp, children: applyAll(raw.children as MetaFlowComponent[]) } as unknown as MetaFlowComponent
-        }
-        const name = raw.name as string | undefined
-        if (!name) return comp
-        // Find if this comp is mapped to a field
-        const fieldKey = Object.entries(newMapping).find(([, cn]) => cn === name)?.[0]
-        if (fieldKey) return { ...comp, _save_field_key: fieldKey } as MetaFlowComponent
-        // Clear previous mapping if not in new mapping
-        const updated = { ...raw }
-        delete updated._save_field_key
-        return updated as unknown as MetaFlowComponent
-      })
+    // Apply per-screen: each screen only gets updated once, with every
+    // matched/cleared component resolved together.
+    for (const s of allScreens) {
+      function applyAll(c: MetaFlowComponent[]): { comps: MetaFlowComponent[]; changed: boolean } {
+        let changed = false
+        const next = c.map((comp) => {
+          const raw = comp as unknown as Record<string, unknown>
+          if (raw.type === 'Form' && Array.isArray(raw.children)) {
+            const r = applyAll(raw.children as MetaFlowComponent[])
+            if (r.changed) changed = true
+            return { ...comp, children: r.comps } as unknown as MetaFlowComponent
+          }
+          const name = raw.name as string | undefined
+          if (!name) return comp
+          const fieldKey = Object.entries(newMapping).find(([, cn]) => cn === name)?.[0]
+          const prevKey = raw._save_field_key as string | undefined
+          if (fieldKey !== prevKey) {
+            changed = true
+            if (fieldKey) return { ...comp, _save_field_key: fieldKey } as MetaFlowComponent
+            const updated = { ...raw }
+            delete updated._save_field_key
+            return updated as unknown as MetaFlowComponent
+          }
+          return comp
+        })
+        return { comps: next, changed }
+      }
+      const { comps, changed } = applyAll(s.components)
+      if (changed) onScreenComponentsChange(s.id, comps)
     }
-    comps = applyAll(comps)
-    onComponentsChange(comps)
   }
 
   return (
@@ -916,7 +979,7 @@ function SaveMappingTable({
           type="button"
           onClick={autoMap}
           className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-          title="Auto-match fields by name"
+          title="Auto-match fields by name, across every screen"
         >
           <RefreshCw className="h-2.5 w-2.5" /> Auto-map
         </button>
@@ -939,18 +1002,31 @@ function SaveMappingTable({
                 <div className="font-medium text-slate-800 truncate">{field.label}</div>
                 <div className="text-[10px] text-slate-500 capitalize">{field.field_type}</div>
               </div>
-              <select
-                className="h-7 w-full rounded-md border border-slate-200 bg-white px-1.5 text-xs"
-                value={mappedName}
-                onChange={(e) => handleChange(field.field_key, e.target.value)}
-              >
-                <option value="">— None —</option>
-                {formInputs.map((inp) => (
-                  <option key={inp.name} value={inp.name}>
-                    {inp.label} ({inp.type.replace(/Comp$/, '')})
-                  </option>
-                ))}
-              </select>
+              <div className="space-y-0.5">
+                <select
+                  className="h-7 w-full rounded-md border border-slate-200 bg-white px-1.5 text-xs"
+                  value={mappedName}
+                  onChange={(e) => handleChange(field.field_key, e.target.value)}
+                >
+                  <option value="">— None —</option>
+                  {allScreens.map((s) => {
+                    const opts = formInputs.filter((inp) => inp.screenId === s.id)
+                    if (opts.length === 0) return null
+                    return (
+                      <optgroup key={s.id} label={s.title || s.id}>
+                        {opts.map((inp) => (
+                          <option key={inp.name} value={inp.name}>
+                            {inp.label} ({inp.type.replace(/Comp$/, '')})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )
+                  })}
+                </select>
+                {mappedComp && (
+                  <div className="text-[9px] text-slate-500 truncate">on {mappedComp.screenTitle}</div>
+                )}
+              </div>
               <div className="text-center">
                 {compatInfo && (
                   <span
@@ -966,7 +1042,7 @@ function SaveMappingTable({
         })}
         {formInputs.length === 0 && (
           <div className="px-3 py-3 text-[10px] text-slate-500 text-center">
-            No form inputs found on this screen. Add TextInput, DatePicker, or Dropdown components.
+            No form inputs found on any screen. Add TextInput, DatePicker, or Dropdown components.
           </div>
         )}
       </div>

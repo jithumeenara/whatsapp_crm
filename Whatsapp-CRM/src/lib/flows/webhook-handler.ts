@@ -32,6 +32,47 @@ function makeLabelVarName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
 }
 
+// Mirrors upload/route.ts's copy — must stay in sync so the ${data.X}
+// pass-through references Meta sends match the keys read/written here.
+function makeSaveCarryVarName(saveFieldKey: string): string {
+  return saveFieldKey.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_carried'
+}
+
+// Every save-mapped field (Field Mapping in "Save form data to"), across
+// ALL screens in the flow — keyed by DataStore field_key, which is stable
+// and unique per table regardless of which screen's component collects it.
+function collectAllSaveFields(
+  screens: Array<{ components: Array<Record<string, unknown>> }>,
+): Array<{ fieldKey: string; carryVar: string }> {
+  const seen = new Set<string>()
+  const out: Array<{ fieldKey: string; carryVar: string }> = []
+  for (const s of screens) {
+    for (const c of flatCompsShallow(s.components ?? [])) {
+      const fk = c._save_field_key as string | undefined
+      if (fk && !seen.has(fk)) {
+        seen.add(fk)
+        out.push({ fieldKey: fk, carryVar: makeSaveCarryVarName(fk) })
+      }
+    }
+  }
+  return out
+}
+
+// Non-recursive Form-unwrap — same shape as the in-scope flatComps() used
+// elsewhere in this file, duplicated here because collectAllSaveFields is
+// called before flatComps is defined in some call sites' scope.
+function flatCompsShallow(comps: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = []
+  for (const c of comps) {
+    if (c.type === 'Form' && Array.isArray(c.children)) {
+      out.push(...(c.children as Array<Record<string, unknown>>))
+    } else {
+      out.push(c)
+    }
+  }
+  return out
+}
+
 // A Label component can now bind MULTIPLE named data sources into one text
 // template (plain text + several {{token}} placeholders). Each source gets
 // its own data-model variable, namespaced by both the label's name and the
@@ -536,6 +577,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     const submittedScreen = screens.find((s) => sanitizeId(s.id) === currentScreenId) ?? screens[0]
     const submittedComps = flatComps(submittedScreen?.components ?? [])
     const hasSaveFields = submittedComps.some((c) => c._save_field_key)
+    const allSaveFields = collectAllSaveFields(screens)
 
     const filterTrigger = submittedComps.find(
       (c) => c._filter_trigger === true && c.name && (c.name as string) in formData,
@@ -682,6 +724,19 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           }),
       )
 
+      // Carry every save-mapped field's value forward into the target
+      // screen: if the screen we're navigating AWAY FROM collected it,
+      // use its just-submitted live value; otherwise pass through
+      // whatever was already carried (from an even earlier screen).
+      for (const sf of allSaveFields) {
+        const collector = submittedComps.find((c) => c._save_field_key === sf.fieldKey)
+        if (collector?.name && String(collector.name) in formData) {
+          freshData[sf.carryVar] = formData[String(collector.name)]
+        } else {
+          freshData[sf.carryVar] = formData[sf.carryVar] ?? ''
+        }
+      }
+
       console.log('[data_exchange:load] → screen:', sanitizeId(formScreen.id))
       logDebug(flowId, {
         ts: new Date().toISOString(),
@@ -703,12 +758,19 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
 
     if (saveTableId) {
       const record: Record<string, unknown> = {}
+      // Fields collected on THIS (final) screen: read their live value.
       for (const comp of submittedComps) {
         const compName = comp.name as string | undefined
         const saveFieldKey = comp._save_field_key as string | undefined
         if (compName && saveFieldKey && compName in formData) {
           record[saveFieldKey] = formData[compName]
         }
+      }
+      // Fields collected on an EARLIER screen: read the carried-forward
+      // value the "load" branch chained through every hop since then.
+      for (const sf of allSaveFields) {
+        if (sf.fieldKey in record) continue
+        if (sf.carryVar in formData) record[sf.fieldKey] = formData[sf.carryVar]
       }
 
       console.log('[data_exchange:save] record:', JSON.stringify(record))
@@ -816,6 +878,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       }
     }),
   )
+
+  // Every carry-forward save field starts empty — nothing has been
+  // collected yet at INIT.
+  for (const sf of collectAllSaveFields(screens)) {
+    responseData[sf.carryVar] = ''
+  }
 
   const targetScreen = sanitizeId(screens[0]?.id ?? 'SCREEN')
   console.log('[webhook] INIT → screen:', targetScreen, '| data keys:', Object.keys(responseData))

@@ -146,6 +146,13 @@ function makeLabelVarName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_label'
 }
 
+// Mirrors webhook-handler.ts's copy — must stay in sync so the ${data.X}
+// pass-through references generated here match the keys the webhook reads
+// and writes when carrying a save-mapped field's value across screens.
+function makeSaveCarryVarName(saveFieldKey: string): string {
+  return saveFieldKey.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_carried'
+}
+
 interface LabelSourceConfig {
   id: string
   table_id: string
@@ -306,6 +313,28 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     idMap[s.id] = sanitizeScreenId(s.id)
   }
 
+  // Every save-mapped field (Field Mapping in "Save form data to"), across
+  // ALL screens, gets one carry-forward variable — declared on every
+  // screen's data model and pass-through-chained through every navigate/
+  // data_exchange payload, so a field collected on an EARLIER screen is
+  // still available when a LATER screen (possibly several hops away)
+  // actually performs the save. Keyed by DataStore field_key (stable and
+  // unique per table) rather than component name, since the same table
+  // field can only be mapped to one component across the whole flow.
+  const allSaveFields: Array<{ fieldKey: string; carryVar: string }> = []
+  {
+    const seen = new Set<string>()
+    for (const screen of screens) {
+      for (const comp of screen.components) {
+        const fk = (comp as Record<string, unknown>)._save_field_key as string | undefined
+        if (fk && !seen.has(fk)) {
+          seen.add(fk)
+          allSaveFields.push({ fieldKey: fk, carryVar: makeSaveCarryVarName(fk) })
+        }
+      }
+    }
+  }
+
   // First pass: collect each screen's own dynamic vars.
   // screenDynamicVars: dropdown/selection sources (array type) — chained through navigate payloads.
   // screenLabelVars: TextLabel sources (string type) — declared only on their own screen.
@@ -332,6 +361,14 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
         hasDynamicData = true
       }
     }
+    // Every screen declares every carry-forward var, regardless of whether
+    // it collects or even needs that field — required so any navigate/
+    // data_exchange payload transitioning through this screen can pass one
+    // through without Meta rejecting an undeclared data-model key.
+    for (const sf of allSaveFields) {
+      labelVars[sf.carryVar] = { type: 'string', '__example__': '' }
+    }
+    if (allSaveFields.length > 0) hasDynamicData = true
     screenDynamicVars[idMap[screen.id]] = vars
     screenLabelVars[idMap[screen.id]] = labelVars
   }
@@ -359,6 +396,17 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     const screenHasFilterTrigger = screen.components.some(
       (c) => (c as Record<string, unknown>)._filter_trigger === true,
     )
+
+    // Which of the globally save-mapped fields does THIS screen actually
+    // collect? Those get their live value forwarded via ${form.x} (already
+    // covered by namedFields/formRefs below); every other carry-var needs
+    // an explicit ${data.x} pass-through so it survives this hop too.
+    const screenSaveFieldKeys = new Set(
+      screen.components
+        .map((c) => (c as Record<string, unknown>)._save_field_key as string | undefined)
+        .filter((fk): fk is string => Boolean(fk)),
+    )
+    const passthroughCarryVars = allSaveFields.filter((sf) => !screenSaveFieldKeys.has(sf.fieldKey))
 
     const cleanedComps = screen.components.flatMap((comp): Record<string, unknown>[] => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -417,6 +465,13 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
               for (const name of namedFields) {
                 formRefs[name] = `\${form.${name}}`
               }
+              // Carry-forward fields not collected on this screen need an
+              // explicit pass-through reference — the webhook's "load"
+              // branch reads these (and the live ${form.x} values above)
+              // to build the target screen's carried-forward values.
+              for (const sf of passthroughCarryVars) {
+                formRefs[sf.carryVar] = `\${data.${sf.carryVar}}`
+              }
               raw['on-click-action'] = {
                 name: 'data_exchange',
                 payload: { ...formRefs, __target_screen: targetId },
@@ -444,6 +499,20 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
               for (const varName of Object.keys(targetLabelVars)) {
                 dynamicPayload[varName] = ''
               }
+              // Save-mapped fields: this screen's OWN collected field goes
+              // out as its live ${form.x} value; everything else already
+              // carried (from an earlier screen, or this screen's static
+              // ${data.x} declaration) passes straight through.
+              for (const sf of allSaveFields) {
+                if (screenSaveFieldKeys.has(sf.fieldKey)) {
+                  const collector = screen.components.find(
+                    (c) => (c as Record<string, unknown>)._save_field_key === sf.fieldKey,
+                  ) as Record<string, unknown> | undefined
+                  dynamicPayload[sf.carryVar] = `\${form.${String(collector?.name)}}`
+                } else {
+                  dynamicPayload[sf.carryVar] = `\${data.${sf.carryVar}}`
+                }
+              }
 
               raw['on-click-action'] = {
                 ...action,
@@ -457,6 +526,11 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
           const formRefs: Record<string, string> = {}
           for (const name of namedFields) {
             formRefs[name] = `\${form.${name}}`
+          }
+          // Same pass-through as above — the final SAVE step needs every
+          // carried field, not just this screen's own.
+          for (const sf of passthroughCarryVars) {
+            formRefs[sf.carryVar] = `\${data.${sf.carryVar}}`
           }
           raw['on-click-action'] = {
             ...action,
