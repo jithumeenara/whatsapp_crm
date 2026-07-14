@@ -346,7 +346,7 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       (c) => (c as Record<string, unknown>)._filter_trigger === true,
     )
 
-    const cleanedComps = screen.components.map((comp) => {
+    const cleanedComps = screen.components.flatMap((comp): Record<string, unknown>[] => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { id: _id, ...raw } = comp
 
@@ -355,21 +355,44 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
         const labelName = raw.name as string | undefined
         const sources = raw._sources as LabelSourceConfig[] | undefined
         if (Array.isArray(sources) && sources.length > 0 && labelName) {
-          // Multi-source: replace each {{token}} in the template with its own
-          // ${data.X} reference, leaving surrounding plain text untouched.
-          let text = String(raw.text ?? '')
-          for (const s of sources) {
-            if (!s.table_id || !s.field_key) continue
-            const token = new RegExp(`\\{\\{\\s*${s.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}\\}`, 'g')
-            text = text.replace(token, `\${data.${makeMultiLabelVarName(labelName, s.id)}}`)
+          // Multi-source: Meta only substitutes ${data.X} when a TextBody's
+          // `text` is EXACTLY that reference — it does not interpolate a
+          // token embedded inside a longer string. So a template mixing
+          // plain text with {{token}}s must become SEVERAL TextBody
+          // components: static segments verbatim, each dynamic segment
+          // holding nothing but its own ${data.X} reference.
+          const template = String(raw.text ?? '')
+          const validSources = sources.filter((s) => s.table_id && s.field_key)
+          const tokenIds = new Set(validSources.map((s) => s.id))
+          const re = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g
+          const segments: Record<string, unknown>[] = []
+          let lastIndex = 0
+          let m: RegExpExecArray | null
+          while ((m = re.exec(template)) !== null) {
+            if (m.index > lastIndex) {
+              const staticPart = template.slice(lastIndex, m.index)
+              if (staticPart) segments.push({ type: 'TextBody', text: staticPart })
+            }
+            if (tokenIds.has(m[1])) {
+              segments.push({ type: 'TextBody', text: `\${data.${makeMultiLabelVarName(labelName, m[1])}}` })
+            } else {
+              // Unknown token (no matching source) — leave the raw {{x}} text as-is.
+              segments.push({ type: 'TextBody', text: m[0] })
+            }
+            lastIndex = m.index + m[0].length
           }
-          return { type: 'TextBody', text }
+          if (lastIndex < template.length) {
+            const tail = template.slice(lastIndex)
+            if (tail) segments.push({ type: 'TextBody', text: tail })
+          }
+          return segments.length > 0 ? segments : [{ type: 'TextBody', text: '' }]
         }
-        // Legacy single-source: the whole text is replaced by one reference.
+        // Legacy single-source: the whole text is replaced by one reference —
+        // already the "entire value is ${data.X}" shape Meta requires.
         if (raw._source_table_id && raw._source_field_key && labelName) {
-          return { type: 'TextBody', text: `\${data.${makeLabelVarName(labelName)}}` }
+          return [{ type: 'TextBody', text: `\${data.${makeLabelVarName(labelName)}}` }]
         }
-        return { type: 'TextBody', text: String(raw.text ?? '') }
+        return [{ type: 'TextBody', text: String(raw.text ?? '') }]
       }
 
       // Dynamic data source — replace static array with ${data.VARNAME} reference.
@@ -457,7 +480,7 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       }
 
       // Strip empty optional fields + convert helper-text to object
-      return cleanComponent(raw)
+      return [cleanComponent(raw)]
     }).filter((c) => !(c.type === 'Image' && !c.src))
 
     // v7.3: Wrap all components inside a Form component (required for data_exchange
