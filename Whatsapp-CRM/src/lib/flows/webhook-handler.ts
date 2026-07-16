@@ -78,6 +78,41 @@ function collectAllSaveFields(
   return out
 }
 
+// EVERY named field across every screen (regular inputs by their own
+// component name, every Label token by a componentName__tokenId synthetic
+// identifier) — mirrors upload/route.ts's copy. Deliberately separate from
+// collectAllSaveFields: this powers the chatbot's "every variable" list via
+// nfm_reply, and must never be used for the DataStore save record (a
+// component name is not a real DataStore field_key).
+function collectAllFlowFieldVars(
+  screens: Array<{ components: Array<Record<string, unknown>> }>,
+): Array<{ token: string; carryVar: string }> {
+  const seen = new Set<string>()
+  const out: Array<{ token: string; carryVar: string }> = []
+  const add = (token: string | undefined) => {
+    if (token && !seen.has(token)) {
+      seen.add(token)
+      out.push({ token, carryVar: makeSaveCarryVarName(token) })
+    }
+  }
+  for (const s of screens) {
+    for (const c of flatCompsShallow(s.components ?? [])) {
+      if (c.type === 'TextLabel' && c.name) {
+        const sources = c._sources as Array<{ id: string; table_id: string; field_key: string }> | undefined
+        const validSources = Array.isArray(sources) ? sources.filter((src) => src.table_id && src.field_key) : []
+        if (validSources.length > 0) {
+          for (const src of validSources) add(`${c.name}__${src.id}`)
+        } else if (c._source_table_id && c._source_field_key) {
+          add(c.name as string)
+        }
+      } else if (c.type !== 'TextLabel' && c.type !== 'Footer' && c.type !== 'Image' && c.name) {
+        add(c.name as string)
+      }
+    }
+  }
+  return out
+}
+
 // Finds the data-model variable holding a save-mapped field's live value on
 // a given set of components — a component-level match (regular input or
 // legacy single-source label) returns its own name (plus the component
@@ -97,6 +132,29 @@ function findSaveFieldVarKey(
     if (Array.isArray(sources)) {
       const src = sources.find((s) => s._save_field_key === fieldKey)
       if (src && c.name) return { varKey: makeMultiLabelVarName(String(c.name), src.id) }
+    }
+  }
+  return undefined
+}
+
+// Same shape as findSaveFieldVarKey, but for ANY named field (not just
+// save-mapped ones) — looked up by its own token (a component's name, or
+// componentName__tokenId for a label token), matching collectAllFlowFieldVars.
+function findFlowFieldVarKey(
+  comps: Array<Record<string, unknown>>,
+  token: string,
+): { varKey: string; collector?: Record<string, unknown> } | undefined {
+  for (const c of comps) {
+    if (c.type === 'TextLabel' && c.name) {
+      const sources = c._sources as Array<{ id: string; table_id: string; field_key: string }> | undefined
+      const validSources = Array.isArray(sources) ? sources.filter((s) => s.table_id && s.field_key) : []
+      const src = validSources.find((s) => `${c.name}__${s.id}` === token)
+      if (src) return { varKey: makeMultiLabelVarName(String(c.name), src.id) }
+      if (c._source_table_id && c._source_field_key && String(c.name) === token) {
+        return { varKey: makeLabelVarName(String(c.name)) }
+      }
+    } else if (c.type !== 'TextLabel' && c.type !== 'Footer' && c.type !== 'Image' && c.name === token) {
+      return { varKey: token, collector: c }
     }
   }
   return undefined
@@ -647,6 +705,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     const submittedComps = flatComps(submittedScreen?.components ?? [])
     const hasSaveFields = submittedComps.some((c) => c._save_field_key)
     const allSaveFields = collectAllSaveFields(screens)
+    const allFlowFieldVars = collectAllFlowFieldVars(screens)
 
     const filterTrigger = submittedComps.find(
       (c) => c._filter_trigger === true && c.name && (c.name as string) in formData,
@@ -814,6 +873,18 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           freshData[sf.carryVar] = formData[sf.carryVar] ?? ''
         }
       }
+      // Same carry-forward, but for EVERY named field (not just save-mapped
+      // ones) — this is what lets the chatbot's Send Flow node reference
+      // ANY collected field, not just ones also mapped in Field Mapping.
+      for (const fv of allFlowFieldVars) {
+        const found = findFlowFieldVarKey(submittedComps, fv.token)
+        if (found && found.varKey in formData) {
+          const raw = formData[found.varKey]
+          freshData[fv.carryVar] = found.collector ? resolveStaticOptionValue(found.collector, raw) : raw
+        } else {
+          freshData[fv.carryVar] = formData[fv.carryVar] ?? ''
+        }
+      }
 
       console.log('[data_exchange:load] → screen:', sanitizeId(formScreen.id))
       logDebug(flowId, {
@@ -962,10 +1033,13 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     }),
   )
 
-  // Every carry-forward save field starts empty — nothing has been
-  // collected yet at INIT.
+  // Every carry-forward save field (and every general flow field variable)
+  // starts empty — nothing has been collected yet at INIT.
   for (const sf of collectAllSaveFields(screens)) {
     responseData[sf.carryVar] = ''
+  }
+  for (const fv of collectAllFlowFieldVars(screens)) {
+    responseData[fv.carryVar] = ''
   }
 
   const targetScreen = sanitizeId(screens[0]?.id ?? 'SCREEN')

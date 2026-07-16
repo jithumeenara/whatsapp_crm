@@ -355,6 +355,42 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     }
   }
 
+  // EVERY named field across every screen — regular inputs (by their own
+  // component name) and every Label token (by a synthetic
+  // componentName__tokenId identifier) — used ONLY to populate the
+  // terminal 'complete' action's payload (nfm_reply), so the chatbot's
+  // Send Flow node can reference ANY collected field as {{vars.flow_x}},
+  // not just ones also mapped in Field Mapping. Deliberately separate from
+  // allSaveFields (DataStore save keys) — mixing the two would risk
+  // writing bogus columns into the save table using a component name that
+  // isn't a real DataStore field_key.
+  const allFlowFieldVars: Array<{ token: string; carryVar: string }> = []
+  {
+    const seen = new Set<string>()
+    const add = (token: string | undefined) => {
+      if (token && !seen.has(token)) {
+        seen.add(token)
+        allFlowFieldVars.push({ token, carryVar: makeSaveCarryVarName(token) })
+      }
+    }
+    for (const screen of screens) {
+      for (const comp of screen.components) {
+        const c = comp as Record<string, unknown>
+        if (c.type === 'TextLabel' && c.name) {
+          const sources = c._sources as LabelSourceConfig[] | undefined
+          const validSources = Array.isArray(sources) ? sources.filter((s) => s.table_id && s.field_key) : []
+          if (validSources.length > 0) {
+            for (const s of validSources) add(`${c.name}__${s.id}`)
+          } else if (c._source_table_id && c._source_field_key) {
+            add(c.name as string)
+          }
+        } else if (c.type !== 'TextLabel' && c.type !== 'Footer' && c.type !== 'Image' && c.name) {
+          add(c.name as string)
+        }
+      }
+    }
+  }
+
   // First pass: collect each screen's own dynamic vars.
   // screenDynamicVars: dropdown/selection sources (array type) — chained through navigate payloads.
   // screenLabelVars: TextLabel sources (string type) — declared only on their own screen.
@@ -396,7 +432,10 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     for (const sf of allSaveFields) {
       labelVars[sf.carryVar] = { type: 'string', '__example__': '' }
     }
-    if (allSaveFields.length > 0) hasDynamicData = true
+    for (const fv of allFlowFieldVars) {
+      labelVars[fv.carryVar] = { type: 'string', '__example__': '' }
+    }
+    if (allSaveFields.length > 0 || allFlowFieldVars.length > 0) hasDynamicData = true
     screenDynamicVars[idMap[screen.id]] = vars
     screenLabelVars[idMap[screen.id]] = labelVars
   }
@@ -454,8 +493,6 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
         }
       }
     }
-    const screenSaveFieldKeys = new Set(screenFieldRefs.keys())
-
     // Carry-var entries this screen's OWN outgoing data_exchange payload
     // needs explicitly: a Label (or label token) collected here —
     // namedFields excludes labels entirely, so its value would otherwise
@@ -480,6 +517,45 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
     // Flow node variable list can reference directly.
     function saveFieldLiveOrCarriedRef(sf: { fieldKey: string; carryVar: string }): string {
       return screenFieldRefs.get(sf.fieldKey) ?? `\${data.${sf.carryVar}}`
+    }
+
+    // Same idea as screenFieldRefs above, but for EVERY named field (not
+    // just save-mapped ones) — every regular input and every Label token
+    // always has a reference here, keyed by the same token used in
+    // allFlowFieldVars. Powers the chatbot's "every variable" list.
+    const screenFlowFieldRefs = new Map<string, string>() // token → ${form.x} or ${data.x}
+    for (const comp of screen.components) {
+      const c = comp as Record<string, unknown>
+      if (c.type === 'TextLabel' && c.name) {
+        const sources = c._sources as LabelSourceConfig[] | undefined
+        const validSources = Array.isArray(sources) ? sources.filter((s) => s.table_id && s.field_key) : []
+        if (validSources.length > 0) {
+          for (const s of validSources) {
+            screenFlowFieldRefs.set(`${c.name}__${s.id}`, `\${data.${makeMultiLabelVarName(String(c.name), s.id)}}`)
+          }
+        } else if (c._source_table_id && c._source_field_key) {
+          screenFlowFieldRefs.set(String(c.name), `\${data.${makeLabelVarName(String(c.name))}}`)
+        }
+      } else if (c.type !== 'TextLabel' && c.type !== 'Footer' && c.type !== 'Image' && c.name) {
+        screenFlowFieldRefs.set(String(c.name), `\${form.${String(c.name)}}`)
+      }
+    }
+    // Carry-var entries for every field NOT collected live on this screen —
+    // a regular input collected here needs nothing extra (formRefs below
+    // already sends its ${form.x} value under its own name); a Label
+    // (or label token) collected here needs an explicit ${data.x}
+    // reference, same reasoning as carryVarPayloadEntries above.
+    const flowFieldPayloadEntries: Array<{ carryVar: string; ref: string }> = allFlowFieldVars
+      .map((fv) => {
+        const ref = screenFlowFieldRefs.get(fv.token)
+        if (ref?.startsWith('${data.')) return { carryVar: fv.carryVar, ref }
+        if (!ref) return { carryVar: fv.carryVar, ref: `\${data.${fv.carryVar}}` }
+        return null
+      })
+      .filter((e): e is { carryVar: string; ref: string } => e !== null)
+
+    function flowFieldLiveOrCarriedRef(fv: { token: string; carryVar: string }): string {
+      return screenFlowFieldRefs.get(fv.token) ?? `\${data.${fv.carryVar}}`
     }
 
     const cleanedComps = screen.components.flatMap((comp): Record<string, unknown>[] => {
@@ -547,6 +623,9 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
               for (const entry of carryVarPayloadEntries) {
                 formRefs[entry.carryVar] = entry.ref
               }
+              for (const entry of flowFieldPayloadEntries) {
+                formRefs[entry.carryVar] = entry.ref
+              }
               raw['on-click-action'] = {
                 name: 'data_exchange',
                 payload: { ...formRefs, __target_screen: targetId },
@@ -582,6 +661,9 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
               for (const sf of allSaveFields) {
                 dynamicPayload[sf.carryVar] = saveFieldLiveOrCarriedRef(sf)
               }
+              for (const fv of allFlowFieldVars) {
+                dynamicPayload[fv.carryVar] = flowFieldLiveOrCarriedRef(fv)
+              }
 
               raw['on-click-action'] = {
                 ...action,
@@ -601,21 +683,32 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
           for (const entry of carryVarPayloadEntries) {
             formRefs[entry.carryVar] = entry.ref
           }
+          for (const entry of flowFieldPayloadEntries) {
+            formRefs[entry.carryVar] = entry.ref
+          }
           raw['on-click-action'] = {
             ...action,
             payload: { ...formRefs, ...((action.payload as Record<string, unknown>) ?? {}) },
           }
-        } else if (action.name === 'complete' && allSaveFields.length > 0) {
+        } else if (action.name === 'complete' && (allSaveFields.length > 0 || allFlowFieldVars.length > 0)) {
           // The terminal screen's payload becomes nfm_reply.response_json —
           // the ONLY way a completed Flow's data reaches the chatbot engine
           // (see engine.ts's send_flow resume). Meta does not aggregate
           // every screen's fields automatically; only what's explicitly
-          // listed here comes back. Every save-mapped field (Field Mapping)
-          // is included, keyed by its DataStore field_key, so the chatbot's
-          // "Send Flow" node can reference {{vars.flow_<field_key>}}.
+          // listed here comes back.
           const completePayload: Record<string, string> = {}
+          // Every save-mapped field (Field Mapping), keyed by its DataStore
+          // field_key — the more meaningful, stable identifier where one exists.
           for (const sf of allSaveFields) {
             completePayload[sf.fieldKey] = saveFieldLiveOrCarriedRef(sf)
+          }
+          // EVERY other named field too, keyed by its own token (component
+          // name, or componentName__tokenId for a label token) — so
+          // {{vars.flow_x}} works for any field, not just Field-Mapped ones.
+          // Skips anything already added above via its field_key.
+          for (const fv of allFlowFieldVars) {
+            if (fv.token in completePayload) continue
+            completePayload[fv.token] = flowFieldLiveOrCarriedRef(fv)
           }
           raw['on-click-action'] = {
             ...action,

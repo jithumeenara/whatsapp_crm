@@ -1885,28 +1885,40 @@ function LinkChatbotForm({ cfg, onChange }: FormProps) {
 interface MetaFlowOption {
   metaFlowId: string;
   name: string;
-  /** Every field mapped in "Save form data to" (Field Mapping), by
-   *  DataStore field_key. This — not every screen's raw input list — is
-   *  what actually reaches the chatbot: Meta only returns whatever the
-   *  terminal screen's 'complete' action payload explicitly lists in
-   *  nfm_reply, and upload/route.ts populates that payload from exactly
-   *  these save-mapped fields (regular inputs AND Label (dynamic) fields
-   *  alike — see saveFieldLiveOrCarriedRef). */
-  saveFieldKeys: string[];
+  /** Every named field across every screen of this flow — a field mapped
+   *  in Field Mapping shows its DataStore field_key (more meaningful,
+   *  stable); everything else shows its own component name (or
+   *  componentName__tokenId for one token inside a multi-source Label).
+   *  This mirrors exactly what upload/route.ts populates onto the
+   *  terminal screen's 'complete' action payload — the ONLY thing that
+   *  becomes nfm_reply.response_json, which is how the chatbot reads
+   *  these back (see saveFieldLiveOrCarriedRef / flowFieldLiveOrCarriedRef). */
+  variableTokens: string[];
 }
 
-function extractSaveMappedFields(screens: unknown): string[] {
+function extractAllFlowVariables(screens: unknown): string[] {
   if (!Array.isArray(screens)) return [];
-  const keys = new Set<string>();
+  const result = new Set<string>();
   for (const screen of screens) {
     const comps = (screen as Record<string, unknown> | null)?.components;
     if (!Array.isArray(comps)) continue;
     for (const comp of comps) {
-      const fk = (comp as Record<string, unknown>)._save_field_key;
-      if (typeof fk === "string" && fk) keys.add(fk);
+      const c = comp as Record<string, unknown>;
+      const name = typeof c.name === "string" ? c.name : undefined;
+      if (c.type === "TextLabel" && name) {
+        const sources = c._sources as Array<{ id: string; table_id?: string; field_key?: string; _save_field_key?: string }> | undefined;
+        const validSources = Array.isArray(sources) ? sources.filter((s) => s.table_id && s.field_key) : [];
+        if (validSources.length > 0) {
+          for (const s of validSources) result.add(s._save_field_key || `${name}__${s.id}`);
+        } else if (c._source_table_id && c._source_field_key) {
+          result.add((c._save_field_key as string | undefined) || name);
+        }
+      } else if (c.type !== "TextLabel" && c.type !== "Footer" && c.type !== "Image" && name) {
+        result.add((c._save_field_key as string | undefined) || name);
+      }
     }
   }
-  return Array.from(keys);
+  return Array.from(result);
 }
 
 function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
@@ -1922,7 +1934,7 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           .map((f) => ({
             metaFlowId: String(f.trigger_config.meta_flow_id),
             name: f.name,
-            saveFieldKeys: extractSaveMappedFields(f.trigger_config?.screens),
+            variableTokens: extractAllFlowVariables(f.trigger_config?.screens),
           }));
         setFlows(opts);
       })
@@ -2012,10 +2024,10 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       {(() => {
         const selected = flows.find((f) => f.metaFlowId === String(cfg.flow_id ?? ""));
         if (!selected) return null;
-        if (selected.saveFieldKeys.length === 0) {
+        if (selected.variableTokens.length === 0) {
           return (
             <div className="rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-2 text-[10px] text-amber-800">
-              No fields are mapped yet, so nothing will be available here. Open this flow in the builder → the screen with &quot;Save form data to&quot; → Field Mapping, and map at least one field (input or Label) to a table column.
+              This flow has no named input or Label fields yet, so nothing will be available here.
             </div>
           );
         }
@@ -2032,10 +2044,10 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             </div>
             <div className="px-2.5 py-2.5 space-y-2">
               <p className="text-[10px] text-slate-600">
-                Every field mapped in Field Mapping — including Label (dynamic) fields — once the customer submits this flow, use these in any later step (e.g. a &quot;Send Text&quot; node) to show back what they entered — click a token to copy it.
+                Every field across every screen — inputs and Label (dynamic) fields alike, whether or not it&apos;s also mapped in Field Mapping — once the customer submits this flow, use these in any later step (e.g. a &quot;Send Text&quot; node) to show back what they entered — click a token to copy it.
               </p>
               <div className="flex flex-wrap gap-1">
-                {selected.saveFieldKeys.map((key) => (
+                {selected.variableTokens.map((key) => (
                   <button
                     key={key}
                     type="button"
@@ -2052,7 +2064,7 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 type="button"
                 onClick={() => {
                   const sample: Record<string, string> = {};
-                  for (const key of selected.saveFieldKeys) sample[`flow_${key}`] = "<value the customer entered>";
+                  for (const key of selected.variableTokens) sample[`flow_${key}`] = "<value the customer entered>";
                   copy(JSON.stringify(sample, null, 2), "sample JSON");
                 }}
                 className="flex h-7 items-center gap-1 rounded border border-teal-300 bg-white px-2 text-[10px] text-teal-700 hover:bg-teal-100 transition-colors"
