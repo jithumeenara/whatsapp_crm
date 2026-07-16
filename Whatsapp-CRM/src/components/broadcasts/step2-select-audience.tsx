@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import {
   Users, ArrowRight, ArrowLeft, X, Search, Phone,
   CheckCheck, Tag as TagIcon, FileSpreadsheet, Upload, AlertCircle, Trash2,
-  ShieldCheck, Loader2, CheckCircle2, XCircle,
+  ShieldCheck, Loader2, CheckCircle2, XCircle, Download,
 } from 'lucide-react';
 
 /* ── types ─────────────────────────────────────────────────────── */
@@ -83,6 +83,27 @@ async function parseExcelFile(file: File): Promise<{ phone: string; name?: strin
   })
 
   return results
+}
+
+async function downloadDemoTemplate() {
+  const { Workbook } = await import('exceljs')
+  const wb = new Workbook()
+  const ws = wb.addWorksheet('Contacts')
+  ws.columns = [
+    { header: 'phone', key: 'phone', width: 20 },
+    { header: 'name', key: 'name', width: 24 },
+  ]
+  ws.addRow({ phone: '+919876543210', name: 'Jane Doe' })
+  ws.addRow({ phone: '+15551234567', name: 'John Smith' })
+  ws.getRow(1).font = { bold: true }
+  const buffer = await wb.xlsx.writeBuffer()
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'broadcast-contacts-template.xlsx'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 /* ── Main component ─────────────────────────────────────────────── */
@@ -374,7 +395,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       </div>
 
       {/* ── Mode tabs ── */}
-      <div className="flex gap-1.5 rounded-xl bg-slate-100 p-1">
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-4">
         {([
           { key: 'all',   label: 'All WhatsApp',   icon: Users },
           { key: 'tags',  label: 'By Tag',          icon: TagIcon },
@@ -386,14 +407,14 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
             type="button"
             onClick={() => switchMode(key)}
             className={cn(
-              'flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[13px] font-medium transition-all',
+              'flex min-w-0 items-center justify-center gap-1.5 rounded-lg py-2 px-1.5 text-[12px] sm:text-[13px] font-medium transition-all',
               mode === key
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-500 hover:text-slate-700'
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
-            {label}
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{label}</span>
           </button>
         ))}
       </div>
@@ -427,42 +448,68 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       {/* ── Excel import (excel mode) ── */}
       {mode === 'excel' && (
         <div className="space-y-4">
-          {/* Drop zone */}
           {excelContacts.length === 0 && (
-            <div
-              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleFileDrop}
-              className={cn(
-                'rounded-xl border-2 border-dashed p-10 text-center transition-all cursor-pointer',
-                isDragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/30'
-              )}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExcelFile(f); }}
-              />
-              {excelLoading ? (
-                <div className="flex flex-col items-center gap-2">
-                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-                  <p className="text-[13px] text-slate-500">Reading file…</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
-                    <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-slate-600 uppercase tracking-wide">Upload contact list</p>
+                <button
+                  type="button"
+                  onClick={downloadDemoTemplate}
+                  className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-indigo-600 hover:text-indigo-800"
+                >
+                  <Download className="h-3.5 w-3.5" /> Download demo file
+                </button>
+              </div>
+
+              {/* Drop zone */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleFileDrop}
+                className={cn(
+                  'rounded-xl border-2 border-dashed p-10 text-center transition-all cursor-pointer',
+                  isDragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/30'
+                )}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleExcelFile(f); }}
+                />
+                {excelLoading ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                    <p className="text-[13px] text-slate-500">Reading file…</p>
                   </div>
-                  <div>
-                    <p className="text-[14px] font-semibold text-slate-700">Drop your Excel file here</p>
-                    <p className="mt-0.5 text-[12px] text-slate-400">or click to browse — .xlsx, .xls, .csv supported</p>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
+                      <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
+                    </div>
+                    <div>
+                      <p className="text-[14px] font-semibold text-slate-700">Drop your Excel file here</p>
+                      <p className="mt-0.5 text-[12px] text-slate-400">or click to browse — .xlsx, .xls, .csv supported</p>
+                    </div>
+                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white">
+                      <Upload className="h-3.5 w-3.5" /> Choose File
+                    </div>
                   </div>
-                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white">
-                    <Upload className="h-3.5 w-3.5" /> Choose File
+                )}
+              </div>
+
+              {/* Format hint */}
+              {!excelLoading && (
+                <div className="mt-4 rounded-lg bg-slate-50 p-4">
+                  <p className="text-[12px] font-semibold text-slate-600 mb-2">Expected column names:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {['phone', 'mobile', 'number', 'name'].map((col) => (
+                      <span key={col} className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600">{col}</span>
+                    ))}
                   </div>
+                  <p className="mt-2 text-[11px] text-slate-400">Column names are case-insensitive. Phone numbers without + will have it added automatically. Not sure of the format? <button type="button" onClick={downloadDemoTemplate} className="text-indigo-600 hover:underline font-medium">Download the demo file</button>.</p>
                 </div>
               )}
             </div>
@@ -473,19 +520,6 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
             <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
               <AlertCircle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
               <p className="text-[13px] text-rose-700">{excelError}</p>
-            </div>
-          )}
-
-          {/* Format hint */}
-          {excelContacts.length === 0 && !excelLoading && (
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <p className="text-[12px] font-semibold text-slate-600 mb-2">Expected column names:</p>
-              <div className="flex flex-wrap gap-2">
-                {['phone', 'mobile', 'number', 'name'].map((col) => (
-                  <span key={col} className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600">{col}</span>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] text-slate-400">Column names are case-insensitive. Phone numbers without + will have it added automatically.</p>
             </div>
           )}
 
