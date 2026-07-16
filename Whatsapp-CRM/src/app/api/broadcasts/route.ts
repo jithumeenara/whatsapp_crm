@@ -243,13 +243,13 @@ function digitsOnly(phone: string): string {
 
 async function upsertCsvContacts(
   ctx: AccountContext,
-  csvRows: { phone: string; name?: string }[],
+  csvRows: { phone: string; name?: string; tagNames?: string[] }[],
 ): Promise<ContactRow[]> {
   if (csvRows.length === 0) return [];
   const db = ctx.db;
 
   // De-duplicate CSV rows by digits-only phone so "+91..." and "91..." are the same.
-  const uniqueByDigits = new Map<string, { phone: string; name?: string }>();
+  const uniqueByDigits = new Map<string, { phone: string; name?: string; tagNames?: string[] }>();
   for (const row of csvRows) {
     if (!row.phone) continue;
     const digits = digitsOnly(row.phone);
@@ -296,6 +296,31 @@ async function upsertCsvContacts(
       where: { account_id: ctx.accountId, phone: { in: chunk.map((c) => c.phone) } },
     });
     for (const c of created) byDigits.set(digitsOnly(c.phone), c);
+  }
+
+  // Apply any per-row tag names (from an optional "tag" Excel column) — matched
+  // case-insensitively against the account's existing tags. Unknown names are
+  // silently skipped rather than auto-created, since the import UI only offers
+  // a dropdown of tags that already exist.
+  const allTagNames = new Set<string>();
+  for (const row of uniqueByDigits.values()) {
+    for (const t of row.tagNames ?? []) allTagNames.add(t.toLowerCase());
+  }
+  if (allTagNames.size > 0) {
+    const accountTags = await db.tag.findMany({ where: { account_id: ctx.accountId } });
+    const tagIdByName = new Map(accountTags.map((t) => [t.name.toLowerCase(), t.id]));
+    const contactTagRows: { contact_id: string; tag_id: string }[] = [];
+    for (const [digits, row] of uniqueByDigits) {
+      const contact = byDigits.get(digits);
+      if (!contact || !row.tagNames) continue;
+      for (const name of row.tagNames) {
+        const tagId = tagIdByName.get(name.toLowerCase());
+        if (tagId) contactTagRows.push({ contact_id: contact.id, tag_id: tagId });
+      }
+    }
+    if (contactTagRows.length > 0) {
+      await db.contactTag.createMany({ data: contactTagRows, skipDuplicates: true });
+    }
   }
 
   return [...uniqueByDigits.keys()]

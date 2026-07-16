@@ -16,7 +16,7 @@ export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
   tagIds?: string[];
   customField?: { fieldId: string; operator: 'is' | 'is_not' | 'contains'; value: string };
-  csvContacts?: { phone: string; name?: string }[];
+  csvContacts?: { phone: string; name?: string; tagNames?: string[] }[];
   contactIds?: string[];
   excludeTagIds?: string[];
 }
@@ -56,7 +56,7 @@ function WaBadge() {
 }
 
 /* ── Excel parser ────────────────────────────────────────────────── */
-async function parseExcelFile(file: File): Promise<{ phone: string; name?: string }[]> {
+async function parseExcelFile(file: File): Promise<{ phone: string; name?: string; tagNames?: string[] }[]> {
   const { Workbook } = await import('exceljs')
   const buffer = await file.arrayBuffer()
   const wb = new Workbook()
@@ -64,7 +64,7 @@ async function parseExcelFile(file: File): Promise<{ phone: string; name?: strin
   const ws = wb.worksheets[0]
   if (!ws) return []
 
-  const results: { phone: string; name?: string }[] = []
+  const results: { phone: string; name?: string; tagNames?: string[] }[] = []
   let headers: string[] = []
 
   ws.eachRow((row, rowIndex) => {
@@ -76,26 +76,46 @@ async function parseExcelFile(file: File): Promise<{ phone: string; name?: strin
     }
     const phoneIdx = headers.findIndex((k) => /phone|mobile|number|whatsapp/i.test(k))
     const nameIdx  = headers.findIndex((k) => /name/i.test(k))
+    const tagIdx   = headers.findIndex((k) => /^tags?$/i.test(k.trim()))
     const raw = phoneIdx >= 0 ? String(values[phoneIdx] ?? '').trim().replace(/\s+/g, '') : ''
     const phone = raw.startsWith('+') ? raw : raw ? `+${raw}` : ''
     const name  = nameIdx  >= 0 ? String(values[nameIdx] ?? '').trim() : undefined
-    if (phone.length >= 7) results.push({ phone, name })
+    const tagNames = tagIdx >= 0
+      ? String(values[tagIdx] ?? '').split(/[,;]+/).map((t) => t.trim()).filter(Boolean)
+      : undefined
+    if (phone.length >= 7) results.push({ phone, name, tagNames: tagNames?.length ? tagNames : undefined })
   })
 
   return results
 }
 
-async function downloadDemoTemplate() {
+async function downloadDemoTemplate(tags: Tag[]) {
   const { Workbook } = await import('exceljs')
   const wb = new Workbook()
   const ws = wb.addWorksheet('Contacts')
   ws.columns = [
     { header: 'phone', key: 'phone', width: 20 },
     { header: 'name', key: 'name', width: 24 },
+    { header: 'tag', key: 'tag', width: 20 },
   ]
-  ws.addRow({ phone: '+919876543210', name: 'Jane Doe' })
-  ws.addRow({ phone: '+15551234567', name: 'John Smith' })
+  const sampleTag = tags[0]?.name ?? ''
+  ws.addRow({ phone: '+919876543210', name: 'Jane Doe', tag: sampleTag })
+  ws.addRow({ phone: '+15551234567', name: 'John Smith', tag: '' })
   ws.getRow(1).font = { bold: true }
+
+  // Turn the "tag" column into an in-cell dropdown listing the account's
+  // existing tags, so users pick a valid name instead of guessing one.
+  if (tags.length > 0) {
+    const list = `"${tags.map((t) => t.name).join(',')}"`
+    for (let r = 2; r <= 500; r++) {
+      ws.getCell(`C${r}`).dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: [list],
+      }
+    }
+  }
+
   const buffer = await wb.xlsx.writeBuffer()
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = URL.createObjectURL(blob)
@@ -142,7 +162,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
 
   /* Excel import */
-  const [excelContacts, setExcelContacts] = useState<{ phone: string; name?: string }[]>(
+  const [excelContacts, setExcelContacts] = useState<{ phone: string; name?: string; tagNames?: string[] }[]>(
     audience.type === 'csv' ? (audience.csvContacts ?? []) : []
   );
   const [excelFileName, setExcelFileName] = useState('');
@@ -454,7 +474,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 <p className="text-[12px] font-semibold text-slate-600 uppercase tracking-wide">Upload contact list</p>
                 <button
                   type="button"
-                  onClick={downloadDemoTemplate}
+                  onClick={() => downloadDemoTemplate(tags)}
                   className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-indigo-600 hover:text-indigo-800"
                 >
                   <Download className="h-3.5 w-3.5" /> Download demo file
@@ -505,11 +525,16 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 <div className="mt-4 rounded-lg bg-slate-50 p-4">
                   <p className="text-[12px] font-semibold text-slate-600 mb-2">Expected column names:</p>
                   <div className="flex flex-wrap gap-2">
-                    {['phone', 'mobile', 'number', 'name'].map((col) => (
+                    {['phone', 'mobile', 'number', 'name', 'tag'].map((col) => (
                       <span key={col} className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600">{col}</span>
                     ))}
                   </div>
-                  <p className="mt-2 text-[11px] text-slate-400">Column names are case-insensitive. Phone numbers without + will have it added automatically. Not sure of the format? <button type="button" onClick={downloadDemoTemplate} className="text-indigo-600 hover:underline font-medium">Download the demo file</button>.</p>
+                  <p className="mt-2 text-[11px] text-slate-400">
+                    Column names are case-insensitive. Phone numbers without + will have it added automatically.
+                    The optional <span className="font-mono">tag</span> column assigns an existing CRM tag to each
+                    contact on import — use one of: {tags.length === 0 ? 'no tags yet' : tags.map((t) => t.name).join(', ')}.
+                    {' '}Not sure of the format? <button type="button" onClick={() => downloadDemoTemplate(tags)} className="text-indigo-600 hover:underline font-medium">Download the demo file</button>.
+                  </p>
                 </div>
               )}
             </div>
@@ -540,16 +565,20 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 </button>
               </div>
               {/* Table header */}
-              <div className="grid grid-cols-2 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
+              <div className="grid grid-cols-3 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Phone</p>
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Name</p>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Tag</p>
               </div>
               {/* Rows (max 8 preview) */}
               <div className="divide-y divide-slate-50 max-h-52 overflow-y-auto">
                 {excelContacts.slice(0, 50).map((c, i) => (
-                  <div key={i} className="grid grid-cols-2 gap-4 px-4 py-2.5">
+                  <div key={i} className="grid grid-cols-3 gap-4 px-4 py-2.5">
                     <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
                     <p className="text-[13px] text-slate-500 truncate">{c.name || <span className="italic text-slate-300">—</span>}</p>
+                    <p className="text-[13px] text-slate-500 truncate">
+                      {c.tagNames?.length ? c.tagNames.join(', ') : <span className="italic text-slate-300">—</span>}
+                    </p>
                   </div>
                 ))}
                 {excelContacts.length > 50 && (
@@ -609,9 +638,10 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
               </div>
               {/* Validated list */}
               <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-                <div className="grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
                   <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Phone</p>
                   <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Name</p>
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Tag</p>
                   <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</p>
                 </div>
                 <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto">
@@ -619,11 +649,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                     const s = validationMap.get(c.phone) ?? 'unknown';
                     return (
                       <div key={i} className={cn(
-                        'grid grid-cols-[1fr_auto_auto] gap-4 px-4 py-2.5 items-center',
+                        'grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2.5 items-center',
                         s === 'invalid' ? 'bg-rose-50/50' : ''
                       )}>
                         <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
                         <p className="text-[13px] text-slate-500 truncate">{c.name || '—'}</p>
+                        <p className="text-[13px] text-slate-500 truncate">{c.tagNames?.join(', ') || '—'}</p>
                         <span className={cn(
                           'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
                           s === 'valid' ? 'bg-emerald-100 text-emerald-700' :
