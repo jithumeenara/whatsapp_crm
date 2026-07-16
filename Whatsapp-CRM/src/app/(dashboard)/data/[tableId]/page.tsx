@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
+import { RecordDetailModal } from "@/components/data/record-detail-modal"
 import type { DataTable, DataField, DataRecord, FieldType } from "@/lib/data-store/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) {
@@ -93,6 +94,7 @@ export default function DataTablePage() {
   const [importing, setImporting] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
   const [confirmRecordId, setConfirmRecordId] = useState<string | null>(null)
+  const [viewingRecord, setViewingRecord] = useState<DataRecord | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -408,7 +410,12 @@ export default function DataTablePage() {
                         {visibleFields.map((f) => {
                           const raw = data[f.field_key]
                           return (
-                            <td key={f.id} className="px-4 py-2.5 text-slate-700 max-w-[220px] border-r border-slate-50/80">
+                            <td
+                              key={f.id}
+                              onClick={() => setViewingRecord(rec)}
+                              className="px-4 py-2.5 text-slate-700 max-w-[220px] border-r border-slate-50/80 cursor-pointer"
+                              title="Click to view full details"
+                            >
                               {f.field_type === "boolean" ? (
                                 <span className={cn(
                                   "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
@@ -526,6 +533,24 @@ export default function DataTablePage() {
           record={editingRecord}
           onClose={() => { setFormOpen(false); setEditingRecord(null) }}
           onSaved={() => { setFormOpen(false); setEditingRecord(null); load() }}
+        />
+      )}
+
+      {/* Record detail popup */}
+      {viewingRecord && (
+        <RecordDetailModal
+          record={viewingRecord}
+          fields={fields}
+          onClose={() => setViewingRecord(null)}
+          onEdit={() => {
+            setEditingRecord(viewingRecord)
+            setViewingRecord(null)
+            setFormOpen(true)
+          }}
+          onDelete={() => {
+            setConfirmRecordId(viewingRecord.id)
+            setViewingRecord(null)
+          }}
         />
       )}
 
