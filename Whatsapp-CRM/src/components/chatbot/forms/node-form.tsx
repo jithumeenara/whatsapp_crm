@@ -65,6 +65,11 @@ function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string
       if (typeof n.config.save_reply_to === "string" && n.config.save_reply_to) {
         keys.add(n.config.save_reply_to);
       }
+    } else if (n.node_type === "send_flow") {
+      const tokens = Array.isArray(n.config.available_vars)
+        ? (n.config.available_vars as unknown[]).filter((t): t is string => typeof t === "string")
+        : [];
+      for (const t of tokens) keys.add(`flow_${t}`);
     }
   }
   return [...keys];
@@ -1943,6 +1948,21 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
   useEffect(() => { loadFlows(); }, []);
 
+  // Cache the selected flow's variable tokens onto this node's own config so
+  // other nodes (getFlowVars) can offer {{vars.flow_x}} autocomplete without
+  // re-fetching the flow. Also backfills older nodes configured before this
+  // caching existed, once flows finish loading.
+  useEffect(() => {
+    if (!cfg.flow_id) return;
+    const found = flows.find((f) => f.metaFlowId === String(cfg.flow_id));
+    if (!found) return;
+    const current = Array.isArray(cfg.available_vars) ? (cfg.available_vars as string[]) : [];
+    const next = found.variableTokens;
+    const same = current.length === next.length && current.every((v, i) => v === next[i]);
+    if (!same) onChange({ ...cfg, available_vars: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flows, cfg.flow_id]);
+
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -2201,7 +2221,7 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
       <Field
         label="Body parameters (optional)"
-        hint="Comma-separated values to fill {{1}}, {{2}} etc. in the template body."
+        hint="Comma-separated values to fill {{1}}, {{2}} etc. in the template body. {{vars.x}} tokens (including {{vars.flow_x}} from an earlier Send Flow node) are substituted with the real value before sending."
       >
         <RichTextArea
           value={String(cfg.body_params ?? "")}

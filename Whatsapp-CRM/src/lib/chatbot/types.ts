@@ -253,6 +253,11 @@ export interface SendFlowNodeCfg {
   /** Button text the user taps to open the flow */
   button_text: string
   next_node_key: string
+  /** Every named field token across the selected flow's screens, cached at
+   *  selection time so later nodes can offer {{vars.flow_x}} autocomplete
+   *  without re-fetching the flow. May go stale if the flow's fields change
+   *  after this node was configured — re-select the flow to refresh it. */
+  available_vars?: string[]
 }
 
 export interface SendTemplateNodeCfg {

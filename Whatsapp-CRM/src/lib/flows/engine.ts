@@ -1221,7 +1221,9 @@ async function advanceFromNodeKey(
           contactId: run.contact_id!,
           templateName: cfg.template_name,
           languageCode: cfg.language_code || "en_US",
-          bodyParams: cfg.body_params,
+          bodyParams: cfg.body_params
+            ? interpolateWithContact(cfg.body_params, run.vars, await getContact())
+            : cfg.body_params,
         });
         await logEvent(run.id, "message_sent", node.node_key, {
           node_type: "send_template",
