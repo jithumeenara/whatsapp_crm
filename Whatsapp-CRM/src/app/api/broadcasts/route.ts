@@ -160,10 +160,6 @@ type ContactRow = {
   account_id: string;
 };
 
-// Only contacts with at least one WhatsApp conversation are valid broadcast targets.
-// Instagram contacts store a PSID (not a real phone number) and will always fail.
-const WA_FILTER = { conversations: { some: { channel: "whatsapp" } } } as const;
-
 async function resolveAudience(
   ctx: AccountContext,
   audience: AudienceConfig,
@@ -171,9 +167,16 @@ async function resolveAudience(
   const db = ctx.db;
   let contacts: ContactRow[] = [];
 
+  // No "has an existing WhatsApp conversation" requirement here — a contact
+  // added/tagged/imported but never yet messaged is still a valid broadcast
+  // target (often the whole point of a campaign). Invalid numbers (bad
+  // format, or an Instagram PSID stored in the phone field) are caught per
+  // recipient at actual send time in run-broadcast.ts via isValidE164, which
+  // marks that one recipient "failed" instead of excluding it from the
+  // audience count/preview entirely.
   if (audience.type === "all") {
     contacts = await db.contact.findMany({
-      where: { account_id: ctx.accountId, ...WA_FILTER },
+      where: { account_id: ctx.accountId },
     });
   } else if (
     audience.type === "tags" &&
@@ -187,7 +190,7 @@ async function resolveAudience(
     const uniqueContactIds = [...new Set(contactTags.map((ct) => ct.contact_id))];
     if (uniqueContactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: uniqueContactIds }, account_id: ctx.accountId, ...WA_FILTER },
+        where: { id: { in: uniqueContactIds }, account_id: ctx.accountId },
       });
     }
   } else if (audience.type === "custom_field" && audience.customField) {
@@ -204,22 +207,18 @@ async function resolveAudience(
     const contactIds = [...new Set(matches.map((m) => m.contact_id))];
     if (contactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: contactIds }, account_id: ctx.accountId, ...WA_FILTER },
+        where: { id: { in: contactIds }, account_id: ctx.accountId },
       });
     }
   } else if (audience.type === "csv" && audience.csvContacts) {
-    // CSV/Excel numbers are user-supplied and assumed to be valid WhatsApp numbers.
-    // Skip WA_FILTER — newly upserted contacts have no conversations yet and would
-    // be incorrectly excluded if we required an existing WhatsApp conversation.
     const upserted = await upsertCsvContacts(ctx, audience.csvContacts);
     const upsertedIds = upserted.map((c) => c.id);
     contacts = upsertedIds.length > 0
       ? await db.contact.findMany({ where: { id: { in: upsertedIds }, account_id: ctx.accountId } })
       : [];
   } else if (audience.type === "contacts" && audience.contactIds && audience.contactIds.length > 0) {
-    // Already WhatsApp-filtered via the picker — still enforce at DB level.
     contacts = await db.contact.findMany({
-      where: { id: { in: audience.contactIds }, account_id: ctx.accountId, ...WA_FILTER },
+      where: { id: { in: audience.contactIds }, account_id: ctx.accountId },
     });
   }
 

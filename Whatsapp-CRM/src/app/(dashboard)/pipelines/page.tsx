@@ -9,7 +9,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-
 import { CSS } from "@dnd-kit/utilities"
 import {
   Plus, MoreHorizontal, Trash2, Edit2, X, Check, ChevronRight,
-  Kanban, DollarSign, User, Calendar, Flame, Thermometer, Snowflake,
+  Kanban, User, Calendar, Flame, Thermometer, Snowflake,
   GripVertical, Target, TrendingUp, CheckCircle2, AlertCircle, Loader2,
   Trophy, XCircle,
 } from "lucide-react"
@@ -143,7 +143,7 @@ function DealCard({
 
       {deal.value > 0 && (
         <div className="mt-1.5 flex items-center gap-1 text-[12px] font-semibold text-emerald-600">
-          <DollarSign className="h-3 w-3" />{formatCurrency(deal.value, deal.currency)}
+          {formatCurrency(deal.value, deal.currency)}
         </div>
       )}
 

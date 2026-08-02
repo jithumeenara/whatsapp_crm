@@ -181,7 +181,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const loadContacts = useCallback(async () => {
     setLoadingContacts(true);
     try {
-      const params = new URLSearchParams({ channel: 'whatsapp', limit: String(PAGE), page: String(page) });
+      const params = new URLSearchParams({ limit: String(PAGE), page: String(page) });
       if (query) params.set('search', query);
       if (mode === 'tags' && selectedTagIds.length > 0) params.set('tagIds', selectedTagIds.join(','));
       const res = await fetch(`/api/contacts?${params}`);
@@ -194,9 +194,9 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     }
   }, [page, query, mode, selectedTagIds]);
 
-  /* Fetch total WhatsApp count once */
+  /* Fetch total contact count once */
   useEffect(() => {
-    fetch('/api/contacts?channel=whatsapp&limit=1')
+    fetch('/api/contacts?limit=1')
       .then((r) => r.json())
       .then((d) => setTotalWa(d.total ?? 0))
       .catch(() => {});
@@ -217,7 +217,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   useEffect(() => {
     if (hydratedRef.current || selectedIds.size === 0) return;
     hydratedRef.current = true;
-    fetch('/api/contacts?channel=whatsapp&limit=100')
+    fetch('/api/contacts?limit=100')
       .then((r) => r.json())
       .then((d) => {
         const all: Contact[] = d.contacts ?? [];
