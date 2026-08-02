@@ -732,8 +732,11 @@ export default function ContactsV2() {
                 <ChevronLeft className="h-4 w-4" />
               </button>
               {/* Page number pills */}
-              {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                const p = totalPages <= 5 ? i : Math.min(Math.max(page - 2, 0) + i, totalPages - 1)
+              {(() => {
+                const windowSize = Math.min(totalPages, 5)
+                const start = Math.min(Math.max(page - 2, 0), totalPages - windowSize)
+                return Array.from({ length: windowSize }, (_, i) => start + i)
+              })().map((p) => {
                 return (
                   <button
                     key={p}
