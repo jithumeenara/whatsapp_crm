@@ -14,15 +14,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const name = (body.name ?? '').trim()
     if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
 
-    const lastStage = await prisma.pipelineStage.findFirst({
+    // New stages are always 'open' — Won/Lost are pinned, exactly one of
+    // each, and only created alongside the pipeline itself. Insert this one
+    // right before the first close stage so open stages always lead and
+    // Won/Lost always stay last.
+    const stages = await prisma.pipelineStage.findMany({
       where: { pipeline_id },
-      orderBy: { position: 'desc' },
+      orderBy: { position: 'asc' },
     })
-    const position = (lastStage?.position ?? -1) + 1
+    const firstCloseIdx = stages.findIndex((s) => s.stage_type !== 'open')
+    const insertPosition = firstCloseIdx === -1 ? stages.length : stages[firstCloseIdx].position
 
-    const stage = await prisma.pipelineStage.create({
-      data: { pipeline_id, name, position, color: body.color ?? '#6366f1' },
-    })
+    const [stage] = await prisma.$transaction([
+      prisma.pipelineStage.create({
+        data: { pipeline_id, name, position: insertPosition, color: body.color ?? '#6366f1', stage_type: 'open' },
+      }),
+      ...stages
+        .filter((s) => s.position >= insertPosition)
+        .map((s) => prisma.pipelineStage.update({ where: { id: s.id }, data: { position: s.position + 1 } })),
+    ])
 
     return NextResponse.json({ stage }, { status: 201 })
   } catch (e) {

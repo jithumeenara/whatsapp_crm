@@ -14,6 +14,8 @@ export async function PATCH(
     const pipeline = await prisma.pipeline.findFirst({ where: { id: pipeline_id, account_id: ctx.accountId } })
     if (!pipeline) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+    // stage_type is fixed at creation (exactly one Won + one Lost per
+    // pipeline) — only the display name/color/position are editable.
     const stage = await prisma.pipelineStage.update({
       where: { id: stageId },
       data: {
@@ -40,9 +42,28 @@ export async function DELETE(
     const pipeline = await prisma.pipeline.findFirst({ where: { id: pipeline_id, account_id: ctx.accountId } })
     if (!pipeline) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-    // Move deals in this stage to the first other stage before deleting
+    const stage = await prisma.pipelineStage.findFirst({ where: { id: stageId, pipeline_id } })
+    if (!stage) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (stage.stage_type === 'won' || stage.stage_type === 'lost') {
+      return NextResponse.json(
+        { error: `The ${stage.stage_type === 'won' ? 'Won' : 'Lost'} stage can't be deleted — every pipeline needs one of each. Rename it instead.` },
+        { status: 400 },
+      )
+    }
+
+    const openStages = await prisma.pipelineStage.count({ where: { pipeline_id, stage_type: 'open' } })
+    if (openStages <= 1) {
+      return NextResponse.json(
+        { error: 'Every pipeline needs at least one stage before Won/Lost.' },
+        { status: 400 },
+      )
+    }
+
+    // Move deals in this stage to another open stage before deleting — never
+    // silently drop them into Won/Lost as a side effect of stage deletion.
     const otherStage = await prisma.pipelineStage.findFirst({
-      where: { pipeline_id, id: { not: stageId } },
+      where: { pipeline_id, id: { not: stageId }, stage_type: 'open' },
       orderBy: { position: 'asc' },
     })
     if (otherStage) {

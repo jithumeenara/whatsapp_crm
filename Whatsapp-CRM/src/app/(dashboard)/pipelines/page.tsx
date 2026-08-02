@@ -11,13 +11,18 @@ import {
   Plus, MoreHorizontal, Trash2, Edit2, X, Check, ChevronRight,
   Kanban, DollarSign, User, Calendar, Flame, Thermometer, Snowflake,
   GripVertical, Target, TrendingUp, CheckCircle2, AlertCircle, Loader2,
+  Trophy, XCircle,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useAuth } from "@/hooks/use-auth"
+import { formatCurrency } from "@/lib/currency"
 
 // ── types ──────────────────────────────────────────────────────────────────────
 
+type StageType = "open" | "won" | "lost"
+
 interface Stage {
-  id: string; name: string; position: number; color: string
+  id: string; name: string; position: number; color: string; stage_type: StageType
 }
 
 interface Deal {
@@ -42,10 +47,6 @@ interface Pipeline {
 }
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
-
-function fmt(v: number, currency = "USD") {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency, maximumFractionDigits: 0 }).format(v)
-}
 
 function ScoreDot({ score }: { score?: string | null }) {
   if (score === "hot")  return <Flame className="h-3 w-3 text-rose-500" />
@@ -142,7 +143,7 @@ function DealCard({
 
       {deal.value > 0 && (
         <div className="mt-1.5 flex items-center gap-1 text-[12px] font-semibold text-emerald-600">
-          <DollarSign className="h-3 w-3" />{fmt(deal.value, deal.currency)}
+          <DollarSign className="h-3 w-3" />{formatCurrency(deal.value, deal.currency)}
         </div>
       )}
 
@@ -186,10 +187,11 @@ function SortableDealCard({ deal, onEdit, onDelete }: { deal: Deal; onEdit: (d: 
 // ── Stage Column ───────────────────────────────────────────────────────────────
 
 function StageColumn({
-  stage, deals, onAddDeal, onEditStage, onDeleteStage, onEditDeal, onDeleteDeal,
+  stage, deals, currency, onAddDeal, onEditStage, onDeleteStage, onEditDeal, onDeleteDeal,
 }: {
   stage: Stage
   deals: Deal[]
+  currency: string
   onAddDeal: (stageId: string) => void
   onEditStage: (stage: Stage) => void
   onDeleteStage: (stage: Stage) => void
@@ -215,7 +217,13 @@ function StageColumn({
     <div className="flex w-[280px] shrink-0 flex-col rounded-2xl bg-slate-50 border border-slate-200">
       {/* Stage header */}
       <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-        <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: stage.color }} />
+        {stage.stage_type === "won" ? (
+          <Trophy className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+        ) : stage.stage_type === "lost" ? (
+          <XCircle className="h-3.5 w-3.5 shrink-0 text-rose-500" />
+        ) : (
+          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: stage.color }} />
+        )}
         <span className="flex-1 text-[13px] font-semibold text-slate-800 truncate">{stage.name}</span>
         <span className="rounded-full bg-white border border-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
           {deals.length}
@@ -237,10 +245,12 @@ function StageColumn({
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-slate-700 hover:bg-slate-50">
                 <Edit2 className="h-3 w-3" /> Rename Stage
               </button>
-              <button onClick={() => { setMenuOpen(false); onDeleteStage(stage) }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-rose-600 hover:bg-rose-50">
-                <Trash2 className="h-3 w-3" /> Delete Stage
-              </button>
+              {stage.stage_type === "open" && (
+                <button onClick={() => { setMenuOpen(false); onDeleteStage(stage) }}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-rose-600 hover:bg-rose-50">
+                  <Trash2 className="h-3 w-3" /> Delete Stage
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -248,7 +258,7 @@ function StageColumn({
 
       {total > 0 && (
         <div className="px-3 pb-2 text-[11px] font-semibold text-slate-500">
-          {fmt(total)} total
+          {formatCurrency(total, currency)} total
         </div>
       )}
 
@@ -375,22 +385,63 @@ function DealModal({
 
 // ── New Pipeline Modal ─────────────────────────────────────────────────────────
 
-const PIPELINE_TEMPLATES = [
-  { name: "Sales Pipeline",          stages: ["New Lead", "Contacted", "Proposal", "Negotiation", "Won", "Lost"] },
-  { name: "Real Estate",             stages: ["Inquiry", "Site Visit", "Negotiation", "Agreement", "Registration", "Closed"] },
-  { name: "Education / Admissions",  stages: ["Enquiry", "Application", "Interview", "Offer", "Enrolled", "Dropped"] },
-  { name: "Healthcare",              stages: ["Lead", "Consultation", "Diagnosis", "Treatment", "Follow-up", "Discharged"] },
-  { name: "Recruitment / HR",        stages: ["Applied", "Screened", "Interview", "Offer", "Accepted", "Rejected"] },
-  { name: "Support / Service",       stages: ["Open", "Assigned", "In Progress", "Pending Customer", "Resolved", "Closed"] },
-  { name: "E-commerce / Orders",     stages: ["Order Placed", "Confirmed", "Packed", "Shipped", "Delivered", "Returned"] },
-  { name: "Insurance / Finance",     stages: ["Prospect", "Quote", "Underwriting", "Approved", "Policy Issued", "Renewal"] },
-  { name: "Custom",                  stages: ["New", "In Progress", "Review", "Won", "Lost"] },
+interface TemplateStage { name: string; stage_type: StageType }
+
+const PIPELINE_TEMPLATES: { name: string; stages: TemplateStage[] }[] = [
+  { name: "Sales Pipeline", stages: [
+    { name: "New Lead", stage_type: "open" }, { name: "Contacted", stage_type: "open" },
+    { name: "Proposal", stage_type: "open" }, { name: "Negotiation", stage_type: "open" },
+    { name: "Won", stage_type: "won" }, { name: "Lost", stage_type: "lost" },
+  ] },
+  { name: "Real Estate", stages: [
+    { name: "Inquiry", stage_type: "open" }, { name: "Site Visit", stage_type: "open" },
+    { name: "Negotiation", stage_type: "open" }, { name: "Agreement", stage_type: "open" },
+    { name: "Registered", stage_type: "won" }, { name: "Deal Lost", stage_type: "lost" },
+  ] },
+  { name: "Education / Admissions", stages: [
+    { name: "Enquiry", stage_type: "open" }, { name: "Application", stage_type: "open" },
+    { name: "Interview", stage_type: "open" }, { name: "Offer", stage_type: "open" },
+    { name: "Enrolled", stage_type: "won" }, { name: "Dropped", stage_type: "lost" },
+  ] },
+  { name: "Healthcare", stages: [
+    { name: "Lead", stage_type: "open" }, { name: "Consultation", stage_type: "open" },
+    { name: "Diagnosis", stage_type: "open" }, { name: "Treatment", stage_type: "open" },
+    { name: "Discharged", stage_type: "won" }, { name: "Discontinued", stage_type: "lost" },
+  ] },
+  { name: "Recruitment / HR", stages: [
+    { name: "Applied", stage_type: "open" }, { name: "Screened", stage_type: "open" },
+    { name: "Interview", stage_type: "open" }, { name: "Offer", stage_type: "open" },
+    { name: "Accepted", stage_type: "won" }, { name: "Rejected", stage_type: "lost" },
+  ] },
+  { name: "Support / Service", stages: [
+    { name: "Open", stage_type: "open" }, { name: "Assigned", stage_type: "open" },
+    { name: "In Progress", stage_type: "open" }, { name: "Pending Customer", stage_type: "open" },
+    { name: "Resolved", stage_type: "won" }, { name: "Unresolved", stage_type: "lost" },
+  ] },
+  { name: "E-commerce / Orders", stages: [
+    { name: "Order Placed", stage_type: "open" }, { name: "Confirmed", stage_type: "open" },
+    { name: "Packed", stage_type: "open" }, { name: "Shipped", stage_type: "open" },
+    { name: "Delivered", stage_type: "won" }, { name: "Returned", stage_type: "lost" },
+  ] },
+  { name: "Insurance / Finance", stages: [
+    { name: "Prospect", stage_type: "open" }, { name: "Quote", stage_type: "open" },
+    { name: "Underwriting", stage_type: "open" }, { name: "Approved", stage_type: "open" },
+    { name: "Policy Issued", stage_type: "won" }, { name: "Declined", stage_type: "lost" },
+  ] },
+  { name: "Custom", stages: [
+    { name: "New", stage_type: "open" }, { name: "In Progress", stage_type: "open" }, { name: "Review", stage_type: "open" },
+    { name: "Won", stage_type: "won" }, { name: "Lost", stage_type: "lost" },
+  ] },
 ]
 
-function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: string[]) => Promise<void>; onClose: () => void }) {
+function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: TemplateStage[]) => Promise<void>; onClose: () => void }) {
   const [name, setName] = useState("")
   const [selected, setSelected] = useState(PIPELINE_TEMPLATES[0])
-  const [customStages, setCustomStages] = useState<string[]>(PIPELINE_TEMPLATES[0].stages)
+  const [openStages, setOpenStages] = useState<string[]>(
+    PIPELINE_TEMPLATES[0].stages.filter((s) => s.stage_type === "open").map((s) => s.name)
+  )
+  const [wonName, setWonName] = useState(PIPELINE_TEMPLATES[0].stages.find((s) => s.stage_type === "won")!.name)
+  const [lostName, setLostName] = useState(PIPELINE_TEMPLATES[0].stages.find((s) => s.stage_type === "lost")!.name)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -398,7 +449,9 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
 
   const handleTemplate = (t: typeof PIPELINE_TEMPLATES[0]) => {
     setSelected(t)
-    setCustomStages([...t.stages])
+    setOpenStages(t.stages.filter((s) => s.stage_type === "open").map((s) => s.name))
+    setWonName(t.stages.find((s) => s.stage_type === "won")!.name)
+    setLostName(t.stages.find((s) => s.stage_type === "lost")!.name)
     if (!name || PIPELINE_TEMPLATES.some((p) => p.name === name)) setName(t.name)
   }
 
@@ -406,9 +459,17 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
     e.preventDefault()
     const n = name.trim()
     if (!n) { toast.error("Pipeline name required"); return }
+    const opens = openStages.map((s) => s.trim()).filter(Boolean)
+    if (opens.length === 0) { toast.error("Add at least one stage before Won/Lost"); return }
+    if (!wonName.trim() || !lostName.trim()) { toast.error("Won and Lost stage names are required"); return }
     setSaving(true)
-    try { await onSave(n, customStages.filter(Boolean)) }
-    finally { setSaving(false) }
+    try {
+      await onSave(n, [
+        ...opens.map((name) => ({ name, stage_type: "open" as StageType })),
+        { name: wonName.trim(), stage_type: "won" as StageType },
+        { name: lostName.trim(), stage_type: "lost" as StageType },
+      ])
+    } finally { setSaving(false) }
   }
 
   return (
@@ -453,29 +514,56 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
 
           <div>
             <label className="block text-[12px] font-semibold text-slate-600 mb-2">Stages</label>
+            <p className="text-[11px] text-slate-400 mb-2">
+              Every pipeline needs at least one stage before Won/Lost — Won and Lost are always the last two and can&apos;t be removed, only renamed.
+            </p>
             <div className="space-y-2">
-              {customStages.map((s, i) => (
+              {openStages.map((s, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <GripVertical className="h-4 w-4 text-slate-300 shrink-0" />
                   <input
                     value={s}
                     onChange={(e) => {
-                      const updated = [...customStages]
+                      const updated = [...openStages]
                       updated[i] = e.target.value
-                      setCustomStages(updated)
+                      setOpenStages(updated)
                     }}
                     className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                   />
-                  <button type="button" onClick={() => setCustomStages(customStages.filter((_, j) => j !== i))}
-                    className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                  <button
+                    type="button"
+                    onClick={() => setOpenStages(openStages.filter((_, j) => j !== i))}
+                    disabled={openStages.length <= 1}
+                    className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                  >
                     <X className="h-3 w-3" />
                   </button>
                 </div>
               ))}
-              <button type="button" onClick={() => setCustomStages([...customStages, ""])}
+              <button type="button" onClick={() => setOpenStages([...openStages, ""])}
                 className="flex items-center gap-1.5 text-[12px] text-indigo-600 hover:text-indigo-800">
                 <Plus className="h-3.5 w-3.5" /> Add Stage
               </button>
+
+              {/* Pinned close stages — Won / Lost */}
+              <div className="flex items-center gap-2 pt-1">
+                <Trophy className="h-4 w-4 text-emerald-500 shrink-0" />
+                <input
+                  value={wonName}
+                  onChange={(e) => setWonName(e.target.value)}
+                  placeholder="Won stage name"
+                  className="flex-1 rounded-xl border border-emerald-200 bg-emerald-50/50 px-3 py-1.5 text-[12px] font-medium text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-rose-500 shrink-0" />
+                <input
+                  value={lostName}
+                  onChange={(e) => setLostName(e.target.value)}
+                  placeholder="Lost stage name"
+                  className="flex-1 rounded-xl border border-rose-200 bg-rose-50/50 px-3 py-1.5 text-[12px] font-medium text-rose-800 focus:outline-none focus:ring-2 focus:ring-rose-300"
+                />
+              </div>
             </div>
           </div>
 
@@ -499,6 +587,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
 export default function PipelinesPage() {
+  const { defaultCurrency } = useAuth()
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
   const [activePipelineId, setActivePipelineId] = useState<string | null>(null)
   const [deals, setDeals] = useState<Deal[]>([])
@@ -547,7 +636,7 @@ export default function PipelinesPage() {
   }, [activePipelineId, loadDeals])
 
   // ── Create pipeline ──
-  const handleCreatePipeline = async (name: string, stages: string[]) => {
+  const handleCreatePipeline = async (name: string, stages: TemplateStage[]) => {
     const res = await fetch("/api/pipelines", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -601,11 +690,16 @@ export default function PipelinesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     })
-    if (!res.ok) { toast.error("Failed to add stage"); return }
-    const { stage } = await res.json()
-    setPipelines((prev) => prev.map((p) =>
-      p.id === activePipelineId ? { ...p, stages: [...p.stages, stage] } : p
-    ))
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) { toast.error(data.error ?? "Failed to add stage"); return }
+    const stage: Stage = data.stage
+    // New stages are always 'open' and belong before the pinned Won/Lost pair.
+    setPipelines((prev) => prev.map((p) => {
+      if (p.id !== activePipelineId) return p
+      const closeIdx = p.stages.findIndex((s) => s.stage_type !== "open")
+      const stages = closeIdx === -1 ? [...p.stages, stage] : [...p.stages.slice(0, closeIdx), stage, ...p.stages.slice(closeIdx)]
+      return { ...p, stages }
+    }))
     setAddingStage(false)
     setNewStageName("")
   }
@@ -640,7 +734,11 @@ export default function PipelinesPage() {
       message: msg,
       onConfirm: async () => {
         const res = await fetch(`/api/pipelines/${activePipelineId}/stages/${stage.id}`, { method: "DELETE" })
-        if (!res.ok) { toast.error("Failed to delete stage"); return }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          toast.error(data.error ?? "Failed to delete stage")
+          return
+        }
         setPipelines((prev) => prev.map((p) =>
           p.id === activePipelineId ? { ...p, stages: p.stages.filter((s) => s.id !== stage.id) } : p
         ))
@@ -875,7 +973,7 @@ export default function PipelinesPage() {
                   <h1 className="text-[15px] font-bold text-slate-900">{activePipeline.name}</h1>
                   <div className="flex items-center gap-3 text-[12px] text-slate-500">
                     <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-500" />{openCount} open deals</span>
-                    {totalValue > 0 && <span className="flex items-center gap-1"><TrendingUp className="h-3 w-3 text-indigo-500" />{fmt(totalValue)} pipeline value</span>}
+                    {totalValue > 0 && <span className="flex items-center gap-1"><TrendingUp className="h-3 w-3 text-indigo-500" />{formatCurrency(totalValue, defaultCurrency)} pipeline value</span>}
                   </div>
                 </div>
               </div>
@@ -915,6 +1013,7 @@ export default function PipelinesPage() {
                           key={stage.id}
                           stage={stage}
                           deals={stageDeals}
+                          currency={defaultCurrency}
                           onAddDeal={(stageId) => setDealModal({ stageId })}
                           onEditStage={(s) => { setEditingStage(s); setEditStageName(s.name) }}
                           onDeleteStage={handleDeleteStage}

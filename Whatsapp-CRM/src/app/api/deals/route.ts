@@ -45,8 +45,14 @@ export async function POST(req: NextRequest) {
     // Verify pipeline belongs to account
     const pipeline = await prisma.pipeline.findFirst({
       where: { id: body.pipeline_id, account_id: ctx.accountId },
+      include: { account: { select: { default_currency: true } } },
     })
     if (!pipeline) return NextResponse.json({ error: 'Pipeline not found' }, { status: 404 })
+
+    const stage = await prisma.pipelineStage.findFirst({
+      where: { id: body.stage_id, pipeline_id: body.pipeline_id },
+    })
+    if (!stage) return NextResponse.json({ error: 'Stage not found' }, { status: 404 })
 
     const deal = await prisma.deal.create({
       data: {
@@ -60,10 +66,10 @@ export async function POST(req: NextRequest) {
         assigned_to:         body.assigned_to  ?? null,
         title,
         value:               body.value ?? 0,
-        currency:            body.currency ?? 'USD',
+        currency:            body.currency ?? pipeline.account.default_currency,
         notes:               body.notes ?? null,
         expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : null,
-        status:              'open',
+        status:              body.status ?? stage.stage_type,
       },
       include: {
         stage:   { select: { id: true, name: true, color: true } },
