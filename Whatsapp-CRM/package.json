@@ -48,11 +48,11 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
-    "exceljs": "^4.4.0",
+    "exceljs": "^3.4.0",
     "isomorphic-dompurify": "^3.18.0",
     "lucide-react": "^1.17.0",
     "mime-types": "^3.0.2",
-    "next": "16.2.6",
+    "next": "^16.3.1",
     "next-auth": "^5.0.0-beta",
     "pg": "^8.21.0",
     "prisma": "^5.22.0",
@@ -91,7 +91,7 @@
     "esbuild": ">=0.25.0",
     "postcss": ">=8.5.10",
     "exceljs": {
-      "uuid": "^8.3.2"
+      "uuid": "^11.1.1"
     }
   }
 }
