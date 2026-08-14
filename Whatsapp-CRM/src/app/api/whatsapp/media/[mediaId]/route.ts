@@ -4,6 +4,23 @@ import { prisma } from '@/lib/db'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
+/**
+ * Media WhatsApp has permanently expired (Graph API error code 100.33 —
+ * "Object does not exist") never becomes available again on retry; it's
+ * gone from Meta's servers for good. Without this, every re-render/re-open
+ * of a conversation containing old media re-hits the Graph API for the
+ * same known-dead ID, spamming logs and burning API calls for nothing.
+ * In-memory + per-process is fine here: worst case after a restart is one
+ * extra real (still-failing) Meta call per dead ID before it's re-cached.
+ */
+const DEAD_MEDIA_TTL_MS = 24 * 60 * 60 * 1000
+const deadMediaCache = new Map<string, number>()
+
+function isPermanentlyGone(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('(code 100.33)') || message.includes('does not exist')
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ mediaId: string }> }
@@ -26,6 +43,18 @@ export async function GET(
       )
     }
     const userId = session.user.id
+
+    // Short-circuit known-dead media before touching the DB or Meta's API.
+    const failedAt = deadMediaCache.get(mediaId)
+    if (failedAt !== undefined) {
+      if (Date.now() - failedAt < DEAD_MEDIA_TTL_MS) {
+        return NextResponse.json(
+          { error: 'This media has expired and is no longer available from WhatsApp.' },
+          { status: 404 }
+        )
+      }
+      deadMediaCache.delete(mediaId) // TTL elapsed — allow one more real check
+    }
 
     // Resolve the caller's account_id — whatsapp_config is one-per-
     // account, so a teammate fetching media for a conversation in the
@@ -73,6 +102,19 @@ export async function GET(
       },
     })
   } catch (error) {
+    const { mediaId } = await params
+    if (isPermanentlyGone(error)) {
+      // Only log the first time — every subsequent hit for this ID is
+      // served from the cache above and doesn't reach this catch block.
+      if (!deadMediaCache.has(mediaId)) {
+        console.warn(`WhatsApp media ${mediaId} has expired (code 100.33) — caching as unavailable for 24h.`)
+      }
+      deadMediaCache.set(mediaId, Date.now())
+      return NextResponse.json(
+        { error: 'This media has expired and is no longer available from WhatsApp.' },
+        { status: 404 }
+      )
+    }
     console.error('Error in WhatsApp media GET:', error)
     return NextResponse.json(
       { error: 'Failed to fetch media' },
