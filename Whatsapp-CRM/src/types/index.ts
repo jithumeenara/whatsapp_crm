@@ -144,6 +144,12 @@ export interface ContactNote {
   user_id: string;
   note_text: string;
   created_at: string;
+  /** Creator's display name — resolved server-side from Profile.full_name
+   *  (falls back to email if no profile name is set). */
+  created_by_name?: string;
+  /** Creator's account role (owner/supervisor/admin/agent/viewer) at fetch
+   *  time, so the inbox can show "by <name> · Admin" on each note. */
+  created_by_role?: AccountRole | null;
 }
 
 export type ConversationStatus = 'open' | 'pending' | 'closed';
@@ -153,7 +159,7 @@ export interface Conversation {
   user_id: string;
   contact_id: string;
   status: ConversationStatus;
-  channel?: string; // 'whatsapp' | 'instagram'
+  channel?: string; // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
@@ -197,6 +203,22 @@ export interface Message {
    */
   interactive_reply_id?: string;
   deleted_at?: string | null;
+  /** Subject line, only set for `channel === 'email'` messages. */
+  email_subject?: string | null;
+  /**
+   * Only set for `content_type === 'template'` — the sent template's own
+   * button definitions (quick-reply/URL/phone/etc.), looked up by
+   * `template_name` at fetch time. Lets the inbox bubble show what buttons
+   * the customer actually saw, instead of just the body text.
+   */
+  template_buttons?: TemplateButton[] | null;
+  /**
+   * Which channel this message belongs to. Only present when the message
+   * came from the merged cross-channel timeline (`/api/contacts/[id]/timeline`)
+   * — per-conversation message fetches omit it since the conversation's own
+   * `channel` already applies to every message in it.
+   */
+  channel?: string;
 }
 
 export type ReactionActor = 'customer' | 'agent';

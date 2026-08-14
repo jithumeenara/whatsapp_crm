@@ -7,6 +7,9 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { prisma } from '@/lib/db'
+import { sendSmsText } from '@/lib/messaging/channels/sms'
+import { sendEmail } from '@/lib/messaging/channels/email'
+import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
 interface SendTextArgs {
   accountId: string
@@ -26,7 +29,71 @@ interface SendTemplateArgs {
   params?: string[]
 }
 
+/** Same missing-real-time-emit bug fixed in flows/meta-send.ts — neither
+ * message-create site in this file was calling `emitToAccount`, so an
+ * automation's bot reply never appeared in the Inbox live; an agent had to
+ * manually refresh to see it. */
+async function notifyBotMessage(
+  accountId: string,
+  message: unknown,
+  conversationId: string,
+  conversationPatch: Record<string, unknown>,
+) {
+  const { emitToAccount } = await import('@/lib/socket')
+  emitToAccount(accountId, 'message', { eventType: 'INSERT', new: message, old: {} })
+  emitToAccount(accountId, 'conversation', {
+    eventType: 'UPDATE',
+    new: { id: conversationId, ...conversationPatch },
+    old: {},
+  })
+}
+
+/** Shared persistence for the SMS/Email/RCS channels — mirrors sendViaMeta's
+ *  message-row + conversation-touch pattern for the WhatsApp path below. */
+async function persistBotTextMessage(accountId: string, conversationId: string, text: string, messageId: string, emailSubject?: string) {
+  const savedMsg = await prisma.message.create({
+    data: {
+      conversation_id: conversationId, sender_type: 'bot', content_type: 'text',
+      content_text: text, message_id: messageId, status: 'sent',
+      email_subject: emailSubject ?? null,
+    },
+  })
+  const lastMessageAt = new Date()
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { last_message_text: text, last_message_at: lastMessageAt },
+  })
+  await notifyBotMessage(accountId, savedMsg, conversationId, { last_message_text: text, last_message_at: lastMessageAt.toISOString() })
+}
+
 export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_message_id: string }> {
+  // Template sends stay WhatsApp-only (no SMS/Email/RCS template equivalent
+  // in this phase) — only plain text branches by channel.
+  const convRows = await prisma.$queryRaw<{ channel: string | null }[]>`
+    SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
+  `.catch(() => [] as { channel: string | null }[])
+  const channel = convRows[0]?.channel
+
+  if (channel === 'sms' || channel === 'rcs') {
+    const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { phone: true } })
+    if (!contact?.phone) throw new Error(`${channel} contact has no phone number`)
+    const { messageId } = channel === 'sms'
+      ? await sendSmsText({ accountId: args.accountId, to: contact.phone, text: args.text })
+      : await sendRcsText({ accountId: args.accountId, to: contact.phone, text: args.text })
+    const finalId = messageId || `${channel}_bot_${Date.now()}`
+    await persistBotTextMessage(args.accountId, args.conversationId, args.text, finalId)
+    return { whatsapp_message_id: finalId }
+  }
+  if (channel === 'email') {
+    const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { email: true } })
+    if (!contact?.email) throw new Error('Email contact has no email address')
+    const subject = args.text.slice(0, 60).trim() || 'New message'
+    const { messageId } = await sendEmail({ accountId: args.accountId, to: contact.email, subject, text: args.text })
+    const finalId = messageId || `email_bot_${Date.now()}`
+    await persistBotTextMessage(args.accountId, args.conversationId, args.text, finalId, subject)
+    return { whatsapp_message_id: finalId }
+  }
+
   return sendViaMeta({ ...args, kind: 'text' })
 }
 
@@ -104,7 +171,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const content_text = input.kind === 'text' ? input.text : null
   const template_name = input.kind === 'template' ? input.templateName : null
 
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: {
       conversation_id: input.conversationId,
       sender_type: 'bot',
@@ -116,13 +183,19 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     },
   })
 
+  const lastMessageText =
+    input.kind === 'template' ? `[template:${input.templateName}]` : input.text
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: input.conversationId },
     data: {
-      last_message_text:
-        input.kind === 'template' ? `[template:${input.templateName}]` : input.text,
-      last_message_at: new Date(),
+      last_message_text: lastMessageText,
+      last_message_at: lastMessageAt,
     },
+  })
+  await notifyBotMessage(input.accountId, savedMsg, input.conversationId, {
+    last_message_text: lastMessageText,
+    last_message_at: lastMessageAt.toISOString(),
   })
 
   return { whatsapp_message_id: waMessageId }

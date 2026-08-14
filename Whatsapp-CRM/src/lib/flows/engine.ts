@@ -537,9 +537,17 @@ async function sendButtonsAndSuspend(
       conversationId: run.conversation_id!,
       contactId: run.contact_id!,
       bodyText,
-      headerText: cfg.header_text
-        ? interpolateWithContact(cfg.header_text, run.vars, contact)
+      // header_media_url takes priority over header_text — Meta allows only
+      // one header type per interactive message (see meta-api.ts).
+      headerText: cfg.header_media_url
+        ? undefined
+        : cfg.header_text
+          ? interpolateWithContact(cfg.header_text, run.vars, contact)
+          : undefined,
+      headerMediaUrl: cfg.header_media_url
+        ? interpolateWithContact(cfg.header_media_url, run.vars, contact)
         : undefined,
+      headerMediaType: cfg.header_media_url ? cfg.header_media_type : undefined,
       footerText: cfg.footer_text
         ? interpolateWithContact(cfg.footer_text, run.vars, contact)
         : undefined,
@@ -1296,14 +1304,34 @@ async function advanceFromNodeKey(
     // ── Chatbot-builder node types ────────────────────────────────
     // send_text is the chatbot builder's equivalent of send_message.
     if (node.node_type === "send_text") {
-      const cfg = node.config as { text?: string; next_node_key?: string };
+      const cfg = node.config as { text?: string; header_text?: string; footer_text?: string; next_node_key?: string };
       try {
+        const contactForText = await getContact();
+        const headerLine = cfg.header_text
+          ? interpolateWithContact(cfg.header_text, run.vars, contactForText)
+          : "";
+        const bodyLine = interpolateWithContact(cfg.text ?? "", run.vars, contactForText);
+        const footerLine = cfg.footer_text
+          ? interpolateWithContact(cfg.footer_text, run.vars, contactForText)
+          : "";
+        // send_text is a plain-text message on every channel (no native
+        // header/footer object like interactive messages get) — a plain
+        // text message type has no header field in WhatsApp's API. We
+        // simulate the "bold header above the body" the builder UI
+        // promises by prepending it as *bold* WhatsApp markdown; this was
+        // previously silently dropped here (header_text/footer_text were
+        // captured by the node form but never read from cfg at send time).
+        const composedText = [
+          headerLine ? `*${headerLine}*` : null,
+          bodyLine,
+          footerLine || null,
+        ].filter(Boolean).join("\n\n");
         const { whatsapp_message_id } = await engineSendText({
           accountId: run.account_id,
           userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
-          text: interpolateWithContact(cfg.text ?? "", run.vars, await getContact()),
+          text: composedText,
         });
         await logEvent(run.id, "message_sent", node.node_key, {
           node_type: "send_text",

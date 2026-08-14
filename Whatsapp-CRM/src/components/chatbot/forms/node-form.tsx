@@ -26,7 +26,10 @@ import {
   RefreshCw,
   Copy,
   Code2,
+  FolderOpen,
+  AlertTriangle,
 } from "lucide-react";
+import { FileManagerPicker } from "@/components/inbox/file-manager-picker";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -38,7 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { RichTextArea, VarInput } from "./rich-text-area";
+import { RichTextArea } from "./rich-text-area";
 import type { ChatbotBuilderNode, ChatbotNodeType } from "@/lib/chatbot/types";
 
 // ─── Variable helpers ────────────────────────────────────────────
@@ -169,6 +172,68 @@ function NodeSelect({
 
 type MediaInputMode = "url" | "upload";
 
+/** WhatsApp's real accepted formats per media type — shown as a hint so a
+ * mismatched URL (e.g. a CDN that quietly serves WebP behind a .jpg-looking
+ * path) can be self-diagnosed before a send fails. */
+const WHATSAPP_FORMAT_HINT: Record<string, string> = {
+  image: "JPEG or PNG only (not WebP/GIF) · max 5MB",
+  video: "MP4 or 3GPP (H.264 + AAC) · max 16MB",
+  audio: "AAC, MP4, MPEG, AMR, or OGG (Opus) · max 16MB",
+  document: "PDF, Office docs (doc/docx/ppt/pptx/xls/xlsx), or text · max 100MB",
+};
+
+/** Live preview of the current media URL — catches broken links, wrong
+ * domains, and content that doesn't actually load, right in the editor
+ * instead of only surfacing as a failed send later. Note: this can't catch
+ * every WhatsApp-specific rejection (e.g. a browser renders WebP fine even
+ * though WhatsApp's image type doesn't accept it) — the format hint below
+ * covers that gap. */
+function MediaPreview({ url, mediaType }: { url: string; mediaType: string }) {
+  // No effect needed to reset `failed` when `url` changes — the caller
+  // passes `key={url}`, so React remounts this component (fresh state)
+  // whenever the URL changes instead.
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-[10px] text-amber-700">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+        Couldn&apos;t load a preview — double-check the URL is public and reachable.
+      </div>
+    );
+  }
+  if (mediaType === "image") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- arbitrary user-pasted/uploaded URL, not a static asset next/image can optimize
+      <img
+        src={url}
+        alt="Preview"
+        className="h-24 w-auto max-w-full rounded-lg border border-slate-200 object-cover"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  if (mediaType === "video") {
+    return (
+      <video
+        src={url}
+        controls
+        className="h-24 w-auto max-w-full rounded-lg border border-slate-200"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  if (mediaType === "audio") {
+    return <audio src={url} controls className="w-full" onError={() => setFailed(true)} />;
+  }
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] text-emerald-600">
+      <ImageIcon className="h-3 w-3" />
+      <span className="max-w-[240px] truncate font-mono">{url}</span>
+    </div>
+  );
+}
+
 function MediaUrlField({
   value,
   mediaType,
@@ -180,6 +245,8 @@ function MediaUrlField({
 }) {
   const [mode, setMode] = useState<MediaInputMode>("url");
   const [uploading, setUploading] = useState(false);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+  const [fileManagerOpen, setFileManagerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const accept =
@@ -204,7 +271,7 @@ function MediaUrlField({
       onChange(json.url);
       setMode("url");
     } catch {
-      // fall through — let user see error by URL staying empty
+      toast.error("Upload failed — please try again");
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -217,7 +284,7 @@ function MediaUrlField({
       <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 w-fit">
         <button
           type="button"
-          onClick={() => setMode("url")}
+          onClick={() => { setMode("url"); setUploadMenuOpen(false); }}
           className={cn(
             "flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium transition-colors",
             mode === "url"
@@ -228,19 +295,49 @@ function MediaUrlField({
           <Link2 className="h-3 w-3" />
           URL
         </button>
-        <button
-          type="button"
-          onClick={() => { setMode("upload"); setTimeout(() => fileRef.current?.click(), 50); }}
-          className={cn(
-            "flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium transition-colors",
-            mode === "upload"
-              ? "bg-white text-slate-900 shadow-sm"
-              : "text-slate-500 hover:text-slate-900",
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setUploadMenuOpen((o) => !o)}
+            className={cn(
+              "flex items-center gap-1 rounded px-2.5 py-1 text-[10px] font-medium transition-colors",
+              mode === "upload"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-900",
+            )}
+          >
+            <Upload className="h-3 w-3" />
+            Upload
+          </button>
+          {uploadMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setUploadMenuOpen(false)} />
+              <div className="absolute left-0 top-8 z-20 w-48 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUploadMenuOpen(false);
+                    setMode("upload");
+                    setTimeout(() => fileRef.current?.click(), 50);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                >
+                  <Upload className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  From my device
+                </button>
+                <div className="border-t border-slate-100" />
+                <button
+                  type="button"
+                  onClick={() => { setUploadMenuOpen(false); setFileManagerOpen(true); }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                  From File Manager
+                </button>
+              </div>
+            </>
           )}
-        >
-          <Upload className="h-3 w-3" />
-          Upload
-        </button>
+        </div>
       </div>
 
       {/* URL input */}
@@ -253,7 +350,7 @@ function MediaUrlField({
         />
       )}
 
-      {/* Hidden file input */}
+      {/* Hidden file input — device upload */}
       <input
         ref={fileRef}
         type="file"
@@ -262,17 +359,31 @@ function MediaUrlField({
         onChange={handleFile}
       />
 
-      {/* Upload progress / preview */}
+      {/* File Manager picker */}
+      <FileManagerPicker
+        open={fileManagerOpen}
+        onClose={() => setFileManagerOpen(false)}
+        onSelect={(file) => { onChange(file.url); setMode("url"); }}
+      />
+
+      {/* Upload progress */}
       {uploading && (
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Uploading…
         </div>
       )}
-      {!uploading && value && mode === "url" && (
-        <div className="flex items-center gap-1.5 text-[10px] text-emerald-600">
-          <ImageIcon className="h-3 w-3" />
-          <span className="max-w-[200px] truncate font-mono">{value}</span>
+
+      {/* Live preview + format hint — catches a bad/wrong-format URL before
+          it fails silently at send time. */}
+      {!uploading && value && (
+        <div className="space-y-1">
+          <MediaPreview key={value} url={value} mediaType={mediaType} />
+          {WHATSAPP_FORMAT_HINT[mediaType] && (
+            <p className="text-[10px] text-slate-400">
+              WhatsApp accepts: {WHATSAPP_FORMAT_HINT[mediaType]}
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -446,6 +557,73 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           minHeight={60}
         />
       </Field>
+
+      {!isCta && (() => {
+        // Single source of truth for which header mode is active, used
+        // both for the tab highlighting and the conditional content below
+        // — keeps the two from ever disagreeing (e.g. tab shows "Text"
+        // highlighted while the media editor is actually rendered).
+        const headerIsMedia = cfg.header_media_type !== undefined;
+        return (
+        <div className="rounded-lg border border-slate-200 p-3 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-slate-700">Header (optional)</p>
+            <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5">
+              <button
+                type="button"
+                onClick={() => onChange({ ...cfg, header_media_url: undefined, header_media_type: undefined })}
+                className={cn(
+                  "rounded px-2.5 py-1 text-[10px] font-medium transition-colors",
+                  !headerIsMedia ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900",
+                )}
+              >
+                Text
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ ...cfg, header_text: undefined, header_media_type: "image" })}
+                className={cn(
+                  "rounded px-2.5 py-1 text-[10px] font-medium transition-colors",
+                  headerIsMedia ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-900",
+                )}
+              >
+                Media
+              </button>
+            </div>
+          </div>
+          {headerIsMedia ? (
+            <>
+              <Select
+                value={String(cfg.header_media_type ?? "image")}
+                onValueChange={(v) => onChange({ ...cfg, header_media_type: v })}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {["image", "video", "document"].map((t) => (
+                    <SelectItem key={t} value={t} className="text-xs capitalize">{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <MediaUrlField
+                value={String(cfg.header_media_url ?? "")}
+                mediaType={String(cfg.header_media_type ?? "image")}
+                onChange={(url) => onChange({ ...cfg, header_media_url: url })}
+              />
+            </>
+          ) : (
+            <Input
+              className="h-8 text-xs"
+              value={String(cfg.header_text ?? "")}
+              onChange={(e) => onChange({ ...cfg, header_text: e.target.value })}
+              placeholder="e.g. Welcome!"
+              maxLength={60}
+            />
+          )}
+        </div>
+        );
+      })()}
 
       {isCta ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
@@ -718,12 +896,12 @@ function SendMediaForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         </Field>
       )}
       <Field label="Caption (optional)">
-        <VarInput
-          className="h-8 text-xs"
+        <RichTextArea
           value={String(cfg.caption ?? "")}
           onChange={(v) => onChange({ ...cfg, caption: v })}
           placeholder="Optional caption text…"
           vars={vars}
+          minHeight={60}
         />
       </Field>
       <NodeSelect

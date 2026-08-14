@@ -48,7 +48,7 @@ export function ChatbotShell({
   const [status, setStatus] = useState(initialStatus);
   const [nodes, setNodes] = useState<ChatbotBuilderNode[]>(initialNodes);
   const [entryNodeId, setEntryNodeId] = useState<string | null>(initialEntryNodeKey || null);
-  const [viewMode, setViewMode] = useState<ViewMode>("split");
+  const [viewMode, setViewMode] = useState<ViewMode>("canvas");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [isDirty, setIsDirty] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -76,6 +76,8 @@ export function ChatbotShell({
   const futureRef = useRef<ChatbotBuilderNode[][]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const isDirtyRef = useRef(false);
+  isDirtyRef.current = isDirty;
 
   const pushHistory = useCallback(() => {
     historyRef.current = [...historyRef.current.slice(-(MAX_HISTORY - 1)), nodesRef.current];
@@ -134,6 +136,22 @@ export function ChatbotShell({
     pendingRef.current = setTimeout(save, 3000);
   }, [save]);
 
+  /**
+   * Cancels any pending debounced autosave and saves immediately. Without
+   * this, a drag/edit made less than 3s before leaving the editor (Back
+   * button, browser back, tab close) had its `setTimeout(save, 3000)`
+   * silently killed by navigation — the edit was never persisted, so
+   * reopening the chatbot showed stale (pre-edit) node positions/direction.
+   * Call this on every way out of the editor, not just the explicit Save.
+   */
+  const flushSave = useCallback(async () => {
+    if (pendingRef.current) {
+      clearTimeout(pendingRef.current);
+      pendingRef.current = null;
+    }
+    if (isDirtyRef.current) await save();
+  }, [save]);
+
   const undo = useCallback(() => {
     if (historyRef.current.length === 0) return;
     const prev = historyRef.current[historyRef.current.length - 1];
@@ -178,6 +196,33 @@ export function ChatbotShell({
     return () => window.removeEventListener("keydown", handleKey);
   }, [save, undo, redo]);
 
+  // Tab close / refresh / browser-chrome navigation — beforeunload can't
+  // reliably await an async save, so this is a best-effort fire-and-forget
+  // flush plus the native "leave site?" confirmation as a safety net.
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirtyRef.current) return;
+      void flushSave();
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [flushSave]);
+
+  // In-app navigation away from the editor (e.g. unmounting because the
+  // user routed elsewhere by some path other than the Back button below)
+  // — same reasoning as flushSave's doc comment.
+  useEffect(() => {
+    return () => { void flushSave(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only on unmount, not every flushSave identity change
+  }, []);
+
+  const goBack = useCallback(async () => {
+    await flushSave();
+    router.push("/chatbot");
+  }, [flushSave, router]);
+
   const onNodesChange = useCallback((updated: ChatbotBuilderNode[]) => {
     pushHistory(); setNodes(updated); scheduleSave();
   }, [pushHistory, scheduleSave]);
@@ -196,7 +241,7 @@ export function ChatbotShell({
 
         {/* Back */}
         <button
-          onClick={() => router.push("/chatbot")}
+          onClick={() => void goBack()}
           title="Back to chatbots"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
         >

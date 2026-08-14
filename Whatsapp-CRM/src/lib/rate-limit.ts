@@ -152,6 +152,15 @@ export const RATE_LIMITS = {
   /** External API key writes. 60 req/min per key — one write per
    *  second sustained; tight enough to prevent mass-create abuse. */
   apiWrite: { limit:  60, windowMs: 60_000 },
+  /** Inbound channel webhooks authenticated by a URL-embedded secret (SMS
+   *  via MSG91, Email via SendGrid Inbound Parse) rather than a
+   *  cryptographic signature — MSG91's own webhook auth scheme isn't
+   *  confirmed from current docs, and Inbound Parse has no signature by
+   *  default. 60/min per IP is comfortable for real provider traffic
+   *  bursts while still meaningfully slowing secret-guessing brute force —
+   *  belt-and-braces alongside the secret's own ~192 bits of entropy, same
+   *  reasoning as invitationPeek above. */
+  inboundWebhookSecret: { limit: 60, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

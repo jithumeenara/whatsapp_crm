@@ -1172,9 +1172,12 @@ async function findOrCreateConversation(
   configOwnerUserId: string,
   contactId: string,
 ) {
-  // Look for existing conversation in this account
+  // Scoped by channel too — a contact_id shared across channels (e.g. after
+  // manual merge, or a rare cross-channel identity collision) must never
+  // reuse another channel's conversation row. Matches Facebook's
+  // findOrCreateFbConversation, which already does this correctly.
   const existing = await prisma.conversation.findFirst({
-    where: { account_id: accountId, contact_id: contactId },
+    where: { account_id: accountId, contact_id: contactId, channel: 'whatsapp' },
   })
 
   if (existing) {

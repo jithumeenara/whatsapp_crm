@@ -174,9 +174,18 @@ async function resolveAudience(
   // recipient at actual send time in run-broadcast.ts via isValidE164, which
   // marks that one recipient "failed" instead of excluding it from the
   // audience count/preview entirely.
+  //
+  // The one exception: contacts whose `phone` is the "email:<address>"
+  // placeholder (created by the Email channel webhook for contacts with no
+  // real phone number — Contact.phone has no NULL option in the schema).
+  // Unlike a real-but-unvalidated number, this can never succeed on
+  // WhatsApp under any circumstance, so it's excluded up front rather than
+  // padding the audience count with a guaranteed failure.
+  const excludeEmailPlaceholder = { NOT: { phone: { startsWith: "email:" } } } as const;
+
   if (audience.type === "all") {
     contacts = await db.contact.findMany({
-      where: { account_id: ctx.accountId },
+      where: { account_id: ctx.accountId, ...excludeEmailPlaceholder },
     });
   } else if (
     audience.type === "tags" &&
@@ -190,7 +199,7 @@ async function resolveAudience(
     const uniqueContactIds = [...new Set(contactTags.map((ct) => ct.contact_id))];
     if (uniqueContactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: uniqueContactIds }, account_id: ctx.accountId },
+        where: { id: { in: uniqueContactIds }, account_id: ctx.accountId, ...excludeEmailPlaceholder },
       });
     }
   } else if (audience.type === "custom_field" && audience.customField) {
@@ -207,7 +216,7 @@ async function resolveAudience(
     const contactIds = [...new Set(matches.map((m) => m.contact_id))];
     if (contactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: contactIds }, account_id: ctx.accountId },
+        where: { id: { in: contactIds }, account_id: ctx.accountId, ...excludeEmailPlaceholder },
       });
     }
   } else if (audience.type === "csv" && audience.csvContacts) {
@@ -218,7 +227,7 @@ async function resolveAudience(
       : [];
   } else if (audience.type === "contacts" && audience.contactIds && audience.contactIds.length > 0) {
     contacts = await db.contact.findMany({
-      where: { id: { in: audience.contactIds }, account_id: ctx.accountId },
+      where: { id: { in: audience.contactIds }, account_id: ctx.accountId, ...excludeEmailPlaceholder },
     });
   }
 

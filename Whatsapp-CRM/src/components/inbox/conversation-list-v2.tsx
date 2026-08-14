@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import type { Conversation, ConversationStatus } from "@/types"
-import { Search, X, MessageSquare, ChevronDown } from "lucide-react"
+import { Search, X, MessageSquare, ChevronDown, Mail, Radio } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
@@ -41,38 +41,36 @@ function FacebookIcon({ className }: { className?: string }) {
   )
 }
 
-type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook"
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs"
 
 const CHANNEL_OPTIONS: { value: ChannelFilter; label: string; icon: React.ReactNode }[] = [
   { value: "all",       label: "All",       icon: <MessageSquare className="h-3.5 w-3.5" /> },
   { value: "whatsapp",  label: "WhatsApp",  icon: <WhatsAppIcon className="h-3.5 w-3.5" /> },
   { value: "instagram", label: "Instagram", icon: <InstagramIcon className="h-3.5 w-3.5" /> },
   { value: "facebook",  label: "Messenger", icon: <FacebookIcon className="h-3.5 w-3.5" /> },
+  { value: "sms",       label: "SMS",       icon: <MessageSquare className="h-3.5 w-3.5 text-indigo-500" /> },
+  { value: "email",     label: "Email",     icon: <Mail className="h-3.5 w-3.5 text-sky-500" /> },
+  { value: "rcs",       label: "RCS",       icon: <Radio className="h-3.5 w-3.5 text-violet-500" /> },
 ]
 
+/** Icon shown inside the small badge on a conversation's avatar — same set as CHANNEL_OPTIONS, minus "all". */
+function channelIcon(channel: string, className: string) {
+  switch (channel) {
+    case "instagram": return <InstagramIcon className={className} />
+    case "facebook":  return <FacebookIcon className={className} />
+    case "sms":       return <MessageSquare className={cn(className, "text-indigo-500")} />
+    case "email":     return <Mail className={cn(className, "text-sky-500")} />
+    case "rcs":       return <Radio className={cn(className, "text-violet-500")} />
+    default:          return <WhatsAppIcon className={className} />
+  }
+}
+
 function ChannelBadge({ channel }: { channel?: string }) {
-  if (!channel || channel === "whatsapp") {
-    return (
-      <span className="absolute -bottom-0.5 -left-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-white">
-        <WhatsAppIcon className="h-3 w-3" />
-      </span>
-    )
-  }
-  if (channel === "instagram") {
-    return (
-      <span className="absolute -bottom-0.5 -left-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-white">
-        <InstagramIcon className="h-3 w-3" />
-      </span>
-    )
-  }
-  if (channel === "facebook") {
-    return (
-      <span className="absolute -bottom-0.5 -left-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-white">
-        <FacebookIcon className="h-3 w-3" />
-      </span>
-    )
-  }
-  return null
+  return (
+    <span className="absolute -bottom-0.5 -left-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-white">
+      {channelIcon(channel || "whatsapp", "h-3 w-3")}
+    </span>
+  )
 }
 
 interface Props {

@@ -380,8 +380,19 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const fromCtx = args.context.conversation_id
   if (fromCtx) return fromCtx
   if (!args.contactId) throw new Error('cannot resolve conversation: no contact')
+  // Triggers with no specific triggering message (time_based, tag_added,
+  // new_contact_created) fall back to "some conversation for this contact"
+  // — but a contact can now have one conversation per channel (WhatsApp,
+  // Instagram, Facebook, SMS, Email, RCS all stay in separate rows by
+  // design, see the channel-scoped conversation fix in the webhook
+  // handlers). Without an explicit order, Postgres returns an arbitrary
+  // row, which could silently route the automation's reply onto whichever
+  // channel happens to sort first rather than the one the contact actually
+  // uses. Ordering by most-recently-active picks the channel most likely
+  // to still be a live, expected conversation.
   const conv = await prisma.conversation.findFirst({
     where: { account_id: args.automation.account_id, contact_id: args.contactId },
+    orderBy: { last_message_at: 'desc' },
     select: { id: true },
   })
   if (!conv?.id) throw new Error('no conversation for contact')

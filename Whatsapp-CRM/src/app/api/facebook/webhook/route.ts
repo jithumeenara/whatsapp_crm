@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
-import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 
 type RawConfig = {
@@ -339,9 +338,6 @@ async function findOrCreateFbContact(
   psid: string,
   accessToken: string,
 ) {
-  const existing = await findExistingContact(accountId, psid)
-  if (existing) return existing
-
   // Try to fetch the real name from Facebook Graph API.
   // Requires "Business Asset User Profile Access" feature on the Meta app.
   let displayName: string | null = null
@@ -363,18 +359,28 @@ async function findOrCreateFbContact(
   const nameToSave = displayName ?? "Messenger User"
 
   try {
+    // Matched by exact equality on the dedicated facebook_id column — not
+    // findExistingContact's fuzzy last-8-digit phone matching (meant for
+    // trunk-prefix tolerance on real phone numbers, a cross-channel collision
+    // risk when reused for a platform ID) and not phone_normalized either
+    // (see supabase/migrations/025_contact_platform_ids.sql).
     return await prisma.contact.upsert({
       where: {
-        contacts_account_phone_normalized: {
-          account_id:       accountId,
-          phone_normalized: psid.replace(/\D/g, ""),
+        contacts_account_facebook_id: {
+          account_id:  accountId,
+          facebook_id: psid,
         },
       },
       create: {
         account_id:       accountId,
         user_id:          ownerUserId,
+        // phone still carries the PSID too (unchanged) — several existing
+        // send paths (e.g. handleFacebookSend) read contact.phone as the
+        // recipient id for this channel. facebook_id is the new column used
+        // exclusively for collision-safe lookup.
         phone:            psid,
         phone_normalized: psid.replace(/\D/g, ""),
+        facebook_id:      psid,
         name:             nameToSave,
       },
       // Update name if we got a real name from the API (replaces old PSID or "Messenger User" default)

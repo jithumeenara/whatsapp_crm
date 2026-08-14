@@ -21,6 +21,9 @@ import {
 } from '@/lib/rate-limit'
 import type { MessageTemplate } from '@/types'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { sendSmsText } from '@/lib/messaging/channels/sms'
+import { sendEmail } from '@/lib/messaging/channels/email'
+import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads')
 
@@ -219,6 +222,106 @@ async function handleFacebookSend({
   return NextResponse.json({ success: true, message_id: savedMsg.id })
 }
 
+// ── SMS / RCS send helper ─────────────────────────────────────────────────────
+// Both channels are phone-addressed, text-only in this phase — one shared
+// handler, mirroring handleInstagramSend/handleFacebookSend's shape.
+async function handlePhoneChannelSend({
+  channel,
+  accountId,
+  userId,
+  conversationId,
+  contactPhone,
+  contentText,
+}: {
+  channel:        'sms' | 'rcs'
+  accountId:      string
+  userId:         string
+  conversationId: string
+  contactPhone:   string
+  contentText:    string
+}): Promise<NextResponse> {
+  let messageId: string
+  try {
+    const result = channel === 'sms'
+      ? await sendSmsText({ accountId, to: contactPhone, text: contentText })
+      : await sendRcsText({ accountId, to: contactPhone, text: contentText })
+    messageId = result.messageId || `${channel}_agent_${Date.now()}`
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : `${channel.toUpperCase()} send failed`
+    console.error(`[${channel}/send] error:`, msg)
+    return NextResponse.json({ error: msg }, { status: 502 })
+  }
+
+  const savedMsg = await prisma.message.create({
+    data: {
+      conversation_id: conversationId,
+      sender_type:     'agent',
+      sender_id:        userId,
+      content_type:     'text',
+      content_text:     contentText,
+      message_id:       messageId,
+      status:           'sent',
+    },
+  })
+  emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
+
+  const updatedConv = await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { last_message_text: contentText, last_message_at: new Date() },
+  })
+  emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
+
+  return NextResponse.json({ success: true, message_id: savedMsg.id })
+}
+
+// ── Email send helper ─────────────────────────────────────────────────────────
+async function handleEmailSend({
+  accountId,
+  userId,
+  conversationId,
+  contactEmail,
+  contentText,
+}: {
+  accountId:      string
+  userId:         string
+  conversationId: string
+  contactEmail:   string
+  contentText:    string
+}): Promise<NextResponse> {
+  const subject = contentText.slice(0, 60).trim() || 'New message'
+  let messageId: string
+  try {
+    const result = await sendEmail({ accountId, to: contactEmail, subject, text: contentText })
+    messageId = result.messageId || `email_agent_${Date.now()}`
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Email send failed'
+    console.error('[email/send] error:', msg)
+    return NextResponse.json({ error: msg }, { status: 502 })
+  }
+
+  const savedMsg = await prisma.message.create({
+    data: {
+      conversation_id: conversationId,
+      sender_type:     'agent',
+      sender_id:        userId,
+      content_type:     'text',
+      content_text:     contentText,
+      email_subject:    subject,
+      message_id:       messageId,
+      status:           'sent',
+    },
+  })
+  emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
+
+  const updatedConv = await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { last_message_text: contentText, last_message_at: new Date() },
+  })
+  emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
+
+  return NextResponse.json({ success: true, message_id: savedMsg.id })
+}
+
 export async function POST(request: Request) {
   try {
     // Accept session auth OR Bearer API key
@@ -337,6 +440,28 @@ export async function POST(request: Request) {
     }
 
     const contact = conversation.contact
+
+    // ── Channel routing ───────────────────────────────────────────────────────
+    // Resolved before the phone check below — Email contacts are identified
+    // by email, not phone, so the phone requirement must not apply to them.
+    const convChannel = (conversation as { channel?: string }).channel ?? 'whatsapp'
+
+    if (convChannel === 'email') {
+      if (!contact?.email) {
+        return NextResponse.json({ error: 'Contact has no email address' }, { status: 400 })
+      }
+      if (message_type !== 'text' || !content_text) {
+        return NextResponse.json({ error: 'Only plain text is supported for the Email channel right now' }, { status: 400 })
+      }
+      return handleEmailSend({
+        accountId,
+        userId,
+        conversationId: conversation_id,
+        contactEmail: contact.email,
+        contentText: content_text,
+      })
+    }
+
     if (!contact?.phone) {
       return NextResponse.json(
         { error: 'Contact phone number not found' },
@@ -344,8 +469,6 @@ export async function POST(request: Request) {
       )
     }
 
-    // ── Channel routing ───────────────────────────────────────────────────────
-    const convChannel = (conversation as { channel?: string }).channel ?? 'whatsapp'
     if (convChannel === 'instagram') {
       return handleInstagramSend({
         accountId,
@@ -366,6 +489,19 @@ export async function POST(request: Request) {
         messageType: message_type,
         contentText: content_text ?? null,
         mediaUrl: media_url ?? null,
+      })
+    }
+    if (convChannel === 'sms' || convChannel === 'rcs') {
+      if (message_type !== 'text' || !content_text) {
+        return NextResponse.json({ error: `Only plain text is supported for the ${convChannel.toUpperCase()} channel right now` }, { status: 400 })
+      }
+      return handlePhoneChannelSend({
+        channel: convChannel,
+        accountId,
+        userId,
+        conversationId: conversation_id,
+        contactPhone: contact.phone,
+        contentText: content_text,
       })
     }
 

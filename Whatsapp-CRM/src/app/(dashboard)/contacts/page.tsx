@@ -1,12 +1,13 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import type { Contact, Tag } from "@/types"
 import {
   Users, Search, Plus, Pencil, Trash2, ChevronLeft, ChevronRight,
   Phone, Mail, Upload, MoreHorizontal, MessageSquare, SortAsc,
-  Tag as TagIcon, X, ChevronDown, Camera,
+  Tag as TagIcon, X, ChevronDown, Camera, Radio,
 } from "lucide-react"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { ContactDetailViewV2 } from "@/components/contacts/contact-detail-view-v2"
@@ -36,6 +37,28 @@ function ChannelBadges({ channels }: { channels?: string[] }) {
       {channels.includes("instagram") && (
         <span title="Instagram" className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-[#f09433] via-[#e6683c] to-[#833ab4]">
           <Camera className="h-2 w-2 text-white" />
+        </span>
+      )}
+      {channels.includes("facebook") && (
+        <span title="Messenger" className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#1877F2]">
+          <svg viewBox="0 0 24 24" fill="white" className="h-2.5 w-2.5">
+            <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.235 2.686.235v2.97h-1.513c-1.491 0-1.956.93-1.956 1.885v2.27h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
+          </svg>
+        </span>
+      )}
+      {channels.includes("sms") && (
+        <span title="SMS" className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-indigo-500">
+          <MessageSquare className="h-2 w-2 text-white" />
+        </span>
+      )}
+      {channels.includes("email") && (
+        <span title="Email" className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-sky-500">
+          <Mail className="h-2 w-2 text-white" />
+        </span>
+      )}
+      {channels.includes("rcs") && (
+        <span title="RCS" className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-violet-500">
+          <Radio className="h-2 w-2 text-white" />
         </span>
       )}
     </span>
@@ -178,6 +201,7 @@ function BulkDeleteConfirm({ count, deleting, onCancel, onConfirm }: {
 export default function ContactsV2() {
   const { accountRole } = useAuth()
   const canManage = hasMinRole(accountRole ?? "viewer", "agent")
+  const searchParams = useSearchParams()
 
   const [contacts, setContacts] = useState<ContactWithTags[]>([])
   const [allTags, setAllTags] = useState<Tag[]>([])
@@ -209,6 +233,15 @@ export default function ContactsV2() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sortRef = useRef<HTMLDivElement>(null)
   const tagRef = useRef<HTMLDivElement>(null)
+
+  // Deep-link support: the Inbox contact sidebar's "edit contact" icon
+  // links to /contacts?open=<id> so it lands on that exact contact's
+  // detail panel instead of just the generic list. ContactDetailViewV2
+  // fetches its own data by id, so seeding selectedId is all that's needed.
+  useEffect(() => {
+    const openId = searchParams.get("open")
+    if (openId) setSelectedId(openId)
+  }, [searchParams])
 
   // Close sort/tag dropdowns on outside click (mousedown is fine for these — no DOM removal race)
   useEffect(() => {

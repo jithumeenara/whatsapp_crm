@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
-import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe"
+import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 
 type RawConfig = {
@@ -393,8 +393,14 @@ async function findOrCreateIgContact(
   igsid: string,
   accessToken: string,
 ) {
-  // Instagram IGSID stored as phone (numeric string, won't collide with real E.164 numbers)
-  const existing = await findExistingContact(accountId, igsid)
+  // Matched by exact equality on the dedicated instagram_id column — NOT
+  // findExistingContact's fuzzy last-8-digit phone matching, which is meant
+  // for trunk-prefix tolerance on real phone numbers and risks cross-channel
+  // collisions against unrelated WhatsApp contacts when reused for a platform
+  // ID (see supabase/migrations/025_contact_platform_ids.sql).
+  const existing = await prisma.contact.findFirst({
+    where: { account_id: accountId, instagram_id: igsid },
+  })
   if (existing) return existing
 
   // Try to fetch the user's display name from Instagram Graph API
@@ -417,15 +423,20 @@ async function findOrCreateIgContact(
       data: {
         account_id:       accountId,
         user_id:          ownerUserId,
+        // phone still carries the IGSID too (unchanged) — several existing
+        // send paths (e.g. handleInstagramSend, engineSendTextInstagram) read
+        // contact.phone as the recipient id for this channel. instagram_id is
+        // the new column used exclusively for collision-safe lookup above.
         phone:            igsid,
         phone_normalized: igsid.replace(/\D/g, ""),
+        instagram_id:     igsid,
         name:             displayName,
       },
     })
     return contact
   } catch (err) {
     if (isUniqueViolation(err)) {
-      return findExistingContact(accountId, igsid)
+      return prisma.contact.findFirst({ where: { account_id: accountId, instagram_id: igsid } })
     }
     console.error("[Instagram] contact create failed:", err)
     return null
@@ -437,16 +448,16 @@ async function findOrCreateIgConversation(
   ownerUserId: string,
   contactId: string,
 ) {
-  // Look for an existing Instagram conversation for this contact
+  // Scoped by channel — previously this looked up ANY conversation for the
+  // contact_id (no channel filter) and then force-overwrote channel to
+  // 'instagram' on whatever it found, which could silently relabel a
+  // WhatsApp conversation (and all its prior messages) as Instagram if the
+  // same contact_id was ever shared across channels. Matches Facebook's
+  // findOrCreateFbConversation.
   const existing = await prisma.conversation.findFirst({
-    where: { account_id: accountId, contact_id: contactId },
+    where: { account_id: accountId, contact_id: contactId, channel: 'instagram' },
   })
   if (existing) {
-    // Always ensure channel is set — it may be NULL on conversations created before this column existed
-    await prisma.$executeRaw`
-      UPDATE conversations SET channel = 'instagram'
-      WHERE id = ${existing.id}::uuid AND (channel IS NULL OR channel != 'instagram')
-    `.catch(() => {})
     return existing
   }
 

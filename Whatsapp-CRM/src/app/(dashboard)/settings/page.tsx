@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import {
   User, MessageCircle, Camera, MousePointerClick, Tag, LayoutGrid,
   Layers, Palette, Users, Bot, Database, Bell, Key, Webhook, Settings,
-  ChevronRight,
+  ChevronRight, MessageSquare, Mail, Radio,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { WhatsAppConfig } from "@/components/settings/whatsapp-config"
@@ -23,6 +23,9 @@ import { LeadsSettingsV2 } from "@/components/settings/leads-settings-v2"
 import { CustomFieldsPanel } from "@/components/settings/custom-fields-panel"
 import { InstagramConfig } from "@/components/settings/instagram-config"
 import { FacebookConfig } from "@/components/settings/facebook-config"
+import { SmsConfig } from "@/components/settings/sms-config"
+import { EmailConfig } from "@/components/settings/email-config"
+import { RcsConfig } from "@/components/settings/rcs-config"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -50,6 +53,9 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       { key: "whatsapp",     label: "WhatsApp",      icon: MessageCircle, ownerOnly: true },
       { key: "instagram",    label: "Instagram",     icon: Camera,        ownerOnly: true },
       { key: "facebook",     label: "Facebook",      icon: Settings,      ownerOnly: true },
+      { key: "sms",          label: "SMS",           icon: MessageSquare, ownerOnly: true },
+      { key: "email",        label: "Email",         icon: Mail,          ownerOnly: true },
+      { key: "rcs",          label: "RCS",           icon: Radio,         ownerOnly: true },
     ],
   },
   {
@@ -83,6 +89,9 @@ const TAB_TITLES: Record<string, string> = {
   whatsapp: "WhatsApp",
   instagram: "Instagram",
   facebook: "Facebook",
+  sms: "SMS",
+  email: "Email",
+  rcs: "RCS",
   capture: "Capture",
   tags: "Tags",
   "custom-fields": "Custom Fields",
@@ -127,6 +136,9 @@ function SettingsContent() {
       case "whatsapp":       return isOwner ? <WhatsAppConfig /> : null
       case "instagram":      return isOwner ? <InstagramConfig /> : null
       case "facebook":       return isOwner ? <FacebookConfig /> : null
+      case "sms":            return isOwner ? <SmsConfig /> : null
+      case "email":          return isOwner ? <EmailConfig /> : null
+      case "rcs":            return isOwner ? <RcsConfig /> : null
       case "capture":        return <CapturePanel />
       case "tags":           return <TagManager />
       case "custom-fields":  return <CustomFieldsPanel />

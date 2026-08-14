@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
+import { WhatsAppText } from "./message-bubble";
 
 interface ReplyQuoteProps {
   /** Sender label of the quoted message: "You" for our own messages,
@@ -42,8 +43,8 @@ export function ReplyQuote({
          *  layout wider, shoving the contact sidebar off-screen.
          *  `break-words` also wraps long URLs that have no whitespace
          *  to break on. Issue #165. */}
-        <div className="whitespace-pre-wrap break-words text-xs text-slate-800/80/80">
-          {preview}
+        <div className="whitespace-pre-wrap text-xs text-slate-800/80" style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>
+          <WhatsAppText text={preview} />
         </div>
       </div>
       {onDismiss && (

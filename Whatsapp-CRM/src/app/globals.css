@@ -299,6 +299,17 @@ html[data-theme="rose"] {
   * {
     @apply border-border outline-ring/50;
   }
+  /* Defensive baseline: no single element's overflow bug anywhere in the
+   * app should be able to drag the whole page into a horizontal scroll.
+   * Without this, one unwrapped long string in one component (a message
+   * bubble, a table, a stray URL) can shift the entire mobile viewport
+   * sideways — every other part of the screen (headers, other bubbles)
+   * then LOOKS like its own left edge is "cut off", even though those
+   * elements are individually fine. Scoping this at html/body catches
+   * that class of bug everywhere, not just in the one place it's found. */
+  html, body {
+    overflow-x: hidden;
+  }
   body {
     @apply bg-background text-foreground antialiased;
   }

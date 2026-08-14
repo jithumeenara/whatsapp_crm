@@ -794,8 +794,12 @@ export interface SendInteractiveButtonsArgs {
   to: string
   /** The body text — what the customer reads above the buttons. */
   bodyText: string
-  /** Optional plain-text header (≤ 60 chars). */
+  /** Optional plain-text header (≤ 60 chars). Ignored when headerMediaUrl is set — Meta allows only one header type. */
   headerText?: string
+  /** Optional image/video/document header — takes priority over headerText when both are set. */
+  headerMediaUrl?: string
+  /** Required alongside headerMediaUrl. Note: Meta's interactive-button header does NOT support 'audio' (unlike send_media). */
+  headerMediaType?: 'image' | 'video' | 'document'
   /** Optional grey footer line under the buttons (≤ 60 chars). */
   footerText?: string
   /** 1–3 buttons. Validated against Meta's limits before sending. */
@@ -817,10 +821,15 @@ export async function sendInteractiveButtons(
 ): Promise<MetaSendResult> {
   const {
     phoneNumberId, accessToken, to,
-    bodyText, headerText, footerText, buttons, contextMessageId,
+    bodyText, headerText, headerMediaUrl, headerMediaType, footerText, buttons, contextMessageId,
   } = args
   validateInteractiveBody(bodyText)
-  validateInteractiveHeaderFooter(headerText, footerText)
+  // headerMediaUrl replaces the text header entirely, so only validate
+  // headerText's length when it's actually going to be used.
+  validateInteractiveHeaderFooter(headerMediaUrl ? undefined : headerText, footerText)
+  if (headerMediaUrl && !headerMediaType) {
+    throw new Error('headerMediaUrl requires headerMediaType (image/video/document).')
+  }
   if (buttons.length < 1 || buttons.length > INTERACTIVE_LIMITS.maxButtons) {
     throw new Error(
       `Interactive button message requires 1-${INTERACTIVE_LIMITS.maxButtons} buttons (got ${buttons.length}).`
@@ -846,7 +855,11 @@ export async function sendInteractiveButtons(
       })),
     },
   }
-  if (headerText) interactive.header = { type: 'text', text: headerText }
+  if (headerMediaUrl && headerMediaType) {
+    interactive.header = { type: headerMediaType, [headerMediaType]: { link: headerMediaUrl } }
+  } else if (headerText) {
+    interactive.header = { type: 'text', text: headerText }
+  }
   if (footerText) interactive.footer = { text: footerText }
 
   const body: Record<string, unknown> = {

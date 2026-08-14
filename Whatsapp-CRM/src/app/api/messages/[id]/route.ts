@@ -51,6 +51,8 @@ export async function DELETE(
     if (platformMid) {
       if (channel === "instagram") {
         await deleteInstagramMessage(user.accountId, platformMid)
+      } else if (channel === "facebook") {
+        await deleteFacebookMessage(user.accountId, platformMid)
       } else {
         await deleteWhatsAppMessage(user.accountId, platformMid)
       }
@@ -103,5 +105,22 @@ async function deleteInstagramMessage(accountId: string, messageId: string) {
   if (!res.ok) {
     const data = await res.json().catch(() => ({})) as { error?: { message: string } }
     throw new Error(data.error?.message ?? `Instagram unsend failed: ${res.status}`)
+  }
+}
+
+async function deleteFacebookMessage(accountId: string, messageId: string) {
+  const rows = await prisma.$queryRaw<{ access_token: string }[]>`
+    SELECT access_token FROM facebook_config WHERE account_id = ${accountId}::uuid LIMIT 1
+  `.catch(() => [] as { access_token: string }[])
+  const token = rows[0]?.access_token
+  if (!token) throw new Error("Facebook not configured")
+
+  const res = await fetch(
+    `https://graph.facebook.com/v21.0/${encodeURIComponent(messageId)}?access_token=${encodeURIComponent(token)}`,
+    { method: "DELETE" }
+  )
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: { message: string } }
+    throw new Error(data.error?.message ?? `Facebook unsend failed: ${res.status}`)
   }
 }

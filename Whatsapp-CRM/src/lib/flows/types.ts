@@ -36,9 +36,13 @@ export interface SendMessageNodeConfig {
 
 export interface SendButtonsNodeConfig {
   text: string;
-  /** Optional header / footer lines around the buttons. */
+  /** Optional header / footer lines around the buttons. header_text is ignored when header_media_url is set — Meta allows only one header type per message. */
   header_text?: string;
   footer_text?: string;
+  /** Optional image/video/document header — takes priority over header_text. */
+  header_media_url?: string;
+  /** Required alongside header_media_url. Meta's button header does NOT support 'audio' (unlike send_media). */
+  header_media_type?: 'image' | 'video' | 'document';
   /** 'normal' (default, quick-reply, suspends) | 'cta' (single URL button, auto-advances). Omitted = 'normal'. */
   mode?: 'normal' | 'cta';
   /** 1-3 buttons; Meta cap enforced in meta-api validation. Used when mode !== 'cta'. */
@@ -404,7 +408,7 @@ export interface DispatchInboundInput {
   contactId: string;
   conversationId: string;
   message: ParsedInbound;
-  /** 'whatsapp' | 'instagram' — restricts flow matching to the same channel */
+  /** 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' — restricts flow matching to the same channel */
   channel?: string;
 }
 

@@ -80,7 +80,7 @@ function LoginContent() {
                 <input
                   id="password"
                   type={showPw ? "text" : "password"}
-                  placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                  placeholder="••••••••"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

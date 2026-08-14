@@ -335,9 +335,22 @@ function SendTemplateFields({
 }) {
   const { templates } = useResources()
 
+  // Templates are a WhatsApp Business API concept — there's no equivalent
+  // on SMS/Email/RCS. Automations aren't scoped to one channel at build
+  // time (unlike Flows), so this step can be reached by a contact on any
+  // channel; when it is, it fails cleanly with a logged error rather than
+  // silently misrouting (see engineSendTemplate in automations/meta-send.ts).
+  // This note just sets that expectation up front.
+  const whatsappOnlyNote = (
+    <p className="mb-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-700">
+      WhatsApp only — has no effect if this automation runs for an SMS, Email, or RCS contact.
+    </p>
+  )
+
   if (templates.length === 0) {
     return (
       <>
+        {whatsappOnlyNote}
         <FieldBlock label="Template name">
           <Input
             value={templateName}
@@ -369,7 +382,9 @@ function SendTemplateFields({
   )
 
   return (
-    <FieldBlock label="Template">
+    <>
+      {whatsappOnlyNote}
+      <FieldBlock label="Template">
       <select
         value={current}
         onChange={(e) => {
@@ -393,7 +408,8 @@ function SendTemplateFields({
           </option>
         )}
       </select>
-    </FieldBlock>
+      </FieldBlock>
+    </>
   )
 }
 

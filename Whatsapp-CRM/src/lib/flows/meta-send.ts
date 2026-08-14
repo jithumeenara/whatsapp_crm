@@ -15,6 +15,9 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { sendSmsText } from '@/lib/messaging/channels/sms'
+import { sendEmail } from '@/lib/messaging/channels/email'
+import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads')
 import {
@@ -62,6 +65,9 @@ interface SendInteractiveButtonsEngineArgs {
   bodyText: string
   buttons: InteractiveButton[]
   headerText?: string
+  /** Takes priority over headerText when set — Meta allows only one header type. */
+  headerMediaUrl?: string
+  headerMediaType?: 'image' | 'video' | 'document'
   footerText?: string
 }
 
@@ -221,14 +227,94 @@ async function engineSendTextInstagram(args: SendTextEngineArgs): Promise<{ what
   console.log('[engineSendTextInstagram] sent OK. message_id:', data.message_id, '| recipient_id:', data.recipient_id)
 
   const igMid = data.message_id ?? `ig_bot_${Date.now()}`
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'text', content_text: args.text, message_id: igMid, status: 'sent' },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: args.text, last_message_at: new Date() },
+    data: { last_message_text: args.text, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.text, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: igMid }
+}
+
+/**
+ * Every bot send in this file was creating its Message row + touching the
+ * Conversation row completely silently — no `emitToAccount`, unlike every
+ * inbound webhook and the agent-send API route, which both emit on every
+ * message/conversation write. That meant a chatbot/flow reply never showed
+ * up in the Inbox in real time; an agent watching the thread only saw it
+ * after a manual refresh (or some unrelated event happened to trigger a
+ * refetch). This is the fix, centralized so every send function below
+ * calls it instead of re-deriving the same two emits 11 times over.
+ */
+async function notifyBotMessage(
+  accountId: string,
+  message: unknown,
+  conversationId: string,
+  conversationPatch: Record<string, unknown>,
+) {
+  const { emitToAccount } = await import('@/lib/socket')
+  emitToAccount(accountId, 'message', { eventType: 'INSERT', new: message, old: {} })
+  emitToAccount(accountId, 'conversation', {
+    eventType: 'UPDATE',
+    new: { id: conversationId, ...conversationPatch },
+    old: {},
+  })
+}
+
+/** Shared persistence for the SMS/Email/RCS channels — mirrors the
+ *  message-row + conversation-touch pattern each existing branch below
+ *  (WhatsApp, Instagram) already duplicates inline. */
+async function persistBotTextMessage(accountId: string, conversationId: string, text: string, messageId: string) {
+  const savedMsg = await prisma.message.create({
+    data: { conversation_id: conversationId, sender_type: 'bot', content_type: 'text', content_text: text, message_id: messageId, status: 'sent' },
+  })
+  const lastMessageAt = new Date()
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { last_message_text: text, last_message_at: lastMessageAt },
+  })
+  await notifyBotMessage(accountId, savedMsg, conversationId, { last_message_text: text, last_message_at: lastMessageAt.toISOString() })
+}
+
+async function engineSendTextSms(args: SendTextEngineArgs): Promise<{ whatsapp_message_id: string }> {
+  const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { phone: true } })
+  if (!contact?.phone) throw new Error('SMS contact has no phone number')
+  const { messageId } = await sendSmsText({ accountId: args.accountId, to: contact.phone, text: args.text })
+  const finalId = messageId || `sms_bot_${Date.now()}`
+  await persistBotTextMessage(args.accountId, args.conversationId, args.text, finalId)
+  return { whatsapp_message_id: finalId }
+}
+
+async function engineSendTextRcs(args: SendTextEngineArgs): Promise<{ whatsapp_message_id: string }> {
+  const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { phone: true } })
+  if (!contact?.phone) throw new Error('RCS contact has no phone number')
+  const { messageId } = await sendRcsText({ accountId: args.accountId, to: contact.phone, text: args.text })
+  const finalId = messageId || `rcs_bot_${Date.now()}`
+  await persistBotTextMessage(args.accountId, args.conversationId, args.text, finalId)
+  return { whatsapp_message_id: finalId }
+}
+
+async function engineSendTextEmail(args: SendTextEngineArgs): Promise<{ whatsapp_message_id: string }> {
+  const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { email: true } })
+  if (!contact?.email) throw new Error('Email contact has no email address')
+  // Plain-text MVP has no subject-composing UI yet — derive one from the
+  // body so the email isn't blank in the subject line.
+  const subject = args.text.slice(0, 60).trim() || 'New message'
+  const { messageId } = await sendEmail({ accountId: args.accountId, to: contact.email, subject, text: args.text })
+  const finalId = messageId || `email_bot_${Date.now()}`
+  const savedMsg = await prisma.message.create({
+    data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'text', content_text: args.text, email_subject: subject, message_id: finalId, status: 'sent' },
+  })
+  const lastMessageAt = new Date()
+  await prisma.conversation.update({
+    where: { id: args.conversationId },
+    data: { last_message_text: args.text, last_message_at: lastMessageAt },
+  })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.text, last_message_at: lastMessageAt.toISOString() })
+  return { whatsapp_message_id: finalId }
 }
 
 export async function engineSendText(
@@ -241,6 +327,9 @@ export async function engineSendText(
   const channel = convRows[0]?.channel
 
   if (channel === 'instagram') return engineSendTextInstagram(args)
+  if (channel === 'sms') return engineSendTextSms(args)
+  if (channel === 'rcs') return engineSendTextRcs(args)
+  if (channel === 'email') return engineSendTextEmail(args)
 
   // Safety net: if channel is NULL, check if contact phone looks like an IGSID
   // (pure numeric, no '+' prefix — won't collide with valid E.164 numbers)
@@ -262,13 +351,15 @@ export async function engineSendText(
     sendTextMessage({ phoneNumberId: config.phone_number_id, accessToken, to: phone, text: args.text }).then((r) => r.messageId)
   )
 
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'text', content_text: args.text, message_id: waMessageId, status: 'sent' },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: args.text, last_message_at: new Date() },
+    data: { last_message_text: args.text, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.text, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }
 
@@ -311,13 +402,15 @@ export async function engineSendMedia(
   )
 
   const preview = args.caption?.trim() || `[${args.kind}]`
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: args.kind, content_text: args.caption ?? null, message_id: waMessageId, status: 'sent' },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: preview, last_message_at: new Date() },
+    data: { last_message_text: preview, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: preview, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }
 
@@ -393,13 +486,15 @@ async function engineSendIgMedia(
 
   const igMid = data.message_id ?? `ig_media_${Date.now()}`
   const preview = args.caption ?? `[${args.kind}]`
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: args.kind, content_text: preview, media_url: args.link, message_id: igMid, status: 'sent' },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: preview, last_message_at: new Date() },
+    data: { last_message_text: preview, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: preview, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: igMid }
 }
 
@@ -459,7 +554,7 @@ export async function engineSendTemplate(
     }).then((r) => r.messageId)
   )
 
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: {
       conversation_id: args.conversationId,
       sender_type: 'bot',
@@ -469,10 +564,13 @@ export async function engineSendTemplate(
       status: 'sent',
     },
   })
+  const templatePreview = `[Template: ${args.templateName}]`
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: `[Template: ${args.templateName}]`, last_message_at: new Date() },
+    data: { last_message_text: templatePreview, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: templatePreview, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }
 
@@ -510,7 +608,7 @@ export async function engineSendFlow(
   )
 
   const preview = args.bodyText ?? `[Flow: ${args.flowCta}]`
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: {
       conversation_id: args.conversationId,
       sender_type: 'bot',
@@ -520,10 +618,12 @@ export async function engineSendFlow(
       status: 'sent',
     },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: preview, last_message_at: new Date() },
+    data: { last_message_text: preview, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: preview, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }
 
@@ -627,13 +727,15 @@ async function engineSendIgButtonTemplate(
   console.log('[engineSendIgButtonTemplate] sent OK, mid:', data.message_id)
 
   const igMid = data.message_id ?? `ig_btn_${Date.now()}`
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'text', content_text: args.bodyText, message_id: igMid, status: 'sent' },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: args.bodyText, last_message_at: new Date() },
+    data: { last_message_text: args.bodyText, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.bodyText, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: igMid }
 }
 
@@ -664,20 +766,22 @@ async function sendInteractiveViaMeta(
 
   const { waMessageId } = await retryWithVariants(sanitized, contact.id, async (phone) => {
     if (input.kind === 'buttons') {
-      const r = await sendInteractiveButtons({ phoneNumberId: config.phone_number_id, accessToken, to: phone, bodyText: input.bodyText, buttons: input.buttons, headerText: input.headerText, footerText: input.footerText })
+      const r = await sendInteractiveButtons({ phoneNumberId: config.phone_number_id, accessToken, to: phone, bodyText: input.bodyText, buttons: input.buttons, headerText: input.headerText, headerMediaUrl: input.headerMediaUrl, headerMediaType: input.headerMediaType, footerText: input.footerText })
       return r.messageId
     }
     const r = await sendInteractiveList({ phoneNumberId: config.phone_number_id, accessToken, to: phone, bodyText: input.bodyText, buttonLabel: input.buttonLabel, sections: input.sections, headerText: input.headerText, footerText: input.footerText })
     return r.messageId
   })
 
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: { conversation_id: input.conversationId, sender_type: 'bot', content_type: 'interactive', content_text: input.bodyText, message_id: waMessageId, status: 'sent' },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: input.conversationId },
-    data: { last_message_text: input.bodyText, last_message_at: new Date() },
+    data: { last_message_text: input.bodyText, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(input.accountId, savedMsg, input.conversationId, { last_message_text: input.bodyText, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }
 
@@ -711,12 +815,14 @@ export async function engineSendCtaUrlButton(
     return r.messageId
   })
 
-  await prisma.message.create({
+  const savedMsg = await prisma.message.create({
     data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'interactive', content_text: args.bodyText, message_id: waMessageId, status: 'sent' },
   })
+  const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },
-    data: { last_message_text: args.bodyText, last_message_at: new Date() },
+    data: { last_message_text: args.bodyText, last_message_at: lastMessageAt },
   })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.bodyText, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }

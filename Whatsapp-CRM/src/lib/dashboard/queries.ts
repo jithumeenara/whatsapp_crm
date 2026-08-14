@@ -172,6 +172,21 @@ export async function loadResponseTime(accountId: string): Promise<ResponseTimeS
   }
 }
 
+/**
+ * Email-only contacts (created from an inbound email with no phone number)
+ * get a "email:<address>" placeholder in `phone` — Contact.phone has no
+ * NULL option in the schema (see the email webhook). Anywhere phone is
+ * used as a human-facing fallback label, prefer the real email instead of
+ * leaking that placeholder into the UI.
+ */
+function contactLabel(contact: { name?: string | null; phone?: string | null; email?: string | null } | null | undefined, fallback: string): string {
+  if (!contact) return fallback
+  if (contact.name) return contact.name
+  if (contact.phone && !contact.phone.startsWith('email:')) return contact.phone
+  if (contact.email) return contact.email
+  return fallback
+}
+
 // --- 4. Activity feed --------------------------------------------------
 
 export async function loadActivity(accountId: string, limit = 20): Promise<ActivityItem[]> {
@@ -183,14 +198,14 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
         content_text: true,
         created_at: true,
         conversation_id: true,
-        conversation: { select: { contact: { select: { name: true, phone: true } } } },
+        conversation: { select: { contact: { select: { name: true, phone: true, email: true } } } },
       },
       orderBy: { created_at: 'desc' },
       take: 10,
     }),
     prisma.contact.findMany({
       where: { account_id: accountId },
-      select: { id: true, name: true, phone: true, created_at: true },
+      select: { id: true, name: true, phone: true, email: true, created_at: true },
       orderBy: { created_at: 'desc' },
       take: 10,
     }),
@@ -208,7 +223,7 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
         status: true,
         created_at: true,
         automation: { select: { name: true } },
-        contact: { select: { name: true, phone: true } },
+        contact: { select: { name: true, phone: true, email: true } },
       },
       orderBy: { created_at: 'desc' },
       take: 10,
@@ -218,7 +233,7 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
   const items: ActivityItem[] = []
 
   for (const m of msgs) {
-    const who = m.conversation.contact?.name || m.conversation.contact?.phone || 'Unknown'
+    const who = contactLabel(m.conversation.contact, 'Unknown')
     items.push({
       id: `msg-${m.id}`,
       kind: 'message',
@@ -232,7 +247,7 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
     items.push({
       id: `contact-${c.id}`,
       kind: 'contact',
-      text: `New contact: ${c.name || c.phone}`,
+      text: `New contact: ${contactLabel(c, 'Unknown')}`,
       at: c.created_at.toISOString(),
       href: '/contacts',
     })
@@ -253,7 +268,7 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
   }
 
   for (const l of autoLogs) {
-    const who = l.contact?.name || l.contact?.phone || 'a contact'
+    const who = contactLabel(l.contact, 'a contact')
     const autoName = l.automation?.name || 'Automation'
     items.push({
       id: `auto-${l.id}`,

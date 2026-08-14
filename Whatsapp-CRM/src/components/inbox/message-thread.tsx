@@ -20,6 +20,7 @@ import {
   Check,
   ArrowLeft,
   RefreshCw,
+  History,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import {
@@ -242,6 +243,16 @@ export function MessageThread({
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
 
+  // Merged cross-channel history view — read-only aggregation of every
+  // channel this contact has a conversation on (see
+  // /api/contacts/[id]/timeline). Composing/replying/deleting always
+  // targets the currently open single conversation, never this view, so
+  // it's rendered without MessageActions (no reply/react/delete affordances).
+  const [mergedView, setMergedView] = useState(false);
+  const [mergedMessages, setMergedMessages] = useState<Message[]>([]);
+  const [mergedLoading, setMergedLoading] = useState(false);
+  const [mergedChannelCount, setMergedChannelCount] = useState<number | null>(null);
+
   // Profiles for the assign-agent dropdown.
   useEffect(() => {
     let cancelled = false;
@@ -338,6 +349,45 @@ export function MessageThread({
     // was disconnected or throttled are otherwise lost.
   }, [conversationId, resyncToken]);
 
+  // Merged view is per-conversation-selection — drop back to the single
+  // thread whenever the user switches conversations, rather than carrying
+  // a stale merged history for the wrong contact across the switch.
+  useEffect(() => {
+    setMergedView(false);
+    setMergedMessages([]);
+    setMergedChannelCount(null);
+  }, [conversationId]);
+
+  const contactId = contact?.id;
+  const handleToggleMergedView = useCallback(async () => {
+    if (!contactId) return;
+    if (mergedView) {
+      setMergedView(false);
+      return;
+    }
+    setMergedLoading(true);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/timeline`);
+      if (!res.ok) {
+        toast.error("Failed to load full history");
+        return;
+      }
+      const body = await res.json();
+      const msgs: Message[] = Array.isArray(body.messages) ? body.messages : [];
+      const channelCount: number = Array.isArray(body.channels) ? body.channels.length : 1;
+      setMergedMessages(msgs);
+      setMergedChannelCount(channelCount);
+      setMergedView(true);
+      if (channelCount <= 1) {
+        toast.info("This contact only has messages on one channel");
+      }
+    } catch {
+      toast.error("Failed to load full history");
+    } finally {
+      setMergedLoading(false);
+    }
+  }, [contactId, mergedView]);
+
   // Reactions fetch — pulls the current state from the DB. Kept separate
   // from the channel subscription below so a `resyncToken` bump just
   // refetches the rows without also tearing down and rebuilding the
@@ -429,13 +479,14 @@ export function MessageThread({
     }).catch((err) => console.error("Failed to reset unread_count:", err));
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages (or when switching in/out of the
+  // merged cross-channel view, which swaps the entire rendered list).
   useEffect(() => {
     if (scrollRef.current) {
       const el = scrollRef.current;
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, mergedView, mergedMessages]);
 
   const handleSend = useCallback(
     async (text: string, replyToId?: string) => {
@@ -554,8 +605,8 @@ export function MessageThread({
 
   const handleOpenTemplates = useCallback(() => {
     const ch = (conversation as { channel?: string })?.channel
-    if (ch === 'instagram' || ch === 'facebook') {
-      toast.info('Templates are not supported for this channel.')
+    if (ch && ch !== 'whatsapp') {
+      toast.info('Templates are only supported on WhatsApp.')
       return
     }
     setTemplateModalOpen(true);
@@ -816,27 +867,58 @@ export function MessageThread({
   }
 
   const displayName = contact.name || contact.phone;
-  const messageGroups = groupMessagesByDate(messages);
+  const displayMessages = mergedView ? mergedMessages : messages;
+  const messageGroups = groupMessagesByDate(displayMessages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
   );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
+  const isLoadingMessages = mergedView ? mergedLoading : loading;
 
   let messagesContent: React.ReactNode;
-  if (loading) {
+  if (isLoadingMessages) {
     messagesContent = (
       <div className="flex items-center justify-center py-12">
         <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
-  } else if (messages.length === 0) {
+  } else if (displayMessages.length === 0) {
     messagesContent = (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-sm text-slate-500">No messages yet</p>
         <p className="text-xs text-slate-600">
           Send a template to start the conversation
         </p>
+      </div>
+    );
+  } else if (mergedView) {
+    // Read-only merged view — no reply/react/delete affordances, since
+    // those always act on the currently open single conversation and most
+    // of these messages belong to other conversations entirely.
+    messagesContent = (
+      <div className="space-y-4">
+        {messageGroups.map((group) => (
+          <div key={group.date}>
+            <div className="mb-3 flex items-center justify-center">
+              <span className="rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-500 shadow-sm backdrop-blur-sm select-none">
+                {formatDateSeparator(group.date)}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {group.messages.map((msg) => (
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  currentUserId={userId ?? undefined}
+                  agentName={
+                    msg.sender_type === "agent" ? agentLabelFor(msg) : undefined
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     );
   } else {
@@ -955,6 +1037,24 @@ export function MessageThread({
 
         {/* Action buttons (right side) */}
         <div className="flex items-center gap-0.5 shrink-0">
+          {/* Merged cross-channel history toggle */}
+          <button
+            type="button"
+            onClick={() => void handleToggleMergedView()}
+            disabled={mergedLoading}
+            title={mergedView ? "Show only this channel" : "View full history across all channels"}
+            className={cn(
+              "hidden lg:flex h-9 w-9 items-center justify-center rounded-full hover:bg-slate-100 disabled:opacity-50",
+              mergedView ? "text-indigo-600 bg-indigo-50" : "text-slate-500",
+            )}
+          >
+            {mergedLoading ? (
+              <div className="h-[15px] w-[15px] animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <History className="h-[17px] w-[17px]" />
+            )}
+          </button>
+
           {/* Manual refresh — desktop only; mobile relies on realtime + focus resync */}
           {onRefresh && (
             <button
@@ -1011,8 +1111,23 @@ export function MessageThread({
         </div>
       </div>
 
-      {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-styled px-3 py-3 sm:px-4 sm:py-4">
+      {/* Merged view banner */}
+      {mergedView && (
+        <div className="flex shrink-0 items-center justify-center gap-1.5 border-b border-indigo-100 bg-indigo-50 px-3 py-1.5">
+          <History className="h-3 w-3 text-indigo-500" />
+          <p className="text-[11px] font-medium text-indigo-700">
+            Viewing full history across {mergedChannelCount ?? "all"} channel{mergedChannelCount === 1 ? "" : "s"} · new messages still send on {(conversation as { channel?: string })?.channel ?? "this channel"}
+          </p>
+        </div>
+      )}
+
+      {/* Messages Area — overflow-x-hidden is deliberate: any single bubble
+          that fails to wrap (a stray unbroken token, an unloaded-image
+          placeholder, etc.) should clip at this container's edge rather
+          than dragging the whole panel into a horizontal scroll, which on
+          mobile is one accidental sideways touch-scroll away from making
+          every message look like its left edge is cut off. */}
+      <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto scroll-styled px-3 py-3 sm:px-4 sm:py-4">
         {messagesContent}
       </div>
 

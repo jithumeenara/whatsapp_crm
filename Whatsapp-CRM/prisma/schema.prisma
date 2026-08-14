@@ -37,6 +37,9 @@ model User {
   flow_runs                    FlowRun[]
   whatsapp_configs             WhatsAppConfig[]
   ai_configs                   AiConfig[]
+  sms_configs                  SmsConfig[]
+  email_configs                EmailConfig[]
+  rcs_configs                  RcsConfig[]
   invitations_created          AccountInvitation[]          @relation("InvitationCreator")
   invitations_accepted         AccountInvitation[]          @relation("InvitationAcceptor")
   leads                        Lead[]
@@ -86,6 +89,9 @@ model Account {
   conversations                Conversation[]
   whatsapp_config              WhatsAppConfig?
   ai_config                    AiConfig?
+  sms_config                   SmsConfig?
+  email_config                 EmailConfig?
+  rcs_config                   RcsConfig?
   message_templates            MessageTemplate[]
   pipelines                    Pipeline[]
   deals                        Deal[]
@@ -167,6 +173,14 @@ model Contact {
   gender           String?
   avatar_url       String?
   external_id      String?                        // dedup key for external integrations (HMS, LMS, etc.)
+  // Dedicated per-platform identity columns — never reuse `phone` for these.
+  // Instagram/Facebook platform IDs are matched by exact equality only, never
+  // via the fuzzy last-8-digit suffix matching used for real phone numbers
+  // (findExistingContact in src/lib/contacts/dedupe.ts) — that heuristic only
+  // makes sense for phone numbers and would risk cross-channel identity
+  // collisions if reused here.
+  instagram_id     String?                        // Instagram-scoped platform ID (IGSID)
+  facebook_id      String?                        // Facebook Messenger-scoped platform ID (PSID)
   created_at       DateTime @default(now()) @db.Timestamptz(6)
   updated_at       DateTime @updatedAt @db.Timestamptz(6)
 
@@ -188,6 +202,8 @@ model Contact {
   tasks                        Task[]
 
   @@unique([account_id, phone_normalized], name: "contacts_account_phone_normalized")
+  @@unique([account_id, instagram_id], name: "contacts_account_instagram_id")
+  @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
   @@map("contacts")
 }
 
@@ -292,7 +308,7 @@ model Conversation {
   flow_runs        FlowRun[]
 
   // Channel that originated this conversation
-  channel         String   @default("whatsapp") // 'whatsapp' | 'instagram'
+  channel         String   @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
 
   // Contact name capture flow state
   capture_state   String?  // null | 'awaiting_confirm' | 'awaiting_name'
@@ -316,6 +332,7 @@ model Message {
   status              String   @default("sent")
   interactive_reply_id String?
   reply_to_message_id String?   @db.Uuid
+  email_subject       String?   // Email channel only — subject/body split the other channels don't have
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   deleted_at          DateTime? @db.Timestamptz(6)
 
@@ -395,6 +412,94 @@ model AiConfig {
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("ai_configs")
+}
+
+// ============================================================
+// SMS / EMAIL / RCS CONFIG
+// ============================================================
+// Three separate models rather than one shared discriminated table — each
+// vendor's field shape is genuinely different (MSG91: sender ID + DLT ids;
+// SendGrid: verified sender + inbound-parse host; Twilio: account SID +
+// messaging service). Follows the WhatsAppConfig/AiConfig pattern (real
+// Prisma columns, one row per account, secrets encrypted) rather than the
+// Integration model's unencrypted-JSON shape, which is built for the
+// separate REST/FHIR data-pull connectors, not messaging credentials.
+
+model SmsConfig {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @unique @db.Uuid
+  user_id         String    @db.Uuid
+  provider        String    @default("msg91")
+  /// AES-256-GCM encrypted MSG91 Auth Key.
+  auth_key        String
+  sender_id       String?   // 6-char DLT-approved sender ID
+  route           String?   @default("4") // MSG91 transactional route
+  dlt_entity_id   String?   // India DLT compliance
+  dlt_template_id String?   // per-account default; may need to move to a
+                            // per-MessageTemplate column — see Stage 3 open
+                            // questions in the implementation plan
+  webhook_secret  String?   // shared secret for inbound webhook auth
+  status          String    @default("disconnected")
+  last_tested_at  DateTime? @db.Timestamptz(6)
+  test_error      String?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("sms_config")
+}
+
+model EmailConfig {
+  id                 String    @id @default(uuid()) @db.Uuid
+  account_id         String    @unique @db.Uuid
+  user_id            String    @db.Uuid
+  provider           String    @default("sendgrid")
+  /// AES-256-GCM encrypted SendGrid API key.
+  api_key            String
+  from_email         String    // must be a SendGrid-verified sender
+  from_name          String?
+  inbound_parse_host String?   // MX subdomain configured for Inbound Parse
+  inbound_secret     String?   // per-account token embedded in the inbound
+                                // webhook URL path — Inbound Parse has no
+                                // signature header, this is the substitute
+  webhook_public_key String?   // SendGrid Ed25519 key, for the separate
+                                // Event Webhook (delivery/open/click) — stretch,
+                                // not required for MVP inbound messaging
+  status             String    @default("disconnected")
+  last_tested_at     DateTime? @db.Timestamptz(6)
+  test_error         String?
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("email_config")
+}
+
+model RcsConfig {
+  id                     String    @id @default(uuid()) @db.Uuid
+  account_id             String    @unique @db.Uuid
+  user_id                String    @db.Uuid
+  provider               String    @default("twilio")
+  account_sid            String    // Twilio Account SID (not secret, kept alongside)
+  /// AES-256-GCM encrypted Twilio Auth Token.
+  auth_token             String
+  messaging_service_sid  String?   // recommended over a raw From number
+  rcs_agent_id           String?   // once the RCS agent is approved by Google/Twilio
+  from_number            String?   // fallback SMS/RCS sender if not using a messaging service
+  status                 String    @default("disconnected")
+  last_tested_at         DateTime? @db.Timestamptz(6)
+  test_error             String?
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("rcs_config")
 }
 
 // ============================================================

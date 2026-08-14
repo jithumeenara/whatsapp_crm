@@ -72,8 +72,12 @@ export interface ChatbotCtaButton {
 
 export interface SendButtonsNodeCfg {
   text: string
+  /** Plain-text header — mutually exclusive with header_media_url (WhatsApp allows only one header type per message). Ignored when header_media_url is set. */
   header_text?: string
   footer_text?: string
+  /** Optional image/video/document shown as the header instead of header_text. */
+  header_media_url?: string
+  header_media_type?: 'image' | 'video' | 'document'
   /** 'normal' (default, quick-reply buttons, suspends) | 'cta' (single URL button, auto-advances). Omitted = 'normal'. */
   mode?: 'normal' | 'cta'
   /** 1–3 buttons (Meta cap). Used when mode !== 'cta'. */

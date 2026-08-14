@@ -3,14 +3,9 @@
 import { memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { AlertTriangle } from "lucide-react";
-import { NODE_META, summarizeChatbotNode, getSourceHandles } from "@/lib/chatbot/node-meta";
+import { NODE_META, summarizeChatbotNode, getSourceHandles, CHANNEL_INCOMPATIBLE_NODES, CHANNEL_LABEL } from "@/lib/chatbot/node-meta";
 import type { ChatbotNodeType } from "@/lib/chatbot/types";
 import { ChatbotChannelContext, ChatbotDirectionContext } from "./chatbot-canvas";
-
-const INSTAGRAM_INCOMPATIBLE = new Set([
-  // send_buttons works via Instagram Quick Replies API
-  'send_list', 'send_template', 'send_flow', 'send_to_number',
-])
 
 function cn(...c: (string | boolean | undefined | null)[]) {
   return c.filter(Boolean).join(" ");
@@ -31,7 +26,7 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
   const direction = useContext(ChatbotDirectionContext)
   if (!meta) return null;
 
-  const isIncompatible = channel === 'instagram' && INSTAGRAM_INCOMPATIBLE.has(node_type)
+  const isIncompatible = Boolean(channel && CHANNEL_INCOMPATIBLE_NODES[channel]?.has(node_type))
   const isLR = direction === 'LR'
 
   const Icon = meta.icon;
@@ -76,11 +71,11 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
       {/* Top accent line */}
       <div className={cn("h-[3px] w-full", isIncompatible ? "bg-rose-400" : meta.bg.replace("bg-", "bg-gradient-to-r from-"))} />
 
-      {/* Instagram incompatibility warning */}
+      {/* Channel incompatibility warning */}
       {isIncompatible && (
         <div className="mx-3 mt-2 flex items-center gap-1.5 rounded-lg bg-rose-50 px-2 py-1.5 text-[10px] font-medium text-rose-700">
           <AlertTriangle className="h-3 w-3 shrink-0" />
-          Not supported on Instagram — delete this node
+          Not supported on {CHANNEL_LABEL[channel ?? ""] ?? channel} — delete this node
         </div>
       )}
 

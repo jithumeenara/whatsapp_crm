@@ -30,6 +30,18 @@ export async function GET(
       prisma.contactNote.findMany({
         where: { contact_id: id },
         orderBy: { created_at: "desc" },
+        // Notes previously showed only text + timestamp — no way to tell
+        // which agent/admin/supervisor actually wrote it. Join through to
+        // the creator's display name + account role (User has no name
+        // field itself; Profile.full_name is the real display name).
+        include: {
+          user: {
+            select: {
+              email: true,
+              profile: { select: { full_name: true, account_role: true } },
+            },
+          },
+        },
       }),
     ])
 
@@ -38,7 +50,13 @@ export async function GET(
       contact_tag_id: ct.id,
     }))
 
-    return NextResponse.json({ contact, tags, notes })
+    const shapedNotes = notes.map(({ user, ...note }) => ({
+      ...note,
+      created_by_name: user.profile?.full_name || user.email,
+      created_by_role: user.profile?.account_role ?? null,
+    }))
+
+    return NextResponse.json({ contact, tags, notes: shapedNotes })
   } catch (err) {
     return toErrorResponse(err)
   }

@@ -66,14 +66,26 @@ export async function POST(req: NextRequest) {
       excludeSet = new Set(rows.map((r) => r.contact_id))
     }
 
+    // Broadcasts are WhatsApp-only — contacts whose `phone` is the
+    // "email:<address>" placeholder (Email-channel contacts with no real
+    // phone number) can never receive one, so keep this preview count in
+    // sync with resolveAudience()'s exclusion in the actual send route.
     if (baseIds) {
+      const placeholderRows = await db.contact.findMany({
+        where: { id: { in: [...baseIds] }, phone: { startsWith: "email:" } },
+        select: { id: true },
+      })
+      for (const row of placeholderRows) baseIds.delete(row.id)
+
       const effective = excludeSet
         ? [...baseIds].filter((id) => !excludeSet!.has(id)).length
         : baseIds.size
       return NextResponse.json({ count: effective })
     }
 
-    const total = await db.contact.count({ where: { account_id: ctx.accountId } })
+    const total = await db.contact.count({
+      where: { account_id: ctx.accountId, NOT: { phone: { startsWith: "email:" } } },
+    })
     const count = excludeSet ? Math.max(0, total - excludeSet.size) : total
     return NextResponse.json({ count })
   } catch (err) {

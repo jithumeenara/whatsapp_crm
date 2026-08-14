@@ -22,6 +22,15 @@ export async function GET(req: NextRequest) {
 
     const search = searchParams.get("search")?.trim() ?? ""
     const channel = searchParams.get("channel")?.trim() ?? ""   // e.g. "whatsapp" | "instagram"
+    // Email-only contacts (created from an inbound email with no phone
+    // number) get a "email:<address>" placeholder in `phone` — Contact.phone
+    // has no NULL option in the schema (see the email webhook). Callers that
+    // are about to use `phone` as a real number to dial/text (the broadcast
+    // audience picker, which is WhatsApp-only) pass this to exclude them —
+    // unlike `channel=whatsapp` this doesn't require an existing WhatsApp
+    // conversation, so a real phone number that's just never been messaged
+    // yet still shows up.
+    const realPhoneOnly = searchParams.get("realPhoneOnly") === "true"
     const tagIdsParam = searchParams.get("tagIds")?.trim() ?? ""
     const tagIds = tagIdsParam ? tagIdsParam.split(",").filter(Boolean) : []
     const page = Math.max(0, parseInt(searchParams.get("page") ?? "0", 10) || 0)
@@ -44,6 +53,9 @@ export async function GET(req: NextRequest) {
         : {}),
       ...(channel
         ? { conversations: { some: { channel } } }
+        : {}),
+      ...(realPhoneOnly
+        ? { NOT: { phone: { startsWith: "email:" } } }
         : {}),
       ...(tagIds.length > 0
         ? { tags: { some: { tag_id: { in: tagIds } } } }

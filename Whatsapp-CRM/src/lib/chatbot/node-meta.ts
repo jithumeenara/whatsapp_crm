@@ -24,6 +24,52 @@ import {
 } from 'lucide-react'
 import type { ChatbotNodeType } from './types'
 
+// ─── Per-channel node compatibility ─────────────────────────────
+// Shared by the builder canvas (palette filtering) and the node card
+// (incompatibility warning badge) — one source of truth for which node
+// types a given channel can't render.
+
+/** Instagram: send_buttons works via its Quick Replies API; the rest don't have an equivalent. */
+const INSTAGRAM_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
+  'send_list', 'send_template', 'send_flow', 'send_to_number',
+])
+
+/**
+ * SMS, plain-text Email, and RCS (this phase's MVP scope) — text-only.
+ *
+ * RCS *could* eventually map send_buttons/send_list to Twilio's native
+ * suggested-replies/rich-card content types, but that requires pre-created
+ * Twilio Content API templates and was explicitly scoped out of this phase
+ * as a follow-up spike (see the implementation plan) — only plain-text
+ * sending (engineSendTextRcs) actually exists right now. Restricting RCS to
+ * text here too prevents building a chatbot flow the engine can't execute:
+ * without this, a send_buttons node on an RCS channel would silently fall
+ * through to the WhatsApp-only send path instead of erroring clearly.
+ */
+const TEXT_ONLY_CHANNEL_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
+  'send_list', 'send_buttons', 'send_template', 'send_flow', 'send_to_number',
+  // send_media isn't wired to a channel-aware sender for these 3 channels
+  // either (engineSendMedia only branches for 'instagram') — same silent
+  // misroute-to-WhatsApp risk as the node types above.
+  'send_media',
+])
+
+export const CHANNEL_INCOMPATIBLE_NODES: Record<string, Set<ChatbotNodeType>> = {
+  instagram: INSTAGRAM_INCOMPATIBLE,
+  sms: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
+  email: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
+  rcs: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
+}
+
+export const CHANNEL_LABEL: Record<string, string> = {
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  sms: 'SMS',
+  email: 'Email',
+  rcs: 'RCS',
+}
+
 // ─── Visual metadata per node type ─────────────────────────────
 
 export interface NodeMeta {

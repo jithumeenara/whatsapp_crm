@@ -181,7 +181,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const loadContacts = useCallback(async () => {
     setLoadingContacts(true);
     try {
-      const params = new URLSearchParams({ limit: String(PAGE), page: String(page) });
+      const params = new URLSearchParams({ limit: String(PAGE), page: String(page), realPhoneOnly: 'true' });
       if (query) params.set('search', query);
       if (mode === 'tags' && selectedTagIds.length > 0) params.set('tagIds', selectedTagIds.join(','));
       const res = await fetch(`/api/contacts?${params}`);
@@ -196,7 +196,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
 
   /* Fetch total contact count once */
   useEffect(() => {
-    fetch('/api/contacts?limit=1')
+    fetch('/api/contacts?limit=1&realPhoneOnly=true')
       .then((r) => r.json())
       .then((d) => setTotalWa(d.total ?? 0))
       .catch(() => {});

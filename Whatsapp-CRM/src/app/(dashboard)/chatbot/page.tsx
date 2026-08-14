@@ -8,9 +8,11 @@ import {
   Bot, Plus, Pencil, Trash2, Zap, MessagesSquare,
   AlertTriangle, Loader2,
   Radio, Hash, Play, LayoutGrid, List, X, Download, Upload,
+  MessageSquare, Mail, ChevronDown,
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 import { useRealtime } from "@/hooks/use-realtime"
+import { Switch } from "@/components/ui/switch"
 
 interface Chatbot {
   id: string
@@ -21,7 +23,7 @@ interface Chatbot {
   status: string
   execution_count: number
   created_at: string
-  channel?: string // 'whatsapp' | 'instagram'
+  channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
 }
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
@@ -70,19 +72,29 @@ function InstagramIcon({ className }: Readonly<{ className?: string }>) {
   )
 }
 
+function FacebookIcon({ className }: Readonly<{ className?: string }>) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="#1877F2">
+      <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.41c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.235 2.686.235v2.97h-1.513c-1.491 0-1.956.93-1.956 1.885v2.27h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/>
+    </svg>
+  )
+}
+
+const CHANNEL_META: Record<string, { label: string; icon: React.ReactNode; badgeIcon: React.ReactNode }> = {
+  whatsapp:  { label: "WhatsApp",  icon: <WhatsAppIcon className="h-3 w-3" />,  badgeIcon: <WhatsAppIcon className="h-2.5 w-2.5" /> },
+  instagram: { label: "Instagram", icon: <InstagramIcon className="h-3 w-3" />, badgeIcon: <InstagramIcon className="h-2.5 w-2.5" /> },
+  facebook:  { label: "Messenger", icon: <FacebookIcon className="h-3 w-3" />,  badgeIcon: <FacebookIcon className="h-2.5 w-2.5" /> },
+  sms:       { label: "SMS",       icon: <MessageSquare className="h-3 w-3" />, badgeIcon: <MessageSquare className="h-2.5 w-2.5" /> },
+  email:     { label: "Email",     icon: <Mail className="h-3 w-3" />,          badgeIcon: <Mail className="h-2.5 w-2.5" /> },
+  rcs:       { label: "RCS",       icon: <Radio className="h-3 w-3" />,         badgeIcon: <Radio className="h-2.5 w-2.5" /> },
+}
+
 function ChannelBadge({ channel }: Readonly<{ channel?: string }>) {
-  if (!channel || channel === "whatsapp") {
-    return (
-      <span className="flex items-center gap-1 rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold text-white border border-white/20">
-        <WhatsAppIcon className="h-2.5 w-2.5" />
-        WhatsApp
-      </span>
-    )
-  }
+  const meta = CHANNEL_META[channel || "whatsapp"] ?? CHANNEL_META.whatsapp
   return (
     <span className="flex items-center gap-1 rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold text-white border border-white/20">
-      <InstagramIcon className="h-2.5 w-2.5" />
-      Instagram
+      {meta.badgeIcon}
+      {meta.label}
     </span>
   )
 }
@@ -92,7 +104,7 @@ function getKeywords(bot: Chatbot): string[] {
   return bot.trigger_config?.keywords?.filter(Boolean) ?? []
 }
 
-type ChannelFilter = "all" | "whatsapp" | "instagram"
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs"
 
 export default function ChatbotV2() {
   const router = useRouter()
@@ -101,8 +113,11 @@ export default function ChatbotV2() {
   const [creating, setCreating] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [view, setView] = useState<"grid" | "table">("grid")
+  const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [view, setView] = useState<"grid" | "table">("table")
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all")
+  const [channelFilterOpen, setChannelFilterOpen] = useState(false)
+  const channelFilterRef = useRef<HTMLDivElement>(null)
   const [showPlatformPicker, setShowPlatformPicker] = useState(false)
   const [importing, setImporting] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
@@ -118,6 +133,15 @@ export default function ChatbotV2() {
 
   useEffect(() => { load() }, [])
 
+  useEffect(() => {
+    if (!channelFilterOpen) return
+    const handler = (e: MouseEvent) => {
+      if (channelFilterRef.current && !channelFilterRef.current.contains(e.target as Node)) setChannelFilterOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [channelFilterOpen])
+
   useRealtime({
     channelName: "chatbot-page",
     onChatbotEvent: (event) => {
@@ -127,7 +151,7 @@ export default function ChatbotV2() {
     },
   })
 
-  async function createNew(channel: "whatsapp" | "instagram") {
+  async function createNew(channel: "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs") {
     setShowPlatformPicker(false)
     setCreating(true)
     try {
@@ -155,6 +179,28 @@ export default function ChatbotV2() {
       load()
     } catch { toast.error("Failed to delete") }
     finally { setDeleting(false) }
+  }
+
+  async function toggleActive(bot: Chatbot) {
+    const wasActive = isActive(bot)
+    const nextStatus = wasActive ? "draft" : "active"
+    setTogglingId(bot.id)
+    // Optimistic update — reverted in the catch/failure branch below.
+    setChatbots((prev) => prev.map((b) => (b.id === bot.id ? { ...b, status: nextStatus, is_active: !wasActive } : b)))
+    try {
+      const res = await fetch(`/api/chatbot/${bot.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      })
+      if (!res.ok) throw new Error("failed")
+      toast.success(wasActive ? "Chatbot paused" : "Chatbot activated")
+    } catch {
+      toast.error("Failed to update chatbot status")
+      setChatbots((prev) => prev.map((b) => (b.id === bot.id ? { ...b, status: bot.status, is_active: bot.is_active } : b)))
+    } finally {
+      setTogglingId(null)
+    }
   }
 
   async function exportBot(bot: Chatbot) {
@@ -305,13 +351,21 @@ export default function ChatbotV2() {
                   : "bg-gradient-to-br from-indigo-500 to-indigo-700"
               )}>
                 <div className="absolute top-2 right-2">
-                  <span className={cn(
-                    "flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold",
-                    active ? "bg-white/20 text-white" : "bg-black/20 text-white/75"
-                  )}>
-                    <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-emerald-300 animate-pulse" : "bg-white/40")} />
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleActive(bot) }}
+                    disabled={togglingId === bot.id}
+                    title={active ? "Pause this chatbot" : "Activate this chatbot"}
+                    className={cn(
+                      "flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold transition-colors disabled:opacity-60",
+                      active ? "bg-white/20 text-white hover:bg-white/30" : "bg-black/20 text-white/75 hover:bg-black/30"
+                    )}
+                  >
+                    {togglingId === bot.id
+                      ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      : <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-emerald-300 animate-pulse" : "bg-white/40")} />}
                     {active ? "Active" : "Paused"}
-                  </span>
+                  </button>
                 </div>
                 <div className="flex h-6 w-6 items-center justify-center rounded-md bg-white/20">
                   <Bot className="h-3.5 w-3.5 text-white" />
@@ -485,13 +539,20 @@ export default function ChatbotV2() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn(
-                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                      active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
-                    )}>
-                      <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-emerald-500" : "bg-slate-400")} />
-                      {active ? "Active" : "Paused"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={active}
+                        disabled={togglingId === bot.id}
+                        onCheckedChange={() => toggleActive(bot)}
+                      />
+                      <span className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                        active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                      )}>
+                        <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-emerald-500" : "bg-slate-400")} />
+                        {togglingId === bot.id ? "…" : active ? "Active" : "Paused"}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-1.5 text-[13px] font-bold text-slate-900">
@@ -567,24 +628,40 @@ export default function ChatbotV2() {
 
           <div className="flex items-center gap-2">
             {/* Channel filter */}
-            <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 gap-0.5">
-              {(["all", "whatsapp", "instagram"] as ChannelFilter[]).map((ch) => (
-                <button
-                  key={ch}
-                  type="button"
-                  onClick={() => setChannelFilter(ch)}
-                  className={cn(
-                    "flex items-center gap-1 h-7 px-2 rounded-md text-[11px] font-semibold transition-all",
-                    channelFilter === ch
-                      ? "bg-white shadow-sm text-indigo-600"
-                      : "text-slate-400 hover:text-slate-600"
-                  )}
-                >
-                  {ch === "all" && <span>All</span>}
-                  {ch === "whatsapp" && <><WhatsAppIcon className="h-3 w-3" /><span>WhatsApp</span></>}
-                  {ch === "instagram" && <><InstagramIcon className="h-3 w-3" /><span>Instagram</span></>}
-                </button>
-              ))}
+            <div ref={channelFilterRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setChannelFilterOpen((p) => !p)}
+                className={cn(
+                  "flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-[12px] font-semibold transition-all",
+                  channelFilter !== "all"
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100"
+                )}
+              >
+                {channelFilter === "all" ? <span>All channels</span> : (
+                  <>{CHANNEL_META[channelFilter]?.icon}<span>{CHANNEL_META[channelFilter]?.label}</span></>
+                )}
+                <ChevronDown className="h-3 w-3" />
+              </button>
+              {channelFilterOpen && (
+                <div className="absolute right-0 top-9 z-20 w-44 rounded-xl border border-slate-100 bg-white shadow-xl py-1">
+                  {(["all", "whatsapp", "instagram", "facebook", "sms", "email", "rcs"] as ChannelFilter[]).map((ch) => (
+                    <button
+                      key={ch}
+                      type="button"
+                      onClick={() => { setChannelFilter(ch); setChannelFilterOpen(false) }}
+                      className={cn(
+                        "flex w-full items-center gap-2 px-3 py-1.5 text-[12px] transition-colors",
+                        channelFilter === ch ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-slate-600 hover:bg-slate-50"
+                      )}
+                    >
+                      {ch === "all" ? <span className="h-3 w-3" /> : CHANNEL_META[ch]?.icon}
+                      {ch === "all" ? "All channels" : CHANNEL_META[ch]?.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* View toggle */}
@@ -653,7 +730,7 @@ export default function ChatbotV2() {
       {showPlatformPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowPlatformPicker(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="h-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400" />
             <div className="p-6">
               <div className="flex items-center justify-between mb-5">
@@ -670,19 +747,19 @@ export default function ChatbotV2() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {/* WhatsApp */}
                 <button
                   type="button"
                   onClick={() => createNew("whatsapp")}
-                  className="group flex flex-col items-center gap-3 rounded-xl border-2 border-slate-200 bg-white p-5 text-center hover:border-green-400 hover:bg-green-50/40 transition-all"
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-green-400 hover:bg-green-50/40 transition-all"
                 >
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-green-50 group-hover:bg-green-100 transition-colors shadow-sm">
-                    <WhatsAppIcon className="h-7 w-7" />
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-green-50 group-hover:bg-green-100 transition-colors shadow-sm">
+                    <WhatsAppIcon className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-[13px] font-bold text-slate-800">WhatsApp</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Templates, lists,<br />buttons & flows</p>
+                    <p className="text-[12px] font-bold text-slate-800">WhatsApp</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Templates, lists,<br />buttons & flows</p>
                   </div>
                 </button>
 
@@ -690,14 +767,74 @@ export default function ChatbotV2() {
                 <button
                   type="button"
                   onClick={() => createNew("instagram")}
-                  className="group flex flex-col items-center gap-3 rounded-xl border-2 border-slate-200 bg-white p-5 text-center hover:border-pink-400 hover:bg-pink-50/40 transition-all"
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-pink-400 hover:bg-pink-50/40 transition-all"
                 >
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-pink-50 group-hover:bg-pink-100 transition-colors shadow-sm">
-                    <InstagramIcon className="h-7 w-7" />
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-pink-50 group-hover:bg-pink-100 transition-colors shadow-sm">
+                    <InstagramIcon className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-[13px] font-bold text-slate-800">Instagram</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Text, images,<br />quick replies</p>
+                    <p className="text-[12px] font-bold text-slate-800">Instagram</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Text & quick<br />replies</p>
+                  </div>
+                </button>
+
+                {/* Facebook Messenger */}
+                <button
+                  type="button"
+                  onClick={() => createNew("facebook")}
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-blue-400 hover:bg-blue-50/40 transition-all"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 group-hover:bg-blue-100 transition-colors shadow-sm">
+                    <FacebookIcon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-slate-800">Messenger</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Text & quick<br />replies</p>
+                  </div>
+                </button>
+
+                {/* SMS */}
+                <button
+                  type="button"
+                  onClick={() => createNew("sms")}
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-indigo-400 hover:bg-indigo-50/40 transition-all"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-50 group-hover:bg-indigo-100 transition-colors shadow-sm">
+                    <MessageSquare className="h-6 w-6 text-indigo-500" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-slate-800">SMS</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />only</p>
+                  </div>
+                </button>
+
+                {/* Email */}
+                <button
+                  type="button"
+                  onClick={() => createNew("email")}
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-sky-400 hover:bg-sky-50/40 transition-all"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 group-hover:bg-sky-100 transition-colors shadow-sm">
+                    <Mail className="h-6 w-6 text-sky-500" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-slate-800">Email</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />only</p>
+                  </div>
+                </button>
+
+                {/* RCS */}
+                <button
+                  type="button"
+                  onClick={() => createNew("rcs")}
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-violet-400 hover:bg-violet-50/40 transition-all"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-50 group-hover:bg-violet-100 transition-colors shadow-sm">
+                    <Radio className="h-6 w-6 text-violet-500" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-slate-800">RCS</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />(rich cards soon)</p>
                   </div>
                 </button>
               </div>

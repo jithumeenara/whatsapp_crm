@@ -87,12 +87,19 @@ export function MessageActions({
       onContextMenu={handleContextMenu}
       onBlur={() => setTouchOpen(false)}
     >
-      {/* `min-w-0` lets this flex child actually respect the 75% cap.
-       *  Default `min-width: auto` lets content (a long quote preview,
-       *  an unbroken URL) push past the cap and shove the row past
-       *  100%, which used to bleed across into the contact-sidebar
-       *  area. See issue #165. */}
-      <div className="group/actions relative min-w-0 max-w-[75%]">
+      {/* `min-w-0` lets this flex child actually respect MessageBubble's
+       *  own responsive width cap (max-w-[88%]/sm:max-w-[82%]). Default
+       *  `min-width: auto` lets content (a long quote preview, an unbroken
+       *  URL) push past the cap and shove the row past 100%, which used to
+       *  bleed across into the contact-sidebar area. See issue #165.
+       *
+       *  Deliberately NOT also capping max-width here — MessageBubble is
+       *  the single source of truth for that. A second max-w-[75%] here
+       *  used to compound with the bubble's own cap (85% of an already-75%
+       *  container ≈ 64%), squeezing every bubble narrower than intended
+       *  and forcing extra line-wraps, worst on mobile where the two caps
+       *  disagreed most (85% vs. this wrapper's flat 75%). */}
+      <div className={cn("group/actions relative min-w-0", isAgent ? "ml-auto" : "mr-auto")}>
         {children}
       <div
         data-touch-open={touchOpen || pickerOpen ? "true" : undefined}
