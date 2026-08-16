@@ -24,6 +24,13 @@ export async function GET(request: Request) {
     suppliedBuf.length !== expectedBuf.length ||
     !timingSafeEqual(suppliedBuf, expectedBuf)
   ) {
+    // TEMP DEBUG — masked lengths/edges only, never the full secret.
+    // Remove once the mismatch is root-caused.
+    console.warn(
+      '[chatbot/cron] secret mismatch — expected: len=%d [%s...%s], supplied: len=%d [%s...%s]',
+      expectedBuf.length, expected.slice(0, 4), expected.slice(-4),
+      suppliedBuf.length, supplied.slice(0, 4), supplied.slice(-4),
+    )
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
