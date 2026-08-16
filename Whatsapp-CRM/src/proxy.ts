@@ -17,6 +17,14 @@ const PUBLIC_PREFIXES = [
   '/api/instagram/webhook',   // Meta Instagram webhook — server-to-server, no session cookie
   '/api/facebook/webhook',    // Meta Facebook Messenger webhook — server-to-server, no session cookie
   '/api/flows/data-exchange/', // Meta WhatsApp Flows data-exchange (server-to-server, RSA-encrypted)
+  // Cron sweeps — called by an external scheduler (crontab/systemd timer),
+  // never by a logged-in browser. Each has its own timing-safe secret
+  // check against AUTOMATION_CRON_SECRET inside the route handler itself
+  // (see chatbot/cron/route.ts) — that's what actually secures these, the
+  // same pattern as the webhook endpoints above.
+  '/api/chatbot/cron',
+  '/api/flows/cron',
+  '/api/automations/cron',
   '/_next/',
   '/favicon',
   '/icon',   // Next.js App Router favicon generator

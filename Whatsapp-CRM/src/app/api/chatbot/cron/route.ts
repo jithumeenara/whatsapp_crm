@@ -1,6 +1,3 @@
-// @ts-nocheck -- TEMP: unreachable debug-diagnostic code below trips the
-// checker even though it never runs. Remove this line along with the
-// unconditional debug return once root-caused.
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
@@ -10,8 +7,8 @@ import { engineSendText } from '@/lib/flows/meta-send'
 // which — unlike the `headers()`/`cookies()` helpers from `next/headers` —
 // does NOT signal Next.js to treat the route as dynamic. Without this, the
 // route can get statically cached at build time and silently serve that
-// one frozen response (e.g. an early 401) on every request forever,
-// without ever re-executing the handler.
+// one frozen response on every request forever, without ever re-executing
+// the handler.
 export const dynamic = 'force-dynamic'
 
 /**
@@ -20,19 +17,12 @@ export const dynamic = 'force-dynamic'
  * then marks the flow run as timed_out.
  *
  * Call this endpoint every minute via a cron job or external scheduler.
- * Auth: same AUTOMATION_CRON_SECRET as the flows cron.
+ * Auth: same AUTOMATION_CRON_SECRET as the flows cron. Reachable without a
+ * login session because it's listed in proxy.ts's PUBLIC_PREFIXES — this
+ * header-secret check is what actually secures it (matches the same
+ * pattern as the WhatsApp/Instagram/Facebook webhook endpoints).
  */
 export async function GET(request: Request) {
-  // TEMP DEBUG — unconditional, no header/condition required at all.
-  // If this doesn't show up, something other than this file's GET is
-  // answering the request. Remove once root-caused.
-  return NextResponse.json({
-    marker: 'UNCONDITIONAL_MARKER_V2',
-    hasSecret: !!process.env.AUTOMATION_CRON_SECRET,
-    secretLen: (process.env.AUTOMATION_CRON_SECRET ?? '').length,
-    suppliedHeader: request.headers.get('x-cron-secret'),
-  })
-
   const expected = process.env.AUTOMATION_CRON_SECRET
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
@@ -45,13 +35,6 @@ export async function GET(request: Request) {
     suppliedBuf.length !== expectedBuf.length ||
     !timingSafeEqual(suppliedBuf, expectedBuf)
   ) {
-    // TEMP DEBUG — masked lengths/edges only, never the full secret.
-    // Remove once the mismatch is root-caused.
-    console.warn(
-      '[chatbot/cron] secret mismatch — expected: len=%d [%s...%s], supplied: len=%d [%s...%s]',
-      expectedBuf.length, expected.slice(0, 4), expected.slice(-4),
-      suppliedBuf.length, supplied.slice(0, 4), supplied.slice(-4),
-    )
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
