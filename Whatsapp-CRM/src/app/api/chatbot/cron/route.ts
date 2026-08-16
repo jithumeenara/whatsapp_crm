@@ -20,6 +20,12 @@ export const dynamic = 'force-dynamic'
  * Auth: same AUTOMATION_CRON_SECRET as the flows cron.
  */
 export async function GET(request: Request) {
+  // TEMP DEBUG marker — proves this exact handler build was reached at all,
+  // independent of any log file. Remove once root-caused.
+  if (request.headers.get('x-debug-marker') === '1') {
+    return NextResponse.json({ marker: 'REACHED_HANDLER_TOP', hasSecret: !!process.env.AUTOMATION_CRON_SECRET })
+  }
+
   const expected = process.env.AUTOMATION_CRON_SECRET
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
