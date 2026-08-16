@@ -3,6 +3,12 @@ import { prisma } from '@/lib/db'
 import { resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
 
+// See chatbot/cron/route.ts — reading `request.headers` directly doesn't
+// signal Next.js to treat this route as dynamic, so it can get statically
+// cached at build time and freeze on whatever response the first request
+// got. Force it dynamic so it actually re-runs on every call.
+export const dynamic = 'force-dynamic'
+
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
  * on a schedule (Vercel Cron / external pinger) — requires a shared

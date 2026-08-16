@@ -3,6 +3,12 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { resolveFallbackPolicy } from '@/lib/flows/fallback'
 
+// See chatbot/cron/route.ts — reading `request.headers` directly doesn't
+// signal Next.js to treat this route as dynamic, so it can get statically
+// cached at build time and freeze on whatever response the first request
+// got. Force it dynamic so it actually re-runs on every call.
+export const dynamic = 'force-dynamic'
+
 /**
  * Sweep abandoned active flow runs.
  *

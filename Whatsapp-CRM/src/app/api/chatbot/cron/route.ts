@@ -3,6 +3,14 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { engineSendText } from '@/lib/flows/meta-send'
 
+// This handler reads the cron secret via the raw `request.headers` object,
+// which — unlike the `headers()`/`cookies()` helpers from `next/headers` —
+// does NOT signal Next.js to treat the route as dynamic. Without this, the
+// route can get statically cached at build time and silently serve that
+// one frozen response (e.g. an early 401) on every request forever,
+// without ever re-executing the handler.
+export const dynamic = 'force-dynamic'
+
 /**
  * Sweep chatbot sessions where the user hasn't replied within the
  * configured no_reply_delay_minutes. Sends the auto-end message (if set)
