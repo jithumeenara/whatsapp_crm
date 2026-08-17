@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Smile, Paperclip, Send, Loader2,
-  FileText, Plus, Trash2, X,
+  FileText, Plus, Trash2, X, Image, Music, FolderOpen,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
@@ -13,6 +13,7 @@ import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-
 import { FollowupInlineForm } from "@/components/leads/followup-inline-form"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
+import { FileManagerPicker } from "@/components/inbox/file-manager-picker"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useRealtime } from "@/hooks/use-realtime"
 
@@ -78,6 +79,14 @@ const QUICK_EMOJI = [
   "😊", "😢", "😮", "🤔", "👋", "💯", "⭐", "📞", "📅", "⏰",
 ]
 
+// Mirrors the main Inbox's MessageComposer attach menu — same categories,
+// same "From Device" / "From File Manager" grouping.
+const ATTACH_OPTIONS = [
+  { key: "document" as const, label: "Document", icon: FileText, color: "text-blue-500", accept: ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" },
+  { key: "image" as const, label: "Photos & Videos", icon: Image, color: "text-emerald-500", accept: "image/png,image/jpeg,image/webp,video/mp4,video/3gpp" },
+  { key: "audio" as const, label: "Audio", icon: Music, color: "text-purple-500", accept: "audio/*" },
+]
+
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -123,6 +132,8 @@ export default function LeadDetailPage() {
   const [composerText, setComposerText] = useState("")
   const [sending, setSending] = useState(false)
   const [emojiOpen, setEmojiOpen] = useState(false)
+  const [attachOpen, setAttachOpen] = useState(false)
+  const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -240,13 +251,9 @@ export default function LeadDetailPage() {
   }, [id, loadLead])
 
   async function saveDetails() {
-    if (!district.trim() || !place.trim()) {
-      toast.error("District and Place / Area are required")
-      return
-    }
     setSavingDetails(true)
     dirtyRef.current = false
-    const ok = await patchLead({ district, place })
+    const ok = await patchLead({ district: district || null, place: place || null })
     setSavingDetails(false)
     if (ok) toast.success("Lead details saved")
   }
@@ -340,6 +347,25 @@ export default function LeadDetailPage() {
     setEmojiOpen(false)
   }
 
+  async function sendMediaUrl(url: string, mediaType: "image" | "document" | "audio" | "video") {
+    if (!conversationId) return
+    const sendRes = await fetch("/api/whatsapp/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId, message_type: mediaType, media_url: url }),
+    })
+    if (!sendRes.ok) { toast.error("Failed to send attachment"); return }
+    loadChat()
+  }
+
+  function openFilePicker(accept: string) {
+    setAttachOpen(false)
+    if (fileInputRef.current) {
+      fileInputRef.current.accept = accept
+      fileInputRef.current.click()
+    }
+  }
+
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ""
@@ -358,13 +384,7 @@ export default function LeadDetailPage() {
         : file.type.startsWith("audio/") ? "audio"
         : "document"
 
-      const sendRes = await fetch("/api/whatsapp/send", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ conversation_id: conversationId, message_type: mediaType, media_url: url }),
-      })
-      if (!sendRes.ok) { toast.error("Failed to send attachment"); return }
-      loadChat()
+      await sendMediaUrl(url, mediaType)
     } catch {
       toast.error("Upload failed")
     } finally {
@@ -433,6 +453,11 @@ export default function LeadDetailPage() {
           </button>
         </div>
 
+        <button onClick={() => setCloseDialogOpen(true)}
+          className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-rose-50 text-rose-600 text-[12px] font-semibold hover:bg-rose-100 shrink-0">
+          Close Lead
+        </button>
+
         <button onClick={saveDetails} disabled={savingDetails}
           className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 disabled:opacity-60 shrink-0">
           {savingDetails ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
@@ -443,11 +468,7 @@ export default function LeadDetailPage() {
       <div className="flex-1 overflow-hidden grid grid-cols-1 xl:grid-cols-[1fr_420px]">
         <div className="overflow-y-auto p-6 space-y-4">
           {/* Contact hero card */}
-          <div className="relative bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-wrap items-center gap-4">
-            <button onClick={() => setCloseDialogOpen(true)}
-              className="absolute top-4 right-4 flex items-center gap-1.5 h-8 px-3 rounded-xl bg-rose-50 text-rose-600 text-[12px] font-semibold hover:bg-rose-100">
-              Close Lead
-            </button>
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-wrap items-center gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white text-xl font-black">
               {displayName.slice(0, 1).toUpperCase()}
             </div>
@@ -474,7 +495,7 @@ export default function LeadDetailPage() {
               )}
             </div>
 
-            <div className="ml-auto flex flex-wrap items-center gap-2 pr-24">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {phone && (
                 <>
                   <span className="text-[14px] font-bold text-slate-800">{phone}</span>
@@ -508,28 +529,18 @@ export default function LeadDetailPage() {
               <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">Lead Details</p>
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                    District <span className="text-rose-500">*</span>
-                  </label>
+                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">District</label>
                   <select value={district} onChange={(e) => { setDistrict(e.target.value); dirtyRef.current = true }}
-                    className={cn(
-                      "w-full h-10 rounded-xl border bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400",
-                      district ? "border-slate-200" : "border-rose-200",
-                    )}>
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400">
                     <option value="">Select district…</option>
                     {KERALA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                    Place / Area <span className="text-rose-500">*</span>
-                  </label>
+                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Place / Area</label>
                   <input value={place} onChange={(e) => { setPlace(e.target.value); dirtyRef.current = true }}
                     placeholder="City / area"
-                    className={cn(
-                      "w-full h-10 rounded-xl border bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400",
-                      place ? "border-slate-200" : "border-rose-200",
-                    )} />
+                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead Score</label>
@@ -733,10 +744,34 @@ export default function LeadDetailPage() {
                   </>
                 )}
               </div>
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!conversationId || uploading}
-                className="text-slate-400 hover:text-slate-600 shrink-0 disabled:opacity-40" title="Attach">
-                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
-              </button>
+              <div className="relative shrink-0">
+                <button type="button" onClick={() => setAttachOpen((v) => !v)} disabled={!conversationId || uploading}
+                  className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title="Attach">
+                  {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+                </button>
+                {attachOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
+                    <div className="absolute bottom-9 left-0 z-20 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">From Device</div>
+                      {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
+                        <button key={key} type="button" onClick={() => openFilePicker(accept)}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
+                          <Icon className={cn("h-4 w-4 shrink-0", color)} />
+                          {label}
+                        </button>
+                      ))}
+                      <div className="mx-3 my-1 border-t border-slate-100" />
+                      <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">From File Manager</div>
+                      <button type="button" onClick={() => { setAttachOpen(false); setFilePickerOpen(true) }}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
+                        <FolderOpen className="h-4 w-4 shrink-0 text-indigo-500" />
+                        Browse Files
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <input value={composerText} onChange={(e) => setComposerText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 placeholder={conversationId ? "Type a message…" : "No WhatsApp conversation yet"}
@@ -762,6 +797,19 @@ export default function LeadDetailPage() {
           <FollowupInlineForm onSave={handleFollowupSave} onCancel={() => { setFollowupOpen(false); setConnectedChoice("") }} />
         </DialogContent>
       </Dialog>
+
+      <FileManagerPicker
+        open={filePickerOpen}
+        onClose={() => setFilePickerOpen(false)}
+        onSelect={(file) => {
+          const mediaType: "image" | "document" | "audio" | "video" =
+            file.file_category === "image" ? "image"
+            : file.file_category === "video" ? "video"
+            : file.file_category === "audio" ? "audio"
+            : "document"
+          void sendMediaUrl(file.url, mediaType)
+        }}
+      />
     </div>
   )
 }

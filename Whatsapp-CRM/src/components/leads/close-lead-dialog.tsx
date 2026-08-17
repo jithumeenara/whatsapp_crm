@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Loader2, Trophy, ThumbsDown } from 'lucide-react'
+import { Loader2, Trophy, ThumbsDown, Sparkles } from 'lucide-react'
+
+function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
 interface PipelineStageLite { id: string; name: string; stage_type: string; color: string }
 interface PipelineLite { id: string; name: string; stages: PipelineStageLite[] }
@@ -34,7 +34,6 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
 
   useEffect(() => {
     if (!open) return
-    // Reset per-open, and load pipelines lazily only once needed
     setOutcome('won')
     setRemarks('')
     setAddToPipeline(false)
@@ -48,8 +47,6 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
 
   const selectedPipeline = pipelines.find((p) => p.id === pipelineId)
 
-  // Default the stage to the matching Won/Lost close-stage when the pipeline
-  // or outcome changes, so the common case needs zero extra clicks.
   useEffect(() => {
     if (!selectedPipeline) return
     const match = selectedPipeline.stages.find((s) => s.stage_type === outcome)
@@ -75,33 +72,55 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-white">
-        <DialogHeader>
-          <DialogTitle>Close Enquiry</DialogTitle>
+      <DialogContent className="sm:max-w-lg bg-white p-0 overflow-hidden rounded-3xl gap-0">
+        <DialogHeader
+          className={cn(
+            "px-6 pt-6 pb-5 transition-colors",
+            outcome === "won" ? "bg-gradient-to-br from-emerald-50 to-white" : "bg-gradient-to-br from-rose-50 to-white",
+          )}
+        >
+          <DialogTitle className="flex items-center gap-2 text-[17px] font-bold text-slate-800">
+            <Sparkles className={cn("h-4 w-4", outcome === "won" ? "text-emerald-500" : "text-rose-500")} />
+            Close Enquiry
+          </DialogTitle>
+          <p className="text-[12px] text-slate-400 mt-0.5">Record the final outcome for this lead.</p>
         </DialogHeader>
-        <div className="space-y-4 pt-1">
+
+        <div className="px-6 pb-6 pt-1 space-y-5">
           {/* Won / Lost */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-3">
             <button type="button" onClick={() => setOutcome('won')}
-              className={`flex items-center justify-center gap-2 h-11 rounded-xl border text-sm font-semibold transition-colors ${
-                outcome === 'won' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-emerald-50 border-emerald-100 text-emerald-700 hover:bg-emerald-100'
-              }`}>
-              <Trophy className="size-4" /> Won
+              className={cn(
+                "flex flex-col items-center gap-2 rounded-2xl border-2 py-4 transition-all",
+                outcome === 'won'
+                  ? "border-emerald-500 bg-emerald-50 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]"
+                  : "border-slate-100 bg-white hover:border-emerald-200 hover:bg-emerald-50/40",
+              )}>
+              <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", outcome === "won" ? "bg-emerald-500 text-white" : "bg-emerald-50 text-emerald-500")}>
+                <Trophy className="h-5 w-5" />
+              </div>
+              <span className={cn("text-[13px] font-bold", outcome === "won" ? "text-emerald-700" : "text-slate-600")}>Won</span>
             </button>
             <button type="button" onClick={() => setOutcome('lost')}
-              className={`flex items-center justify-center gap-2 h-11 rounded-xl border text-sm font-semibold transition-colors ${
-                outcome === 'lost' ? 'bg-rose-500 border-rose-500 text-white' : 'bg-rose-50 border-rose-100 text-rose-700 hover:bg-rose-100'
-              }`}>
-              <ThumbsDown className="size-4" /> Lost
+              className={cn(
+                "flex flex-col items-center gap-2 rounded-2xl border-2 py-4 transition-all",
+                outcome === 'lost'
+                  ? "border-rose-500 bg-rose-50 shadow-[0_0_0_4px_rgba(244,63,94,0.12)]"
+                  : "border-slate-100 bg-white hover:border-rose-200 hover:bg-rose-50/40",
+              )}>
+              <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", outcome === "lost" ? "bg-rose-500 text-white" : "bg-rose-50 text-rose-500")}>
+                <ThumbsDown className="h-5 w-5" />
+              </div>
+              <span className={cn("text-[13px] font-bold", outcome === "lost" ? "text-rose-700" : "text-slate-600")}>Lost</span>
             </button>
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">
-              {outcome === 'won' ? 'Closing Notes' : 'Reason for Losing'} <span className="text-destructive">*</span>
-            </Label>
+            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+              {outcome === 'won' ? 'Closing Notes' : 'Reason for Losing'} <span className="text-rose-500">*</span>
+            </label>
             <textarea
-              className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm min-h-[90px] resize-none"
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-800 min-h-[90px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
               placeholder={outcome === 'won' ? 'What closed this deal…' : 'Why this enquiry is being lost…'}
@@ -110,21 +129,30 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
           </div>
 
           {/* Add to Pipeline */}
-          <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-800 cursor-pointer">
-              <input type="checkbox" checked={addToPipeline} onChange={(e) => setAddToPipeline(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400" />
-              Add to Pipeline
-            </label>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[13px] font-semibold text-slate-700">Add to Pipeline</span>
+              <button type="button" role="switch" aria-checked={addToPipeline}
+                onClick={() => setAddToPipeline((v) => !v)}
+                className={cn(
+                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                  addToPipeline ? "bg-indigo-600" : "bg-slate-200",
+                )}>
+                <span className={cn(
+                  "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform",
+                  addToPipeline ? "translate-x-4" : "translate-x-0",
+                )} />
+              </button>
+            </div>
             {addToPipeline && (
               <div className="grid grid-cols-2 gap-2">
                 <select value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}
-                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm">
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100">
                   <option value="">Select pipeline…</option>
                   {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <select value={stageId} onChange={(e) => setStageId(e.target.value)} disabled={!selectedPipeline}
-                  className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm disabled:opacity-50">
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-50">
                   <option value="">Select stage…</option>
                   {selectedPipeline?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -132,12 +160,20 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
             )}
           </div>
 
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={handleConfirm} disabled={saving || !remarks.trim() || (addToPipeline && (!pipelineId || !stageId))} className="gap-2">
-              {saving && <Loader2 className="size-4 animate-spin" />}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={() => onOpenChange(false)} disabled={saving}
+              className="h-10 px-4 rounded-xl text-[13px] font-semibold text-slate-500 hover:bg-slate-100 disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="button" onClick={handleConfirm}
+              disabled={saving || !remarks.trim() || (addToPipeline && (!pipelineId || !stageId))}
+              className={cn(
+                "h-10 px-5 rounded-xl text-[13px] font-bold text-white flex items-center gap-2 disabled:opacity-50 transition-colors",
+                outcome === "won" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-rose-500 hover:bg-rose-600",
+              )}>
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               Confirm Close
-            </Button>
+            </button>
           </div>
         </div>
       </DialogContent>
