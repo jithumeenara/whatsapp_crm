@@ -9,10 +9,12 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
-import { CloseEnquiryDialog } from "@/components/leads/close-enquiry-dialog"
+import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-lead-dialog"
 import { FollowupInlineForm } from "@/components/leads/followup-inline-form"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { useRealtime } from "@/hooks/use-realtime"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -71,6 +73,11 @@ const ROLE_LABEL: Record<string, string> = {
   owner: "Owner", supervisor: "Supervisor", admin: "Admin", agent: "Agent", viewer: "Viewer",
 }
 
+const QUICK_EMOJI = [
+  "😀", "😂", "😍", "🙏", "👍", "👏", "🎉", "❤️", "🔥", "✅",
+  "😊", "😢", "😮", "🤔", "👋", "💯", "⭐", "📞", "📅", "⏰",
+]
+
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -115,7 +122,10 @@ export default function LeadDetailPage() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [composerText, setComposerText] = useState("")
   const [sending, setSending] = useState(false)
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const loadLead = useCallback(() => {
     fetch(`/api/leads/${id}?from=${encodeURIComponent(fromTab)}`)
@@ -154,6 +164,27 @@ export default function LeadDetailPage() {
 
   useEffect(() => { loadChat() }, [loadChat])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ block: "end" }) }, [messages])
+
+  // Instant messages — same socket.io mechanism the main Inbox uses, so new
+  // messages for this lead's contact appear here live instead of only after
+  // a manual refresh.
+  useRealtime({
+    channelName: `lead-${id}`,
+    onMessageEvent: (event) => {
+      if (event.eventType === "DELETE") return
+      const msg = event.new
+      if (!msg?.conversation_id || !msg.id) return
+      const knownConvIds = new Set(messages.map((m) => m.conversation_id))
+      if (conversationId) knownConvIds.add(conversationId)
+      if (!knownConvIds.has(msg.conversation_id)) return
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === msg.id)) {
+          return prev.map((m) => (m.id === msg.id ? { ...m, ...msg } : m))
+        }
+        return [...prev, msg as Message]
+      })
+    },
+  })
 
   const loadContactNotes = useCallback(() => {
     if (!contactId) { setContactNotes([]); return }
@@ -250,10 +281,28 @@ export default function LeadDetailPage() {
     toast.success("Follow-up scheduled")
   }
 
-  async function handleCloseConfirm(remarks: string) {
-    await patchLead({ status: "closed", closing_remarks: remarks })
-    setCloseDialogOpen(false)
-    toast.success("Lead closed")
+  async function handleCloseConfirm(result: CloseLeadResult) {
+    const patch: Record<string, unknown> = { status: "closed", closing_remarks: result.remarks }
+    if (result.outcome === "won") patch.converted_at = new Date().toISOString()
+    else patch.lost_reason = result.remarks
+    await patchLead(patch)
+
+    if (result.pipelineId && result.stageId && lead) {
+      const res = await fetch("/api/deals", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: lead.title,
+          pipeline_id: result.pipelineId,
+          stage_id: result.stageId,
+          contact_id: lead.contact_id ?? undefined,
+          lead_id: lead.id,
+        }),
+      })
+      if (!res.ok) toast.error("Lead closed, but adding to pipeline failed")
+    }
+
+    toast.success(result.outcome === "won" ? "Lead closed — Won 🎉" : "Lead closed — Lost")
   }
 
   async function copyPhone(value: string) {
@@ -283,6 +332,43 @@ export default function LeadDetailPage() {
       loadChat()
     } finally {
       setSending(false)
+    }
+  }
+
+  function insertEmoji(emoji: string) {
+    setComposerText((prev) => prev + emoji)
+    setEmojiOpen(false)
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ""
+    if (!file || !conversationId) return
+
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: form })
+      if (!uploadRes.ok) { toast.error("Upload failed"); return }
+      const { url } = await uploadRes.json()
+
+      const mediaType = file.type.startsWith("image/") ? "image"
+        : file.type.startsWith("video/") ? "video"
+        : file.type.startsWith("audio/") ? "audio"
+        : "document"
+
+      const sendRes = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId, message_type: mediaType, media_url: url }),
+      })
+      if (!sendRes.ok) { toast.error("Failed to send attachment"); return }
+      loadChat()
+    } catch {
+      toast.error("Upload failed")
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -357,7 +443,11 @@ export default function LeadDetailPage() {
       <div className="flex-1 overflow-hidden grid grid-cols-1 xl:grid-cols-[1fr_420px]">
         <div className="overflow-y-auto p-6 space-y-4">
           {/* Contact hero card */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-wrap items-center gap-4">
+          <div className="relative bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-wrap items-center gap-4">
+            <button onClick={() => setCloseDialogOpen(true)}
+              className="absolute top-4 right-4 flex items-center gap-1.5 h-8 px-3 rounded-xl bg-rose-50 text-rose-600 text-[12px] font-semibold hover:bg-rose-100">
+              Close Lead
+            </button>
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white text-xl font-black">
               {displayName.slice(0, 1).toUpperCase()}
             </div>
@@ -384,11 +474,7 @@ export default function LeadDetailPage() {
               )}
             </div>
 
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <button onClick={() => setCloseDialogOpen(true)}
-                className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-rose-50 text-rose-600 text-[12px] font-semibold hover:bg-rose-100">
-                Close Lead
-              </button>
+            <div className="ml-auto flex flex-wrap items-center gap-2 pr-24">
               {phone && (
                 <>
                   <span className="text-[14px] font-bold text-slate-800">{phone}</span>
@@ -548,14 +634,10 @@ export default function LeadDetailPage() {
                     <option value="">Choose outcome…</option>
                     {CONNECTED_OUTCOMES.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
                   </select>
-                  {followupOpen && connectedChoice === "follow_up" ? (
-                    <FollowupInlineForm onSave={handleFollowupSave} onCancel={() => { setFollowupOpen(false); setConnectedChoice("") }} />
-                  ) : (
-                    <button onClick={recordConnected} disabled={!connectedChoice || recording !== null}
-                      className="w-full h-10 rounded-xl bg-emerald-500 text-white text-[13px] font-bold hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
-                      {recording === "connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
-                    </button>
-                  )}
+                  <button onClick={recordConnected} disabled={!connectedChoice || recording !== null}
+                    className="w-full h-10 rounded-xl bg-emerald-500 text-white text-[13px] font-bold hover:bg-emerald-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {recording === "connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
+                  </button>
                 </div>
 
                 {/* Not Connected */}
@@ -629,9 +711,32 @@ export default function LeadDetailPage() {
           </div>
 
           <div className="border-t border-slate-100 p-3 shrink-0">
+            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected}
+              accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <button className="text-slate-400 hover:text-slate-600 shrink-0" disabled title="Coming soon"><Smile className="h-4 w-4" /></button>
-              <button className="text-slate-400 hover:text-slate-600 shrink-0" disabled title="Coming soon"><Paperclip className="h-4 w-4" /></button>
+              <div className="relative shrink-0">
+                <button type="button" onClick={() => setEmojiOpen((v) => !v)} disabled={!conversationId}
+                  className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title="Emoji">
+                  <Smile className="h-4 w-4" />
+                </button>
+                {emojiOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setEmojiOpen(false)} />
+                    <div className="absolute bottom-9 left-0 z-20 grid grid-cols-5 gap-1 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+                      {QUICK_EMOJI.map((e) => (
+                        <button key={e} type="button" onClick={() => insertEmoji(e)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[17px] hover:bg-slate-100">
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={!conversationId || uploading}
+                className="text-slate-400 hover:text-slate-600 shrink-0 disabled:opacity-40" title="Attach">
+                {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+              </button>
               <input value={composerText} onChange={(e) => setComposerText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 placeholder={conversationId ? "Type a message…" : "No WhatsApp conversation yet"}
@@ -647,7 +752,16 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      <CloseEnquiryDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} onConfirm={handleCloseConfirm} />
+      <CloseLeadDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} onConfirm={handleCloseConfirm} />
+
+      <Dialog open={followupOpen} onOpenChange={(v) => { setFollowupOpen(v); if (!v) setConnectedChoice("") }}>
+        <DialogContent className="sm:max-w-md bg-white">
+          <DialogHeader>
+            <DialogTitle>Schedule Follow-up</DialogTitle>
+          </DialogHeader>
+          <FollowupInlineForm onSave={handleFollowupSave} onCancel={() => { setFollowupOpen(false); setConnectedChoice("") }} />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
