@@ -8,6 +8,7 @@ function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boo
 
 interface PipelineStageLite { id: string; name: string; stage_type: string; color: string }
 interface PipelineLite { id: string; name: string; stages: PipelineStageLite[] }
+interface ReasonLite { icon: string; label: string }
 
 export interface CloseLeadResult {
   outcome: 'won' | 'lost'
@@ -24,6 +25,8 @@ interface CloseLeadDialogProps {
 
 export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDialogProps) {
   const [outcome, setOutcome] = useState<'won' | 'lost'>('won')
+  const [reason, setReason] = useState('')
+  const [reasons, setReasons] = useState<ReasonLite[]>([])
   const [remarks, setRemarks] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -35,6 +38,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
   useEffect(() => {
     if (!open) return
     setOutcome('won')
+    setReason('')
     setRemarks('')
     setAddToPipeline(false)
     setPipelineId('')
@@ -43,7 +47,19 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
       .then((r) => r.json())
       .then((d) => setPipelines(Array.isArray(d.pipelines) ? d.pipelines : []))
       .catch(() => {})
+    // Admin-configurable list (Settings → Leads → Close Enquiry Reasons)
+    fetch('/api/leads/settings')
+      .then((r) => r.json())
+      .then((d) => setReasons(Array.isArray(d.close_enquiry_reasons) ? d.close_enquiry_reasons : []))
+      .catch(() => {})
   }, [open])
+
+  // Picking a reason seeds the remarks field (still freely editable) so
+  // agents get a consistent starting point instead of typing from scratch.
+  function selectReason(label: string) {
+    setReason(label)
+    if (!remarks.trim()) setRemarks(label)
+  }
 
   const selectedPipeline = pipelines.find((p) => p.id === pipelineId)
 
@@ -114,6 +130,17 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
               <span className={cn("text-[13px] font-bold", outcome === "lost" ? "text-rose-700" : "text-slate-600")}>Lost</span>
             </button>
           </div>
+
+          {reasons.length > 0 && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Reason</label>
+              <select value={reason} onChange={(e) => selectReason(e.target.value)}
+                className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400">
+                <option value="">Select a reason…</option>
+                {reasons.map((r) => <option key={r.label} value={r.label}>{r.icon ? `${r.icon} ` : ""}{r.label}</option>)}
+              </select>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">

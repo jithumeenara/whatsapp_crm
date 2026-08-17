@@ -5,17 +5,18 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Smile, Paperclip, Send, Loader2,
-  FileText, Plus, Trash2, X, Image, Music, FolderOpen,
+  FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
 import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-lead-dialog"
-import { FollowupInlineForm } from "@/components/leads/followup-inline-form"
+import { ScheduleFollowupDialog } from "@/components/leads/schedule-followup-dialog"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
 import { FileManagerPicker } from "@/components/inbox/file-manager-picker"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { useRealtime } from "@/hooks/use-realtime"
+import type { MessageTemplate } from "@/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -134,6 +135,7 @@ export default function LeadDetailPage() {
   const [emojiOpen, setEmojiOpen] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -345,6 +347,37 @@ export default function LeadDetailPage() {
   function insertEmoji(emoji: string) {
     setComposerText((prev) => prev + emoji)
     setEmojiOpen(false)
+  }
+
+  function renderTemplateBody(body: string, params: string[]): string {
+    return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
+      const idx = Number(raw) - 1
+      return params[idx] ?? `{{${raw}}}`
+    })
+  }
+
+  async function handleSendTemplate(template: MessageTemplate, values: TemplateSendValues) {
+    if (!conversationId) return
+    const renderedBody = renderTemplateBody(template.body_text, values.body)
+    const res = await fetch("/api/whatsapp/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        message_type: "template",
+        template_name: template.name,
+        template_language: template.language,
+        template_message_params: {
+          body: values.body,
+          headerText: values.headerText,
+          buttonParams: values.buttonParams,
+        },
+        template_params: values.body,
+        content_text: renderedBody,
+      }),
+    })
+    if (!res.ok) { toast.error("Failed to send template"); return }
+    loadChat()
   }
 
   async function sendMediaUrl(url: string, mediaType: "image" | "document" | "audio" | "video") {
@@ -753,6 +786,12 @@ export default function LeadDetailPage() {
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
                     <div className="absolute bottom-9 left-0 z-20 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                      <button type="button" onClick={() => { setAttachOpen(false); setTemplatePickerOpen(true) }}
+                        className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
+                        <LayoutTemplate className="h-4 w-4 shrink-0 text-amber-500" />
+                        Message Template
+                      </button>
+                      <div className="mx-3 my-1 border-t border-slate-100" />
                       <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">From Device</div>
                       {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
                         <button key={key} type="button" onClick={() => openFilePicker(accept)}
@@ -789,14 +828,11 @@ export default function LeadDetailPage() {
 
       <CloseLeadDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} onConfirm={handleCloseConfirm} />
 
-      <Dialog open={followupOpen} onOpenChange={(v) => { setFollowupOpen(v); if (!v) setConnectedChoice("") }}>
-        <DialogContent className="sm:max-w-md bg-white">
-          <DialogHeader>
-            <DialogTitle>Schedule Follow-up</DialogTitle>
-          </DialogHeader>
-          <FollowupInlineForm onSave={handleFollowupSave} onCancel={() => { setFollowupOpen(false); setConnectedChoice("") }} />
-        </DialogContent>
-      </Dialog>
+      <ScheduleFollowupDialog
+        open={followupOpen}
+        onOpenChange={(v) => { setFollowupOpen(v); if (!v) setConnectedChoice("") }}
+        onSave={handleFollowupSave}
+      />
 
       <FileManagerPicker
         open={filePickerOpen}
@@ -809,6 +845,12 @@ export default function LeadDetailPage() {
             : "document"
           void sendMediaUrl(file.url, mediaType)
         }}
+      />
+
+      <TemplatePicker
+        open={templatePickerOpen}
+        onOpenChange={setTemplatePickerOpen}
+        onSelect={handleSendTemplate}
       />
     </div>
   )
