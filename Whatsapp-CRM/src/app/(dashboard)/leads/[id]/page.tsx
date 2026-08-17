@@ -5,9 +5,10 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Smile, Paperclip, Send, Loader2,
+  FileText, Plus, Trash2, X,
 } from "lucide-react"
 import { toast } from "sonner"
-import type { Lead, LeadActivity, Message } from "@/types"
+import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
 import { CloseEnquiryDialog } from "@/components/leads/close-enquiry-dialog"
 import { FollowupInlineForm } from "@/components/leads/followup-inline-form"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
@@ -60,6 +61,16 @@ const CONNECTED_OUTCOMES = [
   { key: "follow_up", label: "Follow-up" },
 ]
 
+const KERALA_DISTRICTS = [
+  "Thiruvananthapuram", "Kollam", "Pathanamthitta", "Alappuzha",
+  "Kottayam", "Idukki", "Ernakulam", "Thrissur", "Palakkad",
+  "Malappuram", "Kozhikode", "Wayanad", "Kannur", "Kasaragod",
+]
+
+const ROLE_LABEL: Record<string, string> = {
+  owner: "Owner", supervisor: "Supervisor", admin: "Admin", agent: "Agent", viewer: "Viewer",
+}
+
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -75,9 +86,17 @@ export default function LeadDetailPage() {
   // Editable Lead Details card — local draft + debounced/explicit save
   const [district, setDistrict] = useState("")
   const [place, setPlace] = useState("")
-  const [notes, setNotes] = useState("")
   const [savingDetails, setSavingDetails] = useState(false)
   const dirtyRef = useRef(false)
+
+  // Contact notes — same list/expand/delete UX as the Inbox contact sidebar,
+  // per explicit request. These are ContactNote records (one per note, with
+  // creator name+role), not the single Lead.notes text field.
+  const [contactNotes, setContactNotes] = useState<ContactNote[]>([])
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [newNoteOpen, setNewNoteOpen] = useState(false)
+  const [newNoteText, setNewNoteText] = useState("")
+  const [addingNote, setAddingNote] = useState(false)
 
   // Log Call Outcome card
   const [connectedChoice, setConnectedChoice] = useState("")
@@ -109,7 +128,6 @@ export default function LeadDetailPage() {
         if (!dirtyRef.current) {
           setDistrict(d.lead?.district ?? "")
           setPlace(d.lead?.place ?? "")
-          setNotes(d.lead?.notes ?? "")
         }
       })
       .catch(() => toast.error("Failed to load lead"))
@@ -137,6 +155,46 @@ export default function LeadDetailPage() {
   useEffect(() => { loadChat() }, [loadChat])
   useEffect(() => { chatEndRef.current?.scrollIntoView({ block: "end" }) }, [messages])
 
+  const loadContactNotes = useCallback(() => {
+    if (!contactId) { setContactNotes([]); return }
+    fetch(`/api/contacts/${contactId}/notes`)
+      .then((r) => r.json())
+      .then((d) => setContactNotes(Array.isArray(d.notes) ? d.notes : []))
+      .catch(() => {})
+  }, [contactId])
+
+  useEffect(() => { loadContactNotes() }, [loadContactNotes])
+
+  async function addNote() {
+    if (!contactId || !newNoteText.trim()) return
+    setAddingNote(true)
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/notes`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ note_text: newNoteText.trim() }),
+      })
+      if (res.ok) {
+        const body = await res.json()
+        if (body.note) setContactNotes((prev) => [body.note, ...prev])
+        setNewNoteText("")
+        setNewNoteOpen(false)
+        toast.success("Note added")
+      } else {
+        toast.error("Failed to add note")
+      }
+    } catch { toast.error("Failed to add note") }
+    finally { setAddingNote(false) }
+  }
+
+  async function deleteNote(noteId: string) {
+    if (!contactId) return
+    const prev = contactNotes
+    setContactNotes((p) => p.filter((n) => n.id !== noteId))
+    const res = await fetch(`/api/contacts/${contactId}/notes/${noteId}`, { method: "DELETE" })
+    if (!res.ok) { setContactNotes(prev); toast.error("Failed to delete note") }
+  }
+
   const patchLead = useCallback(async (patch: Record<string, unknown>) => {
     const res = await fetch(`/api/leads/${id}`, {
       method: "PATCH",
@@ -151,9 +209,13 @@ export default function LeadDetailPage() {
   }, [id, loadLead])
 
   async function saveDetails() {
+    if (!district.trim() || !place.trim()) {
+      toast.error("District and Place / Area are required")
+      return
+    }
     setSavingDetails(true)
     dirtyRef.current = false
-    const ok = await patchLead({ district: district || null, place: place || null, notes: notes || null })
+    const ok = await patchLead({ district, place })
     setSavingDetails(false)
     if (ok) toast.success("Lead details saved")
   }
@@ -286,7 +348,7 @@ export default function LeadDetailPage() {
         </div>
 
         <button onClick={saveDetails} disabled={savingDetails}
-          className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-slate-100 text-slate-600 text-[12px] font-semibold hover:bg-slate-200 disabled:opacity-60 shrink-0">
+          className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 disabled:opacity-60 shrink-0">
           {savingDetails ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Save
         </button>
       </div>
@@ -360,16 +422,28 @@ export default function LeadDetailPage() {
               <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">Lead Details</p>
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">District</label>
-                  <input value={district} onChange={(e) => { setDistrict(e.target.value); dirtyRef.current = true }}
-                    placeholder="District"
-                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
+                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                    District <span className="text-rose-500">*</span>
+                  </label>
+                  <select value={district} onChange={(e) => { setDistrict(e.target.value); dirtyRef.current = true }}
+                    className={cn(
+                      "w-full h-10 rounded-xl border bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400",
+                      district ? "border-slate-200" : "border-rose-200",
+                    )}>
+                    <option value="">Select district…</option>
+                    {KERALA_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  </select>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Place / Area</label>
+                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                    Place / Area <span className="text-rose-500">*</span>
+                  </label>
                   <input value={place} onChange={(e) => { setPlace(e.target.value); dirtyRef.current = true }}
                     placeholder="City / area"
-                    className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
+                    className={cn(
+                      "w-full h-10 rounded-xl border bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400",
+                      place ? "border-slate-200" : "border-rose-200",
+                    )} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead Score</label>
@@ -383,14 +457,72 @@ export default function LeadDetailPage() {
                     ))}
                   </div>
                 </div>
+                {/* Notes — same list/expand/delete UX as the Inbox contact sidebar */}
                 <div className="space-y-1.5">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Notes</label>
-                  <textarea value={notes} onChange={(e) => { setNotes(e.target.value); dirtyRef.current = true }}
-                    placeholder="Add notes…" rows={4}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
+                  <div className="flex items-center justify-between">
+                    <button type="button" onClick={() => setNotesOpen((v) => !v)} disabled={!contactId}
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide hover:text-slate-700 disabled:opacity-50">
+                      <FileText className="h-3.5 w-3.5" />
+                      Notes
+                      <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">{contactNotes.length}</span>
+                    </button>
+                    <button type="button" onClick={() => setNewNoteOpen((v) => !v)} disabled={!contactId}
+                      className={cn("flex h-6 w-6 items-center justify-center rounded-lg transition-all disabled:opacity-40",
+                        newNoteOpen ? "bg-indigo-100 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
+                      {newNoteOpen ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+
+                  {newNoteOpen && (
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
+                      <textarea rows={3} value={newNoteText} onChange={(e) => setNewNoteText(e.target.value)}
+                        placeholder="Write a note…" autoFocus
+                        className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => { setNewNoteOpen(false); setNewNoteText("") }} disabled={addingNote}
+                          className="flex-1 rounded-lg border border-slate-200 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                          Cancel
+                        </button>
+                        <button type="button" onClick={addNote} disabled={addingNote || !newNoteText.trim()}
+                          className="flex-1 rounded-lg bg-indigo-600 py-1.5 text-[12px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                          {addingNote ? "Saving…" : "Save"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {notesOpen && (
+                    contactNotes.length === 0 ? (
+                      <p className="text-[12px] text-slate-400 italic">No notes yet</p>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-y-auto">
+                        {contactNotes.map((note) => (
+                          <div key={note.id} className="group/note rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-[12px] text-slate-700 leading-relaxed whitespace-pre-wrap">{note.note_text}</p>
+                              <button type="button" onClick={() => deleteNote(note.id)}
+                                aria-label="Delete note"
+                                className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full text-amber-500 opacity-0 group-hover/note:opacity-100 hover:bg-amber-100 transition-opacity">
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-amber-600">
+                              {note.created_by_name && <span className="font-semibold text-amber-700">{note.created_by_name}</span>}
+                              {note.created_by_role && (
+                                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-700">
+                                  {ROLE_LABEL[note.created_by_role] ?? note.created_by_role}
+                                </span>
+                              )}
+                              <span>{note.created_at ? new Date(note.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
                 </div>
                 <button onClick={saveDetails} disabled={savingDetails}
-                  className="w-full h-10 rounded-xl bg-slate-100 text-slate-600 text-[13px] font-semibold hover:bg-slate-200 disabled:opacity-60 flex items-center justify-center gap-2">
+                  className="w-full h-10 rounded-xl bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700 disabled:opacity-60 flex items-center justify-center gap-2">
                   {savingDetails && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save Changes
                 </button>
                 <div className="pt-2 border-t border-slate-100 space-y-0.5">
@@ -469,7 +601,7 @@ export default function LeadDetailPage() {
             <button onClick={loadChat} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-100 shrink-0" title="Refresh">
               <RefreshCw className={cn("h-3.5 w-3.5 text-slate-400", chatLoading && "animate-spin")} />
             </button>
-            <button onClick={() => router.push("/inbox")}
+            <button onClick={() => router.push(conversationId ? `/inbox?c=${conversationId}` : "/inbox")}
               className="flex items-center gap-1 shrink-0 h-7 px-2.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
               <ExternalLink className="h-3 w-3" /> Inbox
             </button>

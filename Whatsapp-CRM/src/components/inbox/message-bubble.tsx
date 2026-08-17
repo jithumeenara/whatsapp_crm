@@ -271,7 +271,7 @@ function MessageContent({ message }: { message: Message }) {
               {subject}
             </p>
           )}
-          <p className="whitespace-pre-wrap text-sm" style={WRAP_STYLE}>
+          <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
             <WhatsAppText text={message.content_text ?? ""} />
           </p>
         </div>
@@ -286,7 +286,7 @@ function MessageContent({ message }: { message: Message }) {
             <MediaUnavailable label="Image" />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap text-sm" style={WRAP_STYLE}>
+            <p className="mt-1 whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
               <WhatsAppText text={message.content_text} />
             </p>
           )}
@@ -306,7 +306,7 @@ function MessageContent({ message }: { message: Message }) {
             <MediaUnavailable label="Video" />
           )}
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap text-sm" style={WRAP_STYLE}>
+            <p className="mt-1 whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
               <WhatsAppText text={message.content_text} />
             </p>
           )}
@@ -333,7 +333,7 @@ function MessageContent({ message }: { message: Message }) {
           href={message.media_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm hover:bg-slate-100"
+          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-[13px] hover:bg-slate-100"
         >
           <FileText className="h-5 w-5 shrink-0 text-slate-500" />
           <span className="truncate">
@@ -350,7 +350,7 @@ function MessageContent({ message }: { message: Message }) {
             Template
           </span>
           {message.content_text && (
-            <p className="mt-1 whitespace-pre-wrap text-sm" style={WRAP_STYLE}>
+            <p className="mt-1 whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
               <WhatsAppText text={message.content_text} />
             </p>
           )}
@@ -360,7 +360,7 @@ function MessageContent({ message }: { message: Message }) {
 
     case "location":
       return (
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-2 text-[13px]">
           <MapPin className="h-4 w-4 shrink-0 text-slate-500" />
           <span>{message.content_text || "Location shared"}</span>
         </div>
@@ -380,7 +380,7 @@ function MessageContent({ message }: { message: Message }) {
             Button reply
           </span>
           <div className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-2.5 py-1.5">
-            <p className="whitespace-pre-wrap text-sm font-semibold text-emerald-900" style={WRAP_STYLE}>
+            <p className="whitespace-pre-wrap text-[13px] font-semibold text-emerald-900" style={WRAP_STYLE}>
               <WhatsAppText text={message.content_text || "[Interactive reply]"} />
             </p>
           </div>
@@ -390,7 +390,7 @@ function MessageContent({ message }: { message: Message }) {
 
     default:
       return (
-        <p className="whitespace-pre-wrap text-sm" style={WRAP_STYLE}>
+        <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
           <WhatsAppText text={message.content_text || "[Unsupported message type]"} />
         </p>
       );
@@ -462,7 +462,7 @@ export function MessageBubble({
 
       <div
         className={cn(
-          "relative min-w-0 px-3 py-2 shadow-sm",
+          "relative min-w-0 px-2.5 py-[7px] shadow-sm",
           isOutbound
             ? "rounded-[18px] rounded-tr-[4px]"
             : "rounded-[18px] rounded-tl-[4px]",
