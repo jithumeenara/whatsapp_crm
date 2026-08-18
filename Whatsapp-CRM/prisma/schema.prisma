@@ -374,9 +374,11 @@ model ScheduledMessage {
   max_sends      Int     @default(1)
   sends_count    Int     @default(0)
 
-  status       String    @default("active") // 'active' | 'paused' | 'completed' | 'cancelled'
+  status       String    @default("active") // 'active' | 'paused' | 'completed' | 'cancelled' | 'failed' | 'expired'
   next_send_at DateTime  @db.Timestamptz(6)
   last_sent_at DateTime? @db.Timestamptz(6)
+  error_message String? // set when status = 'failed' -- the last send error, shown in the list UI
+  error_count   Int     @default(0) // consecutive failures; status flips to 'failed' after 3
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)

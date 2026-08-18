@@ -2,19 +2,32 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CalendarClock, Loader2, Image as ImageIcon, X, Plus, Repeat, Send } from 'lucide-react'
+import { CalendarClock, Loader2, Image as ImageIcon, X, Plus, Repeat, Send, Save } from 'lucide-react'
 import { toast } from 'sonner'
+import type { ScheduledMessage } from '@/types'
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
+
+function toLocalDateInput(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function toLocalTimeInput(iso: string): string {
+  const d = new Date(iso)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 interface ScheduleMessageDialogProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   conversationId: string
+  /** When set, edits this existing scheduled message instead of creating a new one. */
+  editItem?: ScheduledMessage | null
   onScheduled?: () => void
 }
 
-export function ScheduleMessageDialog({ open, onOpenChange, conversationId, onScheduled }: ScheduleMessageDialogProps) {
+export function ScheduleMessageDialog({ open, onOpenChange, conversationId, editItem, onScheduled }: ScheduleMessageDialogProps) {
+  const isEdit = !!editItem
   const [text, setText] = useState('')
   const [mediaUrl, setMediaUrl] = useState('')
   const [uploading, setUploading] = useState(false)
@@ -33,17 +46,30 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, onSc
 
   useEffect(() => {
     if (!open) return
-    setText('')
-    setMediaUrl('')
-    setButtons([])
-    setScheduleType('once')
-    setDate('')
-    setTime('09:00')
-    setIntervalValue(1)
-    setIntervalUnit('days')
-    setStopOnReply(true)
-    setMaxSends(3)
-  }, [open])
+    if (editItem) {
+      setText(editItem.content_text ?? '')
+      setMediaUrl(editItem.media_url ?? '')
+      setButtons((editItem.buttons ?? []).map((b) => b.title))
+      setScheduleType(editItem.schedule_type)
+      setDate(toLocalDateInput(editItem.next_send_at))
+      setTime(toLocalTimeInput(editItem.next_send_at))
+      setIntervalValue(editItem.interval_value ?? 1)
+      setIntervalUnit(editItem.interval_unit ?? 'days')
+      setStopOnReply(editItem.stop_on_reply)
+      setMaxSends(editItem.max_sends || 3)
+    } else {
+      setText('')
+      setMediaUrl('')
+      setButtons([])
+      setScheduleType('once')
+      setDate('')
+      setTime('09:00')
+      setIntervalValue(1)
+      setIntervalUnit('days')
+      setStopOnReply(true)
+      setMaxSends(3)
+    }
+  }, [open, editItem])
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -105,17 +131,17 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, onSc
         if (date) body.scheduled_at = new Date(`${date}T${time || '09:00'}:00`).toISOString()
       }
 
-      const res = await fetch('/api/scheduled-messages', {
-        method: 'POST',
+      const res = await fetch(isEdit ? `/api/scheduled-messages/${editItem!.id}` : '/api/scheduled-messages', {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        toast.error(err.error || 'Failed to schedule message')
+        toast.error(err.error || (isEdit ? 'Failed to save changes' : 'Failed to schedule message'))
         return
       }
-      toast.success(scheduleType === 'once' ? 'Message scheduled' : 'Recurring message scheduled')
+      toast.success(isEdit ? 'Scheduled message updated' : scheduleType === 'once' ? 'Message scheduled' : 'Recurring message scheduled')
       onOpenChange(false)
       onScheduled?.()
     } finally {
@@ -129,9 +155,11 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, onSc
         <DialogHeader className="px-6 pt-6 pb-5 bg-gradient-to-br from-indigo-50 to-white">
           <DialogTitle className="flex items-center gap-2 text-[17px] font-bold text-slate-800">
             <CalendarClock className="h-4 w-4 text-indigo-500" />
-            Schedule Message
+            {isEdit ? 'Edit Scheduled Message' : 'Schedule Message'}
           </DialogTitle>
-          <p className="text-[12px] text-slate-400 mt-0.5">Send a message later, or on a repeating schedule.</p>
+          <p className="text-[12px] text-slate-400 mt-0.5">
+            {isEdit ? 'Changes restart this message’s progress.' : 'Send a message later, or on a repeating schedule.'}
+          </p>
         </DialogHeader>
 
         <div className="px-6 pb-6 pt-1 space-y-5">
@@ -263,8 +291,8 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, onSc
             </button>
             <button type="button" onClick={handleSubmit} disabled={saving || !canSubmit}
               className="h-10 px-5 rounded-xl text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Schedule
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : isEdit ? <Save className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+              {isEdit ? 'Save Changes' : 'Schedule'}
             </button>
           </div>
         </div>

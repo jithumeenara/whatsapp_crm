@@ -183,16 +183,11 @@ function InboxV2Content() {
           return
         }
       }
-      if (!activeConversation && !deepLinkConvId) {
-        const first = loaded[0]
-        setActiveConversation(first)
-        setActiveContact(first.contact ?? null)
-        setMessages([])
-        autoSelectedForDeepLinkRef.current = first.id
-        router.replace(`/inbox?c=${first.id}`, { scroll: false })
-      }
+      // No auto-select of the first conversation on load — the inbox opens
+      // to an empty state and the agent picks a conversation explicitly.
+      // (deepLinkConvId above still honors an explicit /inbox?c=<id> link.)
     },
-    [deepLinkConvId, activeConversation, router],
+    [deepLinkConvId, activeConversation],
   )
 
   const handleSelectConversation = useCallback(

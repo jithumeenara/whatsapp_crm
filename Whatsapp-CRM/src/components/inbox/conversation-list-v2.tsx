@@ -151,9 +151,16 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
   const loadedRef = useRef(onConversationsLoaded)
   useEffect(() => { loadedRef.current = onConversationsLoaded })
 
+  // Only the very first load (mount) shows the skeleton. Every later call
+  // — resyncToken bumping on tab-focus/reconnect — is a quiet background
+  // catch-up: the list swaps in fresh data with no loading flash. Real-time
+  // socket events are what actually keep the list current; this resync is
+  // just a safety net for anything missed while the socket was disconnected.
+  const isFirstLoadRef = useRef(true)
+
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    if (isFirstLoadRef.current) setLoading(true)
     ;(async () => {
       try {
         const r = await fetch("/api/conversations")
@@ -162,7 +169,10 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
         if (cancelled) return
         loadedRef.current(Array.isArray(body) ? body : (body.conversations ?? []))
       } catch { } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          isFirstLoadRef.current = false
+        }
       }
     })()
     return () => { cancelled = true }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, Smile, CalendarClock } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, Smile, CalendarClock, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -10,6 +10,7 @@ import { ReplyQuote } from "./reply-quote";
 import { toast } from "sonner";
 import { FileManagerPicker } from "./file-manager-picker";
 import { ScheduleMessageDialog } from "./schedule-message-dialog";
+import { ScheduledMessagesPanel } from "./scheduled-messages-panel";
 
 const QUICK_EMOJI = [
   "😀", "😂", "😍", "🙏", "👍", "👏", "🎉", "❤️", "🔥", "✅",
@@ -73,6 +74,7 @@ export function MessageComposer({
   const [filePickerOpen, setFilePickerOpen] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduledListOpen, setScheduledListOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
@@ -289,7 +291,7 @@ export function MessageComposer({
         </div>
 
         {/* Schedule a message — one-time or recurring, optionally with an
-            image + buttons, sent later via the scheduled-messages cron. */}
+            image + buttons, sent later via the scheduled-messages sweep. */}
         <GatedButton
           variant="ghost"
           size="sm"
@@ -300,6 +302,19 @@ export function MessageComposer({
           onClick={() => setScheduleOpen(true)}
         >
           <CalendarClock className="h-4 w-4" />
+        </GatedButton>
+
+        {/* View / edit / cancel this conversation's scheduled messages */}
+        <GatedButton
+          variant="ghost"
+          size="sm"
+          canAct={!readOnly}
+          gateReason="send messages"
+          title="View scheduled messages"
+          className="h-9 w-9 p-0 shrink-0 text-slate-500 hover:text-slate-800"
+          onClick={() => setScheduledListOpen(true)}
+        >
+          <ListChecks className="h-4 w-4" />
         </GatedButton>
 
         {/* Attachment button + popover — hosts file uploads and (WhatsApp only) message templates */}
@@ -433,6 +448,12 @@ export function MessageComposer({
       <ScheduleMessageDialog
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
+        conversationId={conversationId}
+      />
+
+      <ScheduledMessagesPanel
+        open={scheduledListOpen}
+        onOpenChange={setScheduledListOpen}
         conversationId={conversationId}
       />
     </div>

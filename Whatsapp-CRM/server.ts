@@ -2,6 +2,10 @@ import { createServer } from "http";
 import { parse } from "url";
 import next from "next";
 import { Server as SocketIOServer } from "socket.io";
+// Relative import (not the "@/..." alias) -- server.ts runs directly via
+// tsx from the project root, outside the alias resolution the rest of the
+// app relies on.
+import { sweepScheduledMessages } from "./src/lib/scheduled-messages/sweep";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -54,6 +58,17 @@ app.prepare().then(() => {
   httpServer.listen(port, () => {
     console.log(`> Ready on http://${hostname}:${port}`);
   });
+
+  // Scheduled/recurring conversation messages -- sends run from right here,
+  // in this always-on process (PM2 keeps it alive), instead of depending on
+  // an external cron job being set up. Runs every minute for as long as the
+  // server is up; a brief failure (e.g. a DB blip) just gets retried on the
+  // next tick.
+  setInterval(() => {
+    sweepScheduledMessages().catch((err) => {
+      console.error("[scheduled-messages] sweep interval failed:", err);
+    });
+  }, 60_000);
 });
 
 /** Emit a real-time event to all sockets in an account's room. */

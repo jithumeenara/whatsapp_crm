@@ -233,6 +233,40 @@ export interface MessageReaction {
   created_at: string;
 }
 
+export type ScheduledMessageStatus = 'active' | 'paused' | 'completed' | 'cancelled' | 'failed' | 'expired';
+export type ScheduledMessageScheduleType = 'once' | 'recurring';
+export type ScheduledMessageIntervalUnit = 'minutes' | 'hours' | 'days';
+
+export interface ScheduledMessageButton {
+  id: string;
+  title: string;
+}
+
+export interface ScheduledMessage {
+  id: string;
+  account_id: string;
+  conversation_id: string;
+  contact_id: string;
+  created_by: string;
+  content_text?: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
+  buttons?: ScheduledMessageButton[] | null;
+  schedule_type: ScheduledMessageScheduleType;
+  interval_value?: number | null;
+  interval_unit?: ScheduledMessageIntervalUnit | null;
+  stop_on_reply: boolean;
+  max_sends: number;
+  sends_count: number;
+  status: ScheduledMessageStatus;
+  next_send_at: string;
+  last_sent_at?: string | null;
+  error_message?: string | null;
+  error_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WhatsAppConfig {
   id: string;
   user_id: string;
