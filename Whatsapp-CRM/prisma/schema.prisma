@@ -52,6 +52,7 @@ model User {
   tasks_assigned               Task[]                       @relation("TaskAssignee")
   conversations_assigned       Conversation[]               @relation("ConversationAgent")
   push_subscriptions           PushSubscription[]
+  scheduled_messages           ScheduledMessage[]
 
   @@map("users")
 }
@@ -114,6 +115,7 @@ model Account {
   api_keys                     ApiKey[]
   webhooks                     Webhook[]
   integrations                 Integration[]
+  scheduled_messages           ScheduledMessage[]
 
   @@unique([owner_user_id])
   @@map("accounts")
@@ -200,6 +202,7 @@ model Contact {
   follow_ups                   FollowUp[]
   lead_activities              LeadActivity[]
   tasks                        Task[]
+  scheduled_messages           ScheduledMessage[]
 
   @@unique([account_id, phone_normalized], name: "contacts_account_phone_normalized")
   @@unique([account_id, instagram_id], name: "contacts_account_instagram_id")
@@ -306,6 +309,7 @@ model Conversation {
   message_reactions MessageReaction[]
   deals            Deal[]
   flow_runs        FlowRun[]
+  scheduled_messages ScheduledMessage[]
 
   // Channel that originated this conversation
   channel         String   @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
@@ -343,6 +347,47 @@ model Message {
   prompt_for_runs FlowRun[]    @relation("LastPromptMessage")
 
   @@map("messages")
+}
+
+// A message (text/media/buttons) queued to send to one conversation at a
+// future time, either once or on a repeating interval. Distinct from
+// Broadcast (which fans one message out to many contacts once) and
+// Automation (event-triggered) -- this is a time/interval-triggered send
+// scoped to a single ongoing conversation, e.g. "remind this customer every
+// 2 days until they reply, up to 5 times."
+model ScheduledMessage {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  conversation_id String    @db.Uuid
+  contact_id      String    @db.Uuid
+  created_by      String    @db.Uuid
+
+  content_text String? // body text, or button-message body when buttons is set
+  media_url    String?
+  media_type   String? // 'image' | 'video' | 'document' | 'audio'
+  buttons      Json?   // InteractiveButton[] ({id, title}), 1-3 entries -- mirrors the chatbot Send Buttons node
+
+  schedule_type  String @default("once") // 'once' | 'recurring'
+  interval_value Int? // recurring only
+  interval_unit  String? // 'minutes' | 'hours' | 'days'
+  stop_on_reply  Boolean @default(true) // recurring only -- stop once the customer sends a message after last_sent_at
+  max_sends      Int     @default(1)
+  sends_count    Int     @default(0)
+
+  status       String    @default("active") // 'active' | 'paused' | 'completed' | 'cancelled'
+  next_send_at DateTime  @db.Timestamptz(6)
+  last_sent_at DateTime? @db.Timestamptz(6)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account      Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [created_by], references: [id], onDelete: Cascade)
+
+  @@index([status, next_send_at])
+  @@map("scheduled_messages")
 }
 
 model MessageReaction {

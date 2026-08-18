@@ -25,6 +25,7 @@ const PUBLIC_PREFIXES = [
   '/api/chatbot/cron',
   '/api/flows/cron',
   '/api/automations/cron',
+  '/api/scheduled-messages/cron',
   '/_next/',
   '/favicon',
   '/icon',   // Next.js App Router favicon generator
