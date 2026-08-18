@@ -15,8 +15,9 @@ import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
 import { FileManagerPicker } from "@/components/inbox/file-manager-picker"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
+import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
-import type { MessageTemplate } from "@/types"
+import type { MessageTemplate, Contact } from "@/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -123,8 +124,9 @@ export default function LeadDetailPage() {
   const [recording, setRecording] = useState<"connected" | "not_connected" | null>(null)
 
   const [copied, setCopied] = useState<string | null>(null)
-  const [editingTitle, setEditingTitle] = useState(false)
-  const [titleDraft, setTitleDraft] = useState("")
+  const [contactEditOpen, setContactEditOpen] = useState(false)
+  const [contactEditData, setContactEditData] = useState<Contact | null>(null)
+  const [contactEditLoading, setContactEditLoading] = useState(false)
 
   // Embedded WhatsApp chat
   const [messages, setMessages] = useState<Message[]>([])
@@ -320,10 +322,20 @@ export default function LeadDetailPage() {
     setTimeout(() => setCopied(null), 2000)
   }
 
-  async function saveTitle() {
-    if (!titleDraft.trim()) { setEditingTitle(false); return }
-    await patchLead({ title: titleDraft.trim() })
-    setEditingTitle(false)
+  async function openContactEdit() {
+    if (!contactId) return
+    setContactEditLoading(true)
+    try {
+      const res = await fetch(`/api/contacts/${contactId}`)
+      if (!res.ok) { toast.error("Failed to load contact"); return }
+      const body = await res.json()
+      setContactEditData(body.contact ?? null)
+      setContactEditOpen(true)
+    } catch {
+      toast.error("Failed to load contact")
+    } finally {
+      setContactEditLoading(false)
+    }
   }
 
   async function sendMessage() {
@@ -507,13 +519,7 @@ export default function LeadDetailPage() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                {editingTitle ? (
-                  <input autoFocus value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)}
-                    onBlur={saveTitle} onKeyDown={(e) => e.key === "Enter" && saveTitle()}
-                    className="h-7 rounded-lg border border-indigo-300 px-2 text-[15px] font-bold text-slate-800 outline-none" />
-                ) : (
-                  <h1 className="text-[16px] font-bold text-slate-800 truncate">{displayName}</h1>
-                )}
+                <h1 className="text-[16px] font-bold text-slate-800 truncate">{displayName}</h1>
                 {lead.score && (
                   <span className={cn("shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize flex items-center gap-1",
                     lead.score === "hot" ? "bg-rose-100 text-rose-700" : lead.score === "warm" ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700")}>
@@ -540,9 +546,9 @@ export default function LeadDetailPage() {
                   </button>
                 </>
               )}
-              <button onClick={() => { setEditingTitle(true); setTitleDraft(lead.title) }}
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100">
-                <Pencil className="h-3.5 w-3.5" />
+              <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact"
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50">
+                {contactEditLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
               </button>
               {altPhone && (
                 <div className="w-full flex items-center gap-2 pt-1">
@@ -851,6 +857,13 @@ export default function LeadDetailPage() {
         open={templatePickerOpen}
         onOpenChange={setTemplatePickerOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <ContactForm
+        open={contactEditOpen}
+        onOpenChange={setContactEditOpen}
+        contact={contactEditData}
+        onSaved={() => { setContactEditOpen(false); loadLead() }}
       />
     </div>
   )
