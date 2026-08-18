@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db'
-import { engineSendText, engineSendMedia, engineSendInteractiveButtons } from '@/lib/flows/meta-send'
+import { engineSendText, engineSendMedia, engineSendInteractiveButtons, engineSendTemplate } from '@/lib/flows/meta-send'
 import type { MediaKind } from '@/lib/whatsapp/meta-api'
 
 const INTERVAL_MS: Record<string, number> = {
@@ -82,37 +82,57 @@ export async function sweepScheduledMessages(): Promise<SweepResult> {
         }
       }
 
-      const buttons = Array.isArray(sm.buttons) ? (sm.buttons as { id: string; title: string }[]) : null
-
-      if (buttons && buttons.length > 0) {
-        await engineSendInteractiveButtons({
+      if (sm.template_name) {
+        // Standard path: approved template, the only kind guaranteed to
+        // send outside the 24h customer-service window.
+        const bodyParams = Array.isArray(sm.template_body_params)
+          ? (sm.template_body_params as string[]).join(',')
+          : undefined
+        await engineSendTemplate({
           accountId: sm.account_id,
           userId: sm.created_by,
           conversationId: sm.conversation_id,
           contactId: sm.contact_id,
-          bodyText: sm.content_text ?? '',
-          buttons,
-          headerMediaUrl: sm.media_url ?? undefined,
-          headerMediaType: sm.media_url ? (sm.media_type as 'image' | 'video' | 'document' | undefined) : undefined,
-        })
-      } else if (sm.media_url) {
-        await engineSendMedia({
-          accountId: sm.account_id,
-          userId: sm.created_by,
-          conversationId: sm.conversation_id,
-          contactId: sm.contact_id,
-          kind: (sm.media_type as MediaKind | null) ?? 'image',
-          link: sm.media_url,
-          caption: sm.content_text ?? undefined,
+          templateName: sm.template_name,
+          languageCode: sm.template_language ?? 'en_US',
+          bodyParams,
+          headerText: sm.template_header_text ?? undefined,
+          buttonParams: (sm.template_button_params as Record<number, string> | null) ?? undefined,
         })
       } else {
-        await engineSendText({
-          accountId: sm.account_id,
-          userId: sm.created_by,
-          conversationId: sm.conversation_id,
-          contactId: sm.contact_id,
-          text: sm.content_text ?? '',
-        })
+        // Legacy path -- only reachable for rows created before templates
+        // became mandatory. New scheduled messages always have template_name set.
+        const buttons = Array.isArray(sm.buttons) ? (sm.buttons as { id: string; title: string }[]) : null
+        if (buttons && buttons.length > 0) {
+          await engineSendInteractiveButtons({
+            accountId: sm.account_id,
+            userId: sm.created_by,
+            conversationId: sm.conversation_id,
+            contactId: sm.contact_id,
+            bodyText: sm.content_text ?? '',
+            buttons,
+            headerMediaUrl: sm.media_url ?? undefined,
+            headerMediaType: sm.media_url ? (sm.media_type as 'image' | 'video' | 'document' | undefined) : undefined,
+          })
+        } else if (sm.media_url) {
+          await engineSendMedia({
+            accountId: sm.account_id,
+            userId: sm.created_by,
+            conversationId: sm.conversation_id,
+            contactId: sm.contact_id,
+            kind: (sm.media_type as MediaKind | null) ?? 'image',
+            link: sm.media_url,
+            caption: sm.content_text ?? undefined,
+          })
+        } else {
+          await engineSendText({
+            accountId: sm.account_id,
+            userId: sm.created_by,
+            conversationId: sm.conversation_id,
+            contactId: sm.contact_id,
+            text: sm.content_text ?? '',
+          })
+        }
       }
 
       const newSendsCount = sm.sends_count + 1

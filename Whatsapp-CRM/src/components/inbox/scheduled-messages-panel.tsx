@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CalendarClock, Pencil, Trash2, Repeat, Clock, AlertCircle, Loader2, Image as ImageIcon } from 'lucide-react'
+import { CalendarClock, Pencil, Trash2, Repeat, Clock, AlertCircle, Loader2, Image as ImageIcon, LayoutTemplate } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ScheduledMessage, ScheduledMessageStatus } from '@/types'
 import { ScheduleMessageDialog } from './schedule-message-dialog'
@@ -103,9 +103,14 @@ export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: S
                               <Repeat className="h-3 w-3" /> Recurring
                             </span>
                           )}
+                          {sm.template_name && (
+                            <span className="flex items-center gap-1 text-[10px] font-semibold text-indigo-500">
+                              <LayoutTemplate className="h-3 w-3" /> {sm.template_name}
+                            </span>
+                          )}
                           {sm.media_url && <ImageIcon className="h-3 w-3 text-slate-400" />}
                         </div>
-                        <p className="mt-1.5 text-[13px] text-slate-800 line-clamp-2">{sm.content_text || '(image only)'}</p>
+                        <p className="mt-1.5 text-[13px] text-slate-800 line-clamp-2">{sm.content_text || sm.template_name || '(no preview)'}</p>
                         {sm.buttons && sm.buttons.length > 0 && (
                           <p className="mt-1 text-[11px] text-indigo-500">
                             Buttons: {sm.buttons.map((b) => b.title).join(' · ')}

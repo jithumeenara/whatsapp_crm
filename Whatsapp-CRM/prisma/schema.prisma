@@ -362,10 +362,24 @@ model ScheduledMessage {
   contact_id      String    @db.Uuid
   created_by      String    @db.Uuid
 
-  content_text String? // body text, or button-message body when buttons is set
+  // Scheduled messages must be Meta-approved templates -- WhatsApp rejects
+  // free-form text/media outside the 24h customer-service window, which a
+  // scheduled (especially recurring, multi-day) send routinely lands
+  // outside of. template_name/template_language identify the approved
+  // template; the rest fill its variables. content_text holds a rendered
+  // preview only, for the list UI -- it is never sent as-is.
+  content_text          String?
+  template_name         String?
+  template_language     String?
+  template_body_params  Json? // string[] -- body variable values, in order
+  template_header_text  String? // header variable value, if the template's header has one
+  template_button_params Json? // Record<number, string> -- per-URL-button variable suffixes
+  // Legacy free-form fields -- unused by new schedules (creation now
+  // requires a template) but kept so any pre-existing rows created before
+  // this change still send correctly.
   media_url    String?
   media_type   String? // 'image' | 'video' | 'document' | 'audio'
-  buttons      Json?   // InteractiveButton[] ({id, title}), 1-3 entries -- mirrors the chatbot Send Buttons node
+  buttons      Json?   // InteractiveButton[] ({id, title}), 1-3 entries
 
   schedule_type  String @default("once") // 'once' | 'recurring'
   interval_value Int? // recurring only

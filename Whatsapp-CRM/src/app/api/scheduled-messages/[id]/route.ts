@@ -3,18 +3,16 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
 
-interface ScheduledButtonInput { id: string; title: string }
-
 /**
  * PATCH /api/scheduled-messages/[id]
  *
  * Two shapes:
  *  - { status: 'active' | 'paused' | 'cancelled' } -- quick pause/resume/
  *    cancel, no other fields touched.
- *  - Full content edit (content_text/media_url/buttons/schedule_type/...,
- *    same shape as POST /api/scheduled-messages) -- replaces the message
- *    and schedule in place, resetting progress (sends_count, error state)
- *    and reactivating it. Editing a paused/failed/expired message this way
+ *  - Full edit (same template_name/template_language/... shape as
+ *    POST /api/scheduled-messages) -- replaces the template/schedule in
+ *    place, resetting progress (sends_count, error state) and
+ *    reactivating it. Editing a paused/failed/expired message this way
  *    brings it back to 'active'.
  */
 export async function PATCH(
@@ -45,17 +43,16 @@ export async function PATCH(
       return NextResponse.json({ item: updated })
     }
 
-    // Full content/schedule edit
-    const contentText: string | undefined = body.content_text?.trim() || undefined
-    const mediaUrl: string | undefined = body.media_url || undefined
-    const buttons: ScheduledButtonInput[] | undefined =
-      Array.isArray(body.buttons) && body.buttons.length > 0 ? body.buttons.slice(0, 3) : undefined
-
-    if (!contentText && !mediaUrl) {
-      return NextResponse.json({ error: "Message needs text or media" }, { status: 400 })
+    // Full edit
+    if (!body.template_name || !body.template_language) {
+      return NextResponse.json({ error: "A Meta-approved template is required" }, { status: 400 })
     }
-    if (buttons && !contentText) {
-      return NextResponse.json({ error: "Button messages need body text" }, { status: 400 })
+    const template = await prisma.messageTemplate.findFirst({
+      where: { account_id: ctx.accountId, name: body.template_name, language: body.template_language },
+      select: { id: true },
+    })
+    if (!template) {
+      return NextResponse.json({ error: "Template not found for this account" }, { status: 404 })
     }
 
     const scheduleType = body.schedule_type === "recurring" ? "recurring" : "once"
@@ -79,14 +76,24 @@ export async function PATCH(
     }
 
     const maxSends = scheduleType === "once" ? 1 : Math.max(1, Number(body.max_sends) || 1)
+    const bodyParams: string[] | undefined =
+      Array.isArray(body.template_body_params) && body.template_body_params.length > 0
+        ? body.template_body_params
+        : undefined
+    const buttonParams: Record<number, string> | undefined =
+      body.template_button_params && typeof body.template_button_params === "object"
+        ? body.template_button_params
+        : undefined
 
     const updated = await prisma.scheduledMessage.update({
       where: { id },
       data: {
-        content_text: contentText ?? null,
-        media_url: mediaUrl ?? null,
-        media_type: body.media_type ?? null,
-        buttons: buttons ? (buttons as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        content_text: body.content_text?.trim() || null,
+        template_name: body.template_name,
+        template_language: body.template_language,
+        template_body_params: bodyParams ? (bodyParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        template_header_text: body.template_header_text?.trim() || null,
+        template_button_params: buttonParams ? (buttonParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
         schedule_type: scheduleType,
         interval_value: intervalValue ?? null,
         interval_unit: intervalUnit ?? null,

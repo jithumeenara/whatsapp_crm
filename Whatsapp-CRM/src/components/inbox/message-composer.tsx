@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, Smile, CalendarClock, ListChecks } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, CalendarClock, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -11,11 +11,7 @@ import { toast } from "sonner";
 import { FileManagerPicker } from "./file-manager-picker";
 import { ScheduleMessageDialog } from "./schedule-message-dialog";
 import { ScheduledMessagesPanel } from "./scheduled-messages-panel";
-
-const QUICK_EMOJI = [
-  "😀", "😂", "😍", "🙏", "👍", "👏", "🎉", "❤️", "🔥", "✅",
-  "😊", "😢", "😮", "🤔", "👋", "💯", "⭐", "📞", "📅", "⏰",
-];
+import { EmojiPickerPopover } from "./emoji-picker-popover";
 
 interface ReplyDraft {
   id: string;
@@ -72,7 +68,6 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
-  const [emojiOpen, setEmojiOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduledListOpen, setScheduledListOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -94,7 +89,6 @@ export function MessageComposer({
 
   const insertEmoji = useCallback((emoji: string) => {
     setText((prev) => prev + emoji);
-    setEmojiOpen(false);
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
       adjustHeight();
@@ -262,33 +256,8 @@ export function MessageComposer({
       )}
 
       <div className="flex items-end gap-1.5 sm:gap-2">
-        {/* Emoji picker */}
-        <div className="relative shrink-0">
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title="Emoji"
-            className="h-9 w-9 p-0 text-slate-500 hover:text-slate-800"
-            onClick={() => setEmojiOpen((o) => !o)}
-          >
-            <Smile className="h-4 w-4" />
-          </GatedButton>
-          {emojiOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setEmojiOpen(false)} />
-              <div className="absolute bottom-11 left-0 z-20 grid grid-cols-5 gap-1 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-                {QUICK_EMOJI.map((e) => (
-                  <button key={e} type="button" onClick={() => insertEmoji(e)}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-[17px] hover:bg-slate-100">
-                    {e}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        {/* Emoji picker — full set, categories + search (emoji-picker-react) */}
+        <EmojiPickerPopover onSelect={insertEmoji} disabled={readOnly} />
 
         {/* Schedule a message — one-time or recurring, optionally with an
             image + buttons, sent later via the scheduled-messages sweep. */}

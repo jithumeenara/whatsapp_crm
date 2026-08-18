@@ -55,6 +55,10 @@ interface SendTemplateEngineArgs {
   templateName: string
   languageCode: string
   bodyParams?: string
+  /** Header variable value, only used if the template's header type is text with a variable. */
+  headerText?: string
+  /** Per-URL-button variable suffixes, keyed by button index. */
+  buttonParams?: Record<number, string>
 }
 
 interface SendInteractiveButtonsEngineArgs {
@@ -548,6 +552,8 @@ export async function engineSendTemplate(
             },
             messageParams: {
               body: params.length > 0 ? params : undefined,
+              headerText: args.headerText,
+              buttonParams: args.buttonParams,
             },
           }
         : { params }),

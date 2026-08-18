@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
-  MapPin, MessageSquare, ExternalLink, RefreshCw, Smile, Paperclip, Send, Loader2,
+  MapPin, MessageSquare, ExternalLink, RefreshCw, Paperclip, Send, Loader2,
   FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -14,6 +14,7 @@ import { ScheduleFollowupDialog } from "@/components/leads/schedule-followup-dia
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
 import { FileManagerPicker } from "@/components/inbox/file-manager-picker"
+import { EmojiPickerPopover } from "@/components/inbox/emoji-picker-popover"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
@@ -76,11 +77,6 @@ const ROLE_LABEL: Record<string, string> = {
   owner: "Owner", supervisor: "Supervisor", admin: "Admin", agent: "Agent", viewer: "Viewer",
 }
 
-const QUICK_EMOJI = [
-  "😀", "😂", "😍", "🙏", "👍", "👏", "🎉", "❤️", "🔥", "✅",
-  "😊", "😢", "😮", "🤔", "👋", "💯", "⭐", "📞", "📅", "⏰",
-]
-
 // Mirrors the main Inbox's MessageComposer attach menu — same categories,
 // same "From Device" / "From File Manager" grouping.
 const ATTACH_OPTIONS = [
@@ -134,7 +130,6 @@ export default function LeadDetailPage() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [composerText, setComposerText] = useState("")
   const [sending, setSending] = useState(false)
-  const [emojiOpen, setEmojiOpen] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -358,7 +353,6 @@ export default function LeadDetailPage() {
 
   function insertEmoji(emoji: string) {
     setComposerText((prev) => prev + emoji)
-    setEmojiOpen(false)
   }
 
   function renderTemplateBody(body: string, params: string[]): string {
@@ -764,25 +758,7 @@ export default function LeadDetailPage() {
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected}
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="relative shrink-0">
-                <button type="button" onClick={() => setEmojiOpen((v) => !v)} disabled={!conversationId}
-                  className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title="Emoji">
-                  <Smile className="h-4 w-4" />
-                </button>
-                {emojiOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setEmojiOpen(false)} />
-                    <div className="absolute bottom-9 left-0 z-20 grid grid-cols-5 gap-1 w-56 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-                      {QUICK_EMOJI.map((e) => (
-                        <button key={e} type="button" onClick={() => insertEmoji(e)}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-[17px] hover:bg-slate-100">
-                          {e}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+              <EmojiPickerPopover onSelect={insertEmoji} disabled={!conversationId} />
               <div className="relative shrink-0">
                 <button type="button" onClick={() => setAttachOpen((v) => !v)} disabled={!conversationId || uploading}
                   className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title="Attach">

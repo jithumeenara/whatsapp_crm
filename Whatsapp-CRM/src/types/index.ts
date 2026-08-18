@@ -248,7 +248,14 @@ export interface ScheduledMessage {
   conversation_id: string;
   contact_id: string;
   created_by: string;
+  /** Rendered preview of the template body, for the list UI -- not sent as-is. */
   content_text?: string | null;
+  template_name?: string | null;
+  template_language?: string | null;
+  template_body_params?: string[] | null;
+  template_header_text?: string | null;
+  template_button_params?: Record<number, string> | null;
+  /** Legacy free-form fields -- only ever populated on rows created before templates became mandatory. */
   media_url?: string | null;
   media_type?: string | null;
   buttons?: ScheduledMessageButton[] | null;
