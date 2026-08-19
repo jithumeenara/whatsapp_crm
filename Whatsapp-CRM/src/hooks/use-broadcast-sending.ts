@@ -21,7 +21,7 @@ export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
   tagIds?: string[];
   customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string; tagNames?: string[] }[];
+  csvContacts?: { phone: string; name?: string; tagNames?: string[]; company?: string; customFields?: Record<string, string> }[];
   contactIds?: string[];
   excludeTagIds?: string[];
 }

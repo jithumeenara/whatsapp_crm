@@ -251,15 +251,27 @@ function digitsOnly(phone: string): string {
   return phone.replace(/\D/g, "");
 }
 
+interface CsvContactRow {
+  phone: string;
+  name?: string;
+  tagNames?: string[];
+  /** "business name"/"company" column — matches Contact.company directly. */
+  company?: string;
+  /** Every other column, keyed by its header text — becomes a Custom Field
+   *  value per contact (see the block below), so it shows up as a "Custom
+   *  Field" option in the broadcast's variable-mapping step. */
+  customFields?: Record<string, string>;
+}
+
 async function upsertCsvContacts(
   ctx: AccountContext,
-  csvRows: { phone: string; name?: string; tagNames?: string[] }[],
+  csvRows: CsvContactRow[],
 ): Promise<ContactRow[]> {
   if (csvRows.length === 0) return [];
   const db = ctx.db;
 
   // De-duplicate CSV rows by digits-only phone so "+91..." and "91..." are the same.
-  const uniqueByDigits = new Map<string, { phone: string; name?: string; tagNames?: string[] }>();
+  const uniqueByDigits = new Map<string, CsvContactRow>();
   for (const row of csvRows) {
     if (!row.phone) continue;
     const digits = digitsOnly(row.phone);
@@ -296,6 +308,7 @@ async function upsertCsvContacts(
       account_id: ctx.accountId,
       phone: row.phone,
       name: row.name ?? null,
+      company: row.company ?? null,
     }));
 
   const INSERT_CHUNK = 200;
@@ -330,6 +343,48 @@ async function upsertCsvContacts(
     }
     if (contactTagRows.length > 0) {
       await db.contactTag.createMany({ data: contactTagRows, skipDuplicates: true });
+    }
+  }
+
+  // Any column beyond phone/name/business/tag becomes a Custom Field value
+  // per contact — auto-creating the Custom Field (case-insensitively matched
+  // against existing ones) the first time its header is seen. This is what
+  // lets a "Doctor" or "Appointment Date" Excel column show up as a "Custom
+  // Field" option in the broadcast's variable-mapping step afterward.
+  const allFieldNames = new Set<string>();
+  for (const row of uniqueByDigits.values()) {
+    for (const name of Object.keys(row.customFields ?? {})) allFieldNames.add(name);
+  }
+  if (allFieldNames.size > 0) {
+    const existingFields = await db.customField.findMany({ where: { account_id: ctx.accountId } });
+    const fieldIdByName = new Map(existingFields.map((f) => [f.field_name.toLowerCase(), f.id]));
+
+    for (const name of allFieldNames) {
+      if (fieldIdByName.has(name.toLowerCase())) continue;
+      const created = await db.customField.create({
+        data: { account_id: ctx.accountId, user_id: ctx.userId, field_name: name, field_type: "text" },
+      });
+      fieldIdByName.set(name.toLowerCase(), created.id);
+    }
+
+    const customValueRows: { contact_id: string; custom_field_id: string; value: string }[] = [];
+    for (const [digits, row] of uniqueByDigits) {
+      const contact = byDigits.get(digits);
+      if (!contact || !row.customFields) continue;
+      for (const [name, value] of Object.entries(row.customFields)) {
+        const fieldId = fieldIdByName.get(name.toLowerCase());
+        if (fieldId && value) customValueRows.push({ contact_id: contact.id, custom_field_id: fieldId, value });
+      }
+    }
+    // One row per (contact, field) already — upsert individually so a
+    // re-import updates existing values instead of erroring on the
+    // @@unique([contact_id, custom_field_id]) constraint.
+    for (const row of customValueRows) {
+      await db.contactCustomValue.upsert({
+        where: { contact_id_custom_field_id: { contact_id: row.contact_id, custom_field_id: row.custom_field_id } },
+        create: row,
+        update: { value: row.value },
+      });
     }
   }
 

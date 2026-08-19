@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Tag, Contact } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,7 +16,7 @@ export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
   tagIds?: string[];
   customField?: { fieldId: string; operator: 'is' | 'is_not' | 'contains'; value: string };
-  csvContacts?: { phone: string; name?: string; tagNames?: string[] }[];
+  csvContacts?: ExcelContactRow[];
   contactIds?: string[];
   excludeTagIds?: string[];
 }
@@ -55,8 +55,23 @@ function WaBadge() {
   );
 }
 
+export interface ExcelContactRow {
+  phone: string;
+  name?: string;
+  tagNames?: string[];
+  /** "business"/"company" column — matches Contact.company directly. */
+  company?: string;
+  /**
+   * Any other column in the sheet, keyed by its header text. Flows into a
+   * Custom Field per contact (auto-created if the name doesn't exist yet)
+   * so it shows up as a "Custom Field" option in the broadcast's variable
+   * mapping step — e.g. a "Doctor" or "Appointment Date" column.
+   */
+  customFields?: Record<string, string>;
+}
+
 /* ── Excel parser ────────────────────────────────────────────────── */
-async function parseExcelFile(file: File): Promise<{ phone: string; name?: string; tagNames?: string[] }[]> {
+async function parseExcelFile(file: File): Promise<ExcelContactRow[]> {
   const { Workbook } = await import('exceljs')
   const buffer = await file.arrayBuffer()
   const wb = new Workbook()
@@ -64,7 +79,7 @@ async function parseExcelFile(file: File): Promise<{ phone: string; name?: strin
   const ws = wb.worksheets[0]
   if (!ws) return []
 
-  const results: { phone: string; name?: string; tagNames?: string[] }[] = []
+  const results: ExcelContactRow[] = []
   let headers: string[] = []
 
   ws.eachRow((row, rowIndex) => {
@@ -74,16 +89,36 @@ async function parseExcelFile(file: File): Promise<{ phone: string; name?: strin
       headers = values.map((v) => String(v ?? ''))
       return
     }
-    const phoneIdx = headers.findIndex((k) => /phone|mobile|number|whatsapp/i.test(k))
-    const nameIdx  = headers.findIndex((k) => /name/i.test(k))
-    const tagIdx   = headers.findIndex((k) => /^tags?$/i.test(k.trim()))
+    const phoneIdx   = headers.findIndex((k) => /phone|mobile|number|whatsapp/i.test(k))
+    const nameIdx     = headers.findIndex((k) => /name/i.test(k) && !/business/i.test(k))
+    const tagIdx       = headers.findIndex((k) => /^tags?$/i.test(k.trim()))
+    const companyIdx = headers.findIndex((k) => /business|company/i.test(k))
     const raw = phoneIdx >= 0 ? String(values[phoneIdx] ?? '').trim().replace(/\s+/g, '') : ''
     const phone = raw.startsWith('+') ? raw : raw ? `+${raw}` : ''
-    const name  = nameIdx  >= 0 ? String(values[nameIdx] ?? '').trim() : undefined
+    const name  = nameIdx  >= 0 ? String(values[nameIdx] ?? '').trim() || undefined : undefined
+    const company = companyIdx >= 0 ? String(values[companyIdx] ?? '').trim() || undefined : undefined
     const tagNames = tagIdx >= 0
       ? String(values[tagIdx] ?? '').split(/[,;]+/).map((t) => t.trim()).filter(Boolean)
       : undefined
-    if (phone.length >= 7) results.push({ phone, name, tagNames: tagNames?.length ? tagNames : undefined })
+
+    // Any column beyond the recognized ones (phone/name/tag/business) becomes
+    // a per-contact Custom Field value, keyed by its header text as-is.
+    const customFields: Record<string, string> = {}
+    headers.forEach((header, idx) => {
+      if (idx === phoneIdx || idx === nameIdx || idx === tagIdx || idx === companyIdx) return
+      const label = header.trim()
+      if (!label) return
+      const val = String(values[idx] ?? '').trim()
+      if (val) customFields[label] = val
+    })
+
+    if (phone.length >= 7) {
+      results.push({
+        phone, name, company,
+        tagNames: tagNames?.length ? tagNames : undefined,
+        customFields: Object.keys(customFields).length ? customFields : undefined,
+      })
+    }
   })
 
   return results
@@ -96,19 +131,21 @@ async function downloadDemoTemplate(tags: Tag[]) {
   ws.columns = [
     { header: 'phone', key: 'phone', width: 20 },
     { header: 'name', key: 'name', width: 24 },
+    { header: 'business name', key: 'company', width: 24 },
     { header: 'tag', key: 'tag', width: 20 },
   ]
   const sampleTag = tags[0]?.name ?? ''
-  ws.addRow({ phone: '+919876543210', name: 'Jane Doe', tag: sampleTag })
-  ws.addRow({ phone: '+15551234567', name: 'John Smith', tag: '' })
+  ws.addRow({ phone: '+919876543210', name: 'Jane Doe', company: 'Acme Pvt Ltd', tag: sampleTag })
+  ws.addRow({ phone: '+15551234567', name: 'John Smith', company: '', tag: '' })
   ws.getRow(1).font = { bold: true }
 
   // Turn the "tag" column into an in-cell dropdown listing the account's
   // existing tags, so users pick a valid name instead of guessing one.
   if (tags.length > 0) {
     const list = `"${tags.map((t) => t.name).join(',')}"`
+    // "tag" is now the 4th column (D) — business name (C) was inserted before it.
     for (let r = 2; r <= 500; r++) {
-      ws.getCell(`C${r}`).dataValidation = {
+      ws.getCell(`D${r}`).dataValidation = {
         type: 'list',
         allowBlank: true,
         formulae: [list],
@@ -162,7 +199,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
 
   /* Excel import */
-  const [excelContacts, setExcelContacts] = useState<{ phone: string; name?: string; tagNames?: string[] }[]>(
+  const [excelContacts, setExcelContacts] = useState<ExcelContactRow[]>(
     audience.type === 'csv' ? (audience.csvContacts ?? []) : []
   );
   const [excelFileName, setExcelFileName] = useState('');
@@ -376,6 +413,14 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
 
   const totalPages = Math.ceil(pageTotal / PAGE);
 
+  const extraColumnNames = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of excelContacts) {
+      for (const k of Object.keys(c.customFields ?? {})) set.add(k);
+    }
+    return [...set];
+  }, [excelContacts]);
+
   const validCount = validationStatus === 'done'
     ? excelContacts.filter((c) => { const s = validationMap.get(c.phone); return s === 'valid' || s === 'unknown'; }).length
     : 0;
@@ -525,14 +570,17 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 <div className="mt-4 rounded-lg bg-slate-50 p-4">
                   <p className="text-[12px] font-semibold text-slate-600 mb-2">Expected column names:</p>
                   <div className="flex flex-wrap gap-2">
-                    {['phone', 'mobile', 'number', 'name', 'tag'].map((col) => (
+                    {['phone', 'mobile', 'number', 'name', 'business name', 'tag'].map((col) => (
                       <span key={col} className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600">{col}</span>
                     ))}
                   </div>
                   <p className="mt-2 text-[11px] text-slate-400">
                     Column names are case-insensitive. Phone numbers without + will have it added automatically.
-                    The optional <span className="font-mono">tag</span> column assigns an existing CRM tag to each
-                    contact on import — use one of: {tags.length === 0 ? 'no tags yet' : tags.map((t) => t.name).join(', ')}.
+                    The optional <span className="font-mono">business name</span> column fills the contact&apos;s
+                    Company field. The optional <span className="font-mono">tag</span> column assigns an existing
+                    CRM tag to each contact on import — use one of: {tags.length === 0 ? 'no tags yet' : tags.map((t) => t.name).join(', ')}.
+                    {' '}Any other column (e.g. &quot;Doctor&quot;, &quot;Appointment Date&quot;) is saved as a Custom
+                    Field per contact, so you can map it as a template variable in the next step.
                     {' '}Not sure of the format? <button type="button" onClick={() => downloadDemoTemplate(tags)} className="text-indigo-600 hover:underline font-medium">Download the demo file</button>.
                   </p>
                 </div>
@@ -558,24 +606,38 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
                     {excelContacts.length} contacts
                   </span>
+                  {extraColumnNames.length > 0 && (
+                    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                      +{extraColumnNames.length} custom field{extraColumnNames.length !== 1 ? 's' : ''} detected
+                    </span>
+                  )}
                 </div>
                 <button type="button" onClick={clearExcel}
                   className="flex items-center gap-1 text-[12px] text-rose-500 hover:text-rose-700 font-medium">
                   <Trash2 className="h-3.5 w-3.5" /> Remove
                 </button>
               </div>
+              {extraColumnNames.length > 0 && (
+                <div className="px-4 py-2 border-b border-slate-100 bg-indigo-50/40">
+                  <p className="text-[11px] text-indigo-600">
+                    Detected columns: <span className="font-medium">{extraColumnNames.join(', ')}</span> — available as Custom Field variables in the next step.
+                  </p>
+                </div>
+              )}
               {/* Table header */}
-              <div className="grid grid-cols-3 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
+              <div className="grid grid-cols-4 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Phone</p>
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Name</p>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Business</p>
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Tag</p>
               </div>
               {/* Rows (max 8 preview) */}
               <div className="divide-y divide-slate-50 max-h-52 overflow-y-auto">
                 {excelContacts.slice(0, 50).map((c, i) => (
-                  <div key={i} className="grid grid-cols-3 gap-4 px-4 py-2.5">
+                  <div key={i} className="grid grid-cols-4 gap-4 px-4 py-2.5">
                     <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
                     <p className="text-[13px] text-slate-500 truncate">{c.name || <span className="italic text-slate-300">—</span>}</p>
+                    <p className="text-[13px] text-slate-500 truncate">{c.company || <span className="italic text-slate-300">—</span>}</p>
                     <p className="text-[13px] text-slate-500 truncate">
                       {c.tagNames?.length ? c.tagNames.join(', ') : <span className="italic text-slate-300">—</span>}
                     </p>
