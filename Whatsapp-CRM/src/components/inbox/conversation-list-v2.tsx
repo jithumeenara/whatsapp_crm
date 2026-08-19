@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo, useRef } from "react"
 import type { Conversation, ConversationStatus } from "@/types"
-import { Search, X, MessageSquare, ChevronDown, Mail, Radio } from "lucide-react"
+import { Search, X, MessageSquare, ChevronDown, Mail, Radio, CalendarClock } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+import { ScheduledContactsOverview } from "./scheduled-contacts-overview"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -134,6 +135,7 @@ function avatarGradient(id: string) {
 export function ConversationListV2({ activeConversationId, onSelect, conversations, onConversationsLoaded, resyncToken = 0 }: Props) {
   const [search, setSearch] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
+  const [scheduledOverviewOpen, setScheduledOverviewOpen] = useState(false)
   const [filter, setFilter] = useState<Filter>("all")
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all")
   const [channelOpen, setChannelOpen] = useState(false)
@@ -256,6 +258,11 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
               className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition-all",
                 searchOpen ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
               {searchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+            </button>
+            {/* Scheduled messages overview — every contact with one, account-wide */}
+            <button type="button" onClick={() => setScheduledOverviewOpen(true)} title="Scheduled messages"
+              className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all">
+              <CalendarClock className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -384,6 +391,8 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
           </div>
         )}
       </div>
+
+      <ScheduledContactsOverview open={scheduledOverviewOpen} onOpenChange={setScheduledOverviewOpen} />
     </div>
   )
 }

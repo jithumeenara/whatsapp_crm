@@ -1147,6 +1147,7 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+        conversationId={conversation?.id}
       />
     </div>
   );

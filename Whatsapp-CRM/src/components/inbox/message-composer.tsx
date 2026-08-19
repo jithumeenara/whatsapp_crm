@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, CalendarClock, ListChecks } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -9,9 +9,8 @@ import { cn } from "@/lib/utils";
 import { ReplyQuote } from "./reply-quote";
 import { toast } from "sonner";
 import { FileManagerPicker } from "./file-manager-picker";
-import { ScheduleMessageDialog } from "./schedule-message-dialog";
-import { ScheduledMessagesPanel } from "./scheduled-messages-panel";
 import { EmojiPickerPopover } from "./emoji-picker-popover";
+import { ScheduleMenuButton } from "./schedule-menu-button";
 
 interface ReplyDraft {
   id: string;
@@ -68,8 +67,6 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [filePickerOpen, setFilePickerOpen] = useState(false);
-  const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [scheduledListOpen, setScheduledListOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
@@ -259,32 +256,8 @@ export function MessageComposer({
         {/* Emoji picker — full set, categories + search (emoji-picker-react) */}
         <EmojiPickerPopover onSelect={insertEmoji} disabled={readOnly} />
 
-        {/* Schedule a message — one-time or recurring, optionally with an
-            image + buttons, sent later via the scheduled-messages sweep. */}
-        <GatedButton
-          variant="ghost"
-          size="sm"
-          canAct={!readOnly}
-          gateReason="send messages"
-          title="Schedule message"
-          className="h-9 w-9 p-0 shrink-0 text-slate-500 hover:text-slate-800"
-          onClick={() => setScheduleOpen(true)}
-        >
-          <CalendarClock className="h-4 w-4" />
-        </GatedButton>
-
-        {/* View / edit / cancel this conversation's scheduled messages */}
-        <GatedButton
-          variant="ghost"
-          size="sm"
-          canAct={!readOnly}
-          gateReason="send messages"
-          title="View scheduled messages"
-          className="h-9 w-9 p-0 shrink-0 text-slate-500 hover:text-slate-800"
-          onClick={() => setScheduledListOpen(true)}
-        >
-          <ListChecks className="h-4 w-4" />
-        </GatedButton>
+        {/* Scheduled messages — one icon, menu with New Schedule / View Schedule */}
+        <ScheduleMenuButton conversationId={conversationId} disabled={readOnly} />
 
         {/* Attachment button + popover — hosts file uploads and (WhatsApp only) message templates */}
         <div className="relative shrink-0">
@@ -412,18 +385,6 @@ export function MessageComposer({
             file.file_category === 'audio' ? 'audio' : 'document';
           onSendMedia(file.url, mediaType, file.original_name);
         }}
-      />
-
-      <ScheduleMessageDialog
-        open={scheduleOpen}
-        onOpenChange={setScheduleOpen}
-        conversationId={conversationId}
-      />
-
-      <ScheduledMessagesPanel
-        open={scheduledListOpen}
-        onOpenChange={setScheduledListOpen}
-        conversationId={conversationId}
       />
     </div>
   );

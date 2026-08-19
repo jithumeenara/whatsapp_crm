@@ -59,15 +59,18 @@ export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: S
     setDeletingId(id)
     try {
       const res = await fetch(`/api/scheduled-messages/${id}`, { method: 'DELETE' })
-      if (!res.ok) { toast.error('Failed to cancel'); return }
-      setItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: 'cancelled' } : it)))
-      toast.success('Scheduled message cancelled')
+      if (!res.ok) { toast.error('Failed to delete'); return }
+      setItems((prev) => prev.filter((it) => it.id !== id))
+      toast.success('Scheduled message deleted')
     } finally {
       setDeletingId(null)
     }
   }
 
-  const canEditOrDelete = (status: ScheduledMessageStatus) => status === 'active' || status === 'paused' || status === 'failed'
+  // Editing (reactivating) only makes sense for something not already
+  // finished. Deleting is always available, including finished/cancelled
+  // history, so the list doesn't just accumulate clutter forever.
+  const canEdit = (status: ScheduledMessageStatus) => status === 'active' || status === 'paused' || status === 'failed'
 
   return (
     <>
@@ -131,18 +134,18 @@ export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: S
                         )}
                       </div>
 
-                      {canEditOrDelete(sm.status) && (
-                        <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
+                        {canEdit(sm.status) && (
                           <button type="button" onClick={() => setEditItem(sm)} title="Edit"
                             className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-indigo-600">
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
-                          <button type="button" onClick={() => handleDelete(sm.id)} disabled={deletingId === sm.id} title="Delete"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-rose-600 disabled:opacity-50">
-                            {deletingId === sm.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                          </button>
-                        </div>
-                      )}
+                        )}
+                        <button type="button" onClick={() => handleDelete(sm.id)} disabled={deletingId === sm.id} title="Delete"
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-rose-600 disabled:opacity-50">
+                          {deletingId === sm.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}

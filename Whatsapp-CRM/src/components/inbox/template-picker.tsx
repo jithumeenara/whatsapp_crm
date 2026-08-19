@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { MessageTemplate } from "@/types";
+import type { MessageTemplate, Contact } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,21 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
+  /** When set, fetches the conversation's contact and offers "insert from
+   *  contact" quick-fill chips (Name/Phone/Email/Company) under each
+   *  variable input, instead of typing every value by hand. */
+  conversationId?: string;
+}
+
+/** Non-empty contact fields worth offering as one-click fill-ins. */
+function contactFillOptions(contact: Contact | null): { label: string; value: string }[] {
+  if (!contact) return [];
+  const options: { label: string; value: string }[] = [];
+  if (contact.name) options.push({ label: "Name", value: contact.name });
+  if (contact.phone && !contact.phone.startsWith("email:")) options.push({ label: "Phone", value: contact.phone });
+  if (contact.email) options.push({ label: "Email", value: contact.email });
+  if (contact.company) options.push({ label: "Company", value: contact.company });
+  return options;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -76,6 +91,7 @@ export function TemplatePicker({
   open,
   onOpenChange,
   onSelect,
+  conversationId,
 }: TemplatePickerProps) {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,6 +99,7 @@ export function TemplatePicker({
   const [params, setParams] = useState<string[]>([]);
   const [headerText, setHeaderText] = useState<string>("");
   const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
+  const [contact, setContact] = useState<Contact | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -107,10 +124,19 @@ export function TemplatePicker({
       }
     })();
 
+    if (conversationId) {
+      fetch(`/api/conversations/${conversationId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled) setContact(d?.contact ?? null); })
+        .catch(() => { if (!cancelled) setContact(null); });
+    } else {
+      setContact(null);
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, conversationId]);
 
   function resetSelection() {
     setSelected(null);
@@ -158,6 +184,7 @@ export function TemplatePicker({
     () => (selected ? collectVariableSlots(selected) : null),
     [selected],
   );
+  const fillOptions = useMemo(() => contactFillOptions(contact), [contact]);
   const canConfirm =
     !!selected &&
     !!slots &&
@@ -253,6 +280,16 @@ export function TemplatePicker({
                   placeholder="Value for the header variable"
                   className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
                 />
+                {fillOptions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {fillOptions.map((opt) => (
+                      <button key={opt.label} type="button" onClick={() => setHeaderText(opt.value)}
+                        className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20">
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {slots?.bodyVars.map((v, i) => (
@@ -268,6 +305,17 @@ export function TemplatePicker({
                   placeholder={`Value for {{${v}}}`}
                   className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
                 />
+                {fillOptions.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {fillOptions.map((opt) => (
+                      <button key={opt.label} type="button"
+                        onClick={() => { const next = [...params]; next[i] = opt.value; setParams(next); }}
+                        className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20">
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
             {slots?.urlButtonSlots.map((slot) => (

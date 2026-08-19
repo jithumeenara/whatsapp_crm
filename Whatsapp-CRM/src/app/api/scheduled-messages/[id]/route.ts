@@ -116,8 +116,8 @@ export async function PATCH(
 
 /**
  * DELETE /api/scheduled-messages/[id]
- * Soft-cancels (status flip, not a row delete) so it stays visible in the
- * conversation's schedule history.
+ * Permanently removes the row -- unlike the earlier soft-cancel, this
+ * actually disappears from the list, per explicit request.
  */
 export async function DELETE(
   _req: NextRequest,
@@ -132,7 +132,7 @@ export async function DELETE(
     })
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
-    await prisma.scheduledMessage.update({ where: { id }, data: { status: "cancelled" } })
+    await prisma.scheduledMessage.delete({ where: { id } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

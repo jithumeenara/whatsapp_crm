@@ -15,6 +15,7 @@ import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
 import { FileManagerPicker } from "@/components/inbox/file-manager-picker"
 import { EmojiPickerPopover } from "@/components/inbox/emoji-picker-popover"
+import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
@@ -759,6 +760,7 @@ export default function LeadDetailPage() {
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
               <EmojiPickerPopover onSelect={insertEmoji} disabled={!conversationId} />
+              {conversationId && <ScheduleMenuButton conversationId={conversationId} />}
               <div className="relative shrink-0">
                 <button type="button" onClick={() => setAttachOpen((v) => !v)} disabled={!conversationId || uploading}
                   className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title="Attach">
@@ -833,6 +835,7 @@ export default function LeadDetailPage() {
         open={templatePickerOpen}
         onOpenChange={setTemplatePickerOpen}
         onSelect={handleSendTemplate}
+        conversationId={conversationId ?? undefined}
       />
 
       <ContactForm
