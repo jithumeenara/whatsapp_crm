@@ -459,6 +459,18 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
         <p className="mt-0.5 text-[13px] text-slate-500">Only WhatsApp contacts can receive broadcasts.</p>
       </div>
 
+      {/* Top nav — mirrors the bottom bar so a long contact list or Excel
+          import preview doesn't force a scroll just to move on. */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <Button variant="outline" onClick={onBack} className="border-slate-200 text-slate-700 h-9">
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Button>
+        <Button onClick={onNext} disabled={!isValid}
+          className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50">
+          Continue <ArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+
       {/* ── Mode tabs ── */}
       <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-4">
         {([

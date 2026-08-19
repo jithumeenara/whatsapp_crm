@@ -79,6 +79,18 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         <p className="mt-0.5 text-[13px] text-slate-500">Select an approved WhatsApp template for your broadcast.</p>
       </div>
 
+      {/* Top nav — mirrors the bottom bar so you don't have to scroll past
+          the template grid / media picker just to move to the next step. */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <Button variant="outline" onClick={onBack} className="border-slate-200 text-slate-700 h-9">
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Button>
+        <Button onClick={onNext} disabled={!selectedTemplate}
+          className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50">
+          Continue <ArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+
       {/* Search */}
       {!loading && !error && templates.length > 0 && (
         <div className="relative">

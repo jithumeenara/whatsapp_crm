@@ -102,7 +102,7 @@ export default function NewBroadcastV2() {
         <div style={{ opacity: isProcessing ? 0.6 : 1, pointerEvents: isProcessing ? "none" : "auto" }} className="transition-opacity">
           {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} />}
           {step === 1 && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
-          {step === 2 && template && <Step3Personalize template={template} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
+          {step === 2 && template && <Step3Personalize template={template} headerMediaUrl={headerMediaUrl} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
           {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template} audience={audience} onSend={handleSend} onSaveDraft={handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}
         </div>
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Contact, CustomField } from '@/types';
+import { Contact, CustomField, MessageTemplate } from '@/types';
 import type { VariableMapping } from '@/lib/broadcasts/resolve-variables';
 import type { DataTable, DataField, DataRecord as DataStoreRecord } from '@/lib/data-store/types';
 import { Button } from '@/components/ui/button';
@@ -13,12 +13,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Eye, Loader2, Database } from 'lucide-react';
+import {
+  ArrowLeft, ArrowRight, Eye, Loader2, Database,
+  Reply, ExternalLink, Phone, Copy, Zap, FileText, Play, Image as ImageIcon,
+} from 'lucide-react';
 
 type VariableType = VariableMapping['type'];
 
 interface Step3Props {
-  template: { body_text: string };
+  template: MessageTemplate;
+  /** Campaign-level override for a media-header template's image/video/document,
+   *  chosen in Step1 — falls back to the template's own approved sample media. */
+  headerMediaUrl?: string;
   variables: Record<string, VariableMapping>;
   onUpdate: (variables: Record<string, VariableMapping>) => void;
   onNext: () => void;
@@ -56,6 +62,7 @@ function digitsOnly(s: string): string {
 
 export function Step3Personalize({
   template,
+  headerMediaUrl,
   variables,
   onUpdate,
   onNext,
@@ -272,6 +279,27 @@ export function Step3Personalize({
         </p>
       </div>
 
+      {/* Top nav — mirrors the bottom bar so long variable lists don't
+          force a scroll just to move to the next step. */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <Button
+          variant="outline"
+          onClick={onBack}
+          className="border-slate-200 text-slate-800/80"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+        <Button
+          onClick={onNext}
+          disabled={unmappedKeys.length > 0}
+          className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+        >
+          Next
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+
       {placeholders.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white/50 p-6 text-center">
           <p className="text-sm text-slate-500">
@@ -463,9 +491,11 @@ export function Step3Personalize({
         </div>
       )}
 
-      {/* Live Preview — rendered as a WhatsApp-style bubble so the user
-          sees approximately what the recipient will see. */}
-      <div className="rounded-xl border border-slate-200 bg-white/50 p-4">
+      {/* Live Preview — an authentic WhatsApp-style bubble: real chat
+          wallpaper, bubble tail, media header, footer, timestamp + read
+          receipt, and template buttons rendered as their own card
+          underneath — the same layout WhatsApp itself renders. */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="mb-3 flex items-center gap-2">
           <Eye className="h-4 w-4 text-primary" />
           <p className="text-sm font-medium text-slate-800">Live Preview</p>
@@ -474,11 +504,102 @@ export function Step3Personalize({
             <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
           )}
         </div>
-        <div className="rounded-lg bg-[#0e1a12] p-3">
-          <div className="ml-auto max-w-[85%] rounded-lg bg-primary/30 px-3 py-2 shadow-sm">
-            <p className="whitespace-pre-wrap text-sm text-primary">
-              {previewText}
-            </p>
+
+        <div
+          className="rounded-2xl p-4 sm:p-6"
+          style={{
+            backgroundColor: '#e5ddd5',
+            backgroundImage:
+              'radial-gradient(circle at 12% 22%, rgba(255,255,255,0.35) 0, transparent 40%), radial-gradient(circle at 82% 72%, rgba(255,255,255,0.3) 0, transparent 45%)',
+          }}
+        >
+          <div className="ml-auto flex max-w-[88%] flex-col items-end sm:max-w-[72%]">
+            {/* Bubble */}
+            <div className="relative rounded-lg rounded-tr-none bg-[#d9fdd3] shadow-sm">
+              <span
+                className="absolute right-[-8px] top-0 h-0 w-0"
+                style={{ borderTop: '8px solid #d9fdd3', borderRight: '8px solid transparent' }}
+              />
+
+              {/* Media header */}
+              {template.header_type === 'image' && (
+                <div className="overflow-hidden rounded-t-lg rounded-tr-none bg-slate-200">
+                  {(headerMediaUrl || template.header_media_url) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={headerMediaUrl || template.header_media_url} alt="" className="max-h-56 w-full object-cover" />
+                  ) : (
+                    <div className="flex h-28 items-center justify-center text-slate-400">
+                      <ImageIcon className="h-7 w-7" />
+                    </div>
+                  )}
+                </div>
+              )}
+              {template.header_type === 'video' && (
+                <div className="overflow-hidden rounded-t-lg rounded-tr-none bg-black">
+                  {(headerMediaUrl || template.header_media_url) ? (
+                    <video src={headerMediaUrl || template.header_media_url} controls muted className="max-h-56 w-full" />
+                  ) : (
+                    <div className="flex h-28 items-center justify-center text-white/70">
+                      <Play className="h-7 w-7" />
+                    </div>
+                  )}
+                </div>
+              )}
+              {template.header_type === 'document' && (
+                <div className="mx-2 mt-2 flex items-center gap-2 rounded-lg bg-black/5 p-2.5">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-100">
+                    <FileText className="h-4.5 w-4.5 text-rose-500" />
+                  </div>
+                  <p className="truncate text-[12px] text-[#111b21]">
+                    {(headerMediaUrl || template.header_media_url)?.split('/').pop() ?? 'Document'}
+                  </p>
+                </div>
+              )}
+
+              <div className="px-3 pb-1.5 pt-2">
+                {template.header_type === 'text' && template.header_content && (
+                  <p className="mb-1 text-[14.2px] font-bold leading-snug text-[#111b21]">
+                    {template.header_content}
+                  </p>
+                )}
+                <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] text-[#111b21]">
+                  {previewText}
+                </p>
+                {template.footer_text && (
+                  <p className="mt-1 text-[13px] text-[#667781]">{template.footer_text}</p>
+                )}
+                <div className="flex items-center justify-end gap-1 pt-1">
+                  <span className="text-[11px] text-[#667781]">
+                    {new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <svg viewBox="0 0 16 11" className="h-2.5 w-3.5" fill="none">
+                    <path d="M1 5.5L4.5 9 11 1.5" stroke="#53bdeb" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M5 5.5L8.5 9 15 1.5" stroke="#53bdeb" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Buttons card — WhatsApp renders template buttons in their
+                own white card directly under the bubble, one row each. */}
+            {template.buttons && template.buttons.length > 0 && (
+              <div className="mt-0.5 w-full overflow-hidden rounded-lg bg-white shadow-sm">
+                {template.buttons.map((b, i) => {
+                  const Icon =
+                    b.type === 'URL' ? ExternalLink :
+                    b.type === 'PHONE_NUMBER' ? Phone :
+                    b.type === 'COPY_CODE' ? Copy :
+                    b.type === 'FLOW' ? Zap :
+                    Reply;
+                  return (
+                    <div key={i} className={`flex items-center justify-center gap-2 py-2.5 ${i > 0 ? 'border-t border-slate-100' : ''}`}>
+                      <Icon className="h-3.5 w-3.5 text-[#00a5f4]" />
+                      <span className="text-[14px] font-medium text-[#00a5f4]">{b.text}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
