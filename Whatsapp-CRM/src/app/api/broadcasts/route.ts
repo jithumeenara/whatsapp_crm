@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
       template_language: string;
       variables: Record<string, VariableMapping>;
       audience: AudienceConfig;
+      header_media_url?: string;
     };
 
     // ── Resolve audience ──────────────────────────────────────
@@ -64,6 +65,7 @@ export async function POST(request: NextRequest) {
         template_name: body.template_name,
         template_language: body.template_language,
         template_variables: body.variables,
+        header_media_url: body.header_media_url?.trim() || null,
         audience_filter: {
           type: body.audience.type,
           tagIds: body.audience.tagIds,

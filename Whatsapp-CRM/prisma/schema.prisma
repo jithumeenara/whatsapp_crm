@@ -677,6 +677,9 @@ model Broadcast {
   template_name      String
   template_language  String    @default("en_US")
   template_variables Json?
+  // Overrides the template's approved sample media for this campaign's
+  // IMAGE/VIDEO/DOCUMENT header. NULL = use the template's own header_media_url.
+  header_media_url   String?
   audience_filter    Json?
   scheduled_at       DateTime? @db.Timestamptz(6)
   status             String    @default("draft")

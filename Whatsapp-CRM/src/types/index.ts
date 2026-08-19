@@ -355,6 +355,9 @@ export interface Broadcast {
   template_name: string;
   template_language: string;
   template_variables?: Record<string, unknown>;
+  /** Overrides the template's approved sample media for this campaign's
+   *  IMAGE/VIDEO/DOCUMENT header. Unset = use the template's own media. */
+  header_media_url?: string;
   audience_filter?: Record<string, unknown>;
   scheduled_at?: string;
   status: BroadcastStatus;

@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Contact, CustomField, MessageTemplate } from '@/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Contact, CustomField } from '@/types';
+import type { VariableMapping } from '@/lib/broadcasts/resolve-variables';
+import type { DataTable, DataField, DataRecord as DataStoreRecord } from '@/lib/data-store/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -11,17 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Eye, Loader2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, Loader2, Database } from 'lucide-react';
 
-type VariableType = 'static' | 'field' | 'custom_field';
-
-interface VariableMapping {
-  type: VariableType;
-  value: string;
-}
+type VariableType = VariableMapping['type'];
 
 interface Step3Props {
-  template: MessageTemplate;
+  template: { body_text: string };
   variables: Record<string, VariableMapping>;
   onUpdate: (variables: Record<string, VariableMapping>) => void;
   onNext: () => void;
@@ -33,6 +30,12 @@ const contactFields = [
   { value: 'phone', label: 'Phone Number' },
   { value: 'email', label: 'Email Address' },
   { value: 'company', label: 'Company' },
+];
+
+const matchContactFieldOptions: { value: 'phone' | 'email' | 'name'; label: string }[] = [
+  { value: 'phone', label: 'Contact Phone' },
+  { value: 'email', label: 'Contact Email' },
+  { value: 'name', label: 'Contact Name' },
 ];
 
 const SAMPLE_CONTACT: Contact = {
@@ -47,6 +50,10 @@ const SAMPLE_CONTACT: Contact = {
   updated_at: new Date().toISOString(),
 };
 
+function digitsOnly(s: string): string {
+  return s.replace(/\D/g, '');
+}
+
 export function Step3Personalize({
   template,
   variables,
@@ -56,24 +63,35 @@ export function Step3Personalize({
 }: Step3Props) {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingFields, setLoadingFields] = useState(true);
+  const [dataTables, setDataTables] = useState<DataTable[]>([]);
   const [firstContact, setFirstContact] = useState<Contact | null>(null);
   const [firstContactCustomValues, setFirstContactCustomValues] = useState<
     Map<string, string>
   >(new Map());
   const [loadingPreview, setLoadingPreview] = useState(true);
 
-  // Load user's custom fields + a representative contact for the
-  // live preview. Fall back to sample data if no contacts exist yet.
+  // Data Store lookups, cached per table so switching between placeholders
+  // that reference the same table doesn't re-fetch.
+  const [tableFieldsCache, setTableFieldsCache] = useState<Record<string, DataField[]>>({});
+  const [tableRecordsCache, setTableRecordsCache] = useState<Record<string, DataStoreRecord[]>>({});
+  const fetchedFieldsRef = useRef<Set<string>>(new Set());
+  const fetchedRecordsRef = useRef<Set<string>>(new Set());
+
+  // Load user's custom fields, Data Store tables, + a representative
+  // contact for the live preview. Fall back to sample data if no
+  // contacts exist yet.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [fieldsRes, contactsRes] = await Promise.all([
+      const [fieldsRes, contactsRes, tablesRes] = await Promise.all([
         fetch('/api/custom-fields', { cache: 'no-store' }).then((r) => r.json()),
         fetch('/api/contacts?limit=1', { cache: 'no-store' }).then((r) => r.json()),
+        fetch('/api/data-tables', { cache: 'no-store' }).then((r) => r.json()),
       ]);
       if (cancelled) return;
 
       setCustomFields(fieldsRes.fields ?? []);
+      setDataTables(tablesRes.tables ?? []);
       setLoadingFields(false);
 
       const contact: Contact | null = contactsRes.contacts?.[0] ?? null;
@@ -97,6 +115,36 @@ export function Step3Personalize({
     };
   }, []);
 
+  const ensureTableFields = useCallback((tableId: string) => {
+    if (fetchedFieldsRef.current.has(tableId)) return;
+    fetchedFieldsRef.current.add(tableId);
+    fetch(`/api/data-tables/${tableId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.table?.fields) setTableFieldsCache((prev) => ({ ...prev, [tableId]: j.table.fields })); })
+      .catch(() => {});
+  }, []);
+
+  const ensureTableRecords = useCallback((tableId: string) => {
+    if (fetchedRecordsRef.current.has(tableId)) return;
+    fetchedRecordsRef.current.add(tableId);
+    fetch(`/api/data-tables/${tableId}/records?pageSize=100`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.records) setTableRecordsCache((prev) => ({ ...prev, [tableId]: j.records })); })
+      .catch(() => {});
+  }, []);
+
+  // Whenever a placeholder points at a Data Store table, load that
+  // table's fields (for the pickers) and a sample of records (for the
+  // live preview + record count in field labels).
+  useEffect(() => {
+    for (const m of Object.values(variables)) {
+      if (m?.type === 'data_store' && m.table_id) {
+        ensureTableFields(m.table_id);
+        ensureTableRecords(m.table_id);
+      }
+    }
+  }, [variables, ensureTableFields, ensureTableRecords]);
+
   const placeholders = useMemo(() => {
     const matches = template.body_text.match(/\{\{(\d+)\}\}/g);
     if (!matches) return [];
@@ -104,29 +152,64 @@ export function Step3Personalize({
   }, [template.body_text]);
 
   /**
-   * A placeholder is "unmapped" if the user hasn't picked either a
-   * static value or a field/custom-field source. Blocks Next until
-   * every placeholder has something — otherwise the broadcast would
-   * ship with empty strings and confuse recipients.
+   * A placeholder is "unmapped" if it doesn't have everything it needs
+   * to resolve: static needs a value, field/custom_field need a
+   * selected field, data_store needs a table + match field + value
+   * field. Blocks Next until every placeholder is fully mapped —
+   * otherwise the broadcast would ship with empty strings.
    */
   const unmappedKeys = useMemo(() => {
     const missing: string[] = [];
     for (const placeholder of placeholders) {
       const key = placeholder.replace(/^\{\{|\}\}$/g, '');
       const mapping = variables[key];
-      if (!mapping || !mapping.value?.trim()) {
+      if (!mapping) { missing.push(placeholder); continue; }
+      if (mapping.type === 'data_store') {
+        if (!mapping.table_id || !mapping.match_field_key || !mapping.value?.trim()) missing.push(placeholder);
+      } else if (!mapping.value?.trim()) {
         missing.push(placeholder);
       }
     }
     return missing;
   }, [placeholders, variables]);
 
-  function updateVariable(key: string, patch: Partial<VariableMapping>) {
-    const current = variables[key] ?? { type: 'static' as VariableType, value: '' };
-    onUpdate({
-      ...variables,
-      [key]: { ...current, ...patch },
+  function setMapping(key: string, mapping: VariableMapping) {
+    onUpdate({ ...variables, [key]: mapping });
+  }
+
+  function changeType(key: string, type: VariableType) {
+    if (type === 'data_store') {
+      setMapping(key, { type: 'data_store', value: '', table_id: '', match_field_key: '', match_contact_field: 'phone' });
+    } else {
+      setMapping(key, { type, value: '' } as VariableMapping);
+    }
+  }
+
+  /** Best-effort client-side mirror of resolve-data-store.ts, using the
+   *  first page of cached records — good enough for a live preview;
+   *  the real send resolves against the full table server-side. */
+  function dataStorePreviewValue(mapping: Extract<VariableMapping, { type: 'data_store' }>): string | null {
+    if (!mapping.table_id || !mapping.match_field_key || !mapping.value) return null;
+    const contact = firstContact ?? SAMPLE_CONTACT;
+    const rawMatch = mapping.match_contact_field === 'phone' ? contact.phone
+      : mapping.match_contact_field === 'email' ? contact.email
+      : contact.name;
+    const matchVal = rawMatch?.trim().toLowerCase();
+    if (!matchVal) return null;
+    const records = tableRecordsCache[mapping.table_id];
+    if (!records) return null; // still loading
+    const matchDigits = mapping.match_contact_field === 'phone' ? digitsOnly(matchVal) : '';
+    const record = records.find((r) => {
+      const raw = (r.data as Record<string, unknown>)?.[mapping.match_field_key];
+      if (raw == null) return false;
+      const rawStr = String(raw).trim().toLowerCase();
+      if (rawStr === matchVal) return true;
+      if (matchDigits && digitsOnly(rawStr) === matchDigits) return true;
+      return false;
     });
+    if (!record) return null;
+    const val = (record.data as Record<string, unknown>)?.[mapping.value];
+    return val != null ? String(val) : null;
   }
 
   /**
@@ -158,17 +241,21 @@ export function Step3Personalize({
           replacement = fieldMap[mapping.value] ?? placeholder;
         } else if (mapping.type === 'custom_field' && mapping.value) {
           replacement = customValues.get(mapping.value) || placeholder;
+        } else if (mapping.type === 'data_store') {
+          replacement = dataStorePreviewValue(mapping) ?? placeholder;
         }
       }
       text = text.replaceAll(placeholder, replacement);
     }
     return text;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dataStorePreviewValue closes over tableRecordsCache/firstContact, both already deps below
   }, [
     template.body_text,
     variables,
     placeholders,
     firstContact,
     firstContactCustomValues,
+    tableRecordsCache,
   ]);
 
   const previewLabel = firstContact
@@ -180,8 +267,8 @@ export function Step3Personalize({
       <div>
         <h2 className="text-lg font-semibold text-slate-800">Personalize Message</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Map template variables to contact fields, custom fields, or static
-          values.
+          Map template variables to contact fields, custom fields, Data
+          Store records, or static values.
         </p>
       </div>
 
@@ -195,7 +282,9 @@ export function Step3Personalize({
         <div className="space-y-4">
           {placeholders.map((placeholder) => {
             const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-            const mapping = variables[key] ?? { type: 'static', value: '' };
+            const mapping: VariableMapping = variables[key] ?? { type: 'static', value: '' };
+            const dsMapping = mapping.type === 'data_store' ? mapping : null;
+            const dsFields = dsMapping?.table_id ? tableFieldsCache[dsMapping.table_id] : undefined;
 
             return (
               <div
@@ -215,12 +304,7 @@ export function Step3Personalize({
                     </label>
                     <Select
                       value={mapping.type}
-                      onValueChange={(val) =>
-                        updateVariable(key, {
-                          type: val as VariableType,
-                          value: '',
-                        })
-                      }
+                      onValueChange={(val) => changeType(key, val as VariableType)}
                     >
                       <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
                         <SelectValue />
@@ -231,70 +315,148 @@ export function Step3Personalize({
                         <SelectItem value="custom_field">
                           Custom Field
                         </SelectItem>
+                        <SelectItem value="data_store">
+                          Data Store
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500">
-                      {mapping.type === 'static' ? 'Value' : 'Field'}
-                    </label>
-                    {mapping.type === 'static' ? (
-                      <Input
-                        value={mapping.value}
-                        onChange={(e) =>
-                          updateVariable(key, { value: e.target.value })
-                        }
-                        placeholder="Enter value..."
-                        className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
-                      />
-                    ) : mapping.type === 'field' ? (
-                      <Select
-                        value={mapping.value || undefined}
-                        onValueChange={(val) =>
-                          updateVariable(key, { value: val || '' })
-                        }
-                      >
-                        <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
-                          <SelectValue placeholder="Select field..." />
-                        </SelectTrigger>
-                        <SelectContent className="border-slate-200 bg-slate-100">
-                          {contactFields.map((field) => (
-                            <SelectItem key={field.value} value={field.value}>
-                              {field.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Select
-                        value={mapping.value || undefined}
-                        onValueChange={(val) =>
-                          updateVariable(key, { value: val || '' })
-                        }
-                      >
-                        <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
-                          <SelectValue
-                            placeholder={
-                              loadingFields
-                                ? 'Loading…'
-                                : customFields.length === 0
-                                  ? 'No custom fields'
-                                  : 'Select custom field…'
-                            }
-                          />
-                        </SelectTrigger>
-                        <SelectContent className="border-slate-200 bg-slate-100">
-                          {customFields.map((f) => (
-                            <SelectItem key={f.id} value={f.id}>
-                              {f.field_name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
+                  {mapping.type !== 'data_store' && (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-500">
+                        {mapping.type === 'static' ? 'Value' : 'Field'}
+                      </label>
+                      {mapping.type === 'static' ? (
+                        <Input
+                          value={mapping.value}
+                          onChange={(e) => setMapping(key, { type: 'static', value: e.target.value })}
+                          placeholder="Enter value..."
+                          className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
+                        />
+                      ) : mapping.type === 'field' ? (
+                        <Select
+                          value={mapping.value || undefined}
+                          onValueChange={(val) => setMapping(key, { type: 'field', value: val || '' })}
+                        >
+                          <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
+                            <SelectValue placeholder="Select field..." />
+                          </SelectTrigger>
+                          <SelectContent className="border-slate-200 bg-slate-100">
+                            {contactFields.map((field) => (
+                              <SelectItem key={field.value} value={field.value}>
+                                {field.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Select
+                          value={mapping.value || undefined}
+                          onValueChange={(val) => setMapping(key, { type: 'custom_field', value: val || '' })}
+                        >
+                          <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
+                            <SelectValue
+                              placeholder={
+                                loadingFields
+                                  ? 'Loading…'
+                                  : customFields.length === 0
+                                    ? 'No custom fields'
+                                    : 'Select custom field…'
+                              }
+                            />
+                          </SelectTrigger>
+                          <SelectContent className="border-slate-200 bg-slate-100">
+                            {customFields.map((f) => (
+                              <SelectItem key={f.id} value={f.id}>
+                                {f.field_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  )}
                 </div>
+
+                {mapping.type === 'data_store' && (
+                  <div className="mt-3 space-y-3 rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600">
+                      <Database className="h-3.5 w-3.5" /> Data Store lookup
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Table</label>
+                      <Select
+                        value={dsMapping!.table_id || undefined}
+                        onValueChange={(val) => setMapping(key, { type: 'data_store', value: '', table_id: val ?? '', match_field_key: '', match_contact_field: dsMapping!.match_contact_field })}
+                      >
+                        <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                          <SelectValue placeholder={dataTables.length === 0 ? 'No Data Store tables' : 'Select a table…'} />
+                        </SelectTrigger>
+                        <SelectContent className="border-slate-200 bg-white">
+                          {dataTables.map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-500">Match customers by</label>
+                        <Select
+                          value={dsMapping!.match_contact_field}
+                          onValueChange={(val) => setMapping(key, { ...dsMapping!, match_contact_field: (val ?? 'phone') as 'phone' | 'email' | 'name' })}
+                        >
+                          <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="border-slate-200 bg-white">
+                            {matchContactFieldOptions.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-500">Matches this table field</label>
+                        <Select
+                          value={dsMapping!.match_field_key || undefined}
+                          disabled={!dsMapping!.table_id}
+                          onValueChange={(val) => setMapping(key, { ...dsMapping!, match_field_key: val ?? '' })}
+                        >
+                          <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                            <SelectValue placeholder={!dsMapping!.table_id ? 'Pick a table first' : dsFields ? 'Select field…' : 'Loading…'} />
+                          </SelectTrigger>
+                          <SelectContent className="border-slate-200 bg-white">
+                            {(dsFields ?? []).map((f) => (
+                              <SelectItem key={f.id} value={f.field_key}>{f.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Insert value from</label>
+                      <Select
+                        value={dsMapping!.value || undefined}
+                        disabled={!dsMapping!.table_id}
+                        onValueChange={(val) => setMapping(key, { ...dsMapping!, value: val ?? '' })}
+                      >
+                        <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                          <SelectValue placeholder={!dsMapping!.table_id ? 'Pick a table first' : dsFields ? 'Select field…' : 'Loading…'} />
+                        </SelectTrigger>
+                        <SelectContent className="border-slate-200 bg-white">
+                          {(dsFields ?? []).map((f) => (
+                            <SelectItem key={f.id} value={f.field_key}>{f.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

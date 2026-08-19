@@ -31,6 +31,8 @@ interface BroadcastPayload {
   template: { name: string; language?: string };
   audience: AudienceConfig;
   variables: Record<string, VariableMapping>;
+  /** Campaign-level override for a media-header template's image/video/document. */
+  headerMediaUrl?: string;
 }
 
 interface UseBroadcastSendingReturn {
@@ -79,6 +81,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           template_language: payload.template.language ?? 'en_US',
           variables: payload.variables,
           audience: payload.audience,
+          header_media_url: payload.headerMediaUrl,
         }),
       });
 

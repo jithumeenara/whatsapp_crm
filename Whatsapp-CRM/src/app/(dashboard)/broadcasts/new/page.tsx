@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Check, Radio } from "lucide-react"
 import type { MessageTemplate } from "@/types"
+import type { VariableMapping } from "@/lib/broadcasts/resolve-variables"
 import { Step1ChooseTemplate } from "@/components/broadcasts/step1-choose-template"
 import { Step2SelectAudience } from "@/components/broadcasts/step2-select-audience"
 import { Step3Personalize } from "@/components/broadcasts/step3-personalize"
@@ -34,13 +35,19 @@ export default function NewBroadcastV2() {
     contactIds?: string[]
     excludeTagIds?: string[]
   }>({ type: "all" })
-  const [variables, setVariables] = useState<Record<string, { type: "static" | "field" | "custom_field"; value: string }>>({})
+  const [variables, setVariables] = useState<Record<string, VariableMapping>>({})
   const [name, setName] = useState("")
+  const [headerMediaUrl, setHeaderMediaUrl] = useState("")
+
+  function handleSelectTemplate(t: MessageTemplate) {
+    if (template?.id !== t.id) setHeaderMediaUrl("") // new template -> old media override no longer applies
+    setTemplate(t)
+  }
 
   async function handleSend() {
     if (!template) return
     try {
-      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds }, variables })
+      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds }, variables, headerMediaUrl: headerMediaUrl || undefined })
       router.push(`/broadcasts/${id}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Broadcast failed")
@@ -52,7 +59,7 @@ export default function NewBroadcastV2() {
     const res = await fetch("/api/broadcasts/draft", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, audience_filter: { type: audience.type, tagIds: audience.tagIds } }),
+      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, header_media_url: headerMediaUrl || undefined, audience_filter: { type: audience.type, tagIds: audience.tagIds } }),
     })
     if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(`Failed: ${b?.error ?? `HTTP ${res.status}`}`); return }
     toast.success("Draft saved"); router.push("/broadcasts")
@@ -100,7 +107,7 @@ export default function NewBroadcastV2() {
       {/* Content */}
       <div className="p-6 mx-auto max-w-3xl">
         <div style={{ opacity: isProcessing ? 0.6 : 1, pointerEvents: isProcessing ? "none" : "auto" }} className="transition-opacity">
-          {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={setTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} />}
+          {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} />}
           {step === 1 && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && template && <Step3Personalize template={template} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
           {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template} audience={audience} onSend={handleSend} onSaveDraft={handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}

@@ -8,7 +8,8 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from "@/lib/whatsapp/phone-utils";
-import { resolveVariables } from "@/lib/broadcasts/resolve-variables";
+import { resolveVariables, type VariableMapping } from "@/lib/broadcasts/resolve-variables";
+import { buildDataStoreIndex } from "@/lib/broadcasts/resolve-data-store";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
@@ -65,10 +66,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     return;
   }
 
-  const variables = (broadcast.template_variables ?? {}) as Record<
-    string,
-    { type: "static" | "field" | "custom_field"; value: string }
-  >;
+  const variables = (broadcast.template_variables ?? {}) as Record<string, VariableMapping>;
 
   const contactIds = broadcast.recipients.map((r) => r.contact_id).filter(Boolean);
   const customValueRows = await prisma.contactCustomValue.findMany({
@@ -80,6 +78,15 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     if (!customIndex[row.contact_id]) customIndex[row.contact_id] = {};
     customIndex[row.contact_id][row.custom_field_id] = row.value ?? "";
   }
+
+  // Pre-resolve any Data Store-mapped variables in one pass per table
+  // (not one query per recipient) — see resolve-data-store.ts.
+  const dataStoreIndex = await buildDataStoreIndex(
+    variables,
+    broadcast.recipients
+      .map((r) => r.contact)
+      .filter((c): c is NonNullable<typeof c> => Boolean(c)),
+  );
 
   let sentCount = 0;
   let failedCount = 0;
@@ -125,6 +132,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       variables,
       { name: contact.name, phone: contact.phone, email: contact.email, company: contact.company },
       customIndex[contact.id] ?? {},
+      dataStoreIndex[contact.id] ?? {},
     );
 
     const variants = phoneVariants(sanitized);
@@ -148,6 +156,13 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
             language: broadcast.template_language,
             template: templateRow ?? undefined,
             params,
+            // Campaign-level override of the template's approved sample
+            // media, when the user picked one for this broadcast. Falls
+            // back to the template's own header_media_url when unset
+            // (buildSendComponents handles that fallback already).
+            messageParams: broadcast.header_media_url
+              ? { headerMediaUrl: broadcast.header_media_url }
+              : undefined,
           });
           sentMessageId = result.messageId;
           lastError = null;

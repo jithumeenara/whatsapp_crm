@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
 
-    const { name, template_name, template_language, template_variables, audience_filter } =
+    const { name, template_name, template_language, template_variables, audience_filter, header_media_url } =
       body as Record<string, unknown>
 
     if (!name || typeof name !== "string" || !name.trim()) {
@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
         template_name: template_name,
         template_language: (template_language as string) ?? "en_US",
         template_variables: template_variables ?? {},
+        header_media_url: typeof header_media_url === "string" && header_media_url.trim() ? header_media_url.trim() : null,
         audience_filter: audience_filter ?? {},
         status: "draft",
         total_recipients: 0,
