@@ -18,7 +18,7 @@ import {
 import {
   ArrowLeft, ArrowRight, Eye, Loader2, Database, AlertTriangle, CheckCircle2, Pencil, Sparkles,
   Reply, ExternalLink, Phone, Copy, Zap, FileText, Play, Image as ImageIcon, Film,
-  File as FileIcon, Upload, X, ChevronRight, ChevronDown, PenLine, User, Tags,
+  File as FileIcon, Upload, X, ChevronRight, ChevronDown, PenLine, User, Tags, Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,6 +32,14 @@ const MEDIA_ACCEPT: Record<string, string> = {
 const MEDIA_ICON: Record<string, typeof ImageIcon> = { image: ImageIcon, video: Film, document: FileIcon };
 
 type VariableType = VariableMapping['type'];
+
+interface FileManagerItem {
+  id: string;
+  original_name: string;
+  url: string;
+  mime_type: string;
+  file_category: string;
+}
 
 const MAPPING_TYPE_TILES: { type: VariableType; label: string; icon: typeof PenLine }[] = [
   { type: 'static', label: 'Static', icon: PenLine },
@@ -100,6 +108,11 @@ export function Step3Personalize({
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [mediaPopupOpen, setMediaPopupOpen] = useState(false);
+  // "Upload New" vs picking an already-uploaded file from File Manager.
+  const [mediaSource, setMediaSource] = useState<'upload' | 'library'>('upload');
+  const [libraryFiles, setLibraryFiles] = useState<FileManagerItem[]>([]);
+  const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
   const [mappingPopupOpen, setMappingPopupOpen] = useState(false);
   // Which variable row is expanded (accordion-style) inside the mapping popup.
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -360,6 +373,29 @@ export function Step3Personalize({
     }
   }
 
+  // Browse already-uploaded files instead of uploading a new one. The File
+  // Manager API only filters by one category at a time, so "document"
+  // (Meta's header type) fetches "all" and filters client-side against
+  // both "document" and "pdf" — File Manager files a PDF separately.
+  useEffect(() => {
+    if (!mediaPopupOpen || mediaSource !== 'library' || !mediaType) return;
+    setLoadingLibrary(true);
+    const t = setTimeout(() => {
+      const params = new URLSearchParams({ category: 'all', pageSize: '60' });
+      if (librarySearch.trim()) params.set('search', librarySearch.trim());
+      fetch(`/api/file-manager?${params}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          const accept = mediaType === 'document' ? new Set(['document', 'pdf']) : new Set([mediaType]);
+          const files = ((j?.files ?? []) as FileManagerItem[]).filter((f) => accept.has(f.file_category));
+          setLibraryFiles(files);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingLibrary(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [mediaPopupOpen, mediaSource, mediaType, librarySearch]);
+
   // Mapping is never mandatory — an unmapped variable just sends as a
   // blank space (see resolve-variables.ts's orBlankSpace) instead of
   // blocking the broadcast. Media is still required when the template
@@ -506,12 +542,70 @@ export function Step3Personalize({
                 </button>
               </div>
             ) : (
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
-                className={cn('flex h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed bg-white text-[12.5px] font-medium disabled:opacity-50',
-                  mediaRequired ? 'border-amber-300 text-amber-600 hover:border-amber-400 hover:bg-amber-50/50' : 'border-indigo-200 text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50')}>
-                {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
-                {uploading ? 'Uploading…' : 'Click to upload'}
-              </button>
+              <>
+                {/* Upload a new file, or pick one already sitting in File Manager */}
+                <div className="flex gap-1.5 rounded-xl bg-slate-100 p-1">
+                  <button type="button" onClick={() => setMediaSource('upload')}
+                    className={cn('flex-1 rounded-lg py-1.5 text-[12px] font-semibold transition-all', mediaSource === 'upload' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+                    Upload New
+                  </button>
+                  <button type="button" onClick={() => setMediaSource('library')}
+                    className={cn('flex-1 rounded-lg py-1.5 text-[12px] font-semibold transition-all', mediaSource === 'library' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+                    File Manager
+                  </button>
+                </div>
+
+                {mediaSource === 'upload' ? (
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                    className={cn('flex h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed bg-white text-[12.5px] font-medium disabled:opacity-50',
+                      mediaRequired ? 'border-amber-300 text-amber-600 hover:border-amber-400 hover:bg-amber-50/50' : 'border-indigo-200 text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50')}>
+                    {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                    {uploading ? 'Uploading…' : 'Click to upload'}
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                      <input
+                        value={librarySearch}
+                        onChange={(e) => setLibrarySearch(e.target.value)}
+                        placeholder="Search File Manager…"
+                        className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-[12px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                      />
+                    </div>
+                    {loadingLibrary ? (
+                      <div className="flex h-28 items-center justify-center">
+                        <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
+                      </div>
+                    ) : libraryFiles.length === 0 ? (
+                      <p className="py-8 text-center text-[12px] text-slate-400">
+                        No matching {mediaType} files in your File Manager yet.
+                      </p>
+                    ) : mediaType === 'image' ? (
+                      <div className="grid max-h-60 grid-cols-4 gap-2 overflow-y-auto pr-1">
+                        {libraryFiles.map((f) => (
+                          <button key={f.id} type="button" onClick={() => { onHeaderMediaChange(f.url); setMediaSource('upload'); }}
+                            title={f.original_name}
+                            className="aspect-square overflow-hidden rounded-lg border border-slate-200 hover:border-indigo-400">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={f.url} alt={f.original_name} className="h-full w-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="max-h-60 space-y-1.5 overflow-y-auto pr-1">
+                        {libraryFiles.map((f) => (
+                          <button key={f.id} type="button" onClick={() => { onHeaderMediaChange(f.url); setMediaSource('upload'); }}
+                            className="flex w-full items-center gap-2.5 rounded-lg border border-slate-200 p-2 text-left hover:border-indigo-400 hover:bg-indigo-50/30">
+                            {MediaIcon && <MediaIcon className="h-4 w-4 shrink-0 text-indigo-500" />}
+                            <span className="truncate text-[12px] text-slate-700">{f.original_name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             <Button onClick={() => setMediaPopupOpen(false)} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
