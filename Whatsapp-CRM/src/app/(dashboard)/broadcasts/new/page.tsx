@@ -61,10 +61,10 @@ export default function NewBroadcastV2() {
   return (
     <div className="min-h-full">
       {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-6 py-4">
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-            <Radio className="h-4 w-4 text-indigo-600" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 shadow-sm">
+            <Radio className="h-4 w-4 text-white" />
           </div>
           <div>
             <h1 className="text-[15px] font-semibold text-slate-900">New Broadcast</h1>
@@ -79,17 +79,17 @@ export default function NewBroadcastV2() {
             const active = i === step
             return (
               <div key={s.key} className="flex flex-1 items-center">
-                <div className="flex items-center gap-2">
-                  <div className={cn("flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-all",
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold transition-all sm:h-7 sm:w-7 sm:text-[11px]",
                     done ? "bg-indigo-600 text-white" : active ? "border-2 border-indigo-600 bg-indigo-50 text-indigo-700" : "border border-slate-300 bg-white text-slate-400")}>
-                    {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
+                    {done ? <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : i + 1}
                   </div>
                   <span className={cn("hidden text-[12px] font-medium sm:block", active ? "text-slate-900" : done ? "text-indigo-600" : "text-slate-400")}>
                     {s.label}
                   </span>
                 </div>
                 {i < STEPS.length - 1 && (
-                  <div className={cn("mx-3 h-px flex-1", i < step ? "bg-indigo-600" : "bg-slate-200")} />
+                  <div className={cn("mx-2 h-px flex-1 sm:mx-3", i < step ? "bg-indigo-600" : "bg-slate-200")} />
                 )}
               </div>
             )
@@ -98,11 +98,11 @@ export default function NewBroadcastV2() {
       </div>
 
       {/* Content */}
-      <div className="p-6 mx-auto max-w-3xl">
+      <div className="mx-auto max-w-3xl p-4 sm:p-6">
         <div style={{ opacity: isProcessing ? 0.6 : 1, pointerEvents: isProcessing ? "none" : "auto" }} className="transition-opacity">
-          {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} />}
+          {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} />}
           {step === 1 && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
-          {step === 2 && template && <Step3Personalize template={template} headerMediaUrl={headerMediaUrl} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
+          {step === 2 && template && <Step3Personalize template={template} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
           {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template} audience={audience} onSend={handleSend} onSaveDraft={handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}
         </div>
       </div>
