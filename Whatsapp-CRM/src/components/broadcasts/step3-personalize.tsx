@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Contact, CustomField, MessageTemplate } from '@/types';
 import type { VariableMapping } from '@/lib/broadcasts/resolve-variables';
 import type { DataTable, DataField, DataRecord as DataStoreRecord } from '@/lib/data-store/types';
+import { extractVariableKeys } from '@/lib/whatsapp/template-variable-keys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -14,7 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  ArrowLeft, ArrowRight, Eye, Loader2, Database,
+  ArrowLeft, ArrowRight, Eye, Loader2, Database, AlertTriangle,
   Reply, ExternalLink, Phone, Copy, Zap, FileText, Play, Image as ImageIcon,
 } from 'lucide-react';
 
@@ -153,9 +154,10 @@ export function Step3Personalize({
   }, [variables, ensureTableFields, ensureTableRecords]);
 
   const placeholders = useMemo(() => {
-    const matches = template.body_text.match(/\{\{(\d+)\}\}/g);
-    if (!matches) return [];
-    return [...new Set(matches)].sort();
+    // Recognizes both Meta's positional ({{1}}, {{2}}) and named
+    // ({{customer_name}}) variable formats — a template synced from
+    // Meta may use either. See template-variable-keys.ts.
+    return extractVariableKeys(template.body_text).map((k) => `{{${k}}}`);
   }, [template.body_text]);
 
   /**
@@ -269,6 +271,9 @@ export function Step3Personalize({
     ? firstContact.name || firstContact.phone
     : 'sample data';
 
+  const needsMedia = template.header_type === 'image' || template.header_type === 'video' || template.header_type === 'document';
+  const mediaMissing = needsMedia && !headerMediaUrl && !template.header_media_url;
+
   return (
     <div className="space-y-6">
       <div>
@@ -292,7 +297,7 @@ export function Step3Personalize({
         </Button>
         <Button
           onClick={onNext}
-          disabled={unmappedKeys.length > 0}
+          disabled={unmappedKeys.length > 0 || mediaMissing}
           className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           Next
@@ -505,6 +510,16 @@ export function Step3Personalize({
           )}
         </div>
 
+        {mediaMissing && (
+          <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
+            <p className="text-[12px] text-amber-700">
+              No {template.header_type} selected for this campaign, and this template has no default media Meta can reuse —
+              go back to <span className="font-semibold">Choose a Template</span> and upload one, or the send will fail.
+            </p>
+          </div>
+        )}
+
         <div
           className="rounded-2xl p-4 sm:p-6"
           style={{
@@ -625,7 +640,7 @@ export function Step3Personalize({
         </Button>
         <Button
           onClick={onNext}
-          disabled={unmappedKeys.length > 0}
+          disabled={unmappedKeys.length > 0 || mediaMissing}
           className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
         >
           Next

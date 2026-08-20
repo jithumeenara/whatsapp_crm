@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, ArrowLeft, FileText, Search, Loader2, Globe, Image as ImageIcon, Film, File as FileIcon, Upload, X } from 'lucide-react';
+import { ArrowRight, ArrowLeft, FileText, Search, Loader2, Globe, Image as ImageIcon, Film, File as FileIcon, Upload, X, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
@@ -38,11 +38,22 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const mediaType = selectedTemplate?.header_type as string | undefined;
   const needsMedia = mediaType === 'image' || mediaType === 'video' || mediaType === 'document';
   const MediaIcon = needsMedia ? MEDIA_ICON[mediaType!] : null;
+  // Templates synced from Meta only carry a real, reusable header_media_url
+  // when one was set directly in this app — Meta's own template API never
+  // returns a sendable media URL/id for the sample used at approval time.
+  // So for most synced media-header templates, this campaign upload is the
+  // ONLY way the send will actually carry an image/video/document — not
+  // optional. Templates created in-app with their own header_media_url
+  // already have a working fallback, so the upload stays optional there.
+  const hasDefaultMedia = !!selectedTemplate?.header_media_url;
+  const mediaRequired = needsMedia && !hasDefaultMedia;
+  const canContinue = !!selectedTemplate && !(mediaRequired && !headerMediaUrl);
 
   async function handleFilePick(file: File) {
     setUploading(true);
@@ -60,13 +71,31 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
     }
   }
 
-  useEffect(() => {
-    fetch('/api/whatsapp/templates?status=APPROVED', { cache: 'no-store' })
+  const loadTemplates = useCallback(() => {
+    setLoading(true);
+    return fetch('/api/whatsapp/templates?status=APPROVED', { cache: 'no-store' })
       .then((r) => r.ok ? r.json() : r.json().then((b: { error?: string }) => Promise.reject(b?.error ?? `HTTP ${r.status}`)))
-      .then((j) => setTemplates(j.templates ?? []))
+      .then((j) => { setTemplates(j.templates ?? []); setError(null); })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+
+  async function syncFromMeta() {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/whatsapp/templates/sync', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(data?.error ?? 'Sync failed'); return; }
+      toast.success(`Synced — ${data.inserted ?? 0} new, ${data.updated ?? 0} updated`);
+      await loadTemplates();
+    } catch {
+      toast.error('Failed to sync');
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const filtered = templates.filter((t) =>
     !search || t.name.toLowerCase().includes(search.toLowerCase()) || (t.body_text ?? '').toLowerCase().includes(search.toLowerCase())
@@ -74,9 +103,21 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-[16px] font-semibold text-slate-900">Choose a Template</h2>
-        <p className="mt-0.5 text-[13px] text-slate-500">Select an approved WhatsApp template for your broadcast.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[16px] font-semibold text-slate-900">Choose a Template</h2>
+          <p className="mt-0.5 text-[13px] text-slate-500">Select an approved WhatsApp template for your broadcast.</p>
+        </div>
+        <button
+          type="button"
+          onClick={syncFromMeta}
+          disabled={syncing}
+          title="Sync all templates from Meta"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700 disabled:opacity-50"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', syncing && 'animate-spin')} />
+          {syncing ? 'Syncing…' : 'Sync from Meta'}
+        </button>
       </div>
 
       {/* Top nav — mirrors the bottom bar so you don't have to scroll past
@@ -85,7 +126,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         <Button variant="outline" onClick={onBack} className="border-slate-200 text-slate-700 h-9">
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
-        <Button onClick={onNext} disabled={!selectedTemplate}
+        <Button onClick={onNext} disabled={!canContinue}
           className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50">
           Continue <ArrowRight className="h-4 w-4" />
         </Button>
@@ -184,15 +225,20 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
           header is selected. Optional: leave blank to reuse the template's own
           approved sample media on every send. */}
       {needsMedia && (
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
+        <div className={cn('rounded-xl border p-4', mediaRequired ? 'border-amber-300 bg-amber-50/60' : 'border-indigo-200 bg-indigo-50/50')}>
           <div className="flex items-center gap-2 mb-2">
-            {MediaIcon && <MediaIcon className="h-4 w-4 text-indigo-600" />}
-            <p className="text-[13px] font-semibold text-indigo-800">
+            {MediaIcon && <MediaIcon className={cn('h-4 w-4', mediaRequired ? 'text-amber-600' : 'text-indigo-600')} />}
+            <p className={cn('text-[13px] font-semibold', mediaRequired ? 'text-amber-800' : 'text-indigo-800')}>
               {mediaType === 'image' ? 'Header image' : mediaType === 'video' ? 'Header video' : 'Header document'} for this campaign
             </p>
+            {mediaRequired && (
+              <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">Required</span>
+            )}
           </div>
-          <p className="text-[11px] text-indigo-500 mb-3">
-            Optional — pick media for this specific broadcast, or leave blank to reuse the template&apos;s approved sample media.
+          <p className={cn('text-[11px] mb-3', mediaRequired ? 'text-amber-600' : 'text-indigo-500')}>
+            {mediaRequired
+              ? "This template has no default media Meta can reuse at send time — upload one for this broadcast or the send will fail."
+              : "Optional — pick media for this specific broadcast, or leave blank to reuse the template's approved sample media."}
           </p>
 
           <input
@@ -221,7 +267,8 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
             </div>
           ) : (
             <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
-              className="flex h-20 w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-indigo-200 bg-white text-[12px] font-medium text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50 disabled:opacity-50">
+              className={cn('flex h-20 w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-white text-[12px] font-medium disabled:opacity-50',
+                mediaRequired ? 'border-amber-300 text-amber-600 hover:border-amber-400 hover:bg-amber-50/50' : 'border-indigo-200 text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50')}>
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               {uploading ? 'Uploading…' : 'Click to upload'}
             </button>
@@ -234,7 +281,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         <Button variant="outline" onClick={onBack} className="border-slate-200 text-slate-700 h-9">
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
-        <Button onClick={onNext} disabled={!selectedTemplate}
+        <Button onClick={onNext} disabled={!canContinue}
           className="h-9 bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50">
           Continue <ArrowRight className="h-4 w-4" />
         </Button>

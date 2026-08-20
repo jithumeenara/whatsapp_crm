@@ -116,7 +116,7 @@ describe('buildSendComponents — header', () => {
     });
   });
 
-  it('prefers media id over url when both are available', () => {
+  it('ignores header_handle (a template-creation upload handle, not a valid send-time media id) and falls back to header_media_url', () => {
     const components = buildSendComponents(
       row({
         header_type: 'document',
@@ -126,14 +126,62 @@ describe('buildSendComponents — header', () => {
     );
     expect(components[0]).toEqual({
       type: 'header',
-      parameters: [{ type: 'document', document: { id: '4::aBc' } }],
+      parameters: [{ type: 'document', document: { link: 'https://x.com/doc.pdf' } }],
     });
   });
 
-  it('throws on media header with no link OR id available', () => {
+  it('uses an explicit headerMediaId override (a real Media Upload API id) as id', () => {
+    const components = buildSendComponents(
+      row({ header_type: 'image', header_media_url: 'https://x.com/img.jpg' }),
+      { headerMediaId: 'media-123' },
+    );
+    expect(components[0]).toEqual({
+      type: 'header',
+      parameters: [{ type: 'image', image: { id: 'media-123' } }],
+    });
+  });
+
+  it('throws on media header with no link OR id available (header_handle alone does not count)', () => {
     expect(() =>
-      buildSendComponents(row({ header_type: 'image' })),
+      buildSendComponents(row({ header_type: 'image', header_handle: '4::aBc' })),
     ).toThrow(/requires a media link or id/);
+  });
+});
+
+describe('buildSendComponents — named-parameter templates', () => {
+  it('emits body parameters with parameter_name for {{customer_name}}-style templates', () => {
+    const components = buildSendComponents(
+      row({ body_text: 'Hello {{customer_name}}, welcome to {{company_name}}!' }),
+      { bodyByName: { customer_name: 'Sara', company_name: 'Acme' } },
+    );
+    expect(components).toEqual([
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', parameter_name: 'customer_name', text: 'Sara' },
+          { type: 'text', parameter_name: 'company_name', text: 'Acme' },
+        ],
+      },
+    ]);
+  });
+
+  it('throws when a named body variable has no value in bodyByName', () => {
+    expect(() =>
+      buildSendComponents(
+        row({ body_text: 'Hi {{customer_name}}' }),
+        { bodyByName: {} },
+      ),
+    ).toThrow(/customer_name.*require a value/);
+  });
+
+  it('emits a named TEXT header parameter', () => {
+    const components = buildSendComponents(
+      row({ header_type: 'text', header_content: 'Hi {{first_name}}' }),
+      { headerText: 'Sara' },
+    );
+    expect(components).toEqual([
+      { type: 'header', parameters: [{ type: 'text', parameter_name: 'first_name', text: 'Sara' }] },
+    ]);
   });
 });
 

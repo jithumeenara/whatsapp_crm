@@ -8,8 +8,9 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from "@/lib/whatsapp/phone-utils";
-import { resolveVariables, type VariableMapping } from "@/lib/broadcasts/resolve-variables";
+import { resolveVariables, resolveVariablesByKey, type VariableMapping } from "@/lib/broadcasts/resolve-variables";
 import { buildDataStoreIndex } from "@/lib/broadcasts/resolve-data-store";
+import { isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
@@ -128,12 +129,19 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       continue;
     }
 
-    const params = resolveVariables(
-      variables,
-      { name: contact.name, phone: contact.phone, email: contact.email, company: contact.company },
-      customIndex[contact.id] ?? {},
-      dataStoreIndex[contact.id] ?? {},
-    );
+    // Named-parameter templates ({{customer_name}}) must match values by
+    // name, not array position — resolveVariables' sorted array is only
+    // meaningful for positional ({{1}}, {{2}}) templates. See
+    // template-variable-keys.ts for why the two formats need different
+    // handling all the way through to the actual Meta send payload.
+    const named = isNamedVariableText(templateRow?.body_text);
+    const contactForResolve = { name: contact.name, phone: contact.phone, email: contact.email, company: contact.company };
+    const params = named
+      ? undefined
+      : resolveVariables(variables, contactForResolve, customIndex[contact.id] ?? {}, dataStoreIndex[contact.id] ?? {});
+    const bodyByName = named
+      ? resolveVariablesByKey(variables, contactForResolve, customIndex[contact.id] ?? {}, dataStoreIndex[contact.id] ?? {})
+      : undefined;
 
     const variants = phoneVariants(sanitized);
     let sentMessageId: string | null = null;
@@ -156,13 +164,14 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
             language: broadcast.template_language,
             template: templateRow ?? undefined,
             params,
-            // Campaign-level override of the template's approved sample
-            // media, when the user picked one for this broadcast. Falls
-            // back to the template's own header_media_url when unset
-            // (buildSendComponents handles that fallback already).
-            messageParams: broadcast.header_media_url
-              ? { headerMediaUrl: broadcast.header_media_url }
-              : undefined,
+            messageParams: {
+              // Campaign-level override of the template's approved sample
+              // media, when the user picked one for this broadcast. Falls
+              // back to the template's own header_media_url when unset
+              // (buildSendComponents handles that fallback already).
+              headerMediaUrl: broadcast.header_media_url ?? undefined,
+              bodyByName,
+            },
           });
           sentMessageId = result.messageId;
           lastError = null;

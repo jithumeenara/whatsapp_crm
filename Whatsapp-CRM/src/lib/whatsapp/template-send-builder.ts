@@ -32,11 +32,18 @@
 
 import type { MessageTemplate, TemplateButton } from '@/types';
 import { extractVariableIndices } from './template-validators';
+import { extractVariableKeys, isPositionalKey } from './template-variable-keys';
 
 export interface SendTimeParams {
-  /** Values for body {{1}}, {{2}}, … indexed by variable position. */
+  /** Values for body {{1}}, {{2}}, … indexed by variable position.
+   *  Used when the template's body uses Meta's positional format. */
   body?: string[];
-  /** Value for TEXT-header {{1}}, when the header has a variable. */
+  /** Values keyed by variable name (e.g. "customer_name"), for a body
+   *  that uses Meta's named-parameter format instead of positional. */
+  bodyByName?: Record<string, string>;
+  /** Value for TEXT-header {{1}}, when the header has a variable.
+   *  Used for both positional and named header variables — a header
+   *  can only ever carry a single variable, so no by-name map is needed. */
   headerText?: string;
   /** Override the template's static media URL for this send. */
   headerMediaUrl?: string;
@@ -62,7 +69,7 @@ export type MetaSendComponent =
     };
 
 type MetaSendParameter =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; parameter_name?: string }
   | { type: 'image'; image: { link?: string; id?: string } }
   | { type: 'video'; video: { link?: string; id?: string } }
   | { type: 'document'; document: { link?: string; id?: string } }
@@ -78,28 +85,40 @@ function buildHeaderComponent(
   if (!headerType) return null;
 
   if (headerType === 'text') {
-    // TEXT header with {{1}} → need a value. Static text headers
+    // TEXT header with a variable → need a value. Static text headers
     // (no variables) just ride along inside the template itself; no
     // header component required on send.
-    const varCount = extractVariableIndices(template.header_content ?? '').length;
-    if (varCount === 0) return null;
+    const headerKeys = extractVariableKeys(template.header_content);
+    if (headerKeys.length === 0) return null;
     const value = params.headerText;
     if (!value || !value.trim()) {
       throw new Error(
         'Header text variable {{1}} requires a value — pass headerText.',
       );
     }
+    const key = headerKeys[0];
     return {
       type: 'header',
-      parameters: [{ type: 'text', text: value }],
+      parameters: [
+        isPositionalKey(key)
+          ? { type: 'text', text: value }
+          : { type: 'text', parameter_name: key, text: value },
+      ],
     };
   }
 
   // image / video / document — Meta requires the media component on
-  // every send. Prefer the caller's explicit override; fall back to
-  // the template's stored sample.
+  // every send. Prefer the caller's explicit override; otherwise fall
+  // back to the template's own stored sample URL.
+  //
+  // Deliberately NOT falling back to template.header_handle here: that
+  // handle is a Resumable-Upload session id from when the template was
+  // first SUBMITTED for approval — it is not a valid media id for the
+  // send-message endpoint, and Meta rejects it. A real send-time id can
+  // only come from an explicit params.headerMediaId (from the Media
+  // Upload API), never from the template row itself.
   const link = params.headerMediaUrl ?? template.header_media_url;
-  const id = params.headerMediaId ?? template.header_handle;
+  const id = params.headerMediaId;
   if (!link && !id) {
     throw new Error(
       `${headerType} header requires a media link or id at send time — set header_media_url on the template or pass headerMediaUrl/headerMediaId.`,
@@ -122,9 +141,28 @@ function buildBodyComponent(
   template: MessageTemplate,
   params: SendTimeParams,
 ): MetaSendComponent | null {
-  const varCount = extractVariableIndices(template.body_text).length;
+  const keys = extractVariableKeys(template.body_text);
+  if (keys.length === 0) return null;
+
+  if (keys.some((k) => !isPositionalKey(k))) {
+    // Named-parameter body — each value is looked up by name, not by
+    // array position. Order doesn't matter; Meta matches by parameter_name.
+    const map = params.bodyByName ?? {};
+    const missing = keys.filter((k) => !map[k]?.toString().trim());
+    if (missing.length > 0) {
+      throw new Error(
+        `Body variable(s) ${missing.join(', ')} require a value — pass bodyByName.`,
+      );
+    }
+    return {
+      type: 'body',
+      parameters: keys.map((k) => ({ type: 'text', parameter_name: k, text: String(map[k]) })),
+    };
+  }
+
+  // Positional — unchanged legacy behaviour.
+  const varCount = keys.length;
   const body = params.body ?? [];
-  if (varCount === 0 && body.length === 0) return null;
   if (body.length < varCount) {
     throw new Error(
       `Body has ${varCount} variable(s) but only ${body.length} value(s) were supplied.`,
