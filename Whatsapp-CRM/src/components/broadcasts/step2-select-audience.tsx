@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Tag, Contact } from '@/types';
+import type { ExcelContactRow } from '@/lib/broadcasts/excel-row';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -56,100 +57,36 @@ function WaBadge() {
   );
 }
 
-export interface ExcelContactRow {
-  phone: string;
-  name?: string;
-  tagNames?: string[];
-  /** "business"/"company" column — matches Contact.company directly. */
-  company?: string;
-  /**
-   * Any other column in the sheet, keyed by its header text. Flows into a
-   * Custom Field per contact (auto-created if the name doesn't exist yet)
-   * so it shows up as a "Custom Field" option in the broadcast's variable
-   * mapping step — e.g. a "Doctor" or "Appointment Date" column.
-   */
-  customFields?: Record<string, string>;
+/**
+ * Parsing moved server-side (POST /api/broadcasts/parse-excel) — exceljs's
+ * browser bundle trips this site's production CSP (script-src has no
+ * 'unsafe-eval') just by being loaded, independent of which feature is
+ * used. See that route for the full explanation; this file just uploads
+ * the file and reads back the parsed rows.
+ */
+async function parseExcelFile(file: File): Promise<ExcelContactRow[]> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch('/api/broadcasts/parse-excel', { method: 'POST', body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data?.error ?? 'Failed to parse file')
+  return (data.contacts ?? []) as ExcelContactRow[]
 }
 
-/* ── Excel parser ────────────────────────────────────────────────── */
-async function parseExcelFile(file: File): Promise<ExcelContactRow[]> {
-  const { Workbook } = await import('exceljs')
-  const buffer = await file.arrayBuffer()
-  const wb = new Workbook()
-  await wb.xlsx.load(buffer)
-  const ws = wb.worksheets[0]
-  if (!ws) return []
-
-  const results: ExcelContactRow[] = []
-  let headers: string[] = []
-
-  ws.eachRow((row, rowIndex) => {
-    // exceljs row.values is 1-indexed; index 0 is always undefined
-    const values = (row.values as unknown[]).slice(1)
-    if (rowIndex === 1) {
-      headers = values.map((v) => String(v ?? ''))
+/**
+ * Generation moved server-side (GET /api/broadcasts/demo-template) — same
+ * CSP reason as parseExcelFile above. The server route fetches the
+ * account's tags itself, so this just downloads the finished file.
+ */
+async function downloadDemoTemplate() {
+  try {
+    const res = await fetch('/api/broadcasts/demo-template')
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      toast.error(data?.error ?? 'Failed to generate the demo file. Please try again.')
       return
     }
-    const phoneIdx   = headers.findIndex((k) => /phone|mobile|number|whatsapp/i.test(k))
-    const nameIdx     = headers.findIndex((k) => /name/i.test(k) && !/business/i.test(k))
-    const tagIdx       = headers.findIndex((k) => /^tags?$/i.test(k.trim()))
-    const companyIdx = headers.findIndex((k) => /business|company/i.test(k))
-    const raw = phoneIdx >= 0 ? String(values[phoneIdx] ?? '').trim().replace(/\s+/g, '') : ''
-    const phone = raw.startsWith('+') ? raw : raw ? `+${raw}` : ''
-    const name  = nameIdx  >= 0 ? String(values[nameIdx] ?? '').trim() || undefined : undefined
-    const company = companyIdx >= 0 ? String(values[companyIdx] ?? '').trim() || undefined : undefined
-    const tagNames = tagIdx >= 0
-      ? String(values[tagIdx] ?? '').split(/[,;]+/).map((t) => t.trim()).filter(Boolean)
-      : undefined
-
-    // Any column beyond the recognized ones (phone/name/tag/business) becomes
-    // a per-contact Custom Field value, keyed by its header text as-is.
-    const customFields: Record<string, string> = {}
-    headers.forEach((header, idx) => {
-      if (idx === phoneIdx || idx === nameIdx || idx === tagIdx || idx === companyIdx) return
-      const label = header.trim()
-      if (!label) return
-      const val = String(values[idx] ?? '').trim()
-      if (val) customFields[label] = val
-    })
-
-    if (phone.length >= 7) {
-      results.push({
-        phone, name, company,
-        tagNames: tagNames?.length ? tagNames : undefined,
-        customFields: Object.keys(customFields).length ? customFields : undefined,
-      })
-    }
-  })
-
-  return results
-}
-
-async function downloadDemoTemplate(tags: Tag[]) {
-  try {
-    const { Workbook } = await import('exceljs')
-    const wb = new Workbook()
-    const ws = wb.addWorksheet('Contacts')
-    ws.columns = [
-      { header: 'phone', key: 'phone', width: 20 },
-      { header: 'name', key: 'name', width: 24 },
-      { header: 'business name', key: 'company', width: 24 },
-      { header: 'tag', key: 'tag', width: 20 },
-    ]
-    const sampleTag = tags[0]?.name ?? ''
-    ws.addRow({ phone: '+919876543210', name: 'Jane Doe', company: 'Acme Pvt Ltd', tag: sampleTag })
-    ws.addRow({ phone: '+15551234567', name: 'John Smith', company: '', tag: '' })
-    ws.getRow(1).font = { bold: true }
-
-    // Deliberately NOT using an in-cell dropdown (ws.getCell(...).dataValidation)
-    // for the "tag" column here: exceljs's data-validation/formula module
-    // evaluates a string as JavaScript internally, which this site's
-    // production CSP blocks ("script-src ... violates ... unsafe-eval"),
-    // crashing the whole download. The valid tag names are listed in the
-    // hint text below the button instead — same guidance, no eval needed.
-
-    const buffer = await wb.xlsx.writeBuffer()
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const blob = await res.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -538,7 +475,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 <p className="text-[12px] font-semibold text-slate-600 uppercase tracking-wide">Upload contact list</p>
                 <button
                   type="button"
-                  onClick={() => downloadDemoTemplate(tags)}
+                  onClick={() => downloadDemoTemplate()}
                   className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-indigo-600 hover:text-indigo-800"
                 >
                   <Download className="h-3.5 w-3.5" /> Download demo file
@@ -600,7 +537,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                     CRM tag to each contact on import — use one of: {tags.length === 0 ? 'no tags yet' : tags.map((t) => t.name).join(', ')}.
                     {' '}Any other column (e.g. &quot;Doctor&quot;, &quot;Appointment Date&quot;) is saved as a Custom
                     Field per contact, so you can map it as a template variable in the next step.
-                    {' '}Not sure of the format? <button type="button" onClick={() => downloadDemoTemplate(tags)} className="text-indigo-600 hover:underline font-medium">Download the demo file</button>.
+                    {' '}Not sure of the format? <button type="button" onClick={() => downloadDemoTemplate()} className="text-indigo-600 hover:underline font-medium">Download the demo file</button>.
                   </p>
                 </div>
               )}

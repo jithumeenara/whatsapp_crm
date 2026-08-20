@@ -183,40 +183,21 @@ export default function BroadcastDetailPage() {
     }
   }
 
+  // Generation moved server-side (GET /api/broadcasts/[id]/export) —
+  // exceljs's browser bundle trips this site's production CSP (script-src
+  // has no 'unsafe-eval') just by being loaded, independent of which
+  // feature is used. This just downloads the finished file.
   async function exportToExcel() {
     if (!broadcast) return
     setExporting(true)
     try {
-      const { Workbook } = await import("exceljs")
-      const sent: Record<string, string>[] = []
-      const skipped: Record<string, string>[] = []
-
-      for (const r of recipients) {
-        const row = {
-          Name: r.contact?.name ?? "",
-          Phone: r.contact?.phone ?? "",
-          Email: r.contact?.email ?? "",
-          Status: r.status,
-          "Sent At": r.sent_at ? format(new Date(r.sent_at), "yyyy-MM-dd HH:mm") : "",
-          "Delivered At": r.delivered_at ? format(new Date(r.delivered_at), "yyyy-MM-dd HH:mm") : "",
-          "Read At": r.read_at ? format(new Date(r.read_at), "yyyy-MM-dd HH:mm") : "",
-          "Replied At": r.replied_at ? format(new Date(r.replied_at), "yyyy-MM-dd HH:mm") : "",
-          "Error": r.error_message ?? "",
-        }
-        if (r.status === "failed") skipped.push(row)
-        else sent.push(row)
+      const res = await fetch(`/api/broadcasts/${id}/export`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error((data as { error?: string }).error ?? "Export failed")
+        return
       }
-
-      const COLS = ["Name", "Phone", "Email", "Status", "Sent At", "Delivered At", "Read At", "Replied At", "Error"]
-      const wb = new Workbook()
-      const sentSheet = wb.addWorksheet("Sent")
-      sentSheet.columns = COLS.map((k) => ({ header: k, key: k, width: 20 }))
-      sent.forEach((row) => sentSheet.addRow(row))
-      const failedSheet = wb.addWorksheet("Failed")
-      failedSheet.columns = COLS.map((k) => ({ header: k, key: k, width: 20 }))
-      skipped.forEach((row) => failedSheet.addRow(row))
-      const buffer = await wb.xlsx.writeBuffer()
-      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+      const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
@@ -224,7 +205,7 @@ export default function BroadcastDetailPage() {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch {
       toast.error("Export failed")
     } finally {

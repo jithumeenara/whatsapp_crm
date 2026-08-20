@@ -576,12 +576,12 @@ export function Step3Personalize({
                               type="button"
                               onClick={() => changeType(key, tile.type)}
                               className={cn(
-                                'flex flex-col items-center gap-1.5 rounded-2xl border-2 p-3 transition-all',
-                                selected ? 'border-indigo-400 bg-indigo-50 shadow-sm ring-2 ring-indigo-200' : 'border-slate-200 bg-white hover:border-slate-300',
+                                'flex flex-col items-center gap-1 rounded-xl border p-2 transition-all',
+                                selected ? 'border-indigo-400 bg-indigo-50 shadow-sm ring-1 ring-indigo-200' : 'border-slate-200 bg-white hover:border-slate-300',
                               )}
                             >
-                              <TileIcon className={cn('h-4.5 w-4.5', selected ? 'text-indigo-600' : 'text-slate-400')} />
-                              <span className={cn('text-[10.5px] font-semibold leading-tight text-center', selected ? 'text-indigo-700' : 'text-slate-500')}>{tile.label}</span>
+                              <TileIcon className={cn('h-3.5 w-3.5', selected ? 'text-indigo-600' : 'text-slate-400')} />
+                              <span className={cn('text-[9.5px] font-semibold leading-tight text-center', selected ? 'text-indigo-700' : 'text-slate-500')}>{tile.label}</span>
                             </button>
                           );
                         })}
