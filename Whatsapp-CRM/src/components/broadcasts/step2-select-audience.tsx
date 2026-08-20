@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Tag, Contact } from '@/types';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Users, ArrowRight, ArrowLeft, X, Search, Phone,
@@ -125,42 +126,55 @@ async function parseExcelFile(file: File): Promise<ExcelContactRow[]> {
 }
 
 async function downloadDemoTemplate(tags: Tag[]) {
-  const { Workbook } = await import('exceljs')
-  const wb = new Workbook()
-  const ws = wb.addWorksheet('Contacts')
-  ws.columns = [
-    { header: 'phone', key: 'phone', width: 20 },
-    { header: 'name', key: 'name', width: 24 },
-    { header: 'business name', key: 'company', width: 24 },
-    { header: 'tag', key: 'tag', width: 20 },
-  ]
-  const sampleTag = tags[0]?.name ?? ''
-  ws.addRow({ phone: '+919876543210', name: 'Jane Doe', company: 'Acme Pvt Ltd', tag: sampleTag })
-  ws.addRow({ phone: '+15551234567', name: 'John Smith', company: '', tag: '' })
-  ws.getRow(1).font = { bold: true }
+  try {
+    const { Workbook } = await import('exceljs')
+    const wb = new Workbook()
+    const ws = wb.addWorksheet('Contacts')
+    ws.columns = [
+      { header: 'phone', key: 'phone', width: 20 },
+      { header: 'name', key: 'name', width: 24 },
+      { header: 'business name', key: 'company', width: 24 },
+      { header: 'tag', key: 'tag', width: 20 },
+    ]
+    const sampleTag = tags[0]?.name ?? ''
+    ws.addRow({ phone: '+919876543210', name: 'Jane Doe', company: 'Acme Pvt Ltd', tag: sampleTag })
+    ws.addRow({ phone: '+15551234567', name: 'John Smith', company: '', tag: '' })
+    ws.getRow(1).font = { bold: true }
 
-  // Turn the "tag" column into an in-cell dropdown listing the account's
-  // existing tags, so users pick a valid name instead of guessing one.
-  if (tags.length > 0) {
-    const list = `"${tags.map((t) => t.name).join(',')}"`
-    // "tag" is now the 4th column (D) — business name (C) was inserted before it.
-    for (let r = 2; r <= 500; r++) {
-      ws.getCell(`D${r}`).dataValidation = {
-        type: 'list',
-        allowBlank: true,
-        formulae: [list],
+    // Turn the "tag" column into an in-cell dropdown listing the account's
+    // existing tags, so users pick a valid name instead of guessing one.
+    if (tags.length > 0) {
+      const list = `"${tags.map((t) => t.name).join(',')}"`
+      // "tag" is the 4th column (D) — business name (C) was inserted before it.
+      for (let r = 2; r <= 500; r++) {
+        ws.getCell(`D${r}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [list],
+        }
       }
     }
-  }
 
-  const buffer = await wb.xlsx.writeBuffer()
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'broadcast-contacts-template.xlsx'
-  a.click()
-  URL.revokeObjectURL(url)
+    const buffer = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'broadcast-contacts-template.xlsx'
+    // Some browsers (Firefox in particular) silently ignore a click on an
+    // <a download> that was never attached to the document — appending it
+    // is what makes the download reliably fire everywhere.
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    // Revoke on a delay, not immediately — revoking synchronously right
+    // after click() can race the browser's own read of the blob and
+    // silently abort the download in some browsers.
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (err) {
+    console.error('Failed to generate demo template:', err)
+    toast.error('Failed to generate the demo file. Please try again.')
+  }
 }
 
 /* ── Main component ─────────────────────────────────────────────── */
