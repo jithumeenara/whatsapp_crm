@@ -147,8 +147,12 @@ function buildBodyComponent(
   if (keys.some((k) => !isPositionalKey(k))) {
     // Named-parameter body — each value is looked up by name, not by
     // array position. Order doesn't matter; Meta matches by parameter_name.
+    // A whitespace-only value (e.g. " ") is accepted deliberately —
+    // callers like run-broadcast.ts use that to stand in for a variable
+    // with no mapping rather than fail the whole send; only a truly
+    // absent/empty entry counts as missing here.
     const map = params.bodyByName ?? {};
-    const missing = keys.filter((k) => !map[k]?.toString().trim());
+    const missing = keys.filter((k) => map[k] == null || map[k] === '');
     if (missing.length > 0) {
       throw new Error(
         `Body variable(s) ${missing.join(', ')} require a value — pass bodyByName.`,

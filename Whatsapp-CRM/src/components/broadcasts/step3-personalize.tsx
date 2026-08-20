@@ -18,7 +18,7 @@ import {
 import {
   ArrowLeft, ArrowRight, Eye, Loader2, Database, AlertTriangle, CheckCircle2, Pencil, Sparkles,
   Reply, ExternalLink, Phone, Copy, Zap, FileText, Play, Image as ImageIcon, Film,
-  File as FileIcon, Upload, X,
+  File as FileIcon, Upload, X, ChevronRight, ChevronDown, PenLine, User, Tags,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,6 +32,13 @@ const MEDIA_ACCEPT: Record<string, string> = {
 const MEDIA_ICON: Record<string, typeof ImageIcon> = { image: ImageIcon, video: Film, document: FileIcon };
 
 type VariableType = VariableMapping['type'];
+
+const MAPPING_TYPE_TILES: { type: VariableType; label: string; icon: typeof PenLine }[] = [
+  { type: 'static', label: 'Static', icon: PenLine },
+  { type: 'field', label: 'Contact Field', icon: User },
+  { type: 'custom_field', label: 'Custom Field', icon: Tags },
+  { type: 'data_store', label: 'Data Store', icon: Database },
+];
 
 interface Step3Props {
   template: MessageTemplate;
@@ -92,7 +99,10 @@ export function Step3Personalize({
   >(new Map());
   const [loadingPreview, setLoadingPreview] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [mediaPopupOpen, setMediaPopupOpen] = useState(false);
+  const [mappingPopupOpen, setMappingPopupOpen] = useState(false);
+  // Which variable row is expanded (accordion-style) inside the mapping popup.
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Data Store lookups, cached per table so switching between placeholders
@@ -212,7 +222,7 @@ export function Step3Personalize({
   }
 
   /** Short human summary of a mapping, shown on the collapsed row so you
-   *  don't have to open the popup just to see what's already set. */
+   *  don't have to expand it just to see what's already set. */
   function summarize(key: string): { label: string; complete: boolean } {
     const mapping = variables[key];
     if (!mapping) return { label: 'Not mapped yet', complete: false };
@@ -235,6 +245,8 @@ export function Step3Personalize({
     const field = tableFieldsCache[mapping.table_id]?.find((f) => f.field_key === mapping.value);
     return { label: `Data Store — ${table?.name ?? '…'} · ${field?.label ?? mapping.value}`, complete: true };
   }
+
+  const mappedCount = placeholders.filter((p) => summarize(p.replace(/^\{\{|\}\}$/g, '')).complete).length;
 
   /** Best-effort client-side mirror of resolve-data-store.ts, using the
    *  first page of cached records — good enough for a live preview;
@@ -273,27 +285,34 @@ export function Step3Personalize({
       ? firstContactCustomValues
       : new Map<string, string>();
 
+    // Mapping is never mandatory — an unmapped placeholder, or one that
+    // resolves to nothing for this contact, sends as a single space
+    // rather than failing (see orBlankSpace in resolve-variables.ts).
+    // The preview mirrors that so it shows what actually gets sent.
     let text = template.body_text;
     for (const placeholder of placeholders) {
       const key = placeholder.replace(/^\{\{|\}\}$/g, '');
       const mapping = variables[key];
-      let replacement = placeholder;
+      let replacement = ' ';
 
       if (mapping) {
-        if (mapping.type === 'static' && mapping.value) {
-          replacement = mapping.value;
-        } else if (mapping.type === 'field' && mapping.value) {
+        if (mapping.type === 'static') {
+          replacement = mapping.value?.trim() ? mapping.value : ' ';
+        } else if (mapping.type === 'field') {
           const fieldMap: Record<string, string | undefined> = {
             name: contact.name,
             phone: contact.phone,
             email: contact.email,
             company: contact.company,
           };
-          replacement = fieldMap[mapping.value] ?? placeholder;
-        } else if (mapping.type === 'custom_field' && mapping.value) {
-          replacement = customValues.get(mapping.value) || placeholder;
+          const v = mapping.value ? fieldMap[mapping.value] : undefined;
+          replacement = v?.trim() ? v : ' ';
+        } else if (mapping.type === 'custom_field') {
+          const v = mapping.value ? customValues.get(mapping.value) : undefined;
+          replacement = v?.trim() ? v : ' ';
         } else if (mapping.type === 'data_store') {
-          replacement = dataStorePreviewValue(mapping) ?? placeholder;
+          const v = dataStorePreviewValue(mapping);
+          replacement = v?.trim() ? v : ' ';
         }
       }
       text = text.replaceAll(placeholder, replacement);
@@ -341,19 +360,19 @@ export function Step3Personalize({
     }
   }
 
-  const canContinue = unmappedKeys.length === 0 && !mediaMissing;
-
-  const editingMapping: VariableMapping | null = editingKey ? (variables[editingKey] ?? { type: 'static', value: '' }) : null;
-  const editingDsMapping = editingMapping?.type === 'data_store' ? editingMapping : null;
-  const editingDsFields = editingDsMapping?.table_id ? tableFieldsCache[editingDsMapping.table_id] : undefined;
+  // Mapping is never mandatory — an unmapped variable just sends as a
+  // blank space (see resolve-variables.ts's orBlankSpace) instead of
+  // blocking the broadcast. Media is still required when the template
+  // has no default Meta can fall back to, since that failure mode is a
+  // hard API rejection rather than a merely-blank placeholder.
+  const canContinue = !mediaMissing;
 
   return (
     <div className="space-y-5 sm:space-y-6">
       <div>
         <h2 className="text-[16px] font-semibold text-slate-900 sm:text-lg">Personalize Message</h2>
         <p className="mt-1 text-[13px] text-slate-500 sm:text-sm">
-          Map template variables to contact fields, custom fields, Data
-          Store records, or static values.
+          Attach media and map template variables before sending.
         </p>
       </div>
 
@@ -371,266 +390,345 @@ export function Step3Personalize({
         </Button>
       </div>
 
-      {/* Media picker — moved here from Choose a Template, since it belongs
-          with the rest of this campaign's personalization. Optional: leave
-          blank to reuse the template's own approved sample media. */}
-      {needsMedia && (
-        <div className={cn('rounded-2xl border p-4', mediaRequired ? 'border-amber-300 bg-amber-50/60' : 'border-indigo-200 bg-indigo-50/50')}>
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            {MediaIcon && <MediaIcon className={cn('h-4 w-4', mediaRequired ? 'text-amber-600' : 'text-indigo-600')} />}
-            <p className={cn('text-[13px] font-semibold', mediaRequired ? 'text-amber-800' : 'text-indigo-800')}>
-              {mediaType === 'image' ? 'Header image' : mediaType === 'video' ? 'Header video' : 'Header document'} for this campaign
-            </p>
-            {mediaRequired && (
-              <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">Required</span>
+      {/* Two summary buttons — each opens its own popup instead of
+          showing every control on the page at once. */}
+      <div className="space-y-2.5">
+        {needsMedia && (
+          <button
+            type="button"
+            onClick={() => setMediaPopupOpen(true)}
+            className={cn(
+              'flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all hover:shadow-sm',
+              mediaRequired && !headerMediaUrl ? 'border-amber-300 bg-amber-50/60 hover:border-amber-400' : 'border-slate-200 bg-white hover:border-primary/40',
             )}
-          </div>
-          <p className={cn('mb-3 text-[11px]', mediaRequired ? 'text-amber-600' : 'text-indigo-500')}>
-            {mediaRequired
-              ? 'This template has no default media Meta can reuse at send time — upload one for this broadcast or the send will fail.'
-              : "Optional — pick media for this specific broadcast, or leave blank to reuse the template's approved sample media."}
-          </p>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={MEDIA_ACCEPT[mediaType!]}
-            className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilePick(f); e.target.value = ''; }}
-          />
-
-          {headerMediaUrl ? (
-            <div className="flex items-center gap-3 rounded-lg border border-indigo-200 bg-white p-2.5">
-              {mediaType === 'image' ? (
+          >
+            {headerMediaUrl ? (
+              mediaType === 'image' ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={headerMediaUrl} alt="Header media" className="h-12 w-12 rounded-md object-cover" />
+                <img src={headerMediaUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
               ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-md bg-indigo-50">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
                   {MediaIcon && <MediaIcon className="h-5 w-5 text-indigo-500" />}
                 </div>
-              )}
-              <p className="flex-1 truncate text-[12px] text-slate-600">{headerMediaUrl.split('/').pop()}</p>
-              <button type="button" onClick={() => onHeaderMediaChange('')}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600">
-                <X className="h-3.5 w-3.5" />
-              </button>
+              )
+            ) : (
+              <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', mediaRequired ? 'bg-amber-100' : 'bg-indigo-50')}>
+                {MediaIcon && <MediaIcon className={cn('h-5 w-5', mediaRequired ? 'text-amber-600' : 'text-indigo-500')} />}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <p className="text-[13px] font-semibold text-slate-800">Header Media</p>
+                {mediaRequired && !headerMediaUrl && (
+                  <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">Required</span>
+                )}
+              </div>
+              <p className="truncate text-[12px] text-slate-500">
+                {headerMediaUrl ? headerMediaUrl.split('/').pop() : mediaRequired ? 'Not attached — send will fail without one' : 'Optional — uses the template’s sample media'}
+              </p>
             </div>
-          ) : (
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
-              className={cn('flex h-20 w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed bg-white text-[12px] font-medium disabled:opacity-50',
-                mediaRequired ? 'border-amber-300 text-amber-600 hover:border-amber-400 hover:bg-amber-50/50' : 'border-indigo-200 text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50')}>
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              {uploading ? 'Uploading…' : 'Click to upload'}
-            </button>
-          )}
-        </div>
-      )}
+            {headerMediaUrl ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : mediaRequired ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : null}
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
+        )}
 
-      {/* Variables — a compact row per placeholder; tap one to open its
-          mapping in a popup instead of showing every control inline. */}
-      {placeholders.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white/50 p-6 text-center">
-          <p className="text-sm text-slate-500">
-            This template has no variables to personalize.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {placeholders.map((placeholder) => {
-            const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-            const { label, complete } = summarize(key);
-            return (
-              <button
-                key={placeholder}
-                type="button"
-                onClick={() => setEditingKey(key)}
-                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/60 p-3.5 text-left transition-all hover:border-primary/40 hover:bg-white hover:shadow-sm"
-              >
-                <div className="min-w-0">
-                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
-                    {placeholder}
-                  </span>
-                  <p className={cn('mt-1.5 truncate text-[12.5px]', complete ? 'text-slate-600' : 'text-amber-600')}>{label}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {complete ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertTriangle className="h-4 w-4 text-amber-500" />}
-                  <Pencil className="h-3.5 w-3.5 text-slate-400" />
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
+        {placeholders.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setMappingPopupOpen(true)}
+            className={cn(
+              'flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all hover:shadow-sm',
+              unmappedKeys.length > 0 ? 'border-amber-300 bg-amber-50/60 hover:border-amber-400' : 'border-slate-200 bg-white hover:border-primary/40',
+            )}
+          >
+            <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', unmappedKeys.length > 0 ? 'bg-amber-100' : 'bg-indigo-50')}>
+              <Sparkles className={cn('h-5 w-5', unmappedKeys.length > 0 ? 'text-amber-600' : 'text-indigo-500')} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-slate-800">Variable Mapping</p>
+              <p className="text-[12px] text-slate-500">
+                {placeholders.length} placeholder{placeholders.length !== 1 ? 's' : ''} · {mappedCount} mapped
+                {unmappedKeys.length > 0 && `, ${unmappedKeys.length} missing`}
+              </p>
+            </div>
+            {unmappedKeys.length > 0 ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />}
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
+        )}
 
-      {/* Popup — the full mapping form for whichever variable was tapped. */}
-      <Dialog open={!!editingKey} onOpenChange={(v) => { if (!v) setEditingKey(null); }}>
-        <DialogContent className="max-h-[85vh] gap-0 overflow-y-auto rounded-3xl bg-white p-0 sm:max-w-md">
-          <DialogHeader className="bg-gradient-to-br from-indigo-50 to-white px-6 pb-5 pt-6">
-            <DialogTitle className="flex items-center gap-2 text-[17px] font-bold text-slate-800">
-              <Sparkles className="h-4 w-4 text-indigo-500" />
-              Map <span className="font-mono">{editingKey ? `{{${editingKey}}}` : ''}</span>
+        {placeholders.length === 0 && !needsMedia && (
+          <div className="rounded-2xl border border-slate-200 bg-white/50 p-6 text-center">
+            <p className="text-sm text-slate-500">This template has no variables or media to configure.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Media popup */}
+      <Dialog open={mediaPopupOpen} onOpenChange={setMediaPopupOpen}>
+        <DialogContent className="gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-md">
+          <DialogHeader className={cn('bg-gradient-to-br px-6 pb-5 pt-6', mediaRequired ? 'from-amber-50 to-white' : 'from-indigo-50 to-white')}>
+            <div className={cn('mb-1 flex h-11 w-11 items-center justify-center rounded-2xl', mediaRequired ? 'bg-amber-100' : 'bg-indigo-100')}>
+              {MediaIcon && <MediaIcon className={cn('h-5 w-5', mediaRequired ? 'text-amber-600' : 'text-indigo-600')} />}
+            </div>
+            <DialogTitle className="text-[17px] font-bold text-slate-800">
+              {mediaType === 'image' ? 'Header Image' : mediaType === 'video' ? 'Header Video' : 'Header Document'}
             </DialogTitle>
-            <p className="mt-0.5 text-[12px] text-slate-400">Choose where this variable&apos;s value should come from.</p>
+            <p className="mt-0.5 text-[12px] text-slate-400">
+              {mediaRequired
+                ? 'This template has no default media Meta can reuse at send time — upload one for this broadcast or the send will fail.'
+                : "Optional — pick media for this specific broadcast, or leave blank to reuse the template's approved sample media."}
+            </p>
           </DialogHeader>
 
-          {editingKey && editingMapping && (
-            <div className="space-y-4 px-6 pb-6 pt-4">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-500">Mapping Type</label>
-                <Select
-                  value={editingMapping.type}
-                  onValueChange={(val) => changeType(editingKey, val as VariableType)}
-                >
-                  <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="border-slate-200 bg-slate-100">
-                    <SelectItem value="static">Static Value</SelectItem>
-                    <SelectItem value="field">Contact Field</SelectItem>
-                    <SelectItem value="custom_field">Custom Field</SelectItem>
-                    <SelectItem value="data_store">Data Store</SelectItem>
-                  </SelectContent>
-                </Select>
+          <div className="space-y-3 px-6 pb-6 pt-1">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={mediaType ? MEDIA_ACCEPT[mediaType] : undefined}
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFilePick(f); e.target.value = ''; }}
+            />
+
+            {headerMediaUrl ? (
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                {mediaType === 'image' ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={headerMediaUrl} alt="Header media" className="h-14 w-14 rounded-xl object-cover" />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-indigo-50">
+                    {MediaIcon && <MediaIcon className="h-6 w-6 text-indigo-500" />}
+                  </div>
+                )}
+                <p className="flex-1 truncate text-[12.5px] text-slate-600">{headerMediaUrl.split('/').pop()}</p>
+                <button type="button" onClick={() => onHeaderMediaChange('')}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
+            ) : (
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
+                className={cn('flex h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed bg-white text-[12.5px] font-medium disabled:opacity-50',
+                  mediaRequired ? 'border-amber-300 text-amber-600 hover:border-amber-400 hover:bg-amber-50/50' : 'border-indigo-200 text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50')}>
+                {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                {uploading ? 'Uploading…' : 'Click to upload'}
+              </button>
+            )}
 
-              {editingMapping.type === 'static' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-500">Value</label>
-                  <Input
-                    value={editingMapping.value}
-                    onChange={(e) => setMapping(editingKey, { type: 'static', value: e.target.value })}
-                    placeholder="Enter value..."
-                    className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
-                  />
-                </div>
-              )}
+            <Button onClick={() => setMediaPopupOpen(false)} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+              Done
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-              {editingMapping.type === 'field' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-500">Field</label>
-                  <Select
-                    value={editingMapping.value || undefined}
-                    onValueChange={(val) => setMapping(editingKey, { type: 'field', value: val || '' })}
-                  >
-                    <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
-                      <SelectValue placeholder="Select field..." />
-                    </SelectTrigger>
-                    <SelectContent className="border-slate-200 bg-slate-100">
-                      {contactFields.map((field) => (
-                        <SelectItem key={field.value} value={field.value}>{field.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {editingMapping.type === 'custom_field' && (
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-slate-500">Field</label>
-                  <Select
-                    value={editingMapping.value || undefined}
-                    onValueChange={(val) => setMapping(editingKey, { type: 'custom_field', value: val || '' })}
-                  >
-                    <SelectTrigger className="w-full border-slate-200 bg-slate-100 text-slate-800">
-                      <SelectValue
-                        placeholder={
-                          loadingFields ? 'Loading…' : customFields.length === 0 ? 'No custom fields' : 'Select custom field…'
-                        }
-                      />
-                    </SelectTrigger>
-                    <SelectContent className="border-slate-200 bg-slate-100">
-                      {customFields.map((f) => (
-                        <SelectItem key={f.id} value={f.id}>{f.field_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-
-              {editingMapping.type === 'data_store' && (
-                <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-3">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600">
-                    <Database className="h-3.5 w-3.5" /> Data Store lookup
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500">Table</label>
-                    <Select
-                      value={editingDsMapping!.table_id || undefined}
-                      onValueChange={(val) => setMapping(editingKey, { type: 'data_store', value: '', table_id: val ?? '', match_field_key: '', match_contact_field: editingDsMapping!.match_contact_field })}
-                    >
-                      <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
-                        <SelectValue placeholder={dataTables.length === 0 ? 'No Data Store tables' : 'Select a table…'} />
-                      </SelectTrigger>
-                      <SelectContent className="border-slate-200 bg-white">
-                        {dataTables.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Match customers by</label>
-                      <Select
-                        value={editingDsMapping!.match_contact_field}
-                        onValueChange={(val) => setMapping(editingKey, { ...editingDsMapping!, match_contact_field: (val ?? 'phone') as 'phone' | 'email' | 'name' })}
-                      >
-                        <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="border-slate-200 bg-white">
-                          {matchContactFieldOptions.map((o) => (
-                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-500">Matches this table field</label>
-                      <Select
-                        value={editingDsMapping!.match_field_key || undefined}
-                        disabled={!editingDsMapping!.table_id}
-                        onValueChange={(val) => setMapping(editingKey, { ...editingDsMapping!, match_field_key: val ?? '' })}
-                      >
-                        <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
-                          <SelectValue placeholder={!editingDsMapping!.table_id ? 'Pick a table first' : editingDsFields ? 'Select field…' : 'Loading…'} />
-                        </SelectTrigger>
-                        <SelectContent className="border-slate-200 bg-white">
-                          {(editingDsFields ?? []).map((f) => (
-                            <SelectItem key={f.id} value={f.field_key}>{f.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-slate-500">Insert value from</label>
-                    <Select
-                      value={editingDsMapping!.value || undefined}
-                      disabled={!editingDsMapping!.table_id}
-                      onValueChange={(val) => setMapping(editingKey, { ...editingDsMapping!, value: val ?? '' })}
-                    >
-                      <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
-                        <SelectValue placeholder={!editingDsMapping!.table_id ? 'Pick a table first' : editingDsFields ? 'Select field…' : 'Loading…'} />
-                      </SelectTrigger>
-                      <SelectContent className="border-slate-200 bg-white">
-                        {(editingDsFields ?? []).map((f) => (
-                          <SelectItem key={f.id} value={f.field_key}>{f.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              )}
-
-              <Button onClick={() => setEditingKey(null)} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
-                Done
-              </Button>
+      {/* Mapping popup — a scrollable accordion list of every placeholder;
+          tap a row to expand its mapping form inline (no nested dialog). */}
+      <Dialog open={mappingPopupOpen} onOpenChange={(v) => { setMappingPopupOpen(v); if (!v) setExpandedKey(null); }}>
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-lg">
+          <DialogHeader className="bg-gradient-to-br from-indigo-50 to-white px-6 pb-5 pt-6">
+            <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100">
+              <Sparkles className="h-5 w-5 text-indigo-600" />
             </div>
-          )}
+            <DialogTitle className="text-[17px] font-bold text-slate-800">Variable Mapping</DialogTitle>
+            <p className="mt-0.5 text-[12px] text-slate-400">
+              Map each variable to a contact field, custom field, Data Store record, or static value.
+            </p>
+          </DialogHeader>
+
+          <div className="flex-1 space-y-2 overflow-y-auto px-6 pb-6 pt-1">
+            {placeholders.map((placeholder) => {
+              const key = placeholder.replace(/^\{\{|\}\}$/g, '');
+              const mapping: VariableMapping = variables[key] ?? { type: 'static', value: '' };
+              const dsMapping = mapping.type === 'data_store' ? mapping : null;
+              const dsFields = dsMapping?.table_id ? tableFieldsCache[dsMapping.table_id] : undefined;
+              const { label, complete } = summarize(key);
+              const expanded = expandedKey === key;
+
+              return (
+                <div key={placeholder} className="overflow-hidden rounded-2xl border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedKey(expanded ? null : key)}
+                    className="flex w-full items-center justify-between gap-3 bg-white p-3.5 text-left"
+                  >
+                    <div className="min-w-0">
+                      <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
+                        {placeholder}
+                      </span>
+                      <p className={cn('mt-1.5 truncate text-[12.5px]', complete ? 'text-slate-600' : 'text-amber-600')}>{label}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {complete ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertTriangle className="h-4 w-4 text-amber-500" />}
+                      {expanded ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <Pencil className="h-3.5 w-3.5 text-slate-400" />}
+                    </div>
+                  </button>
+
+                  {expanded && (
+                    <div className="space-y-4 border-t border-slate-100 bg-slate-50/60 p-4">
+                      {/* Mapping type — icon tiles instead of a plain dropdown. */}
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        {MAPPING_TYPE_TILES.map((tile) => {
+                          const selected = mapping.type === tile.type;
+                          const TileIcon = tile.icon;
+                          return (
+                            <button
+                              key={tile.type}
+                              type="button"
+                              onClick={() => changeType(key, tile.type)}
+                              className={cn(
+                                'flex flex-col items-center gap-1.5 rounded-2xl border-2 p-3 transition-all',
+                                selected ? 'border-indigo-400 bg-indigo-50 shadow-sm ring-2 ring-indigo-200' : 'border-slate-200 bg-white hover:border-slate-300',
+                              )}
+                            >
+                              <TileIcon className={cn('h-4.5 w-4.5', selected ? 'text-indigo-600' : 'text-slate-400')} />
+                              <span className={cn('text-[10.5px] font-semibold leading-tight text-center', selected ? 'text-indigo-700' : 'text-slate-500')}>{tile.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {mapping.type === 'static' && (
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-500">Value</label>
+                          <Input
+                            value={mapping.value}
+                            onChange={(e) => setMapping(key, { type: 'static', value: e.target.value })}
+                            placeholder="Enter value..."
+                            className="border-slate-200 bg-white text-slate-800 placeholder:text-slate-500"
+                          />
+                        </div>
+                      )}
+
+                      {mapping.type === 'field' && (
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-500">Field</label>
+                          <Select
+                            value={mapping.value || undefined}
+                            onValueChange={(val) => setMapping(key, { type: 'field', value: val || '' })}
+                          >
+                            <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                              <SelectValue placeholder="Select field..." />
+                            </SelectTrigger>
+                            <SelectContent className="border-slate-200 bg-white">
+                              {contactFields.map((field) => (
+                                <SelectItem key={field.value} value={field.value}>{field.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {mapping.type === 'custom_field' && (
+                        <div>
+                          <label className="mb-1.5 block text-xs font-medium text-slate-500">Field</label>
+                          <Select
+                            value={mapping.value || undefined}
+                            onValueChange={(val) => setMapping(key, { type: 'custom_field', value: val || '' })}
+                          >
+                            <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                              <SelectValue
+                                placeholder={loadingFields ? 'Loading…' : customFields.length === 0 ? 'No custom fields' : 'Select custom field…'}
+                              />
+                            </SelectTrigger>
+                            <SelectContent className="border-slate-200 bg-white">
+                              {customFields.map((f) => (
+                                <SelectItem key={f.id} value={f.id}>{f.field_name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {mapping.type === 'data_store' && (
+                        <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-3">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-600">
+                            <Database className="h-3.5 w-3.5" /> Data Store lookup
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-xs font-medium text-slate-500">Table</label>
+                            <Select
+                              value={dsMapping!.table_id || undefined}
+                              onValueChange={(val) => setMapping(key, { type: 'data_store', value: '', table_id: val ?? '', match_field_key: '', match_contact_field: dsMapping!.match_contact_field })}
+                            >
+                              <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                                <SelectValue placeholder={dataTables.length === 0 ? 'No Data Store tables' : 'Select a table…'} />
+                              </SelectTrigger>
+                              <SelectContent className="border-slate-200 bg-white">
+                                {dataTables.map((t) => (
+                                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div>
+                              <label className="mb-1.5 block text-xs font-medium text-slate-500">Match customers by</label>
+                              <Select
+                                value={dsMapping!.match_contact_field}
+                                onValueChange={(val) => setMapping(key, { ...dsMapping!, match_contact_field: (val ?? 'phone') as 'phone' | 'email' | 'name' })}
+                              >
+                                <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent className="border-slate-200 bg-white">
+                                  {matchContactFieldOptions.map((o) => (
+                                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <label className="mb-1.5 block text-xs font-medium text-slate-500">Matches this table field</label>
+                              <Select
+                                value={dsMapping!.match_field_key || undefined}
+                                disabled={!dsMapping!.table_id}
+                                onValueChange={(val) => setMapping(key, { ...dsMapping!, match_field_key: val ?? '' })}
+                              >
+                                <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                                  <SelectValue placeholder={!dsMapping!.table_id ? 'Pick a table first' : dsFields ? 'Select field…' : 'Loading…'} />
+                                </SelectTrigger>
+                                <SelectContent className="border-slate-200 bg-white">
+                                  {(dsFields ?? []).map((f) => (
+                                    <SelectItem key={f.id} value={f.field_key}>{f.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="mb-1.5 block text-xs font-medium text-slate-500">Insert value from</label>
+                            <Select
+                              value={dsMapping!.value || undefined}
+                              disabled={!dsMapping!.table_id}
+                              onValueChange={(val) => setMapping(key, { ...dsMapping!, value: val ?? '' })}
+                            >
+                              <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
+                                <SelectValue placeholder={!dsMapping!.table_id ? 'Pick a table first' : dsFields ? 'Select field…' : 'Loading…'} />
+                              </SelectTrigger>
+                              <SelectContent className="border-slate-200 bg-white">
+                                {(dsFields ?? []).map((f) => (
+                                  <SelectItem key={f.id} value={f.field_key}>{f.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="border-t border-slate-100 px-6 py-4">
+            <Button onClick={() => setMappingPopupOpen(false)} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+              Done
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -649,8 +747,8 @@ export function Step3Personalize({
           <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             <p className="text-[12px] text-amber-700">
-              No {template.header_type} selected for this campaign, and this template has no default media Meta can reuse —
-              upload one above, or the send will fail.
+              No {template.header_type} attached for this campaign, and this template has no default media Meta can reuse —
+              tap <span className="font-semibold">Header Media</span> above, or the send will fail.
             </p>
           </div>
         )}

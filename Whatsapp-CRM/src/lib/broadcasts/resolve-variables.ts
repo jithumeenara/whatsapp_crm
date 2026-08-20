@@ -33,6 +33,18 @@ type ResolveContact = {
   company?: string | null;
 };
 
+/**
+ * Meta rejects a template send with an empty-string parameter value —
+ * a blank body variable fails the WHOLE recipient's send, not just that
+ * one placeholder. Mapping is never mandatory here: a variable with no
+ * mapping, or one that resolves to nothing for this particular contact
+ * (e.g. mapped to Contact Email but this contact has none), degrades to
+ * a single space instead of blocking the send.
+ */
+function orBlankSpace(value: string): string {
+  return value.trim() ? value : " ";
+}
+
 function resolveOne(
   v: VariableMapping,
   key: string,
@@ -40,7 +52,7 @@ function resolveOne(
   customValues: Record<string, string> | undefined,
   dataStoreValues: Record<string, string> | undefined,
 ): string {
-  if (v.type === "static") return v.value;
+  if (v.type === "static") return orBlankSpace(v.value);
   if (v.type === "field") {
     const fieldMap: Record<string, string | undefined | null> = {
       name: contact.name,
@@ -48,12 +60,12 @@ function resolveOne(
       email: contact.email,
       company: contact.company,
     };
-    return fieldMap[v.value] ?? "";
+    return orBlankSpace(fieldMap[v.value] ?? "");
   }
   if (v.type === "data_store") {
-    return dataStoreValues?.[key] ?? "";
+    return orBlankSpace(dataStoreValues?.[key] ?? "");
   }
-  return customValues?.[v.value] ?? "";
+  return orBlankSpace(customValues?.[v.value] ?? "");
 }
 
 /**

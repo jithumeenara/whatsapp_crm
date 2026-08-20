@@ -10,7 +10,7 @@ import {
 } from "@/lib/whatsapp/phone-utils";
 import { resolveVariables, resolveVariablesByKey, type VariableMapping } from "@/lib/broadcasts/resolve-variables";
 import { buildDataStoreIndex } from "@/lib/broadcasts/resolve-data-store";
-import { isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
+import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
@@ -68,6 +68,17 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   }
 
   const variables = (broadcast.template_variables ?? {}) as Record<string, VariableMapping>;
+  // Mapping is never mandatory — a placeholder the user never touched in
+  // the Personalize step simply has no entry in `variables` at all. Give
+  // it a blank static mapping so resolveVariables/resolveVariablesByKey
+  // (which only iterate Object.keys(variables)) don't silently drop it;
+  // orBlankSpace() in resolve-variables.ts turns the blank into a single
+  // space rather than failing the send.
+  if (templateRow) {
+    for (const key of extractVariableKeys(templateRow.body_text)) {
+      if (!(key in variables)) variables[key] = { type: "static", value: "" };
+    }
+  }
 
   const contactIds = broadcast.recipients.map((r) => r.contact_id).filter(Boolean);
   const customValueRows = await prisma.contactCustomValue.findMany({
