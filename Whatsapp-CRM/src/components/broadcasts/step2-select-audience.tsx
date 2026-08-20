@@ -141,19 +141,12 @@ async function downloadDemoTemplate(tags: Tag[]) {
     ws.addRow({ phone: '+15551234567', name: 'John Smith', company: '', tag: '' })
     ws.getRow(1).font = { bold: true }
 
-    // Turn the "tag" column into an in-cell dropdown listing the account's
-    // existing tags, so users pick a valid name instead of guessing one.
-    if (tags.length > 0) {
-      const list = `"${tags.map((t) => t.name).join(',')}"`
-      // "tag" is the 4th column (D) — business name (C) was inserted before it.
-      for (let r = 2; r <= 500; r++) {
-        ws.getCell(`D${r}`).dataValidation = {
-          type: 'list',
-          allowBlank: true,
-          formulae: [list],
-        }
-      }
-    }
+    // Deliberately NOT using an in-cell dropdown (ws.getCell(...).dataValidation)
+    // for the "tag" column here: exceljs's data-validation/formula module
+    // evaluates a string as JavaScript internally, which this site's
+    // production CSP blocks ("script-src ... violates ... unsafe-eval"),
+    // crashing the whole download. The valid tag names are listed in the
+    // hint text below the button instead — same guidance, no eval needed.
 
     const buffer = await wb.xlsx.writeBuffer()
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
