@@ -603,7 +603,7 @@ export function Step3Personalize({
                         <div>
                           <label className="mb-1.5 block text-xs font-medium text-slate-500">Field</label>
                           <Select
-                            value={mapping.value || undefined}
+                            value={mapping.value}
                             onValueChange={(val) => setMapping(key, { type: 'field', value: val || '' })}
                           >
                             <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
@@ -622,7 +622,7 @@ export function Step3Personalize({
                         <div>
                           <label className="mb-1.5 block text-xs font-medium text-slate-500">Field</label>
                           <Select
-                            value={mapping.value || undefined}
+                            value={mapping.value}
                             onValueChange={(val) => setMapping(key, { type: 'custom_field', value: val || '' })}
                           >
                             <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
@@ -648,7 +648,7 @@ export function Step3Personalize({
                           <div>
                             <label className="mb-1.5 block text-xs font-medium text-slate-500">Table</label>
                             <Select
-                              value={dsMapping!.table_id || undefined}
+                              value={dsMapping!.table_id}
                               onValueChange={(val) => setMapping(key, { type: 'data_store', value: '', table_id: val ?? '', match_field_key: '', match_contact_field: dsMapping!.match_contact_field })}
                             >
                               <SelectTrigger className="w-full border-slate-200 bg-white text-slate-800">
@@ -682,7 +682,7 @@ export function Step3Personalize({
                             <div>
                               <label className="mb-1.5 block text-xs font-medium text-slate-500">Matches this table field</label>
                               <Select
-                                value={dsMapping!.match_field_key || undefined}
+                                value={dsMapping!.match_field_key}
                                 disabled={!dsMapping!.table_id}
                                 onValueChange={(val) => setMapping(key, { ...dsMapping!, match_field_key: val ?? '' })}
                               >
@@ -701,7 +701,7 @@ export function Step3Personalize({
                           <div>
                             <label className="mb-1.5 block text-xs font-medium text-slate-500">Insert value from</label>
                             <Select
-                              value={dsMapping!.value || undefined}
+                              value={dsMapping!.value}
                               disabled={!dsMapping!.table_id}
                               onValueChange={(val) => setMapping(key, { ...dsMapping!, value: val ?? '' })}
                             >

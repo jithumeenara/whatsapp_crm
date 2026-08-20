@@ -11,6 +11,7 @@ import {
 import { resolveVariables, resolveVariablesByKey, type VariableMapping } from "@/lib/broadcasts/resolve-variables";
 import { buildDataStoreIndex } from "@/lib/broadcasts/resolve-data-store";
 import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
+import { resolveMediaRef } from "@/lib/whatsapp/media-ref";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
@@ -54,6 +55,26 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   }
 
   const accessToken = decrypt(config.access_token);
+
+  // Resolve the campaign's header media (if any) to a real Meta-usable
+  // reference ONCE, up front — not per recipient. A relative
+  // /api/files/... upload URL isn't fetchable by Meta's servers and was
+  // being sent as-is, which Meta rejects with "Param ...link is not a
+  // valid URI" for every single recipient. See media-ref.ts.
+  let resolvedHeaderMedia: { id: string; link?: never } | { link: string; id?: never } | null = null;
+  if (broadcast.header_media_url) {
+    try {
+      resolvedHeaderMedia = await resolveMediaRef(broadcast.header_media_url, config.phone_number_id, accessToken);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      await prisma.broadcast.update({
+        where: { id: broadcastId },
+        data: { status: "failed" },
+      });
+      console.error(`[runBroadcast] Failed to resolve header media for broadcast ${broadcastId}:`, msg);
+      return;
+    }
+  }
 
   const templateRow = await prisma.messageTemplate.findFirst({
     where: {
@@ -147,12 +168,20 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     // handling all the way through to the actual Meta send payload.
     const named = isNamedVariableText(templateRow?.body_text);
     const contactForResolve = { name: contact.name, phone: contact.phone, email: contact.email, company: contact.company };
+    // Resolved once by key regardless of format — used directly as
+    // bodyByName for a named template, and always used to build the
+    // recipient's rendered_body preview (substituting by key name works
+    // the same way for "1"/"2" as it does for "customer_name").
+    const resolvedByKey = resolveVariablesByKey(variables, contactForResolve, customIndex[contact.id] ?? {}, dataStoreIndex[contact.id] ?? {});
     const params = named
       ? undefined
       : resolveVariables(variables, contactForResolve, customIndex[contact.id] ?? {}, dataStoreIndex[contact.id] ?? {});
-    const bodyByName = named
-      ? resolveVariablesByKey(variables, contactForResolve, customIndex[contact.id] ?? {}, dataStoreIndex[contact.id] ?? {})
-      : undefined;
+    const bodyByName = named ? resolvedByKey : undefined;
+
+    let renderedBody = templateRow?.body_text ?? "";
+    for (const [key, value] of Object.entries(resolvedByKey)) {
+      renderedBody = renderedBody.replaceAll(`{{${key}}}`, value);
+    }
 
     const variants = phoneVariants(sanitized);
     let sentMessageId: string | null = null;
@@ -177,10 +206,13 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
             params,
             messageParams: {
               // Campaign-level override of the template's approved sample
-              // media, when the user picked one for this broadcast. Falls
-              // back to the template's own header_media_url when unset
-              // (buildSendComponents handles that fallback already).
-              headerMediaUrl: broadcast.header_media_url ?? undefined,
+              // media, when the user picked one for this broadcast —
+              // resolved to a real Meta media id/URL above, never the raw
+              // relative /api/files/... path. Falls back to the template's
+              // own header_media_url when unset (buildSendComponents
+              // handles that fallback already).
+              headerMediaUrl: resolvedHeaderMedia && "link" in resolvedHeaderMedia ? resolvedHeaderMedia.link : undefined,
+              headerMediaId: resolvedHeaderMedia && "id" in resolvedHeaderMedia ? resolvedHeaderMedia.id : undefined,
               bodyByName,
             },
           });
@@ -205,14 +237,14 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     if (sentMessageId) {
       await prisma.broadcastRecipient.update({
         where: { id: recipient.id },
-        data: { status: "sent", sent_at: new Date(), whatsapp_message_id: sentMessageId, error_message: null },
+        data: { status: "sent", sent_at: new Date(), whatsapp_message_id: sentMessageId, error_message: null, rendered_body: renderedBody },
       });
       sentCount++;
       await prisma.broadcast.update({ where: { id: broadcastId }, data: { sent_count: { increment: 1 } } });
     } else {
       await prisma.broadcastRecipient.update({
         where: { id: recipient.id },
-        data: { status: "failed", error_message: lastError ?? "Send failed" },
+        data: { status: "failed", error_message: lastError ?? "Send failed", rendered_body: renderedBody },
       });
       failedCount++;
       await prisma.broadcast.update({ where: { id: broadcastId }, data: { failed_count: { increment: 1 } } });

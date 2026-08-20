@@ -391,6 +391,9 @@ export interface BroadcastRecipient {
    * Added in migration 003.
    */
   whatsapp_message_id?: string;
+  /** The actual per-recipient body text after variable substitution,
+   *  captured once at send time — added in migration 031. */
+  rendered_body?: string;
   created_at: string;
   contact?: Contact;
 }
