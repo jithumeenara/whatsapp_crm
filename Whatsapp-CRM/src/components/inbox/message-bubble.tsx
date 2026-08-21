@@ -20,6 +20,9 @@ import {
   Phone,
   Copy,
   Zap,
+  Maximize2,
+  X,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -130,41 +133,76 @@ function MediaUnavailable({ label }: { label: string }) {
   );
 }
 
+/** Full-screen click-to-view for an already-resolved image src — reused by
+ *  MediaImage below. A separate component so its state doesn't reset every
+ *  time the thumbnail re-renders. */
+function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-6"
+      onClick={onClose}
+      role="button"
+      tabIndex={-1}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-full max-w-full rounded-lg object-contain"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 function MediaImage({ url, alt }: { url: string; alt: string }) {
-  const [src, setSrc] = useState<string | null>(null);
+  // Only the proxied /api/whatsapp/media/... case needs a fetch+blob-URL
+  // dance (for its own loading/error UI, not an auth requirement — a plain
+  // <img src> would send the session cookie same-origin regardless). A
+  // direct URL is just used as-is, computed at render time below instead
+  // of round-tripping through state, so the effect never needs to call
+  // setState synchronously in its own body — only from the fetch's own
+  // callbacks, which is what effects are for.
+  const isProxied = url.startsWith("/api/whatsapp/media/");
+  const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(isProxied);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   useEffect(() => {
-    if (!url) return;
+    if (!url || !isProxied) return;
     let blobUrl: string | null = null;
     let cancelled = false;
 
-    if (url.startsWith("/api/whatsapp/media/")) {
-      fetch(url)
-        .then(async (res) => {
-          if (cancelled) return;
-          if (!res.ok) throw new Error("Failed to load media");
-          const blob = await res.blob();
-          blobUrl = URL.createObjectURL(blob);
-          if (!cancelled) setSrc(blobUrl);
-        })
-        .catch(() => {
-          if (!cancelled) setError(true);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    } else {
-      setSrc(url);
-      setLoading(false);
-    }
+    fetch(url)
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) throw new Error("Failed to load media");
+        const blob = await res.blob();
+        blobUrl = URL.createObjectURL(blob);
+        if (!cancelled) setBlobSrc(blobUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
 
     return () => {
       cancelled = true;
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [url]);
+  }, [url, isProxied]);
+
+  const src = isProxied ? blobSrc : url;
 
   if (error) {
     return (
@@ -183,12 +221,104 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   }
 
   return (
-    <img
-      src={src ?? ""}
-      alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
+    <>
+      {/* group + hover overlay: hovering reveals an expand affordance,
+          clicking opens the full-size image in a lightbox. */}
+      <button
+        type="button"
+        onClick={() => setLightboxOpen(true)}
+        className="group relative block cursor-zoom-in overflow-hidden rounded-lg"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src ?? ""}
+          alt={alt}
+          className="max-h-64 max-w-60 rounded-lg object-cover"
+          onError={() => setError(true)}
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100">
+          <Maximize2 className="h-6 w-6 text-white drop-shadow" />
+        </div>
+      </button>
+      {lightboxOpen && src && (
+        <ImageLightbox src={src} alt={alt} onClose={() => setLightboxOpen(false)} />
+      )}
+    </>
+  );
+}
+
+function MediaVideo({ url }: { url: string }) {
+  const [error, setError] = useState(false);
+  if (error) return <MediaUnavailable label="Video" />;
+  return (
+    <video
+      src={url}
+      controls
+      className="max-h-64 max-w-60 rounded-lg"
       onError={() => setError(true)}
     />
+  );
+}
+
+function MediaAudio({ url }: { url: string }) {
+  const [error, setError] = useState(false);
+  if (error) return <MediaUnavailable label="Audio" />;
+  return (
+    <audio
+      src={url}
+      controls
+      className="max-w-60"
+      onError={() => setError(true)}
+    />
+  );
+}
+
+/**
+ * A plain `<a href>` to `/api/whatsapp/media/[id]` used to just navigate to
+ * whatever that endpoint returned — including, on expired media, its JSON
+ * error body opened as a garbled new tab. Fetching first (same pattern as
+ * MediaImage) lets a dead link show the same inline "unavailable" state
+ * instead of a broken-looking navigation.
+ */
+function MediaDocument({ url, label }: { url: string; label: string }) {
+  const [error, setError] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  if (error) return <MediaUnavailable label={label} />;
+
+  async function handleClick(e: React.MouseEvent) {
+    if (!url.startsWith("/api/whatsapp/media/")) return; // plain URL — let the browser navigate normally
+    e.preventDefault();
+    setChecking(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { setError(true); return; }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    } catch {
+      setError(true);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <a
+      href={url}
+      onClick={handleClick}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-[13px] hover:bg-slate-100"
+    >
+      {checking ? (
+        <Loader2 className="h-5 w-5 shrink-0 animate-spin text-slate-500" />
+      ) : (
+        <FileText className="h-5 w-5 shrink-0 text-slate-500" />
+      )}
+      <span className="truncate">{label}</span>
+    </a>
   );
 }
 
@@ -297,11 +427,7 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div>
           {message.media_url ? (
-            <video
-              src={message.media_url}
-              controls
-              className="max-h-64 max-w-60 rounded-lg"
-            />
+            <MediaVideo url={message.media_url} />
           ) : (
             <MediaUnavailable label="Video" />
           )}
@@ -317,7 +443,7 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div>
           {message.media_url ? (
-            <audio src={message.media_url} controls className="max-w-60" />
+            <MediaAudio url={message.media_url} />
           ) : (
             <MediaUnavailable label="Audio" />
           )}
@@ -329,17 +455,7 @@ function MessageContent({ message }: { message: Message }) {
         return <MediaUnavailable label={message.content_text || "Document"} />;
       }
       return (
-        <a
-          href={message.media_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-[13px] hover:bg-slate-100"
-        >
-          <FileText className="h-5 w-5 shrink-0 text-slate-500" />
-          <span className="truncate">
-            {message.content_text || "Document"}
-          </span>
-        </a>
+        <MediaDocument url={message.media_url} label={message.content_text || "Document"} />
       );
 
     case "template":
