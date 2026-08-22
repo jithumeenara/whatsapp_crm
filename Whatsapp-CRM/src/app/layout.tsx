@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Anek_Malayalam } from "next/font/google";
 import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -9,8 +9,19 @@ import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from "@/lib/themes";
 import type { ThemeId } from "@/lib/themes";
 
 const inter = Inter({
-  variable: "--font-sans",
+  variable: "--font-inter",
   subsets: ["latin"],
+});
+
+// Malayalam text (chat messages, contact names, etc.) previously fell back
+// to whatever generic system font the browser had for that script — Inter
+// has no Malayalam glyphs at all. Anek Malayalam's font file is subsetted
+// to the Malayalam Unicode block, so stacking it after Inter in --font-sans
+// (see globals.css) activates automatically only for Malayalam characters,
+// never overriding Inter for Latin text.
+const anekMalayalam = Anek_Malayalam({
+  variable: "--font-malayalam",
+  subsets: ["malayalam"],
 });
 
 export const metadata: Metadata = {
@@ -55,7 +66,7 @@ export default async function RootLayout({
     <html
       lang="en"
       data-theme={theme}
-      className={`${inter.variable} h-full antialiased`}
+      className={`${inter.variable} ${anekMalayalam.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-white text-slate-900 font-sans">
         <Providers>

@@ -1,7 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { differenceInHours } from "date-fns"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Paperclip, Send, Loader2,
@@ -137,6 +138,18 @@ export default function LeadDetailPage() {
   const [uploading, setUploading] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 24-hour session window — same rule the main Inbox composer enforces
+  // (WhatsApp only allows free-form replies within 24h of the customer's
+  // last message; outside that window a template is required). This page
+  // previously had no such check at all, letting the composer stay
+  // enabled with a plain "Type a message…" placeholder even when a send
+  // would be rejected by Meta.
+  const sessionExpired = useMemo(() => {
+    const lastCustomerMsg = [...messages].reverse().find((m) => m.sender_type === "customer")
+    if (!lastCustomerMsg) return false
+    return differenceInHours(new Date(), new Date(lastCustomerMsg.created_at)) >= 24
+  }, [messages])
 
   const loadLead = useCallback(() => {
     fetch(`/api/leads/${id}?from=${encodeURIComponent(fromTab)}`)
@@ -336,7 +349,7 @@ export default function LeadDetailPage() {
 
   async function sendMessage() {
     const text = composerText.trim()
-    if (!text || !conversationId) return
+    if (!text || !conversationId || sessionExpired) return
     setSending(true)
     try {
       const res = await fetch("/api/whatsapp/send", {
@@ -734,7 +747,10 @@ export default function LeadDetailPage() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#EFEAE2]">
+          {/* Same WhatsApp-style doodle wallpaper as the main Inbox thread
+              (bg-[url('/inbox-doodle.svg')]) — this panel previously used a
+              flat colour instead of matching the shared pattern. */}
+          <div className="flex-1 overflow-y-auto bg-white bg-[url('/inbox-doodle.svg')] bg-repeat p-4 space-y-2">
             {!contactId ? (
               <p className="text-center text-[13px] text-slate-400 mt-8">This lead has no linked contact.</p>
             ) : chatLoading && messages.length === 0 ? (
@@ -758,12 +774,26 @@ export default function LeadDetailPage() {
           <div className="border-t border-slate-100 p-3 shrink-0">
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected}
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
+
+            {sessionExpired && (
+              <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
+                <p className="text-xs text-amber-600">
+                  24-hour session expired. Use a template to re-engage.
+                </p>
+                <button type="button" onClick={() => setTemplatePickerOpen(true)}
+                  className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-amber-600 hover:bg-amber-500/10 hover:text-amber-700">
+                  <LayoutTemplate className="h-3 w-3" />
+                  Templates
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <EmojiPickerPopover onSelect={insertEmoji} disabled={!conversationId} />
+              <EmojiPickerPopover onSelect={insertEmoji} disabled={!conversationId || sessionExpired} />
               {conversationId && <ScheduleMenuButton conversationId={conversationId} />}
               <div className="relative shrink-0">
-                <button type="button" onClick={() => setAttachOpen((v) => !v)} disabled={!conversationId || uploading}
-                  className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title="Attach">
+                <button type="button" onClick={() => setAttachOpen((v) => !v)} disabled={!conversationId || uploading || sessionExpired}
+                  className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title={sessionExpired ? "Session expired — send a template to re-engage first" : "Attach"}>
                   {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
                 </button>
                 {attachOpen && (
@@ -797,10 +827,16 @@ export default function LeadDetailPage() {
               </div>
               <input value={composerText} onChange={(e) => setComposerText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                placeholder={conversationId ? "Type a message…" : "No WhatsApp conversation yet"}
-                disabled={!conversationId || sending}
+                placeholder={
+                  !conversationId
+                    ? "No WhatsApp conversation yet"
+                    : sessionExpired
+                      ? "Session expired - use a template"
+                      : "Type a message…"
+                }
+                disabled={!conversationId || sending || sessionExpired}
                 className="flex-1 min-w-0 bg-transparent text-[13px] text-slate-800 outline-none disabled:opacity-50" />
-              <button onClick={sendMessage} disabled={!conversationId || !composerText.trim() || sending}
+              <button onClick={sendMessage} disabled={!conversationId || !composerText.trim() || sending || sessionExpired}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40">
                 {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
               </button>

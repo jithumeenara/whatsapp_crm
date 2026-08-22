@@ -48,6 +48,15 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Base font stack: Inter for Latin script, falling back to Anek Malayalam
+ * for Malayalam text. Anek Malayalam's font file is subsetted to the
+ * Malayalam Unicode block, so it only ever supplies glyphs Inter lacks —
+ * it never overrides Inter for English/etc. Applies everywhere font-sans
+ * is used (the whole app, including chat bubbles), not just one screen. */
+:root {
+  --font-sans: var(--font-inter), var(--font-malayalam), ui-sans-serif, system-ui, sans-serif;
+}
+
 /* ============================================================
  * COLOR THEMES
  *
