@@ -125,9 +125,15 @@ function StatusIcon({ status }: { status: Message["status"] }) {
 }
 
 function MediaUnavailable({ label }: { label: string }) {
+  // bg-black/5 + slate text reads correctly against every bubble colour
+  // this app uses (light green/teal/amber/slate) — a previous white-on-
+  // white-ish styling here (bg-white/10 + text-white/80) was only ever
+  // legible against a dark bubble background, which no bubble here has.
+  // Rarely hit before (only a literally-missing media_url); now common,
+  // since video/audio/document route through this on any failed fetch.
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-xs text-white/80">
-      <ImageOff className="h-4 w-4 shrink-0 text-slate-500" />
+    <div className="flex items-center gap-2 rounded-lg bg-black/5 px-3 py-2 text-xs text-slate-500">
+      <ImageOff className="h-4 w-4 shrink-0 text-slate-400" />
       <span>{label} unavailable</span>
     </div>
   );
@@ -289,16 +295,27 @@ function MediaDocument({ url, label }: { url: string; label: string }) {
   async function handleClick(e: React.MouseEvent) {
     if (!url.startsWith("/api/whatsapp/media/")) return; // plain URL — let the browser navigate normally
     e.preventDefault();
+    // Popup blockers only allow window.open() synchronously within the
+    // same event-handler tick as the user's click — calling it after an
+    // `await fetch(...)` (as a first pass here did) risks being silently
+    // blocked with no error shown. Opening the tab right now, before any
+    // await, and redirecting it once the blob is ready keeps it tied to
+    // the click. Deliberately omitting `noopener` here (unlike the plain-
+    // link case) since redirecting requires keeping the window reference
+    // — acceptable for a same-app blob: URL, not an external destination.
+    const pending = window.open("about:blank", "_blank");
     setChecking(true);
     try {
       const res = await fetch(url);
-      if (!res.ok) { setError(true); return; }
+      if (!res.ok) { setError(true); pending?.close(); return; }
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, "_blank", "noopener,noreferrer");
+      if (pending) pending.location.href = blobUrl;
+      else window.open(blobUrl, "_blank", "noopener,noreferrer"); // last-resort if the pre-open was itself blocked
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
     } catch {
       setError(true);
+      pending?.close();
     } finally {
       setChecking(false);
     }
