@@ -12,7 +12,10 @@ import {
 } from 'lucide-react';
 
 /* ── types ─────────────────────────────────────────────────────── */
-type AudienceMode = 'all' | 'tags' | 'pick' | 'excel';
+// 'pick' folded into 'all' -- the All WhatsApp tab itself now offers a
+// "send to everyone" vs "pick specific contacts" toggle instead of being
+// a separate tab (see pickSpecific state below).
+type AudienceMode = 'all' | 'tags' | 'excel';
 
 export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
@@ -112,11 +115,14 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   /* Derive which UI mode we're in */
   const initMode = (): AudienceMode => {
     if (audience.type === 'tags') return 'tags';
-    if (audience.type === 'contacts') return 'pick';
     if (audience.type === 'csv') return 'excel';
-    return 'all';
+    return 'all'; // 'contacts' lives under 'all' too, see pickSpecific
   };
   const [mode, setMode] = useState<AudienceMode>(initMode);
+  /* Within the "All WhatsApp" tab: send to everyone, or hand-pick specific
+   *  contacts (this is the former standalone "Pick Contacts" tab, folded
+   *  in here instead of being a separate mode). */
+  const [pickSpecific, setPickSpecific] = useState(audience.type === 'contacts');
 
   /* All WhatsApp contacts (full list for the picker) */
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
@@ -221,10 +227,17 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setPage(0);
     setQuery('');
     setSearch('');
-    if (m === 'all') onUpdate({ type: 'all' });
+    if (m === 'all') onUpdate(pickSpecific ? { type: 'contacts', contactIds: [...selectedIds] } : { type: 'all' });
     else if (m === 'tags') onUpdate({ type: 'tags', tagIds: selectedTagIds });
-    else if (m === 'excel') onUpdate({ type: 'csv', csvContacts: excelContacts });
-    else onUpdate({ type: 'contacts', contactIds: [...selectedIds] });
+    else onUpdate({ type: 'csv', csvContacts: excelContacts });
+  }
+
+  /* ── "Send to everyone" vs "Pick specific contacts", within the All
+   *  WhatsApp tab ──────────────────────────────────────────────── */
+  function togglePickSpecific(v: boolean) {
+    setPickSpecific(v);
+    setPage(0);
+    onUpdate(v ? { type: 'contacts', contactIds: [...selectedIds] } : { type: 'all' });
   }
 
   /* ── Excel file handler ──────────────────────────────────────── */
@@ -373,28 +386,27 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     : 0;
 
   const isValid =
-    mode === 'all' ||
+    (mode === 'all' && (!pickSpecific || selectedIds.size > 0)) ||
     (mode === 'tags' && selectedTagIds.length > 0) ||
-    (mode === 'pick' && selectedIds.size > 0) ||
     (mode === 'excel' && validationStatus === 'done' && validCount > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
   const summaryLabel =
-    mode === 'all'
+    mode === 'all' && pickSpecific
+      ? `${selectedIds.size} contact${selectedIds.size !== 1 ? 's' : ''} selected`
+      : mode === 'all'
       ? `${totalWa.toLocaleString()} WhatsApp contacts`
       : mode === 'tags'
       ? selectedTagIds.length === 0
         ? 'Select at least one tag'
         : `Contacts with ${selectedTagIds.length} tag${selectedTagIds.length !== 1 ? 's' : ''}`
-      : mode === 'excel'
-      ? excelContacts.length === 0
+      : excelContacts.length === 0
         ? 'Upload an Excel file to continue'
         : validationStatus === 'idle'
           ? `${excelContacts.length} contacts imported — validate WhatsApp numbers to continue`
           : validationStatus === 'validating'
             ? `Validating ${excelContacts.length} numbers…`
-            : `${validCount} valid WhatsApp numbers (${invalidCount} skipped)`
-      : `${selectedIds.size} contact${selectedIds.size !== 1 ? 's' : ''} selected`;
+            : `${validCount} valid WhatsApp numbers (${invalidCount} skipped)`;
 
   return (
     <div className="space-y-5">
@@ -416,11 +428,10 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       </div>
 
       {/* ── Mode tabs ── */}
-      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-4">
+      <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-slate-100 p-1">
         {([
           { key: 'all',   label: 'All WhatsApp',   icon: Users },
           { key: 'tags',  label: 'By Tag',          icon: TagIcon },
-          { key: 'pick',  label: 'Pick Contacts',   icon: CheckCheck },
           { key: 'excel', label: 'Import Excel',    icon: FileSpreadsheet },
         ] as { key: AudienceMode; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
           <button
@@ -709,8 +720,24 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
         </div>
       )}
 
-      {/* ── Contacts list (pick mode) ── */}
-      {mode === 'pick' && (
+      {/* ── Send to everyone vs pick specific contacts (all mode) ── */}
+      {mode === 'all' && (
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => togglePickSpecific(false)}
+            className={cn('flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[12.5px] font-semibold transition-all',
+              !pickSpecific ? 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300')}>
+            <Users className="h-3.5 w-3.5" /> Send to everyone
+          </button>
+          <button type="button" onClick={() => togglePickSpecific(true)}
+            className={cn('flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[12.5px] font-semibold transition-all',
+              pickSpecific ? 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300')}>
+            <CheckCheck className="h-3.5 w-3.5" /> Pick specific contacts
+          </button>
+        </div>
+      )}
+
+      {/* ── Contacts list (all mode, picking specific contacts) ── */}
+      {mode === 'all' && pickSpecific && (
         <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
           {/* Search + bulk actions */}
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
@@ -808,8 +835,8 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
         </div>
       )}
 
-      {/* ── All / Tags mode: WhatsApp contacts preview ── */}
-      {(mode === 'all' || mode === 'tags') && (
+      {/* ── All / Tags mode: WhatsApp contacts preview (read-only, everyone included) ── */}
+      {(mode === 'tags' || (mode === 'all' && !pickSpecific)) && (
         <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
             <div className="relative flex-1">
@@ -876,8 +903,8 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
         </div>
       )}
 
-      {/* ── Selected preview (pick mode) ── */}
-      {mode === 'pick' && selectedContacts.length > 0 && (
+      {/* ── Selected preview (picking specific contacts) ── */}
+      {mode === 'all' && pickSpecific && selectedContacts.length > 0 && (
         <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
