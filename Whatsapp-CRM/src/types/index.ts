@@ -199,6 +199,9 @@ export interface Message {
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
+  /** Set only when a Broadcast campaign sent this message — the inbox
+   *  bubble renders a "Broadcast" tag when present. */
+  broadcast_id?: string | null;
   created_at: string;
   reply_to_message_id?: string;
   /**

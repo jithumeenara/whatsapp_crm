@@ -24,6 +24,7 @@ import {
   X,
   Loader2,
   Download,
+  Radio,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -538,6 +539,25 @@ function ChannelTag({ channel }: { channel?: string }) {
   );
 }
 
+/** Set only on a message a Broadcast campaign sent (see broadcast_id on
+ *  Message) — previously broadcasts never wrote a Message row at all, so a
+ *  sent campaign was completely invisible in the recipient's Inbox thread.
+ *  This distinguishes it from an indistinguishable one-off agent send. */
+function BroadcastTag({ broadcastId }: { broadcastId?: string | null }) {
+  if (!broadcastId) return null;
+  return (
+    <a
+      href={`/broadcasts/${broadcastId}`}
+      onClick={(e) => e.stopPropagation()}
+      title="Sent via a Broadcast campaign — click to view it"
+      className="flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-700 hover:bg-violet-200"
+    >
+      <Radio className="h-2.5 w-2.5" />
+      Broadcast
+    </a>
+  );
+}
+
 /** Read-only display of a sent template's own buttons — quick-reply, URL,
  * phone, copy-code, flow. Previously invisible in the inbox: the bubble
  * only ever showed the template's body text, never what buttons the
@@ -749,7 +769,7 @@ export function MessageBubble({
       )}
     >
       {/* Sender label above the bubble */}
-      {(isBot || (isAgent && agentName) || message.channel) && (
+      {(isBot || (isAgent && agentName) || message.channel || message.broadcast_id) && (
         <span className="mb-0.5 flex items-center gap-1.5">
           {isBot && (
             <span className="flex items-center gap-1 text-[10px] text-teal-600">
@@ -769,6 +789,7 @@ export function MessageBubble({
             </span>
           )}
           <ChannelTag channel={message.channel} />
+          <BroadcastTag broadcastId={message.broadcast_id} />
         </span>
       )}
 

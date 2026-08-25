@@ -17,6 +17,17 @@ const PUBLIC_PREFIXES = [
   '/api/instagram/webhook',   // Meta Instagram webhook — server-to-server, no session cookie
   '/api/facebook/webhook',    // Meta Facebook Messenger webhook — server-to-server, no session cookie
   '/api/flows/data-exchange/', // Meta WhatsApp Flows data-exchange (server-to-server, RSA-encrypted)
+  // Provider-secret-authenticated inbound webhooks (SMS: MSG91/TextBee,
+  // Email: SendGrid Inbound Parse, RCS: Twilio) — each has its own secret
+  // embedded in the URL path or a signature header verified inside the
+  // route handler itself (see /api/sms/webhook/[secret]/route.ts,
+  // /api/email/webhook/[secret]/route.ts, /api/rcs/webhook/route.ts). Were
+  // missing from this allowlist entirely, so every request 401'd before
+  // ever reaching that in-route verification — inbound SMS/Email/RCS never
+  // actually worked in production.
+  '/api/sms/webhook/',
+  '/api/email/webhook/',
+  '/api/rcs/webhook',
   // Cron sweeps — called by an external scheduler (crontab/systemd timer),
   // never by a logged-in browser. Each has its own timing-safe secret
   // check against AUTOMATION_CRON_SECRET inside the route handler itself

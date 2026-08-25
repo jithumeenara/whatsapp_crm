@@ -346,6 +346,12 @@ model Message {
   interactive_reply_id String?
   reply_to_message_id String?   @db.Uuid
   email_subject       String?   // Email channel only — subject/body split the other channels don't have
+  // Set only for a message a Broadcast campaign sent — previously broadcasts
+  // never wrote a Message row at all (only broadcast_recipients), so a sent
+  // campaign was completely invisible in that contact's Inbox thread. This
+  // both makes the message show up AND lets the bubble render a "Broadcast"
+  // tag instead of looking like an indistinguishable one-off agent send.
+  broadcast_id        String?   @db.Uuid
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   deleted_at          DateTime? @db.Timestamptz(6)
 
@@ -354,6 +360,7 @@ model Message {
   replies         Message[]    @relation("MessageReplies")
   reactions       MessageReaction[]
   prompt_for_runs FlowRun[]    @relation("LastPromptMessage")
+  broadcast       Broadcast?   @relation(fields: [broadcast_id], references: [id], onDelete: SetNull)
 
   @@map("messages")
 }
@@ -731,6 +738,7 @@ model Broadcast {
   account    Account             @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user       User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
   recipients BroadcastRecipient[]
+  messages   Message[]
 
   @@map("broadcasts")
 }

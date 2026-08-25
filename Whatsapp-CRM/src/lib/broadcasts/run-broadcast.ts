@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { sendTemplateMessage } from "@/lib/whatsapp/meta-api";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { isMessageTemplate } from "@/lib/whatsapp/template-row-guard";
+import { emitToAccount } from "@/lib/socket";
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -23,6 +24,72 @@ function sleep(ms: number) {
 
 function isRateLimitError(msg: string): boolean {
   return /rate.?limit|too many|131048|80007/i.test(msg);
+}
+
+/** Reuses the contact's existing WhatsApp conversation if one already
+ *  exists (the normal case — most broadcast recipients have messaged in
+ *  before), otherwise creates one. Mirrors the SMS webhook's
+ *  findOrCreateSmsConversation, channel:'whatsapp' instead of 'sms'. */
+async function findOrCreateWhatsAppConversation(accountId: string, ownerUserId: string, contactId: string) {
+  const existing = await prisma.conversation.findFirst({
+    where: { account_id: accountId, contact_id: contactId, channel: "whatsapp" },
+  });
+  if (existing) return existing;
+  try {
+    return await prisma.conversation.create({
+      data: { account_id: accountId, user_id: ownerUserId, contact_id: contactId, channel: "whatsapp" },
+    });
+  } catch (err) {
+    console.error("[runBroadcast] conversation create failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Writes the actual Message row for a sent broadcast recipient, so it
+ * shows up in that contact's Inbox thread (previously it only ever landed
+ * in broadcast_recipients — invisible in the conversation itself, with no
+ * way to tell "did we ever message this customer" from the Inbox alone).
+ * broadcast_id tags it so the bubble can render a "Broadcast" badge.
+ * Best-effort: a failure here doesn't undo the real send that already
+ * happened, so it's logged and swallowed rather than thrown.
+ */
+async function recordBroadcastMessage(args: {
+  accountId: string
+  ownerUserId: string
+  broadcastId: string
+  contactId: string
+  templateName: string
+  renderedBody: string
+  whatsappMessageId: string
+}) {
+  try {
+    const conversation = await findOrCreateWhatsAppConversation(args.accountId, args.ownerUserId, args.contactId);
+    if (!conversation) return;
+
+    const savedMsg = await prisma.message.create({
+      data: {
+        conversation_id: conversation.id,
+        sender_type: "agent",
+        sender_id: args.ownerUserId,
+        content_type: "template",
+        content_text: args.renderedBody,
+        template_name: args.templateName,
+        message_id: args.whatsappMessageId || null,
+        status: "sent",
+        broadcast_id: args.broadcastId,
+      },
+    });
+    emitToAccount(args.accountId, "message", { eventType: "INSERT", new: savedMsg, old: {} });
+
+    const updatedConv = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { last_message_text: args.renderedBody, last_message_at: new Date() },
+    });
+    emitToAccount(args.accountId, "conversation", { eventType: "UPDATE", new: updatedConv, old: {} });
+  } catch (err) {
+    console.error("[runBroadcast] recordBroadcastMessage failed:", err);
+  }
 }
 
 /**
@@ -241,6 +308,15 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       });
       sentCount++;
       await prisma.broadcast.update({ where: { id: broadcastId }, data: { sent_count: { increment: 1 } } });
+      await recordBroadcastMessage({
+        accountId,
+        ownerUserId: broadcast.user_id,
+        broadcastId,
+        contactId: contact.id,
+        templateName: broadcast.template_name,
+        renderedBody,
+        whatsappMessageId: sentMessageId,
+      });
     } else {
       await prisma.broadcastRecipient.update({
         where: { id: recipient.id },

@@ -60,7 +60,7 @@ export async function GET(
     const messages = await ctx.db.$queryRaw<Array<Record<string, unknown>>>`
       SELECT m.id, m.conversation_id, m.sender_type, m.sender_id, m.content_type,
              m.content_text, m.media_url, m.media_mime_type, m.media_filename,
-             m.template_name, m.message_id, m.status,
+             m.template_name, m.message_id, m.status, m.broadcast_id,
              m.interactive_reply_id, m.reply_to_message_id, m.created_at, m.deleted_at,
              m.email_subject, mt.buttons AS template_buttons
       FROM messages m
