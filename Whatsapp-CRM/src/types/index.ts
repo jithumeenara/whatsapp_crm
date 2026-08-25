@@ -353,7 +353,7 @@ export interface MessageTemplate {
 }
 
 
-export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed';
+export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelling' | 'cancelled';
 export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
 
 export interface Broadcast {
@@ -368,6 +368,14 @@ export interface Broadcast {
   header_media_url?: string;
   audience_filter?: Record<string, unknown>;
   scheduled_at?: string;
+  /** 'now' (default) | 'once' | 'recurring' -- see src/lib/broadcasts/sweep.ts. */
+  schedule_type?: string;
+  interval_value?: number | null;
+  interval_unit?: string | null;
+  max_sends?: number;
+  sends_count?: number;
+  next_send_at?: string | null;
+  last_sent_at?: string | null;
   status: BroadcastStatus;
   total_recipients: number;
   sent_count: number;

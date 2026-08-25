@@ -2,9 +2,13 @@
 
 import React, { useEffect, useState } from 'react';
 import type { MessageTemplate } from '@/types';
+import type { BroadcastSchedule } from '@/hooks/use-broadcast-sending';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowLeft, Send, Loader2, Users, Save, FileText, Tag, CheckCheck, Table2, Upload, Rocket, ShieldAlert } from 'lucide-react';
+import {
+  ArrowLeft, Send, Loader2, Users, Save, FileText, Tag, CheckCheck, Table2, Upload,
+  Rocket, ShieldAlert, Zap, CalendarClock, Repeat,
+} from 'lucide-react';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
@@ -20,6 +24,8 @@ interface Step4Props {
   onNameChange: (name: string) => void;
   template: MessageTemplate;
   audience: AudienceConfig;
+  schedule: BroadcastSchedule;
+  onScheduleChange: (s: BroadcastSchedule) => void;
   onSend: () => void;
   onSaveDraft?: () => void;
   onBack: () => void;
@@ -35,12 +41,45 @@ const AUDIENCE_META: Record<string, { label: string; icon: React.ElementType; co
   csv:          { label: 'CSV Upload',              icon: Upload,    color: 'text-amber-600 bg-amber-50' },
 };
 
+function toLocalDateInput(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function toLocalTimeInput(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 export function Step4ScheduleSend({
-  name, onNameChange, template, audience, onSend, onSaveDraft, onBack, isProcessing, progress,
+  name, onNameChange, template, audience, schedule, onScheduleChange, onSend, onSaveDraft, onBack, isProcessing, progress,
 }: Step4Props) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
+
+  // Local date/time inputs, seeded from schedule.scheduledAt when editing;
+  // default to "in an hour" the first time scheduling is turned on.
+  const [date, setDate] = useState(() => (schedule.scheduledAt ? toLocalDateInput(schedule.scheduledAt) : ''));
+  const [time, setTime] = useState(() => (schedule.scheduledAt ? toLocalTimeInput(schedule.scheduledAt) : '09:00'));
+
+  function updateDateTime(nextDate: string, nextTime: string) {
+    setDate(nextDate);
+    setTime(nextTime);
+    if (nextDate) {
+      onScheduleChange({ ...schedule, scheduledAt: new Date(`${nextDate}T${nextTime || '09:00'}:00`).toISOString() });
+    }
+  }
+
+  function setScheduleType(type: BroadcastSchedule['type']) {
+    if (type === 'now') { onScheduleChange({ type: 'now' }); return; }
+    onScheduleChange({
+      type,
+      scheduledAt: date ? new Date(`${date}T${time || '09:00'}:00`).toISOString() : undefined,
+      intervalValue: schedule.intervalValue ?? 1,
+      intervalUnit: schedule.intervalUnit ?? 'days',
+      maxSends: schedule.maxSends ?? 3,
+    });
+  }
 
   useEffect(() => {
     async function calculateReach() {
@@ -133,6 +172,82 @@ export function Step4ScheduleSend({
         </div>
       </div>
 
+      {/* When to send */}
+      <div className="space-y-3">
+        <p className="text-[12px] font-semibold text-slate-700">When to send</p>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            { type: 'now' as const,       label: 'Send now',  icon: Zap },
+            { type: 'once' as const,      label: 'Schedule',  icon: CalendarClock },
+            { type: 'recurring' as const, label: 'Repeat',    icon: Repeat },
+          ]).map(({ type, label, icon: Icon }) => (
+            <button key={type} type="button" onClick={() => setScheduleType(type)} disabled={isProcessing}
+              className={cn('flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-[12.5px] font-semibold transition-all disabled:opacity-50',
+                schedule.type === type ? 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300')}>
+              <Icon className="h-3.5 w-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+
+        {schedule.type !== 'now' && (
+          <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-500">
+                  {schedule.type === 'recurring' ? 'First send date' : 'Date'}
+                </label>
+                <input type="date" value={date} min={toLocalDateInput(new Date().toISOString())}
+                  onChange={(e) => updateDateTime(e.target.value, time)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-slate-500">Time</label>
+                <input type="time" value={time}
+                  onChange={(e) => updateDateTime(date, e.target.value)}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+              </div>
+            </div>
+
+            {schedule.type === 'recurring' && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium text-slate-500">Repeat every</label>
+                    <div className="flex gap-1.5">
+                      <input type="number" min={1} value={schedule.intervalValue ?? 1}
+                        onChange={(e) => onScheduleChange({ ...schedule, intervalValue: Math.max(1, Number(e.target.value) || 1) })}
+                        className="h-9 w-16 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                      <select value={schedule.intervalUnit ?? 'days'}
+                        onChange={(e) => onScheduleChange({ ...schedule, intervalUnit: e.target.value as BroadcastSchedule['intervalUnit'] })}
+                        className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                        <option value="minutes">Minutes</option>
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium text-slate-500">Stop after</label>
+                    <div className="flex items-center gap-1.5">
+                      <input type="number" min={1} value={schedule.maxSends ?? 3}
+                        onChange={(e) => onScheduleChange({ ...schedule, maxSends: Math.max(1, Number(e.target.value) || 1) })}
+                        className="h-9 w-16 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
+                      <span className="text-[12px] text-slate-500">sends</span>
+                    </div>
+                  </div>
+                </div>
+                <p className="text-[11px] text-indigo-600">
+                  Re-sends this campaign to the full audience again every {schedule.intervalValue ?? 1} {schedule.intervalUnit ?? 'days'}, up to {schedule.maxSends ?? 3} times. Cancel any time from the Broadcasts list.
+                </p>
+              </>
+            )}
+            {schedule.type === 'once' && !date && (
+              <p className="text-[11px] text-amber-600">Pick a date and time to schedule this broadcast.</p>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Sending progress */}
       {isProcessing && (
         <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
@@ -163,11 +278,12 @@ export function Step4ScheduleSend({
             </Button>
           )}
           <Button
-            disabled={!name.trim() || isProcessing}
+            disabled={!name.trim() || isProcessing || (schedule.type !== 'now' && !date)}
             onClick={() => setShowConfirm(true)}
             className="h-9 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            <Send className="h-4 w-4" /> Send Broadcast
+            {schedule.type === 'now' ? <Send className="h-4 w-4" /> : schedule.type === 'once' ? <CalendarClock className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
+            {schedule.type === 'now' ? 'Send Broadcast' : schedule.type === 'once' ? 'Schedule Broadcast' : 'Start Recurring Broadcast'}
           </Button>
         </div>
       </div>
@@ -179,8 +295,12 @@ export function Step4ScheduleSend({
             <div className="mb-1 flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-100">
               <Rocket className="h-5 w-5 text-indigo-600" />
             </div>
-            <DialogTitle className="text-[17px] font-bold text-slate-800">Confirm Broadcast</DialogTitle>
-            <p className="mt-0.5 text-[12px] text-slate-400">Review before this goes out — this can&apos;t be undone.</p>
+            <DialogTitle className="text-[17px] font-bold text-slate-800">
+              {schedule.type === 'now' ? 'Confirm Broadcast' : schedule.type === 'once' ? 'Confirm Schedule' : 'Confirm Recurring Broadcast'}
+            </DialogTitle>
+            <p className="mt-0.5 text-[12px] text-slate-400">
+              {schedule.type === 'now' ? "Review before this goes out — this can't be undone." : 'Review before this is scheduled.'}
+            </p>
           </DialogHeader>
 
           <div className="space-y-3 px-6 pb-6 pt-1">
@@ -197,11 +317,31 @@ export function Step4ScheduleSend({
                 <span className="text-[12px] text-slate-500">Recipients</span>
                 <span className="text-[13px] font-bold text-indigo-600">{estimatedReach.toLocaleString()} contacts</span>
               </div>
+              {schedule.type !== 'now' && schedule.scheduledAt && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12px] text-slate-500">{schedule.type === 'recurring' ? 'First send' : 'Sends on'}</span>
+                  <span className="text-[13px] font-semibold text-slate-800">
+                    {new Date(schedule.scheduledAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                  </span>
+                </div>
+              )}
+              {schedule.type === 'recurring' && (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[12px] text-slate-500">Repeats</span>
+                  <span className="text-[13px] font-semibold text-slate-800">
+                    Every {schedule.intervalValue ?? 1} {schedule.intervalUnit ?? 'days'} · up to {schedule.maxSends ?? 3}×
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
               <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-              <p className="text-[11.5px] text-amber-700">Once sent, this broadcast cannot be recalled or edited.</p>
+              <p className="text-[11.5px] text-amber-700">
+                {schedule.type === 'now' ? 'Once sent, this broadcast cannot be recalled or edited.'
+                  : schedule.type === 'once' ? 'Once scheduled, this broadcast will send automatically — even if you close this tab.'
+                  : 'Once started, this campaign re-sends to the full audience automatically on the interval above. Cancel any time from the Broadcasts list.'}
+              </p>
             </div>
 
             <div className="flex justify-end gap-2 pt-1">
@@ -211,7 +351,8 @@ export function Step4ScheduleSend({
               </button>
               <button type="button" onClick={() => { setShowConfirm(false); onSend(); }}
                 className="flex h-10 items-center gap-2 rounded-xl bg-indigo-600 px-5 text-[13px] font-bold text-white hover:bg-indigo-700">
-                <Send className="h-4 w-4" /> Confirm & Send
+                {schedule.type === 'now' ? <Send className="h-4 w-4" /> : schedule.type === 'once' ? <CalendarClock className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
+                {schedule.type === 'now' ? 'Confirm & Send' : schedule.type === 'once' ? 'Confirm & Schedule' : 'Confirm & Start'}
               </button>
             </div>
           </div>

@@ -6,6 +6,7 @@ import { Server as SocketIOServer } from "socket.io";
 // tsx from the project root, outside the alias resolution the rest of the
 // app relies on.
 import { sweepScheduledMessages } from "./src/lib/scheduled-messages/sweep";
+import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -67,6 +68,15 @@ app.prepare().then(() => {
   setInterval(() => {
     sweepScheduledMessages().catch((err) => {
       console.error("[scheduled-messages] sweep interval failed:", err);
+    });
+  }, 60_000);
+
+  // Scheduled/recurring broadcasts -- same always-on-process pattern as
+  // above, just a separate sweep since broadcasts and per-conversation
+  // scheduled messages are unrelated tables with different send loops.
+  setInterval(() => {
+    sweepScheduledBroadcasts().catch((err) => {
+      console.error("[broadcasts] sweep interval failed:", err);
     });
   }, 60_000);
 });

@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import { toast } from "sonner"
 import {
   Radio, Plus, RefreshCw, Send, CheckCircle2, XCircle,
-  Eye, MessageCircle, Users, Trash2,
+  Eye, MessageCircle, Users, Trash2, Repeat, CalendarClock,
 } from "lucide-react"
 import type { Broadcast } from "@/types"
 
@@ -156,8 +156,20 @@ export default function BroadcastsV2() {
                           <div className="min-w-0">
                             <p className="text-[14px] font-semibold text-slate-900 truncate leading-snug">{b.name}</p>
                             <p className="text-[12px] text-slate-400 truncate mt-0.5">{b.template_name}</p>
+                            {b.status === "scheduled" && b.next_send_at && (
+                              <p className="mt-0.5 flex items-center gap-1 text-[11px] text-sky-600">
+                                <CalendarClock className="h-3 w-3" />
+                                {new Date(b.next_send_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                              </p>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
+                            {b.schedule_type === "recurring" && (
+                              <span title={`Repeats · ${b.sends_count ?? 0}/${b.max_sends ?? 1} sent`}
+                                className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                                <Repeat className="h-3 w-3" /> {b.sends_count ?? 0}/{b.max_sends ?? 1}
+                              </span>
+                            )}
                             <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold", cfg.badge)}>
                               <span className={cn("h-1.5 w-1.5 rounded-full", cfg.dot)} />
                               {cfg.label}

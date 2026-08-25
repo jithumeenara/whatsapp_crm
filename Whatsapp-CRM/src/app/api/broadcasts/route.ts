@@ -44,16 +44,50 @@ export async function POST(request: NextRequest) {
       variables: Record<string, VariableMapping>;
       audience: AudienceConfig;
       header_media_url?: string;
+      /** 'now' (default) sends immediately once the caller hits /process,
+       *  same as before this field existed. 'once'/'recurring' create the
+       *  row as status:'scheduled' instead -- the sweep in
+       *  src/lib/broadcasts/sweep.ts picks it up at next_send_at. */
+      schedule_type?: "now" | "once" | "recurring";
+      scheduled_at?: string;
+      interval_value?: number;
+      interval_unit?: "minutes" | "hours" | "days";
+      max_sends?: number;
     };
 
     // ── Resolve audience ──────────────────────────────────────
-    let contacts = await resolveAudience(ctx, body.audience);
+    const contacts = await resolveAudience(ctx, body.audience);
 
     if (contacts.length === 0) {
       return NextResponse.json(
         { error: "No contacts found for this audience." },
         { status: 422 },
       );
+    }
+
+    // ── Scheduling ──────────────────────────────────────────────
+    const scheduleType = body.schedule_type === "recurring" ? "recurring" : body.schedule_type === "once" ? "once" : "now";
+    let scheduledAt: Date | null = null;
+    let intervalValue: number | undefined;
+    let intervalUnit: string | undefined;
+    let maxSends = 1;
+
+    if (scheduleType !== "now") {
+      if (!body.scheduled_at) {
+        return NextResponse.json({ error: "scheduled_at is required for a scheduled or recurring broadcast" }, { status: 400 });
+      }
+      scheduledAt = new Date(body.scheduled_at);
+      if (Number.isNaN(scheduledAt.getTime())) {
+        return NextResponse.json({ error: "Invalid scheduled_at" }, { status: 400 });
+      }
+      if (scheduleType === "recurring") {
+        intervalValue = Number(body.interval_value);
+        intervalUnit = body.interval_unit;
+        if (!intervalValue || intervalValue < 1 || !["minutes", "hours", "days"].includes(intervalUnit ?? "")) {
+          return NextResponse.json({ error: "Valid interval_value + interval_unit are required for a recurring broadcast" }, { status: 400 });
+        }
+        maxSends = Math.max(1, Number(body.max_sends) || 1);
+      }
     }
 
     // ── Create broadcast row ──────────────────────────────────
@@ -72,7 +106,15 @@ export async function POST(request: NextRequest) {
           customField: body.audience.customField,
           excludeTagIds: body.audience.excludeTagIds,
         } as Prisma.InputJsonValue,
-        status: "draft",
+        schedule_type: scheduleType,
+        scheduled_at: scheduledAt,
+        next_send_at: scheduledAt,
+        interval_value: intervalValue ?? null,
+        interval_unit: intervalUnit ?? null,
+        max_sends: maxSends,
+        // A scheduled/recurring broadcast waits for the sweep; "now" keeps
+        // the original behavior where the caller immediately hits /process.
+        status: scheduleType === "now" ? "draft" : "scheduled",
         total_recipients: contacts.length,
         sent_count: 0,
         delivered_count: 0,
@@ -131,6 +173,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       broadcastId: broadcast.id,
+      // 'now' broadcasts still need the caller to kick off /process; a
+      // scheduled/recurring one is left for the sweep to pick up instead.
+      scheduled: scheduleType !== "now",
       recipients: recipientRows.map((r) => ({
         id: r.id,
         contact: r.contact

@@ -26,6 +26,15 @@ export interface AudienceConfig {
   excludeTagIds?: string[];
 }
 
+export interface BroadcastSchedule {
+  type: 'now' | 'once' | 'recurring';
+  /** ISO datetime -- required for 'once'/'recurring'. */
+  scheduledAt?: string;
+  intervalValue?: number;
+  intervalUnit?: 'minutes' | 'hours' | 'days';
+  maxSends?: number;
+}
+
 interface BroadcastPayload {
   name: string;
   template: { name: string; language?: string };
@@ -33,6 +42,8 @@ interface BroadcastPayload {
   variables: Record<string, VariableMapping>;
   /** Campaign-level override for a media-header template's image/video/document. */
   headerMediaUrl?: string;
+  /** Defaults to send-now (unchanged behavior) when omitted. */
+  schedule?: BroadcastSchedule;
 }
 
 interface UseBroadcastSendingReturn {
@@ -44,6 +55,7 @@ interface UseBroadcastSendingReturn {
 // Shape returned by POST /api/broadcasts
 interface BroadcastSetupResult {
   broadcastId: string;
+  scheduled?: boolean;
   recipients: Array<{
     id: string;
     contact: {
@@ -72,6 +84,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     if (!accountId) throw new Error('Your profile is not linked to an account.');
 
     try {
+      const schedule = payload.schedule;
       const setupRes = await fetch('/api/broadcasts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -82,6 +95,11 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           variables: payload.variables,
           audience: payload.audience,
           header_media_url: payload.headerMediaUrl,
+          schedule_type: schedule?.type ?? 'now',
+          scheduled_at: schedule?.scheduledAt,
+          interval_value: schedule?.intervalValue,
+          interval_unit: schedule?.intervalUnit,
+          max_sends: schedule?.maxSends,
         }),
       });
 
@@ -95,6 +113,13 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       const setup = (await setupRes.json()) as BroadcastSetupResult;
       const { broadcastId } = setup;
       setProgress(50);
+
+      if (setup.scheduled) {
+        // Left for the server-side sweep (src/lib/broadcasts/sweep.ts) to
+        // pick up at next_send_at -- nothing to kick off right now.
+        setProgress(100);
+        return broadcastId;
+      }
 
       // Fire-and-forget on the server; returns 202 immediately so
       // sending continues even if the browser tab is closed.

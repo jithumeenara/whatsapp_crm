@@ -10,7 +10,7 @@ import { Step1ChooseTemplate } from "@/components/broadcasts/step1-choose-templa
 import { Step2SelectAudience, type AudienceConfig } from "@/components/broadcasts/step2-select-audience"
 import { Step3Personalize } from "@/components/broadcasts/step3-personalize"
 import { Step4ScheduleSend } from "@/components/broadcasts/step4-schedule-send"
-import { useBroadcastSending } from "@/hooks/use-broadcast-sending"
+import { useBroadcastSending, type BroadcastSchedule } from "@/hooks/use-broadcast-sending"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -31,6 +31,7 @@ export default function NewBroadcastV2() {
   const [variables, setVariables] = useState<Record<string, VariableMapping>>({})
   const [name, setName] = useState("")
   const [headerMediaUrl, setHeaderMediaUrl] = useState("")
+  const [schedule, setSchedule] = useState<BroadcastSchedule>({ type: "now" })
 
   function handleSelectTemplate(t: MessageTemplate) {
     if (template?.id !== t.id) setHeaderMediaUrl("") // new template -> old media override no longer applies
@@ -40,7 +41,8 @@ export default function NewBroadcastV2() {
   async function handleSend() {
     if (!template) return
     try {
-      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds }, variables, headerMediaUrl: headerMediaUrl || undefined })
+      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule })
+      toast.success(schedule.type === "now" ? "Broadcast sending…" : schedule.type === "once" ? "Broadcast scheduled" : "Recurring broadcast started")
       router.push(`/broadcasts/${id}`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Broadcast failed")
@@ -103,7 +105,7 @@ export default function NewBroadcastV2() {
           {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} />}
           {step === 1 && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && template && <Step3Personalize template={template} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
-          {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template} audience={audience} onSend={handleSend} onSaveDraft={handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}
+          {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template} audience={audience} schedule={schedule} onScheduleChange={setSchedule} onSend={handleSend} onSaveDraft={handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}
         </div>
       </div>
     </div>
