@@ -16,10 +16,21 @@ model User {
   email          String    @unique
   password_hash  String?
   email_verified DateTime? @db.Timestamptz(6)
+  // Login MFA -- defaults to 'disabled' for every existing and new user, so
+  // this ships with zero behavior change until a user opts in themselves
+  // (see Settings > Profile > Security). 'sms'/'whatsapp' send a 6-digit
+  // code each login; 'totp' verifies against an authenticator app (Google
+  // Authenticator etc.) with no server-sent code at all.
+  mfa_method     String    @default("disabled") // 'disabled' | 'sms' | 'whatsapp' | 'totp'
+  mfa_phone      String?   // E.164 -- delivery number for sms/whatsapp OTP
+  /// AES-256-GCM encrypted base32 TOTP secret -- only set when mfa_method = 'totp'.
+  totp_secret    String?
+  mfa_enabled_at DateTime? @db.Timestamptz(6)
   created_at     DateTime  @default(now()) @db.Timestamptz(6)
   updated_at     DateTime  @updatedAt @db.Timestamptz(6)
 
   profile                      Profile?
+  mfa_challenges                MfaChallenge[]
   owned_accounts               Account[]                    @relation("AccountOwner")
   contacts                     Contact[]
   tags                         Tag[]
@@ -55,6 +66,35 @@ model User {
   scheduled_messages           ScheduledMessage[]
 
   @@map("users")
+}
+
+// A short-lived MFA code/session, for two purposes: 'login' (a challenge
+// created mid-sign-in, consumed by auth.ts's authorize() once verified) and
+// 'enroll' (confirming a new phone/authenticator app BEFORE actually
+// turning MFA on, so a typo'd number or a missed QR scan can't lock the
+// user out of their own account). code_hash is null for TOTP challenges --
+// there's no server-generated code to check, the live 30-second window is
+// verified directly against the user's stored secret instead.
+model MfaChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  user_id    String    @db.Uuid
+  purpose    String    // 'login' | 'enroll'
+  method     String    // 'sms' | 'whatsapp' | 'totp'
+  /// bcrypt hash of the 6-digit code (sms/whatsapp only).
+  code_hash  String?
+  // 'enroll' only -- the phone number being verified, held here (not yet
+  // written to User.mfa_phone) until the code is confirmed.
+  pending_phone String?
+  verified   Boolean   @default(false)
+  consumed_at DateTime? @db.Timestamptz(6)
+  attempts   Int       @default(0)
+  expires_at DateTime  @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("mfa_challenges")
 }
 
 // ============================================================

@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { consumeLoginChallenge } from "@/lib/auth/mfa";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -9,6 +10,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       credentials: {
         email: { label: "Email / WhatsApp Number", type: "text" },
         password: { label: "Password", type: "password" },
+        // Only present once /api/auth/mfa/start + verify have already
+        // confirmed the user's OTP/TOTP code for this exact sign-in
+        // attempt — see the MFA step in the login page and mfa.ts.
+        challengeId: { label: "MFA Challenge", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
@@ -42,6 +47,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           user.password_hash
         );
         if (!valid) return null;
+
+        // MFA gate — password alone is never sufficient once a user has
+        // opted in. The challengeId must be a 'login' challenge for THIS
+        // user that was already verified by /api/auth/mfa/verify; consuming
+        // it here (not just checking it) closes the replay window, so the
+        // same verified code can't be reused for a second sign-in.
+        if (user.mfa_method !== "disabled") {
+          const challengeId = credentials.challengeId as string | undefined;
+          if (!challengeId) return null;
+          const consumed = await consumeLoginChallenge(challengeId, user.id);
+          if (!consumed) return null;
+        }
 
         return { id: user.id, email: user.email };
       },

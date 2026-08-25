@@ -165,6 +165,16 @@ export const RATE_LIMITS = {
    *  dispatches a real, provider-billed SMS, so this is intentionally
    *  tight (just enough to retry a typo'd number a few times). */
   smsTestMessage: { limit: 5, windowMs: 60_000 },
+  /** MFA login-start (password check + code dispatch), per-IP. Same
+   *  budget as `login` — this is the actual authentication attempt now
+   *  that MFA exists, so it needs the same brute-force protection. */
+  mfaStart: { limit: 10, windowMs: 15 * 60_000 },
+  /** MFA code verification, per-IP. Tighter than mfaStart since this is
+   *  the step an attacker would actually brute-force a 6-digit code
+   *  against — kept low enough that guessing 1 in 1,000,000 is infeasible
+   *  well before the window resets, on top of the 5-attempts-per-challenge
+   *  cap already enforced in mfa.ts itself. */
+  mfaVerify: { limit: 15, windowMs: 15 * 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

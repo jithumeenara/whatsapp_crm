@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PasswordForm } from '@/components/settings/password-form';
+import { MfaSettings } from '@/components/settings/mfa-settings';
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -292,6 +293,9 @@ export function ProfileForm() {
 
       {/* ── Password section ── */}
       <PasswordForm />
+
+      {/* ── Security (MFA) section ── */}
+      <MfaSettings />
     </div>
   );
 }
