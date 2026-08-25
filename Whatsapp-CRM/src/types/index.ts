@@ -190,6 +190,12 @@ export interface Message {
   content_type: ContentType;
   content_text?: string;
   media_url?: string;
+  /** Real MIME type from Meta (e.g. "application/pdf") — added migration 032.
+   *  Only populated for messages received after that migration shipped. */
+  media_mime_type?: string | null;
+  /** Document's original filename, kept separate from content_text (which
+   *  prefers the customer's caption). Only set for document messages. */
+  media_filename?: string | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;

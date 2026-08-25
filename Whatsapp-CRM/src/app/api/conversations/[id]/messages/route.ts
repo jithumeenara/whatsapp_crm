@@ -39,7 +39,8 @@ export async function GET(
     // the body text, never the button labels the customer would have seen.
     const messages = await ctx.db.$queryRaw<unknown[]>`
       SELECT m.id, m.conversation_id, m.sender_type, m.sender_id, m.content_type,
-             m.content_text, m.media_url, m.template_name, m.message_id, m.status,
+             m.content_text, m.media_url, m.media_mime_type, m.media_filename,
+             m.template_name, m.message_id, m.status,
              m.interactive_reply_id, m.reply_to_message_id, m.created_at, m.deleted_at,
              m.email_subject, mt.buttons AS template_buttons
       FROM messages m

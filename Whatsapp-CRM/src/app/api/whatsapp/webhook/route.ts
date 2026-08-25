@@ -548,7 +548,7 @@ async function processMessage(
   }
 
   // Parse message content based on type
-  const { contentText, mediaUrl, mediaType, interactiveReplyId, flowReply } =
+  const { contentText, mediaUrl, mediaType, mediaFilename, interactiveReplyId, flowReply } =
     await parseMessageContent(message, accessToken)
 
   // Resolve swipe-reply context if present.
@@ -565,9 +565,6 @@ async function processMessage(
       )
     }
   }
-
-  // `mediaType` is intentionally unused — the schema has no media_type column.
-  void mediaType
 
   // The messages.content_type CHECK constraint allows:
   //   text, image, document, audio, video, location, template, interactive
@@ -601,6 +598,8 @@ async function processMessage(
         content_type: contentType,
         content_text: contentText,
         media_url: mediaUrl,
+        media_mime_type: mediaType,
+        media_filename: mediaFilename,
         message_id: message.id,
         status: 'delivered',
         created_at: new Date(parseInt(message.timestamp) * 1000),
@@ -762,6 +761,10 @@ async function parseMessageContent(
   contentText: string | null
   mediaUrl: string | null
   mediaType: string | null
+  /** Document's original filename — kept separate from contentText, which
+   *  prefers the customer's caption when one is given. Null for every
+   *  other message type; only WhatsApp documents carry a real filename. */
+  mediaFilename: string | null
   interactiveReplyId: string | null
   /** Present only for a completed WhatsApp Flow submission (nfm_reply). */
   flowReply: { token: string; response: Record<string, unknown> } | null
@@ -776,6 +779,7 @@ async function parseMessageContent(
     contentText: null,
     mediaUrl: null,
     mediaType: null,
+    mediaFilename: null,
     interactiveReplyId: null,
     flowReply: null,
   }
@@ -814,6 +818,7 @@ async function parseMessageContent(
             message.document.caption || message.document.filename || null,
           mediaUrl: await proxyUrl(message.document.id),
           mediaType: message.document.mime_type,
+          mediaFilename: message.document.filename || null,
         }
       }
       return empty

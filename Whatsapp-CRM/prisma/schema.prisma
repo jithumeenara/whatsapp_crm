@@ -331,6 +331,15 @@ model Message {
   content_type        String   @default("text")
   content_text        String?
   media_url           String?
+  // Real MIME type from Meta's webhook payload (e.g. "application/pdf") —
+  // was parsed and immediately discarded before (`void mediaType`, no
+  // column to put it in). Needed to reliably detect a PDF vs. any other
+  // document type rather than sniffing a filename string.
+  media_mime_type     String?
+  // The document's original filename, kept separate from content_text —
+  // content_text prefers the customer's caption when one is given, which
+  // would otherwise be the ONLY thing stored, losing the real filename.
+  media_filename      String?
   template_name       String?
   message_id          String?
   status              String   @default("sent")

@@ -23,6 +23,7 @@ import {
   Maximize2,
   X,
   Loader2,
+  Download,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -168,7 +169,68 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
   );
 }
 
-function MediaImage({ url, alt }: { url: string; alt: string }) {
+/** Best-effort file extension for a suggested download name — WhatsApp
+ *  media URLs are opaque IDs (/api/whatsapp/media/{mediaId}), not real
+ *  filenames, so there's nothing to extract one from otherwise. */
+const MIME_EXT: Record<string, string> = {
+  "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+  "video/mp4": "mp4", "video/3gpp": "3gp",
+  "audio/aac": "aac", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/amr": "amr",
+  "audio/ogg": "ogg", "audio/opus": "opus",
+  "application/pdf": "pdf",
+};
+function extFromMime(mime?: string | null): string {
+  if (!mime) return "";
+  return MIME_EXT[mime] ?? mime.split("/")[1]?.split("+")[0] ?? "";
+}
+
+/** Fetches the media and triggers a real browser download (not just a
+ *  view) — a plain `<a href download>` on a same-origin proxy route
+ *  can't set Content-Disposition itself, so this does the fetch+blob+
+ *  synthetic-click dance instead. Returns whether it succeeded, so
+ *  callers can show a failure state instead of silently doing nothing. */
+async function downloadMediaFile(url: string, filename: string): Promise<boolean> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Small icon button reused by every media type — positioned by the
+ *  caller via `className`. Stops propagation so it never also triggers
+ *  whatever click behavior (lightbox, preview) the media itself has. */
+function DownloadButton({ url, filename, className }: { url: string; filename: string; className: string }) {
+  const [busy, setBusy] = useState(false);
+
+  async function handleClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setBusy(true);
+    const ok = await downloadMediaFile(url, filename);
+    setBusy(false);
+    if (!ok) console.error("Download failed:", url);
+  }
+
+  return (
+    <button type="button" onClick={handleClick} disabled={busy} title="Download" className={className}>
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+function MediaImage({ url, alt, mimeType }: { url: string; alt: string; mimeType?: string | null }) {
   // Only the proxied /api/whatsapp/media/... case needs a fetch+blob-URL
   // dance (for its own loading/error UI, not an auth requirement — a plain
   // <img src> would send the session cookie same-origin regardless). A
@@ -228,12 +290,17 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
 
   return (
     <>
-      {/* group + hover overlay: hovering reveals an expand affordance,
-          clicking opens the full-size image in a lightbox. */}
-      <button
-        type="button"
+      {/* group + hover overlay: hovering reveals expand/download
+          affordances, clicking the image (not the download button)
+          opens the full-size image in a lightbox. A plain div (not a
+          <button>) so the download button can legally nest inside —
+          two real <button> elements can't nest in valid HTML. */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setLightboxOpen(true)}
-        className="group relative block cursor-zoom-in overflow-hidden rounded-lg"
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setLightboxOpen(true); } }}
+        className="group relative block w-fit cursor-zoom-in overflow-hidden rounded-lg"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -245,7 +312,14 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
         <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100">
           <Maximize2 className="h-6 w-6 text-white drop-shadow" />
         </div>
-      </button>
+        {src && (
+          <DownloadButton
+            url={src}
+            filename={`image.${extFromMime(mimeType) || "jpg"}`}
+            className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover:opacity-100"
+          />
+        )}
+      </div>
       {lightboxOpen && src && (
         <ImageLightbox src={src} alt={alt} onClose={() => setLightboxOpen(false)} />
       )}
@@ -253,89 +327,189 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
-function MediaVideo({ url }: { url: string }) {
+function MediaVideo({ url, mimeType }: { url: string; mimeType?: string | null }) {
   const [error, setError] = useState(false);
   if (error) return <MediaUnavailable label="Video" />;
   return (
-    <video
-      src={url}
-      controls
-      className="max-h-64 max-w-60 rounded-lg"
-      onError={() => setError(true)}
-    />
+    <div className="group relative w-fit">
+      <video
+        src={url}
+        controls
+        className="max-h-64 max-w-60 rounded-lg"
+        onError={() => setError(true)}
+      />
+      <DownloadButton
+        url={url}
+        filename={`video.${extFromMime(mimeType) || "mp4"}`}
+        className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white opacity-0 transition-opacity hover:bg-black/70 group-hover:opacity-100"
+      />
+    </div>
   );
 }
 
-function MediaAudio({ url }: { url: string }) {
+function MediaAudio({ url, mimeType }: { url: string; mimeType?: string | null }) {
   const [error, setError] = useState(false);
   if (error) return <MediaUnavailable label="Audio" />;
   return (
-    <audio
-      src={url}
-      controls
-      className="max-w-60"
-      onError={() => setError(true)}
-    />
+    <div className="flex items-center gap-1.5">
+      <audio
+        src={url}
+        controls
+        className="max-w-60"
+        onError={() => setError(true)}
+      />
+      <DownloadButton
+        url={url}
+        filename={`audio.${extFromMime(mimeType) || "ogg"}`}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+      />
+    </div>
   );
 }
 
 /**
- * A plain `<a href>` to `/api/whatsapp/media/[id]` used to just navigate to
- * whatever that endpoint returned — including, on expired media, its JSON
- * error body opened as a garbled new tab. Fetching first (same pattern as
- * MediaImage) lets a dead link show the same inline "unavailable" state
- * instead of a broken-looking navigation.
+ * Opens `url` in a new tab, resolving it via fetch+blob first so an
+ * expired/dead link shows as a failure (via `onFail`) instead of a
+ * broken-looking navigation to the proxy route's raw JSON error body.
+ * Opens the tab synchronously, before the fetch — popup blockers only
+ * allow window.open() within the same event-handler tick as the user's
+ * click; calling it after an await risks being silently blocked.
+ * Deliberately omits `noopener` (unlike a plain link) since redirecting
+ * the tab once the blob is ready requires keeping the window reference —
+ * acceptable for a same-app blob: URL, not an external destination.
  */
-function MediaDocument({ url, label }: { url: string; label: string }) {
+async function openMediaInTab(url: string, onFail: () => void): Promise<void> {
+  const pending = window.open("about:blank", "_blank");
+  try {
+    const res = await fetch(url);
+    if (!res.ok) { onFail(); pending?.close(); return; }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    if (pending) pending.location.href = blobUrl;
+    else window.open(blobUrl, "_blank", "noopener,noreferrer"); // last-resort if the pre-open was itself blocked
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } catch {
+    onFail();
+    pending?.close();
+  }
+}
+
+/**
+ * PDFs get an inline thumbnail — the browser's own PDF renderer in a
+ * small, non-interactive iframe — that opens the full document in a new
+ * tab on click. Any other document type just shows its real filename;
+ * there's no generic way to thumbnail an arbitrary file type inline.
+ */
+function MediaDocument({ url, label, mimeType }: { url: string; label: string; mimeType?: string | null }) {
+  const isPdf = mimeType ? mimeType === "application/pdf" : /\.pdf$/i.test(label);
+  const isProxied = url.startsWith("/api/whatsapp/media/");
+
+  // PDFs fetch eagerly (to render the thumbnail); other types stay lazy,
+  // fetching only on click — a long chat history shouldn't eagerly
+  // download every document just to show a filename chip.
+  const [blobSrc, setBlobSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  const [loading, setLoading] = useState(isPdf && isProxied);
   const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    if (!isPdf || !isProxied) return;
+    let blobUrl: string | null = null;
+    let cancelled = false;
+    fetch(url)
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) throw new Error("Failed to load media");
+        const blob = await res.blob();
+        blobUrl = URL.createObjectURL(blob);
+        if (!cancelled) setBlobSrc(blobUrl);
+      })
+      .catch(() => { if (!cancelled) setError(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => {
+      cancelled = true;
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [url, isPdf, isProxied]);
 
   if (error) return <MediaUnavailable label={label} />;
 
-  async function handleClick(e: React.MouseEvent) {
-    if (!url.startsWith("/api/whatsapp/media/")) return; // plain URL — let the browser navigate normally
+  async function handleOpen(e: React.MouseEvent) {
+    if (!isProxied) return; // plain URL — let the browser navigate normally
     e.preventDefault();
-    // Popup blockers only allow window.open() synchronously within the
-    // same event-handler tick as the user's click — calling it after an
-    // `await fetch(...)` (as a first pass here did) risks being silently
-    // blocked with no error shown. Opening the tab right now, before any
-    // await, and redirecting it once the blob is ready keeps it tied to
-    // the click. Deliberately omitting `noopener` here (unlike the plain-
-    // link case) since redirecting requires keeping the window reference
-    // — acceptable for a same-app blob: URL, not an external destination.
-    const pending = window.open("about:blank", "_blank");
     setChecking(true);
-    try {
-      const res = await fetch(url);
-      if (!res.ok) { setError(true); pending?.close(); return; }
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      if (pending) pending.location.href = blobUrl;
-      else window.open(blobUrl, "_blank", "noopener,noreferrer"); // last-resort if the pre-open was itself blocked
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-    } catch {
-      setError(true);
-      pending?.close();
-    } finally {
-      setChecking(false);
-    }
+    await openMediaInTab(url, () => setError(true));
+    setChecking(false);
+  }
+
+  const downloadUrl = blobSrc ?? url;
+  const downloadName = label.includes(".") ? label : `${label}.${extFromMime(mimeType) || (isPdf ? "pdf" : "")}`;
+
+  if (isPdf) {
+    return (
+      <div className="w-40">
+        <a
+          href={url}
+          onClick={handleOpen}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group relative block overflow-hidden rounded-lg border border-slate-200 bg-white"
+        >
+          {loading ? (
+            <div className="flex h-48 items-center justify-center bg-slate-50">
+              <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            </div>
+          ) : blobSrc ? (
+            <>
+              {/* pointer-events-none: clicks pass through to the <a>
+                  above, which handles opening the full document. */}
+              <iframe src={`${blobSrc}#toolbar=0&navpanes=0`} title={label} className="pointer-events-none h-48 w-full" />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/20 group-hover:opacity-100">
+                <Maximize2 className="h-6 w-6 text-white drop-shadow" />
+              </div>
+            </>
+          ) : (
+            <div className="flex h-48 items-center justify-center bg-rose-50">
+              <FileText className="h-8 w-8 text-rose-400" />
+            </div>
+          )}
+        </a>
+        <div className="mt-1 flex items-center justify-between gap-1.5">
+          <p className="min-w-0 flex-1 truncate text-[12px] text-slate-600" title={label}>{label}</p>
+          <DownloadButton
+            url={downloadUrl}
+            filename={downloadName}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          />
+        </div>
+      </div>
+    );
   }
 
   return (
-    <a
-      href={url}
-      onClick={handleClick}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-[13px] hover:bg-slate-100"
-    >
-      {checking ? (
-        <Loader2 className="h-5 w-5 shrink-0 animate-spin text-slate-500" />
-      ) : (
-        <FileText className="h-5 w-5 shrink-0 text-slate-500" />
-      )}
-      <span className="truncate">{label}</span>
-    </a>
+    <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-[13px]">
+      <a
+        href={url}
+        onClick={handleOpen}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex min-w-0 flex-1 items-center gap-2 hover:opacity-80"
+      >
+        {checking ? (
+          <Loader2 className="h-5 w-5 shrink-0 animate-spin text-slate-500" />
+        ) : (
+          <FileText className="h-5 w-5 shrink-0 text-slate-500" />
+        )}
+        {/* The actual filename+extension, not a generic "Document" label —
+            content_text alone could be a caption rather than the real name. */}
+        <span className="truncate">{label}</span>
+      </a>
+      <DownloadButton
+        url={downloadUrl}
+        filename={downloadName}
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-600"
+      />
+    </div>
   );
 }
 
@@ -428,7 +602,7 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div>
           {message.media_url ? (
-            <MediaImage url={message.media_url} alt="Shared image" />
+            <MediaImage url={message.media_url} alt="Shared image" mimeType={message.media_mime_type} />
           ) : (
             <MediaUnavailable label="Image" />
           )}
@@ -444,7 +618,7 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div>
           {message.media_url ? (
-            <MediaVideo url={message.media_url} />
+            <MediaVideo url={message.media_url} mimeType={message.media_mime_type} />
           ) : (
             <MediaUnavailable label="Video" />
           )}
@@ -460,20 +634,25 @@ function MessageContent({ message }: { message: Message }) {
       return (
         <div>
           {message.media_url ? (
-            <MediaAudio url={message.media_url} />
+            <MediaAudio url={message.media_url} mimeType={message.media_mime_type} />
           ) : (
             <MediaUnavailable label="Audio" />
           )}
         </div>
       );
 
-    case "document":
+    case "document": {
+      // The real filename (media_filename) is preferred over content_text,
+      // which is only the customer's caption when they gave one — a
+      // caption alone would hide the actual file's name and extension.
+      const docLabel = message.media_filename || message.content_text || "Document";
       if (!message.media_url) {
-        return <MediaUnavailable label={message.content_text || "Document"} />;
+        return <MediaUnavailable label={docLabel} />;
       }
       return (
-        <MediaDocument url={message.media_url} label={message.content_text || "Document"} />
+        <MediaDocument url={message.media_url} label={docLabel} mimeType={message.media_mime_type} />
       );
+    }
 
     case "template":
       return (
