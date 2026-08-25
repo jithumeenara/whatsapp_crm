@@ -57,6 +57,9 @@ interface SendTemplateEngineArgs {
   bodyParams?: string
   /** Header variable value, only used if the template's header type is text with a variable. */
   headerText?: string
+  /** Media-header override for this specific send — takes priority over the
+   *  template's own header_media_url when set (see SendTimeParams). */
+  headerMediaUrl?: string
   /** Per-URL-button variable suffixes, keyed by button index. */
   buttonParams?: Record<number, string>
 }
@@ -553,6 +556,7 @@ export async function engineSendTemplate(
             messageParams: {
               body: params.length > 0 ? params : undefined,
               headerText: args.headerText,
+              headerMediaUrl: args.headerMediaUrl,
               buttonParams: args.buttonParams,
             },
           }

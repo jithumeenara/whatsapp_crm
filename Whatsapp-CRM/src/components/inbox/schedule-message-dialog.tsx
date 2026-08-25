@@ -30,6 +30,8 @@ interface SelectedTemplate {
   language: string
   bodyParams: string[]
   headerText?: string
+  headerMediaUrl?: string
+  headerMediaType?: string
   buttonParams?: Record<number, string>
   preview: string
 }
@@ -66,6 +68,8 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
         language: editItem.template_language ?? '',
         bodyParams: editItem.template_body_params ?? [],
         headerText: editItem.template_header_text ?? undefined,
+        headerMediaUrl: editItem.media_url ?? undefined,
+        headerMediaType: editItem.media_type ?? undefined,
         buttonParams: editItem.template_button_params ?? undefined,
         preview: editItem.content_text || editItem.template_name || '',
       })
@@ -94,6 +98,8 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
       language: template.language ?? 'en_US',
       bodyParams: values.body,
       headerText: values.headerText,
+      headerMediaUrl: values.headerMediaUrl,
+      headerMediaType: values.headerMediaUrl ? template.header_type : undefined,
       buttonParams: values.buttonParams,
       preview: renderTemplateBody(template.body_text, values.body),
     })
@@ -112,6 +118,8 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
         template_language: selected.language,
         template_body_params: selected.bodyParams.length > 0 ? selected.bodyParams : undefined,
         template_header_text: selected.headerText || undefined,
+        template_header_media_url: selected.headerMediaUrl || undefined,
+        template_header_media_type: selected.headerMediaType || undefined,
         template_button_params: selected.buttonParams,
         content_text: selected.preview,
         schedule_type: scheduleType,
@@ -176,6 +184,11 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                         <LayoutTemplate className="h-3.5 w-3.5" /> {selected.name}
                       </p>
                       <p className="mt-1 text-[13px] text-slate-700 line-clamp-3">{selected.preview}</p>
+                      {selected.headerMediaUrl && (
+                        <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-indigo-600 ring-1 ring-indigo-200">
+                          📎 {selected.headerMediaUrl.split('/').pop()}
+                        </span>
+                      )}
                     </div>
                     <button type="button" onClick={() => setTemplatePickerOpen(true)}
                       className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-indigo-500 hover:bg-white" title="Change template">

@@ -94,6 +94,8 @@ export async function PATCH(
         template_body_params: bodyParams ? (bodyParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
         template_header_text: body.template_header_text?.trim() || null,
         template_button_params: buttonParams ? (buttonParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        media_url: body.template_header_media_url?.trim() || null,
+        media_type: body.template_header_media_url?.trim() ? body.template_header_media_type || null : null,
         schedule_type: scheduleType,
         interval_value: intervalValue ?? null,
         interval_unit: intervalUnit ?? null,

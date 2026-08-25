@@ -14,9 +14,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { HeaderMediaPicker } from "@/components/shared/header-media-picker";
 import {
   ArrowLeft,
+  AlertTriangle,
+  CheckCircle2,
   ChevronRight,
+  Image as ImageIcon,
+  Film,
+  File as FileIcon,
   LayoutTemplate,
   Loader2,
 } from "lucide-react";
@@ -25,8 +31,17 @@ import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
 export interface TemplateSendValues {
   body: string[];
   headerText?: string;
+  headerMediaUrl?: string;
   buttonParams?: Record<number, string>;
 }
+
+const HEADER_MEDIA_ICON: Record<string, typeof ImageIcon> = {
+  image: ImageIcon,
+  video: Film,
+  document: FileIcon,
+};
+
+function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' '); }
 
 interface TemplatePickerProps {
   open: boolean;
@@ -98,6 +113,8 @@ export function TemplatePicker({
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
   const [params, setParams] = useState<string[]>([]);
   const [headerText, setHeaderText] = useState<string>("");
+  const [headerMediaUrl, setHeaderMediaUrl] = useState<string>("");
+  const [mediaPopupOpen, setMediaPopupOpen] = useState(false);
   const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
   const [contact, setContact] = useState<Contact | null>(null);
 
@@ -142,6 +159,7 @@ export function TemplatePicker({
     setSelected(null);
     setParams([]);
     setHeaderText("");
+    setHeaderMediaUrl("");
     setButtonParams({});
   }
 
@@ -152,10 +170,15 @@ export function TemplatePicker({
 
   function pickTemplate(template: MessageTemplate) {
     const slots = collectVariableSlots(template);
+    const templateNeedsMedia =
+      template.header_type === "image" ||
+      template.header_type === "video" ||
+      template.header_type === "document";
     const noInputsNeeded =
       slots.bodyVars.length === 0 &&
       slots.headerVarCount === 0 &&
-      slots.urlButtonSlots.length === 0;
+      slots.urlButtonSlots.length === 0 &&
+      !templateNeedsMedia;
     if (noInputsNeeded) {
       onSelect(template, { body: [] });
       handleOpenChange(false);
@@ -164,6 +187,7 @@ export function TemplatePicker({
     setSelected(template);
     setParams(new Array(slots.bodyVars.length).fill(""));
     setHeaderText("");
+    setHeaderMediaUrl("");
     setButtonParams({});
   }
 
@@ -171,6 +195,7 @@ export function TemplatePicker({
     if (!selected) return;
     const values: TemplateSendValues = { body: params };
     if (headerText.trim()) values.headerText = headerText.trim();
+    if (headerMediaUrl) values.headerMediaUrl = headerMediaUrl;
     if (Object.keys(buttonParams).length > 0) {
       values.buttonParams = Object.fromEntries(
         Object.entries(buttonParams).map(([k, v]) => [Number(k), v.trim()]),
@@ -185,9 +210,23 @@ export function TemplatePicker({
     [selected],
   );
   const fillOptions = useMemo(() => contactFillOptions(contact), [contact]);
+
+  const headerMediaType =
+    selected?.header_type === "image" || selected?.header_type === "video" || selected?.header_type === "document"
+      ? selected.header_type
+      : null;
+  const HeaderMediaIcon = headerMediaType ? HEADER_MEDIA_ICON[headerMediaType] : null;
+  // Templates synced from Meta rarely carry a reusable header_media_url —
+  // Meta's template API only returns the sample used at approval time, not
+  // a sendable one, so most media-header templates need one picked here.
+  const hasDefaultMedia = !!selected?.header_media_url;
+  const mediaRequired = !!headerMediaType && !hasDefaultMedia;
+  const mediaMissing = !!headerMediaType && !headerMediaUrl && !selected?.header_media_url;
+
   const canConfirm =
     !!selected &&
     !!slots &&
+    !mediaMissing &&
     slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
     (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
     slots.urlButtonSlots.every(
@@ -269,6 +308,43 @@ export function TemplatePicker({
                 </p>
               )}
             </div>
+            {headerMediaType && (
+              <button
+                type="button"
+                onClick={() => setMediaPopupOpen(true)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all hover:shadow-sm",
+                  mediaRequired && !headerMediaUrl ? "border-amber-300 bg-amber-50/60 hover:border-amber-400" : "border-slate-200 bg-white hover:border-primary/40",
+                )}
+              >
+                {headerMediaUrl ? (
+                  headerMediaType === "image" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={headerMediaUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                  ) : (
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+                      {HeaderMediaIcon && <HeaderMediaIcon className="h-4.5 w-4.5 text-indigo-500" />}
+                    </div>
+                  )
+                ) : (
+                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
+                    {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-4.5 w-4.5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="text-[13px] font-semibold text-slate-800">Header Media</p>
+                    {mediaRequired && !headerMediaUrl && (
+                      <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">Required</span>
+                    )}
+                  </div>
+                  <p className="truncate text-[12px] text-slate-500">
+                    {headerMediaUrl ? headerMediaUrl.split("/").pop() : mediaRequired ? "Not attached — send will fail without one" : "Optional — uses the template's sample media"}
+                  </p>
+                </div>
+                {headerMediaUrl ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : mediaRequired ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : null}
+              </button>
+            )}
             {slots && slots.headerVarCount > 0 && (
               <div className="space-y-1">
                 <Label className="text-xs text-slate-800/80">
@@ -372,6 +448,17 @@ export function TemplatePicker({
           )}
         </DialogFooter>
       </DialogContent>
+
+      {headerMediaType && (
+        <HeaderMediaPicker
+          open={mediaPopupOpen}
+          onOpenChange={setMediaPopupOpen}
+          mediaType={headerMediaType}
+          headerMediaUrl={headerMediaUrl}
+          onHeaderMediaChange={setHeaderMediaUrl}
+          required={mediaRequired}
+        />
+      )}
     </Dialog>
   );
 }

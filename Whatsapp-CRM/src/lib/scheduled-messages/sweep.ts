@@ -97,6 +97,7 @@ export async function sweepScheduledMessages(): Promise<SweepResult> {
           languageCode: sm.template_language ?? 'en_US',
           bodyParams,
           headerText: sm.template_header_text ?? undefined,
+          headerMediaUrl: sm.media_url ?? undefined,
           buttonParams: (sm.template_button_params as Record<number, string> | null) ?? undefined,
         })
       } else {

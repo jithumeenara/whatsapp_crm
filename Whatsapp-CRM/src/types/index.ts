@@ -261,7 +261,9 @@ export interface ScheduledMessage {
   template_body_params?: string[] | null;
   template_header_text?: string | null;
   template_button_params?: Record<number, string> | null;
-  /** Legacy free-form fields -- only ever populated on rows created before templates became mandatory. */
+  /** Media-header override for a media-type template (image/video/document), picked at
+   *  schedule time. Also the legacy free-form media field on rows created before
+   *  templates became mandatory -- both share this column since only one ever applies. */
   media_url?: string | null;
   media_type?: string | null;
   buttons?: ScheduledMessageButton[] | null;
