@@ -6,26 +6,31 @@ import { normalizePhone } from "@/lib/whatsapp/phone-utils"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { verifyTextBeeSignature } from "@/lib/messaging/channels/sms"
 import crypto from "crypto"
 
 /**
- * Inbound SMS webhook — MSG91.
+ * Inbound SMS webhook — shared by both MSG91 and TextBee.
  *
- * The per-account secret in the URL path both authenticates the request and
- * resolves which account it belongs to (see the comment in
- * src/app/api/sms/config/route.ts — MSG91's own webhook auth mechanism isn't
- * confirmed against current docs, so this is a portable substitute that
- * works regardless of whatever MSG91-native scheme exists).
+ * The per-account secret in the URL path resolves which account a request
+ * belongs to for both providers (MSG91's own webhook auth mechanism isn't
+ * confirmed against current docs, so this URL-secret is a portable
+ * substitute that works regardless of whatever MSG91-native scheme exists).
+ * For TextBee specifically, the same secret is also registered as the
+ * webhook's HMAC signing secret (see registerTextBeeWebhook in sms.ts), so
+ * TextBee requests get real signature verification on top of the URL
+ * secret — checked below via the `X-Signature` header.
  *
- * MSG91's exact inbound payload field names aren't confirmed either — this
- * tries the commonly-seen variants defensively. Verify against a real
- * payload during setup and adjust extractInboundFields if needed.
+ * MSG91's exact inbound payload field names aren't confirmed against
+ * current docs either — extractInboundFields tries the commonly-seen
+ * variants defensively. TextBee's shape (from textbee.dev/docs/webhooks) is
+ * exact: `{ event: "MESSAGE_RECEIVED", data: { sender, message, _id, ... } }`.
  */
 
 async function resolveAccountBySecret(secret: string) {
   return prisma.smsConfig.findFirst({
     where: { webhook_secret: secret },
-    select: { account_id: true, user_id: true },
+    select: { account_id: true, user_id: true, provider: true },
   })
 }
 
@@ -38,6 +43,21 @@ function getClientIp(request: NextRequest): string {
 }
 
 function extractInboundFields(payload: Record<string, unknown>): { from: string; text: string; messageId: string | null } | null {
+  // TextBee's webhook envelope: { event: "MESSAGE_RECEIVED", data: {...} }.
+  // Only MESSAGE_RECEIVED is ever subscribed to (registerTextBeeWebhook),
+  // but a stray delivery-status event should be acked, not misparsed as a
+  // customer message — bail out here rather than falling through to the
+  // MSG91-shaped guesses below.
+  if (payload.event && typeof payload.data === "object" && payload.data) {
+    if (payload.event !== "MESSAGE_RECEIVED") return null
+    const data = payload.data as Record<string, unknown>
+    const from = String(data.sender ?? "").trim()
+    const text = String(data.message ?? "").trim()
+    const messageId = data._id ?? null
+    if (!from || !text) return null
+    return { from, text, messageId: messageId ? String(messageId) : null }
+  }
+
   const from = String(payload.from ?? payload.sender ?? payload.mobile ?? payload.msisdn ?? "").trim()
   const text = String(payload.text ?? payload.message ?? payload.content ?? payload.body ?? "").trim()
   const messageId = payload.request_id ?? payload.message_id ?? payload.id ?? null
@@ -66,6 +86,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!config) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   const rawBody = await request.text()
+
+  // TextBee registers this same URL secret as its HMAC signing secret (see
+  // registerTextBeeWebhook) — verify it, fail closed, same as every other
+  // provider in this app that supports a real signature scheme.
+  if (config.provider === "textbee") {
+    const signature = request.headers.get("x-signature")
+    if (!verifyTextBeeSignature(rawBody, signature, secret)) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
+    }
+  }
+
   let payload: Record<string, unknown>
   try {
     payload = JSON.parse(rawBody)

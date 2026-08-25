@@ -501,16 +501,25 @@ model SmsConfig {
   id              String    @id @default(uuid()) @db.Uuid
   account_id      String    @unique @db.Uuid
   user_id         String    @db.Uuid
-  provider        String    @default("msg91")
-  /// AES-256-GCM encrypted MSG91 Auth Key.
+  provider        String    @default("msg91") // 'msg91' | 'textbee'
+  /// AES-256-GCM encrypted secret — MSG91's Auth Key, or TextBee's API key,
+  /// depending on `provider`. Same encrypted slot, different meaning.
   auth_key        String
-  sender_id       String?   // 6-char DLT-approved sender ID
-  route           String?   @default("4") // MSG91 transactional route
-  dlt_entity_id   String?   // India DLT compliance
+  sender_id       String?   // 6-char DLT-approved sender ID (msg91 only)
+  route           String?   @default("4") // MSG91 transactional route (msg91 only)
+  dlt_entity_id   String?   // India DLT compliance (msg91 only)
   dlt_template_id String?   // per-account default; may need to move to a
                             // per-MessageTemplate column — see Stage 3 open
-                            // questions in the implementation plan
-  webhook_secret  String?   // shared secret for inbound webhook auth
+                            // questions in the implementation plan (msg91 only)
+  device_id       String?   // TextBee device to send from; blank = TextBee's
+                            // own default/most-recently-active device (textbee only)
+  // TextBee's webhook subscription id, so re-saving PATCHes the existing
+  // subscription (auto-registered via their API) instead of creating a
+  // duplicate one on every save (textbee only).
+  textbee_webhook_id String?
+  webhook_secret  String?   // shared secret for inbound webhook auth — also
+                            // doubles as the HMAC signing secret we register
+                            // with TextBee's webhook API (see sms.ts)
   status          String    @default("disconnected")
   last_tested_at  DateTime? @db.Timestamptz(6)
   test_error      String?

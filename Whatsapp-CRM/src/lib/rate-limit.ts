@@ -161,6 +161,10 @@ export const RATE_LIMITS = {
    *  belt-and-braces alongside the secret's own ~192 bits of entropy, same
    *  reasoning as invitationPeek above. */
   inboundWebhookSecret: { limit: 60, windowMs: 60_000 },
+  /** "Send test message" in SMS settings. 5/min per user — each call
+   *  dispatches a real, provider-billed SMS, so this is intentionally
+   *  tight (just enough to retry a typo'd number a few times). */
+  smsTestMessage: { limit: 5, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
