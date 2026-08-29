@@ -4,12 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { MessageTemplate, Contact } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -17,14 +14,18 @@ import { Badge } from "@/components/ui/badge";
 import { HeaderMediaPicker } from "@/components/shared/header-media-picker";
 import {
   ArrowLeft,
+  ArrowRight,
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
   Image as ImageIcon,
   Film,
   File as FileIcon,
+  FileText,
   LayoutTemplate,
   Loader2,
+  Eye,
+  Send,
 } from "lucide-react";
 import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
 
@@ -70,6 +71,10 @@ function renderBodyPreview(body: string, params: string[]): string {
     const value = params[idx];
     return value && value.trim().length > 0 ? value : `{{${raw}}}`;
   });
+}
+
+function renderHeaderPreview(headerContent: string, value: string): string {
+  return headerContent.replace(/\{\{1\}\}/g, value?.trim() ? value : "{{1}}");
 }
 
 interface UrlButtonSlot {
@@ -222,6 +227,7 @@ export function TemplatePicker({
   const hasDefaultMedia = !!selected?.header_media_url;
   const mediaRequired = !!headerMediaType && !hasDefaultMedia;
   const mediaMissing = !!headerMediaType && !headerMediaUrl && !selected?.header_media_url;
+  const previewMediaUrl = headerMediaUrl || selected?.header_media_url || "";
 
   const canConfirm =
     !!selected &&
@@ -235,29 +241,37 @@ export function TemplatePicker({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="border-slate-200 bg-white sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-slate-800">
-            <LayoutTemplate className="h-4 w-4 text-primary" />
-            {selected ? selected.name : "Send template"}
+      <DialogContent className="gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-lg">
+        <DialogHeader className={cn(
+          "bg-gradient-to-br px-6 pb-5 pt-6",
+          mediaMissing ? "from-amber-50 to-white" : "from-indigo-50 to-white",
+        )}>
+          <div className={cn(
+            "mb-1 flex h-11 w-11 items-center justify-center rounded-2xl",
+            mediaMissing ? "bg-amber-100" : "bg-indigo-100",
+          )}>
+            <LayoutTemplate className={cn("h-5 w-5", mediaMissing ? "text-amber-600" : "text-indigo-600")} />
+          </div>
+          <DialogTitle className="truncate text-[17px] font-bold text-slate-800">
+            {selected ? selected.name : "Send a template"}
           </DialogTitle>
-          <DialogDescription className="text-slate-500">
+          <p className="mt-0.5 text-[12px] text-slate-400">
             {selected
-              ? "Fill in the placeholders to render this template. Meta requires every variable to be set."
+              ? "Fill in what this template needs — Meta requires every variable and required media set before it can send."
               : "Pick an approved WhatsApp template to send to this contact."}
-          </DialogDescription>
+          </p>
         </DialogHeader>
 
         {!selected ? (
-          <div className="max-h-[60vh] space-y-2 overflow-y-auto scroll-styled">
+          <div className="max-h-[65vh] space-y-2 overflow-y-auto px-6 pb-6 pt-1 scroll-styled">
             {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
               </div>
             ) : templates.length === 0 ? (
-              <div className="rounded-md border border-slate-200 bg-white/50 p-6 text-center">
-                <p className="text-sm text-slate-800/80">No approved templates</p>
-                <p className="mt-1 text-xs text-slate-500">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-6 text-center">
+                <p className="text-[13px] font-medium text-slate-600">No approved templates</p>
+                <p className="mt-1 text-[12px] text-slate-400">
                   Approve a template in Meta WhatsApp Manager, then sync it
                   from Settings → Templates.
                 </p>
@@ -268,67 +282,123 @@ export function TemplatePicker({
                   key={t.id}
                   type="button"
                   onClick={() => pickTemplate(t)}
-                  className="w-full rounded-md border border-slate-200 bg-white/50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-white"
+                  className="w-full rounded-2xl border border-slate-200 bg-white p-3.5 text-left transition-all hover:border-indigo-300 hover:shadow-sm"
                 >
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-2.5">
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-sm font-medium text-slate-800">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="truncate text-[13.5px] font-semibold text-slate-800">
                           {t.name}
                         </p>
-                        <Badge className="border border-primary/30 bg-primary/20 text-[10px] text-primary">
+                        <Badge className="border border-indigo-200 bg-indigo-50 text-[10px] text-indigo-600">
                           {t.category}
                         </Badge>
                         {t.language && (
-                          <span className="text-[10px] uppercase text-slate-500">
+                          <span className="text-[10px] uppercase text-slate-400">
                             {t.language}
                           </span>
                         )}
                       </div>
-                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                      <p className="mt-1 line-clamp-2 text-[12px] text-slate-500">
                         {t.body_text}
                       </p>
                     </div>
-                    <ChevronRight className="h-4 w-4 flex-shrink-0 text-slate-500" />
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                   </div>
                 </button>
               ))
             )}
           </div>
         ) : (
-          <div className="space-y-3">
-            <div className="rounded-md border border-slate-200 bg-white/50 p-3">
-              <p className="mb-1 text-xs text-slate-500">Preview</p>
-              <p className="whitespace-pre-wrap text-sm text-slate-800/80">
-                {renderBodyPreview(selected.body_text, params)}
-              </p>
-              {selected.footer_text && (
-                <p className="mt-2 text-xs italic text-slate-500">
-                  {selected.footer_text}
-                </p>
-              )}
+          <div className="max-h-[70vh] space-y-4 overflow-y-auto px-6 pb-2 pt-1 scroll-styled">
+            {/* WhatsApp-style live preview — shows the actual header media,
+                rendered body (unfilled placeholders left visible as a cue),
+                footer, and buttons, not just a bare text dump. */}
+            <div>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <Eye className="h-3 w-3" /> Preview
+              </div>
+              <div className="rounded-2xl p-3" style={{
+                backgroundColor: '#e5ddd5',
+                backgroundImage: 'radial-gradient(circle at 12% 22%, rgba(255,255,255,0.35) 0, transparent 40%), radial-gradient(circle at 82% 72%, rgba(255,255,255,0.3) 0, transparent 45%)',
+              }}>
+                <div className="ml-auto max-w-[92%] overflow-hidden rounded-lg rounded-tr-none bg-[#d9fdd3] shadow-sm">
+                  {headerMediaType === "image" && (
+                    <div className="flex h-28 items-center justify-center overflow-hidden bg-slate-200">
+                      {previewMediaUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={previewMediaUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <ImageIcon className="h-6 w-6 text-slate-400" />
+                      )}
+                    </div>
+                  )}
+                  {headerMediaType === "video" && (
+                    <div className="flex h-24 items-center justify-center bg-black">
+                      <Film className="h-6 w-6 text-white/70" />
+                    </div>
+                  )}
+                  {headerMediaType === "document" && (
+                    <div className="mx-2 mt-2 flex items-center gap-2 rounded-lg bg-black/5 p-2">
+                      <FileText className="h-4 w-4 shrink-0 text-rose-500" />
+                      <span className="truncate text-[12px] text-[#111b21]">
+                        {previewMediaUrl ? previewMediaUrl.split("/").pop() : "Document"}
+                      </span>
+                    </div>
+                  )}
+                  <div className="px-3 pb-1.5 pt-2">
+                    {selected.header_type === "text" && selected.header_content && (
+                      <p className="mb-1 whitespace-pre-wrap text-[14px] font-bold leading-snug text-[#111b21]">
+                        {renderHeaderPreview(selected.header_content, headerText)}
+                      </p>
+                    )}
+                    <p className="whitespace-pre-wrap text-[13.5px] leading-snug text-[#111b21]">
+                      {renderBodyPreview(selected.body_text, params)}
+                    </p>
+                    {selected.footer_text && (
+                      <p className="mt-1 text-[12px] text-[#667781]">{selected.footer_text}</p>
+                    )}
+                  </div>
+                </div>
+                {selected.buttons && selected.buttons.length > 0 && (
+                  <div className="ml-auto mt-0.5 max-w-[92%] overflow-hidden rounded-lg bg-white shadow-sm">
+                    {selected.buttons.map((b, i) => (
+                      <div key={i} className={cn(
+                        "py-2 text-center text-[13px] font-medium text-[#00a5f4]",
+                        i > 0 && "border-t border-slate-100",
+                      )}>
+                        {b.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Header media — first among the "fill this in" controls when
+                it's a hard blocker, since that's the thing most likely to
+                stop the send outright. */}
             {headerMediaType && (
               <button
                 type="button"
                 onClick={() => setMediaPopupOpen(true)}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all hover:shadow-sm",
-                  mediaRequired && !headerMediaUrl ? "border-amber-300 bg-amber-50/60 hover:border-amber-400" : "border-slate-200 bg-white hover:border-primary/40",
+                  "flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all hover:shadow-sm",
+                  mediaRequired && !headerMediaUrl ? "border-amber-300 bg-amber-50/60 hover:border-amber-400" : "border-slate-200 bg-white hover:border-indigo-300",
                 )}
               >
                 {headerMediaUrl ? (
                   headerMediaType === "image" ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={headerMediaUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                    <img src={headerMediaUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
                   ) : (
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-                      {HeaderMediaIcon && <HeaderMediaIcon className="h-4.5 w-4.5 text-indigo-500" />}
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+                      {HeaderMediaIcon && <HeaderMediaIcon className="h-5 w-5 text-indigo-500" />}
                     </div>
                   )
                 ) : (
-                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
-                    {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-4.5 w-4.5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
+                  <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
+                    {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-5 w-5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
@@ -342,89 +412,95 @@ export function TemplatePicker({
                     {headerMediaUrl ? headerMediaUrl.split("/").pop() : mediaRequired ? "Not attached — send will fail without one" : "Optional — uses the template's sample media"}
                   </p>
                 </div>
-                {headerMediaUrl ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : mediaRequired ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : null}
+                {headerMediaUrl ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : mediaRequired ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
               </button>
             )}
-            {slots && slots.headerVarCount > 0 && (
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-800/80">
-                  {`Header {{1}}`}
-                </Label>
-                <Input
-                  value={headerText}
-                  onChange={(e) => setHeaderText(e.target.value)}
-                  placeholder="Value for the header variable"
-                  className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
-                />
-                {fillOptions.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {fillOptions.map((opt) => (
-                      <button key={opt.label} type="button" onClick={() => setHeaderText(opt.value)}
-                        className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20">
-                        {opt.label}
-                      </button>
-                    ))}
+
+            {/* Variables */}
+            {(slots && (slots.headerVarCount > 0 || slots.bodyVars.length > 0 || slots.urlButtonSlots.length > 0)) && (
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+                {slots.headerVarCount > 0 && (
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Header {`{{1}}`}
+                    </label>
+                    <Input
+                      value={headerText}
+                      onChange={(e) => setHeaderText(e.target.value)}
+                      placeholder="Value for the header variable"
+                      className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
+                    />
+                    {fillOptions.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {fillOptions.map((opt) => (
+                          <button key={opt.label} type="button" onClick={() => setHeaderText(opt.value)}
+                            className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
+                {slots.bodyVars.map((v, i) => (
+                  <div key={v} className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{`Body {{${v}}}`}</label>
+                    <Input
+                      value={params[i] ?? ""}
+                      onChange={(e) => {
+                        const next = [...params];
+                        next[i] = e.target.value;
+                        setParams(next);
+                      }}
+                      placeholder={`Value for {{${v}}}`}
+                      className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
+                    />
+                    {fillOptions.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {fillOptions.map((opt) => (
+                          <button key={opt.label} type="button"
+                            onClick={() => { const next = [...params]; next[i] = opt.value; setParams(next); }}
+                            className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {slots.urlButtonSlots.map((slot) => (
+                  <div key={slot.index} className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      {`URL button "${slot.text}" — value for `}{`{{1}}`}
+                    </label>
+                    <Input
+                      value={buttonParams[slot.index] ?? ""}
+                      onChange={(e) =>
+                        setButtonParams((prev) => ({
+                          ...prev,
+                          [slot.index]: e.target.value,
+                        }))
+                      }
+                      placeholder="URL suffix value"
+                      className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
+                    />
+                    <p className="break-all text-[10px] text-slate-400">
+                      Final URL: {slot.url.replace(/\{\{1\}\}/g, buttonParams[slot.index] || "{{1}}")}
+                    </p>
+                  </div>
+                ))}
               </div>
             )}
-            {slots?.bodyVars.map((v, i) => (
-              <div key={v} className="space-y-1">
-                <Label className="text-xs text-slate-800/80">{`Body {{${v}}}`}</Label>
-                <Input
-                  value={params[i] ?? ""}
-                  onChange={(e) => {
-                    const next = [...params];
-                    next[i] = e.target.value;
-                    setParams(next);
-                  }}
-                  placeholder={`Value for {{${v}}}`}
-                  className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
-                />
-                {fillOptions.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {fillOptions.map((opt) => (
-                      <button key={opt.label} type="button"
-                        onClick={() => { const next = [...params]; next[i] = opt.value; setParams(next); }}
-                        className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary hover:bg-primary/20">
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-            {slots?.urlButtonSlots.map((slot) => (
-              <div key={slot.index} className="space-y-1">
-                <Label className="text-xs text-slate-800/80">
-                  {`URL button "${slot.text}" — value for `}{`{{1}}`}
-                </Label>
-                <Input
-                  value={buttonParams[slot.index] ?? ""}
-                  onChange={(e) =>
-                    setButtonParams((prev) => ({
-                      ...prev,
-                      [slot.index]: e.target.value,
-                    }))
-                  }
-                  placeholder="URL suffix value"
-                  className="border-slate-200 bg-slate-100 text-slate-800 placeholder:text-slate-500"
-                />
-                <p className="text-[10px] text-slate-500 break-all">
-                  Final URL: {slot.url.replace(/\{\{1\}\}/g, buttonParams[slot.index] || "{{1}}")}
-                </p>
-              </div>
-            ))}
           </div>
         )}
 
-        <DialogFooter className="gap-2">
+        <div className={cn("flex items-center gap-2 px-6 py-4", selected && "border-t border-slate-100")}>
           {selected ? (
             <>
               <Button
                 variant="outline"
                 onClick={resetSelection}
-                className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
+                className="h-10 border-slate-200 text-slate-600 hover:bg-slate-50"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
@@ -432,21 +508,23 @@ export function TemplatePicker({
               <Button
                 disabled={!canConfirm}
                 onClick={confirm}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                className="h-10 flex-1 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
               >
-                Send template
+                <Send className="h-4 w-4" />
+                Send Template
+                <ArrowRight className="h-4 w-4" />
               </Button>
             </>
           ) : (
             <Button
               variant="outline"
               onClick={() => handleOpenChange(false)}
-              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
+              className="ml-auto h-10 border-slate-200 text-slate-600 hover:bg-slate-50"
             >
               Cancel
             </Button>
           )}
-        </DialogFooter>
+        </div>
       </DialogContent>
 
       {headerMediaType && (
