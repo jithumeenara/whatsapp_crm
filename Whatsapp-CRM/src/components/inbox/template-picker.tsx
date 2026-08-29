@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { MessageTemplate, Contact } from "@/types";
+import type { MessageTemplate, Contact, CustomField } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -27,6 +27,9 @@ import {
   Loader2,
   Eye,
   Send,
+  PenLine,
+  User,
+  Tags,
 } from "lucide-react";
 import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
 import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
@@ -38,8 +41,7 @@ export interface TemplateSendValues {
   /** Named {{customer_name}}, … — set instead of `body` when the
    *  template uses Meta's named-parameter format (extremely common on
    *  templates synced FROM Meta, since Business Manager defaults new
-   *  templates to it). Previously unsupported here at all — a named
-   *  template silently showed no variable input whatsoever. */
+   *  templates to it). */
   bodyByName?: Record<string, string>;
   headerText?: string;
   headerMediaUrl?: string;
@@ -58,21 +60,10 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
-  /** When set, fetches the conversation's contact and offers "insert from
-   *  contact" quick-fill chips (Name/Phone/Email/Company) under each
-   *  variable input, instead of typing every value by hand. */
+  /** When set, fetches the conversation's contact (+ their custom field
+   *  values) so each variable can be mapped to a Contact Field or Custom
+   *  Field instead of only ever typed by hand. */
   conversationId?: string;
-}
-
-/** Non-empty contact fields worth offering as one-click fill-ins. */
-function contactFillOptions(contact: Contact | null): { label: string; value: string }[] {
-  if (!contact) return [];
-  const options: { label: string; value: string }[] = [];
-  if (contact.name) options.push({ label: "Name", value: contact.name });
-  if (contact.phone && !contact.phone.startsWith("email:")) options.push({ label: "Phone", value: contact.phone });
-  if (contact.email) options.push({ label: "Email", value: contact.email });
-  if (contact.company) options.push({ label: "Company", value: contact.company });
-  return options;
 }
 
 function renderBodyPreview(body: string, isNamed: boolean, params: string[], namedValues: Record<string, string>): string {
@@ -130,6 +121,134 @@ function collectVariableSlots(template: MessageTemplate): {
   return { isBodyNamed, bodyVars, bodyNamedKeys, headerVarCount, urlButtonSlots };
 }
 
+// ── Variable mapping — same source model as the broadcast composer's
+// Variable Mapping popup (Static / Contact Field / Custom Field), scoped
+// to the one contact already loaded here instead of resolving per-recipient.
+// Data Store lookup is deliberately not offered — it exists in broadcasts to
+// avoid typing the same value for thousands of recipients; for a single
+// known contact it would just add a table/match-field picker for no benefit
+// over typing the value directly.
+type VarSourceType = "static" | "contact_field" | "custom_field";
+type ContactFieldKey = "name" | "phone" | "email" | "company";
+
+interface VarMapping {
+  type: VarSourceType;
+  staticValue: string;
+  contactField?: ContactFieldKey;
+  customFieldId?: string;
+}
+
+function emptyMapping(): VarMapping {
+  return { type: "static", staticValue: "" };
+}
+
+const CONTACT_FIELD_OPTIONS: { key: ContactFieldKey; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+  { key: "company", label: "Company" },
+];
+
+const MAPPING_TILES: { type: VarSourceType; label: string; icon: typeof PenLine }[] = [
+  { type: "static", label: "Static", icon: PenLine },
+  { type: "contact_field", label: "Contact", icon: User },
+  { type: "custom_field", label: "Custom Field", icon: Tags },
+];
+
+function resolveMappingValue(
+  mapping: VarMapping | undefined,
+  contact: Contact | null,
+  customValues: Map<string, string>,
+): string {
+  if (!mapping) return "";
+  if (mapping.type === "static") return mapping.staticValue;
+  if (mapping.type === "contact_field") {
+    if (!mapping.contactField || !contact) return "";
+    const map: Record<ContactFieldKey, string | undefined> = {
+      name: contact.name, phone: contact.phone, email: contact.email, company: contact.company,
+    };
+    return map[mapping.contactField] ?? "";
+  }
+  if (mapping.type === "custom_field") {
+    if (!mapping.customFieldId) return "";
+    return customValues.get(mapping.customFieldId) ?? "";
+  }
+  return "";
+}
+
+interface VarRow { id: string; label: string }
+
+/** One placeholder's mapping control — a compact 3-tile source switcher
+ *  plus whichever control that source needs. */
+function VariableMappingRow({
+  row, mapping, onChange, customFields, hasContact,
+}: {
+  row: VarRow;
+  mapping: VarMapping;
+  onChange: (next: VarMapping) => void;
+  customFields: CustomField[];
+  hasContact: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{row.label}</label>
+      <div className="flex gap-1">
+        {MAPPING_TILES.map((tile) => {
+          const selected = mapping.type === tile.type;
+          const TileIcon = tile.icon;
+          const disabled = (tile.type === "contact_field" && !hasContact) || (tile.type === "custom_field" && customFields.length === 0);
+          return (
+            <button
+              key={tile.type}
+              type="button"
+              disabled={disabled}
+              onClick={() => onChange(tile.type === "static" ? { type: "static", staticValue: mapping.type === "static" ? mapping.staticValue : "" } : { type: tile.type, staticValue: "" })}
+              className={cn(
+                "flex flex-1 items-center justify-center gap-1 rounded-lg border py-1.5 text-[10.5px] font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-40",
+                selected ? "border-indigo-400 bg-indigo-50 text-indigo-700 shadow-sm" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300",
+              )}
+            >
+              <TileIcon className="h-3 w-3" /> {tile.label}
+            </button>
+          );
+        })}
+      </div>
+      {mapping.type === "static" && (
+        <Input
+          value={mapping.staticValue}
+          onChange={(e) => onChange({ ...mapping, staticValue: e.target.value })}
+          placeholder={`Value for ${row.label}`}
+          className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
+        />
+      )}
+      {mapping.type === "contact_field" && (
+        <div className="flex flex-wrap gap-1.5">
+          {CONTACT_FIELD_OPTIONS.map((opt) => (
+            <button key={opt.key} type="button"
+              onClick={() => onChange({ ...mapping, contactField: opt.key })}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all",
+                mapping.contactField === opt.key ? "border-indigo-400 bg-indigo-100 text-indigo-700" : "border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100",
+              )}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {mapping.type === "custom_field" && (
+        <select
+          value={mapping.customFieldId ?? ""}
+          onChange={(e) => onChange({ ...mapping, customFieldId: e.target.value || undefined })}
+          className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] text-slate-700 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+        >
+          <option value="">Select a custom field…</option>
+          {customFields.map((f) => <option key={f.id} value={f.id}>{f.field_name}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
 export function TemplatePicker({
   open,
   onOpenChange,
@@ -139,13 +258,12 @@ export function TemplatePicker({
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
-  const [params, setParams] = useState<string[]>([]);
-  const [namedValues, setNamedValues] = useState<Record<string, string>>({});
-  const [headerText, setHeaderText] = useState<string>("");
+  const [mappings, setMappings] = useState<Record<string, VarMapping>>({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState<string>("");
   const [mediaPopupOpen, setMediaPopupOpen] = useState(false);
-  const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
   const [contact, setContact] = useState<Contact | null>(null);
+  const [customFields, setCustomFields] = useState<CustomField[]>([]);
+  const [customValues, setCustomValues] = useState<Map<string, string>>(new Map());
   // Collapsed by default — a long template's preview was pushing Header
   // Media / variable inputs below the fold, making them easy to miss
   // entirely. Still one click away, and height-capped with its own scroll
@@ -175,13 +293,36 @@ export function TemplatePicker({
       }
     })();
 
+    fetch('/api/custom-fields', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setCustomFields(d?.fields ?? []); })
+      .catch(() => {});
+
     if (conversationId) {
       fetch(`/api/conversations/${conversationId}`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (!cancelled) setContact(d?.contact ?? null); })
-        .catch(() => { if (!cancelled) setContact(null); });
+        .then(async (d) => {
+          if (cancelled) return;
+          const c: Contact | null = d?.contact ?? null;
+          setContact(c);
+          if (c) {
+            const cvRes = await fetch(`/api/contacts/${c.id}/custom-values`, { cache: 'no-store' });
+            if (!cancelled && cvRes.ok) {
+              const cvJson = await cvRes.json();
+              const map = new Map<string, string>();
+              for (const row of (cvJson.values ?? []) as { custom_field_id: string; value?: string }[]) {
+                map.set(row.custom_field_id, row.value ?? '');
+              }
+              setCustomValues(map);
+            }
+          } else {
+            setCustomValues(new Map());
+          }
+        })
+        .catch(() => { if (!cancelled) { setContact(null); setCustomValues(new Map()); } });
     } else {
       setContact(null);
+      setCustomValues(new Map());
     }
 
     return () => {
@@ -189,13 +330,24 @@ export function TemplatePicker({
     };
   }, [open, conversationId]);
 
+  const rows: VarRow[] = useMemo(() => {
+    if (!selected) return [];
+    const slots = collectVariableSlots(selected);
+    const list: VarRow[] = [];
+    if (slots.headerVarCount > 0) list.push({ id: "header", label: "Header {{1}}" });
+    if (slots.isBodyNamed) {
+      for (const key of slots.bodyNamedKeys) list.push({ id: `body:${key}`, label: `Variable {{${key}}}` });
+    } else {
+      for (const v of slots.bodyVars) list.push({ id: `body:${v}`, label: `Body {{${v}}}` });
+    }
+    for (const slot of slots.urlButtonSlots) list.push({ id: `button:${slot.index}`, label: `URL button "${slot.text}"` });
+    return list;
+  }, [selected]);
+
   function resetSelection() {
     setSelected(null);
-    setParams([]);
-    setNamedValues({});
-    setHeaderText("");
+    setMappings({});
     setHeaderMediaUrl("");
-    setButtonParams({});
   }
 
   function handleOpenChange(next: boolean) {
@@ -221,24 +373,34 @@ export function TemplatePicker({
       return;
     }
     setSelected(template);
-    setParams(new Array(slots.bodyVars.length).fill(""));
-    setNamedValues(Object.fromEntries(slots.bodyNamedKeys.map((k) => [k, ""])));
-    setHeaderText("");
     setHeaderMediaUrl("");
-    setButtonParams({});
+    // Seed every placeholder with an empty static mapping — done here
+    // (rather than lazily) so canConfirm/resolved values never have to
+    // special-case an undefined mapping.
+    const seedRows: VarRow[] = [];
+    if (slots.headerVarCount > 0) seedRows.push({ id: "header", label: "" });
+    if (slots.isBodyNamed) slots.bodyNamedKeys.forEach((k) => seedRows.push({ id: `body:${k}`, label: "" }));
+    else slots.bodyVars.forEach((v) => seedRows.push({ id: `body:${v}`, label: "" }));
+    slots.urlButtonSlots.forEach((s) => seedRows.push({ id: `button:${s.index}`, label: "" }));
+    setMappings(Object.fromEntries(seedRows.map((r) => [r.id, emptyMapping()])));
   }
+
+  const resolved = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const row of rows) out[row.id] = resolveMappingValue(mappings[row.id], contact, customValues).trim();
+    return out;
+  }, [rows, mappings, contact, customValues]);
 
   function confirm() {
     if (!selected || !slots) return;
+    const headerTextResolved = resolved["header"] ?? "";
     const values: TemplateSendValues = slots.isBodyNamed
-      ? { body: [], bodyByName: Object.fromEntries(Object.entries(namedValues).map(([k, v]) => [k, v.trim()])) }
-      : { body: params };
-    if (headerText.trim()) values.headerText = headerText.trim();
+      ? { body: [], bodyByName: Object.fromEntries(slots.bodyNamedKeys.map((k) => [k, resolved[`body:${k}`] ?? ""])) }
+      : { body: slots.bodyVars.map((v) => resolved[`body:${v}`] ?? "") };
+    if (headerTextResolved) values.headerText = headerTextResolved;
     if (headerMediaUrl) values.headerMediaUrl = headerMediaUrl;
-    if (Object.keys(buttonParams).length > 0) {
-      values.buttonParams = Object.fromEntries(
-        Object.entries(buttonParams).map(([k, v]) => [Number(k), v.trim()]),
-      );
+    if (slots.urlButtonSlots.length > 0) {
+      values.buttonParams = Object.fromEntries(slots.urlButtonSlots.map((s) => [s.index, resolved[`button:${s.index}`] ?? ""]));
     }
     onSelect(selected, values);
     handleOpenChange(false);
@@ -248,7 +410,6 @@ export function TemplatePicker({
     () => (selected ? collectVariableSlots(selected) : null),
     [selected],
   );
-  const fillOptions = useMemo(() => contactFillOptions(contact), [contact]);
 
   const headerMediaType =
     selected?.header_type === "image" || selected?.header_type === "video" || selected?.header_type === "document"
@@ -267,33 +428,34 @@ export function TemplatePicker({
     !!selected &&
     !!slots &&
     !mediaMissing &&
-    (slots.isBodyNamed
-      ? slots.bodyNamedKeys.every((k) => (namedValues[k] ?? "").trim().length > 0)
-      : slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0)) &&
-    (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
-    slots.urlButtonSlots.every(
-      (s) => (buttonParams[s.index] ?? "").trim().length > 0,
-    );
+    rows.every((row) => (resolved[row.id] ?? "").length > 0);
+
+  // Preview needs the header/body values in their original shapes.
+  const previewHeaderText = resolved["header"] ?? "";
+  const previewParams = slots && !slots.isBodyNamed ? slots.bodyVars.map((v) => resolved[`body:${v}`] ?? "") : [];
+  const previewNamedValues = slots && slots.isBodyNamed
+    ? Object.fromEntries(slots.bodyNamedKeys.map((k) => [k, resolved[`body:${k}`] ?? ""]))
+    : {};
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-lg">
         <DialogHeader className={cn(
-          "bg-gradient-to-br px-6 pb-5 pt-6",
+          "bg-gradient-to-br px-6 pb-4 pt-5",
           mediaMissing ? "from-amber-50 to-white" : "from-indigo-50 to-white",
         )}>
           <div className={cn(
-            "mb-1 flex h-11 w-11 items-center justify-center rounded-2xl",
+            "mb-1 flex h-9 w-9 items-center justify-center rounded-xl",
             mediaMissing ? "bg-amber-100" : "bg-indigo-100",
           )}>
-            <LayoutTemplate className={cn("h-5 w-5", mediaMissing ? "text-amber-600" : "text-indigo-600")} />
+            <LayoutTemplate className={cn("h-4.5 w-4.5", mediaMissing ? "text-amber-600" : "text-indigo-600")} />
           </div>
-          <DialogTitle className="truncate text-[17px] font-bold text-slate-800">
+          <DialogTitle className="truncate text-[16px] font-bold text-slate-800">
             {selected ? selected.name : "Send a template"}
           </DialogTitle>
-          <p className="mt-0.5 text-[12px] text-slate-400">
+          <p className="mt-0.5 text-[11.5px] text-slate-400">
             {selected
-              ? "Fill in what this template needs — Meta requires every variable and required media set before it can send."
+              ? "Fill in what this template needs before it can send."
               : "Pick an approved WhatsApp template to send to this contact."}
           </p>
         </DialogHeader>
@@ -346,10 +508,10 @@ export function TemplatePicker({
             )}
           </div>
         ) : (
-          <div className="max-h-[70vh] space-y-4 overflow-y-auto px-6 pb-2 pt-1 scroll-styled">
-            {/* WhatsApp-style live preview — shows the actual header media,
-                rendered body (unfilled placeholders left visible as a cue),
-                footer, and buttons, not just a bare text dump. */}
+          <div className="max-h-[68vh] space-y-3 overflow-y-auto px-6 pb-2 pt-1 scroll-styled">
+            {/* WhatsApp-style live preview — collapsed by default so it
+                never dominates the dialog; shows actual header media,
+                rendered body, footer, and buttons when opened. */}
             <div>
               <button
                 type="button"
@@ -360,13 +522,13 @@ export function TemplatePicker({
                 {previewOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               </button>
               {previewOpen && (
-              <div className="max-h-52 overflow-y-auto rounded-2xl p-3 scroll-styled" style={{
+              <div className="max-h-44 overflow-y-auto rounded-2xl p-3 scroll-styled" style={{
                 backgroundColor: '#e5ddd5',
                 backgroundImage: 'radial-gradient(circle at 12% 22%, rgba(255,255,255,0.35) 0, transparent 40%), radial-gradient(circle at 82% 72%, rgba(255,255,255,0.3) 0, transparent 45%)',
               }}>
                 <div className="ml-auto max-w-[92%] overflow-hidden rounded-lg rounded-tr-none bg-[#d9fdd3] shadow-sm">
                   {headerMediaType === "image" && (
-                    <div className="flex h-28 items-center justify-center overflow-hidden bg-slate-200">
+                    <div className="flex h-24 items-center justify-center overflow-hidden bg-slate-200">
                       {previewMediaUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={previewMediaUrl} alt="" className="h-full w-full object-cover" />
@@ -376,7 +538,7 @@ export function TemplatePicker({
                     </div>
                   )}
                   {headerMediaType === "video" && (
-                    <div className="flex h-24 items-center justify-center bg-black">
+                    <div className="flex h-20 items-center justify-center bg-black">
                       <Film className="h-6 w-6 text-white/70" />
                     </div>
                   )}
@@ -391,11 +553,11 @@ export function TemplatePicker({
                   <div className="px-3 pb-1.5 pt-2">
                     {selected.header_type === "text" && selected.header_content && (
                       <p className="mb-1 whitespace-pre-wrap text-[14px] font-bold leading-snug text-[#111b21]">
-                        {renderHeaderPreview(selected.header_content, headerText)}
+                        {renderHeaderPreview(selected.header_content, previewHeaderText)}
                       </p>
                     )}
                     <p className="whitespace-pre-wrap text-[13.5px] leading-snug text-[#111b21]">
-                      {renderBodyPreview(selected.body_text, slots?.isBodyNamed ?? false, params, namedValues)}
+                      {renderBodyPreview(selected.body_text, slots?.isBodyNamed ?? false, previewParams, previewNamedValues)}
                     </p>
                     {selected.footer_text && (
                       <p className="mt-1 text-[12px] text-[#667781]">{selected.footer_text}</p>
@@ -426,22 +588,22 @@ export function TemplatePicker({
                 type="button"
                 onClick={() => setMediaPopupOpen(true)}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition-all hover:shadow-sm",
+                  "flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all hover:shadow-sm",
                   mediaRequired && !headerMediaUrl ? "border-amber-300 bg-amber-50/60 hover:border-amber-400" : "border-slate-200 bg-white hover:border-indigo-300",
                 )}
               >
                 {headerMediaUrl ? (
                   headerMediaType === "image" ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={headerMediaUrl} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                    <img src={headerMediaUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
                   ) : (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-                      {HeaderMediaIcon && <HeaderMediaIcon className="h-5 w-5 text-indigo-500" />}
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+                      {HeaderMediaIcon && <HeaderMediaIcon className="h-4.5 w-4.5 text-indigo-500" />}
                     </div>
                   )
                 ) : (
-                  <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
-                    {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-5 w-5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
+                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
+                    {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-4.5 w-4.5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
@@ -459,114 +621,33 @@ export function TemplatePicker({
               </button>
             )}
 
-            {/* Variables */}
-            {(slots && (slots.headerVarCount > 0 || slots.bodyVars.length > 0 || slots.bodyNamedKeys.length > 0 || slots.urlButtonSlots.length > 0)) && (
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
-                {slots.headerVarCount > 0 && (
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      Header {`{{1}}`}
-                    </label>
-                    <Input
-                      value={headerText}
-                      onChange={(e) => setHeaderText(e.target.value)}
-                      placeholder="Value for the header variable"
-                      className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
-                    />
-                    {fillOptions.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {fillOptions.map((opt) => (
-                          <button key={opt.label} type="button" onClick={() => setHeaderText(opt.value)}
-                            className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {slots.isBodyNamed
-                  ? slots.bodyNamedKeys.map((key) => (
-                    <div key={key} className="space-y-1.5">
-                      <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{`Variable {{${key}}}`}</label>
-                      <Input
-                        value={namedValues[key] ?? ""}
-                        onChange={(e) => setNamedValues((prev) => ({ ...prev, [key]: e.target.value }))}
-                        placeholder={`Value for {{${key}}}`}
-                        className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
-                      />
-                      {fillOptions.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          {fillOptions.map((opt) => (
-                            <button key={opt.label} type="button"
-                              onClick={() => setNamedValues((prev) => ({ ...prev, [key]: opt.value }))}
-                              className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                  : slots.bodyVars.map((v, i) => (
-                    <div key={v} className="space-y-1.5">
-                      <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{`Body {{${v}}}`}</label>
-                      <Input
-                        value={params[i] ?? ""}
-                        onChange={(e) => {
-                          const next = [...params];
-                          next[i] = e.target.value;
-                          setParams(next);
-                        }}
-                        placeholder={`Value for {{${v}}}`}
-                        className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
-                      />
-                      {fillOptions.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          {fillOptions.map((opt) => (
-                            <button key={opt.label} type="button"
-                              onClick={() => { const next = [...params]; next[i] = opt.value; setParams(next); }}
-                              className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                {slots.urlButtonSlots.map((slot) => (
-                  <div key={slot.index} className="space-y-1.5">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      {`URL button "${slot.text}" — value for `}{`{{1}}`}
-                    </label>
-                    <Input
-                      value={buttonParams[slot.index] ?? ""}
-                      onChange={(e) =>
-                        setButtonParams((prev) => ({
-                          ...prev,
-                          [slot.index]: e.target.value,
-                        }))
-                      }
-                      placeholder="URL suffix value"
-                      className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
-                    />
-                    <p className="break-all text-[10px] text-slate-400">
-                      Final URL: {slot.url.replace(/\{\{1\}\}/g, buttonParams[slot.index] || "{{1}}")}
-                    </p>
-                  </div>
+            {/* Variables — one uniform mapping row per placeholder (header,
+                body, URL buttons alike), same Static/Contact Field/Custom
+                Field source model as the broadcast composer. */}
+            {rows.length > 0 && (
+              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5">
+                {rows.map((row) => (
+                  <VariableMappingRow
+                    key={row.id}
+                    row={row}
+                    mapping={mappings[row.id] ?? emptyMapping()}
+                    onChange={(next) => setMappings((prev) => ({ ...prev, [row.id]: next }))}
+                    customFields={customFields}
+                    hasContact={!!contact}
+                  />
                 ))}
               </div>
             )}
           </div>
         )}
 
-        <div className={cn("flex items-center gap-2 px-6 py-4", selected && "border-t border-slate-100")}>
+        <div className={cn("flex items-center gap-2 px-6 py-3.5", selected && "border-t border-slate-100")}>
           {selected ? (
             <>
               <Button
                 variant="outline"
                 onClick={resetSelection}
-                className="h-10 border-slate-200 text-slate-600 hover:bg-slate-50"
+                className="h-9 border-slate-200 text-slate-600 hover:bg-slate-50"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
@@ -574,7 +655,7 @@ export function TemplatePicker({
               <Button
                 disabled={!canConfirm}
                 onClick={confirm}
-                className="h-10 flex-1 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="h-9 flex-1 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
                 Send Template
@@ -585,7 +666,7 @@ export function TemplatePicker({
             <Button
               variant="outline"
               onClick={() => handleOpenChange(false)}
-              className="ml-auto h-10 border-slate-200 text-slate-600 hover:bg-slate-50"
+              className="ml-auto h-9 border-slate-200 text-slate-600 hover:bg-slate-50"
             >
               Cancel
             </Button>
