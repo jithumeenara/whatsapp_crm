@@ -9,7 +9,10 @@ import { TemplatePicker, type TemplateSendValues } from './template-picker'
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
-function renderTemplateBody(body: string, params: string[]): string {
+function renderTemplateBody(body: string, params: string[], bodyByName?: Record<string, string>): string {
+  if (bodyByName && Object.keys(bodyByName).length > 0) {
+    return body.replace(/\{\{([^}]+)\}\}/g, (_, rawKey) => bodyByName[rawKey.trim()] ?? `{{${rawKey}}}`)
+  }
   return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
     const idx = Number(raw) - 1
     return params[idx] ?? `{{${raw}}}`
@@ -29,11 +32,20 @@ interface SelectedTemplate {
   name: string
   language: string
   bodyParams: string[]
+  bodyByName?: Record<string, string>
   headerText?: string
   headerMediaUrl?: string
   headerMediaType?: string
   buttonParams?: Record<number, string>
   preview: string
+}
+
+/** ScheduledMessage.template_body_params is a plain Json column that
+ *  holds EITHER positional values (string[]) or named values (a plain
+ *  object) depending on which format the template used — Prisma has no
+ *  fixed shape for it either way, so this just tells the two apart. */
+function isNamedBodyParams(value: unknown): value is Record<string, string> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
 }
 
 interface ScheduleMessageDialogProps {
@@ -63,10 +75,13 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
   useEffect(() => {
     if (!open) return
     if (editItem) {
+      const rawParams = editItem.template_body_params
+      const named = isNamedBodyParams(rawParams)
       setSelected({
         name: editItem.template_name ?? '',
         language: editItem.template_language ?? '',
-        bodyParams: editItem.template_body_params ?? [],
+        bodyParams: Array.isArray(rawParams) ? rawParams : [],
+        bodyByName: named ? rawParams : undefined,
         headerText: editItem.template_header_text ?? undefined,
         headerMediaUrl: editItem.media_url ?? undefined,
         headerMediaType: editItem.media_type ?? undefined,
@@ -97,11 +112,12 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
       name: template.name,
       language: template.language ?? 'en_US',
       bodyParams: values.body,
+      bodyByName: values.bodyByName,
       headerText: values.headerText,
       headerMediaUrl: values.headerMediaUrl,
       headerMediaType: values.headerMediaUrl ? template.header_type : undefined,
       buttonParams: values.buttonParams,
-      preview: renderTemplateBody(template.body_text, values.body),
+      preview: renderTemplateBody(template.body_text, values.body, values.bodyByName),
     })
     setTemplatePickerOpen(false)
   }
@@ -116,7 +132,12 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
         conversation_id: conversationId,
         template_name: selected.name,
         template_language: selected.language,
-        template_body_params: selected.bodyParams.length > 0 ? selected.bodyParams : undefined,
+        // Positional and named templates share this one JSON slot — the
+        // API route (and the sweep that later sends it) tells them apart
+        // by shape (array vs. plain object), see isNamedBodyParams above.
+        template_body_params: (selected.bodyByName && Object.keys(selected.bodyByName).length > 0)
+          ? selected.bodyByName
+          : (selected.bodyParams.length > 0 ? selected.bodyParams : undefined),
         template_header_text: selected.headerText || undefined,
         template_header_media_url: selected.headerMediaUrl || undefined,
         template_header_media_type: selected.headerMediaType || undefined,

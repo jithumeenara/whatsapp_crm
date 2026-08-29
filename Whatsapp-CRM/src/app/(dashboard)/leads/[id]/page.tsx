@@ -370,7 +370,10 @@ export default function LeadDetailPage() {
     setComposerText((prev) => prev + emoji)
   }
 
-  function renderTemplateBody(body: string, params: string[]): string {
+  function renderTemplateBody(body: string, params: string[], bodyByName?: Record<string, string>): string {
+    if (bodyByName && Object.keys(bodyByName).length > 0) {
+      return body.replace(/\{\{([^}]+)\}\}/g, (_, rawKey) => bodyByName[rawKey.trim()] ?? `{{${rawKey}}}`)
+    }
     return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
       const idx = Number(raw) - 1
       return params[idx] ?? `{{${raw}}}`
@@ -379,7 +382,7 @@ export default function LeadDetailPage() {
 
   async function handleSendTemplate(template: MessageTemplate, values: TemplateSendValues) {
     if (!conversationId) return
-    const renderedBody = renderTemplateBody(template.body_text, values.body)
+    const renderedBody = renderTemplateBody(template.body_text, values.body, values.bodyByName)
     const res = await fetch("/api/whatsapp/send", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -390,6 +393,7 @@ export default function LeadDetailPage() {
         template_language: template.language,
         template_message_params: {
           body: values.body,
+          bodyByName: values.bodyByName,
           headerText: values.headerText,
           headerMediaUrl: values.headerMediaUrl,
           buttonParams: values.buttonParams,

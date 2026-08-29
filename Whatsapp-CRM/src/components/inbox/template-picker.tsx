@@ -29,9 +29,18 @@ import {
   Send,
 } from "lucide-react";
 import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
+import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
 
 export interface TemplateSendValues {
+  /** Positional {{1}}, {{2}}, … — set when the template uses Meta's
+   *  classic numbered format. */
   body: string[];
+  /** Named {{customer_name}}, … — set instead of `body` when the
+   *  template uses Meta's named-parameter format (extremely common on
+   *  templates synced FROM Meta, since Business Manager defaults new
+   *  templates to it). Previously unsupported here at all — a named
+   *  template silently showed no variable input whatsoever. */
+  bodyByName?: Record<string, string>;
   headerText?: string;
   headerMediaUrl?: string;
   buttonParams?: Record<number, string>;
@@ -66,7 +75,14 @@ function contactFillOptions(contact: Contact | null): { label: string; value: st
   return options;
 }
 
-function renderBodyPreview(body: string, params: string[]): string {
+function renderBodyPreview(body: string, isNamed: boolean, params: string[], namedValues: Record<string, string>): string {
+  if (isNamed) {
+    return body.replace(/\{\{([^}]+)\}\}/g, (_, rawKey) => {
+      const key = rawKey.trim();
+      const value = namedValues[key];
+      return value && value.trim().length > 0 ? value : `{{${key}}}`;
+    });
+  }
   return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
     const idx = Number(raw) - 1;
     const value = params[idx];
@@ -85,16 +101,22 @@ interface UrlButtonSlot {
 }
 
 /**
- * Templates may need values for: body variables, a text-header
+ * Templates may need values for: body variables (either Meta's classic
+ * positional {{1}}/{{2}} format, or the named {{customer_name}} format —
+ * a template uses one or the other, never mixed), a text-header
  * variable, and per-URL-button suffixes. Collect them all so the
  * send-message path doesn't 400 on missing parameters.
  */
 function collectVariableSlots(template: MessageTemplate): {
+  isBodyNamed: boolean;
   bodyVars: number[];
+  bodyNamedKeys: string[];
   headerVarCount: number;
   urlButtonSlots: UrlButtonSlot[];
 } {
-  const bodyVars = extractVariableIndices(template.body_text);
+  const isBodyNamed = isNamedVariableText(template.body_text);
+  const bodyVars = isBodyNamed ? [] : extractVariableIndices(template.body_text);
+  const bodyNamedKeys = isBodyNamed ? extractVariableKeys(template.body_text) : [];
   const headerVarCount =
     template.header_type === "text" && template.header_content
       ? extractVariableIndices(template.header_content).length
@@ -105,7 +127,7 @@ function collectVariableSlots(template: MessageTemplate): {
       urlButtonSlots.push({ index: i, text: b.text, url: b.url });
     }
   });
-  return { bodyVars, headerVarCount, urlButtonSlots };
+  return { isBodyNamed, bodyVars, bodyNamedKeys, headerVarCount, urlButtonSlots };
 }
 
 export function TemplatePicker({
@@ -118,6 +140,7 @@ export function TemplatePicker({
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<MessageTemplate | null>(null);
   const [params, setParams] = useState<string[]>([]);
+  const [namedValues, setNamedValues] = useState<Record<string, string>>({});
   const [headerText, setHeaderText] = useState<string>("");
   const [headerMediaUrl, setHeaderMediaUrl] = useState<string>("");
   const [mediaPopupOpen, setMediaPopupOpen] = useState(false);
@@ -169,6 +192,7 @@ export function TemplatePicker({
   function resetSelection() {
     setSelected(null);
     setParams([]);
+    setNamedValues({});
     setHeaderText("");
     setHeaderMediaUrl("");
     setButtonParams({});
@@ -187,6 +211,7 @@ export function TemplatePicker({
       template.header_type === "document";
     const noInputsNeeded =
       slots.bodyVars.length === 0 &&
+      slots.bodyNamedKeys.length === 0 &&
       slots.headerVarCount === 0 &&
       slots.urlButtonSlots.length === 0 &&
       !templateNeedsMedia;
@@ -197,14 +222,17 @@ export function TemplatePicker({
     }
     setSelected(template);
     setParams(new Array(slots.bodyVars.length).fill(""));
+    setNamedValues(Object.fromEntries(slots.bodyNamedKeys.map((k) => [k, ""])));
     setHeaderText("");
     setHeaderMediaUrl("");
     setButtonParams({});
   }
 
   function confirm() {
-    if (!selected) return;
-    const values: TemplateSendValues = { body: params };
+    if (!selected || !slots) return;
+    const values: TemplateSendValues = slots.isBodyNamed
+      ? { body: [], bodyByName: Object.fromEntries(Object.entries(namedValues).map(([k, v]) => [k, v.trim()])) }
+      : { body: params };
     if (headerText.trim()) values.headerText = headerText.trim();
     if (headerMediaUrl) values.headerMediaUrl = headerMediaUrl;
     if (Object.keys(buttonParams).length > 0) {
@@ -239,7 +267,9 @@ export function TemplatePicker({
     !!selected &&
     !!slots &&
     !mediaMissing &&
-    slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
+    (slots.isBodyNamed
+      ? slots.bodyNamedKeys.every((k) => (namedValues[k] ?? "").trim().length > 0)
+      : slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0)) &&
     (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
     slots.urlButtonSlots.every(
       (s) => (buttonParams[s.index] ?? "").trim().length > 0,
@@ -365,7 +395,7 @@ export function TemplatePicker({
                       </p>
                     )}
                     <p className="whitespace-pre-wrap text-[13.5px] leading-snug text-[#111b21]">
-                      {renderBodyPreview(selected.body_text, params)}
+                      {renderBodyPreview(selected.body_text, slots?.isBodyNamed ?? false, params, namedValues)}
                     </p>
                     {selected.footer_text && (
                       <p className="mt-1 text-[12px] text-[#667781]">{selected.footer_text}</p>
@@ -430,7 +460,7 @@ export function TemplatePicker({
             )}
 
             {/* Variables */}
-            {(slots && (slots.headerVarCount > 0 || slots.bodyVars.length > 0 || slots.urlButtonSlots.length > 0)) && (
+            {(slots && (slots.headerVarCount > 0 || slots.bodyVars.length > 0 || slots.bodyNamedKeys.length > 0 || slots.urlButtonSlots.length > 0)) && (
               <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
                 {slots.headerVarCount > 0 && (
                   <div className="space-y-1.5">
@@ -455,32 +485,55 @@ export function TemplatePicker({
                     )}
                   </div>
                 )}
-                {slots.bodyVars.map((v, i) => (
-                  <div key={v} className="space-y-1.5">
-                    <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{`Body {{${v}}}`}</label>
-                    <Input
-                      value={params[i] ?? ""}
-                      onChange={(e) => {
-                        const next = [...params];
-                        next[i] = e.target.value;
-                        setParams(next);
-                      }}
-                      placeholder={`Value for {{${v}}}`}
-                      className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
-                    />
-                    {fillOptions.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {fillOptions.map((opt) => (
-                          <button key={opt.label} type="button"
-                            onClick={() => { const next = [...params]; next[i] = opt.value; setParams(next); }}
-                            className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                {slots.isBodyNamed
+                  ? slots.bodyNamedKeys.map((key) => (
+                    <div key={key} className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{`Variable {{${key}}}`}</label>
+                      <Input
+                        value={namedValues[key] ?? ""}
+                        onChange={(e) => setNamedValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                        placeholder={`Value for {{${key}}}`}
+                        className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
+                      />
+                      {fillOptions.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {fillOptions.map((opt) => (
+                            <button key={opt.label} type="button"
+                              onClick={() => setNamedValues((prev) => ({ ...prev, [key]: opt.value }))}
+                              className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                  : slots.bodyVars.map((v, i) => (
+                    <div key={v} className="space-y-1.5">
+                      <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{`Body {{${v}}}`}</label>
+                      <Input
+                        value={params[i] ?? ""}
+                        onChange={(e) => {
+                          const next = [...params];
+                          next[i] = e.target.value;
+                          setParams(next);
+                        }}
+                        placeholder={`Value for {{${v}}}`}
+                        className="h-9 border-slate-200 bg-white text-[13px] text-slate-800 placeholder:text-slate-400"
+                      />
+                      {fillOptions.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {fillOptions.map((opt) => (
+                            <button key={opt.label} type="button"
+                              onClick={() => { const next = [...params]; next[i] = opt.value; setParams(next); }}
+                              className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-600 hover:bg-indigo-100">
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 {slots.urlButtonSlots.map((slot) => (
                   <div key={slot.index} className="space-y-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">

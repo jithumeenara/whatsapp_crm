@@ -85,9 +85,13 @@ export async function sweepScheduledMessages(): Promise<SweepResult> {
       if (sm.template_name) {
         // Standard path: approved template, the only kind guaranteed to
         // send outside the 24h customer-service window.
+        // template_body_params holds EITHER an array (positional) or a
+        // plain object (named {{customer_name}}-style) — never both.
+        const isNamed = !!sm.template_body_params && typeof sm.template_body_params === 'object' && !Array.isArray(sm.template_body_params)
         const bodyParams = Array.isArray(sm.template_body_params)
           ? (sm.template_body_params as string[]).join(',')
           : undefined
+        const bodyByName = isNamed ? (sm.template_body_params as Record<string, string>) : undefined
         await engineSendTemplate({
           accountId: sm.account_id,
           userId: sm.created_by,
@@ -96,6 +100,7 @@ export async function sweepScheduledMessages(): Promise<SweepResult> {
           templateName: sm.template_name,
           languageCode: sm.template_language ?? 'en_US',
           bodyParams,
+          bodyByName,
           headerText: sm.template_header_text ?? undefined,
           headerMediaUrl: sm.media_url ?? undefined,
           buttonParams: (sm.template_button_params as Record<number, string> | null) ?? undefined,

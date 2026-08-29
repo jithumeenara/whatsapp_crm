@@ -55,6 +55,9 @@ interface SendTemplateEngineArgs {
   templateName: string
   languageCode: string
   bodyParams?: string
+  /** Named ({{customer_name}}) body values, keyed by name — set INSTEAD of
+   *  bodyParams when the template uses Meta's named-parameter format. */
+  bodyByName?: Record<string, string>
   /** Header variable value, only used if the template's header type is text with a variable. */
   headerText?: string
   /** Media-header override for this specific send — takes priority over the
@@ -555,6 +558,7 @@ export async function engineSendTemplate(
             },
             messageParams: {
               body: params.length > 0 ? params : undefined,
+              bodyByName: args.bodyByName,
               headerText: args.headerText,
               headerMediaUrl: args.headerMediaUrl,
               buttonParams: args.buttonParams,
@@ -569,9 +573,11 @@ export async function engineSendTemplate(
   // of just a bare "Template" pill — previously this only ever stored
   // template_name, leaving content_text/media_url null even though both
   // were already fully resolved above for the Meta send itself.
-  const renderedBody = templateRow
-    ? params.reduce((text, val, i) => text.replaceAll(`{{${i + 1}}}`, val?.trim() ? val : ' '), templateRow.body_text)
-    : `[Template: ${args.templateName}]`
+  const renderedBody = !templateRow
+    ? `[Template: ${args.templateName}]`
+    : args.bodyByName
+      ? Object.entries(args.bodyByName).reduce((text, [key, val]) => text.replaceAll(`{{${key}}}`, val?.trim() ? val : ' '), templateRow.body_text)
+      : params.reduce((text, val, i) => text.replaceAll(`{{${i + 1}}}`, val?.trim() ? val : ' '), templateRow.body_text)
   const headerMediaUrl = args.headerMediaUrl ?? templateRow?.header_media_url ?? null
   const headerType = templateRow?.header_type
   const headerMimeType = headerType === 'image' ? 'image/jpeg' : headerType === 'video' ? 'video/mp4' : null

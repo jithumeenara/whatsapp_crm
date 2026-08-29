@@ -261,7 +261,10 @@ export interface ScheduledMessage {
   content_text?: string | null;
   template_name?: string | null;
   template_language?: string | null;
-  template_body_params?: string[] | null;
+  /** string[] for a positional template ({{1}}, {{2}}, …), or a plain
+   *  object keyed by name for a named-parameter template ({{customer_name}}) —
+   *  a template uses one format or the other, never mixed. */
+  template_body_params?: string[] | Record<string, string> | null;
   template_header_text?: string | null;
   template_button_params?: Record<number, string> | null;
   /** Media-header override for a media-type template (image/video/document), picked at

@@ -91,10 +91,15 @@ export async function POST(req: NextRequest) {
     }
 
     const maxSends = scheduleType === "once" ? 1 : Math.max(1, Number(body.max_sends) || 1)
-    const bodyParams: string[] | undefined =
+    // Positional ({{1}}, {{2}}, …) templates send an array; named
+    // ({{customer_name}}) templates send a plain object — both are valid,
+    // stored as-is in the same JSON column, told apart later by shape.
+    const bodyParams: string[] | Record<string, string> | undefined =
       Array.isArray(body.template_body_params) && body.template_body_params.length > 0
         ? body.template_body_params
-        : undefined
+        : (body.template_body_params && typeof body.template_body_params === "object" && Object.keys(body.template_body_params).length > 0
+          ? body.template_body_params
+          : undefined)
     const buttonParams: Record<number, string> | undefined =
       body.template_button_params && typeof body.template_button_params === "object"
         ? body.template_button_params

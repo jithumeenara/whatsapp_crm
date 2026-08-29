@@ -43,7 +43,10 @@ interface ReplyDraft {
   preview: string;
 }
 
-function renderTemplateBody(body: string, params: string[]): string {
+function renderTemplateBody(body: string, params: string[], bodyByName?: Record<string, string>): string {
+  if (bodyByName && Object.keys(bodyByName).length > 0) {
+    return body.replace(/\{\{([^}]+)\}\}/g, (_, rawKey) => bodyByName[rawKey.trim()] ?? `{{${rawKey}}}`);
+  }
   return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
     const idx = Number(raw) - 1;
     return params[idx] ?? `{{${raw}}}`;
@@ -617,6 +620,7 @@ export function MessageThread({
       template: MessageTemplate,
       values: {
         body: string[];
+        bodyByName?: Record<string, string>;
         headerText?: string;
         headerMediaUrl?: string;
         buttonParams?: Record<number, string>;
@@ -624,7 +628,7 @@ export function MessageThread({
     ) => {
       if (!conversation) return;
 
-      const renderedBody = renderTemplateBody(template.body_text, values.body);
+      const renderedBody = renderTemplateBody(template.body_text, values.body, values.bodyByName);
       const tempId = `temp-${Date.now()}`;
 
       const optimisticMsg: Message = {
@@ -655,6 +659,7 @@ export function MessageThread({
             // back if the template row isn't found locally.
             template_message_params: {
               body: values.body,
+              bodyByName: values.bodyByName,
               headerText: values.headerText,
               headerMediaUrl: values.headerMediaUrl,
               buttonParams: values.buttonParams,
