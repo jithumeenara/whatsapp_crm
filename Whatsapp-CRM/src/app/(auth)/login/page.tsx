@@ -4,7 +4,7 @@ import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
-import { MessageSquare, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, KeyRound } from "lucide-react"
+import { MessageSquare, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, KeyRound, Clock } from "lucide-react"
 
 type Step = "credentials" | "mfa"
 type MfaMethod = "sms" | "whatsapp" | "totp"
@@ -18,6 +18,7 @@ const MFA_LABEL: Record<MfaMethod, string> = {
 function LoginContent() {
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get("invite")
+  const idleLogout = searchParams.get("reason") === "idle"
   const router = useRouter()
 
   const [step, setStep] = useState<Step>("credentials")
@@ -131,6 +132,12 @@ function LoginContent() {
 
         {/* Card */}
         <div className="rounded-2xl bg-white border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.08)] px-8 py-8">
+          {idleLogout && !error && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
+              <Clock className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>You were signed out after 10 minutes of inactivity — sign back in to continue.</span>
+            </div>
+          )}
           {error && (
             <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
               {error}

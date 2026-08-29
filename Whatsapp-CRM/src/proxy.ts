@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
+// Auto-logout after this long with zero real user interaction (mouse,
+// keyboard, touch, scroll) anywhere in the app — enforced here, not just
+// client-side, since `lastActivity` lives inside the signed JWT itself and
+// is only ever refreshed via an explicit session update the client fires
+// on real activity (see auth.ts's jwt callback + use-idle-timeout.ts). A
+// client that stopped running JS (or a stolen cookie replayed elsewhere)
+// can't extend this by itself — the check below runs on every request.
+const IDLE_TIMEOUT_MS = 10 * 60_000
+
 // Public paths that never require a session
 const PUBLIC_PATHS = new Set([
   '/login',
@@ -99,6 +108,30 @@ export async function proxy(req: NextRequest) {
     loginUrl.pathname = '/login'
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
+  }
+
+  // Idle timeout — lastActivity is seeded at sign-in and only moves forward
+  // via an explicit client-triggered session update, so this reflects real
+  // inactivity, not just "the tab is open." Missing entirely on an older
+  // token (issued before this feature existed) falls back to `iat` so a
+  // pre-existing session doesn't get treated as infinitely fresh.
+  const lastActivity =
+    typeof token.lastActivity === 'number' ? token.lastActivity : (token.iat ?? 0) * 1000
+  if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+    const cookieName =
+      process.env.NODE_ENV === 'production' ? '__Secure-authjs.session-token' : 'authjs.session-token'
+    if (pathname.startsWith('/api/')) {
+      const res = NextResponse.json({ error: 'Session expired due to inactivity' }, { status: 401 })
+      res.cookies.delete(cookieName)
+      return res
+    }
+    const loginUrl = req.nextUrl.clone()
+    loginUrl.pathname = '/login'
+    loginUrl.searchParams.set('callbackUrl', pathname)
+    loginUrl.searchParams.set('reason', 'idle')
+    const res = NextResponse.redirect(loginUrl)
+    res.cookies.delete(cookieName)
+    return res
   }
 
   return NextResponse.next()

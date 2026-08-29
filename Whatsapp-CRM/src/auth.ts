@@ -92,8 +92,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     newUser: "/signup",
   },
   callbacks: {
-    jwt({ token, user }) {
+    jwt({ token, user, trigger }) {
       if (user?.id) token.id = user.id;
+      // Idle-timeout tracking. `lastActivity` only ever moves forward via an
+      // explicit `trigger: "update"` (the client's useSession().update()
+      // call, fired on real user interaction — see use-idle-timeout.ts) —
+      // never on a passive session read, so background polling can't
+      // silently keep a genuinely idle session alive. Seeded at sign-in so
+      // a brand-new session isn't immediately treated as idle.
+      if (user?.id || trigger === "update") token.lastActivity = Date.now();
       return token;
     },
     session({ session, token }) {
