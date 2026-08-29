@@ -94,12 +94,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   callbacks: {
     jwt({ token, user, trigger }) {
       if (user?.id) token.id = user.id;
-      // Idle-timeout tracking. `lastActivity` only ever moves forward via an
-      // explicit `trigger: "update"` (the client's useSession().update()
-      // call, fired on real user interaction — see use-idle-timeout.ts) —
-      // never on a passive session read, so background polling can't
-      // silently keep a genuinely idle session alive. Seeded at sign-in so
-      // a brand-new session isn't immediately treated as idle.
+      // Idle-timeout tracking, seeded at sign-in. The ONGOING refresh path
+      // is POST /api/heartbeat (re-signs and re-sets the cookie directly,
+      // called by use-idle-timeout.ts on real activity) — not this
+      // trigger:"update" branch, which flipping SessionProvider's shared
+      // `loading` state on every call caused visible app-wide re-renders.
+      // Kept here as a harmless fallback in case anything else ever calls
+      // useSession().update() for an unrelated reason.
       if (user?.id || trigger === "update") token.lastActivity = Date.now();
       return token;
     },

@@ -12,16 +12,13 @@ const IDLE_TIMEOUT_MS = 10 * 60_000
 const WARNING_MS = 10_000 // show a live countdown for the last 10 seconds
 const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'] as const
 // Real activity refreshes the LOCAL idle clock immediately, but the
-// server-side session (a POST to /api/auth/session) is only refreshed at
-// most this often — otherwise a moving mouse would fire that request
-// continuously for no security benefit.
+// server-side session is only refreshed at most this often — otherwise a
+// moving mouse would fire a request continuously for no security benefit.
 const SERVER_REFRESH_THROTTLE_MS = 60_000
 
 export function useIdleTimeout() {
-  const { status, update } = useSession()
+  const { status } = useSession()
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
-  // Seeded with 0, not Date.now() — calling Date.now() during render is
-  // impure (react-hooks/purity); the real value is set in the effect below.
   const lastActivityRef = useRef(0)
   const lastServerRefreshRef = useRef(0)
 
@@ -31,9 +28,16 @@ export function useIdleTimeout() {
     const now = Date.now()
     if (now - lastServerRefreshRef.current > SERVER_REFRESH_THROTTLE_MS) {
       lastServerRefreshRef.current = now
-      update().catch(() => {})
+      // A plain fetch to a dedicated route, deliberately NOT next-auth's
+      // useSession().update() — that flips SessionProvider's shared
+      // `loading` state for the call's duration, which every consumer of
+      // useSession() app-wide (including use-auth.tsx, whose profile
+      // fetch re-runs on session status changes) re-renders in response
+      // to. That was visible as the whole app periodically "refreshing"
+      // during otherwise-normal use — see /api/heartbeat's own comment.
+      fetch('/api/heartbeat', { method: 'POST' }).catch(() => {})
     }
-  }, [update])
+  }, [])
 
   useEffect(() => {
     if (status !== 'authenticated') return
