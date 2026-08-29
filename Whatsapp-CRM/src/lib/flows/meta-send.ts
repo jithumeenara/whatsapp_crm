@@ -564,17 +564,32 @@ export async function engineSendTemplate(
     }).then((r) => r.messageId)
   )
 
+  // Render the actual body text and note any header media used, so the
+  // saved Message row (and the inbox bubble) shows real content instead
+  // of just a bare "Template" pill — previously this only ever stored
+  // template_name, leaving content_text/media_url null even though both
+  // were already fully resolved above for the Meta send itself.
+  const renderedBody = templateRow
+    ? params.reduce((text, val, i) => text.replaceAll(`{{${i + 1}}}`, val?.trim() ? val : ' '), templateRow.body_text)
+    : `[Template: ${args.templateName}]`
+  const headerMediaUrl = args.headerMediaUrl ?? templateRow?.header_media_url ?? null
+  const headerType = templateRow?.header_type
+  const headerMimeType = headerType === 'image' ? 'image/jpeg' : headerType === 'video' ? 'video/mp4' : null
+
   const savedMsg = await prisma.message.create({
     data: {
       conversation_id: args.conversationId,
       sender_type: 'bot',
       content_type: 'template',
+      content_text: renderedBody,
       template_name: args.templateName,
+      media_url: headerType && headerType !== 'text' ? headerMediaUrl : null,
+      media_mime_type: headerMimeType,
       message_id: waMessageId,
       status: 'sent',
     },
   })
-  const templatePreview = `[Template: ${args.templateName}]`
+  const templatePreview = renderedBody || `[Template: ${args.templateName}]`
   const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: args.conversationId },

@@ -168,8 +168,24 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   }
 
   const content_type = input.kind === 'template' ? 'template' : 'text'
-  const content_text = input.kind === 'text' ? input.text : null
   const template_name = input.kind === 'template' ? input.templateName : null
+
+  // Same bug fixed in flows/meta-send.ts's engineSendTemplate — content_text
+  // was always left null for a template send, so the message showed as a
+  // bare "Template" pill in the inbox with no visible text at all.
+  let content_text: string | null = input.kind === 'text' ? input.text : null
+  if (input.kind === 'template') {
+    const templateRow = await prisma.messageTemplate.findFirst({
+      where: { account_id: input.accountId, name: input.templateName, ...(input.language ? { language: input.language } : {}) },
+      select: { body_text: true },
+    })
+    if (templateRow) {
+      const params = input.params ?? []
+      content_text = params.reduce((text, val, i) => text.replaceAll(`{{${i + 1}}}`, val?.trim() ? val : ' '), templateRow.body_text)
+    } else {
+      content_text = `[Template: ${input.templateName}]`
+    }
+  }
 
   const savedMsg = await prisma.message.create({
     data: {
@@ -184,7 +200,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   })
 
   const lastMessageText =
-    input.kind === 'template' ? `[template:${input.templateName}]` : input.text
+    input.kind === 'template' ? (content_text || `[template:${input.templateName}]`) : input.text
   const lastMessageAt = new Date()
   await prisma.conversation.update({
     where: { id: input.conversationId },

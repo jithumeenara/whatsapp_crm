@@ -117,6 +117,7 @@ export default function LeadDetailPage() {
   // Log Call Outcome card
   const [connectedChoice, setConnectedChoice] = useState("")
   const [notConnectedChoice, setNotConnectedChoice] = useState("")
+  const [callMode, setCallMode] = useState<"connected" | "not_connected">("connected")
   const [followupOpen, setFollowupOpen] = useState(false)
   const [closeDialogOpen, setCloseDialogOpen] = useState(false)
   const [recording, setRecording] = useState<"connected" | "not_connected" | null>(null)
@@ -312,7 +313,7 @@ export default function LeadDetailPage() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          title: lead.title,
+          title: result.dealTitle?.trim() || lead.title,
           pipeline_id: result.pipelineId,
           stage_id: result.stageId,
           contact_id: lead.contact_id ?? undefined,
@@ -682,8 +683,30 @@ export default function LeadDetailPage() {
               <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">
                 <Phone className="h-3.5 w-3.5" /> Log Call Outcome
               </p>
-              <div className="space-y-4">
-                {/* Connected */}
+
+              {/* Mode switch — only one of Connected / Call Not Connected is
+                  editable at a time, chosen here instead of both being
+                  simultaneously live. */}
+              <div className="mb-4 grid grid-cols-2 gap-2">
+                <label className={cn(
+                  "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
+                  callMode === "connected" ? "border-emerald-400 bg-emerald-50" : "border-slate-100 bg-white hover:border-emerald-200",
+                )}>
+                  <input type="radio" name="call-mode" checked={callMode === "connected"}
+                    onChange={() => setCallMode("connected")} className="accent-emerald-500" />
+                  <span className={cn("text-[12.5px] font-bold", callMode === "connected" ? "text-emerald-700" : "text-slate-500")}>Connected</span>
+                </label>
+                <label className={cn(
+                  "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
+                  callMode === "not_connected" ? "border-rose-400 bg-rose-50" : "border-slate-100 bg-white hover:border-rose-200",
+                )}>
+                  <input type="radio" name="call-mode" checked={callMode === "not_connected"}
+                    onChange={() => setCallMode("not_connected")} className="accent-rose-500" />
+                  <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-600" : "text-slate-500")}>Call Not Connected</span>
+                </label>
+              </div>
+
+              {callMode === "connected" ? (
                 <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 space-y-2.5">
                   <p className="flex items-center gap-2 text-[13px] font-bold text-emerald-700">
                     <Phone className="h-4 w-4" /> Connected
@@ -698,11 +721,10 @@ export default function LeadDetailPage() {
                     {recording === "connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
                   </button>
                 </div>
-
-                {/* Not Connected */}
+              ) : (
                 <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 space-y-2.5">
                   <p className="flex items-center gap-2 text-[13px] font-bold text-rose-600">
-                    <PhoneOff className="h-4 w-4" /> Not Connected
+                    <PhoneOff className="h-4 w-4" /> Call Not Connected
                   </p>
                   <select value={notConnectedChoice} onChange={(e) => setNotConnectedChoice(e.target.value)}
                     className="w-full h-9 rounded-xl border border-rose-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-rose-100">
@@ -714,7 +736,7 @@ export default function LeadDetailPage() {
                     {recording === "not_connected" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Record Outcome
                   </button>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -847,7 +869,7 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      <CloseLeadDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} onConfirm={handleCloseConfirm} />
+      <CloseLeadDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} onConfirm={handleCloseConfirm} leadTitle={lead?.title ?? ''} />
 
       <ScheduleFollowupDialog
         open={followupOpen}

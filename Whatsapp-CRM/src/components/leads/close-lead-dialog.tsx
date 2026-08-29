@@ -15,15 +15,20 @@ export interface CloseLeadResult {
   remarks: string
   pipelineId?: string
   stageId?: string
+  /** Only meaningful when pipelineId/stageId are set — the Deal's own
+   *  name, editable here instead of silently reusing the lead's title. */
+  dealTitle?: string
 }
 
 interface CloseLeadDialogProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onConfirm: (result: CloseLeadResult) => Promise<void>
+  /** Seeds the Deal Name field when "Add to Pipeline" is turned on. */
+  leadTitle?: string
 }
 
-export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDialogProps) {
+export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: CloseLeadDialogProps) {
   const [outcome, setOutcome] = useState<'won' | 'lost'>('won')
   const [reason, setReason] = useState('')
   const [reasons, setReasons] = useState<ReasonLite[]>([])
@@ -34,6 +39,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
   const [pipelines, setPipelines] = useState<PipelineLite[]>([])
   const [pipelineId, setPipelineId] = useState('')
   const [stageId, setStageId] = useState('')
+  const [dealTitle, setDealTitle] = useState('')
 
   useEffect(() => {
     if (!open) return
@@ -43,6 +49,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
     setAddToPipeline(false)
     setPipelineId('')
     setStageId('')
+    setDealTitle(leadTitle ?? '')
     fetch('/api/pipelines')
       .then((r) => r.json())
       .then((d) => setPipelines(Array.isArray(d.pipelines) ? d.pipelines : []))
@@ -52,6 +59,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
       .then((r) => r.json())
       .then((d) => setReasons(Array.isArray(d.close_enquiry_reasons) ? d.close_enquiry_reasons : []))
       .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- leadTitle is a seed value, re-running on its every change would clobber in-progress edits
   }, [open])
 
   // Picking a reason seeds the remarks field (still freely editable) so
@@ -71,7 +79,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
 
   const handleConfirm = async () => {
     if (!remarks.trim()) return
-    if (addToPipeline && (!pipelineId || !stageId)) return
+    if (addToPipeline && (!pipelineId || !stageId || !dealTitle.trim())) return
     setSaving(true)
     try {
       await onConfirm({
@@ -79,6 +87,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
         remarks: remarks.trim(),
         pipelineId: addToPipeline ? pipelineId : undefined,
         stageId: addToPipeline ? stageId : undefined,
+        dealTitle: addToPipeline ? dealTitle.trim() : undefined,
       })
       onOpenChange(false)
     } finally {
@@ -172,17 +181,26 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
               </button>
             </div>
             {addToPipeline && (
-              <div className="grid grid-cols-2 gap-2">
-                <select value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100">
-                  <option value="">Select pipeline…</option>
-                  {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <select value={stageId} onChange={(e) => setStageId(e.target.value)} disabled={!selectedPipeline}
-                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-50">
-                  <option value="">Select stage…</option>
-                  {selectedPipeline?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={dealTitle}
+                  onChange={(e) => setDealTitle(e.target.value)}
+                  placeholder="Deal name…"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100">
+                    <option value="">Select pipeline…</option>
+                    {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <select value={stageId} onChange={(e) => setStageId(e.target.value)} disabled={!selectedPipeline}
+                    className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:opacity-50">
+                    <option value="">Select stage…</option>
+                    {selectedPipeline?.stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
               </div>
             )}
           </div>
@@ -193,7 +211,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm }: CloseLeadDial
               Cancel
             </button>
             <button type="button" onClick={handleConfirm}
-              disabled={saving || !remarks.trim() || (addToPipeline && (!pipelineId || !stageId))}
+              disabled={saving || !remarks.trim() || (addToPipeline && (!pipelineId || !stageId || !dealTitle.trim()))}
               className={cn(
                 "h-10 px-5 rounded-xl text-[13px] font-bold text-white flex items-center gap-2 disabled:opacity-50 transition-colors",
                 outcome === "won" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-rose-500 hover:bg-rose-600",

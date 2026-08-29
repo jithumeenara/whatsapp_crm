@@ -681,6 +681,17 @@ function MessageContent({ message }: { message: Message }) {
             <LayoutTemplate className="h-3 w-3" />
             Template
           </span>
+          {message.media_url && (
+            <div className="mt-1 mb-1.5">
+              {message.media_mime_type?.startsWith("video/") ? (
+                <MediaVideo url={message.media_url} mimeType={message.media_mime_type} />
+              ) : message.media_mime_type?.startsWith("image/") ? (
+                <MediaImage url={message.media_url} alt="" mimeType={message.media_mime_type} />
+              ) : (
+                <MediaDocument url={message.media_url} label={message.media_filename || "Document"} mimeType={message.media_mime_type} />
+              )}
+            </div>
+          )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
               <WhatsAppText text={message.content_text} />

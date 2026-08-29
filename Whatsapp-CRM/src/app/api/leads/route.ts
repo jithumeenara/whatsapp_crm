@@ -42,8 +42,12 @@ export async function GET(req: NextRequest) {
     // Pool: unassigned new leads — visible to all agents
     if (tab === 'new_pool') {
       where.assigned_to = null
-    } else if (!isPrivileged && tab !== 'all') {
-      // Agents only see their own leads in non-pool tabs
+    } else if (!isPrivileged) {
+      // Agents only see their own leads outside the pool — including on
+      // the "all" tab, which used to skip this and leak every agent's
+      // leads account-wide (the frontend was papering over that by
+      // silently substituting new_pool for "all", which hid an agent's
+      // own closed/follow-up leads instead of fixing the real gap).
       where.assigned_to = ctx.userId
     }
     // Privileged users (supervisor+) see all leads in all tabs
