@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
+  ChevronDown,
   Image as ImageIcon,
   Film,
   File as FileIcon,
@@ -122,6 +123,11 @@ export function TemplatePicker({
   const [mediaPopupOpen, setMediaPopupOpen] = useState(false);
   const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
   const [contact, setContact] = useState<Contact | null>(null);
+  // Collapsed by default — a long template's preview was pushing Header
+  // Media / variable inputs below the fold, making them easy to miss
+  // entirely. Still one click away, and height-capped with its own scroll
+  // even when open so it can never dominate the dialog again.
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -315,10 +321,16 @@ export function TemplatePicker({
                 rendered body (unfilled placeholders left visible as a cue),
                 footer, and buttons, not just a bare text dump. */}
             <div>
-              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              <button
+                type="button"
+                onClick={() => setPreviewOpen((v) => !v)}
+                className="mb-1.5 flex w-full items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600"
+              >
                 <Eye className="h-3 w-3" /> Preview
-              </div>
-              <div className="rounded-2xl p-3" style={{
+                {previewOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              </button>
+              {previewOpen && (
+              <div className="max-h-52 overflow-y-auto rounded-2xl p-3 scroll-styled" style={{
                 backgroundColor: '#e5ddd5',
                 backgroundImage: 'radial-gradient(circle at 12% 22%, rgba(255,255,255,0.35) 0, transparent 40%), radial-gradient(circle at 82% 72%, rgba(255,255,255,0.3) 0, transparent 45%)',
               }}>
@@ -373,6 +385,7 @@ export function TemplatePicker({
                   </div>
                 )}
               </div>
+              )}
             </div>
 
             {/* Header media — first among the "fill this in" controls when
