@@ -138,7 +138,27 @@ export async function verifyChallenge(challengeId: string, code: string): Promis
     // TOTP enrollment instead keeps the candidate secret out of the DB
     // until confirmed (see /api/account/mfa/enroll routes), so this path
     // only ever checks the ALREADY-SAVED secret — i.e. only 'login'.
-    if (user?.totp_secret) valid = verifyTotp(decrypt(user.totp_secret), code)
+    if (user?.totp_secret) {
+      try {
+        valid = verifyTotp(decrypt(user.totp_secret), code)
+      } catch (err) {
+        // decrypt() throws hard on a corrupted/undecryptable ciphertext
+        // (e.g. ENCRYPTION_KEY rotated since the secret was saved) — this
+        // is deterministic per stored value, not something a guessed code
+        // could ever trigger, so it can only mean the account's own TOTP
+        // config is broken, not an attack. Letting it crash the request
+        // (the original bug) or leaving MFA stuck "on" with an unusable
+        // secret would permanently lock the user out with no self-service
+        // recovery path — auto-clear it instead so the account fails open
+        // to password-only, and tell the user plainly what happened.
+        console.error(`[mfa] corrupted TOTP secret for user ${challenge.user_id}, clearing:`, err)
+        await prisma.user.update({
+          where: { id: challenge.user_id },
+          data: { mfa_method: "disabled", mfa_phone: null, totp_secret: null, mfa_enabled_at: null },
+        })
+        return { ok: false, error: "Your authenticator setup was broken and has been reset — sign in with your password, then set up two-factor authentication again from Settings." }
+      }
+    }
   } else if (challenge.code_hash) {
     valid = await bcrypt.compare(code.replace(/\D/g, ""), challenge.code_hash)
   }
