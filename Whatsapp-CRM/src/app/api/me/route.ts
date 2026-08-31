@@ -14,6 +14,7 @@ export async function GET() {
       account: {
         select: { id: true, name: true, default_currency: true, owner_user_id: true },
       },
+      user: { select: { email_verified: true } },
     },
   });
 
@@ -37,6 +38,9 @@ export async function GET() {
       full_name: profile.full_name,
       email: profile.email,
       avatar_url: profile.avatar_url,
+      phone: profile.phone,
+      phone_verified: profile.phone_verified_at !== null,
+      email_verified: profile.user?.email_verified !== null,
       account_id: profile.account_id,
       account_role: accountRole,
     },

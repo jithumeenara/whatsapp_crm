@@ -6,6 +6,11 @@ export interface Profile {
   full_name: string;
   email: string;
   avatar_url?: string;
+  /** This person's own WhatsApp number, E.164 (e.g. "+919876543210").
+   *  Collected at signup as a country-code select + local-number input,
+   *  combined before saving. Not the Business Platform number the app
+   *  sends/receives through — see WhatsAppConfig for that. */
+  phone?: string;
   /**
    * Legacy free-form role column from migration 001. Never read
    * by the app since 017_account_sharing.sql introduced the typed

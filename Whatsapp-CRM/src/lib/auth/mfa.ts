@@ -14,7 +14,10 @@ import { verifyTotp } from "@/lib/auth/totp"
 import { isMessageTemplate } from "@/lib/whatsapp/template-row-guard"
 
 export type MfaMethod = "sms" | "whatsapp" | "totp"
-export type MfaPurpose = "login" | "enroll"
+// 'profile_phone' confirms a team member's own WhatsApp number in Settings >
+// Profile — same challenge lifecycle as 'enroll', just not tied to turning
+// login MFA on/off.
+export type MfaPurpose = "login" | "enroll" | "profile_phone"
 
 const CODE_TTL_MS = 5 * 60_000 // 5 minutes
 const MAX_ATTEMPTS = 5
@@ -73,7 +76,30 @@ async function sendWhatsappOtp(userId: string, phone: string, code: string): Pro
 }
 
 /**
- * Creates a challenge and (for sms/whatsapp) sends the code. TOTP has
+ * Tries WhatsApp first, falls back to SMS — used for 'profile_phone'
+ * verification where the caller doesn't want to make the user pick a
+ * channel themselves. Throws a single combined error (naming both
+ * failures) only if BOTH are unavailable/misconfigured, so the message
+ * tells the account owner exactly what to go connect in Settings.
+ */
+async function sendAutoOtp(userId: string, phone: string, code: string): Promise<MfaMethod> {
+  try {
+    await sendWhatsappOtp(userId, phone, code)
+    return "whatsapp"
+  } catch (whatsappErr) {
+    try {
+      await sendSmsOtp(userId, phone, code)
+      return "sms"
+    } catch (smsErr) {
+      const wa = whatsappErr instanceof Error ? whatsappErr.message : String(whatsappErr)
+      const sms = smsErr instanceof Error ? smsErr.message : String(smsErr)
+      throw new Error(`Couldn't send a verification code — WhatsApp: ${wa}. SMS: ${sms}. Connect one of these in Settings first.`)
+    }
+  }
+}
+
+/**
+ * Creates a challenge and (for sms/whatsapp/auto) sends the code. TOTP has
  * nothing to send — the code lives in the user's own authenticator app —
  * so its challenge row exists only to carry purpose/method/expiry through
  * to verifyChallenge, with code_hash left null.
@@ -81,34 +107,40 @@ async function sendWhatsappOtp(userId: string, phone: string, code: string): Pro
 export async function createChallenge(args: {
   userId: string
   purpose: MfaPurpose
-  method: MfaMethod
-  /** Delivery number for sms/whatsapp — required for those methods on
-   *  'enroll' (verifying a NEW number); on 'login' the caller should pass
-   *  the user's already-saved mfa_phone. */
+  /** 'auto' tries WhatsApp then falls back to SMS — only meaningful for
+   *  'profile_phone', where the caller hasn't asked the user to pick a
+   *  channel. The challenge is saved under whichever method actually sent. */
+  method: MfaMethod | "auto"
+  /** Delivery number for sms/whatsapp/auto — required for those methods on
+   *  'enroll'/'profile_phone' (verifying a NEW number); on 'login' the
+   *  caller should pass the user's already-saved mfa_phone. */
   phone?: string | null
-}): Promise<{ challengeId: string }> {
+}): Promise<{ challengeId: string; method: MfaMethod }> {
   const expiresAt = new Date(Date.now() + CODE_TTL_MS)
 
   let codeHash: string | null = null
+  let actualMethod: MfaMethod = args.method === "auto" ? "whatsapp" : args.method
   if (args.method !== "totp") {
     if (!args.phone) throw new Error("A phone number is required for SMS/WhatsApp codes")
     const code = generateOtpCode()
     codeHash = await bcrypt.hash(code, 10)
-    if (args.method === "sms") await sendSmsOtp(args.userId, args.phone, code)
+    if (args.method === "auto") actualMethod = await sendAutoOtp(args.userId, args.phone, code)
+    else if (args.method === "sms") await sendSmsOtp(args.userId, args.phone, code)
     else await sendWhatsappOtp(args.userId, args.phone, code)
   }
 
+  const storesPendingPhone = args.purpose === "enroll" || args.purpose === "profile_phone"
   const challenge = await prisma.mfaChallenge.create({
     data: {
       user_id: args.userId,
       purpose: args.purpose,
-      method: args.method,
+      method: actualMethod,
       code_hash: codeHash,
-      pending_phone: args.purpose === "enroll" ? (args.phone ?? null) : null,
+      pending_phone: storesPendingPhone ? (args.phone ?? null) : null,
       expires_at: expiresAt,
     },
   })
-  return { challengeId: challenge.id }
+  return { challengeId: challenge.id, method: actualMethod }
 }
 
 export interface VerifyResult {

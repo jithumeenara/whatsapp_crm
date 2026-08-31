@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, CircleAlert, Camera, ShieldCheck, Mail, BadgeCheck } from 'lucide-react';
+import { Loader2, Upload, Trash2, CircleAlert, Camera, ShieldCheck, Mail, BadgeCheck, Phone, CheckCircle2 } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PasswordForm } from '@/components/settings/password-form';
 import { MfaSettings } from '@/components/settings/mfa-settings';
+import { CountryCodeSelect } from '@/components/shared/country-code-select';
+import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -32,9 +34,28 @@ export function ProfileForm() {
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // WhatsApp number — two-part control (country + local), like signup.
+  const [phoneIso, setPhoneIso] = useState(DEFAULT_COUNTRY_ISO);
+  const [phoneLocal, setPhoneLocal] = useState('');
+
+  // Phone verify (WhatsApp/SMS OTP) — same challenge lifecycle as MFA enroll.
+  const [phoneVerifying, setPhoneVerifying] = useState(false);
+  const [phoneChallengeId, setPhoneChallengeId] = useState('');
+  const [phoneCode, setPhoneCode] = useState('');
+  const [phoneSending, setPhoneSending] = useState(false);
+  const [phoneConfirming, setPhoneConfirming] = useState(false);
+  const [phoneSentVia, setPhoneSentVia] = useState<'sms' | 'whatsapp' | null>(null);
+
+  // Email verify (one-click link).
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
   useEffect(() => {
     if (!profile) return;
     setFullName(profile.full_name ?? '');
+    const parsed = profile.phone ? splitE164(profile.phone) : null;
+    setPhoneIso(parsed?.iso ?? DEFAULT_COUNTRY_ISO);
+    setPhoneLocal(parsed?.local ?? '');
   }, [profile]);
 
   useEffect(() => {
@@ -43,6 +64,13 @@ export function ProfileForm() {
 
   const currentAvatar = previewUrl ?? (!removeAvatar ? profile?.avatar_url ?? null : null);
   const initial = (fullName || profile?.full_name || profile?.email || 'U').charAt(0).toUpperCase();
+
+  const combinedPhone = (() => {
+    const dial = COUNTRY_CODES.find((c) => c.iso === phoneIso)?.dial ?? '';
+    const digits = phoneLocal.replace(/\D/g, '');
+    return digits ? `${dial}${digits}` : '';
+  })();
+  const phoneDirty = !!profile && combinedPhone !== (profile.phone ?? '');
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -91,6 +119,7 @@ export function ProfileForm() {
 
       const patchBody: Record<string, unknown> = { full_name: trimmedName };
       if (nextAvatarUrl !== undefined) patchBody.avatar_url = nextAvatarUrl;
+      if (phoneDirty) patchBody.phone = combinedPhone;
 
       const res = await fetch('/api/profile', {
         method: 'PATCH',
@@ -117,10 +146,62 @@ export function ProfileForm() {
   const dirty = !!profile && (
     fullName.trim() !== (profile.full_name ?? '') ||
     pendingAvatar !== null ||
-    removeAvatar
+    removeAvatar ||
+    phoneDirty
   );
 
   const roleInfo = ROLE_LABELS[profile?.account_role ?? ''];
+
+  async function startPhoneVerify() {
+    setPhoneSending(true);
+    try {
+      const res = await fetch('/api/account/profile/phone/verify/start', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Failed to send code'); return; }
+      if (data.alreadyVerified) { toast.success('Already verified'); await refreshProfile(); return; }
+      setPhoneChallengeId(data.challengeId);
+      setPhoneSentVia((data.method as 'sms' | 'whatsapp') ?? null);
+      setPhoneVerifying(true);
+      toast.success('Verification code sent');
+    } finally {
+      setPhoneSending(false);
+    }
+  }
+
+  async function confirmPhoneVerify() {
+    if (phoneCode.length !== 6) return;
+    setPhoneConfirming(true);
+    try {
+      const res = await fetch('/api/account/profile/phone/verify/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengeId: phoneChallengeId, code: phoneCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Incorrect code'); return; }
+      toast.success('Number verified');
+      setPhoneVerifying(false);
+      setPhoneCode('');
+      setPhoneChallengeId('');
+      await refreshProfile();
+    } finally {
+      setPhoneConfirming(false);
+    }
+  }
+
+  async function sendVerificationEmail() {
+    setEmailSending(true);
+    try {
+      const res = await fetch('/api/account/profile/email/verify/start', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Failed to send email'); return; }
+      if (data.alreadyVerified) { toast.success('Already verified'); await refreshProfile(); return; }
+      setEmailSent(true);
+      toast.success('Verification email sent — check your inbox');
+    } finally {
+      setEmailSending(false);
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -235,9 +316,85 @@ export function ProfileForm() {
               />
             </div>
 
+            {/* WhatsApp number */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-[13px] font-medium text-slate-700">WhatsApp Number</Label>
+                {profile && (
+                  profile.phone_verified ? (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Verified
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                      <CircleAlert className="h-3.5 w-3.5" /> Not verified
+                    </span>
+                  )
+                )}
+              </div>
+              <div className="flex gap-2">
+                <CountryCodeSelect value={phoneIso} onChange={setPhoneIso} className="w-[104px] shrink-0" />
+                <div className="relative flex-1">
+                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="98765 43210"
+                    value={phoneLocal}
+                    onChange={(e) => setPhoneLocal(e.target.value)}
+                    disabled={saving}
+                    className="h-9 pl-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
+                  />
+                </div>
+              </div>
+              {phoneDirty ? (
+                <p className="text-[11px] text-amber-600">Save changes to update your number, then verify it.</p>
+              ) : profile?.phone && !profile.phone_verified && !phoneVerifying ? (
+                <button type="button" onClick={startPhoneVerify} disabled={phoneSending}
+                  className="text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60">
+                  {phoneSending ? 'Sending code…' : 'Verify this number'}
+                </button>
+              ) : !profile?.phone && !phoneVerifying ? (
+                <button type="button" disabled
+                  className="text-[11.5px] font-medium text-slate-400 cursor-not-allowed">
+                  Add a number above, then verify
+                </button>
+              ) : null}
+              <p className="text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
+              {phoneVerifying && (
+                <div className="space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                  <p className="text-[12px] text-slate-500">Code sent via {phoneSentVia === 'whatsapp' ? 'WhatsApp' : 'SMS'}.</p>
+                  <div className="flex gap-2">
+                    <Input value={phoneCode} onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="123456" inputMode="numeric" maxLength={6}
+                      className="h-9 text-[13px] font-mono border-slate-200 bg-white text-center tracking-[0.3em]" />
+                    <Button type="button" onClick={confirmPhoneVerify} disabled={phoneConfirming || phoneCode.length !== 6}
+                      className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
+                      {phoneConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+                    </Button>
+                  </div>
+                  <button type="button" onClick={() => { setPhoneVerifying(false); setPhoneCode(''); setPhoneChallengeId(''); }}
+                    className="text-[11px] text-slate-500 hover:text-slate-700 underline underline-offset-2">Cancel</button>
+                </div>
+              )}
+            </div>
+
             {/* Email (read-only) */}
             <div className="space-y-1.5">
-              <Label className="text-[13px] font-medium text-slate-700">Email address</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-[13px] font-medium text-slate-700">Email address</Label>
+                {profile && (
+                  profile.email_verified ? (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Verified
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                      <CircleAlert className="h-3.5 w-3.5" /> Not verified
+                    </span>
+                  )
+                )}
+              </div>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
@@ -246,6 +403,16 @@ export function ProfileForm() {
                   className="h-9 pl-9 text-[13px] bg-slate-50 border-slate-200 text-slate-500"
                 />
               </div>
+              {profile && !profile.email_verified && (
+                emailSent ? (
+                  <p className="text-[11px] text-emerald-600">Verification link sent — check your inbox (valid 24 hours).</p>
+                ) : (
+                  <button type="button" onClick={sendVerificationEmail} disabled={emailSending}
+                    className="text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60">
+                    {emailSending ? 'Sending…' : 'Send verification email'}
+                  </button>
+                )
+              )}
               <p className="text-[11px] text-slate-400">Managed by your authentication provider.</p>
             </div>
 

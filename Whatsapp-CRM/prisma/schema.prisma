@@ -64,8 +64,29 @@ model User {
   conversations_assigned       Conversation[]               @relation("ConversationAgent")
   push_subscriptions           PushSubscription[]
   scheduled_messages           ScheduledMessage[]
+  email_verification_tokens    EmailVerificationToken[]
 
   @@map("users")
+}
+
+// A one-time link token for confirming a user's own email address (Settings
+// > Profile "Verify" button, and the not-verified-yet banner on Dashboard).
+// Only token_hash (SHA-256 of the plaintext) is stored — same reasoning as
+// AccountInvitation.token_hash: a leaked DB snapshot alone can't be used to
+// confirm someone else's email, the raw token only ever appears once, in
+// the emailed link itself.
+model EmailVerificationToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique
+  expires_at DateTime  @db.Timestamptz(6)
+  consumed_at DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("email_verification_tokens")
 }
 
 // A short-lived MFA code/session, for two purposes: 'login' (a challenge
@@ -186,6 +207,17 @@ model Profile {
   full_name    String      @default("")
   email        String
   avatar_url   String?
+  /// This person's own WhatsApp number (E.164, e.g. "+919876543210") —
+  /// collected at signup as a country-code select + local-number input,
+  /// combined into one string before saving. Distinct from
+  /// WhatsAppConfig.phone_number_id, which is the Business Platform
+  /// number the app sends/receives through, not a team member's own.
+  phone        String?
+  /// When phone was last confirmed via a WhatsApp/SMS OTP (Settings > Profile
+  /// "Verify" button). Null = not verified. Cleared back to null whenever
+  /// `phone` itself is changed, so an edited number can't inherit the old
+  /// number's verified status.
+  phone_verified_at DateTime? @db.Timestamptz(6)
   account_id   String      @db.Uuid
   account_role          AccountRole
   restrict_to_assigned  Boolean     @default(false)

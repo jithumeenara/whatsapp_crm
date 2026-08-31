@@ -4,7 +4,9 @@ import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
-import { MessageSquare, Eye, EyeOff, Lock, Mail, User } from "lucide-react"
+import { MessageSquare, Eye, EyeOff, Lock, Mail, User, Phone } from "lucide-react"
+import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO } from "@/lib/country-codes"
+import { CountryCodeSelect } from "@/components/shared/country-code-select"
 
 function SignupContent() {
   const searchParams = useSearchParams()
@@ -13,6 +15,10 @@ function SignupContent() {
 
   const [fullName, setFullName] = useState("")
   const [email, setEmail] = useState("")
+  // Two separate controls (country select, then local number) — combined
+  // into one E.164 string only when actually submitting.
+  const [countryIso, setCountryIso] = useState(DEFAULT_COUNTRY_ISO)
+  const [localNumber, setLocalNumber] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPw, setConfirmPw] = useState("")
   const [showPw, setShowPw] = useState(false)
@@ -25,10 +31,16 @@ function SignupContent() {
     if (password !== confirmPw) { setError("Passwords do not match"); return }
     if (password.length < 6) { setError("Password must be at least 6 characters"); return }
     setLoading(true)
+    // Combine the two controls into one E.164 string here, right before
+    // sending — country code + digits-only local number. Left blank if
+    // no local number was actually typed (the field is optional).
+    const dialCode = COUNTRY_CODES.find((c) => c.iso === countryIso)?.dial ?? ""
+    const digitsOnly = localNumber.replace(/\D/g, "")
+    const phone = digitsOnly ? `${dialCode}${digitsOnly}` : ""
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, full_name: fullName }),
+      body: JSON.stringify({ email, password, full_name: fullName, phone }),
     })
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? "Registration failed"); setLoading(false); return }
@@ -61,6 +73,27 @@ function SignupContent() {
                 <input type="text" placeholder="Your name" required value={fullName} onChange={(e) => setFullName(e.target.value)}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100" />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">
+                WhatsApp Number <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <div className="flex gap-2">
+                <CountryCodeSelect value={countryIso} onChange={setCountryIso} className="w-[112px] shrink-0" />
+                <div className="relative flex-1">
+                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="98765 43210"
+                    value={localNumber}
+                    onChange={(e) => setLocalNumber(e.target.value)}
+                    className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                  />
+                </div>
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
             </div>
 
             <div>

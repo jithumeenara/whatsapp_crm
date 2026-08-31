@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useMemo, useRef } from "react"
 import type { Conversation, ConversationStatus } from "@/types"
-import { Search, X, MessageSquare, ChevronDown, Mail, Radio, CalendarClock } from "lucide-react"
+import { Search, X, MessageSquare, ChevronDown, Mail, Radio, CalendarClock, MoreVertical } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { ScheduledContactsOverview } from "./scheduled-contacts-overview"
+import { NewChatDialog } from "@/components/shared/new-chat-dialog"
+import { WhatsAppQrButton } from "@/components/shared/whatsapp-qr-button"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -80,6 +82,10 @@ interface Props {
   conversations: Conversation[]
   onConversationsLoaded: (convs: Conversation[]) => void
   resyncToken?: number
+  /** Fired once a "New chat" template send actually succeeds, so the
+   *  page can select the freshly created conversation immediately
+   *  instead of waiting on the realtime socket round-trip. */
+  onNewChatCreated?: (conversationId: string) => void
 }
 
 type Filter = ConversationStatus | "all"
@@ -132,7 +138,7 @@ function avatarGradient(id: string) {
   return AVATAR_COLORS[s % AVATAR_COLORS.length]
 }
 
-export function ConversationListV2({ activeConversationId, onSelect, conversations, onConversationsLoaded, resyncToken = 0 }: Props) {
+export function ConversationListV2({ activeConversationId, onSelect, conversations, onConversationsLoaded, resyncToken = 0, onNewChatCreated }: Props) {
   const [search, setSearch] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
   const [scheduledOverviewOpen, setScheduledOverviewOpen] = useState(false)
@@ -140,6 +146,8 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all")
   const [channelOpen, setChannelOpen] = useState(false)
   const channelRef = useRef<HTMLDivElement>(null)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!channelOpen) return
@@ -149,6 +157,15 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [channelOpen])
+
+  useEffect(() => {
+    if (!moreOpen) return
+    function handler(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [moreOpen])
   const [loading, setLoading] = useState(true)
   const loadedRef = useRef(onConversationsLoaded)
   useEffect(() => { loadedRef.current = onConversationsLoaded })
@@ -259,11 +276,45 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
                 searchOpen ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
               {searchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
             </button>
-            {/* Scheduled messages overview — every contact with one, account-wide */}
-            <button type="button" onClick={() => setScheduledOverviewOpen(true)} title="Scheduled messages"
-              className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-all">
-              <CalendarClock className="h-4 w-4" />
-            </button>
+            {/* More: scheduled messages, WhatsApp QR code, new chat —
+                grouped behind one trigger so the header doesn't turn
+                into a row of unlabeled icon buttons. */}
+            <div ref={moreRef} className="relative">
+              <button type="button" onClick={() => setMoreOpen((v) => !v)} title="More"
+                className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition-all",
+                  moreOpen ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
+                <MoreVertical className="h-4 w-4" />
+              </button>
+              {/* Always mounted, toggled with CSS rather than conditionally
+                  rendered — WhatsAppQrButton/NewChatDialog own their popup's
+                  open state internally, so unmounting this panel the instant
+                  one of them is clicked (their onOpen closes this menu) would
+                  destroy that popup before it could ever appear. */}
+              <div
+                className={cn(
+                  "absolute right-0 top-full mt-1 z-50 min-w-[220px] rounded-xl border border-slate-200 bg-white shadow-xl py-1 transition-opacity",
+                  moreOpen ? "visible opacity-100" : "invisible opacity-0 pointer-events-none",
+                )}
+              >
+                  <button type="button"
+                    onClick={() => { setScheduledOverviewOpen(true); setMoreOpen(false) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50">
+                    <CalendarClock className="h-4 w-4 text-slate-400" />
+                    Scheduled messages
+                  </button>
+                  <WhatsAppQrButton
+                    label="WhatsApp QR code"
+                    onOpen={() => setMoreOpen(false)}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
+                  />
+                  <NewChatDialog
+                    onSent={onNewChatCreated}
+                    label="New chat"
+                    onOpen={() => setMoreOpen(false)}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50"
+                  />
+                </div>
+            </div>
           </div>
         </div>
 

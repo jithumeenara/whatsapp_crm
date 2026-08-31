@@ -175,6 +175,18 @@ export const RATE_LIMITS = {
    *  well before the window resets, on top of the 5-attempts-per-challenge
    *  cap already enforced in mfa.ts itself. */
   mfaVerify: { limit: 15, windowMs: 15 * 60_000 },
+  /** "Start new chat" — creates a Contact + Conversation for a
+   *  manually-entered phone number. Lighter than `send` since it's a
+   *  one-time setup step per number, but still capped to stop a script
+   *  from mass-creating fake contacts. */
+  newChat: { limit: 20, windowMs: 60_000 },
+  /** Settings > Profile "Verify" — send a WhatsApp/SMS code or a
+   *  verification email link, per user. Same budget as mfaStart since
+   *  this dispatches a real, provider-billed message/email each call. */
+  profileVerifyStart: { limit: 10, windowMs: 15 * 60_000 },
+  /** Settings > Profile — submitting the 6-digit phone code. Same budget
+   *  as mfaVerify for the same brute-force reasoning. */
+  profileVerifyConfirm: { limit: 15, windowMs: 15 * 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

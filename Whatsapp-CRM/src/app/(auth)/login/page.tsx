@@ -4,7 +4,7 @@ import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
-import { MessageSquare, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, KeyRound, Clock } from "lucide-react"
+import { MessageSquare, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, KeyRound, Clock, CheckCircle2, CircleAlert } from "lucide-react"
 
 type Step = "credentials" | "mfa"
 type MfaMethod = "sms" | "whatsapp" | "totp"
@@ -19,6 +19,7 @@ function LoginContent() {
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get("invite")
   const idleLogout = searchParams.get("reason") === "idle"
+  const emailVerified = searchParams.get("emailVerified")
   const router = useRouter()
 
   const [step, setStep] = useState<Step>("credentials")
@@ -136,6 +137,18 @@ function LoginContent() {
             <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-700">
               <Clock className="h-4 w-4 shrink-0 mt-0.5" />
               <span>You were signed out after 10 minutes of inactivity — sign back in to continue.</span>
+            </div>
+          )}
+          {emailVerified === "1" && !error && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700">
+              <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>Email address verified — sign in to continue.</span>
+            </div>
+          )}
+          {emailVerified === "0" && !error && (
+            <div className="mb-4 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
+              <CircleAlert className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>That verification link is invalid or has expired — sign in, then send yourself a new one from Settings &gt; Profile.</span>
             </div>
           )}
           {error && (

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { isValidE164 } from "@/lib/whatsapp/phone-utils";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, full_name } = await req.json();
+    const { email, password, full_name, phone } = await req.json();
 
     if (!email || !password) {
       return NextResponse.json(
@@ -16,6 +17,16 @@ export async function POST(req: NextRequest) {
     if (password.length < 6) {
       return NextResponse.json(
         { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
+
+    // Optional — the signup form only sends it once a local number has
+    // actually been typed, but validate defensively if it did arrive.
+    const trimmedPhone = typeof phone === "string" ? phone.trim() : "";
+    if (trimmedPhone && !isValidE164(trimmedPhone)) {
+      return NextResponse.json(
+        { error: "Enter a valid WhatsApp number for the selected country" },
         { status: 400 }
       );
     }
@@ -48,6 +59,7 @@ export async function POST(req: NextRequest) {
           user_id: newUser.id,
           full_name: full_name ?? "",
           email,
+          phone: trimmedPhone || null,
           account_id: account.id,
           account_role: "owner",
         },

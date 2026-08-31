@@ -18,6 +18,7 @@ import { FileManagerPicker } from "@/components/inbox/file-manager-picker"
 import { EmojiPickerPopover } from "@/components/inbox/emoji-picker-popover"
 import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
+import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
 import type { MessageTemplate, Contact } from "@/types"
@@ -511,6 +512,15 @@ export default function LeadDetailPage() {
             <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
           </button>
         </div>
+
+        {/* Start/re-engage a chat — pre-filled with this lead's own number,
+            so re-typing what's already on screen isn't needed. Still
+            editable, e.g. for the contact's alternate phone instead. */}
+        <NewChatDialog
+          className="flex items-center justify-center h-8 w-8 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 shrink-0"
+          initialPhone={phone ?? undefined}
+          initialName={lead.contact?.name ?? undefined}
+        />
 
         <button onClick={() => setCloseDialogOpen(true)}
           className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-rose-50 text-rose-600 text-[12px] font-semibold hover:bg-rose-100 shrink-0">

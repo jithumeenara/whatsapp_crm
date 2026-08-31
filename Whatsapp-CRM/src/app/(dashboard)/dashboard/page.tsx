@@ -28,6 +28,8 @@ import {
   Clock,
   AlertTriangle,
 } from "lucide-react"
+import { WhatsAppQrButton } from "@/components/shared/whatsapp-qr-button"
+import { VerificationBanner } from "@/components/shared/verification-banner"
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -223,14 +225,20 @@ export default function DashboardV2() {
   return (
     <div className="min-h-full p-6 lg:p-8">
       {/* Page header */}
-      <div className="mb-8">
-        <h1 className="text-[22px] font-bold text-slate-900">
-          {greeting}, {profile?.full_name?.split(" ")[0] ?? "there"} 👋
-        </h1>
-        <p className="mt-0.5 text-[13px] text-slate-500">
-          {new Date().toLocaleDateString("en", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[22px] font-bold text-slate-900">
+            {greeting}, {profile?.full_name?.split(" ")[0] ?? "there"} 👋
+          </h1>
+          <p className="mt-0.5 text-[13px] text-slate-500">
+            {new Date().toLocaleDateString("en", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+          </p>
+        </div>
+        {/* Click-to-WhatsApp QR code for this account's number */}
+        <WhatsAppQrButton className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 shrink-0" />
       </div>
+
+      <VerificationBanner />
 
       {/* Metric cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-8">

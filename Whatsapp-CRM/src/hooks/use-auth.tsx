@@ -26,6 +26,9 @@ interface Profile {
   full_name: string | null;
   email: string;
   avatar_url: string | null;
+  phone: string | null;
+  phone_verified: boolean;
+  email_verified: boolean;
   account_id: string | null;
   account_role: AccountRole | null;
 }
@@ -85,6 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           full_name: data.profile.full_name,
           email: data.profile.email,
           avatar_url: data.profile.avatar_url,
+          phone: data.profile.phone ?? null,
+          phone_verified: !!data.profile.phone_verified,
+          email_verified: !!data.profile.email_verified,
           account_id: data.profile.account_id,
           account_role: accountRole,
         });

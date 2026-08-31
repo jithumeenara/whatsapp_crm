@@ -207,6 +207,18 @@ function InboxV2Content() {
     [activeConversation?.id, router, closeSidebar],
   )
 
+  const handleNewChatCreated = useCallback(
+    async (convId: string) => {
+      try {
+        const res = await fetch(`/api/conversations/${convId}`)
+        if (!res.ok) return
+        const conv = (await res.json()) as Conversation
+        handleSelectConversation(conv)
+      } catch { }
+    },
+    [handleSelectConversation],
+  )
+
   const handleCloseConversation = useCallback(() => {
     setActiveConversation(null)
     setActiveContact(null)
@@ -271,6 +283,7 @@ function InboxV2Content() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            onNewChatCreated={handleNewChatCreated}
           />
         </div>
 
