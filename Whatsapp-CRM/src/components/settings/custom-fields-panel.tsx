@@ -98,7 +98,7 @@ export function CustomFieldsPanel() {
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <Sliders className="h-4 w-4 text-indigo-600" />
+          <Sliders className="h-4 w-4 text-[#5B6CF9]" />
           <h2 className="text-[16px] font-bold text-slate-900">Contact Custom Fields</h2>
         </div>
         <p className="text-[13px] text-slate-500">
@@ -121,7 +121,7 @@ export function CustomFieldsPanel() {
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleAdd() }}
               placeholder="e.g. Lead Source, Budget…"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[14px] text-slate-900 placeholder:text-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-all"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[14px] text-slate-900 placeholder:text-slate-300 focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 focus:bg-white outline-none transition-all"
             />
           </div>
 
@@ -133,7 +133,7 @@ export function CustomFieldsPanel() {
             <select
               value={newType}
               onChange={(e) => setNewType(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[14px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-all appearance-none cursor-pointer"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[14px] text-slate-900 focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 focus:bg-white outline-none transition-all appearance-none cursor-pointer"
             >
               {FIELD_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
@@ -147,7 +147,7 @@ export function CustomFieldsPanel() {
               type="button"
               onClick={handleAdd}
               disabled={adding || !newName.trim()}
-              className="flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[14px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
+              className="flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl bg-[#5B6CF9] px-5 py-2.5 text-[14px] font-semibold text-white hover:bg-[#4a5ce8] disabled:opacity-50 transition-colors shadow-sm"
             >
               {adding
                 ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -166,7 +166,7 @@ export function CustomFieldsPanel() {
               onClick={() => setNewType(t.value)}
               className={`rounded-lg px-2.5 py-1 text-[12px] font-medium transition-all ${
                 newType === t.value
-                  ? "bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300"
+                  ? "bg-[#EEF0FF] text-[#5B6CF9] ring-1 ring-[#5B6CF9]/25"
                   : "bg-slate-100 text-slate-500 hover:bg-slate-200"
               }`}
             >

@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Plus, X, Loader2 } from 'lucide-react';
+import { Plus, X, Loader2, Tag as TagIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -49,7 +48,6 @@ export function TagManager() {
       return;
     }
     fetchTags();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, userId]);
 
   async function fetchTags() {
@@ -124,18 +122,18 @@ export function TagManager() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-primary" />
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-8 flex items-center justify-center">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 mt-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">Tags</h2>
-          <p className="text-sm text-slate-500">Organize your contacts with color-coded tags.</p>
+          <h2 className="text-[16px] font-semibold text-slate-900">Tags</h2>
+          <p className="text-[13px] text-slate-500 mt-0.5">Organize your contacts with color-coded tags.</p>
         </div>
         <Button
           onClick={() => {
@@ -143,50 +141,46 @@ export function TagManager() {
             setSelectedColor(PRESET_COLORS[3].value);
             setDialogOpen(true);
           }}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground"
+          className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0"
         >
-          <Plus className="size-4" />
+          <Plus className="h-3.5 w-3.5" />
           New Tag
         </Button>
       </div>
 
       {tags.length === 0 ? (
-        <Card className="bg-white border-slate-200 ring-0 ring-transparent">
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-slate-500 text-sm">No tags yet.</p>
-            <p className="text-slate-500 text-xs mt-1">Create tags to categorize your contacts.</p>
-          </CardContent>
-        </Card>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col items-center justify-center py-14 text-center">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 mb-3">
+            <TagIcon className="h-4.5 w-4.5 text-slate-400" />
+          </span>
+          <p className="text-[13.5px] font-medium text-slate-700">No tags yet</p>
+          <p className="text-[12.5px] text-slate-400 mt-0.5">Create tags to categorize your contacts.</p>
+        </div>
       ) : (
-        <Card className="bg-white border-slate-200 ring-0 ring-transparent">
-          <CardContent className="pt-4">
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <span
-                  key={tag.id}
-                  className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
-                  style={{
-                    backgroundColor: `${tag.color}20`,
-                    color: tag.color,
-                    border: `1px solid ${tag.color}40`,
-                  }}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+          <div className="flex flex-wrap gap-2">
+            {tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors"
+                style={{
+                  backgroundColor: `${tag.color}18`,
+                  color: tag.color,
+                  border: `1px solid ${tag.color}40`,
+                }}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
+                {tag.name}
+                <button
+                  onClick={() => confirmDelete(tag)}
+                  className="ml-0.5 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/5"
                 >
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  {tag.name}
-                  <button
-                    onClick={() => confirmDelete(tag)}
-                    className="ml-0.5 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* New Tag Dialog */}
@@ -200,30 +194,30 @@ export function TagManager() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label className="text-slate-800/80">Tag Name</Label>
+            <div className="space-y-1.5">
+              <Label className="text-[13px] font-medium text-slate-700">Tag Name</Label>
               <Input
                 placeholder="e.g. VIP Customer"
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
-                className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500"
+                className="h-9 text-[13px] border-slate-200 focus-visible:ring-[#5B6CF9]/20"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleCreate();
                 }}
               />
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-slate-800/80">Color</Label>
+            <div className="space-y-1.5">
+              <Label className="text-[13px] font-medium text-slate-700">Color</Label>
               <div className="flex gap-2 flex-wrap">
                 {PRESET_COLORS.map((color) => (
                   <button
                     key={color.value}
                     onClick={() => setSelectedColor(color.value)}
-                    className="relative size-8 rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900"
+                    className="relative h-8 w-8 rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2"
                     style={{
                       backgroundColor: color.value,
-                      boxShadow: selectedColor === color.value ? `0 0 0 2px rgb(15 23 42), 0 0 0 4px ${color.value}` : 'none',
+                      boxShadow: selectedColor === color.value ? `0 0 0 2px white, 0 0 0 4px ${color.value}` : 'none',
                     }}
                     title={color.name}
                   />
@@ -231,49 +225,30 @@ export function TagManager() {
               </div>
             </div>
 
-            {/* Preview */}
-            <div className="space-y-2">
-              <Label className="text-slate-800/80">Preview</Label>
+            <div className="space-y-1.5">
+              <Label className="text-[13px] font-medium text-slate-700">Preview</Label>
               <div>
                 <span
-                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium"
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium"
                   style={{
-                    backgroundColor: `${selectedColor}20`,
+                    backgroundColor: `${selectedColor}18`,
                     color: selectedColor,
                     border: `1px solid ${selectedColor}40`,
                   }}
                 >
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: selectedColor }}
-                  />
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: selectedColor }} />
                   {newTagName || 'Tag Name'}
                 </span>
               </div>
             </div>
           </div>
 
-          <DialogFooter className="bg-white border-slate-200">
-            <Button
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
-            >
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-9 text-[13px] border-slate-200">
               Cancel
             </Button>
-            <Button
-              onClick={handleCreate}
-              disabled={saving}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Creating...
-                </>
-              ) : (
-                'Create Tag'
-              )}
+            <Button onClick={handleCreate} disabled={saving} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Tag'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -289,27 +264,12 @@ export function TagManager() {
               it from all contacts. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="bg-white border-slate-200">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteDialogOpen(false)}
-              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
-            >
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} className="h-9 text-[13px] border-slate-200">
               Cancel
             </Button>
-            <Button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="bg-red-600 hover:bg-red-700 text-slate-800"
-            >
-              {deleting ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete Tag'
-              )}
+            <Button onClick={handleDelete} disabled={deleting} className="h-9 text-[13px] bg-rose-600 hover:bg-rose-700 text-white">
+              {deleting ? <><Loader2 className="h-4 w-4 animate-spin" />Deleting…</> : 'Delete Tag'}
             </Button>
           </DialogFooter>
         </DialogContent>
