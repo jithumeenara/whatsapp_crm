@@ -46,10 +46,12 @@ const PROFILE_PANELS: Partial<Record<ChannelKey, React.ComponentType>> = {
  * per-channel button (only for the 3 channels that have one) that swaps
  * this view over to that channel's profile editor, with a Back button.
  *
- * Layout: the channel switcher and the Business Profile button are on
- * DELIBERATELY separate rows — putting them side by side let the button
- * squeeze the tab bar's available width and wrap it to a second line,
- * which is exactly the bug this avoids.
+ * Layout: channel switcher + Business Profile button share one row. The
+ * switcher gets `flex-1 min-w-0 overflow-x-auto` so it shrinks/scrolls
+ * instead of wrapping to a second line when the button needs its own
+ * space — a fixed-width sibling (the button, `shrink-0`) can't force a
+ * flex-1+min-w-0 sibling to wrap the way it could without those two
+ * classes.
  */
 export function ChannelsTab() {
   const [channel, setChannel] = useState<ChannelKey>('whatsapp');
@@ -66,58 +68,61 @@ export function ChannelsTab() {
 
   return (
     <div className="space-y-5">
-      {/* Row 1: channel switcher — always one line, scrolls horizontally
-          on narrow screens instead of wrapping */}
-      <div className="overflow-x-auto">
-        {/* Desktop/tablet: segmented tab bar */}
-        <div className="hidden sm:inline-flex min-w-max rounded-xl border border-slate-200 bg-slate-50 p-1">
-          {CHANNELS.map((c) => {
-            const Icon = c.icon;
-            const active = channel === c.key;
-            return (
-              <button
-                key={c.key}
-                type="button"
-                onClick={() => selectChannel(c.key)}
-                className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-all ${
-                  active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {c.label}
-              </button>
-            );
-          })}
+      {/* One row: channel switcher (shrinks + scrolls horizontally if
+          needed, never wraps) + Business Profile action, right-aligned */}
+      <div className="flex items-center gap-3">
+        {/* Desktop/tablet: segmented tab bar — min-w-0 + overflow-x-auto on
+            the wrapper is what lets this shrink instead of forcing the
+            action button below it onto a second line. */}
+        <div className="hidden sm:block flex-1 min-w-0 overflow-x-auto">
+          <div className="inline-flex min-w-max rounded-xl border border-slate-200 bg-slate-50 p-1">
+            {CHANNELS.map((c) => {
+              const Icon = c.icon;
+              const active = channel === c.key;
+              return (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={() => selectChannel(c.key)}
+                  className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-all ${
+                    active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Mobile: dropdown */}
         <select
           value={channel}
           onChange={(e) => selectChannel(e.target.value as ChannelKey)}
-          className="sm:hidden h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-[13.5px] font-medium text-slate-800 outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10"
+          className="sm:hidden h-10 flex-1 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-[13.5px] font-medium text-slate-800 outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10"
         >
           {CHANNELS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
         </select>
-      </div>
 
-      {/* Row 2: Business Profile action, own row so it never competes with the tab bar for width */}
-      {current.hasProfile && (
-        <div className="flex justify-end">
-          {showProfile ? (
+        {current.hasProfile && (
+          showProfile ? (
             <Button type="button" variant="outline" onClick={() => setShowProfile(false)}
-              className="h-9 px-4 text-[13px] border-slate-200 text-slate-600 hover:bg-slate-50">
+              className="h-9 px-4 text-[13px] border-slate-200 text-slate-600 hover:bg-slate-50 shrink-0">
               <ArrowLeft className="h-3.5 w-3.5" />
-              Back to {current.label}
+              <span className="hidden sm:inline">Back to {current.label}</span>
+              <span className="sm:hidden">Back</span>
             </Button>
           ) : (
             <Button type="button" onClick={() => setShowProfile(true)}
-              className="h-9 px-4 text-[13px] font-medium bg-[#EEF0FF] text-[#5B6CF9] hover:bg-[#E2E5FF] border border-[#5B6CF9]/15">
+              className="h-9 px-4 text-[13px] font-medium bg-[#EEF0FF] text-[#5B6CF9] hover:bg-[#E2E5FF] border border-[#5B6CF9]/15 shrink-0">
               <IdCard className="h-3.5 w-3.5" />
-              Business Profile
+              <span className="hidden sm:inline">Business Profile</span>
+              <span className="sm:hidden">Profile</span>
             </Button>
-          )}
-        </div>
-      )}
+          )
+        )}
+      </div>
 
       {showProfile && ProfilePanel ? <ProfilePanel /> : <ConfigPanel />}
     </div>

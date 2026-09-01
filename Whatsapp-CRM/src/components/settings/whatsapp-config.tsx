@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 import { KeysDialog } from '@/components/flows/keys-dialog';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
+import { ConnectChannelScreen } from '@/components/settings/connect-channel-screen';
+import { WhatsAppIcon } from '@/components/icons/brand-icons';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -75,6 +77,7 @@ export function WhatsAppConfig() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [keysDialogOpen, setKeysDialogOpen] = useState(false);
+  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>('quick');
   const [testing, setTesting] = useState(false);
   const [testPhone, setTestPhone] = useState('');
   const [sendingTest, setSendingTest] = useState(false);
@@ -334,15 +337,18 @@ export function WhatsAppConfig() {
   return (
     <div className="space-y-5">
       {!isConnected && (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="flex-1">
-            <p className="text-[14px] font-semibold text-slate-800">Quickest way to connect</p>
-            <p className="text-[12px] text-slate-500 mt-0.5">Log in with Facebook, pick or create your WhatsApp Business Account — no tokens to copy.</p>
-          </div>
-          <EmbeddedSignupButton onConnected={() => fetchConfig('')} />
-        </div>
+        <ConnectChannelScreen
+          icon={WhatsAppIcon}
+          channelName="WhatsApp"
+          method={connectMethod}
+          onMethodChange={setConnectMethod}
+          quickConnect={<EmbeddedSignupButton onConnected={() => fetchConfig('')} />}
+          manualConnect={null}
+        />
       )}
 
+      {(isConnected || connectMethod === 'manual') && (
+      <>
       {/* ── Status Bar ── */}
       <div className={cn(
         "rounded-2xl border px-5 py-4 flex items-center gap-4",
@@ -815,6 +821,9 @@ export function WhatsAppConfig() {
           </div>
         )}
       </div>
+
+      </>
+      )}
 
       <KeysDialog open={keysDialogOpen} onOpenChange={setKeysDialogOpen} />
     </div>
