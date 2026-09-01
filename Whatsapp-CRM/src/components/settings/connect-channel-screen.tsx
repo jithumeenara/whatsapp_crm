@@ -12,78 +12,61 @@ interface Props {
   /** The EmbeddedSignupButton (or an explanatory fallback if the platform
    *  hasn't set up Embedded Signup yet) — shown when Quick Connect is picked. */
   quickConnect: ReactNode;
-  /** Rendered below the picker when Manual Connect is picked — the
-   *  existing credential form each channel already has, untouched. */
-  manualConnect: ReactNode;
+  /** Unused — the manual credential form lives in the parent (it already
+   *  has its own heading), rendered as a sibling below this component once
+   *  Manual Connect is picked. Kept only so existing call sites that still
+   *  pass `manualConnect={null}` keep compiling. */
+  manualConnect?: ReactNode;
 }
 
 /**
- * The big, centered "let's connect this channel" screen shown in place of
- * the small top banner that used to sit above an always-visible manual
- * form. Two methods, presented as a real radio choice — Quick Connect
- * (Embedded Signup) is the default; Manual Connect reveals the existing
- * credential-entry form underneath instead of replacing this screen.
+ * A compact, single-line Quick Connect / Manual Connect picker shown above
+ * the channel's connect UI. Quick Connect shows its own small hero (icon +
+ * "Connect X" + the Embedded Signup button) right below the picker. Manual
+ * Connect shows nothing extra here — the existing credential form the
+ * parent renders right underneath already has its own heading ("X
+ * Messaging" / "Not configured"), so adding a second "Connect X" hero
+ * above it just duplicated that heading (reported by the user as "two
+ * heads").
  */
-export function ConnectChannelScreen({ icon: Icon, channelName, method, onMethodChange, quickConnect, manualConnect }: Props) {
+export function ConnectChannelScreen({ icon: Icon, channelName, method, onMethodChange, quickConnect }: Props) {
   return (
-    <div className="flex flex-col items-center py-10 px-4">
-      <div className="w-full max-w-md">
-        <div className="flex flex-col items-center text-center mb-7">
-          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 mb-4">
-            <Icon className="h-7 w-7" />
+    <div className="flex flex-col items-center pt-6 pb-2 px-4">
+      <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1">
+        <button
+          type="button"
+          onClick={() => onMethodChange('quick')}
+          className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium whitespace-nowrap transition-all ${
+            method === 'quick' ? 'bg-white text-[#5B6CF9] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Quick Connect
+          <span className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold ${
+            method === 'quick' ? 'bg-[#5B6CF9]/10 text-[#5B6CF9]' : 'bg-slate-200 text-slate-500'
+          }`}>
+            Recommended
           </span>
-          <h2 className="text-[17px] font-semibold text-slate-900">Connect {channelName}</h2>
-          <p className="text-[13px] text-slate-500 mt-1">Choose how you&apos;d like to connect your account.</p>
-        </div>
-
-        <div className="flex flex-col gap-2.5">
-          <label
-            className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
-              method === 'quick' ? 'border-[#5B6CF9] bg-[#EEF0FF]/50 ring-1 ring-[#5B6CF9]/20' : 'border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <input
-              type="radio"
-              name="connect-method"
-              checked={method === 'quick'}
-              onChange={() => onMethodChange('quick')}
-              className="mt-1 h-4 w-4 accent-[#5B6CF9]"
-            />
-            <div>
-              <p className="text-[13.5px] font-semibold text-slate-800 flex items-center gap-1.5">
-                Quick Connect
-                <span className="rounded-full bg-[#5B6CF9]/10 px-2 py-0.5 text-[10px] font-medium text-[#5B6CF9]">Recommended</span>
-              </p>
-              <p className="text-[12px] text-slate-500 mt-0.5">Log in with Facebook — no tokens to copy, done in under a minute.</p>
-            </div>
-          </label>
-
-          {method === 'quick' && (
-            <div className="flex justify-center pt-1 pb-2">{quickConnect}</div>
-          )}
-
-          <label
-            className={`flex items-start gap-3 rounded-2xl border p-4 cursor-pointer transition-all ${
-              method === 'manual' ? 'border-[#5B6CF9] bg-[#EEF0FF]/50 ring-1 ring-[#5B6CF9]/20' : 'border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <input
-              type="radio"
-              name="connect-method"
-              checked={method === 'manual'}
-              onChange={() => onMethodChange('manual')}
-              className="mt-1 h-4 w-4 accent-[#5B6CF9]"
-            />
-            <div>
-              <p className="text-[13.5px] font-semibold text-slate-800">Manual Connect</p>
-              <p className="text-[12px] text-slate-500 mt-0.5">Paste in your own API credentials from Meta&apos;s developer console.</p>
-            </div>
-          </label>
-        </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => onMethodChange('manual')}
+          className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-medium whitespace-nowrap transition-all ${
+            method === 'manual' ? 'bg-white text-[#5B6CF9] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Manual Connect
+        </button>
       </div>
 
-      {method === 'manual' && (
-        <div className="w-full max-w-2xl mt-6">{manualConnect}</div>
+      {method === 'quick' && (
+        <div className="flex flex-col items-center text-center mt-6 mb-2">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 mb-3">
+            <Icon className="h-6 w-6" />
+          </span>
+          <h2 className="text-[16px] font-semibold text-slate-900">Connect {channelName}</h2>
+          <p className="text-[12.5px] text-slate-500 mt-1 max-w-xs">Log in with Facebook — no tokens to copy, done in under a minute.</p>
+          <div className="mt-4">{quickConnect}</div>
+        </div>
       )}
     </div>
   );

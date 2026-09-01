@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { ConfirmProvider } from "@/hooks/use-confirm";
 import { SidebarV2 } from "./sidebar-v2";
@@ -22,6 +22,20 @@ const MobileBarCtx = createContext<{ hide: () => void; show: () => void; closeSi
   closeSidebar: () => {},
 });
 export function useMobileBar() { return useContext(MobileBarCtx); }
+
+/**
+ * The main app sidebar's collapsed state + manual toggle, exposed so a
+ * page (Settings, which has its own inner sidebar) can render its own
+ * collapse/expand control instead of only the one inside SidebarV2 itself
+ * — useful since SidebarV2 shrinks to icon-only right when Settings makes
+ * it auto-collapse (see the effect in ShellInner below), so its own
+ * toggle becomes a small target right when it's most wanted.
+ */
+const SidebarCollapseCtx = createContext<{ collapsed: boolean; toggle: () => void }>({
+  collapsed: false,
+  toggle: () => {},
+});
+export function useSidebarCollapse() { return useContext(SidebarCollapseCtx); }
 
 // Force all shadcn CSS-var tokens to light values inside the V2 shell,
 // regardless of the global data-theme (which may be a dark palette).
@@ -49,9 +63,37 @@ const LIGHT_VARS: React.CSSProperties = {
 function ShellInner({ children }: { children: React.ReactNode }) {
   const { userId, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  // Starts pre-collapsed if the user's first load IS Settings (direct nav
+  // or a refresh) — otherwise the auto-collapse effect below only fires on
+  // an actual route change, so a fresh mount wouldn't catch it.
+  const [collapsed, setCollapsed] = useState(() => pathname.startsWith("/settings"));
   const [mobileBarHidden, setMobileBarHidden] = useState(false);
+  // Tracks the previous render's pathname so a Settings-boundary crossing
+  // can be detected. Deliberately NOT a ref + useEffect — adjusting state
+  // in response to a prop/route change like this is meant to happen during
+  // render (React's own recommended pattern for "storing information from
+  // previous renders"), not in an effect, which would cost an extra
+  // cascading render for no benefit.
+  const [prevPathname, setPrevPathname] = useState(pathname);
+
+  // Auto-collapse the main sidebar the moment the user enters Settings
+  // (it has its own inner sidebar — two full-width sidebars at once wastes
+  // space), and auto-expand it back the moment they leave. Only fires on
+  // an actual Settings-boundary crossing, not on every route change, so a
+  // manual collapse/expand elsewhere in the app isn't fought or reset by
+  // navigating between two non-Settings pages.
+  if (prevPathname !== pathname) {
+    const wasSettings = prevPathname.startsWith("/settings");
+    const isSettings = pathname.startsWith("/settings");
+    if (isSettings && !wasSettings) setCollapsed(true);
+    else if (!isSettings && wasSettings) setCollapsed(false);
+    setPrevPathname(pathname);
+  }
+
+  const toggleCollapsed = useCallback(() => setCollapsed((v) => !v), []);
+  const sidebarCollapseCtx = useMemo(() => ({ collapsed, toggle: toggleCollapsed }), [collapsed, toggleCollapsed]);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const hideBar = useCallback(() => setMobileBarHidden(true), []);
   const showBar = useCallback(() => setMobileBarHidden(false), []);
@@ -90,13 +132,14 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   if (!userId) return null;
 
   return (
+    <SidebarCollapseCtx.Provider value={sidebarCollapseCtx}>
     <MobileBarCtx.Provider value={mobileBarCtx}>
       <div className="flex h-dvh overflow-hidden bg-slate-50 text-slate-900" style={{ fontFamily: "Inter, sans-serif", ...LIGHT_VARS }}>
         <SidebarV2
           open={sidebarOpen}
           onClose={closeSidebar}
           collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((v) => !v)}
+          onToggleCollapse={toggleCollapsed}
         />
 
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
@@ -119,6 +162,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     </MobileBarCtx.Provider>
+    </SidebarCollapseCtx.Provider>
   );
 }
 

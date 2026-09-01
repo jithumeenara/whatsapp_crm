@@ -198,7 +198,7 @@ export function InstagramConfig() {
               <p className="font-semibold">How to fix:</p>
               <ol className="list-decimal list-inside space-y-1 text-rose-600">
                 <li>Go to Meta Developer Console → Your App → Instagram → <strong>API setup with Instagram login</strong></li>
-                <li>Under <strong>"2. Generate access tokens"</strong>, click <strong>"Generate token"</strong> next to your Instagram account</li>
+                <li>Under <strong>&quot;2. Generate access tokens&quot;</strong>, click <strong>&quot;Generate token&quot;</strong> next to your Instagram account</li>
                 <li>Copy the <strong>full token</strong> from the popup (it starts with <code className="bg-rose-100 px-1 rounded">IGQ...</code> and is 200+ characters long)</li>
                 <li>Click the Access Token field below, clear it, paste the new token</li>
                 <li>Click <strong>Save Settings</strong> then <strong>Test Connection</strong></li>

@@ -349,6 +349,48 @@ export function WhatsAppConfig() {
 
       {(isConnected || connectMethod === 'manual') && (
       <>
+      {/* ── Status ── One merged green box once both connected AND
+          registered (this used to be two separate stacked green boxes
+          saying almost the same thing). While only one of the two is true
+          yet, keep them as distinct boxes since they're reporting genuinely
+          different states. */}
+      {isConnected && isRegistered ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-center gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+            <Wifi className="h-5 w-5 text-emerald-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[14px] font-semibold text-emerald-800">WhatsApp Connected &amp; Registered</p>
+            <p className="text-[12px] mt-0.5 text-emerald-600">
+              Authenticated with Meta and subscribed since{' '}
+              {config?.registered_at ? new Date(config.registered_at).toLocaleString() : 'unknown'}. Meta will deliver events.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={testing}
+              className="h-8 text-[12px] border-emerald-200 bg-white"
+            >
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              Test
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleVerifyRegistration}
+              disabled={verifyingRegistration}
+              className="h-8 text-[12px] border-emerald-200 bg-white"
+            >
+              {verifyingRegistration ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
+              Verify
+            </Button>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* ── Status Bar ── */}
       <div className={cn(
         "rounded-2xl border px-5 py-4 flex items-center gap-4",
@@ -405,6 +447,8 @@ export function WhatsAppConfig() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Registration probe results */}
       {registrationProbe && (
@@ -441,7 +485,7 @@ export function WhatsAppConfig() {
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
           <div className="flex-1">
-            <p className="text-[13px] font-semibold text-amber-800">Stored token can't be decrypted</p>
+            <p className="text-[13px] font-semibold text-amber-800">Stored token can&apos;t be decrypted</p>
             <p className="text-[12px] text-amber-700 mt-0.5">{statusMessage}</p>
             <Button
               size="sm"
@@ -456,8 +500,10 @@ export function WhatsAppConfig() {
         </div>
       )}
 
-      {/* Registration status */}
-      {config && (
+      {/* Registration status — folded into the merged green box above once
+          both connected and registered, so this only covers the remaining
+          "connected but not yet registered" / "not connected yet" states. */}
+      {config && !(isConnected && isRegistered) && (
         <div className={cn(
           "rounded-2xl border px-5 py-4 flex items-start gap-3",
           isRegistered ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"
@@ -484,7 +530,11 @@ export function WhatsAppConfig() {
         </div>
       )}
 
-      {/* ── Credentials ── */}
+      {/* ── Config sections as tiles — API Credentials and Webhook get the
+          full row (many fields / a lot of content), Encryption and Send
+          Test Message sit side-by-side as smaller tiles. ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="lg:col-span-2">
       <SectionCard
         title="API Credentials"
         description="Enter your Meta WhatsApp Business API credentials from Meta Developers."
@@ -619,6 +669,7 @@ export function WhatsAppConfig() {
           </FieldRow>
         </div>
       </SectionCard>
+      </div>
 
       {/* ── Encryption Keys ── */}
       <SectionCard
@@ -631,7 +682,34 @@ export function WhatsAppConfig() {
         </Button>
       </SectionCard>
 
+      {/* ── Test Message ── */}
+      {config && (
+        <SectionCard
+          title="Send Test Message"
+          description="Send a Hello World message to verify your WhatsApp connection is working."
+        >
+          <div className="flex gap-2">
+            <Input
+              placeholder="+91 98765 43210"
+              value={testPhone}
+              onChange={(e) => setTestPhone(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendTestMessage()}
+              className="h-9 text-[13px] border-slate-200 max-w-xs"
+            />
+            <Button
+              onClick={handleSendTestMessage}
+              disabled={sendingTest || !testPhone.trim()}
+              className="h-9 text-[13px] bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {sendingTest ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : 'Send Test'}
+            </Button>
+          </div>
+          <p className="text-[11px] text-slate-400">International format with country code. Number must have WhatsApp installed.</p>
+        </SectionCard>
+      )}
+
       {/* ── Webhook ── */}
+      <div className="lg:col-span-2">
       <SectionCard
         title="Webhook Configuration"
         description="Paste this URL into Meta Developers → WhatsApp → Configuration → Webhooks."
@@ -641,7 +719,7 @@ export function WhatsAppConfig() {
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
               <div>
-                <p className="text-[13px] font-semibold text-amber-800">Localhost can't be reached by Meta</p>
+                <p className="text-[13px] font-semibold text-amber-800">Localhost can&apos;t be reached by Meta</p>
                 <p className="text-[12px] text-amber-700 mt-0.5 leading-relaxed">
                   You need a public HTTPS URL. Use ngrok for quick local testing.
                 </p>
@@ -727,32 +805,8 @@ export function WhatsAppConfig() {
           </ol>
         </div>
       </SectionCard>
-
-      {/* ── Test Message ── */}
-      {config && (
-        <SectionCard
-          title="Send Test Message"
-          description="Send a Hello World message to verify your WhatsApp connection is working."
-        >
-          <div className="flex gap-2">
-            <Input
-              placeholder="+91 98765 43210"
-              value={testPhone}
-              onChange={(e) => setTestPhone(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendTestMessage()}
-              className="h-9 text-[13px] border-slate-200 max-w-xs"
-            />
-            <Button
-              onClick={handleSendTestMessage}
-              disabled={sendingTest || !testPhone.trim()}
-              className="h-9 text-[13px] bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              {sendingTest ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : 'Send Test'}
-            </Button>
-          </div>
-          <p className="text-[11px] text-slate-400">International format with country code. Number must have WhatsApp installed.</p>
-        </SectionCard>
-      )}
+      </div>
+      </div>
 
       {/* ── Setup guide (collapsible) ── */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">

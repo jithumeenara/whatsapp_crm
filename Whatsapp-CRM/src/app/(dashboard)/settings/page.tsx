@@ -6,9 +6,10 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   User, MousePointerClick, Tag, LayoutGrid, MessageSquare,
   Layers, Palette, Users, Bot, Database, Bell, Key, Webhook, Settings,
-  Search, ShieldCheck, X,
+  Search, ShieldCheck, X, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
+import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
 import { ProfileForm } from "@/components/settings/profile-form"
 import { CapturePanel } from "@/components/settings/capture-panel"
 import { TagManager } from "@/components/settings/tag-manager"
@@ -99,12 +100,18 @@ const TAB_TITLES: Record<string, string> = {
   webhooks: "Webhooks",
 }
 
+// Tabs whose content (tile grids, multi-column layouts) needs the full
+// panel width — everything else stays narrower for comfortable form/text
+// reading width.
+const WIDE_TABS = new Set(["channels", "platform", "database"])
+
 function SettingsContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { accountRole, profile } = useAuth()
   const [query, setQuery] = useState("")
   const reduceMotion = useReducedMotion()
+  const { collapsed: sidebarCollapsed, toggle: toggleMainSidebar } = useSidebarCollapse()
 
   const isOwner = accountRole === "owner"
   const isAdmin = isOwner || accountRole === "admin"
@@ -169,10 +176,19 @@ function SettingsContent() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#5B6CF9] shadow-sm shadow-[#5B6CF9]/30">
               <Settings className="h-4.5 w-4.5 text-white" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-[13.5px] font-semibold text-slate-800 leading-tight">Settings</p>
               <p className="truncate text-[11px] text-slate-400 leading-tight mt-0.5">{profile?.account_role ? `Signed in as ${profile.account_role}` : "Manage your workspace"}</p>
             </div>
+            <button
+              type="button"
+              onClick={toggleMainSidebar}
+              title={sidebarCollapsed ? "Expand main menu" : "Collapse main menu"}
+              aria-label={sidebarCollapsed ? "Expand main menu" : "Collapse main menu"}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
           </div>
 
           <div className="relative">
@@ -197,7 +213,7 @@ function SettingsContent() {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 pb-3 space-y-4">
+        <nav className="flex-1 overflow-y-auto sidebar-nav px-3 pb-3 space-y-4">
           {filteredSections.length === 0 && (
             <p className="px-2 py-6 text-center text-[12.5px] text-slate-400">No settings match &quot;{query}&quot;</p>
           )}
@@ -271,7 +287,7 @@ function SettingsContent() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 lg:p-8">
-          <div className="max-w-2xl">
+          <div className={WIDE_TABS.has(activeTab) ? "max-w-none" : "max-w-2xl"}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
