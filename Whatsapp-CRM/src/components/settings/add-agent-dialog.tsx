@@ -95,7 +95,7 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-slate-800">
-                <CheckCircle className="size-4 text-green-400" />
+                <CheckCircle className="size-4 text-emerald-500" />
                 Agent account created
               </DialogTitle>
               <DialogDescription className="text-slate-500">
@@ -139,7 +139,7 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
             <DialogFooter className="bg-white border-slate-200">
               <Button
                 onClick={() => onOpenChange(false)}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
               >
                 Done
               </Button>
@@ -198,7 +198,7 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
               <Button
                 onClick={handleCreate}
                 disabled={submitting}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
               >
                 {submitting ? (
                   <>

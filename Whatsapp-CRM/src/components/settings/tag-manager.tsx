@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { toast } from 'sonner';
-import { Plus, X, Loader2, Tag as TagIcon } from 'lucide-react';
+import { Plus, X, Loader2, Tag as TagIcon, Trash2 } from 'lucide-react';
+import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -259,26 +260,18 @@ export function TagManager() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="bg-white border-slate-200 sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-slate-800">Delete Tag</DialogTitle>
-            <DialogDescription className="text-slate-500">
-              Are you sure you want to delete the tag &quot;{tagToDelete?.name}&quot;? This will remove
-              it from all contacts. This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} className="h-9 text-[13px] border-slate-200">
-              Cancel
-            </Button>
-            <Button onClick={handleDelete} disabled={deleting} className="h-9 text-[13px] bg-rose-600 hover:bg-rose-700 text-white">
-              {deleting ? <><Loader2 className="h-4 w-4 animate-spin" />Deleting…</> : 'Delete Tag'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmIconDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        icon={Trash2}
+        tone="danger"
+        title="Delete this tag?"
+        description={<>&quot;{tagToDelete?.name}&quot; will be removed from all contacts. This can&apos;t be undone.</>}
+        actionLabel="Delete Tag"
+        actionPendingLabel="Deleting…"
+        onConfirm={handleDelete}
+        pending={deleting}
+      />
     </div>
   );
 }

@@ -4,9 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { Webhook, Plus, Trash2, Copy, Check, AlertTriangle, ToggleLeft, ToggleRight, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '@/components/ui/dialog'
+import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog'
 
 interface DataTable { id: string; name: string }
 
@@ -318,22 +316,18 @@ if (sig !== expected) return res.status(401).end()`}</pre>
         </div>
       )}
 
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="bg-white border-slate-200 sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-slate-800">Delete this webhook?</DialogTitle>
-            <DialogDescription className="text-slate-500">
-              &quot;{deleteTarget?.name}&quot; will stop receiving events immediately. This can&apos;t be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)} className="h-9 text-[13px] border-slate-200">Cancel</Button>
-            <Button onClick={remove} disabled={deleting} className="h-9 text-[13px] bg-rose-600 hover:bg-rose-700 text-white">
-              {deleting ? <><Loader2 className="h-4 w-4 animate-spin" />Deleting…</> : 'Delete'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmIconDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        icon={Trash2}
+        tone="danger"
+        title="Delete this webhook?"
+        description={<>&quot;{deleteTarget?.name}&quot; will stop receiving events immediately. This can&apos;t be undone.</>}
+        actionLabel="Delete"
+        actionPendingLabel="Deleting…"
+        onConfirm={remove}
+        pending={deleting}
+      />
     </div>
   )
 }

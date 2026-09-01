@@ -42,14 +42,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import {
   Select,
   SelectContent,
@@ -103,17 +96,17 @@ const ROLE_CHIP: Record<
   owner: {
     icon: Crown,
     label: 'Admin',
-    className: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+    className: 'border-amber-200 bg-amber-50 text-amber-700',
   },
   admin: {
     icon: Shield,
     label: 'Manager',
-    className: 'border-primary/40 bg-primary/10 text-primary',
+    className: 'border-[#5B6CF9]/25 bg-[#EEF0FF] text-[#5B6CF9]',
   },
   supervisor: {
     icon: UserCheck,
     label: 'Supervisor',
-    className: 'border-violet-500/40 bg-violet-500/10 text-violet-400',
+    className: 'border-violet-200 bg-violet-50 text-violet-700',
   },
   agent: {
     icon: UserCog,
@@ -324,38 +317,38 @@ export function MembersTab() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-primary" />
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-8 flex items-center justify-center">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 mt-4">
+    <div className="space-y-5">
       {/* Header + invite button */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-slate-800">Account members</h2>
-          <p className="text-sm text-slate-500">
+          <h2 className="text-[16px] font-semibold text-slate-900">Account members</h2>
+          <p className="text-[13px] text-slate-500 mt-0.5">
             People with access to this account. Roles control what each
             teammate can do.
           </p>
         </div>
         <RequireRole min="admin">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <Button
               onClick={() => setAddAgentOpen(true)}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
             >
-              <Plus className="size-4" />
+              <Plus className="h-3.5 w-3.5" />
               Add Agent
             </Button>
             <Button
               variant="outline"
               onClick={() => setInviteOpen(true)}
-              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
+              className="h-9 px-4 text-[13px] border-slate-200"
             >
-              <Mail className="size-4" />
+              <Mail className="h-3.5 w-3.5" />
               Invite link
             </Button>
           </div>
@@ -363,9 +356,9 @@ export function MembersTab() {
       </div>
 
       {/* Roster */}
-      <Card className="bg-white border-slate-200 ring-0 ring-transparent">
+      <Card className="rounded-2xl bg-white border-slate-200 shadow-sm">
         <CardContent className="p-0">
-          <ul className="divide-y divide-slate-800">
+          <ul className="divide-y divide-slate-100">
             {members.map((member) => {
               const roleMeta = ROLE_CHIP[member.role];
               const RoleIcon = roleMeta.icon;
@@ -391,7 +384,7 @@ export function MembersTab() {
                           alt={member.full_name || 'Member'}
                         />
                       ) : null}
-                      <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
+                      <AvatarFallback className="bg-[#EEF0FF] text-sm font-medium text-[#5B6CF9]">
                         {(member.full_name || member.email || 'U')
                           .charAt(0)
                           .toUpperCase()}
@@ -432,7 +425,7 @@ export function MembersTab() {
                         aria-checked={member.restrict_to_assigned}
                         onClick={() => handleRestrictToggle(member, !member.restrict_to_assigned)}
                         className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-                          member.restrict_to_assigned ? 'bg-primary' : 'bg-slate-100-foreground/30'
+                          member.restrict_to_assigned ? 'bg-[#5B6CF9]' : 'bg-slate-200'
                         }`}
                       >
                         <span
@@ -467,7 +460,7 @@ export function MembersTab() {
                         }
                       >
                         <SelectTrigger
-                          className="w-32 bg-slate-100 border-slate-200 text-slate-800/80"
+                          className="w-32 bg-slate-50 border-slate-200 text-slate-700"
                           disabled={isBusy}
                         >
                           <SelectValue />
@@ -502,7 +495,7 @@ export function MembersTab() {
                         size="sm"
                         onClick={() => setRemovingMember(member)}
                         disabled={isBusy}
-                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
+                        className="border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300 hover:text-rose-700"
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -541,7 +534,7 @@ export function MembersTab() {
           ) : null}
 
           {invitations.length === 0 ? (
-            <Card className="bg-white border-slate-200 ring-0 ring-transparent">
+            <Card className="rounded-2xl bg-white border-slate-200 shadow-sm">
               <CardContent className="flex flex-col items-center justify-center py-8 text-center">
                 <Mail className="size-6 text-slate-600" />
                 <p className="mt-2 text-sm text-slate-500">
@@ -554,9 +547,9 @@ export function MembersTab() {
               </CardContent>
             </Card>
           ) : (
-            <Card className="bg-white border-slate-200 ring-0 ring-transparent">
+            <Card className="rounded-2xl bg-white border-slate-200 shadow-sm">
               <CardContent className="p-0">
-                <ul className="divide-y divide-slate-800">
+                <ul className="divide-y divide-slate-100">
                   {invitations.map((inv) => {
                     const inviteRoleMeta = ROLE_CHIP[inv.role];
                     const InviteRoleIcon = inviteRoleMeta.icon;
@@ -590,7 +583,7 @@ export function MembersTab() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleRevoke(inv)}
-                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
+                        className="border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300 hover:text-rose-700"
                       >
                         <MailX className="size-4" />
                         Revoke
@@ -617,53 +610,23 @@ export function MembersTab() {
         onCreated={loadEverything}
       />
 
-      <Dialog
+      <ConfirmIconDialog
         open={removingMember !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemovingMember(null);
-        }}
-      >
-        <DialogContent className="bg-white border-slate-200 sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-800">
-              <AlertTriangle className="size-4 text-amber-400" />
-              Remove member
-            </DialogTitle>
-            <DialogDescription className="text-slate-500">
-              Remove{' '}
-              <span className="font-medium text-slate-800/80">
-                {removingMember?.full_name || 'this teammate'}
-              </span>{' '}
-              from the account? They&apos;ll be signed out of this account
-              and given a fresh personal account on their next sign-in. Their
-              login isn&apos;t deleted.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="bg-white border-slate-200">
-            <Button
-              variant="outline"
-              onClick={() => setRemovingMember(null)}
-              className="border-slate-200 text-slate-800/80 hover:bg-slate-100"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRemove}
-              disabled={!!pendingMemberAction}
-              className="bg-red-600 hover:bg-red-700 text-slate-800"
-            >
-              {pendingMemberAction ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Removing...
-                </>
-              ) : (
-                'Remove member'
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={(open) => !open && setRemovingMember(null)}
+        icon={AlertTriangle}
+        tone="warning"
+        title="Remove this member?"
+        description={
+          <>
+            Remove <span className="font-medium text-slate-700">{removingMember?.full_name || 'this teammate'}</span> from
+            the account? They&apos;ll be signed out and given a fresh personal account on their next sign-in — their login isn&apos;t deleted.
+          </>
+        }
+        actionLabel="Remove member"
+        actionPendingLabel="Removing…"
+        onConfirm={handleRemove}
+        pending={!!pendingMemberAction}
+      />
     </div>
   );
 }

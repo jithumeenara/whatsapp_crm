@@ -192,7 +192,7 @@ export function InviteMemberDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-slate-800">
-                <Sparkles className="size-4 text-primary" />
+                <Sparkles className="h-4 w-4 text-[#5B6CF9]" />
                 Invite created
               </DialogTitle>
               <DialogDescription className="text-slate-500">
@@ -219,20 +219,15 @@ export function InviteMemberDialog({
                 <Button
                   type="button"
                   onClick={copyToClipboard}
-                  className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
+                  className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0"
                 >
                   <Copy className="size-4" />
                   Copy
                 </Button>
               </div>
 
-              {/* Higher-contrast amber than the original 10% / amber-200.
-                  Reviewed against slate-900 to meet WCAG AAA for body
-                  text (target ratio 7:1). Border bumped to /50, bg to
-                  /15, foreground promoted to amber-100 for the strong
-                  intro, amber-200 for the body. */}
-              <div className="rounded-md border border-amber-500/50 bg-amber-500/15 px-3 py-2 text-xs text-amber-200">
-                <strong className="font-semibold text-amber-100">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] text-amber-800">
+                <strong className="font-semibold text-amber-900">
                   Save this link now.
                 </strong>{' '}
                 We never store the plaintext — once you close this dialog
@@ -263,7 +258,7 @@ export function InviteMemberDialog({
             <DialogFooter className="bg-white border-slate-200">
               <Button
                 onClick={() => onOpenChange(false)}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
               >
                 Done
               </Button>
@@ -350,7 +345,7 @@ export function InviteMemberDialog({
               <Button
                 onClick={handleCreate}
                 disabled={submitting}
-                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
               >
                 {submitting ? (
                   <>

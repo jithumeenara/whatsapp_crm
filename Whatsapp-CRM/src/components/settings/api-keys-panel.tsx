@@ -4,9 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { KeyRound, Plus, Trash2, Copy, Check, AlertTriangle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '@/components/ui/dialog'
+import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog'
 
 interface ApiKey {
   id: string
@@ -223,22 +221,18 @@ curl -X POST https://yourapp.com/api/data-tables/TABLE_ID/records \\
         </pre>
       </div>
 
-      <Dialog open={!!revokeTarget} onOpenChange={(open) => !open && setRevokeTarget(null)}>
-        <DialogContent className="bg-white border-slate-200 sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-slate-800">Revoke this API key?</DialogTitle>
-            <DialogDescription className="text-slate-500">
-              Any app using &quot;{revokeTarget?.name}&quot; will immediately lose access. This can&apos;t be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRevokeTarget(null)} className="h-9 text-[13px] border-slate-200">Cancel</Button>
-            <Button onClick={revoke} disabled={revoking} className="h-9 text-[13px] bg-rose-600 hover:bg-rose-700 text-white">
-              {revoking ? <><Loader2 className="h-4 w-4 animate-spin" />Revoking…</> : 'Revoke'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmIconDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+        icon={KeyRound}
+        tone="danger"
+        title="Revoke this API key?"
+        description={<>Any app using &quot;{revokeTarget?.name}&quot; will immediately lose access. This can&apos;t be undone.</>}
+        actionLabel="Revoke"
+        actionPendingLabel="Revoking…"
+        onConfirm={revoke}
+        pending={revoking}
+      />
     </div>
   )
 }
