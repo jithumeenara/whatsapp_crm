@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { PasswordForm } from '@/components/settings/password-form';
 import { MfaSettings } from '@/components/settings/mfa-settings';
+import { SessionsCard } from '@/components/settings/sessions-card';
 import { CountryCodeSelect } from '@/components/shared/country-code-select';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
 
@@ -463,6 +464,9 @@ export function ProfileForm() {
 
       {/* ── Security (MFA) section ── */}
       <MfaSettings />
+
+      {/* ── Sessions ── */}
+      <SessionsCard />
     </div>
   );
 }

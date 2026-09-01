@@ -15,9 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 import { KeysDialog } from '@/components/flows/keys-dialog';
-import { WhatsAppBusinessProfile } from '@/components/settings/whatsapp-business-profile';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
-import { MetaPlatformConfig } from '@/components/settings/meta-platform-config';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -817,10 +815,6 @@ export function WhatsAppConfig() {
           </div>
         )}
       </div>
-
-      {connectionStatus === 'connected' && <WhatsAppBusinessProfile />}
-
-      <MetaPlatformConfig />
 
       <KeysDialog open={keysDialogOpen} onOpenChange={setKeysDialogOpen} />
     </div>

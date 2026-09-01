@@ -25,7 +25,7 @@ export async function GET() {
     `
     const token = rows[0]?.access_token
     if (!token) {
-      return NextResponse.json({ error: "Instagram is not connected yet. Set it up above first." }, { status: 400 })
+      return NextResponse.json({ error: "Instagram is not connected yet — set it up in Settings > Instagram first." }, { status: 400 })
     }
 
     // Instagram Login tokens (IGQ...) → graph.instagram.com; Facebook Page

@@ -13,7 +13,7 @@ async function resolveConfig(userId: string) {
   const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
   if (!profile?.account_id) return { error: "Your profile is not linked to an account.", config: null }
   const config = await prisma.whatsAppConfig.findUnique({ where: { account_id: profile.account_id } })
-  if (!config) return { error: "WhatsApp is not connected yet. Set it up above first.", config: null }
+  if (!config) return { error: "WhatsApp is not connected yet — set it up in Settings > WhatsApp first.", config: null }
   return { error: null, config }
 }
 

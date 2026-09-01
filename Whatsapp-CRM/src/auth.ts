@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { consumeLoginChallenge } from "@/lib/auth/mfa";
+import { getSessionInvalidatedAt } from "@/lib/auth/session-invalidation";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -92,7 +93,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     newUser: "/signup",
   },
   callbacks: {
-    jwt({ token, user, trigger }) {
+    async jwt({ token, user, trigger }) {
       if (user?.id) token.id = user.id;
       // Idle-timeout tracking, seeded at sign-in. The ONGOING refresh path
       // is POST /api/heartbeat (re-signs and re-sets the cookie directly,
@@ -102,6 +103,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // Kept here as a harmless fallback in case anything else ever calls
       // useSession().update() for an unrelated reason.
       if (user?.id || trigger === "update") token.lastActivity = Date.now();
+
+      // "Sign out everywhere" (Settings > Profile > Sessions) — reject any
+      // token issued before the user's last invalidation, on every use.
+      // This is what actually revokes a session under the JWT strategy;
+      // returning null here is NextAuth's documented way to force the
+      // caller to be treated as signed out.
+      if (token.id) {
+        const invalidatedAt = await getSessionInvalidatedAt(token.id as string);
+        if (invalidatedAt && typeof token.iat === "number" && invalidatedAt.getTime() / 1000 > token.iat) {
+          return null;
+        }
+      }
+
       return token;
     },
     session({ session, token }) {

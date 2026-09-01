@@ -9,14 +9,20 @@ import { Label } from '@/components/ui/label';
 
 const MASKED = '••••••••••••••••';
 
+interface Props {
+  /** Expanded on mount — used by its own dedicated Settings tab, where
+   *  there's no reason to hide it behind a click. Defaults closed when
+   *  embedded elsewhere. */
+  defaultOpen?: boolean;
+}
+
 /**
  * One-time, platform-wide setup for Embedded Signup — the Meta "Tech
  * Provider" App's own ID/Secret/Configuration ID, NOT a per-tenant config.
- * Owner-only. Collapsed by default since most visits to Settings > WhatsApp
- * are a tenant connecting their own number, not the platform operator.
+ * Owner-only.
  */
-export function MetaPlatformConfig() {
-  const [open, setOpen] = useState(false);
+export function MetaPlatformConfig({ defaultOpen = false }: Props) {
+  const [open, setOpen] = useState(defaultOpen);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [configured, setConfigured] = useState(false);

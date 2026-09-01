@@ -1,113 +1,104 @@
 "use client";
 
-import { Check } from "lucide-react";
-
-import { useTheme } from "@/hooks/use-theme";
-import { THEMES, type ThemeId } from "@/lib/themes";
+import { useEffect, useState } from "react";
+import { Sun, Moon, Monitor, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+type ColorScheme = "light" | "dark" | "system";
+
+const STORAGE_KEY = "wacrm.colorScheme";
+
+const OPTIONS: { id: ColorScheme; label: string; description: string; icon: typeof Sun }[] = [
+  { id: "light", label: "Light", description: "Bright background, dark text.", icon: Sun },
+  { id: "dark", label: "Dark", description: "Dark background, light text.", icon: Moon },
+  { id: "system", label: "System", description: "Match your device's setting automatically.", icon: Monitor },
+];
+
+function readInitial(): ColorScheme {
+  if (typeof window === "undefined") return "system";
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  } catch {
+    // localStorage can throw in private-browsing / sandboxed contexts
+  }
+  return "system";
+}
+
 /**
- * Appearance panel — color-theme picker.
+ * Appearance — the standard Light/Dark/System pattern every app uses,
+ * replacing the previous 6-swatch accent-color picker.
  *
- * Click a card → applies + persists immediately. No save button:
- * the whole change is a single CSS-variable swap on <html>, there's
- * nothing to roll back. The active card carries a check chip + a
- * primary-tinted border so the current pick is obvious.
- *
- * Persistence: localStorage only (device-scoped). The boot script in
- * layout.tsx replays the choice before first paint on subsequent
- * loads.
+ * Deliberately NOT wired to real colors yet (by explicit decision) — this
+ * just saves the preference so a later pass can apply it everywhere at
+ * once. Worth knowing for that later pass: 5 of the app's existing 6
+ * accent themes (see lib/themes.ts) are already built as full dark
+ * palettes, so wiring "Dark" up for real is less work than starting from
+ * scratch.
  */
 export function AppearancePanel() {
-  const { theme, setTheme } = useTheme();
+  const [scheme, setScheme] = useState<ColorScheme>(readInitial);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, scheme);
+    } catch {
+      // same private-browsing edge case as above
+    }
+  }, [scheme]);
+
   return (
     <section className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-slate-800">Color theme</h2>
+        <h2 className="text-lg font-semibold text-slate-800">Appearance</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Pick the accent color used across the app. All themes stay
-          dark — only the primary color (buttons, active nav, badges)
-          changes. Saved to this device.
+          Choose how the app looks. Saved to this device.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {THEMES.map((t) => (
-          <ThemeCard
-            key={t.id}
-            id={t.id}
-            name={t.name}
-            tagline={t.tagline}
-            swatch={t.swatch}
-            isActive={t.id === theme}
-            onPick={() => setTheme(t.id)}
-          />
-        ))}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {OPTIONS.map((opt) => {
+          const Icon = opt.icon;
+          const isActive = scheme === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setScheme(opt.id)}
+              aria-pressed={isActive}
+              className={cn(
+                "flex flex-col gap-3 rounded-xl border bg-white p-4 text-left transition-colors",
+                isActive
+                  ? "border-[#5B6CF9]/60 ring-2 ring-[#5B6CF9]/30"
+                  : "border-slate-200 hover:bg-slate-50",
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <span className={cn(
+                  "flex h-9 w-9 items-center justify-center rounded-lg",
+                  isActive ? "bg-[#5B6CF9]/10" : "bg-slate-100",
+                )}>
+                  <Icon className={cn("h-4.5 w-4.5", isActive ? "text-[#5B6CF9]" : "text-slate-500")} />
+                </span>
+                {isActive && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#5B6CF9]/10 px-2 py-0.5 text-[11px] font-medium text-[#5B6CF9]">
+                    <Check className="h-3 w-3" />
+                    Active
+                  </span>
+                )}
+              </div>
+              <div>
+                <div className="text-[13.5px] font-semibold text-slate-800">{opt.label}</div>
+                <div className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{opt.description}</div>
+              </div>
+            </button>
+          );
+        })}
       </div>
-    </section>
-  );
-}
 
-function ThemeCard({
-  id,
-  name,
-  tagline,
-  swatch,
-  isActive,
-  onPick,
-}: {
-  id: ThemeId;
-  name: string;
-  tagline: string;
-  swatch: string;
-  isActive: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onPick}
-      aria-pressed={isActive}
-      aria-label={`Use ${name} theme`}
-      className={cn(
-        "flex flex-col gap-3 rounded-lg border bg-white p-4 text-left transition-colors",
-        isActive
-          ? "border-primary/60 ring-2 ring-primary/40"
-          : "border-slate-200 hover:border-slate-200 hover:bg-slate-50",
-      )}
-    >
-      <div className="flex items-center justify-between">
-        <span
-          aria-hidden
-          className="h-8 w-8 shrink-0 rounded-full"
-          style={{
-            background: swatch,
-            boxShadow: "inset 0 0 0 1px oklch(1 0 0 / 0.15)",
-          }}
-        />
-        {isActive && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-medium text-primary">
-            <Check className="h-3 w-3" />
-            Active
-          </span>
-        )}
-      </div>
-      <div>
-        <div className="text-sm font-semibold text-slate-800">{name}</div>
-        <div className="mt-1 text-xs leading-relaxed text-slate-500">
-          {tagline}
-        </div>
-      </div>
-      <div
-        className="mt-1 flex h-2 overflow-hidden rounded-full"
-        aria-hidden
-      >
-        <span className="flex-1" style={{ background: swatch }} />
-        <span className="w-3 bg-slate-700" />
-        <span className="w-3 bg-slate-100" />
-        <span className="w-3 bg-white" />
-      </div>
-      <span className="sr-only">Theme id: {id}</span>
-    </button>
+      <p className="text-[12px] text-slate-400">
+        Dark mode is on the way — your preference is saved now and will apply automatically the moment it&apos;s ready.
+      </p>
+    </section>
   );
 }

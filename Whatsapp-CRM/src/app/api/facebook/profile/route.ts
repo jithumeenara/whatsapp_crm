@@ -10,7 +10,7 @@ async function resolveFacebookAuth(accountId: string): Promise<{ error?: string;
   `
   const row = rows[0]
   if (!row?.access_token || !row?.page_id) {
-    return { error: "Facebook Page is not connected yet. Set it up above first." }
+    return { error: "Facebook Page is not connected yet — set it up in Settings > Facebook first." }
   }
   return { token: row.access_token, pageId: row.page_id }
 }

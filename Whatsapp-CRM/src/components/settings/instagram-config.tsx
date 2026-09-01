@@ -3,29 +3,10 @@
 import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { Eye, EyeOff, Copy, CheckCircle2, XCircle, Loader2, ExternalLink, RefreshCw } from "lucide-react"
-import { InstagramBusinessProfile } from "@/components/settings/instagram-business-profile"
 import { EmbeddedSignupButton } from "@/components/settings/embedded-signup-button"
+import { InstagramIcon } from "@/components/icons/brand-icons"
 
 const MASKED = "••••••••••••••••"
-
-function InstagramIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none">
-      <defs>
-        <radialGradient id="ig-grad" cx="30%" cy="107%" r="150%">
-          <stop offset="0%" stopColor="#fdf497" />
-          <stop offset="5%" stopColor="#fdf497" />
-          <stop offset="45%" stopColor="#fd5949" />
-          <stop offset="60%" stopColor="#d6249f" />
-          <stop offset="90%" stopColor="#285AEB" />
-        </radialGradient>
-      </defs>
-      <rect x="2" y="2" width="20" height="20" rx="6" fill="url(#ig-grad)" />
-      <circle cx="12" cy="12" r="4.5" stroke="white" strokeWidth="2" fill="none" />
-      <circle cx="17.5" cy="6.5" r="1.2" fill="white" />
-    </svg>
-  )
-}
 
 type ConfigData = {
   configured: boolean
@@ -434,8 +415,6 @@ export function InstagramConfig() {
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </button>
       </div>
-
-      {isConnected && <InstagramBusinessProfile />}
     </div>
   )
 }

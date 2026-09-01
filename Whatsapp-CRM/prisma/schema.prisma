@@ -26,6 +26,13 @@ model User {
   /// AES-256-GCM encrypted base32 TOTP secret -- only set when mfa_method = 'totp'.
   totp_secret    String?
   mfa_enabled_at DateTime? @db.Timestamptz(6)
+  /// Set by "Sign out everywhere" (Settings > Profile > Sessions). Sessions
+  /// are JWT-based (stateless, no server-side session store), so this is
+  /// the actual revocation mechanism: any token issued before this
+  /// timestamp is rejected in auth.ts's jwt callback on its next use, even
+  /// though the JWT itself would otherwise still be cryptographically
+  /// valid until its 8h maxAge.
+  session_invalidated_at DateTime? @db.Timestamptz(6)
   created_at     DateTime  @default(now()) @db.Timestamptz(6)
   updated_at     DateTime  @updatedAt @db.Timestamptz(6)
 
