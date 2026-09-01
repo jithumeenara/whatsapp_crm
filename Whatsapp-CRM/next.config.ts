@@ -36,8 +36,13 @@ const SECURITY_HEADERS = [
       // Next.js needs 'unsafe-inline' for its inline hydration script.
       // 'unsafe-eval' is restricted to dev only — Turbopack uses it but
       // production builds do not need it.
-      // Razorpay checkout.js and any scripts it loads dynamically
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://*.razorpay.com`,
+      // Razorpay checkout.js and any scripts it loads dynamically.
+      // connect.facebook.net serves Meta's JS SDK, loaded client-side for
+      // WhatsApp/Instagram/Facebook Embedded Signup (FB.init/FB.login) —
+      // without it here the script silently fails to load and the
+      // "Connect with Facebook" button is stuck disabled forever, with no
+      // console error a non-technical user would notice.
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://*.razorpay.com https://connect.facebook.net`,
       // Tailwind + inline style attributes on lots of components.
       "style-src 'self' 'unsafe-inline'",
       // Supabase public-bucket avatars, contact avatars (arbitrary
@@ -45,14 +50,18 @@ const SECURITY_HEADERS = [
       // tiny inline assets.
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
-      // Supabase REST + realtime (WSS). All Meta API calls happen
-      // server-side, so graph.facebook.com does not belong here.
+      // Supabase REST + realtime (WSS). Most Meta API calls happen
+      // server-side, but the Embedded Signup JS SDK itself pings
+      // *.facebook.com client-side (cookie/session sync, app-event
+      // logging) once loaded, so that needs to be allowed too.
       // Razorpay: wildcard covers checkout.razorpay.com, api.razorpay.com,
       // cdn.razorpay.com, lumberjack.razorpay.com and any other subdomains
       // the checkout modal needs.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com",
-      // Razorpay checkout modal renders as an iframe — wildcard covers all subdomains
-      "frame-src https://*.razorpay.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com https://*.facebook.com",
+      // Razorpay checkout modal renders as an iframe — wildcard covers all subdomains.
+      // *.facebook.com: the Embedded Signup JS SDK opens its own login
+      // dialog and a hidden cross-domain-communication iframe from here.
+      "frame-src https://*.razorpay.com https://*.facebook.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
