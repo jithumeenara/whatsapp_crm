@@ -15,6 +15,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 import { KeysDialog } from '@/components/flows/keys-dialog';
+import { WhatsAppBusinessProfile } from '@/components/settings/whatsapp-business-profile';
+import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
+import { MetaPlatformConfig } from '@/components/settings/meta-platform-config';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -332,6 +335,16 @@ export function WhatsAppConfig() {
 
   return (
     <div className="space-y-5">
+      {!isConnected && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-[14px] font-semibold text-slate-800">Quickest way to connect</p>
+            <p className="text-[12px] text-slate-500 mt-0.5">Log in with Facebook, pick or create your WhatsApp Business Account — no tokens to copy.</p>
+          </div>
+          <EmbeddedSignupButton onConnected={() => fetchConfig('')} />
+        </div>
+      )}
+
       {/* ── Status Bar ── */}
       <div className={cn(
         "rounded-2xl border px-5 py-4 flex items-center gap-4",
@@ -804,6 +817,10 @@ export function WhatsAppConfig() {
           </div>
         )}
       </div>
+
+      {connectionStatus === 'connected' && <WhatsAppBusinessProfile />}
+
+      <MetaPlatformConfig />
 
       <KeysDialog open={keysDialogOpen} onOpenChange={setKeysDialogOpen} />
     </div>

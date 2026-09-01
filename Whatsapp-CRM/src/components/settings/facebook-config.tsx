@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 import { Eye, EyeOff, Copy, CheckCircle2, XCircle, Loader2, ExternalLink, RefreshCw } from "lucide-react"
+import { FacebookBusinessProfile } from "@/components/settings/facebook-business-profile"
+import { EmbeddedSignupButton } from "@/components/settings/embedded-signup-button"
 
 const MASKED = "••••••••••••••••"
 
@@ -141,6 +143,16 @@ export function FacebookConfig() {
 
   return (
     <div className="space-y-6">
+      {!isConnected && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-5 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-[14px] font-semibold text-slate-800">Quickest way to connect</p>
+            <p className="text-[12px] text-slate-500 mt-0.5">Log in with Facebook and pick your Page — no tokens to copy. Also connects Instagram automatically if that Page has one linked.</p>
+          </div>
+          <EmbeddedSignupButton onConnected={load} />
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3">
         <FacebookIcon className="h-8 w-8" />
@@ -357,6 +369,8 @@ export function FacebookConfig() {
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
         </button>
       </div>
+
+      {isConnected && <FacebookBusinessProfile />}
     </div>
   )
 }

@@ -541,6 +541,27 @@ model WhatsAppConfig {
   @@map("whatsapp_config")
 }
 
+// A SINGLE platform-wide Meta App's credentials for Embedded Signup — NOT
+// per-tenant like WhatsAppConfig above. One "Tech Provider" Meta App is what
+// lets every tenant self-onboard their own WhatsApp number through the
+// Embedded Signup popup; this table just holds that one app's own
+// App ID / App Secret / Facebook-Login-for-Business Configuration ID, so the
+// platform operator (not individual tenants) sets it once from a settings
+// screen. Enforced as a singleton via a fixed id — always read/written at
+// id "singleton", never a second row.
+model MetaPlatformConfig {
+  id         String   @id @default("singleton")
+  app_id     String
+  /// AES-256-GCM encrypted, same cipher as WhatsAppConfig.access_token.
+  app_secret String
+  config_id  String
+  updated_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("meta_platform_config")
+}
+
 // ============================================================
 // AI CONFIG
 // ============================================================

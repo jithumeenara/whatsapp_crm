@@ -1,27 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { ensureFacebookConfigTable as ensureTable } from "@/lib/social/ensure-tables"
 
 const MASKED = "••••••••••••••••"
-
-async function ensureTable() {
-  await prisma.$executeRaw`
-    CREATE TABLE IF NOT EXISTS facebook_config (
-      id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-      account_id   UUID        UNIQUE NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-      access_token TEXT,
-      verify_token TEXT,
-      page_id      TEXT,
-      app_secret   TEXT,
-      status       TEXT        NOT NULL DEFAULT 'disconnected',
-      page_name    TEXT,
-      last_tested_at TIMESTAMPTZ,
-      test_error   TEXT,
-      created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `.catch(() => {})
-}
 
 type RawRow = {
   id: string

@@ -81,6 +81,70 @@ export async function verifyPhoneNumber(
 }
 
 // ============================================================
+// Business Profile (About/description/address/etc — Settings > WhatsApp)
+// ============================================================
+//
+// Note: the profile PHOTO is deliberately read-only here. Cloud API only
+// accepts a photo change via `profile_picture_handle`, obtained through
+// Meta's separate Resumable Upload API (POST /{app-id}/uploads, then a
+// second call with the raw bytes) — that needs the Meta App ID, which
+// isn't collected anywhere in this app's WhatsApp setup today. Rather than
+// half-build that, the UI shows the current photo (from profile_picture_url
+// below, which Meta DOES return) with a link to WhatsApp Manager instead.
+
+export interface WhatsAppBusinessProfile {
+  about?: string
+  address?: string
+  description?: string
+  email?: string
+  profile_picture_url?: string
+  websites?: string[]
+  vertical?: string
+}
+
+const BUSINESS_PROFILE_FIELDS = 'about,address,description,email,profile_picture_url,websites,vertical'
+
+export interface GetBusinessProfileArgs {
+  phoneNumberId: string
+  accessToken: string
+}
+
+export async function getWhatsAppBusinessProfile(
+  args: GetBusinessProfileArgs
+): Promise<WhatsAppBusinessProfile> {
+  const { phoneNumberId, accessToken } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/whatsapp_business_profile?fields=${BUSINESS_PROFILE_FIELDS}`
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+  if (!response.ok) await throwMetaError(response, `Meta API error: ${response.status}`)
+  const data = (await response.json()) as { data?: WhatsAppBusinessProfile[] }
+  return data.data?.[0] ?? {}
+}
+
+/** Meta's fixed list of allowed business categories ("vertical"). */
+export const WHATSAPP_BUSINESS_VERTICALS = [
+  'UNDEFINED', 'OTHER', 'AUTO', 'BEAUTY', 'APPAREL', 'EDU', 'ENTERTAIN',
+  'EVENT_PLAN', 'FINANCE', 'GROCERY', 'GOVT', 'HOTEL', 'HEALTH', 'NONPROFIT',
+  'PROF_SERVICES', 'RETAIL', 'TRAVEL', 'RESTAURANT', 'NOT_A_BIZ',
+] as const
+
+export interface UpdateBusinessProfileArgs extends GetBusinessProfileArgs {
+  profile: Partial<Omit<WhatsAppBusinessProfile, 'profile_picture_url'>>
+}
+
+export async function updateWhatsAppBusinessProfile(
+  args: UpdateBusinessProfileArgs
+): Promise<void> {
+  const { phoneNumberId, accessToken, profile } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/whatsapp_business_profile`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messaging_product: 'whatsapp', ...profile }),
+  })
+  if (!response.ok) await throwMetaError(response, `Meta API error: ${response.status}`)
+}
+
+// ============================================================
 // Cloud API registration (subscription for inbound webhooks)
 // ============================================================
 //
@@ -191,6 +255,36 @@ export async function subscribeWabaToApp(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
+}
+
+// ============================================================
+// Embedded Signup — code-for-token exchange
+// ============================================================
+//
+// After a tenant completes the Embedded Signup popup, the browser gets a
+// short-lived (30s) `code` back, NOT a usable token. This is the one
+// server-to-server call that turns it into a real "business token" —
+// per Meta's Tech Provider onboarding docs: GET .../oauth/access_token
+// with client_id/client_secret/code as query params.
+
+export interface ExchangeEmbeddedSignupCodeArgs {
+  appId: string
+  appSecret: string
+  code: string
+}
+
+export async function exchangeEmbeddedSignupCode(
+  args: ExchangeEmbeddedSignupCodeArgs
+): Promise<{ accessToken: string }> {
+  const { appId, appSecret, code } = args
+  const url = `${META_API_BASE}/oauth/access_token?client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(appSecret)}&code=${encodeURIComponent(code)}`
+  const response = await fetch(url)
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = (await response.json()) as { access_token?: string }
+  if (!data.access_token) throw new Error('Meta did not return an access token for this code')
+  return { accessToken: data.access_token }
 }
 
 export interface GetSubscribedAppsArgs {
