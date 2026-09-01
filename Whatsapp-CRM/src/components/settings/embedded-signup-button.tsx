@@ -136,6 +136,13 @@ export function EmbeddedSignupButton({ onConnected, className }: Props) {
 
   function startSignup() {
     if (!window.FB || !configIdRef.current) return;
+    // Meta's SDK refuses to run FB.login() on a plain http:// page (their
+    // own policy, not something we control) — on localhost dev this is
+    // expected; it works once tested on the live https:// site.
+    if (window.location.protocol !== 'https:') {
+      toast.error('Facebook login requires HTTPS. This will work once tested on your live https:// site.', { duration: 8000 });
+      return;
+    }
     signupData.current = {};
     window.FB.login(
       (response) => {
