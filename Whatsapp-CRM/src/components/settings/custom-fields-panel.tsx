@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { Plus, Trash2, Sliders, GripVertical } from "lucide-react"
 
@@ -34,6 +35,7 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 export function CustomFieldsPanel() {
+  const reduceMotion = useReducedMotion()
   const [fields, setFields] = useState<CustomField[]>([])
   const [loading, setLoading] = useState(true)
   const [newName, setNewName] = useState("")
@@ -208,8 +210,14 @@ export function CustomFieldsPanel() {
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {fields.map((field) => (
-              <div key={field.id} className="group flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors">
+            {fields.map((field, i) => (
+              <motion.div
+                key={field.id}
+                className="group flex items-center gap-3 px-5 py-4 hover:bg-slate-50 transition-colors"
+                initial={reduceMotion ? undefined : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.22, delay: Math.min(i * 0.03, 0.3), ease: [0.16, 1, 0.3, 1] }}
+              >
                 <GripVertical className="h-4 w-4 text-slate-200 group-hover:text-slate-300 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] font-semibold text-slate-900 truncate">{field.field_name}</p>
@@ -226,7 +234,7 @@ export function CustomFieldsPanel() {
                     ? <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-rose-400 border-t-transparent" />
                     : <Trash2 className="h-3.5 w-3.5" />}
                 </button>
-              </div>
+              </motion.div>
             ))}
           </div>
         )}

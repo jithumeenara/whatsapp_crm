@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import { toast } from 'sonner';
 import { Plus, X, Loader2, Tag as TagIcon } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
@@ -30,6 +31,7 @@ const PRESET_COLORS = [
 
 export function TagManager() {
   const { userId, loading: authLoading } = useAuth();
+  const reduceMotion = useReducedMotion();
 
   const [loading, setLoading] = useState(true);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -159,8 +161,8 @@ export function TagManager() {
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
           <div className="flex flex-wrap gap-2">
-            {tags.map((tag) => (
-              <span
+            {tags.map((tag, i) => (
+              <motion.span
                 key={tag.id}
                 className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors"
                 style={{
@@ -168,6 +170,9 @@ export function TagManager() {
                   color: tag.color,
                   border: `1px solid ${tag.color}40`,
                 }}
+                initial={reduceMotion ? undefined : { opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2, delay: Math.min(i * 0.02, 0.3), ease: [0.16, 1, 0.3, 1] }}
               >
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
                 {tag.name}
@@ -177,7 +182,7 @@ export function TagManager() {
                 >
                   <X className="h-3 w-3" />
                 </button>
-              </span>
+              </motion.span>
             ))}
           </div>
         </div>

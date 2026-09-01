@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { Webhook, Plus, Trash2, Copy, Check, AlertTriangle, ToggleLeft, ToggleRight, AlertCircle } from 'lucide-react'
+import { motion, useReducedMotion } from 'motion/react'
+import { Webhook, Plus, Trash2, Copy, Check, AlertTriangle, ToggleLeft, ToggleRight, AlertCircle, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog'
 
 interface DataTable { id: string; name: string }
 
@@ -27,17 +32,16 @@ function fmt(iso: string | null) {
 }
 
 function statusBadge(status: number | null, failures: number) {
-  if (failures >= 10) return <span className="text-xs text-destructive font-medium">Auto-disabled</span>
+  if (failures >= 10) return <span className="text-[11.5px] text-rose-600 font-medium">Auto-disabled</span>
   if (!status) return null
   const ok = status >= 200 && status < 300
   return (
-    <span className={`text-xs font-mono ${ok ? 'text-green-600 dark:text-green-400' : 'text-destructive'}`}>
-      {status}
-    </span>
+    <span className={`text-[11.5px] font-mono ${ok ? 'text-emerald-600' : 'text-rose-600'}`}>{status}</span>
   )
 }
 
 export function WebhooksPanel() {
+  const reduceMotion = useReducedMotion()
   const [hooks, setHooks] = useState<WebhookRow[]>([])
   const [tables, setTables] = useState<DataTable[]>([])
   const [loading, setLoading] = useState(true)
@@ -46,8 +50,9 @@ export function WebhooksPanel() {
   const [error, setError] = useState('')
   const [newSecret, setNewSecret] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<WebhookRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
-  // form state
   const [fName, setFName] = useState('')
   const [fUrl, setFUrl] = useState('')
   const [fEvents, setFEvents] = useState<string[]>(['record.created', 'record.updated', 'record.deleted'])
@@ -72,9 +77,7 @@ export function WebhooksPanel() {
   useEffect(() => { load() }, [load])
 
   function toggleEvent(ev: string) {
-    setFEvents((prev) =>
-      prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev],
-    )
+    setFEvents((prev) => (prev.includes(ev) ? prev.filter((e) => e !== ev) : [...prev, ev]))
   }
 
   async function create() {
@@ -87,12 +90,7 @@ export function WebhooksPanel() {
       const res = await fetch('/api/webhooks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: fName.trim(),
-          url: fUrl.trim(),
-          events: fEvents,
-          table_id: fTable || null,
-        }),
+        body: JSON.stringify({ name: fName.trim(), url: fUrl.trim(), events: fEvents, table_id: fTable || null }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.error ?? 'Failed.'); return }
@@ -125,10 +123,16 @@ export function WebhooksPanel() {
     }
   }
 
-  async function remove(id: string) {
-    if (!confirm('Delete this webhook?')) return
-    await fetch(`/api/webhooks/${id}`, { method: 'DELETE' })
-    setHooks((prev) => prev.filter((h) => h.id !== id))
+  async function remove() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await fetch(`/api/webhooks/${deleteTarget.id}`, { method: 'DELETE' })
+      setHooks((prev) => prev.filter((h) => h.id !== deleteTarget.id))
+      setDeleteTarget(null)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   async function copySecret() {
@@ -139,203 +143,197 @@ export function WebhooksPanel() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-          <Webhook className="size-5 text-primary" />
-          Webhooks
-        </h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Receive an HTTPS POST to your endpoint whenever a Data Store record is created, updated, or deleted.
-          Each delivery is signed with HMAC-SHA256 so you can verify it came from this CRM.
-        </p>
+    <div className="space-y-5">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+          <Webhook className="h-4.5 w-4.5 text-[#5B6CF9]" />
+        </span>
+        <div>
+          <h2 className="text-[16px] font-semibold text-slate-900">Webhooks</h2>
+          <p className="text-[13px] text-slate-500 mt-0.5">
+            Get an HTTPS POST to your endpoint whenever a Data Store record is created, updated, or deleted.
+            Each delivery is signed with HMAC-SHA256 so you can verify it came from this CRM.
+          </p>
+        </div>
       </div>
 
-      {/* One-time secret reveal */}
       {newSecret && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3 dark:border-amber-800 dark:bg-amber-950/30">
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="size-4 text-amber-600 mt-0.5 shrink-0" />
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-              Copy the signing secret now — it will never be shown again.
-            </p>
+            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-[13px] font-medium text-amber-800">Copy the signing secret now — it will never be shown again.</p>
           </div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 rounded-lg bg-white dark:bg-black/30 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs font-mono break-all">
-              {newSecret}
-            </code>
-            <button
-              onClick={copySecret}
-              className="shrink-0 rounded-lg border border-amber-300 bg-white dark:bg-black/20 px-3 py-2 text-amber-700 dark:text-amber-300 hover:bg-amber-100 transition-colors"
-              title="Copy"
-            >
-              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            <code className="flex-1 rounded-xl bg-white border border-amber-200 px-3 py-2 text-[12px] font-mono break-all">{newSecret}</code>
+            <button onClick={copySecret} className="shrink-0 rounded-xl border border-amber-300 bg-white px-3 py-2 text-amber-700 hover:bg-amber-100 transition-colors" title="Copy">
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
-          <div className="text-xs text-amber-700 dark:text-amber-400 space-y-1">
+          <div className="text-[12px] text-amber-700 space-y-1">
             <p>Verify deliveries in your receiver:</p>
-            <pre className="bg-white/60 dark:bg-black/30 rounded px-2 py-1.5 overflow-x-auto">{`const sig = req.headers['x-crm-signature']
+            <pre className="bg-white/60 rounded-lg px-2.5 py-1.5 overflow-x-auto text-[11px]">{`const sig = req.headers['x-crm-signature']
 const expected = 'sha256=' + createHmac('sha256', SECRET)
   .update(rawBody, 'utf8').digest('hex')
 if (sig !== expected) return res.status(401).end()`}</pre>
           </div>
-          <button onClick={() => setNewSecret(null)} className="text-xs text-amber-700 dark:text-amber-400 underline">
+          <button onClick={() => setNewSecret(null)} className="text-[12px] text-amber-700 underline underline-offset-2">
             I have saved it, close this
           </button>
         </div>
       )}
 
-      {/* Create form */}
       {showForm ? (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-4">
-          <p className="text-sm font-semibold">New Webhook</p>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
+          <p className="text-[13px] font-semibold text-slate-800">New Webhook</p>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500">Name</label>
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-slate-600">Name</label>
             <input
               autoFocus
               value={fName}
               onChange={(e) => setFName(e.target.value)}
               placeholder="e.g. Sync to Google Sheets"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500">URL <span className="text-slate-400">(must be HTTPS)</span></label>
-            <input
-              value={fUrl}
-              onChange={(e) => setFUrl(e.target.value)}
-              placeholder="https://your-app.com/webhooks/crm"
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] outline-none transition-all focus:border-[#5B6CF9]/40 focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/10"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-slate-500">Events</label>
-            <div className="flex flex-wrap gap-2">
+            <label className="text-[12px] font-medium text-slate-600">URL <span className="text-slate-400">(must be HTTPS)</span></label>
+            <input
+              value={fUrl}
+              onChange={(e) => setFUrl(e.target.value)}
+              placeholder="https://your-app.com/webhooks/crm"
+              className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] outline-none transition-all focus:border-[#5B6CF9]/40 focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/10"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-slate-600">Events</label>
+            <div className="flex flex-wrap gap-3">
               {ALL_EVENTS.map((ev) => (
                 <label key={ev} className="flex items-center gap-1.5 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={fEvents.includes(ev)}
                     onChange={() => toggleEvent(ev)}
-                    className="rounded"
+                    className="h-3.5 w-3.5 rounded accent-[#5B6CF9]"
                   />
-                  <code className="text-xs">{ev}</code>
+                  <code className="text-[12px] text-slate-600">{ev}</code>
                 </label>
               ))}
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-medium text-slate-500">Table scope <span className="text-slate-400">(optional — leave blank for all tables)</span></label>
+          <div className="space-y-1.5">
+            <label className="text-[12px] font-medium text-slate-600">Table scope <span className="text-slate-400">(optional — leave blank for all tables)</span></label>
             <select
               value={fTable}
               onChange={(e) => setFTable(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] outline-none transition-all focus:border-[#5B6CF9]/40 focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/10"
             >
               <option value="">All tables</option>
-              {tables.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
+              {tables.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-sm text-destructive">
-              <AlertCircle className="size-4 shrink-0" />
+            <div className="flex items-center gap-2 text-[12.5px] text-rose-600">
+              <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>
           )}
 
           <div className="flex gap-2">
-            <button
-              onClick={create}
-              disabled={submitting}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {submitting ? 'Creating…' : 'Create Webhook'}
-            </button>
-            <button
-              onClick={resetForm}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm hover:bg-slate-100"
-            >
-              Cancel
-            </button>
+            <Button onClick={create} disabled={submitting} className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+              {submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Webhook'}
+            </Button>
+            <Button variant="outline" onClick={resetForm} className="h-9 px-4 text-[13px] border-slate-200">Cancel</Button>
           </div>
         </div>
       ) : (
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 rounded-lg border border-dashed border-slate-200 px-4 py-2 text-sm text-slate-500 hover:border-primary hover:text-primary transition-colors"
+          className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-[13px] text-slate-500 hover:border-[#5B6CF9]/50 hover:text-[#5B6CF9] transition-colors"
         >
-          <Plus className="size-4" />
+          <Plus className="h-4 w-4" />
           Add Webhook
         </button>
       )}
 
-      {/* Webhook list */}
       {loading ? (
-        <div className="py-8 text-center text-sm text-slate-500">Loading…</div>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-8 flex items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        </div>
       ) : hooks.length === 0 ? (
-        <div className="py-8 text-center text-sm text-slate-500">No webhooks yet.</div>
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm py-10 text-center text-[13px] text-slate-400">No webhooks yet.</div>
       ) : (
         <div className="space-y-3">
-          {hooks.map((h) => (
-            <div
+          {hooks.map((h, i) => (
+            <motion.div
               key={h.id}
-              className={`rounded-xl border p-4 space-y-2 ${h.is_active ? 'border-slate-200 bg-white' : 'border-slate-200/50 bg-slate-100/20 opacity-60'}`}
+              className={`rounded-2xl border p-4 space-y-2.5 shadow-sm ${h.is_active ? 'border-slate-200 bg-white' : 'border-slate-200 bg-slate-50 opacity-60'}`}
+              initial={reduceMotion ? undefined : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, delay: Math.min(i * 0.04, 0.3), ease: [0.16, 1, 0.3, 1] }}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-medium text-sm truncate">{h.name}</p>
-                  <p className="text-xs text-slate-500 truncate">{h.url}</p>
+                  <p className="font-semibold text-[13.5px] text-slate-800 truncate">{h.name}</p>
+                  <p className="text-[12px] text-slate-500 truncate">{h.url}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => toggleActive(h)}
-                    className="rounded-lg p-1.5 text-slate-500 hover:text-primary hover:bg-primary/10 transition-colors"
+                    className="rounded-lg p-1.5 text-slate-400 hover:text-[#5B6CF9] hover:bg-indigo-50 transition-colors"
                     title={h.is_active ? 'Disable' : 'Enable'}
                   >
-                    {h.is_active
-                      ? <ToggleRight className="size-5 text-primary" />
-                      : <ToggleLeft className="size-5" />}
+                    {h.is_active ? <ToggleRight className="h-5 w-5 text-[#5B6CF9]" /> : <ToggleLeft className="h-5 w-5" />}
                   </button>
                   <button
-                    onClick={() => remove(h.id)}
-                    className="rounded-lg p-1.5 text-slate-500 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    onClick={() => setDeleteTarget(h)}
+                    className="rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                     title="Delete"
                   >
-                    <Trash2 className="size-4" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-1.5">
                 {h.events.map((ev) => (
-                  <span key={ev} className="rounded-full bg-primary/10 text-primary text-xs px-2 py-0.5 font-mono">
-                    {ev}
-                  </span>
+                  <span key={ev} className="rounded-full bg-[#EEF0FF] text-[#5B6CF9] text-[11px] px-2 py-0.5 font-mono">{ev}</span>
                 ))}
-                {h.table && (
-                  <span className="rounded-full bg-slate-100 text-slate-500 text-xs px-2 py-0.5">
-                    {h.table.name}
-                  </span>
-                )}
+                {h.table && <span className="rounded-full bg-slate-100 text-slate-500 text-[11px] px-2 py-0.5">{h.table.name}</span>}
               </div>
 
-              <div className="flex items-center gap-3 text-xs text-slate-500">
+              <div className="flex items-center gap-3 text-[11.5px] text-slate-500">
                 <span>Last: {fmt(h.last_triggered_at)}</span>
                 {statusBadge(h.last_response_status, h.failure_count)}
                 {h.failure_count > 0 && h.failure_count < 10 && (
                   <span className="text-amber-600">{h.failure_count} failure{h.failure_count > 1 ? 's' : ''}</span>
                 )}
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="bg-white border-slate-200 sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-slate-800">Delete this webhook?</DialogTitle>
+            <DialogDescription className="text-slate-500">
+              &quot;{deleteTarget?.name}&quot; will stop receiving events immediately. This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} className="h-9 text-[13px] border-slate-200">Cancel</Button>
+            <Button onClick={remove} disabled={deleting} className="h-9 text-[13px] bg-rose-600 hover:bg-rose-700 text-white">
+              {deleting ? <><Loader2 className="h-4 w-4 animate-spin" />Deleting…</> : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

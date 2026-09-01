@@ -2,6 +2,7 @@
 
 import { Suspense, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   User, MousePointerClick, Tag, LayoutGrid, MessageSquare,
   Layers, Palette, Users, Bot, Database, Bell, Key, Webhook, Settings,
@@ -98,6 +99,7 @@ function SettingsContent() {
   const router = useRouter()
   const { accountRole, profile } = useAuth()
   const [query, setQuery] = useState("")
+  const reduceMotion = useReducedMotion()
 
   const isOwner = accountRole === "owner"
   const isAdmin = isOwner || accountRole === "admin"
@@ -254,7 +256,16 @@ function SettingsContent() {
 
         <div className="flex-1 overflow-y-auto p-6 lg:p-8">
           <div className="max-w-2xl">
-            {renderPanel()}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={reduceMotion ? undefined : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              >
+                {renderPanel()}
+              </motion.div>
+            </AnimatePresence>
           </div>
         </div>
       </div>
