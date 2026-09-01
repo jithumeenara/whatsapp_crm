@@ -33,6 +33,11 @@ interface TabDef {
   ownerOnly?: boolean
   adminOnly?: boolean
   supervisorOnly?: boolean
+  /** Extra search terms that should surface this tab even though they
+   *  aren't its label — e.g. "Channels" nests WhatsApp/Instagram/Facebook/
+   *  SMS/Email/RCS inside it now, so searching any of those names needs
+   *  to still find it. */
+  aliases?: string[]
 }
 
 const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
@@ -47,8 +52,8 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
   {
     label: "Business",
     tabs: [
-      { key: "platform",  label: "Embedded Signup", icon: ShieldCheck,   ownerOnly: true },
-      { key: "channels",  label: "Channels",        icon: MessageSquare, ownerOnly: true },
+      { key: "platform",  label: "Embedded Signup", icon: ShieldCheck,   ownerOnly: true, aliases: ["Meta App", "Tech Provider", "Quick Connect"] },
+      { key: "channels",  label: "Channels",        icon: MessageSquare, ownerOnly: true, aliases: ["WhatsApp", "Instagram", "Facebook", "Messenger", "SMS", "Email", "RCS", "Business Profile"] },
     ],
   },
   {
@@ -119,7 +124,12 @@ function SettingsContent() {
     const q = query.trim().toLowerCase()
     if (!q) return visibleSections
     return visibleSections
-      .map((section) => ({ ...section, tabs: section.tabs.filter((t) => t.label.toLowerCase().includes(q)) }))
+      .map((section) => ({
+        ...section,
+        tabs: section.tabs.filter((t) =>
+          t.label.toLowerCase().includes(q) || t.aliases?.some((a) => a.toLowerCase().includes(q))
+        ),
+      }))
       .filter((s) => s.tabs.length > 0)
   }, [visibleSections, query])
 
@@ -168,10 +178,16 @@ function SettingsContent() {
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
+              type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search settings…"
-              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-7 text-[12.5px] text-slate-700 placeholder:text-slate-400 outline-none transition-all focus:border-[#5B6CF9]/40 focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/10"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              name="settings-search-no-autofill"
+              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-7 text-[12.5px] text-slate-700 placeholder:text-slate-400 outline-none transition-all focus:border-[#5B6CF9]/40 focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/10 [&::-webkit-search-cancel-button]:hidden"
             />
             {query && (
               <button type="button" onClick={() => setQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">

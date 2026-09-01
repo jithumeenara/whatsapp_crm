@@ -1004,7 +1004,10 @@ export default function LeadsV2() {
     { icon: "🔗", label: "Referral" }, { icon: "👤", label: "Manual" }, { icon: "📝", label: "Other" },
   ])
   const [loading, setLoading] = useState(true)
-  const [view, setView] = useState<"tiles" | "table">("table")
+  // Tiles by default — table view is a desktop-only option (see the view
+  // toggle below, hidden under sm:), since a dense data table genuinely
+  // doesn't work on a phone screen rather than just looking cramped.
+  const [view, setView] = useState<"tiles" | "table">("tiles")
   const [createOpen, setCreateOpen] = useState(false)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -1174,10 +1177,14 @@ export default function LeadsV2() {
         </div>
       </div>
 
-      {/* Filters bar — only for lead tabs */}
+      {/* Filters bar — only for lead tabs. Stacked on mobile (search full-
+          width, tags below), one row from sm: up. The view toggle only
+          exists at sm:+ — mobile always gets tiles, a dense data table
+          isn't a smaller-screen version of good UX, it's a different
+          problem, so there's nothing to toggle to on a phone. */}
       {isLeadTab && (
-        <div className="border-b border-slate-100 bg-white px-6 py-3 flex items-center gap-3">
-          <div className="relative flex-1 max-w-xs">
+        <div className="border-b border-slate-100 bg-white px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative w-full sm:flex-1 sm:max-w-xs shrink-0">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
               className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-colors"
@@ -1187,7 +1194,7 @@ export default function LeadsV2() {
             />
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1 min-w-0">
             {tags.length > 0 && (
               <>
                 <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
@@ -1208,7 +1215,7 @@ export default function LeadsV2() {
             )}
           </div>
 
-          <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5 shrink-0">
+          <div className="hidden sm:flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5 shrink-0">
             <button type="button" onClick={() => setView("tiles")} title="Tile view"
               className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all",
                 view === "tiles" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}>
@@ -1226,7 +1233,7 @@ export default function LeadsV2() {
       {/* Lead list */}
       <div className={cn(isLeadTab && view === "tiles" ? "p-6" : "")} onClick={() => setMenuOpenId(null)}>
 
-        {/* â”€â”€ Follow-ups tab â”€â”€ */}
+        {/* ── Follow-ups tab ── */}
         {tab === "follow_ups" && (
           loading ? (
             <table className="w-full text-[13px]">
@@ -1260,7 +1267,7 @@ export default function LeadsV2() {
           )
         )}
 
-        {/* â”€â”€ Tasks tab â”€â”€ */}
+        {/* ── Tasks tab ── */}
         {tab === "tasks" && (
           loading ? (
             <table className="w-full text-[13px]">
@@ -1296,11 +1303,11 @@ export default function LeadsV2() {
           )
         )}
 
-        {/* â”€â”€ Lead tabs â”€â”€ */}
+        {/* ── Lead tabs ── */}
         {isLeadTab && (
           loading ? (
             view === "tiles" ? (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {[...Array(6)].map((_, i) => <SkeletonTile key={i} />)}
               </div>
             ) : (
@@ -1332,7 +1339,7 @@ export default function LeadsV2() {
               ) : undefined}
             />
           ) : view === "tiles" ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {leads.map((lead) => (
                 <LeadTile key={lead.id} lead={lead} tab={effectiveTab} scoringMode={scoringMode}
                   menuOpenId={menuOpenId} sources={sourceOptions}
