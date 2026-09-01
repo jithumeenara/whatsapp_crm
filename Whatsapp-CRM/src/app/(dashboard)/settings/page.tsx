@@ -1,12 +1,12 @@
 "use client"
 
-import { Suspense, useMemo, useState } from "react"
+import { Suspense, useId, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   User, MousePointerClick, Tag, LayoutGrid, MessageSquare,
   Layers, Palette, Users, Bot, Database, Bell, Key, Webhook, Settings,
-  Search, ShieldCheck, X, PanelLeftClose, PanelLeftOpen,
+  Search, ShieldCheck, X, ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -111,6 +111,13 @@ function SettingsContent() {
   const { accountRole, profile } = useAuth()
   const [query, setQuery] = useState("")
   const reduceMotion = useReducedMotion()
+  // A fresh, unpredictable field name/id per mount — browser/extension
+  // password managers (Chrome's own, LastPass, 1Password, Bitwarden, …)
+  // key their "which saved login goes in this field" heuristics off a
+  // stable name/id, so a random one each load stops them matching a
+  // saved account email into this field (autoComplete="off" alone isn't
+  // honored by most of them any more).
+  const searchFieldId = useId()
   const { collapsed: sidebarCollapsed, toggle: toggleMainSidebar } = useSidebarCollapse()
 
   const isOwner = accountRole === "owner"
@@ -187,13 +194,14 @@ function SettingsContent() {
               aria-label={sidebarCollapsed ? "Expand main menu" : "Collapse main menu"}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
             >
-              {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              {sidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
           </div>
 
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <input
+              id={searchFieldId}
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -202,7 +210,13 @@ function SettingsContent() {
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              name="settings-search-no-autofill"
+              name={searchFieldId}
+              aria-autocomplete="none"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-bwignore="true"
+              data-form-type="other"
+              data-form-type-ignore="true"
               className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-7 text-[12.5px] text-slate-700 placeholder:text-slate-400 outline-none transition-all focus:border-[#5B6CF9]/40 focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/10 [&::-webkit-search-cancel-button]:hidden"
             />
             {query && (

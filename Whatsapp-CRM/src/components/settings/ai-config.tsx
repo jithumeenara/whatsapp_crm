@@ -144,7 +144,7 @@ export function AiConfig() {
       setValidationStatus('invalid');
       setValidationMsg('Network error during validation.');
     }
-  }, [model]);
+  }, []);
 
   const handleApiKeyChange = (val: string) => {
     setApiKey(val);
@@ -240,46 +240,46 @@ export function AiConfig() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-5 animate-spin text-slate-500" />
+        <Loader2 className="h-5 w-5 animate-spin text-[#5B6CF9]" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold">AI Configuration</h2>
-        <p className="text-sm text-slate-500 mt-0.5">
+        <h2 className="text-[16px] font-semibold text-slate-900">AI Configuration</h2>
+        <p className="text-[12.5px] text-slate-500 mt-0.5">
           Configure Google Gemini for AI-powered chatbot replies.
         </p>
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList className="h-9">
-          <TabsTrigger value="config" className="gap-1.5 text-xs">
-            <Bot className="size-3.5" />
+        <TabsList className="h-9 bg-slate-100 rounded-xl p-1">
+          <TabsTrigger value="config" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
+            <Bot className="h-3.5 w-3.5" />
             Configuration
           </TabsTrigger>
-          <TabsTrigger value="training" className="gap-1.5 text-xs">
-            <BookOpen className="size-3.5" />
+          <TabsTrigger value="training" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
+            <BookOpen className="h-3.5 w-3.5" />
             AI Training
           </TabsTrigger>
-          <TabsTrigger value="test" className="gap-1.5 text-xs">
-            <Send className="size-3.5" />
+          <TabsTrigger value="test" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
+            <Send className="h-3.5 w-3.5" />
             Test AI
           </TabsTrigger>
         </TabsList>
 
         {/* ── Configuration tab ── */}
         <TabsContent value="config" className="mt-4 space-y-5">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-5">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
 
             {/* API key field */}
             <div className="space-y-1.5">
-              <Label htmlFor="api-key">
+              <Label htmlFor="api-key" className="text-[13px] font-medium text-slate-700">
                 Google Gemini API Key
                 {apiKeySet && !apiKey && (
-                  <span className="ml-2 text-xs text-emerald-600 font-normal">
+                  <span className="ml-2 text-[11px] text-emerald-600 font-normal">
                     (saved — enter a new key to replace)
                   </span>
                 )}
@@ -292,55 +292,55 @@ export function AiConfig() {
                   value={apiKey}
                   onChange={(e) => handleApiKeyChange(e.target.value)}
                   className={[
-                    'pr-10 font-mono text-sm',
+                    'h-9 text-[13px] border-slate-200 pr-10 font-mono',
                     validationStatus === 'valid'
                       ? 'border-emerald-500 focus-visible:ring-emerald-500/30'
                       : validationStatus === 'invalid'
-                        ? 'border-destructive focus-visible:ring-destructive/30'
+                        ? 'border-rose-400 focus-visible:ring-rose-400/30'
                         : '',
                   ].join(' ')}
                 />
                 <button
                   type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                   onClick={() => setShowKey((v) => !v)}
                 >
-                  {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
 
               {/* Validation feedback */}
               {validationStatus === 'checking' && (
-                <p className="flex items-center gap-1.5 text-xs text-slate-500">
-                  <Loader2 className="size-3 animate-spin" />
+                <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                  <Loader2 className="h-3 w-3 animate-spin" />
                   Validating key…
                 </p>
               )}
               {validationStatus === 'valid' && (
-                <p className="flex items-center gap-1.5 text-xs text-emerald-600">
-                  <CheckCircle2 className="size-3.5" />
+                <p className="flex items-center gap-1.5 text-[11px] text-emerald-600">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
                   {validationMsg}
                 </p>
               )}
               {validationStatus === 'invalid' && (
-                <p className="flex items-center gap-1.5 text-xs text-destructive">
-                  <XCircle className="size-3.5" />
+                <p className="flex items-center gap-1.5 text-[11px] text-rose-600">
+                  <XCircle className="h-3.5 w-3.5" />
                   {validationMsg}
                 </p>
               )}
               {validationStatus === 'idle' && (
-                <p className="text-xs text-slate-500">
+                <p className="text-[11px] text-slate-400">
                   Get your API key from{' '}
-                  <span className="font-mono text-primary">aistudio.google.com</span>
+                  <span className="font-mono text-[#5B6CF9]">aistudio.google.com</span>
                 </p>
               )}
             </div>
 
             {/* Model */}
             <div className="space-y-1.5">
-              <Label>Model</Label>
+              <Label className="text-[13px] font-medium text-slate-700">Model</Label>
               <Select value={model} onValueChange={(v) => v && setModel(v)}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full h-9 text-[13px] border-slate-200">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -354,11 +354,11 @@ export function AiConfig() {
             </div>
 
             {/* Temperature + Max tokens */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label htmlFor="temperature">
+                <Label htmlFor="temperature" className="text-[13px] font-medium text-slate-700">
                   Temperature
-                  <span className="ml-2 text-xs text-slate-500 font-normal">
+                  <span className="ml-2 text-[11px] text-slate-400 font-normal">
                     {temperature} (0 = precise, 1 = creative)
                   </span>
                 </Label>
@@ -370,11 +370,11 @@ export function AiConfig() {
                   step={0.05}
                   value={temperature}
                   onChange={(e) => setTemperature(Number(e.target.value))}
-                  className="w-full accent-primary"
+                  className="w-full accent-[#5B6CF9]"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="max-tokens">Max Response Tokens</Label>
+                <Label htmlFor="max-tokens" className="text-[13px] font-medium text-slate-700">Max Response Tokens</Label>
                 <Input
                   id="max-tokens"
                   type="number"
@@ -383,6 +383,7 @@ export function AiConfig() {
                   step={50}
                   value={maxTokens}
                   onChange={(e) => setMaxTokens(Number(e.target.value))}
+                  className="h-9 text-[13px] border-slate-200"
                 />
               </div>
             </div>
@@ -391,33 +392,33 @@ export function AiConfig() {
 
         {/* ── Training tab ── */}
         <TabsContent value="training" className="mt-4 space-y-5">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="system-prompt">System Prompt</Label>
+              <Label htmlFor="system-prompt" className="text-[13px] font-medium text-slate-700">System Prompt</Label>
               <Textarea
                 id="system-prompt"
                 placeholder="You are a helpful assistant for [Your Business]. Be friendly and concise. Always respond in the same language the user writes in."
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
                 rows={4}
-                className="resize-none text-sm"
+                className="resize-none text-[13px] border-slate-200"
               />
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] text-slate-400">
                 This tells the AI who it is and how to behave. Keep it short and clear.
               </p>
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium">Knowledge Base (Q&amp;A)</p>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-[13.5px] font-semibold text-slate-800">Knowledge Base (Q&amp;A)</p>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">
                   Add question-answer pairs so the AI knows your business facts.
                 </p>
               </div>
-              <Button size="sm" variant="outline" onClick={addPair} className="gap-1.5">
-                <Plus className="size-3.5" />
+              <Button size="sm" variant="outline" onClick={addPair} className="h-8 text-[12px] gap-1.5 border-slate-200">
+                <Plus className="h-3.5 w-3.5" />
                 Add pair
               </Button>
             </div>
@@ -426,19 +427,19 @@ export function AiConfig() {
               {trainingPairs.map((pair, i) => (
                 <div
                   key={i}
-                  className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2"
+                  className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 space-y-2"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-500">
+                    <span className="text-[11px] font-medium text-slate-500">
                       Pair {i + 1}
                     </span>
                     {trainingPairs.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removePair(i)}
-                        className="text-slate-500 hover:text-destructive transition-colors"
+                        className="text-slate-400 hover:text-rose-500 transition-colors"
                       >
-                        <Trash2 className="size-3.5" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     )}
                   </div>
@@ -446,14 +447,14 @@ export function AiConfig() {
                     placeholder="Question (e.g. What are your working hours?)"
                     value={pair.question}
                     onChange={(e) => updatePair(i, 'question', e.target.value)}
-                    className="text-sm"
+                    className="h-9 text-[13px] border-slate-200 bg-white"
                   />
                   <Textarea
                     placeholder="Answer (e.g. We are open Monday to Saturday, 9am to 6pm.)"
                     value={pair.answer}
                     onChange={(e) => updatePair(i, 'answer', e.target.value)}
                     rows={2}
-                    className="resize-none text-sm"
+                    className="resize-none text-[13px] border-slate-200 bg-white"
                   />
                 </div>
               ))}
@@ -463,13 +464,13 @@ export function AiConfig() {
 
         {/* ── Test AI tab ── */}
         <TabsContent value="test" className="mt-4">
-          <div className="rounded-xl border border-slate-200 bg-white flex flex-col" style={{ height: 460 }}>
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col" style={{ height: 460 }}>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 shrink-0">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2">
-                <Bot className="size-4 text-primary" />
-                <span className="text-sm font-medium">Test your AI</span>
-                <span className="text-xs text-slate-500">
+                <Bot className="h-4 w-4 text-[#5B6CF9]" />
+                <span className="text-[13px] font-semibold text-slate-800">Test your AI</span>
+                <span className="text-[11px] text-slate-400">
                   — uses current (unsaved) settings
                 </span>
               </div>
@@ -477,9 +478,9 @@ export function AiConfig() {
                 <button
                   type="button"
                   onClick={() => { setChatMessages([]); setChatError(''); }}
-                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 transition-colors"
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
                 >
-                  <RotateCcw className="size-3" />
+                  <RotateCcw className="h-3 w-3" />
                   Clear
                 </button>
               )}
@@ -488,11 +489,11 @@ export function AiConfig() {
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
               {chatMessages.length === 0 && !chatLoading && (
-                <div className="flex flex-col items-center justify-center h-full text-center gap-2 text-slate-500">
-                  <Bot className="size-8 opacity-30" />
-                  <p className="text-sm">Send a message to test your AI configuration.</p>
+                <div className="flex flex-col items-center justify-center h-full text-center gap-2 text-slate-400">
+                  <Bot className="h-8 w-8 opacity-30" />
+                  <p className="text-[13px]">Send a message to test your AI configuration.</p>
                   {!apiKeySet && !apiKey && (
-                    <p className="text-xs text-destructive">
+                    <p className="text-[11px] text-rose-500">
                       No API key saved yet. Enter one in Configuration first.
                     </p>
                   )}
@@ -506,9 +507,9 @@ export function AiConfig() {
                 >
                   <div
                     className={[
-                      'max-w-[80%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap',
+                      'max-w-[80%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap',
                       m.role === 'user'
-                        ? 'bg-primary text-primary-foreground rounded-br-sm'
+                        ? 'bg-[#5B6CF9] text-white rounded-br-sm'
                         : 'bg-slate-100 text-slate-800 rounded-bl-sm',
                     ].join(' ')}
                   >
@@ -520,17 +521,17 @@ export function AiConfig() {
               {chatLoading && (
                 <div className="flex justify-start">
                   <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5 flex gap-1 items-center">
-                    <span className="size-1.5 rounded-full bg-slate-100-foreground/60 animate-bounce [animation-delay:0ms]" />
-                    <span className="size-1.5 rounded-full bg-slate-100-foreground/60 animate-bounce [animation-delay:150ms]" />
-                    <span className="size-1.5 rounded-full bg-slate-100-foreground/60 animate-bounce [animation-delay:300ms]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
                   </div>
                 </div>
               )}
 
               {chatError && (
                 <div className="flex justify-start">
-                  <div className="bg-destructive/10 border border-destructive/20 text-destructive rounded-xl px-3.5 py-2 text-xs flex items-center gap-1.5">
-                    <XCircle className="size-3.5 shrink-0" />
+                  <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl px-3.5 py-2 text-[11px] flex items-center gap-1.5">
+                    <XCircle className="h-3.5 w-3.5 shrink-0" />
                     {chatError}
                   </div>
                 </div>
@@ -540,7 +541,7 @@ export function AiConfig() {
             </div>
 
             {/* Input */}
-            <div className="px-4 py-3 border-t border-slate-200 shrink-0">
+            <div className="px-4 py-3 border-t border-slate-100 shrink-0">
               <div className="flex gap-2">
                 <Input
                   placeholder="Type a message to test…"
@@ -552,19 +553,19 @@ export function AiConfig() {
                       sendChat();
                     }
                   }}
-                  className="text-sm"
+                  className="h-9 text-[13px] border-slate-200"
                   disabled={chatLoading}
                 />
                 <Button
                   size="sm"
                   onClick={sendChat}
                   disabled={!chatInput.trim() || chatLoading}
-                  className="shrink-0 gap-1.5"
+                  className="h-9 shrink-0 gap-1.5 text-[12.5px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
                 >
                   {chatLoading ? (
-                    <Loader2 className="size-3.5 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <Send className="size-3.5" />
+                    <Send className="h-3.5 w-3.5" />
                   )}
                   Send
                 </Button>
@@ -576,22 +577,22 @@ export function AiConfig() {
 
       {/* Save bar */}
       <div className="flex items-center justify-between">
-        <div className="text-sm">
+        <div className="text-[12.5px]">
           {saveError && (
-            <span className="flex items-center gap-1.5 text-destructive">
-              <XCircle className="size-4" />
+            <span className="flex items-center gap-1.5 text-rose-600">
+              <XCircle className="h-4 w-4" />
               {saveError}
             </span>
           )}
           {saveOk && (
             <span className="flex items-center gap-1.5 text-emerald-600">
-              <CheckCircle2 className="size-4" />
+              <CheckCircle2 className="h-4 w-4" />
               Settings saved.
             </span>
           )}
         </div>
-        <Button onClick={save} disabled={saving} className="gap-2">
-          {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+        <Button onClick={save} disabled={saving} className="h-9 px-5 text-[13px] gap-2 bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save AI Settings
         </Button>
       </div>

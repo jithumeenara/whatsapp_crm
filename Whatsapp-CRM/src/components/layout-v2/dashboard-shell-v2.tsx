@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { ConfirmProvider } from "@/hooks/use-confirm";
@@ -70,27 +70,33 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   // an actual route change, so a fresh mount wouldn't catch it.
   const [collapsed, setCollapsed] = useState(() => pathname.startsWith("/settings"));
   const [mobileBarHidden, setMobileBarHidden] = useState(false);
-  // Tracks the previous render's pathname so a Settings-boundary crossing
-  // can be detected. Deliberately NOT a ref + useEffect — adjusting state
-  // in response to a prop/route change like this is meant to happen during
-  // render (React's own recommended pattern for "storing information from
-  // previous renders"), not in an effect, which would cost an extra
-  // cascading render for no benefit.
-  const [prevPathname, setPrevPathname] = useState(pathname);
+  const prevPathRef = useRef(pathname);
 
   // Auto-collapse the main sidebar the moment the user enters Settings
   // (it has its own inner sidebar — two full-width sidebars at once wastes
   // space), and auto-expand it back the moment they leave. Only fires on
   // an actual Settings-boundary crossing, not on every route change, so a
   // manual collapse/expand elsewhere in the app isn't fought or reset by
-  // navigating between two non-Settings pages.
-  if (prevPathname !== pathname) {
-    const wasSettings = prevPathname.startsWith("/settings");
-    const isSettings = pathname.startsWith("/settings");
-    if (isSettings && !wasSettings) setCollapsed(true);
-    else if (!isSettings && wasSettings) setCollapsed(false);
-    setPrevPathname(pathname);
-  }
+  // navigating between two non-Settings pages. This is a real side effect
+  // (reacting to a route change from outside this component), so it
+  // belongs in an effect — not in render, where an early return above a
+  // render-phase state adjustment could skip it on some renders.
+  useEffect(() => {
+    const prev = prevPathRef.current;
+    if (prev !== pathname) {
+      const wasSettings = prev.startsWith("/settings");
+      const isSettings = pathname.startsWith("/settings");
+      // These two setState calls react to an external route change (not
+      // this component's own last render), and the boundary check above
+      // already limits them to real Settings-in/out crossings — not every
+      // render — so the cascading-render concern the lint rule guards
+      // against doesn't apply here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (isSettings && !wasSettings) setCollapsed(true);
+      else if (!isSettings && wasSettings) setCollapsed(false);
+      prevPathRef.current = pathname;
+    }
+  }, [pathname]);
 
   const toggleCollapsed = useCallback(() => setCollapsed((v) => !v), []);
   const sidebarCollapseCtx = useMemo(() => ({ collapsed, toggle: toggleCollapsed }), [collapsed, toggleCollapsed]);

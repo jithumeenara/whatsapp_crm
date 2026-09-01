@@ -6,6 +6,31 @@ import { Button } from '@/components/ui/button'
 
 type Status = 'idle' | 'loading' | 'success' | 'error'
 
+function SectionCard({ title, description, icon: Icon, tone = 'indigo', children }: {
+  title: string
+  description: React.ReactNode
+  icon: React.ElementType
+  tone?: 'indigo' | 'rose'
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="px-6 py-4 border-b border-slate-100 flex items-start gap-3">
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+          tone === 'rose' ? 'bg-rose-50' : 'bg-[#EEF0FF]'
+        }`}>
+          <Icon className={`h-4.5 w-4.5 ${tone === 'rose' ? 'text-rose-600' : 'text-[#5B6CF9]'}`} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
+          <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">{description}</p>
+        </div>
+      </div>
+      <div className="px-6 py-5 space-y-4">{children}</div>
+    </div>
+  )
+}
+
 export function DatabasePanel() {
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -104,74 +129,59 @@ export function DatabasePanel() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
 
       {/* Backup card */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-primary/10 p-2 mt-0.5">
-            <Download className="size-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-slate-800">PostgreSQL Backup</h3>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Downloads a complete <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">.sql</code> dump
-              of the entire database using <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">pg_dump</code>.
-              Includes all tables, data, and schema.
-            </p>
-          </div>
-        </div>
-
+      <SectionCard
+        title="PostgreSQL Backup"
+        icon={Download}
+        description={<>Downloads a complete <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">.sql</code> dump
+          of the entire database using <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">pg_dump</code>.
+          Includes all tables, data, and schema.</>}
+      >
         <Button
           onClick={handleBackup}
           disabled={backupStatus === 'loading'}
-          className="gap-2"
+          className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white gap-2"
         >
           {backupStatus === 'loading' ? (
-            <><Loader2 className="size-4 animate-spin" />Preparing dump…</>
+            <><Loader2 className="h-4 w-4 animate-spin" />Preparing dump…</>
           ) : backupStatus === 'success' ? (
-            <><CheckCircle2 className="size-4" />Downloaded!</>
+            <><CheckCircle2 className="h-4 w-4" />Downloaded!</>
           ) : (
-            <><Download className="size-4" />Download Database Backup</>
+            <><Download className="h-4 w-4" />Download Database Backup</>
           )}
         </Button>
 
         {backupStatus === 'error' && (
-          <p className="flex items-center gap-1.5 text-sm text-destructive">
-            <AlertCircle className="size-4 shrink-0" />
+          <p className="flex items-center gap-1.5 text-[12.5px] text-rose-600">
+            <AlertCircle className="h-4 w-4 shrink-0" />
             {backupError}
           </p>
         )}
 
-        <div className="rounded-lg bg-slate-100 border border-slate-200 p-3 text-sm text-slate-500 flex items-start gap-2">
-          <Database className="size-4 shrink-0 mt-0.5" />
+        <div className="rounded-xl bg-slate-50 border border-slate-100 p-3.5 text-[12px] text-slate-500 flex items-start gap-2 leading-relaxed">
+          <Database className="h-4 w-4 shrink-0 mt-0.5 text-slate-400" />
           <span>
             The backup is a plain SQL file generated with{' '}
-            <code className="text-xs bg-slate-100 px-1 rounded">pg_dump --clean --if-exists</code>.
-            It can be restored here or manually with <code className="text-xs bg-slate-100 px-1 rounded">psql</code>.
+            <code className="text-[11px] bg-slate-100 px-1 rounded">pg_dump --clean --if-exists</code>.
+            It can be restored here or manually with <code className="text-[11px] bg-slate-100 px-1 rounded">psql</code>.
           </span>
         </div>
-      </div>
+      </SectionCard>
 
       {/* Restore card */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-destructive/10 p-2 mt-0.5">
-            <Upload className="size-5 text-destructive" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-slate-800">Restore Database</h3>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Upload a <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">.sql</code> backup file to restore the database.
-              Uses <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">psql</code> in a single transaction — rolls back on error.
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 flex items-start gap-2.5 text-sm text-amber-800 dark:text-amber-300">
-          <ShieldAlert className="size-4 shrink-0 mt-0.5" />
+      <SectionCard
+        title="Restore Database"
+        icon={Upload}
+        tone="rose"
+        description={<>Upload a <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">.sql</code> backup file to restore the database.
+          Uses <code className="text-[11px] bg-slate-100 px-1 py-0.5 rounded">psql</code> in a single transaction — rolls back on error.</>}
+      >
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-3.5 flex items-start gap-2.5 text-[12px] text-amber-800 leading-relaxed">
+          <ShieldAlert className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
           <span>
-            <strong>Destructive operation.</strong> The backup file contains <code className="text-xs bg-amber-100 dark:bg-amber-900 px-1 rounded">DROP TABLE</code> statements
+            <strong>Destructive operation.</strong> The backup file contains <code className="text-[11px] bg-amber-100 px-1 rounded">DROP TABLE</code> statements
             that will replace all existing data. Only owners can perform a restore.
             Download a fresh backup first if you want to preserve current data.
           </span>
@@ -187,39 +197,39 @@ export function DatabasePanel() {
           />
           <Button
             variant="outline"
-            className="gap-2 border-destructive text-destructive hover:bg-destructive/10"
+            className="h-9 px-4 text-[13px] gap-2 border-rose-200 text-rose-600 hover:bg-rose-50"
             onClick={() => fileRef.current?.click()}
             disabled={restoreStatus === 'loading' || confirmRestore}
           >
             {restoreStatus === 'loading' ? (
-              <><Loader2 className="size-4 animate-spin" />Restoring…</>
+              <><Loader2 className="h-4 w-4 animate-spin" />Restoring…</>
             ) : (
-              <><Upload className="size-4" />Upload & Restore .sql File</>
+              <><Upload className="h-4 w-4" />Upload &amp; Restore .sql File</>
             )}
           </Button>
         </div>
 
         {/* Confirm dialog */}
         {confirmRestore && pendingFile && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-3">
-            <p className="text-sm font-medium text-slate-800">
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 space-y-3">
+            <p className="text-[13px] font-medium text-slate-800">
               Are you sure you want to restore from{' '}
               <span className="font-semibold">{pendingFile.name}</span>?
             </p>
-            <p className="text-sm text-slate-500">
+            <p className="text-[12.5px] text-slate-500 leading-relaxed">
               This will drop and recreate all database tables. All current data will be replaced
               with the backup contents. This cannot be undone.
             </p>
             <div className="flex gap-2">
               <Button
                 size="sm"
-                className="gap-1.5 bg-destructive hover:bg-destructive/90"
+                className="h-8 text-[12.5px] gap-1.5 bg-rose-600 hover:bg-rose-700 text-white"
                 onClick={executeRestore}
               >
-                <Upload className="size-3.5" />
+                <Upload className="h-3.5 w-3.5" />
                 Yes, restore now
               </Button>
-              <Button size="sm" variant="outline" onClick={cancelRestore}>
+              <Button size="sm" variant="outline" className="h-8 text-[12.5px] border-slate-200" onClick={cancelRestore}>
                 Cancel
               </Button>
             </div>
@@ -229,12 +239,12 @@ export function DatabasePanel() {
         {/* Success */}
         {restoreStatus === 'success' && (
           <div className="space-y-2">
-            <p className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
-              <CheckCircle2 className="size-4" />
+            <p className="flex items-center gap-1.5 text-[12.5px] text-emerald-600 font-medium">
+              <CheckCircle2 className="h-4 w-4" />
               Database restored successfully.
             </p>
             {restoreLog && (
-              <pre className="text-xs bg-slate-100 rounded-lg p-3 overflow-auto max-h-40 text-slate-500">
+              <pre className="text-[11px] bg-slate-50 border border-slate-100 rounded-xl p-3 overflow-auto max-h-40 text-slate-500">
                 {restoreLog}
               </pre>
             )}
@@ -244,26 +254,26 @@ export function DatabasePanel() {
         {/* Error */}
         {restoreStatus === 'error' && (
           <div className="space-y-2">
-            <p className="flex items-center gap-1.5 text-sm text-destructive font-medium">
-              <AlertCircle className="size-4 shrink-0" />
+            <p className="flex items-center gap-1.5 text-[12.5px] text-rose-600 font-medium">
+              <AlertCircle className="h-4 w-4 shrink-0" />
               {restoreError ?? 'Restore failed'}
             </p>
             {restoreLog && (
-              <pre className="text-xs bg-slate-100 rounded-lg p-3 overflow-auto max-h-40 text-slate-500">
+              <pre className="text-[11px] bg-slate-50 border border-slate-100 rounded-xl p-3 overflow-auto max-h-40 text-slate-500">
                 {restoreLog}
               </pre>
             )}
           </div>
         )}
-      </div>
+      </SectionCard>
 
       {/* Manual restore instructions */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-3">
-        <h3 className="font-semibold text-slate-800 text-sm">Manual Restore (CLI)</h3>
-        <p className="text-sm text-slate-500">
-          You can also restore the backup directly from a terminal:
-        </p>
-        <pre className="text-xs bg-slate-100 rounded-lg p-3 overflow-auto text-slate-500 leading-relaxed">
+      <SectionCard
+        title="Manual Restore (CLI)"
+        icon={Database}
+        description="You can also restore the backup directly from a terminal."
+      >
+        <pre className="text-[11px] bg-slate-50 border border-slate-100 rounded-xl p-3.5 overflow-auto text-slate-500 leading-relaxed">
 {`# Restore to the same database
 psql -h HOST -U USER -d DATABASE -f crm-db-backup-YYYY-MM-DD.sql
 
@@ -271,7 +281,7 @@ psql -h HOST -U USER -d DATABASE -f crm-db-backup-YYYY-MM-DD.sql
 createdb -h HOST -U USER new_crm_db
 psql -h HOST -U USER -d new_crm_db -f crm-db-backup-YYYY-MM-DD.sql`}
         </pre>
-      </div>
+      </SectionCard>
     </div>
   )
 }

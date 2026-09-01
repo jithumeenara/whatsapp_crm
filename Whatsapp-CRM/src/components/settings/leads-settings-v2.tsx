@@ -196,7 +196,7 @@ function EditableItemList({
   }
 
   return (
-    <div className="rounded-xl border border-slate-100">
+    <div className="rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
       <div className={`flex items-center gap-2 px-4 py-3 border-b rounded-t-xl ${colors.headerBg}`}>
         <span className={colors.header}>{sectionIcon}</span>
         <span className={`text-[13px] font-semibold ${colors.header}`}>{label}</span>
@@ -356,20 +356,20 @@ export function LeadsSettingsV2() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-[18px] font-bold text-slate-900">Lead Settings</h2>
-        <p className="mt-1 text-[13px] text-slate-500">
+        <h2 className="text-[16px] font-semibold text-slate-900">Lead Settings</h2>
+        <p className="mt-1 text-[12.5px] text-slate-500">
           Configure how leads are created, scored, and what call outcomes agents can record.
         </p>
       </div>
 
       {/* Auto Lead Creation */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <div className="flex items-start gap-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-            <Zap className="h-4 w-4 text-indigo-600" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
+            <Zap className="h-4 w-4 text-[#5B6CF9]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[14px] font-semibold text-slate-900">Auto Lead Creation</p>
+            <p className="text-[14px] font-semibold text-slate-800">Auto Lead Creation</p>
             <p className="mt-0.5 text-[12px] text-slate-500">
               Automatically create a lead when a new customer sends their first WhatsApp message.
               It will appear in the New Leads pool for agents to claim.
@@ -380,8 +380,8 @@ export function LeadsSettingsV2() {
             role="switch"
             aria-checked={settings.auto_lead_creation}
             onClick={() => setSettings((s) => ({ ...s, auto_lead_creation: !s.auto_lead_creation }))}
-            className={`relative shrink-0 mt-0.5 h-6 w-10 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 ${
-              settings.auto_lead_creation ? "bg-indigo-600" : "bg-slate-200"
+            className={`relative shrink-0 mt-0.5 h-6 w-10 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#5B6CF9]/40 focus:ring-offset-2 ${
+              settings.auto_lead_creation ? "bg-[#5B6CF9]" : "bg-slate-200"
             }`}
           >
             <span
@@ -396,11 +396,11 @@ export function LeadsSettingsV2() {
       {/* Lead Score Options */}
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-            <BarChart3 className="h-4 w-4 text-indigo-600" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
+            <BarChart3 className="h-4 w-4 text-[#5B6CF9]" />
           </div>
           <div>
-            <p className="text-[14px] font-semibold text-slate-900">Lead Score Options</p>
+            <p className="text-[14px] font-semibold text-slate-800">Lead Score Options</p>
             <p className="text-[12px] text-slate-500">
               Define score levels agents assign to leads. Pick an icon and write a label for each.
             </p>
@@ -419,7 +419,7 @@ export function LeadsSettingsV2() {
       {/* Call Outcomes */}
       <div className="space-y-3">
         <div>
-          <p className="text-[14px] font-semibold text-slate-900">Call Outcomes</p>
+          <p className="text-[14px] font-semibold text-slate-800">Call Outcomes</p>
           <p className="text-[12px] text-slate-500 mt-0.5">
             Customize the outcome labels agents see when logging call results.
           </p>
@@ -445,7 +445,7 @@ export function LeadsSettingsV2() {
       {/* Close Enquiry Reasons */}
       <div className="space-y-3">
         <div>
-          <p className="text-[14px] font-semibold text-slate-900">Close Enquiry Reasons</p>
+          <p className="text-[14px] font-semibold text-slate-800">Close Enquiry Reasons</p>
           <p className="text-[12px] text-slate-500 mt-0.5">
             The dropdown agents must choose from when closing a lead.
           </p>
@@ -463,7 +463,7 @@ export function LeadsSettingsV2() {
       {/* Lead Sources */}
       <div className="space-y-3">
         <div>
-          <p className="text-[14px] font-semibold text-slate-900">Lead Sources</p>
+          <p className="text-[14px] font-semibold text-slate-800">Lead Sources</p>
           <p className="text-[12px] text-slate-500 mt-0.5">
             The source options shown when creating or editing a lead. WhatsApp and Instagram get their real brand icons automatically.
           </p>
@@ -484,7 +484,7 @@ export function LeadsSettingsV2() {
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="rounded-lg bg-indigo-600 px-5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          className="h-9 rounded-lg bg-[#5B6CF9] px-5 text-[13px] font-semibold text-white hover:bg-[#4a5ce8] disabled:opacity-50 transition-colors"
         >
           {saving ? "Saving…" : "Save Settings"}
         </button>
@@ -499,7 +499,7 @@ export function LeadsSettingsV2() {
               close_enquiry_reasons: DEF_CLOSE_REASONS,
             }))
           }
-          className="rounded-lg border border-slate-200 px-5 py-2 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          className="h-9 rounded-lg border border-slate-200 px-5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
         >
           Reset to defaults
         </button>
