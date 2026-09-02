@@ -6,14 +6,7 @@ import { Loader2, LogOut, ShieldAlert, Monitor, Smartphone, MoreVertical } from 
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
+import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -175,10 +168,10 @@ export function SessionsCard() {
                     >
                       <MoreVertical className="h-4 w-4" />
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => setRevokeTarget(s)} className="text-rose-600 focus:text-rose-600">
+                    <DropdownMenuContent align="end" className="min-w-[190px]">
+                      <DropdownMenuItem onClick={() => setRevokeTarget(s)} variant="destructive" className="whitespace-nowrap">
                         <LogOut className="h-3.5 w-3.5" />
-                        Log out this device
+                        Log out
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -212,57 +205,46 @@ export function SessionsCard() {
         </div>
       </div>
 
-      <Dialog open={signOutOpen} onOpenChange={setSignOutOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Sign out?</DialogTitle>
-            <DialogDescription>You&apos;ll be signed out of this browser and redirected to the login page.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setSignOutOpen(false)} disabled={signingOut}>Cancel</Button>
-            <Button type="button" onClick={onSignOut} disabled={signingOut}>
-              {signingOut ? <><Loader2 className="size-4 animate-spin" />Signing out…</> : 'Sign out'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmIconDialog
+        open={signOutOpen}
+        onOpenChange={setSignOutOpen}
+        icon={LogOut}
+        tone="info"
+        title="Sign out?"
+        description="You'll be signed out of this browser and redirected to the login page."
+        actionLabel="Sign out"
+        actionPendingLabel="Signing out…"
+        onConfirm={onSignOut}
+        pending={signingOut}
+      />
 
-      <Dialog open={everywhereOpen} onOpenChange={setEverywhereOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Sign out everywhere?</DialogTitle>
-            <DialogDescription>
-              Every device currently signed in to your account — phone, other browsers, this one too — will be signed out and need to log in again. Use this if you think someone else has access to your account.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setEverywhereOpen(false)} disabled={signingOutEverywhere}>Cancel</Button>
-            <Button type="button" onClick={onSignOutEverywhere} disabled={signingOutEverywhere}
-              className="bg-rose-600 hover:bg-rose-700 text-white">
-              {signingOutEverywhere ? <><Loader2 className="size-4 animate-spin" />Signing out everywhere…</> : 'Sign out everywhere'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmIconDialog
+        open={everywhereOpen}
+        onOpenChange={setEverywhereOpen}
+        icon={ShieldAlert}
+        tone="danger"
+        title="Sign out everywhere?"
+        description="Every device currently signed in to your account — phone, other browsers, this one too — will be signed out and need to log in again. Use this if you think someone else has access to your account."
+        actionLabel="Sign out everywhere"
+        actionPendingLabel="Signing out everywhere…"
+        onConfirm={onSignOutEverywhere}
+        pending={signingOutEverywhere}
+      />
 
-      <Dialog open={!!revokeTarget} onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Log out this device?</DialogTitle>
-            <DialogDescription>
-              {revokeTarget?.isCurrent
-                ? 'This is your current device — you\'ll be signed out immediately.'
-                : `"${revokeTarget?.device_label}" will be signed out and need to log in again.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => setRevokeTarget(null)} disabled={revoking}>Cancel</Button>
-            <Button type="button" onClick={confirmRevoke} disabled={revoking} className="bg-rose-600 hover:bg-rose-700 text-white">
-              {revoking ? <><Loader2 className="size-4 animate-spin" />Logging out…</> : 'Log out'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmIconDialog
+        open={!!revokeTarget}
+        onOpenChange={(open) => { if (!open) setRevokeTarget(null); }}
+        icon={LogOut}
+        tone="danger"
+        title="Log out this device?"
+        description={revokeTarget?.isCurrent
+          ? 'This is your current device — you\'ll be signed out immediately.'
+          : `"${revokeTarget?.device_label}" will be signed out and need to log in again.`}
+        actionLabel="Log out"
+        actionPendingLabel="Logging out…"
+        onConfirm={confirmRevoke}
+        pending={revoking}
+      />
     </>
   );
 }

@@ -18,7 +18,7 @@ const METHOD_META: Record<Exclude<MfaMethod, 'disabled'>, { label: string; icon:
 };
 
 /**
- * Merged Password + Two-factor authentication card — matches the
+ * Merged Password + Multi-factor authentication (MFA) card — matches the
  * reference design's single "Security" section instead of two separate
  * cards. Each row is a compact summary; the real forms (password change,
  * MFA enrollment/disable — both already-working, untouched logic) open
@@ -90,7 +90,7 @@ export function SecurityCard() {
               <ShieldCheck className="h-4 w-4 text-[#0D9488]" />
             </span>
             <div className="flex-1 min-w-0">
-              <p className="text-[13.5px] font-semibold text-slate-800">Two-factor authentication</p>
+              <p className="text-[13.5px] font-semibold text-slate-800">Multi-factor authentication (MFA)</p>
               <p className="text-[12px] text-slate-500 mt-0.5">Add an extra layer of security to your account.</p>
             </div>
             <div className="flex items-center gap-2.5 shrink-0">
@@ -103,7 +103,7 @@ export function SecurityCard() {
                 type="button"
                 role="switch"
                 aria-checked={isEnabled}
-                aria-label="Two-factor authentication"
+                aria-label="Multi-factor authentication (MFA)"
                 onClick={() => setMfaOpen(true)}
                 className={`relative h-6 w-10 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#5B6CF9]/40 focus:ring-offset-2 ${
                   isEnabled ? 'bg-emerald-500' : 'bg-slate-200'
@@ -142,9 +142,14 @@ export function SecurityCard() {
         </div>
       </div>
 
+      {/* Title/description are sr-only — PasswordForm/MfaSettings already
+          open with their own centered icon + heading, matching the
+          ConfirmIconDialog language used elsewhere; a second DialogHeader
+          on top of that read as two stacked titles. Still real elements
+          (not removed) since the Dialog needs an accessible name. */}
       <Dialog open={pwdOpen} onOpenChange={setPwdOpen}>
         <DialogContent>
-          <DialogHeader>
+          <DialogHeader className="sr-only">
             <DialogTitle>Change password</DialogTitle>
             <DialogDescription>Update the password you use to sign in.</DialogDescription>
           </DialogHeader>
@@ -154,8 +159,8 @@ export function SecurityCard() {
 
       <Dialog open={mfaOpen} onOpenChange={(open) => { setMfaOpen(open); if (!open) fetchStatus(); }}>
         <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Two-factor authentication</DialogTitle>
+          <DialogHeader className="sr-only">
+            <DialogTitle>Multi-factor authentication (MFA)</DialogTitle>
             <DialogDescription>Require a second code every time you sign in.</DialogDescription>
           </DialogHeader>
           <MfaSettings />

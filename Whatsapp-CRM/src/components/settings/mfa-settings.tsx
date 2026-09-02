@@ -121,7 +121,7 @@ export function MfaSettings() {
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || 'Incorrect code'); return; }
-      toast.success('Two-factor authentication enabled');
+      toast.success('Multi-factor authentication (MFA) enabled');
       resetPicker();
       fetchStatus();
     } finally {
@@ -140,7 +140,7 @@ export function MfaSettings() {
       });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || 'Failed to disable'); return; }
-      toast.success('Two-factor authentication disabled');
+      toast.success('Multi-factor authentication (MFA) disabled');
       setDisabling(false);
       setDisablePassword('');
       fetchStatus();
