@@ -27,15 +27,18 @@ function isMobileLabel(label: string) {
   return /Android|iOS/.test(label);
 }
 
-function timeAgo(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
-  const min = Math.round(ms / 60_000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  return `${day}d ago`;
+// Matches the jwt callback's own throttle window in auth.ts — a session
+// whose last_seen_at falls inside that window really is live right now
+// (or was, within the last heartbeat), not just "recently active".
+const LIVE_THRESHOLD_MS = 5 * 60_000;
+
+function activityStatus(iso: string): { live: boolean; label: string } {
+  const then = new Date(iso).getTime();
+  if (Date.now() - then < LIVE_THRESHOLD_MS) return { live: true, label: 'Live' };
+  const label = new Date(iso).toLocaleString(undefined, {
+    day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+  });
+  return { live: false, label: `Last active ${label}` };
 }
 
 /**
@@ -142,6 +145,7 @@ export function SessionsCard() {
           <div className="divide-y divide-slate-100">
             {sessions.map((s) => {
               const DeviceIcon = isMobileLabel(s.device_label) ? Smartphone : Monitor;
+              const status = activityStatus(s.last_seen_at);
               return (
                 <div key={s.id} className="flex items-center gap-3 px-6 py-4">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100">
@@ -156,8 +160,15 @@ export function SessionsCard() {
                         </span>
                       )}
                     </p>
-                    <p className="text-[11.5px] text-slate-400 mt-0.5">
-                      Active {timeAgo(s.last_seen_at)}
+                    <p className="text-[11.5px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+                      {status.live ? (
+                        <span className="flex items-center gap-1 font-medium text-emerald-600">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Live
+                        </span>
+                      ) : (
+                        status.label
+                      )}
                       {profile?.email && s.isCurrent && ` • ${profile.email}`}
                     </p>
                   </div>

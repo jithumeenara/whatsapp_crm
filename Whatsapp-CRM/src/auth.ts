@@ -16,6 +16,12 @@ function getClientIp(request: Request): string | null {
 // doesn't turn into a write on every single request.
 const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
 
+// A device that hasn't made a single request in this long is treated as
+// abandoned and signed out automatically the next time anything checks
+// it (either that device's own next request, or the Sessions list being
+// viewed) — see the jwt callback and GET /api/account/sessions.
+const INACTIVITY_LIMIT_MS = 3 * 24 * 60 * 60 * 1000;
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Credentials({
@@ -73,24 +79,43 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
 
         // Real per-device session tracking (Settings > Profile > Sessions)
-        // — one row per login, revocable individually. Failure here must
-        // never block sign-in, so it's wrapped and just omits sessionId
-        // (jwt() below treats a token with no sessionId as always valid,
-        // same as before this feature existed).
+        // — one row per DEVICE, not per login: signing out and back in on
+        // the same browser reuses (updates) its existing row instead of
+        // piling up a new one every time, matched by the exact User-Agent
+        // string (the best signal available without a persistent device
+        // cookie). Failure here must never block sign-in, so it's wrapped
+        // and just omits sessionId (jwt() below treats a token with no
+        // sessionId as always valid, same as before this feature existed).
         let sessionId: string | undefined;
         try {
           const userAgent = request.headers.get("user-agent");
-          const session = await prisma.userSession.create({
-            data: {
-              user_id: user.id,
-              device_label: deriveDeviceLabel(userAgent),
-              user_agent: userAgent,
-              ip_address: getClientIp(request),
-            },
-          });
-          sessionId = session.id;
+          const ipAddress = getClientIp(request);
+          const existing = userAgent
+            ? await prisma.userSession.findFirst({
+                where: { user_id: user.id, user_agent: userAgent },
+                orderBy: { last_seen_at: "desc" },
+              })
+            : null;
+
+          if (existing) {
+            await prisma.userSession.update({
+              where: { id: existing.id },
+              data: { last_seen_at: new Date(), revoked_at: null, ip_address: ipAddress },
+            });
+            sessionId = existing.id;
+          } else {
+            const session = await prisma.userSession.create({
+              data: {
+                user_id: user.id,
+                device_label: deriveDeviceLabel(userAgent),
+                user_agent: userAgent,
+                ip_address: ipAddress,
+              },
+            });
+            sessionId = session.id;
+          }
         } catch (err) {
-          console.error("Failed to create UserSession row:", err);
+          console.error("Failed to create/update UserSession row:", err);
         }
 
         return { id: user.id, email: user.email, sessionId };
@@ -164,6 +189,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             select: { revoked_at: true, last_seen_at: true },
           });
           if (row?.revoked_at) return null;
+          // Auto-logout after 3 days with no activity at all on this
+          // device — in practice the 8h maxAge above already ends a
+          // truly-abandoned session long before this fires, but it's the
+          // real enforcement point for it (not just hiding stale rows
+          // from the Sessions list, which GET /api/account/sessions also
+          // does on its own).
+          if (row && Date.now() - row.last_seen_at.getTime() > INACTIVITY_LIMIT_MS) {
+            prisma.userSession
+              .update({ where: { id: token.sessionId as string }, data: { revoked_at: new Date() } })
+              .catch((err) => console.error("Failed to auto-revoke inactive UserSession:", err));
+            return null;
+          }
           if (row && Date.now() - row.last_seen_at.getTime() > LAST_SEEN_THROTTLE_MS) {
             // Fire-and-forget — a slow write here must never delay the
             // response, and losing an occasional update is harmless.
