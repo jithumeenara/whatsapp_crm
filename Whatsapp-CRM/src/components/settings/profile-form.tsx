@@ -2,16 +2,20 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, CircleAlert, Camera, ShieldCheck, Mail, BadgeCheck, Phone, CheckCircle2, IdCard } from 'lucide-react';
+import {
+  Loader2, Camera, ShieldCheck, Mail, Phone, CheckCircle2, CircleAlert,
+  IdCard, User, Hash, Copy, Check, Pencil, X,
+} from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { PasswordForm } from '@/components/settings/password-form';
-import { MfaSettings } from '@/components/settings/mfa-settings';
+import { SecurityCard } from '@/components/settings/security-card';
 import { SessionsCard } from '@/components/settings/sessions-card';
+import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { CountryCodeSelect } from '@/components/shared/country-code-select';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
 
@@ -25,15 +29,39 @@ const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   agent:      { label: 'Agent',      color: 'bg-emerald-100 text-emerald-700' },
 };
 
+/** One row in the read-only summary view. */
+function InfoRow({ icon: Icon, iconBg, iconColor, label, pill, children }: {
+  icon: React.ElementType; iconBg: string; iconColor: string; label: string
+  pill?: React.ReactNode; children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start gap-3.5 px-6 py-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: iconBg }}>
+        <Icon className="h-4 w-4" style={{ color: iconColor }} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-[11px] font-medium text-slate-400">{label}</p>
+          {pill}
+        </div>
+        <div className="text-[14px] font-semibold text-slate-800 mt-0.5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 export function ProfileForm() {
   const { userId, profile, refreshProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reduceMotion = useReducedMotion();
 
+  const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState('');
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [removeAvatar, setRemoveAvatar] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [idCopied, setIdCopied] = useState(false);
 
   // WhatsApp number — two-part control (country + local), like signup.
   const [phoneIso, setPhoneIso] = useState(DEFAULT_COUNTRY_ISO);
@@ -85,13 +113,6 @@ export function ProfileForm() {
     setRemoveAvatar(false);
   };
 
-  const onRemoveAvatar = () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPendingAvatar(null);
-    setPreviewUrl(null);
-    setRemoveAvatar(true);
-  };
-
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userId || !profile) return;
@@ -135,6 +156,7 @@ export function ProfileForm() {
       setPendingAvatar(null);
       setPreviewUrl(null);
       setRemoveAvatar(false);
+      setEditing(false);
       await refreshProfile();
       toast.success('Profile saved');
     } catch (err) {
@@ -143,6 +165,20 @@ export function ProfileForm() {
       setSaving(false);
     }
   };
+
+  function cancelEdit() {
+    setEditing(false);
+    setPendingAvatar(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setRemoveAvatar(false);
+    if (profile) {
+      setFullName(profile.full_name ?? '');
+      const parsed = profile.phone ? splitE164(profile.phone) : null;
+      setPhoneIso(parsed?.iso ?? DEFAULT_COUNTRY_ISO);
+      setPhoneLocal(parsed?.local ?? '');
+    }
+  }
 
   const dirty = !!profile && (
     fullName.trim() !== (profile.full_name ?? '') ||
@@ -204,253 +240,244 @@ export function ProfileForm() {
     }
   }
 
+  function copyUserId() {
+    if (!userId) return;
+    navigator.clipboard.writeText(userId);
+    setIdCopied(true);
+    toast.success('User ID copied');
+    setTimeout(() => setIdCopied(false), 1500);
+  }
+
+  const blobMotion = reduceMotion
+    ? {}
+    : { animate: { y: [0, -10, 0], x: [0, 6, 0] }, transition: { duration: 9, repeat: Infinity, ease: 'easeInOut' as const } };
+  const blobMotion2 = reduceMotion
+    ? {}
+    : { animate: { y: [0, 8, 0], x: [0, -5, 0] }, transition: { duration: 11, repeat: Infinity, ease: 'easeInOut' as const } };
+
   return (
     <div className="space-y-5">
       {/* ── Hero Card ── */}
-      <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm">
-        {/* Gradient banner */}
-        <div className="h-24 bg-gradient-to-r from-[#5B6CF9] via-[#7C6CF9] to-[#9B6CF9] relative">
-          <div className="absolute inset-0 opacity-20"
-            style={{ backgroundImage: "radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 20%, white 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-[#EEF0FF] via-[#F4F3FD] to-[#ECEAFB] px-6 py-10">
+        {/* Decorative background — ambient only, gated by prefers-reduced-motion */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <motion.div
+            className="absolute -left-12 -top-12 h-44 w-44 rounded-full bg-white/50 blur-2xl"
+            {...blobMotion}
+          />
+          <motion.div
+            className="absolute -right-6 bottom-2 h-24 w-24 rounded-full bg-white/40 blur-xl"
+            {...blobMotion2}
+          />
+          <div className="absolute right-8 top-7 grid grid-cols-5 gap-2 opacity-40">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <span key={i} className="h-1 w-1 rounded-full bg-[#5B6CF9]" />
+            ))}
+          </div>
+          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-30" preserveAspectRatio="none" viewBox="0 0 400 60">
+            <path d="M0 40 Q 100 10 200 35 T 400 30" fill="none" stroke="#5B6CF9" strokeWidth="1" />
+          </svg>
         </div>
 
-        {/* Avatar + name row */}
-        <div className="px-6 pb-5">
-          <div className="flex items-end justify-between -mt-10 mb-4">
-            {/* Avatar with upload overlay */}
-            <div className="relative group">
-              <Avatar size="lg" className="h-20 w-20 ring-4 ring-white shadow-md">
-                {currentAvatar ? (
-                  <AvatarImage src={currentAvatar} alt={fullName || 'Avatar'} />
-                ) : null}
-                <AvatarFallback className="bg-[#5B6CF9] text-white text-2xl font-bold">
-                  {initial}
-                </AvatarFallback>
-              </Avatar>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity"
-                disabled={saving}
-              >
-                <Camera className="h-5 w-5 text-white" />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                className="hidden"
-                onChange={onPickFile}
-              />
-            </div>
-
-            {/* Role badge */}
-            {roleInfo && (
-              <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold ${roleInfo.color}`}>
-                <ShieldCheck className="h-3.5 w-3.5" />
-                {roleInfo.label}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h2 className="text-lg font-bold text-slate-800 leading-tight">
-              {profile?.full_name || 'Your Name'}
-            </h2>
-            <p className="text-sm text-slate-500 mt-0.5">{profile?.email}</p>
-          </div>
-
-          {/* Avatar actions */}
-          <div className="flex gap-2 mt-4">
-            <Button
+        <div className="relative flex flex-col items-center text-center">
+          <div className="relative group">
+            <Avatar size="lg" className="h-24 w-24 ring-4 ring-white shadow-md">
+              {currentAvatar ? (
+                <AvatarImage src={currentAvatar} alt={fullName || 'Avatar'} />
+              ) : null}
+              <AvatarFallback className="bg-[#5B6CF9] text-white text-3xl font-bold">
+                {initial}
+              </AvatarFallback>
+            </Avatar>
+            <button
               type="button"
-              variant="outline"
-              size="sm"
               onClick={() => fileInputRef.current?.click()}
+              title="Change photo"
               disabled={saving}
-              className="text-[12px] h-8 border-slate-200"
+              className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-[#5B6CF9] hover:bg-slate-50 transition-colors"
             >
-              <Upload className="h-3.5 w-3.5" />
-              {currentAvatar ? 'Change photo' : 'Upload photo'}
-            </Button>
-            {currentAvatar && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={onRemoveAvatar}
-                disabled={saving}
-                className="text-[12px] h-8 text-slate-500 hover:text-red-600"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Remove
-              </Button>
-            )}
+              <Camera className="h-3.5 w-3.5" />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={onPickFile}
+            />
           </div>
-          <p className="text-[11px] text-slate-400 mt-1.5">PNG, JPG, WebP, or GIF · max 2 MB</p>
+
+          <h2 className="text-[19px] font-bold text-slate-900 mt-4 uppercase tracking-tight">
+            {profile?.full_name || 'Your Name'}
+          </h2>
+          <p className="text-[13px] text-slate-500 mt-0.5">{profile?.email}</p>
+
+          {roleInfo && (
+            <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold mt-3 ${roleInfo.color}`}>
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {roleInfo.label}
+            </div>
+          )}
+
+          {(pendingAvatar || removeAvatar) && (
+            <p className="text-[11px] text-[#5B6CF9] mt-3">Photo will be saved with your other changes below.</p>
+          )}
         </div>
       </div>
 
-      {/* ── Edit form ── */}
-      <form onSubmit={onSubmit}>
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-              <IdCard className="h-4.5 w-4.5 text-[#5B6CF9]" />
-            </span>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-[14px] font-semibold text-slate-800">Personal information</h3>
-              <p className="text-[12px] text-slate-500 mt-0.5">Update your name and display preferences.</p>
-            </div>
+      {/* ── Personal information ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-[14px] font-semibold text-slate-800">Personal information</h3>
+            <p className="text-[12px] text-slate-500 mt-0.5">Update your name and contact details.</p>
           </div>
+          {!editing ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditing(true)}
+              className="h-8 px-3.5 text-[12.5px] border-slate-200 shrink-0"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={cancelEdit}
+              disabled={saving}
+              className="h-8 px-3.5 text-[12.5px] border-slate-200 shrink-0"
+            >
+              <X className="h-3.5 w-3.5" />
+              Cancel
+            </Button>
+          )}
+        </div>
 
-          <div className="px-6 py-5 space-y-4">
-            {/* Display name */}
-            <div className="space-y-1.5">
-              <Label htmlFor="profile-full-name" className="text-[13px] font-medium text-slate-700">
-                Display name
-              </Label>
-              <Input
-                id="profile-full-name"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Ada Lovelace"
-                maxLength={120}
-                disabled={saving}
-                required
-                className="h-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
-              />
-            </div>
-
-            {/* WhatsApp number */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-[13px] font-medium text-slate-700">WhatsApp Number</Label>
-                {profile && (
-                  profile.phone_verified ? (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Verified
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600">
-                      <CircleAlert className="h-3.5 w-3.5" /> Not verified
-                    </span>
-                  )
-                )}
-              </div>
-              <div className="flex gap-2">
-                <CountryCodeSelect value={phoneIso} onChange={setPhoneIso} className="w-[104px] shrink-0" />
-                <div className="relative flex-1">
-                  <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="98765 43210"
-                    value={phoneLocal}
-                    onChange={(e) => setPhoneLocal(e.target.value)}
-                    disabled={saving}
-                    className="h-9 pl-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
-                  />
-                </div>
-              </div>
-              {phoneDirty ? (
-                <p className="text-[11px] text-amber-600">Save changes to update your number, then verify it.</p>
-              ) : profile?.phone && !profile.phone_verified && !phoneVerifying ? (
-                <button type="button" onClick={startPhoneVerify} disabled={phoneSending}
-                  className="text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60">
-                  {phoneSending ? 'Sending code…' : 'Verify this number'}
-                </button>
-              ) : !profile?.phone && !phoneVerifying ? (
-                <button type="button" disabled
-                  className="text-[11.5px] font-medium text-slate-400 cursor-not-allowed">
-                  Add a number above, then verify
-                </button>
-              ) : null}
-              <p className="text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
-              {phoneVerifying && (
-                <div className="space-y-2 rounded-xl border border-[#5B6CF9]/15 bg-[#EEF0FF]/40 p-3">
-                  <p className="text-[12px] text-slate-500">Code sent via {phoneSentVia === 'whatsapp' ? 'WhatsApp' : 'SMS'}.</p>
-                  <div className="flex gap-2">
-                    <Input value={phoneCode} onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="123456" inputMode="numeric" maxLength={6}
-                      className="h-9 text-[13px] font-mono border-slate-200 bg-white text-center tracking-[0.3em]" />
-                    <Button type="button" onClick={confirmPhoneVerify} disabled={phoneConfirming || phoneCode.length !== 6}
-                      className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
-                      {phoneConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
-                    </Button>
-                  </div>
-                  <button type="button" onClick={() => { setPhoneVerifying(false); setPhoneCode(''); setPhoneChallengeId(''); }}
-                    className="text-[11px] text-slate-500 hover:text-slate-700 underline underline-offset-2">Cancel</button>
-                </div>
-              )}
-            </div>
-
-            {/* Email (read-only) */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-[13px] font-medium text-slate-700">Email address</Label>
-                {profile && (
-                  profile.email_verified ? (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Verified
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600">
-                      <CircleAlert className="h-3.5 w-3.5" /> Not verified
-                    </span>
-                  )
-                )}
-              </div>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <form onSubmit={onSubmit}>
+          <div className="divide-y divide-slate-100">
+            {!editing ? (
+              <InfoRow icon={User} iconBg="#EEF0FF" iconColor="#5B6CF9" label="Display name">
+                {profile?.full_name || '—'}
+              </InfoRow>
+            ) : (
+              <div className="px-6 py-4 space-y-1.5">
+                <Label htmlFor="profile-full-name" className="text-[13px] font-medium text-slate-700">
+                  Display name
+                </Label>
                 <Input
-                  value={profile?.email ?? ''}
-                  disabled
-                  className="h-9 pl-9 text-[13px] bg-slate-50 border-slate-200 text-slate-500"
+                  id="profile-full-name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Ada Lovelace"
+                  maxLength={120}
+                  disabled={saving}
+                  required
+                  className="h-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
                 />
               </div>
+            )}
+
+            {!editing ? (
+              <InfoRow
+                icon={WhatsAppIcon} iconBg="#E9FBF5" iconColor="#22C55E" label="WhatsApp Number"
+                pill={profile && (
+                  profile.phone_verified ? (
+                    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-600">
+                      <CheckCircle2 className="h-3 w-3" /> Verified
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-600">
+                      <CircleAlert className="h-3 w-3" /> Not verified
+                    </span>
+                  )
+                )}
+              >
+                {profile?.phone || 'Not set'}
+                {profile?.phone && !profile.phone_verified && !phoneVerifying && (
+                  <button type="button" onClick={startPhoneVerify} disabled={phoneSending}
+                    className="block text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60 mt-1">
+                    {phoneSending ? 'Sending code…' : 'Verify this number'}
+                  </button>
+                )}
+                {phoneVerifying && (
+                  <div className="mt-2 space-y-2 rounded-xl border border-[#5B6CF9]/15 bg-[#EEF0FF]/40 p-3">
+                    <p className="text-[12px] font-normal text-slate-500">Code sent via {phoneSentVia === 'whatsapp' ? 'WhatsApp' : 'SMS'}.</p>
+                    <div className="flex gap-2">
+                      <Input value={phoneCode} onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="123456" inputMode="numeric" maxLength={6}
+                        className="h-9 text-[13px] font-mono border-slate-200 bg-white text-center tracking-[0.3em]" />
+                      <Button type="button" onClick={confirmPhoneVerify} disabled={phoneConfirming || phoneCode.length !== 6}
+                        className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
+                        {phoneConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+                      </Button>
+                    </div>
+                    <button type="button" onClick={() => { setPhoneVerifying(false); setPhoneCode(''); setPhoneChallengeId(''); }}
+                      className="text-[11px] font-normal text-slate-500 hover:text-slate-700 underline underline-offset-2">Cancel</button>
+                  </div>
+                )}
+              </InfoRow>
+            ) : (
+              <div className="px-6 py-4 space-y-1.5">
+                <Label className="text-[13px] font-medium text-slate-700">WhatsApp Number</Label>
+                <div className="flex gap-2">
+                  <CountryCodeSelect value={phoneIso} onChange={setPhoneIso} className="w-[104px] shrink-0" />
+                  <div className="relative flex-1">
+                    <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <Input
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder="98765 43210"
+                      value={phoneLocal}
+                      onChange={(e) => setPhoneLocal(e.target.value)}
+                      disabled={saving}
+                      className="h-9 pl-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
+                    />
+                  </div>
+                </div>
+                {phoneDirty && (
+                  <p className="text-[11px] text-amber-600">Save changes to update your number, then verify it.</p>
+                )}
+                <p className="text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
+              </div>
+            )}
+
+            {/* Email — always read-only, verification is independent of edit mode */}
+            <InfoRow
+              icon={Mail} iconBg="#EFF8FF" iconColor="#0284C7" label="Email address"
+              pill={profile && (
+                profile.email_verified ? (
+                  <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-600">
+                    <CheckCircle2 className="h-3 w-3" /> Verified
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-600">
+                    <CircleAlert className="h-3 w-3" /> Not verified
+                  </span>
+                )
+              )}
+            >
+              {profile?.email}
               {profile && !profile.email_verified && (
                 emailSent ? (
-                  <p className="text-[11px] text-emerald-600">Verification link sent — check your inbox (valid 24 hours).</p>
+                  <p className="text-[11px] font-normal text-emerald-600 mt-1">Verification link sent — check your inbox (valid 24 hours).</p>
                 ) : (
                   <button type="button" onClick={sendVerificationEmail} disabled={emailSending}
-                    className="text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60">
+                    className="block text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60 mt-1">
                     {emailSending ? 'Sending…' : 'Send verification email'}
                   </button>
                 )
               )}
-              <p className="text-[11px] text-slate-400">Managed by your authentication provider.</p>
-            </div>
-
-            {/* Account info row */}
-            <div className="grid grid-cols-2 gap-3 pt-1">
-              <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">Role</p>
-                <div className="flex items-center gap-1.5">
-                  <BadgeCheck className="h-3.5 w-3.5 text-[#5B6CF9]" />
-                  <span className="text-[13px] font-medium text-slate-700 capitalize">
-                    {profile?.account_role ?? 'member'}
-                  </span>
-                </div>
-              </div>
-              <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 mb-1">User ID</p>
-                <p className="truncate font-mono text-[11px] text-slate-500">{userId ?? '—'}</p>
-              </div>
-            </div>
+            </InfoRow>
           </div>
 
-          <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50 rounded-b-2xl">
-            {!profile && (
-              <p className="flex items-center gap-1.5 text-[12px] text-slate-500">
-                <CircleAlert className="h-4 w-4" />
-                Loading profile…
-              </p>
-            )}
-            <div className="ml-auto">
+          {editing && (
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50 rounded-b-2xl">
               <Button
                 type="submit"
-                disabled={saving || !dirty || !profile}
+                disabled={saving || (!dirty) || !profile}
                 className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
               >
                 {saving ? (
@@ -460,18 +487,52 @@ export function ProfileForm() {
                 )}
               </Button>
             </div>
+          )}
+        </form>
+
+        {/* Role / User ID */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
+              <ShieldCheck className="h-3.5 w-3.5 text-[#5B6CF9]" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
+              <p className="text-[13px] font-medium text-slate-700 capitalize">{profile?.account_role ?? 'member'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
+              <Hash className="h-3.5 w-3.5 text-[#5B6CF9]" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">User ID</p>
+              <p className="truncate font-mono text-[11px] text-slate-500">{userId ?? '—'}</p>
+            </div>
+            <button type="button" onClick={copyUserId} title="Copy User ID"
+              className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+              {idCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
           </div>
         </div>
-      </form>
 
-      {/* ── Password section ── */}
-      <PasswordForm />
+        {!profile && (
+          <p className="flex items-center gap-1.5 text-[12px] text-slate-500 px-6 py-3 border-t border-slate-100">
+            <IdCard className="h-4 w-4" />
+            Loading profile…
+          </p>
+        )}
+      </div>
 
-      {/* ── Security (MFA) section ── */}
-      <MfaSettings />
+      {/* ── Security (Password + 2FA merged) ── */}
+      <SecurityCard />
 
       {/* ── Sessions ── */}
       <SessionsCard />
+
+      <p className="flex items-center justify-center gap-1.5 text-[11px] text-slate-400 pt-1">
+        Your privacy and security are important to us.
+      </p>
     </div>
   );
 }

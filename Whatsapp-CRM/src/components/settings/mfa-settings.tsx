@@ -157,7 +157,7 @@ export function MfaSettings() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm px-6 py-8 flex items-center justify-center">
+      <div className="flex items-center justify-center py-8">
         <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
       </div>
     );
@@ -166,18 +166,7 @@ export function MfaSettings() {
   const isEnabled = currentMethod !== 'disabled';
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFF6E6]">
-          <ShieldCheck className="h-4.5 w-4.5 text-[#D97706]" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-[14px] font-semibold text-slate-800">Two-factor authentication</h3>
-          <p className="text-[12px] text-slate-500 mt-0.5">Require a second code (SMS, WhatsApp, or an authenticator app) every time you sign in.</p>
-        </div>
-      </div>
-
-      <div className="px-6 py-5 space-y-4">
+    <div className="space-y-4">
         {/* Status */}
         <div className={cn(
           'flex items-center gap-3 rounded-xl border px-4 py-3',
@@ -307,7 +296,6 @@ export function MfaSettings() {
             <Lock className="h-3 w-3" /> Off by default — nothing changes for anyone until they set this up themselves.
           </p>
         )}
-      </div>
     </div>
   );
 }

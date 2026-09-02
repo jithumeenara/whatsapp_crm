@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, LogOut, ShieldAlert } from 'lucide-react';
+import { Loader2, LogOut, ShieldAlert, Monitor, Smartphone } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -18,17 +18,45 @@ import {
 /**
  * Sessions are JWT-based (stateless, no server-side session store — see
  * src/auth.ts's `session: { strategy: "jwt" }`), so there is no list of
- * "other devices" to enumerate or individually revoke. What IS real and
- * useful: "Sign out everywhere", backed by users.session_invalidated_at,
- * which forces every existing token — on every device, including this
- * one — to be rejected on its next use (see auth.ts's jwt callback).
+ * "other devices" to enumerate or individually revoke, and no real IP/
+ * location tracking. What IS real: the browser this page is currently
+ * running in (derived from navigator.userAgent, client-side only — never
+ * fabricated), and "Sign out everywhere", backed by
+ * users.session_invalidated_at, which forces every existing token — on
+ * every device, including this one — to be rejected on its next use (see
+ * auth.ts's jwt callback).
  */
+function parseUserAgent(ua: string): { os: string; browser: string; mobile: boolean } {
+  let os = 'Unknown OS';
+  if (/Windows/.test(ua)) os = 'Windows';
+  else if (/Mac OS X/.test(ua)) os = 'macOS';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS';
+  else if (/Linux/.test(ua)) os = 'Linux';
+
+  let browser = 'Unknown browser';
+  if (/Edg\//.test(ua)) browser = 'Edge';
+  else if (/OPR\//.test(ua)) browser = 'Opera';
+  else if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) browser = 'Chrome';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/Safari\//.test(ua) && !/Chrome/.test(ua)) browser = 'Safari';
+
+  return { os, browser, mobile: /Android|iPhone|iPad|iPod/.test(ua) };
+}
+
 export function SessionsCard() {
   const { signOut, profile } = useAuth();
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [everywhereOpen, setEverywhereOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
+  // Read client-side only (no navigator on the server) — never fabricated,
+  // just what this actual browser reports about itself.
+  const [device, setDevice] = useState<{ os: string; browser: string; mobile: boolean } | null>(null);
+
+  useEffect(() => {
+    setDevice(parseUserAgent(navigator.userAgent));
+  }, []);
 
   const onSignOut = async () => {
     setSigningOut(true);
@@ -56,6 +84,8 @@ export function SessionsCard() {
     }
   };
 
+  const DeviceIcon = device?.mobile ? Smartphone : Monitor;
+
   return (
     <>
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -65,19 +95,31 @@ export function SessionsCard() {
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold text-slate-800">Sessions</h3>
-            <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">
-              {profile?.email && (
-                <span className="block mb-1">
-                  Signed in as <strong className="text-slate-700 font-medium">{profile.email}</strong>
-                  {profile.account_role && (
-                    <span className="ml-2 text-[11px] text-slate-400">({profile.account_role})</span>
-                  )}
-                </span>
-              )}
-              Sign out of just this browser, or force every device currently signed in — including this one — to log in again.
-            </p>
+            <p className="text-[12px] text-slate-500 mt-0.5">Manage your active sessions on different devices.</p>
           </div>
         </div>
+
+        {/* Current device — the only session this app can actually see */}
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+            <DeviceIcon className="h-4 w-4 text-slate-500" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[13px] font-semibold text-slate-800 flex items-center gap-2">
+              {device ? `${device.os} • ${device.browser}` : 'This device'}
+              <span className="rounded-full bg-[#EEF0FF] px-2 py-0.5 text-[10.5px] font-semibold text-[#5B6CF9]">
+                Current session
+              </span>
+            </p>
+            {profile?.email && (
+              <p className="text-[11.5px] text-slate-400 mt-0.5">
+                Signed in as {profile.email}
+                {profile.account_role && ` • ${profile.account_role}`}
+              </p>
+            )}
+          </div>
+        </div>
+
         <div className="px-6 py-5 flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={() => setSignOutOpen(true)} className="h-9 text-[13px] border-slate-200">
             <LogOut className="h-4 w-4" />
