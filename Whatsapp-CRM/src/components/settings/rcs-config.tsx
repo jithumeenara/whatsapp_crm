@@ -205,9 +205,9 @@ export function RcsConfig() {
         )}
       </div>
 
-      <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 flex items-start gap-3">
-        <Clock className="h-4.5 w-4.5 text-indigo-500 mt-0.5 shrink-0" />
-        <p className="text-[12px] text-indigo-700 leading-relaxed">
+      <div className="rounded-2xl border border-[#5B6CF9]/20 bg-[#EEF0FF] px-5 py-4 flex items-start gap-3">
+        <Clock className="h-4.5 w-4.5 text-[#5B6CF9] mt-0.5 shrink-0" />
+        <p className="text-[12px] text-[#4a5ce8] leading-relaxed">
           Real carrier/agent approval for RCS is a separate process on Twilio&apos;s side and typically takes
           <strong> 4-6 weeks</strong>. Messages still send via SMS/MMS fallback while approval is pending — configure
           and test the connection below now, and start the RCS agent approval application in your Twilio console
@@ -259,7 +259,7 @@ export function RcsConfig() {
           <Input id="rcs-agent-id" value={rcsAgentId} onChange={(e) => setRcsAgentId(e.target.value)} placeholder="Optional, pending approval" className="h-9 text-[13px] font-mono border-slate-200" />
         </FieldRow>
         <div className="flex items-center gap-2 pt-1">
-          <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-indigo-600 hover:bg-indigo-700 text-white">
+          <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
             {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
           </Button>
           {hasConfig && (

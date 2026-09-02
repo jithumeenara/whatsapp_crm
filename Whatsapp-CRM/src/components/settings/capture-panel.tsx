@@ -67,7 +67,7 @@ export function CapturePanel() {
     <div className="space-y-5">
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex items-start justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
             <UserCheck className="h-4.5 w-4.5 text-[#5B6CF9]" />
           </span>
           <div>

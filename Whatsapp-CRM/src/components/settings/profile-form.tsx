@@ -368,7 +368,7 @@ export function ProfileForm() {
               ) : null}
               <p className="text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
               {phoneVerifying && (
-                <div className="space-y-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-3">
+                <div className="space-y-2 rounded-xl border border-[#5B6CF9]/15 bg-[#EEF0FF]/40 p-3">
                   <p className="text-[12px] text-slate-500">Code sent via {phoneSentVia === 'whatsapp' ? 'WhatsApp' : 'SMS'}.</p>
                   <div className="flex gap-2">
                     <Input value={phoneCode} onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}

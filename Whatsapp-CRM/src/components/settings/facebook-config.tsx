@@ -358,7 +358,7 @@ export function FacebookConfig() {
       {/* Actions */}
       <div className="flex items-center gap-3">
         <button type="button" onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors">
+          className="flex items-center gap-2 rounded-xl bg-[#5B6CF9] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-[#4a5ce8] disabled:opacity-60 transition-colors">
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save Settings
         </button>

@@ -375,13 +375,13 @@ export function InstagramConfig() {
           </div>
 
           {/* Instructions */}
-          <div className="rounded-lg bg-indigo-50 border border-indigo-100 p-3 text-[11px] text-indigo-700 space-y-1">
+          <div className="rounded-lg bg-[#EEF0FF] border border-[#5B6CF9]/15 p-3 text-[11px] text-[#4a5ce8] space-y-1">
             <p className="font-semibold">In Meta Developer Console:</p>
-            <ol className="list-decimal list-inside space-y-0.5 text-indigo-600">
+            <ol className="list-decimal list-inside space-y-0.5 text-[#5B6CF9]">
               <li>Go to your App → Webhooks</li>
               <li>Click <strong>Add Subscription</strong> → Instagram</li>
               <li>Paste the Webhook URL and Verify Token above</li>
-              <li>Select fields: <code className="bg-indigo-100 px-1 rounded">messages</code>, <code className="bg-indigo-100 px-1 rounded">messaging_postbacks</code></li>
+              <li>Select fields: <code className="bg-[#5B6CF9]/10 px-1 rounded">messages</code>, <code className="bg-[#5B6CF9]/10 px-1 rounded">messaging_postbacks</code></li>
               <li>Click Verify and Save</li>
             </ol>
             <a
@@ -402,7 +402,7 @@ export function InstagramConfig() {
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+          className="flex items-center gap-2 rounded-xl bg-[#5B6CF9] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-[#4a5ce8] disabled:opacity-60 transition-colors"
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save Settings

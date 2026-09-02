@@ -269,7 +269,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => toggleActive(h)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:text-[#5B6CF9] hover:bg-indigo-50 transition-colors"
+                    className="rounded-lg p-1.5 text-slate-400 hover:text-[#5B6CF9] hover:bg-[#EEF0FF] transition-colors"
                     title={h.is_active ? 'Disable' : 'Enable'}
                   >
                     {h.is_active ? <ToggleRight className="h-5 w-5 text-[#5B6CF9]" /> : <ToggleLeft className="h-5 w-5" />}

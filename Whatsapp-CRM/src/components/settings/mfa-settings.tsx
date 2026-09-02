@@ -239,7 +239,7 @@ export function MfaSettings() {
 
         {/* SMS / WhatsApp setup */}
         {(picking === 'sms' || picking === 'whatsapp') && (
-          <div className="space-y-3 rounded-xl border border-indigo-100 bg-[#EEF0FF]/40 p-4">
+          <div className="space-y-3 rounded-xl border border-[#5B6CF9]/15 bg-[#EEF0FF]/40 p-4">
             <p className="text-[12.5px] font-semibold text-[#4a5ce8]">Set up {METHOD_META[picking].label}</p>
             {!codeSentTo ? (
               <div className="flex gap-2">
@@ -268,7 +268,7 @@ export function MfaSettings() {
 
         {/* TOTP setup */}
         {picking === 'totp' && (
-          <div className="space-y-3 rounded-xl border border-indigo-100 bg-[#EEF0FF]/40 p-4">
+          <div className="space-y-3 rounded-xl border border-[#5B6CF9]/15 bg-[#EEF0FF]/40 p-4">
             <p className="text-[12.5px] font-semibold text-[#4a5ce8]">Set up Authenticator App</p>
             {!totpQr ? (
               <Button onClick={startTotp} disabled={sending} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
