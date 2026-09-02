@@ -75,15 +75,13 @@ function SignupContent() {
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">
-                  WhatsApp Number <span className="font-normal text-slate-400">(optional)</span>
-                </label>
-                <CountryCodeSelect value={countryIso} onChange={setCountryIso} />
-              </div>
-              <div>
-                <div className="relative">
+            <div>
+              <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">
+                WhatsApp Number <span className="font-normal text-slate-400">(optional)</span>
+              </label>
+              <div className="flex gap-2">
+                <CountryCodeSelect value={countryIso} onChange={setCountryIso} className="w-[168px] shrink-0" />
+                <div className="relative flex-1">
                   <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     type="tel"
@@ -94,8 +92,8 @@ function SignupContent() {
                     className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                   />
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
               </div>
+              <p className="mt-1.5 text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
             </div>
 
             <div>

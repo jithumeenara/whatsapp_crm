@@ -50,6 +50,7 @@
     "date-fns": "^4.4.0",
     "emoji-picker-react": "^4.19.1",
     "exceljs": "^3.4.0",
+    "flag-icons": "^7.5.0",
     "isomorphic-dompurify": "^3.18.0",
     "lucide-react": "^1.17.0",
     "mime-types": "^3.0.2",

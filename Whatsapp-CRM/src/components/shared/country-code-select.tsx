@@ -10,6 +10,13 @@ interface Props {
   className?: string
 }
 
+/** Real flag SVG (flag-icons' fi-xx classes) instead of emoji — Windows
+ *  mostly renders emoji flags as a bare two-letter fallback with no
+ *  visible flag at all, which is what this replaces. */
+function Flag({ iso }: { iso: string }) {
+  return <span className={`fi fi-${iso.toLowerCase()} rounded-[3px] shrink-0`} style={{ width: '1.333em', height: '1em' }} />
+}
+
 /**
  * Country picker matching a supplied reference exactly: a wide, fully
  * rounded ("pill") trigger showing the selected country's full name +
@@ -69,7 +76,7 @@ export function CountryCodeSelect({ value, onChange, className }: Props) {
         aria-expanded={open}
         className="flex h-11 w-full items-center gap-2 rounded-full border border-slate-200 bg-white pl-4 pr-3.5 text-[13.5px] text-slate-900 outline-none transition-all hover:border-slate-300 focus:border-[#5B6CF9] focus:ring-2 focus:ring-[#5B6CF9]/15"
       >
-        <span className="text-[16px] leading-none">{selected.flag}</span>
+        <Flag iso={selected.iso} />
         <span className="min-w-0 flex-1 truncate text-left font-medium">
           {selected.name} <span className="tabular-nums text-slate-500">({selected.dial})</span>
         </span>
@@ -115,7 +122,7 @@ export function CountryCodeSelect({ value, onChange, className }: Props) {
                     isSelected ? "bg-slate-100" : "hover:bg-slate-50"
                   }`}
                 >
-                  <span className="text-[16px] leading-none">{c.flag}</span>
+                  <Flag iso={c.iso} />
                   <span className="min-w-0 flex-1 truncate text-slate-800">
                     {c.name} <span className="tabular-nums text-slate-400">({c.dial})</span>
                   </span>

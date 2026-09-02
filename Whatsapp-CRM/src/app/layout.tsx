@@ -3,6 +3,11 @@ import { Inter, Anek_Malayalam } from "next/font/google";
 import { cookies } from "next/headers";
 import { Toaster } from "sonner";
 import "./globals.css";
+// Real flag SVGs (fi-xx classes, keyed by lowercase ISO code) — the
+// CountryCodeSelect's flags used to be plain emoji, which Windows mostly
+// renders as a bare two-letter fallback (no visible flag at all, exactly
+// what was reported). This package ships real graphics instead.
+import "flag-icons/css/flag-icons.min.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { Providers } from "@/components/providers";
 import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from "@/lib/themes";
