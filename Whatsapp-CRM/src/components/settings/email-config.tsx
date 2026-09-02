@@ -4,13 +4,14 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
   Copy, CheckCircle2, Loader2, Zap, AlertTriangle, RotateCcw, Info, Terminal,
-  Globe, KeyRound, Mail, Wifi, WifiOff, ChevronDown, ChevronUp, UserRound,
+  Globe, KeyRound, Mail, Wifi, WifiOff, ChevronDown, ChevronUp, UserRound, Webhook,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useConfirm } from '@/hooks/use-confirm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { tileAccent } from '@/components/settings/settings-ui-kit';
 
 const MASKED = '••••••••••••••••';
 
@@ -33,12 +34,19 @@ function FieldRow({ id, label, icon: Icon, children, hint }: {
   )
 }
 
-function SectionCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function SectionCard({ title, description, icon: Icon, accent, children }: {
+  title: string; description?: string; icon: React.ElementType; accent: { bg: string; icon: string }; children: React.ReactNode
+}) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
-        {description && <p className="text-[12px] text-slate-500 mt-0.5">{description}</p>}
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: accent.bg }}>
+          <Icon className="h-4.5 w-4.5" style={{ color: accent.icon }} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
+          {description && <p className="text-[12px] text-slate-500 mt-0.5">{description}</p>}
+        </div>
       </div>
       <div className="px-6 py-5 space-y-4">{children}</div>
     </div>
@@ -213,7 +221,7 @@ export function EmailConfig() {
       )}
 
       {/* ── Credentials ── */}
-      <SectionCard title="SendGrid Credentials" description="From your SendGrid dashboard → Settings → API Keys.">
+      <SectionCard title="SendGrid Credentials" description="From your SendGrid dashboard → Settings → API Keys." icon={KeyRound} accent={tileAccent(0)}>
         <FieldRow id="email-api-key" label="API Key" icon={KeyRound}>
           <Input
             id="email-api-key"
@@ -249,7 +257,7 @@ export function EmailConfig() {
       </SectionCard>
 
       {/* ── Webhook ── */}
-      <SectionCard title="Inbound Parse Webhook" description="SendGrid's Inbound Parse has no signature header — this URL's token is the security check, so keep it private.">
+      <SectionCard title="Inbound Parse Webhook" description="SendGrid's Inbound Parse has no signature header — this URL's token is the security check, so keep it private." icon={Webhook} accent={tileAccent(2)}>
         {isLocalhost && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
             <div className="flex items-start gap-2.5">

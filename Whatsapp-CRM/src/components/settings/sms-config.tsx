@@ -12,6 +12,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { tileAccent } from '@/components/settings/settings-ui-kit';
 
 const MASKED = '••••••••••••••••';
 
@@ -35,12 +36,19 @@ function FieldRow({ id, label, icon: Icon, children, hint }: {
   )
 }
 
-function SectionCard({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function SectionCard({ title, description, icon: Icon, accent, children }: {
+  title: string; description?: string; icon: React.ElementType; accent: { bg: string; icon: string }; children: React.ReactNode
+}) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
-        {description && <p className="text-[12px] text-slate-500 mt-0.5">{description}</p>}
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: accent.bg }}>
+          <Icon className="h-4.5 w-4.5" style={{ color: accent.icon }} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
+          {description && <p className="text-[12px] text-slate-500 mt-0.5">{description}</p>}
+        </div>
       </div>
       <div className="px-6 py-5 space-y-4">{children}</div>
     </div>
@@ -293,7 +301,7 @@ export function SmsConfig() {
 
       {/* ── Credentials ── */}
       {provider === 'msg91' ? (
-        <SectionCard title="MSG91 Credentials" description="From your MSG91 dashboard → API → Auth Key.">
+        <SectionCard title="MSG91 Credentials" description="From your MSG91 dashboard → API → Auth Key." icon={KeyRound} accent={tileAccent(0)}>
           <FieldRow id="sms-auth-key" label="Auth Key" icon={KeyRound}>
             <Input
               id="sms-auth-key"
@@ -333,7 +341,7 @@ export function SmsConfig() {
           </div>
         </SectionCard>
       ) : (
-        <SectionCard title="TextBee Credentials" description="From your TextBee dashboard → API Keys. Uses your Android phone as the SMS gateway — see textbee.dev/docs.">
+        <SectionCard title="TextBee Credentials" description="From your TextBee dashboard → API Keys. Uses your Android phone as the SMS gateway — see textbee.dev/docs." icon={Smartphone} accent={tileAccent(0)}>
           <FieldRow id="sms-api-key" label="API Key" icon={KeyRound}>
             <Input
               id="sms-api-key"
@@ -363,7 +371,7 @@ export function SmsConfig() {
 
       {/* ── Send test message ── */}
       {hasConfig && (
-        <SectionCard title="Send Test Message" description={`Sends a real SMS through ${activeProviderLabel} to confirm the whole pipeline works end to end.`}>
+        <SectionCard title="Send Test Message" description={`Sends a real SMS through ${activeProviderLabel} to confirm the whole pipeline works end to end.`} icon={Send} accent={tileAccent(3)}>
           <div className="flex items-end gap-2">
             <div className="flex-1">
               <FieldRow id="sms-test-number" label="Phone number" icon={Send}>
@@ -384,6 +392,8 @@ export function SmsConfig() {
         description={provider === 'textbee'
           ? 'Auto-registered with TextBee on save — inbound SMS replies flow straight into your Inbox.'
           : "Paste this URL into your MSG91 dashboard's inbound SMS webhook setting."}
+        icon={Webhook}
+        accent={tileAccent(2)}
       >
         {isLocalhost && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">

@@ -127,7 +127,7 @@ export function FacebookConfig() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-[#5B6CF9]" />
       </div>
     )
   }
@@ -189,11 +189,14 @@ export function FacebookConfig() {
 
       {/* Step 1 — Page Access Token */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <p className="text-[12px] font-semibold text-slate-700">Step 1 — Page Access Token</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Meta Developer Console → your App → Messenger → API Settings → Access Tokens → Generate Token
-          </p>
+        <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">1</span>
+          <div>
+            <p className="text-[12px] font-semibold text-slate-700">Page Access Token</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Meta Developer Console → your App → Messenger → API Settings → Access Tokens → Generate Token
+            </p>
+          </div>
         </div>
         <div className="p-4 space-y-4">
           <div>
@@ -211,7 +214,7 @@ export function FacebookConfig() {
                   onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true) }}
                   onFocus={() => { if (accessToken === MASKED) { setAccessToken(""); setTokenEdited(true) } }}
                   placeholder="Paste your Page Access Token (starts with EAA…)"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
                 />
                 <button type="button" onClick={() => setShowToken((s) => !s)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -242,7 +245,7 @@ export function FacebookConfig() {
                   onChange={(e) => { setAppSecret(e.target.value); setSecretEdited(true) }}
                   onFocus={() => { if (appSecret === MASKED) { setAppSecret(""); setSecretEdited(true) } }}
                   placeholder="App Secret from App Settings → Basic"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
                 />
                 <button type="button" onClick={() => setShowSecret((s) => !s)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -262,8 +265,9 @@ export function FacebookConfig() {
 
       {/* Step 2 — Page ID */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <p className="text-[12px] font-semibold text-slate-700">Step 2 — Page ID</p>
+        <div className="flex items-center gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">2</span>
+          <p className="text-[12px] font-semibold text-slate-700">Page ID</p>
         </div>
         <div className="p-4">
           <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Facebook Page ID</label>
@@ -271,7 +275,7 @@ export function FacebookConfig() {
             value={pageId}
             onChange={(e) => setPageId(e.target.value)}
             placeholder="e.g. 101489656173087"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
           />
           <p className="text-[10px] text-slate-400 mt-1">Found in Meta Business Suite → Pages → click your page → ID shown below the page name</p>
         </div>
@@ -279,9 +283,12 @@ export function FacebookConfig() {
 
       {/* Step 3 — Webhook */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <p className="text-[12px] font-semibold text-slate-700">Step 3 — Webhook Configuration</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">Paste these into Meta Developer Console → Messenger → API Settings → Webhooks</p>
+        <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">3</span>
+          <div>
+            <p className="text-[12px] font-semibold text-slate-700">Webhook Configuration</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Paste these into Meta Developer Console → Messenger → API Settings → Webhooks</p>
+          </div>
         </div>
         <div className="p-4 space-y-4">
           <div>
@@ -292,7 +299,7 @@ export function FacebookConfig() {
               value={appUrl}
               onChange={(e) => setAppUrl(e.target.value)}
               placeholder="https://xxxx.ngrok-free.dev"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
             />
           </div>
 
@@ -315,7 +322,7 @@ export function FacebookConfig() {
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
                 placeholder="Type or generate a secret string…"
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
               />
               <button type="button" onClick={generateVerifyToken}
                 className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors whitespace-nowrap">

@@ -130,7 +130,7 @@ export function InstagramConfig() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-[#5B6CF9]" />
       </div>
     )
   }
@@ -210,11 +210,14 @@ export function InstagramConfig() {
 
       {/* Step 1 — Access Token */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <p className="text-[12px] font-semibold text-slate-700">Step 1 — Access Token</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            From Meta Developer Console → Instagram → API setup → Generate token
-          </p>
+        <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">1</span>
+          <div>
+            <p className="text-[12px] font-semibold text-slate-700">Access Token</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              From Meta Developer Console → Instagram → API setup → Generate token
+            </p>
+          </div>
         </div>
         <div className="p-4 space-y-3">
           <div>
@@ -232,7 +235,7 @@ export function InstagramConfig() {
                   onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true) }}
                   onFocus={() => { if (accessToken === MASKED) { setAccessToken(""); setTokenEdited(true) } }}
                   placeholder="Paste your Instagram access token (starts with IGQ… or EAA…)"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
                 />
                 <button
                   type="button"
@@ -261,11 +264,14 @@ export function InstagramConfig() {
 
       {/* Step 2 — Account IDs */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <p className="text-[12px] font-semibold text-slate-700">Step 2 — Account IDs</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Find these in Meta Developer Console or by calling /me with your token
-          </p>
+        <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">2</span>
+          <div>
+            <p className="text-[12px] font-semibold text-slate-700">Account IDs</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Find these in Meta Developer Console or by calling /me with your token
+            </p>
+          </div>
         </div>
         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -274,7 +280,7 @@ export function InstagramConfig() {
               value={igAccountId}
               onChange={(e) => setIgAccountId(e.target.value)}
               placeholder="e.g. 17841400000000000"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
             />
             <p className="text-[10px] text-slate-400 mt-1">Auto-filled after Test Connection succeeds</p>
           </div>
@@ -284,7 +290,7 @@ export function InstagramConfig() {
               value={pageId}
               onChange={(e) => setPageId(e.target.value)}
               placeholder="e.g. 100000000000000"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
             />
           </div>
         </div>
@@ -292,11 +298,14 @@ export function InstagramConfig() {
 
       {/* Step 3 — Webhook */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <p className="text-[12px] font-semibold text-slate-700">Step 3 — Webhook Configuration</p>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Paste these into Meta Developer Console → Webhooks → Instagram
-          </p>
+        <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">3</span>
+          <div>
+            <p className="text-[12px] font-semibold text-slate-700">Webhook Configuration</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Paste these into Meta Developer Console → Webhooks → Instagram
+            </p>
+          </div>
         </div>
         <div className="p-4 space-y-4">
           {/* App / ngrok URL */}
@@ -308,7 +317,7 @@ export function InstagramConfig() {
               value={appUrl}
               onChange={(e) => setAppUrl(e.target.value)}
               placeholder="https://xxxx.ngrok-free.dev  (or your production domain)"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
             />
             <p className="text-[10px] text-slate-400 mt-1">
               In development: copy the Forwarding URL from ngrok (e.g. <code>https://rugulose-xxx.ngrok-free.dev</code>).
@@ -343,7 +352,7 @@ export function InstagramConfig() {
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
                 placeholder="Type or generate a secret string…"
-                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono"
+                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
               />
               <button
                 type="button"
@@ -379,7 +388,7 @@ export function InstagramConfig() {
               href="https://developers.facebook.com/docs/messenger-platform/webhooks"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 mt-1 text-indigo-500 hover:underline"
+              className="inline-flex items-center gap-1 mt-1 text-[#5B6CF9] hover:underline"
             >
               <ExternalLink className="h-3 w-3" /> Meta Webhooks docs
             </a>
