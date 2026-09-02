@@ -449,11 +449,14 @@ export function ProfileForm() {
                 {profile?.phone || 'Not set'}
               </InfoRow>
             ) : (
-              <div className="px-6 py-4 space-y-1.5">
-                <Label className="text-[13px] font-medium text-slate-700">WhatsApp Number</Label>
-                <div className="flex gap-2">
-                  <CountryCodeSelect value={phoneIso} onChange={setPhoneIso} className="w-[104px] shrink-0" />
-                  <div className="relative flex-1">
+              <div className="px-6 py-4 space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[13px] font-medium text-slate-700">Country</Label>
+                  <CountryCodeSelect value={phoneIso} onChange={setPhoneIso} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-[13px] font-medium text-slate-700">WhatsApp Number</Label>
+                  <div className="relative">
                     <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
                       type="tel"
