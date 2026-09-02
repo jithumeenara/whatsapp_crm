@@ -71,14 +71,14 @@ function SectionCard({ title, description, children, footer }: {
   )
 }
 
-export function WhatsAppConfig() {
+export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConnectMethod?: 'quick' | 'manual' }) {
   const { userId, accountId, loading: authLoading, profileLoading } = useAuth();
   const confirm = useConfirm();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [keysDialogOpen, setKeysDialogOpen] = useState(false);
-  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>('quick');
+  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>(defaultConnectMethod);
   const [testing, setTesting] = useState(false);
   const [testPhone, setTestPhone] = useState('');
   const [sendingTest, setSendingTest] = useState(false);

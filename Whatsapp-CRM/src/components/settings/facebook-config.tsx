@@ -21,12 +21,12 @@ type ConfigData = {
   test_error?: string | null
 }
 
-export function FacebookConfig() {
+export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConnectMethod?: 'quick' | 'manual' }) {
   const [loading, setLoading]     = useState(true)
   const [saving, setSaving]       = useState(false)
   const [testing, setTesting]     = useState(false)
   const [showToken, setShowToken] = useState(false)
-  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>('quick')
+  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>(defaultConnectMethod)
   const [showSecret, setShowSecret] = useState(false)
   const [tokenEdited, setTokenEdited]   = useState(false)
   const [secretEdited, setSecretEdited] = useState(false)

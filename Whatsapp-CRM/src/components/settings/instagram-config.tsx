@@ -22,12 +22,12 @@ type ConfigData = {
   test_error?: string | null
 }
 
-export function InstagramConfig() {
+export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultConnectMethod?: 'quick' | 'manual' }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [showToken, setShowToken] = useState(false)
-  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>('quick')
+  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>(defaultConnectMethod)
   const [tokenEdited, setTokenEdited] = useState(false)
 
   const [accessToken, setAccessToken] = useState("")
