@@ -16,11 +16,12 @@ function getClientIp(request: Request): string | null {
 // doesn't turn into a write on every single request.
 const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
 
-// A device that hasn't made a single request in this long is treated as
-// abandoned and signed out automatically the next time anything checks
-// it (either that device's own next request, or the Sessions list being
-// viewed) — see the jwt callback and GET /api/account/sessions.
-const INACTIVITY_LIMIT_MS = 3 * 24 * 60 * 60 * 1000;
+// Fallback only — the real, user-configurable value is
+// users.session_inactivity_limit_minutes (Settings > Profile > Sessions
+// > gear icon), read per-request below. This just matches the column's
+// DB default so behavior is identical if that lookup ever comes back
+// null for some reason.
+const DEFAULT_INACTIVITY_LIMIT_MINUTES = 4320;
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -186,16 +187,22 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         try {
           const row = await prisma.userSession.findUnique({
             where: { id: token.sessionId as string },
-            select: { revoked_at: true, last_seen_at: true },
+            select: {
+              revoked_at: true,
+              last_seen_at: true,
+              user: { select: { session_inactivity_limit_minutes: true } },
+            },
           });
           if (row?.revoked_at) return null;
-          // Auto-logout after 3 days with no activity at all on this
-          // device — in practice the 8h maxAge above already ends a
-          // truly-abandoned session long before this fires, but it's the
-          // real enforcement point for it (not just hiding stale rows
-          // from the Sessions list, which GET /api/account/sessions also
-          // does on its own).
-          if (row && Date.now() - row.last_seen_at.getTime() > INACTIVITY_LIMIT_MS) {
+          // Auto-logout after N minutes with no activity at all on this
+          // device — user-configurable (Settings > Profile > Sessions >
+          // gear icon), defaults to 3 days. In practice the 8h maxAge
+          // above already ends a truly-abandoned session long before a
+          // multi-day limit would fire, but it's the real enforcement
+          // point for it (not just hiding stale rows from the Sessions
+          // list, which GET /api/account/sessions also does on its own).
+          const limitMs = (row?.user.session_inactivity_limit_minutes ?? DEFAULT_INACTIVITY_LIMIT_MINUTES) * 60 * 1000;
+          if (row && Date.now() - row.last_seen_at.getTime() > limitMs) {
             prisma.userSession
               .update({ where: { id: token.sessionId as string }, data: { revoked_at: new Date() } })
               .catch((err) => console.error("Failed to auto-revoke inactive UserSession:", err));

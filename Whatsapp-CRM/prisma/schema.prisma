@@ -33,6 +33,12 @@ model User {
   /// UserSession.revoked_at below; this field is for revoking all of them
   /// at once without having to touch every row.
   session_invalidated_at DateTime? @db.Timestamptz(6)
+  /// User-configurable inactivity auto-logout (Settings > Profile >
+  /// Sessions > gear icon) — a device with no activity for this many
+  /// minutes gets auto-revoked. See INACTIVITY_LIMIT_MS's replacement in
+  /// auth.ts's jwt callback and GET /api/account/sessions' lazy sweep.
+  /// Default 4320 = 3 days, matching the previous hardcoded constant.
+  session_inactivity_limit_minutes Int @default(4320)
   created_at     DateTime  @default(now()) @db.Timestamptz(6)
   updated_at     DateTime  @updatedAt @db.Timestamptz(6)
 

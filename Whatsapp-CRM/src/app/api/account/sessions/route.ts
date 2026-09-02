@@ -2,12 +2,6 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 
-// Same window as the real enforcement in auth.ts's jwt callback — kept
-// here too so a device that's been inactive 3+ days disappears from this
-// list even if it never makes another request itself to trigger that
-// check (nothing else would ever revoke it otherwise).
-const INACTIVITY_LIMIT_MS = 3 * 24 * 60 * 60 * 1000
-
 /**
  * GET /api/account/sessions — the current user's real, active login
  * sessions (Settings > Profile > Sessions). Backed by UserSession, one
@@ -21,11 +15,20 @@ export async function GET() {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
+    // User-configurable (Settings > Profile > Sessions > gear icon) —
+    // same window auth.ts's jwt callback enforces for real; swept here
+    // too so an abandoned device disappears from this list even though
+    // it will never make another request itself to trigger that check.
+    const me = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { session_inactivity_limit_minutes: true },
+    })
+    const limitMs = (me?.session_inactivity_limit_minutes ?? 4320) * 60 * 1000
     await prisma.userSession.updateMany({
       where: {
         user_id: session.user.id,
         revoked_at: null,
-        last_seen_at: { lt: new Date(Date.now() - INACTIVITY_LIMIT_MS) },
+        last_seen_at: { lt: new Date(Date.now() - limitMs) },
       },
       data: { revoked_at: new Date() },
     })

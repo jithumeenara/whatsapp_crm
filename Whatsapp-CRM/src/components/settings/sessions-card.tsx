@@ -2,11 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, LogOut, ShieldAlert, Monitor, Smartphone, MoreVertical } from 'lucide-react';
+import { Loader2, LogOut, ShieldAlert, Monitor, Smartphone, MoreVertical, Settings, Clock } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +26,17 @@ interface SessionRow {
   created_at: string;
   last_seen_at: string;
   isCurrent: boolean;
+}
+
+type TimeUnit = 'minutes' | 'hours' | 'days';
+const UNIT_MINUTES: Record<TimeUnit, number> = { minutes: 1, hours: 60, days: 1440 };
+
+/** Picks the largest whole unit that divides evenly, so 4320 minutes
+ *  shows as "3 days" instead of "4320 minutes". */
+function minutesToDisplay(totalMinutes: number): { value: number; unit: TimeUnit } {
+  if (totalMinutes % 1440 === 0) return { value: totalMinutes / 1440, unit: 'days' };
+  if (totalMinutes % 60 === 0) return { value: totalMinutes / 60, unit: 'hours' };
+  return { value: totalMinutes, unit: 'minutes' };
 }
 
 function isMobileLabel(label: string) {
@@ -41,11 +57,127 @@ function activityStatus(iso: string): { live: boolean; label: string } {
   return { live: false, label: `Last active ${label}` };
 }
 
+/** Gear-icon dialog — lets the user pick their own inactivity
+ *  auto-logout duration (Settings > Profile > Sessions), instead of the
+ *  fixed 3-day default. Value + unit, converted to minutes on save
+ *  (that's what's actually stored and enforced server-side). */
+function TimeoutSettingsDialog({ open, onOpenChange, onSaved }: {
+  open: boolean; onOpenChange: (open: boolean) => void; onSaved: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [value, setValue] = useState(3);
+  const [unit, setUnit] = useState<TimeUnit>('days');
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    fetch('/api/account/session-settings')
+      .then((r) => r.json())
+      .then((data) => {
+        if (typeof data.limitMinutes === 'number') {
+          const d = minutesToDisplay(data.limitMinutes);
+          setValue(d.value);
+          setUnit(d.unit);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  async function save() {
+    const limitMinutes = Math.round(value * UNIT_MINUTES[unit]);
+    setSaving(true);
+    try {
+      const res = await fetch('/api/account/session-settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limitMinutes }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { toast.error(data.error || 'Failed to save'); return; }
+      toast.success('Auto-logout timeout updated');
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader className="sr-only">
+          <DialogTitle>Auto-logout timeout</DialogTitle>
+          <DialogDescription>Choose how long a device can be inactive before it&apos;s signed out automatically.</DialogDescription>
+        </DialogHeader>
+
+        <div className="flex justify-center">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#EEF0FF]">
+            <Clock className="h-6 w-6 text-[#5B6CF9]" />
+          </span>
+        </div>
+        <h2 className="text-center text-[15px] font-semibold text-slate-900 mt-3">Auto-logout timeout</h2>
+        <p className="text-center text-[12.5px] text-slate-500 mt-1 mb-5">
+          A device with no activity for longer than this is signed out automatically.
+        </p>
+
+        {loading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label className="text-[13px] font-medium text-slate-700">Log out after</Label>
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                min={1}
+                value={value}
+                onChange={(e) => setValue(Math.max(1, Number(e.target.value) || 1))}
+                className="h-10 w-24 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
+              />
+              <div className="flex flex-1 rounded-xl border border-slate-200 p-1">
+                {(['minutes', 'hours', 'days'] as TimeUnit[]).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => setUnit(u)}
+                    className={`flex-1 rounded-lg py-1.5 text-[12.5px] font-medium capitalize transition-colors ${
+                      unit === u ? 'bg-[#5B6CF9] text-white' : 'text-slate-500 hover:bg-slate-50'
+                    }`}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-400">Between 5 minutes and 90 days.</p>
+          </div>
+        )}
+
+        <div className="flex gap-2 mt-5">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving} className="flex-1 h-9 text-[13px] border-slate-200">
+            Cancel
+          </Button>
+          <Button onClick={save} disabled={saving || loading} className="flex-1 h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+            {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * Real per-device session list, backed by UserSession (one row per
- * login — see auth.ts). Each row's "Log out" actually revokes that one
+ * device — see auth.ts). Each row's "Log out" actually revokes that one
  * device via DELETE /api/account/sessions/[id], forcing its next request
- * to be rejected — not a cosmetic list.
+ * to be rejected — not a cosmetic list. Refetches every 30s so "Live" /
+ * last-active timestamps and the list itself stay current without
+ * needing a manual page reload.
  */
 export function SessionsCard() {
   const { signOut, profile } = useAuth();
@@ -54,6 +186,7 @@ export function SessionsCard() {
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [everywhereOpen, setEverywhereOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<SessionRow | null>(null);
+  const [timeoutSettingsOpen, setTimeoutSettingsOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signingOutEverywhere, setSigningOutEverywhere] = useState(false);
   const [revoking, setRevoking] = useState(false);
@@ -74,7 +207,11 @@ export function SessionsCard() {
     }
   }
 
-  useEffect(() => { loadSessions(); }, []);
+  useEffect(() => {
+    loadSessions();
+    const interval = setInterval(loadSessions, 30_000);
+    return () => clearInterval(interval);
+  }, []);
 
   const onSignOut = async () => {
     setSigningOut(true);
@@ -135,6 +272,14 @@ export function SessionsCard() {
             <h3 className="text-[14px] font-semibold text-slate-800">Sessions</h3>
             <p className="text-[12px] text-slate-500 mt-0.5">Manage your active sessions on different devices.</p>
           </div>
+          <button
+            type="button"
+            title="Auto-logout timeout settings"
+            onClick={() => setTimeoutSettingsOpen(true)}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
         </div>
 
         {sessions === null ? (
@@ -215,6 +360,12 @@ export function SessionsCard() {
           </Button>
         </div>
       </div>
+
+      <TimeoutSettingsDialog
+        open={timeoutSettingsOpen}
+        onOpenChange={setTimeoutSettingsOpen}
+        onSaved={loadSessions}
+      />
 
       <ConfirmIconDialog
         open={signOutOpen}
