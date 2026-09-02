@@ -7,11 +7,11 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit
  * POST /api/account/sign-out-everywhere
  *
  * Invalidates every existing session for the CURRENT user, on every
- * device — including the one calling this, since there's no per-device
- * session tracking under the JWT strategy to spare it. The frontend
- * should follow this up with a normal client-side signOut() for a clean
- * redirect on this device rather than waiting for the next request to
- * get silently rejected.
+ * device — including the one calling this (there's no way to spare it,
+ * unlike the per-device revoke in /api/account/sessions/[id]). The
+ * frontend should follow this up with a normal client-side signOut() for
+ * a clean redirect on this device rather than waiting for the next
+ * request to get silently rejected.
  */
 export async function POST() {
   const session = await auth()

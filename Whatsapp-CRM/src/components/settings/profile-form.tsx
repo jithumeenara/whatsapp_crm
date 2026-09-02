@@ -29,24 +29,39 @@ const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   agent:      { label: 'Agent',      color: 'bg-emerald-100 text-emerald-700' },
 };
 
-/** One row in the read-only summary view. */
-function InfoRow({ icon: Icon, iconBg, iconColor, label, pill, children }: {
+/** One row in the read-only summary view — icon + label/value on the
+ *  left, a verification pill or "Verify" button on the right. */
+function InfoRow({ icon: Icon, iconBg, iconColor, label, right, children, expanded }: {
   icon: React.ElementType; iconBg: string; iconColor: string; label: string
-  pill?: React.ReactNode; children: React.ReactNode
+  right?: React.ReactNode; children: React.ReactNode; expanded?: React.ReactNode
 }) {
   return (
-    <div className="flex items-start gap-3.5 px-6 py-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: iconBg }}>
-        <Icon className="h-4 w-4" style={{ color: iconColor }} />
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+    <div className="px-6 py-4">
+      <div className="flex items-center gap-3.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: iconBg }}>
+          <Icon className="h-4 w-4" style={{ color: iconColor }} />
+        </span>
+        <div className="flex-1 min-w-0">
           <p className="text-[11px] font-medium text-slate-400">{label}</p>
-          {pill}
+          <div className="text-[14px] font-semibold text-slate-800 mt-0.5 truncate">{children}</div>
         </div>
-        <div className="text-[14px] font-semibold text-slate-800 mt-0.5">{children}</div>
+        {right && <div className="shrink-0">{right}</div>}
       </div>
+      {expanded}
     </div>
+  );
+}
+
+/** Small verified/not-verified pill for the right side of a row. */
+function VerifiedPill({ verified }: { verified: boolean }) {
+  return verified ? (
+    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600">
+      <CheckCircle2 className="h-3 w-3" /> Verified
+    </span>
+  ) : (
+    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+      <CircleAlert className="h-3 w-3" /> Not verified
+    </span>
   );
 }
 
@@ -250,10 +265,10 @@ export function ProfileForm() {
 
   const blobMotion = reduceMotion
     ? {}
-    : { animate: { y: [0, -10, 0], x: [0, 6, 0] }, transition: { duration: 9, repeat: Infinity, ease: 'easeInOut' as const } };
+    : { animate: { y: [0, -18, 0], x: [0, 12, 0] }, transition: { duration: 7, repeat: Infinity, ease: 'easeInOut' as const } };
   const blobMotion2 = reduceMotion
     ? {}
-    : { animate: { y: [0, 8, 0], x: [0, -5, 0] }, transition: { duration: 11, repeat: Infinity, ease: 'easeInOut' as const } };
+    : { animate: { y: [0, 14, 0], x: [0, -10, 0] }, transition: { duration: 8.5, repeat: Infinity, ease: 'easeInOut' as const } };
 
   return (
     <div className="space-y-5">
@@ -280,32 +295,38 @@ export function ProfileForm() {
         </div>
 
         <div className="relative flex flex-col items-center text-center">
-          <div className="relative group">
-            <Avatar size="lg" className="h-24 w-24 ring-4 ring-white shadow-md">
+          {/* No `size` prop here on purpose — Avatar's own size="lg" variant
+              (data-[size=lg]:size-10, 40px) was winning the CSS cascade
+              over this explicit className, collapsing the whole avatar to
+              a sliver behind the camera button. Plain className sizing
+              avoids that conflict entirely. */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={saving}
+            title="Change photo"
+            className="group relative block h-32 w-32 rounded-full"
+          >
+            <Avatar className="h-32 w-32 ring-4 ring-white shadow-md">
               {currentAvatar ? (
                 <AvatarImage src={currentAvatar} alt={fullName || 'Avatar'} />
               ) : null}
-              <AvatarFallback className="bg-[#5B6CF9] text-white text-3xl font-bold">
+              <AvatarFallback className="bg-[#5B6CF9] text-white text-5xl font-bold">
                 {initial}
               </AvatarFallback>
             </Avatar>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Change photo"
-              disabled={saving}
-              className="absolute bottom-0 right-0 flex h-8 w-8 items-center justify-center rounded-full bg-white shadow-md ring-1 ring-slate-200 text-[#5B6CF9] hover:bg-slate-50 transition-colors"
-            >
-              <Camera className="h-3.5 w-3.5" />
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              className="hidden"
-              onChange={onPickFile}
-            />
-          </div>
+            {/* Hidden until hover — shown only then, per request */}
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              <Camera className="h-6 w-6 text-white" />
+            </span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={onPickFile}
+          />
 
           <h2 className="text-[19px] font-bold text-slate-900 mt-4 uppercase tracking-tight">
             {profile?.full_name || 'Your Name'}
@@ -383,27 +404,20 @@ export function ProfileForm() {
             {!editing ? (
               <InfoRow
                 icon={WhatsAppIcon} iconBg="#E9FBF5" iconColor="#22C55E" label="WhatsApp Number"
-                pill={profile && (
+                right={profile && (
                   profile.phone_verified ? (
-                    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-600">
-                      <CheckCircle2 className="h-3 w-3" /> Verified
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-600">
-                      <CircleAlert className="h-3 w-3" /> Not verified
-                    </span>
-                  )
+                    <VerifiedPill verified />
+                  ) : profile.phone && !phoneVerifying ? (
+                    <Button type="button" size="sm" onClick={startPhoneVerify} disabled={phoneSending}
+                      className="h-7 px-3 text-[11.5px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+                      {phoneSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Verify'}
+                    </Button>
+                  ) : !profile.phone ? (
+                    <VerifiedPill verified={false} />
+                  ) : null
                 )}
-              >
-                {profile?.phone || 'Not set'}
-                {profile?.phone && !profile.phone_verified && !phoneVerifying && (
-                  <button type="button" onClick={startPhoneVerify} disabled={phoneSending}
-                    className="block text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60 mt-1">
-                    {phoneSending ? 'Sending code…' : 'Verify this number'}
-                  </button>
-                )}
-                {phoneVerifying && (
-                  <div className="mt-2 space-y-2 rounded-xl border border-[#5B6CF9]/15 bg-[#EEF0FF]/40 p-3">
+                expanded={phoneVerifying && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-[#5B6CF9]/15 bg-[#EEF0FF]/40 p-3">
                     <p className="text-[12px] font-normal text-slate-500">Code sent via {phoneSentVia === 'whatsapp' ? 'WhatsApp' : 'SMS'}.</p>
                     <div className="flex gap-2">
                       <Input value={phoneCode} onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -418,6 +432,8 @@ export function ProfileForm() {
                       className="text-[11px] font-normal text-slate-500 hover:text-slate-700 underline underline-offset-2">Cancel</button>
                   </div>
                 )}
+              >
+                {profile?.phone || 'Not set'}
               </InfoRow>
             ) : (
               <div className="px-6 py-4 space-y-1.5">
@@ -447,29 +463,20 @@ export function ProfileForm() {
             {/* Email — always read-only, verification is independent of edit mode */}
             <InfoRow
               icon={Mail} iconBg="#EFF8FF" iconColor="#0284C7" label="Email address"
-              pill={profile && (
+              right={profile && (
                 profile.email_verified ? (
-                  <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-600">
-                    <CheckCircle2 className="h-3 w-3" /> Verified
-                  </span>
+                  <VerifiedPill verified />
+                ) : emailSent ? (
+                  <span className="text-[11px] font-medium text-emerald-600">Link sent</span>
                 ) : (
-                  <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10.5px] font-semibold text-amber-600">
-                    <CircleAlert className="h-3 w-3" /> Not verified
-                  </span>
+                  <Button type="button" size="sm" onClick={sendVerificationEmail} disabled={emailSending}
+                    className="h-7 px-3 text-[11.5px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+                    {emailSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Verify'}
+                  </Button>
                 )
               )}
             >
               {profile?.email}
-              {profile && !profile.email_verified && (
-                emailSent ? (
-                  <p className="text-[11px] font-normal text-emerald-600 mt-1">Verification link sent — check your inbox (valid 24 hours).</p>
-                ) : (
-                  <button type="button" onClick={sendVerificationEmail} disabled={emailSending}
-                    className="block text-[11.5px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] disabled:opacity-60 mt-1">
-                    {emailSending ? 'Sending…' : 'Send verification email'}
-                  </button>
-                )
-              )}
             </InfoRow>
           </div>
 
