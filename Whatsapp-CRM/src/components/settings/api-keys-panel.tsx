@@ -87,18 +87,6 @@ export function ApiKeysPanel() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-          <KeyRound className="h-4.5 w-4.5 text-[#5B6CF9]" />
-        </span>
-        <div>
-          <h2 className="text-[16px] font-semibold text-slate-900">API Keys</h2>
-          <p className="text-[13px] text-slate-500 mt-0.5">
-            Generate secret keys so external apps can read and write Data Store records via the REST API.
-          </p>
-        </div>
-      </div>
-
       {newRawKey && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
           <div className="flex items-start gap-2">

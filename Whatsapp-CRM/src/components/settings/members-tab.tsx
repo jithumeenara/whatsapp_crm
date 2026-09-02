@@ -325,35 +325,26 @@ export function MembersTab() {
 
   return (
     <div className="space-y-5">
-      {/* Header + invite button */}
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold text-slate-900">Account members</h2>
-          <p className="text-[13px] text-slate-500 mt-0.5">
-            People with access to this account. Roles control what each
-            teammate can do.
-          </p>
+      {/* Invite actions */}
+      <RequireRole min="admin">
+        <div className="flex justify-end gap-2">
+          <Button
+            onClick={() => setAddAgentOpen(true)}
+            className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Agent
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setInviteOpen(true)}
+            className="h-9 px-4 text-[13px] border-slate-200"
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Invite link
+          </Button>
         </div>
-        <RequireRole min="admin">
-          <div className="flex items-center gap-2 shrink-0">
-            <Button
-              onClick={() => setAddAgentOpen(true)}
-              className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Agent
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setInviteOpen(true)}
-              className="h-9 px-4 text-[13px] border-slate-200"
-            >
-              <Mail className="h-3.5 w-3.5" />
-              Invite link
-            </Button>
-          </div>
-        </RequireRole>
-      </div>
+      </RequireRole>
 
       {/* Roster */}
       <Card className="rounded-2xl bg-white border-slate-200 shadow-sm">

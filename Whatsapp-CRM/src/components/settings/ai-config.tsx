@@ -247,13 +247,6 @@ export function AiConfig() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-[16px] font-semibold text-slate-900">AI Configuration</h2>
-        <p className="text-[12.5px] text-slate-500 mt-0.5">
-          Configure Google Gemini for AI-powered chatbot replies.
-        </p>
-      </div>
-
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="h-9 bg-slate-100 rounded-xl p-1">
           <TabsTrigger value="config" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">

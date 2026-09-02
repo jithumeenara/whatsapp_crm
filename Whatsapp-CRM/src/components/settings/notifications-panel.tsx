@@ -27,14 +27,6 @@ export function NotificationsPanel() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-[16px] font-semibold text-slate-900">Push Notifications</h2>
-        <p className="text-[13px] text-slate-500 mt-0.5">
-          Get browser push notifications for new conversations, assignments, follow-ups, and tasks —
-          even when the CRM tab is in the background or closed.
-        </p>
-      </div>
-
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         {state === 'loading' && (
           <div className="flex items-center gap-3 text-slate-500">

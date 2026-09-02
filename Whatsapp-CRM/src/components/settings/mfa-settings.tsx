@@ -167,9 +167,14 @@ export function MfaSettings() {
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-[14px] font-semibold text-slate-800">Two-factor authentication</h3>
-        <p className="text-[12px] text-slate-500 mt-0.5">Require a second code (SMS, WhatsApp, or an authenticator app) every time you sign in.</p>
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFF6E6]">
+          <ShieldCheck className="h-4.5 w-4.5 text-[#D97706]" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">Two-factor authentication</h3>
+          <p className="text-[12px] text-slate-500 mt-0.5">Require a second code (SMS, WhatsApp, or an authenticator app) every time you sign in.</p>
+        </div>
       </div>
 
       <div className="px-6 py-5 space-y-4">
@@ -220,9 +225,9 @@ export function MfaSettings() {
               const Icon = meta.icon;
               return (
                 <button key={key} type="button" onClick={() => setPicking(key)}
-                  className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 p-3.5 text-left transition-all hover:border-indigo-300 hover:shadow-sm">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
-                    <Icon className="h-4 w-4 text-indigo-600" />
+                  className="flex flex-col items-start gap-2 rounded-xl border border-slate-200 p-3.5 text-left transition-all hover:border-[#5B6CF9]/40 hover:shadow-sm">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#EEF0FF]">
+                    <Icon className="h-4 w-4 text-[#5B6CF9]" />
                   </div>
                   <p className="text-[13px] font-semibold text-slate-800">{meta.label}</p>
                   <p className="text-[11px] text-slate-500 leading-relaxed">{meta.description}</p>
@@ -234,13 +239,13 @@ export function MfaSettings() {
 
         {/* SMS / WhatsApp setup */}
         {(picking === 'sms' || picking === 'whatsapp') && (
-          <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
-            <p className="text-[12.5px] font-semibold text-indigo-700">Set up {METHOD_META[picking].label}</p>
+          <div className="space-y-3 rounded-xl border border-indigo-100 bg-[#EEF0FF]/40 p-4">
+            <p className="text-[12.5px] font-semibold text-[#4a5ce8]">Set up {METHOD_META[picking].label}</p>
             {!codeSentTo ? (
               <div className="flex gap-2">
                 <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX"
                   className="h-9 text-[13px] font-mono border-slate-200 bg-white" />
-                <Button onClick={() => startSmsOrWhatsapp(picking)} disabled={sending} className="h-9 text-[13px] bg-indigo-600 hover:bg-indigo-700 text-white shrink-0">
+                <Button onClick={() => startSmsOrWhatsapp(picking)} disabled={sending} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
                   {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Send code'}
                 </Button>
               </div>
@@ -251,7 +256,7 @@ export function MfaSettings() {
                   <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="123456" inputMode="numeric" maxLength={6}
                     className="h-9 text-[13px] font-mono border-slate-200 bg-white text-center tracking-[0.3em]" />
-                  <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-indigo-600 hover:bg-indigo-700 text-white shrink-0">
+                  <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
                     {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
                   </Button>
                 </div>
@@ -263,10 +268,10 @@ export function MfaSettings() {
 
         {/* TOTP setup */}
         {picking === 'totp' && (
-          <div className="space-y-3 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
-            <p className="text-[12.5px] font-semibold text-indigo-700">Set up Authenticator App</p>
+          <div className="space-y-3 rounded-xl border border-indigo-100 bg-[#EEF0FF]/40 p-4">
+            <p className="text-[12.5px] font-semibold text-[#4a5ce8]">Set up Authenticator App</p>
             {!totpQr ? (
-              <Button onClick={startTotp} disabled={sending} className="h-9 text-[13px] bg-indigo-600 hover:bg-indigo-700 text-white">
+              <Button onClick={startTotp} disabled={sending} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
                 {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate QR code'}
               </Button>
             ) : (
@@ -287,7 +292,7 @@ export function MfaSettings() {
                   <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="123456" inputMode="numeric" maxLength={6}
                     className="h-9 text-[13px] font-mono border-slate-200 bg-white text-center tracking-[0.3em]" />
-                  <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-indigo-600 hover:bg-indigo-700 text-white shrink-0">
+                  <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
                     {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
                   </Button>
                 </div>

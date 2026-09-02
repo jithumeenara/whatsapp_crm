@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Upload, Trash2, CircleAlert, Camera, ShieldCheck, Mail, BadgeCheck, Phone, CheckCircle2 } from 'lucide-react';
+import { Loader2, Upload, Trash2, CircleAlert, Camera, ShieldCheck, Mail, BadgeCheck, Phone, CheckCircle2, IdCard } from 'lucide-react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -294,9 +294,14 @@ export function ProfileForm() {
       {/* ── Edit form ── */}
       <form onSubmit={onSubmit}>
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-100">
-            <h3 className="text-[14px] font-semibold text-slate-800">Personal information</h3>
-            <p className="text-[12px] text-slate-500 mt-0.5">Update your name and display preferences.</p>
+          <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
+              <IdCard className="h-4.5 w-4.5 text-[#5B6CF9]" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-[14px] font-semibold text-slate-800">Personal information</h3>
+              <p className="text-[12px] text-slate-500 mt-0.5">Update your name and display preferences.</p>
+            </div>
           </div>
 
           <div className="px-6 py-5 space-y-4">

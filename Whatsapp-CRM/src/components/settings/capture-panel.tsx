@@ -65,14 +65,6 @@ export function CapturePanel() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-[16px] font-semibold text-slate-900">Contact Name Capture</h2>
-        <p className="text-[13px] text-slate-500 mt-0.5">
-          When a new contact messages you for the first time, automatically verify or collect
-          their real name before saving it to your CRM — keeps Leads, Follow-ups, and Tasks clean.
-        </p>
-      </div>
-
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex items-start justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">

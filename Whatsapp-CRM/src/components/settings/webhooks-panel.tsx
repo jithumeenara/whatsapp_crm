@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Webhook, Plus, Trash2, Copy, Check, AlertTriangle, ToggleLeft, ToggleRight, AlertCircle, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Copy, Check, AlertTriangle, ToggleLeft, ToggleRight, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog'
 
@@ -142,19 +142,6 @@ export function WebhooksPanel() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-          <Webhook className="h-4.5 w-4.5 text-[#5B6CF9]" />
-        </span>
-        <div>
-          <h2 className="text-[16px] font-semibold text-slate-900">Webhooks</h2>
-          <p className="text-[13px] text-slate-500 mt-0.5">
-            Get an HTTPS POST to your endpoint whenever a Data Store record is created, updated, or deleted.
-            Each delivery is signed with HMAC-SHA256 so you can verify it came from this CRM.
-          </p>
-        </div>
-      </div>
-
       {newSecret && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
           <div className="flex items-start gap-2">

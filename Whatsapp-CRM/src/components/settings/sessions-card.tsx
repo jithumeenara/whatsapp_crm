@@ -7,13 +7,6 @@ import { Loader2, LogOut, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -65,36 +58,38 @@ export function SessionsCard() {
 
   return (
     <>
-      <Card className="bg-white/40 border-slate-200">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-slate-800">
-            <LogOut className="size-4 text-primary" />
-            Sessions
-          </CardTitle>
-          <CardDescription className="text-slate-500">
-            {profile?.email && (
-              <span className="block mb-1">
-                Signed in as <strong className="text-slate-800/80">{profile.email}</strong>
-                {profile.account_role && (
-                  <span className="ml-2 text-xs text-slate-500">({profile.account_role})</span>
-                )}
-              </span>
-            )}
-            Sign out of just this browser, or force every device currently signed in — including this one — to log in again.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={() => setSignOutOpen(true)}>
-            <LogOut className="size-4" />
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FFF0F3]">
+            <LogOut className="h-4.5 w-4.5 text-[#E11D48]" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[14px] font-semibold text-slate-800">Sessions</h3>
+            <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">
+              {profile?.email && (
+                <span className="block mb-1">
+                  Signed in as <strong className="text-slate-700 font-medium">{profile.email}</strong>
+                  {profile.account_role && (
+                    <span className="ml-2 text-[11px] text-slate-400">({profile.account_role})</span>
+                  )}
+                </span>
+              )}
+              Sign out of just this browser, or force every device currently signed in — including this one — to log in again.
+            </p>
+          </div>
+        </div>
+        <div className="px-6 py-5 flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => setSignOutOpen(true)} className="h-9 text-[13px] border-slate-200">
+            <LogOut className="h-4 w-4" />
             Sign out
           </Button>
           <Button type="button" variant="outline" onClick={() => setEverywhereOpen(true)}
-            className="text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700">
-            <ShieldAlert className="size-4" />
+            className="h-9 text-[13px] text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700">
+            <ShieldAlert className="h-4 w-4" />
             Sign out everywhere
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       <Dialog open={signOutOpen} onOpenChange={setSignOutOpen}>
         <DialogContent>

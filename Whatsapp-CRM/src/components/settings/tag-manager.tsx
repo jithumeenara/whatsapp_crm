@@ -133,11 +133,7 @@ export function TagManager() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-semibold text-slate-900">Tags</h2>
-          <p className="text-[13px] text-slate-500 mt-0.5">Organize your contacts with color-coded tags.</p>
-        </div>
+      <div className="flex justify-end">
         <Button
           onClick={() => {
             setNewTagName('');

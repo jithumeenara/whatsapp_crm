@@ -24,7 +24,6 @@ import { LeadsSettingsV2 } from "@/components/settings/leads-settings-v2"
 import { CustomFieldsPanel } from "@/components/settings/custom-fields-panel"
 import { ChannelsTab } from "@/components/settings/channels-tab"
 import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
-import { IconTile } from "@/components/settings/settings-ui-kit"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -104,18 +103,18 @@ const TAB_TITLES: Record<string, string> = {
 const TAB_DESCRIPTIONS: Record<string, string> = {
   profile: "Your name, contact details and account security",
   channels: "Connect and configure every messaging channel",
-  platform: "One-time Meta Tech Provider app setup",
+  platform: "One Meta App for the whole platform — set up once, every tenant gets one-click Facebook Connect",
   capture: "How new contacts get captured into the CRM",
-  tags: "Organize contacts and conversations with labels",
-  "custom-fields": "Extra fields tracked on every contact",
+  tags: "Organize your contacts with color-coded tags",
+  "custom-fields": "Add extra fields to contacts — lead source, budget, or anything your team needs",
   leads: "Scoring, call outcomes and lead sources",
-  appearance: "Theme and display preferences",
-  members: "Who's on your team and what they can do",
+  appearance: "Choose how the app looks — saved to this device",
+  members: "People with access to this account — roles control what each teammate can do",
   ai: "Gemini-powered AI replies and training data",
   database: "Backup and restore the whole database",
-  notifications: "What you get notified about, and how",
-  "api-keys": "Programmatic access to your workspace",
-  webhooks: "Push events to your own endpoints",
+  notifications: "Browser push alerts for new conversations, assignments, follow-ups and tasks — even when this tab is in the background",
+  "api-keys": "Secret keys so external apps can read and write Data Store records via the REST API",
+  webhooks: "Get an HTTPS POST whenever a Data Store record changes, signed with HMAC-SHA256",
 }
 
 function SettingsContent() {
@@ -282,8 +281,7 @@ function SettingsContent() {
       </aside>
 
       {/* Mobile search — the sidebar (which normally holds it) is
-          desktop-only; the quick-access tile grid below covers mobile
-          navigation on its own, but search still needs a home here. */}
+          desktop-only, so search needs its own home here. */}
       <div className="md:hidden border-b border-slate-200 bg-white px-3 py-2.5">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -311,30 +309,33 @@ function SettingsContent() {
         </div>
       </div>
 
+      {/* ── Mobile nav (pill bar, sidebar's list equivalent) ── */}
+      <div className="md:hidden border-b border-slate-200 bg-white">
+        <div className="flex gap-1.5 overflow-x-auto px-3 py-2.5">
+          {filteredSections.flatMap((s) => s.tabs).map((t) => {
+            const Icon = t.icon
+            const isActive = activeTab === t.key
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors",
+                  isActive ? "bg-[#EEF0FF] text-[#5B6CF9]" : "bg-slate-100 text-slate-600",
+                )}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {t.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       {/* ── Panel area ── */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 lg:p-8">
-          {/* Quick-access launcher — every visible Settings area as one
-              tile, all built from the same rotating-accent icon-square as
-              every section card below, so the whole page reads as one
-              visual system instead of a sidebar list plus unrelated
-              content cards. */}
-          <div className="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2.5 sm:gap-3 mb-6">
-            {filteredSections.flatMap((s) => s.tabs).map((t, i) => (
-              <IconTile
-                key={t.key}
-                icon={t.icon}
-                label={t.label}
-                accentIndex={i}
-                active={activeTab === t.key}
-                onClick={() => setTab(t.key)}
-              />
-            ))}
-            {filteredSections.length === 0 && (
-              <p className="col-span-full py-6 text-center text-[12.5px] text-slate-400">No settings match &quot;{query}&quot;</p>
-            )}
-          </div>
-
           <div className="mb-5">
             <h1 className="text-[19px] font-bold text-slate-900">{TAB_TITLES[activeTab] ?? activeTab}</h1>
             <p className="text-[13px] text-slate-500 mt-0.5">{TAB_DESCRIPTIONS[activeTab] ?? ""}</p>

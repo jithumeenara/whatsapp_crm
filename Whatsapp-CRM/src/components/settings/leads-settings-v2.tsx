@@ -354,14 +354,6 @@ export function LeadsSettingsV2() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-[16px] font-semibold text-slate-900">Lead Settings</h2>
-        <p className="mt-1 text-[12.5px] text-slate-500">
-          Configure how leads are created, scored, and what call outcomes agents can record.
-        </p>
-      </div>
-
       {/* Auto Lead Creation */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <div className="flex items-start gap-4">

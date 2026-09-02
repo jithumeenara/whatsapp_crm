@@ -8,13 +8,6 @@ import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
 
 const MIN_PASSWORD = 8;
 
@@ -38,25 +31,20 @@ export function PasswordForm() {
       return;
     }
     if (next !== confirm) {
-      setConfirmError('New password and confirmation do not match');
+      setConfirmError('Passwords do not match');
       return;
     }
     setConfirmError(null);
     setSaving(true);
-
     try {
-      const res = await fetch('/api/auth/password', {
-        method: 'POST',
+      const res = await fetch('/api/account/password', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          current_password: current,
-          new_password: next,
-        }),
+        body: JSON.stringify({ current_password: current, new_password: next }),
       });
-      const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || 'Password update failed');
-        return;
+        const data = await res.json();
+        throw new Error(data.error || `Update failed: HTTP ${res.status}`);
       }
 
       setCurrent('');
@@ -72,91 +60,94 @@ export function PasswordForm() {
   };
 
   return (
-    <Card className="bg-white/40 border-slate-200">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-slate-800">
-          <KeyRound className="size-4 text-primary" />
-          Password
-        </CardTitle>
-        <CardDescription className="text-slate-500">
-          Use at least {MIN_PASSWORD} characters. You will stay signed in on
-          this device after changing it.
-        </CardDescription>
-      </CardHeader>
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#E9FBF5]">
+          <KeyRound className="h-4.5 w-4.5 text-[#0D9488]" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">Password</h3>
+          <p className="text-[12px] text-slate-500 mt-0.5">
+            Use at least {MIN_PASSWORD} characters. You&apos;ll stay signed in on this device after changing it.
+          </p>
+        </div>
+      </div>
 
-      <CardContent>
-        <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="current-password" className="text-slate-800/80">
-              Current password
+      <form onSubmit={onSubmit} className="px-6 py-5 space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="current-password" className="text-[13px] font-medium text-slate-700">
+            Current password
+          </Label>
+          <Input
+            id="current-password"
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+            disabled={saving}
+            required
+            className="h-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="new-password" className="text-[13px] font-medium text-slate-700">
+              New password
             </Label>
             <Input
-              id="current-password"
+              id="new-password"
               type="password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              autoComplete="current-password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              autoComplete="new-password"
+              minLength={MIN_PASSWORD}
               disabled={saving}
               required
+              className="h-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
             />
           </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="new-password" className="text-slate-800/80">
-                New password
-              </Label>
-              <Input
-                id="new-password"
-                type="password"
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-                autoComplete="new-password"
-                minLength={MIN_PASSWORD}
-                disabled={saving}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password" className="text-slate-800/80">
-                Confirm new password
-              </Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                autoComplete="new-password"
-                minLength={MIN_PASSWORD}
-                disabled={saving}
-                required
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="confirm-password" className="text-[13px] font-medium text-slate-700">
+              Confirm new password
+            </Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+              minLength={MIN_PASSWORD}
+              disabled={saving}
+              required
+              className="h-9 text-[13px] border-slate-200 focus:border-[#5B6CF9] focus:ring-[#5B6CF9]/20"
+            />
           </div>
+        </div>
 
-          {confirmError && (
-            <p className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-300">
-              {confirmError}
-            </p>
-          )}
+        {confirmError && (
+          <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-600">
+            {confirmError}
+          </p>
+        )}
 
-          <div className="flex justify-end">
-            <Button
-              type="submit"
-              disabled={saving || !current || !next || !confirm}
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Updating…
-                </>
-              ) : (
-                'Update password'
-              )}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+        <div className="flex justify-end">
+          <Button
+            type="submit"
+            disabled={saving || !current || !next || !confirm}
+            className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Updating…
+              </>
+            ) : (
+              'Update password'
+            )}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

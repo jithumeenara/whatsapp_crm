@@ -49,13 +49,6 @@ export function AppearancePanel() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-800">Appearance</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Choose how the app looks. Saved to this device.
-        </p>
-      </div>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {OPTIONS.map((opt) => {
           const Icon = opt.icon;

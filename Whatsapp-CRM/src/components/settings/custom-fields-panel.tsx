@@ -97,17 +97,6 @@ export function CustomFieldsPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <Sliders className="h-4 w-4 text-[#5B6CF9]" />
-          <h2 className="text-[16px] font-bold text-slate-900">Contact Custom Fields</h2>
-        </div>
-        <p className="text-[13px] text-slate-500">
-          Add extra fields to your contacts — like lead source, budget, or any data your team needs.
-        </p>
-      </div>
-
       {/* Add field form */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <p className="text-[12px] font-bold text-slate-400 uppercase tracking-widest mb-4">Add New Field</p>
