@@ -18,6 +18,7 @@ import { KeysDialog } from '@/components/flows/keys-dialog';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
 import { ConnectChannelScreen } from '@/components/settings/connect-channel-screen';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
+import { Stepper } from '@/components/settings/settings-ui-kit';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -825,53 +826,36 @@ export function WhatsAppConfig() {
         </button>
 
         {showSetup && (
-          <div className="border-t border-slate-100">
-            {[
-              {
-                n: 1, title: 'Create a Meta App',
-                steps: ['Go to developers.facebook.com', 'Click "My Apps" → "Create App"', 'Select "Business" as app type', 'Fill in app details and create'],
-              },
-              {
-                n: 2, title: 'Add WhatsApp Product',
-                steps: ['In your app dashboard, click "Add Product"', 'Find "WhatsApp" and click "Set Up"', 'Follow the setup wizard to link your business'],
-              },
-              {
-                n: 3, title: 'Get API Credentials',
-                steps: ['Go to WhatsApp → API Setup', 'Copy your Phone Number ID', 'Copy your WhatsApp Business Account ID', 'Generate Permanent Access Token from Business Settings → System Users'],
-              },
-              {
-                n: 4, title: 'Configure Webhooks',
-                steps: ['Go to WhatsApp → Configuration in Meta Developers', 'Click Edit on the Webhook section', 'Paste your Callback URL (from above)', 'Enter the same Verify Token', 'Click Verify and Save', 'Subscribe to the messages field'],
-              },
-            ].map((section) => (
-              <div key={section.n} className="px-6 py-4 border-b border-slate-100 last:border-0">
-                <div className="flex items-center gap-2.5 mb-3">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#5B6CF9] text-[11px] font-bold text-white">
-                    {section.n}
-                  </span>
-                  <p className="text-[13px] font-semibold text-slate-700">{section.title}</p>
-                </div>
-                <ol className="space-y-1.5 text-[12px] text-slate-500">
-                  {section.steps.map((step, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <span className="text-slate-300 font-mono">{i + 1}.</span>
-                      {step}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ))}
-            <div className="px-6 py-4">
-              <a
-                href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-[13px] text-[#5B6CF9] hover:underline"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Meta WhatsApp API Documentation
-              </a>
-            </div>
+          <div className="border-t border-slate-100 px-6 py-5">
+            <Stepper
+              steps={[
+                {
+                  title: 'Create a Meta App',
+                  children: 'Go to developers.facebook.com → "My Apps" → "Create App" → select "Business" as the app type → fill in the details and create.',
+                },
+                {
+                  title: 'Add WhatsApp Product',
+                  children: 'In your app dashboard, click "Add Product", find "WhatsApp" and click "Set Up", then follow the wizard to link your business.',
+                },
+                {
+                  title: 'Get API Credentials',
+                  children: 'Go to WhatsApp → API Setup. Copy your Phone Number ID and WhatsApp Business Account ID, then generate a Permanent Access Token from Business Settings → System Users.',
+                },
+                {
+                  title: 'Configure Webhooks',
+                  children: 'Go to WhatsApp → Configuration in Meta Developers, click Edit on the Webhook section, paste your Callback URL (above), enter the same Verify Token, click Verify and Save, then subscribe to the messages field.',
+                },
+              ]}
+            />
+            <a
+              href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-[#5B6CF9] hover:underline"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Meta WhatsApp API Documentation
+            </a>
           </div>
         )}
       </div>
