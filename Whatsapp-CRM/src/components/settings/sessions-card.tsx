@@ -54,6 +54,7 @@ function timeAgo(iso: string) {
 export function SessionsCard() {
   const { signOut, profile } = useAuth();
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [everywhereOpen, setEverywhereOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<SessionRow | null>(null);
@@ -62,12 +63,18 @@ export function SessionsCard() {
   const [revoking, setRevoking] = useState(false);
 
   async function loadSessions() {
+    setLoadError(null);
     try {
       const res = await fetch('/api/account/sessions');
-      const data = await res.json();
-      if (res.ok) setSessions(data.sessions ?? []);
+      const data = await res.json().catch(() => ({}));
+      // A failure here must still stop the loading spinner — leaving
+      // `sessions` at null forever (as this used to) spins indefinitely
+      // with no feedback, which is what was reported as "not working".
+      if (!res.ok) { setLoadError(data.error || 'Failed to load sessions'); setSessions([]); return; }
+      setSessions(data.sessions ?? []);
     } catch {
-      // list just stays empty/loading — the sign-out buttons still work
+      setLoadError('Failed to load sessions — check your connection');
+      setSessions([]);
     }
   }
 
@@ -178,7 +185,15 @@ export function SessionsCard() {
                 </div>
               );
             })}
-            {sessions.length === 0 && (
+            {sessions.length === 0 && loadError && (
+              <div className="flex items-center justify-between gap-3 px-6 py-4">
+                <p className="text-[12.5px] text-rose-500">{loadError}</p>
+                <button type="button" onClick={loadSessions} className="text-[12px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] shrink-0">
+                  Retry
+                </button>
+              </div>
+            )}
+            {sessions.length === 0 && !loadError && (
               <p className="px-6 py-4 text-[12.5px] text-slate-400">No active sessions found.</p>
             )}
           </div>

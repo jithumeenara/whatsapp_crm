@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Loader2, Camera, ShieldCheck, Mail, Phone, CheckCircle2, CircleAlert,
-  IdCard, User, Hash, Copy, Check, Pencil, X,
+  IdCard, User, Copy, Check, Pencil, X, Crown, UserCheck, UserCog, Palette,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 
@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { SecurityCard } from '@/components/settings/security-card';
 import { SessionsCard } from '@/components/settings/sessions-card';
+import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { CountryCodeSelect } from '@/components/shared/country-code-select';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
@@ -22,11 +23,15 @@ import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-cod
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
-const ROLE_LABELS: Record<string, { label: string; color: string }> = {
-  owner:      { label: 'Owner',      color: 'bg-violet-100 text-violet-700' },
-  admin:      { label: 'Admin',      color: 'bg-blue-100 text-blue-700' },
-  supervisor: { label: 'Supervisor', color: 'bg-amber-100 text-amber-700' },
-  agent:      { label: 'Agent',      color: 'bg-emerald-100 text-emerald-700' },
+// Classic gold, not Tailwind's amber — reads as an actual crown, not just
+// another warning-yellow badge.
+const GOLD = '#B8860B';
+
+const ROLE_META: Record<string, { label: string; icon: React.ElementType; badgeBg: string; badgeText: string; iconColor?: string }> = {
+  owner:      { label: 'Owner',      icon: Crown,      badgeBg: 'bg-amber-50',   badgeText: 'text-amber-800', iconColor: GOLD },
+  admin:      { label: 'Admin',      icon: ShieldCheck,badgeBg: 'bg-blue-100',   badgeText: 'text-blue-700' },
+  supervisor: { label: 'Supervisor', icon: UserCheck,  badgeBg: 'bg-violet-100', badgeText: 'text-violet-700' },
+  agent:      { label: 'Agent',      icon: UserCog,    badgeBg: 'bg-emerald-100',badgeText: 'text-emerald-700' },
 };
 
 /** One row in the read-only summary view — icon + label/value on the
@@ -202,7 +207,7 @@ export function ProfileForm() {
     phoneDirty
   );
 
-  const roleInfo = ROLE_LABELS[profile?.account_role ?? ''];
+  const roleInfo = ROLE_META[profile?.account_role ?? ''];
 
   async function startPhoneVerify() {
     setPhoneSending(true);
@@ -328,14 +333,22 @@ export function ProfileForm() {
             onChange={onPickFile}
           />
 
-          <h2 className="text-[19px] font-bold text-slate-900 mt-4 uppercase tracking-tight">
-            {profile?.full_name || 'Your Name'}
-          </h2>
+          <div className="flex items-center gap-1.5 mt-4">
+            <h2 className="text-[19px] font-bold text-slate-900 uppercase tracking-tight">
+              {profile?.full_name || 'Your Name'}
+            </h2>
+            {userId && (
+              <button type="button" onClick={copyUserId} title="Copy your User ID"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/70 hover:text-slate-600 transition-colors">
+                {idCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            )}
+          </div>
           <p className="text-[13px] text-slate-500 mt-0.5">{profile?.email}</p>
 
           {roleInfo && (
-            <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold mt-3 ${roleInfo.color}`}>
-              <ShieldCheck className="h-3.5 w-3.5" />
+            <div className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold mt-3 ${roleInfo.badgeBg} ${roleInfo.badgeText}`}>
+              <roleInfo.icon className="h-3.5 w-3.5" style={roleInfo.iconColor ? { color: roleInfo.iconColor } : undefined} />
               {roleInfo.label}
             </div>
           )}
@@ -497,38 +510,29 @@ export function ProfileForm() {
           )}
         </form>
 
-        {/* Role / User ID */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/60">
-          <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
-              <ShieldCheck className="h-3.5 w-3.5 text-[#5B6CF9]" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Role</p>
-              <p className="text-[13px] font-medium text-slate-700 capitalize">{profile?.account_role ?? 'member'}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
-              <Hash className="h-3.5 w-3.5 text-[#5B6CF9]" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">User ID</p>
-              <p className="truncate font-mono text-[11px] text-slate-500">{userId ?? '—'}</p>
-            </div>
-            <button type="button" onClick={copyUserId} title="Copy User ID"
-              className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
-              {idCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
-            </button>
-          </div>
-        </div>
-
         {!profile && (
           <p className="flex items-center gap-1.5 text-[12px] text-slate-500 px-6 py-3 border-t border-slate-100">
             <IdCard className="h-4 w-4" />
             Loading profile…
           </p>
         )}
+      </div>
+
+      {/* ── Appearance — moved here from the Settings sidebar, which no
+          longer lists it as its own tab ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
+            <Palette className="h-4.5 w-4.5 text-[#5B6CF9]" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[14px] font-semibold text-slate-800">Appearance</h3>
+            <p className="text-[12px] text-slate-500 mt-0.5">Choose how the app looks — saved to this device.</p>
+          </div>
+        </div>
+        <div className="px-6 py-5">
+          <AppearancePanel />
+        </div>
       </div>
 
       {/* ── Security (Password + 2FA merged) ── */}

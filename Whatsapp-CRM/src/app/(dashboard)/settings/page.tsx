@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   User, MousePointerClick, Tag, LayoutGrid, MessageSquare,
-  Layers, Palette, Users, Bot, Database, Bell, Key, Webhook, Settings,
+  Layers, Users, Bot, Database, Bell, Key, Webhook, Settings,
   Search, ShieldCheck, X, ChevronLeft, ChevronRight,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
@@ -13,7 +13,6 @@ import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
 import { ProfileForm } from "@/components/settings/profile-form"
 import { CapturePanel } from "@/components/settings/capture-panel"
 import { TagManager } from "@/components/settings/tag-manager"
-import { AppearancePanel } from "@/components/settings/appearance-panel"
 import { MembersTab } from "@/components/settings/members-tab"
 import { AiConfig } from "@/components/settings/ai-config"
 import { DatabasePanel } from "@/components/settings/database-panel"
@@ -45,8 +44,7 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
   {
     label: "Account",
     tabs: [
-      { key: "profile",      label: "Profile",       icon: User },
-      { key: "appearance",   label: "Appearance",    icon: Palette },
+      { key: "profile",      label: "Profile",       icon: User, aliases: ["Appearance", "Theme"] },
       { key: "notifications",label: "Notifications", icon: Bell },
     ],
   },
@@ -91,7 +89,6 @@ const TAB_TITLES: Record<string, string> = {
   tags: "Tags",
   "custom-fields": "Custom Fields",
   leads: "Leads",
-  appearance: "Appearance",
   members: "Members",
   ai: "AI Config",
   database: "Database",
@@ -108,7 +105,6 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   tags: "Organize your contacts with color-coded tags",
   "custom-fields": "Add extra fields to contacts — lead source, budget, or anything your team needs",
   leads: "Configure how leads are created, scored, and what call outcomes agents can record",
-  appearance: "Choose how the app looks — saved to this device",
   members: "People with access to this account — roles control what each teammate can do",
   ai: "Configure Google Gemini for AI-powered chatbot replies",
   database: "Backup and restore the whole database",
@@ -175,7 +171,6 @@ function SettingsContent() {
       case "tags":             return <TagManager />
       case "custom-fields":    return <CustomFieldsPanel />
       case "leads":            return isSupervisor ? <LeadsSettingsV2 /> : null
-      case "appearance":       return <AppearancePanel />
       case "members":          return isAdmin ? <MembersTab /> : null
       case "ai":               return isAdmin ? <AiConfig /> : null
       case "database":         return isAdmin ? <DatabasePanel /> : null
