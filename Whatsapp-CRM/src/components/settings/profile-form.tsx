@@ -6,7 +6,7 @@ import {
   Loader2, Camera, ShieldCheck, Mail, Phone, CheckCircle2, CircleAlert,
   IdCard, User, Copy, Check, Pencil, X, Crown, UserCheck, UserCog, Palette,
 } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion, useReducedMotion, useMotionValue, useSpring, useTransform } from 'motion/react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -87,6 +87,30 @@ export function ProfileForm() {
   const { userId, profile, refreshProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const reduceMotion = useReducedMotion();
+
+  // Cursor-follow "antigravity" parallax for the hero background — the
+  // dot field, blobs, and particles each drift toward the mouse by a
+  // different amount (small → large), so closer-feeling layers move more
+  // than the background, the classic depth illusion. Springs smooth the
+  // raw pointer position instead of snapping straight to it.
+  const heroMouseX = useMotionValue(0);
+  const heroMouseY = useMotionValue(0);
+  const heroSpringX = useSpring(heroMouseX, { stiffness: 60, damping: 18, mass: 0.4 });
+  const heroSpringY = useSpring(heroMouseY, { stiffness: 60, damping: 18, mass: 0.4 });
+  const dotParallax = { x: useTransform(heroSpringX, (v) => v * -16), y: useTransform(heroSpringY, (v) => v * -16) };
+  const blobParallax = { x: useTransform(heroSpringX, (v) => v * 26), y: useTransform(heroSpringY, (v) => v * 26) };
+  const particleParallax = { x: useTransform(heroSpringX, (v) => v * 42), y: useTransform(heroSpringY, (v) => v * 42) };
+
+  function handleHeroPointerMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (reduceMotion) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    heroMouseX.set((e.clientX - rect.left) / rect.width - 0.5);
+    heroMouseY.set((e.clientY - rect.top) / rect.height - 0.5);
+  }
+  function handleHeroPointerLeave() {
+    heroMouseX.set(0);
+    heroMouseY.set(0);
+  }
 
   const [editing, setEditing] = useState(false);
   const [fullName, setFullName] = useState('');
@@ -306,6 +330,8 @@ export function ProfileForm() {
           is decorative-only and gated by prefers-reduced-motion. */}
       <div
         className="relative overflow-hidden rounded-2xl border border-slate-200 px-6 py-10"
+        onMouseMove={handleHeroPointerMove}
+        onMouseLeave={handleHeroPointerLeave}
         style={{
           background:
             // Visible colored glows (indigo / violet / a touch of cyan for
@@ -317,42 +343,57 @@ export function ProfileForm() {
             'linear-gradient(135deg, #EEF0FF 0%, #F6F5FF 50%, #ECEEFF 100%)',
         }}
       >
-        {/* Decorative background — ambient only, gated by prefers-reduced-motion */}
+        {/* Decorative background — ambient drift gated by prefers-reduced-
+            motion; the cursor-follow parallax (dotParallax/blobParallax/
+            particleParallax, all derived from the hero's own pointer
+            position) is skipped outright when reduced motion is set,
+            since handleHeroPointerMove returns early in that case and the
+            springs simply stay at 0. */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          {/* Wide diagonal dot field instead of one small corner patch —
-              spans most of the card so the pattern actually reads. */}
-          <div
-            className="absolute inset-0 opacity-[0.35]"
+          {/* Wide diagonal dot field, now genuinely visible (bigger dots,
+              higher opacity, wider mask) instead of hiding in one faint
+              corner patch — and drifts the LEAST toward the cursor, since
+              it reads as the furthest-back layer. */}
+          <motion.div
+            className="absolute -inset-8 opacity-[0.55]"
             style={{
-              backgroundImage: 'radial-gradient(#5B6CF9 1px, transparent 1.5px)',
-              backgroundSize: '22px 22px',
-              maskImage: 'radial-gradient(65% 90% at 82% 18%, black 0%, transparent 70%)',
-              WebkitMaskImage: 'radial-gradient(65% 90% at 82% 18%, black 0%, transparent 70%)',
+              backgroundImage: 'radial-gradient(#5B6CF9 1.4px, transparent 1.8px)',
+              backgroundSize: '20px 20px',
+              maskImage: 'radial-gradient(85% 110% at 78% 22%, black 0%, transparent 78%)',
+              WebkitMaskImage: 'radial-gradient(85% 110% at 78% 22%, black 0%, transparent 78%)',
+              ...dotParallax,
             }}
           />
 
-          <motion.div
-            className="absolute -left-14 -top-14 h-52 w-52 rounded-full bg-[#5B6CF9]/30 blur-3xl"
-            {...blobMotion}
-          />
-          <motion.div
-            className="absolute -right-10 -bottom-8 h-40 w-40 rounded-full bg-[#8B7CF6]/28 blur-3xl"
-            {...blobMotion2}
-          />
-          <motion.div
-            className="absolute right-20 top-0 hidden h-24 w-24 rounded-full bg-[#22D3EE]/25 blur-2xl sm:block"
-            {...blobMotion3}
-          />
-
-          {PROFILE_HERO_PARTICLES.map((p, i) => (
-            <motion.span
-              key={i}
-              className="absolute rounded-full bg-[#5B6CF9] shadow-[0_0_6px_rgba(91,108,249,0.6)]"
-              style={{ left: p.x, top: p.y, width: p.size, height: p.size }}
-              animate={reduceMotion ? undefined : { y: [0, -12, 0], opacity: [0.4, 0.95, 0.4] }}
-              transition={reduceMotion ? undefined : { duration: p.duration, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
+          <motion.div className="absolute inset-0" style={blobParallax}>
+            <motion.div
+              className="absolute -left-14 -top-14 h-52 w-52 rounded-full bg-[#5B6CF9]/30 blur-3xl"
+              {...blobMotion}
             />
-          ))}
+            <motion.div
+              className="absolute -right-10 -bottom-8 h-40 w-40 rounded-full bg-[#8B7CF6]/28 blur-3xl"
+              {...blobMotion2}
+            />
+            <motion.div
+              className="absolute right-20 top-0 hidden h-24 w-24 rounded-full bg-[#22D3EE]/25 blur-2xl sm:block"
+              {...blobMotion3}
+            />
+          </motion.div>
+
+          {/* Nearest-feeling layer — floats toward the cursor the most,
+              the actual "antigravity" touch — while each dot still keeps
+              its own independent ambient bob/fade on top. */}
+          <motion.div className="absolute inset-0" style={particleParallax}>
+            {PROFILE_HERO_PARTICLES.map((p, i) => (
+              <motion.span
+                key={i}
+                className="absolute rounded-full bg-[#5B6CF9] shadow-[0_0_6px_rgba(91,108,249,0.6)]"
+                style={{ left: p.x, top: p.y, width: p.size, height: p.size }}
+                animate={reduceMotion ? undefined : { y: [0, -12, 0], opacity: [0.4, 0.95, 0.4] }}
+                transition={reduceMotion ? undefined : { duration: p.duration, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
+              />
+            ))}
+          </motion.div>
 
           <svg className="absolute inset-x-0 bottom-0 h-20 w-full opacity-40" preserveAspectRatio="none" viewBox="0 0 400 70">
             <path d="M0 48 Q 100 16 200 42 T 400 34" fill="none" stroke="#5B6CF9" strokeWidth="1.5" />
