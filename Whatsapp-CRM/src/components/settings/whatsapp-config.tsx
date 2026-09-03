@@ -7,8 +7,9 @@ import {
   Zap, AlertTriangle, RotateCcw, Info, Terminal, Globe, KeyRound,
   Hash, Building2, Lock, Shield, CheckCheck, ChevronDown, ChevronUp,
   Wifi, WifiOff, RefreshCw, ArrowLeft, Phone, CalendarClock, UserRound,
-  Settings2, CircleHelp, Gauge, MousePointerClick, Send, BookOpen,
+  Settings2, CircleHelp, Gauge, MousePointerClick, Send, BookOpen, Pencil,
 } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '@/hooks/use-auth';
 import { useConfirm } from '@/hooks/use-confirm';
 import { Button } from '@/components/ui/button';
@@ -123,6 +124,42 @@ function DetailField({ label, value, mono }: { label: string; value: string; mon
   )
 }
 
+/** One row in the read-only credentials summary — same shape as Profile's
+ *  InfoRow (icon square, label above value, optional pill on the right),
+ *  kept local since it's only used here. */
+function CredentialRow({ icon: Icon, label, right, children }: {
+  icon: React.ElementType
+  label: string
+  right?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-3.5 px-6 py-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
+        <Icon className="h-4 w-4 text-[#5B6CF9]" />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] font-medium text-slate-400">{label}</p>
+        <div className="text-[13.5px] font-semibold text-slate-800 mt-0.5 truncate">{children}</div>
+      </div>
+      {right && <div className="shrink-0">{right}</div>}
+    </div>
+  )
+}
+
+/** Small green/amber configured-or-not pill for a CredentialRow's right side. */
+function ConfiguredPill({ ok, label }: { ok: boolean; label: string }) {
+  return ok ? (
+    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600">
+      <CheckCircle2 className="h-3 w-3" /> {label}
+    </span>
+  ) : (
+    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+      <AlertTriangle className="h-3 w-3" /> {label}
+    </span>
+  )
+}
+
 /** A section's icon-square accent — defaults to the app's standard brand
  *  violet (matching Security/Profile), overridable for the rare card that
  *  needs to signal something else (e.g. amber for the PIN-security tile). */
@@ -163,11 +200,17 @@ function SectionCard({ icon: Icon, accentBg = '#EEF0FF', accentColor = '#5B6CF9'
 export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConnectMethod?: 'quick' | 'manual' }) {
   const { userId, accountId, loading: authLoading, profileLoading } = useAuth();
   const confirm = useConfirm();
+  const reduceMotion = useReducedMotion();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [keysDialogOpen, setKeysDialogOpen] = useState(false);
   const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>(defaultConnectMethod);
+  // The API Credentials card opens on a read-only summary once a config
+  // exists (mirrors Profile's Personal Information card) — this only
+  // controls whether the summary shows instead; the actual form always
+  // renders when there's no config yet at all (nothing to summarize).
+  const [credentialsEditing, setCredentialsEditing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testPhone, setTestPhone] = useState('');
   const [sendingTest, setSendingTest] = useState(false);
@@ -196,6 +239,8 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
 
   const isRegistered = Boolean(config?.registered_at);
   const lastRegistrationError = config?.last_registration_error ?? null;
+  // No config yet → there's nothing to summarize, the form is always on.
+  const showCredentialsForm = !config || credentialsEditing;
 
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);
   type RegistrationProbe = {
@@ -336,6 +381,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         setPin('');
       }
       await fetchConfig('');
+      setCredentialsEditing(false);
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -412,10 +458,25 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       setConnectionStatus('disconnected');
       setResetReason(null);
       setStatusMessage('');
+      setCredentialsEditing(false);
     } catch {
       toast.error('Failed to reset configuration');
     } finally {
       setResetting(false);
+    }
+  }
+
+  /** Discards in-progress edits to an existing config and returns to the
+   *  read-only summary — mirrors Profile's Personal Information Cancel. */
+  function cancelCredentialsEdit() {
+    setCredentialsEditing(false);
+    if (config) {
+      setPhoneNumberId(config.phone_number_id || '');
+      setWabaId(config.waba_id || '');
+      setAccessToken(MASKED_TOKEN);
+      setVerifyToken('');
+      setPin('');
+      setTokenEdited(false);
     }
   }
 
@@ -757,8 +818,28 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
     );
   }
 
+  const blobMotion = reduceMotion
+    ? {}
+    : { animate: { y: [0, -18, 0], x: [0, 12, 0] }, transition: { duration: 7, repeat: Infinity, ease: 'easeInOut' as const } };
+  const blobMotion2 = reduceMotion
+    ? {}
+    : { animate: { y: [0, 14, 0], x: [0, -10, 0] }, transition: { duration: 8.5, repeat: Infinity, ease: 'easeInOut' as const } };
+
   return (
     <div className="space-y-5">
+      {!isConnected && (
+        <ConnectChannelScreen
+          icon={WhatsAppIcon}
+          channelName="WhatsApp"
+          method={connectMethod}
+          onMethodChange={setConnectMethod}
+          quickConnect={<EmbeddedSignupButton onConnected={() => fetchConfig('')} />}
+          manualConnect={null}
+        />
+      )}
+
+      {(isConnected || connectMethod === 'manual') && (
+      <>
       {isConnected && (
         <Button
           type="button"
@@ -771,16 +852,40 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         </Button>
       )}
 
-      {!isConnected && (
-        <ConnectChannelScreen
-          icon={WhatsAppIcon}
-          channelName="WhatsApp"
-          method={connectMethod}
-          onMethodChange={setConnectMethod}
-          quickConnect={<EmbeddedSignupButton onConnected={() => fetchConfig('')} />}
-          manualConnect={null}
-        />
-      )}
+      {/* ── Hero — same gradient-card language as the Profile page's hero:
+          soft violet gradient, ambient floating blobs, centered identity
+          (icon instead of an avatar photo) and a status pill. ── */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-[#EEF0FF] via-[#F4F3FD] to-[#ECEAFB] px-6 py-9">
+        <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          <motion.div className="absolute -left-12 -top-12 h-44 w-44 rounded-full bg-white/50 blur-2xl" {...blobMotion} />
+          <motion.div className="absolute -right-6 bottom-2 h-24 w-24 rounded-full bg-white/40 blur-xl" {...blobMotion2} />
+          <div className="absolute right-8 top-7 grid grid-cols-5 gap-2 opacity-40">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <span key={i} className="h-1 w-1 rounded-full bg-[#5B6CF9]" />
+            ))}
+          </div>
+          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-30" preserveAspectRatio="none" viewBox="0 0 400 60">
+            <path d="M0 40 Q 100 10 200 35 T 400 30" fill="none" stroke="#5B6CF9" strokeWidth="1" />
+          </svg>
+        </div>
+
+        <div className="relative flex flex-col items-center text-center">
+          <span className="flex h-24 w-24 items-center justify-center rounded-full bg-white ring-4 ring-white shadow-md">
+            <WhatsAppIcon className="h-12 w-12" />
+          </span>
+          <h2 className="mt-4 text-[19px] font-bold text-slate-900">WhatsApp API Setup</h2>
+          <p className="text-[13px] text-slate-500 mt-1 max-w-sm">
+            Manually manage the Meta WhatsApp Business API credentials behind this connection.
+          </p>
+          <div className={cn(
+            'flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold mt-3',
+            isConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600',
+          )}>
+            {isConnected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+            {isConnected ? 'Connected' : 'Not connected'}
+          </div>
+        </div>
+      </div>
 
       {!isConnected && connectMethod === 'manual' && (
         <div className="flex items-center justify-center gap-2 pt-1 pb-2 text-[11.5px] font-medium text-slate-400">
@@ -805,8 +910,6 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         </div>
       )}
 
-      {(isConnected || connectMethod === 'manual') && (
-      <>
       {/* ── Status ── One merged green box once both connected AND
           registered (this used to be two separate stacked green boxes
           saying almost the same thing). While only one of the two is true
@@ -996,18 +1099,44 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       <SectionCard
         icon={KeyRound}
         title="API Credentials"
-        description="Enter your Meta WhatsApp Business API credentials from Meta Developers."
-        footer={
+        description={showCredentialsForm
+          ? "Enter your Meta WhatsApp Business API credentials from Meta Developers."
+          : "Saved and encrypted — click Edit to change any of these."}
+        statusPill={config && !credentialsEditing ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setCredentialsEditing(true)}
+            className="h-8 px-3.5 text-[12.5px] border-slate-200"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Button>
+        ) : undefined}
+        footer={(showCredentialsForm || config) ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
-            >
-              {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
-            </Button>
-            {!config && (
+            {showCredentialsForm && (
+              <Button
+                onClick={handleSave}
+                disabled={saving}
+                className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+              >
+                {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
+              </Button>
+            )}
+            {showCredentialsForm && !config && (
               <p className="text-[12px] text-slate-500">Save credentials first to test connection.</p>
+            )}
+            {showCredentialsForm && config && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={cancelCredentialsEdit}
+                disabled={saving}
+                className="h-9 text-[13px] border-slate-200"
+              >
+                Cancel
+              </Button>
             )}
             {config && (
               <Button
@@ -1020,8 +1149,36 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               </Button>
             )}
           </div>
-        }
+        ) : undefined}
       >
+        {!showCredentialsForm ? (
+          <div className="-mx-6 -my-5 divide-y divide-slate-100">
+            <CredentialRow icon={Hash} label="Phone Number ID">
+              <span className="font-mono">{config?.phone_number_id}</span>
+            </CredentialRow>
+            <CredentialRow icon={Building2} label="WhatsApp Business Account ID">
+              {config?.waba_id ? <span className="font-mono">{config.waba_id}</span> : <span className="text-slate-400 font-normal">Not set</span>}
+            </CredentialRow>
+            <CredentialRow icon={Lock} label="Permanent Access Token">
+              •••••••••••••••• <span className="text-slate-400 font-normal">(saved)</span>
+            </CredentialRow>
+            <CredentialRow
+              icon={Shield}
+              label="Webhook Verify Token"
+              right={<ConfiguredPill ok={!!config?.has_verify_token} label={config?.has_verify_token ? 'Configured' : 'Not set'} />}
+            >
+              {config?.has_verify_token ? '••••••••' : '—'}
+            </CredentialRow>
+            <CredentialRow
+              icon={KeyRound}
+              label="2-Step Verification"
+              right={<ConfiguredPill ok={isRegistered} label={isRegistered ? 'Registered' : 'Required'} />}
+            >
+              {isRegistered ? 'PIN accepted by Meta' : 'Not yet registered with Meta'}
+            </CredentialRow>
+          </div>
+        ) : (
+        <>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FieldRow id="phoneNumberId" label="Phone Number ID" icon={Hash}
             hint="Found in Meta Developers → WhatsApp → API Setup">
@@ -1129,6 +1286,8 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             />
           </FieldRow>
         </div>
+        </>
+        )}
       </SectionCard>
       </div>
 

@@ -316,6 +316,8 @@ export interface WhatsAppConfig {
   connected_by?: string | null;
   /** "quick" (Meta Embedded Signup popup) or "manual" (credentials form). */
   connect_method?: 'quick' | 'manual' | string;
+  /** Whether a webhook verify token is saved — never the raw value. */
+  has_verify_token?: boolean;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
 }

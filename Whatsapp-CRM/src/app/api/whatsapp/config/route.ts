@@ -65,6 +65,7 @@ export async function GET() {
       phone_number_id: string
       waba_id: string | null
       access_token: string
+      verify_token: string | null
       status: string
       registered_at: Date | null
       subscribed_apps_at: Date | null
@@ -81,6 +82,7 @@ export async function GET() {
           phone_number_id: true,
           waba_id: true,
           access_token: true,
+          verify_token: true,
           status: true,
           registered_at: true,
           subscribed_apps_at: true,
@@ -148,6 +150,9 @@ export async function GET() {
       connected_at: config.connected_at,
       connected_by: connectedByProfile?.full_name || connectedByProfile?.email || null,
       connect_method: config.connect_method,
+      // A boolean only — the raw (encrypted) verify_token is never sent to
+      // the client, this just lets the summary view say "Configured".
+      has_verify_token: !!config.verify_token,
       last_registration_error: config.last_registration_error,
     }
 
