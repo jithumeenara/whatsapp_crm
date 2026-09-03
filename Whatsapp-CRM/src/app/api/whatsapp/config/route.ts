@@ -68,6 +68,7 @@ export async function GET() {
       status: string
       registered_at: Date | null
       subscribed_apps_at: Date | null
+      connected_at: Date | null
       last_registration_error: string | null
     } | null
     try {
@@ -82,6 +83,7 @@ export async function GET() {
           status: true,
           registered_at: true,
           subscribed_apps_at: true,
+          connected_at: true,
           last_registration_error: true,
         },
       })
@@ -123,6 +125,14 @@ export async function GET() {
       )
     }
 
+    // Who set this connection up — resolved to a display name for the
+    // connected-state view ("Connected by"), which otherwise only had a
+    // raw user_id to show.
+    const connectedByProfile = await prisma.profile.findUnique({
+      where: { user_id: config.user_id },
+      select: { full_name: true, email: true },
+    })
+
     // Safe (non-sensitive) config fields to return to the client.
     // access_token is intentionally excluded — never expose encrypted secrets.
     const safeConfig = {
@@ -133,6 +143,8 @@ export async function GET() {
       status: config.status,
       registered_at: config.registered_at,
       subscribed_apps_at: config.subscribed_apps_at,
+      connected_at: config.connected_at,
+      connected_by: connectedByProfile?.full_name || connectedByProfile?.email || null,
       last_registration_error: config.last_registration_error,
     }
 
@@ -142,7 +154,37 @@ export async function GET() {
         phoneNumberId: config.phone_number_id,
         accessToken,
       })
-      return NextResponse.json({ connected: true, config: safeConfig, phone_info: phoneInfo })
+
+      // Our OWN send counts — deliberately not presented as Meta's
+      // official quota usage (that lives behind the conversation
+      // analytics API we don't call). Meta's real cap for this number
+      // comes back above as phone_info.messaging_limit_tier.
+      const now = new Date()
+      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+      const [sentLast24h, sentLast30d] = await Promise.all([
+        prisma.message.count({
+          where: {
+            sender_type: { in: ['agent', 'bot'] },
+            created_at: { gte: dayAgo },
+            conversation: { account_id: accountId },
+          },
+        }),
+        prisma.message.count({
+          where: {
+            sender_type: { in: ['agent', 'bot'] },
+            created_at: { gte: monthAgo },
+            conversation: { account_id: accountId },
+          },
+        }),
+      ])
+
+      return NextResponse.json({
+        connected: true,
+        config: safeConfig,
+        phone_info: phoneInfo,
+        usage: { sentLast24h, sentLast30d },
+      })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
       console.error('[whatsapp/config GET] Meta API verification failed:', message)

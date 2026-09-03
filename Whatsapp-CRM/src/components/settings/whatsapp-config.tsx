@@ -6,7 +6,8 @@ import {
   Eye, EyeOff, Copy, ClipboardCheck, CheckCircle2, XCircle, Loader2, ExternalLink,
   Zap, AlertTriangle, RotateCcw, Info, Terminal, Globe, KeyRound,
   Hash, Building2, Lock, Shield, CheckCheck, ChevronDown, ChevronUp,
-  Wifi, WifiOff, RefreshCw,
+  Wifi, WifiOff, RefreshCw, ArrowLeft, Phone, CalendarClock, UserRound,
+  Settings2, CircleHelp, Gauge,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -24,6 +25,35 @@ const MASKED_TOKEN = '••••••••••••••••';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
+
+/** Live metadata Meta returns for the connected number. */
+type PhoneInfo = {
+  id: string;
+  display_phone_number: string;
+  verified_name?: string;
+  quality_rating?: string;
+  messaging_limit_tier?: string;
+};
+
+/** Our OWN send counts — not Meta's official quota usage. */
+type Usage = { sentLast24h: number; sentLast30d: number };
+
+/** Meta's messaging tiers → the real cap each one allows per rolling
+ *  24 hours (business-initiated conversations). */
+const TIER_CAP: Record<string, number> = {
+  TIER_50: 50,
+  TIER_250: 250,
+  TIER_1K: 1_000,
+  TIER_10K: 10_000,
+  TIER_100K: 100_000,
+};
+
+function tierLabel(tier?: string): string {
+  if (!tier) return 'Not reported by Meta';
+  if (tier === 'TIER_UNLIMITED') return 'Unlimited';
+  const cap = TIER_CAP[tier];
+  return cap ? `${cap.toLocaleString()} / 24h` : tier;
+}
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
@@ -45,6 +75,46 @@ function FieldRow({
       </Label>
       {children}
       {hint && <p className="text-[11px] text-slate-400 leading-relaxed">{hint}</p>}
+    </div>
+  )
+}
+
+/** One of the four stats along the bottom of the connected hero. */
+function HeroStat({ icon: Icon, label, value, tone }: {
+  icon: React.ElementType
+  label: string
+  value: string
+  tone?: 'emerald'
+}) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className={cn(
+        'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+        tone === 'emerald' ? 'bg-emerald-100' : 'bg-slate-100',
+      )}>
+        <Icon className={cn('h-3.5 w-3.5', tone === 'emerald' ? 'text-emerald-600' : 'text-slate-500')} />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] text-slate-400">{label}</p>
+        <p className={cn(
+          'truncate text-[13px] font-semibold',
+          tone === 'emerald' ? 'text-emerald-600' : 'text-slate-800',
+        )}>
+          {value}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** A label/value pair in the Business details grid. */
+function DetailField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[11px] text-slate-400">{label}</p>
+      <p className={cn('mt-0.5 truncate text-[13.5px] font-semibold text-slate-800', mono && 'font-mono text-[12.5px]')}>
+        {value}
+      </p>
     </div>
   )
 }
@@ -85,6 +155,12 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
+  const [phoneInfo, setPhoneInfo] = useState<PhoneInfo | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
+  // The connected view opens on the at-a-glance overview; "Manage
+  // Connection" switches to the full credential/webhook/test panels
+  // (everything that used to be the whole connected view).
+  const [overviewMode, setOverviewMode] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -125,6 +201,8 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       const res = await fetch('/api/whatsapp/config', { method: 'GET' });
       const payload = await res.json();
       const data = payload.config ?? null;
+      setPhoneInfo(payload.phone_info ?? null);
+      setUsage(payload.usage ?? null);
 
       if (data) {
         setConfig(data);
@@ -335,8 +413,304 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
 
   const isConnected = connectionStatus === 'connected';
 
+  // ── Connected overview ── the at-a-glance dashboard shown once the
+  // channel is live. Everything on it comes from data we actually have:
+  // Meta's own phone metadata (name/number/quality/messaging tier), our
+  // stored registration + subscription timestamps, and our own send
+  // counts — nothing here is placeholder or sample data.
+  if (isConnected && overviewMode) {
+    const health = [
+      {
+        label: 'API status',
+        value: isConnected ? 'Healthy' : 'Failing',
+        ok: isConnected,
+        icon: Wifi,
+      },
+      {
+        label: 'Message receiving',
+        value: isRegistered ? 'Registered' : 'Not registered',
+        ok: isRegistered,
+        icon: CheckCheck,
+      },
+      {
+        label: 'Webhook',
+        value: config?.subscribed_apps_at ? 'Active' : 'Not subscribed',
+        ok: Boolean(config?.subscribed_apps_at),
+        icon: Globe,
+      },
+      {
+        label: 'Quality rating',
+        value: phoneInfo?.quality_rating
+          ? phoneInfo.quality_rating.charAt(0) + phoneInfo.quality_rating.slice(1).toLowerCase()
+          : 'Not reported',
+        ok: !phoneInfo?.quality_rating || phoneInfo.quality_rating.toUpperCase() === 'GREEN',
+        icon: Gauge,
+      },
+    ];
+    const allHealthy = health.every((h) => h.ok);
+    const tierCap = phoneInfo?.messaging_limit_tier
+      ? (phoneInfo.messaging_limit_tier === 'TIER_UNLIMITED' ? null : TIER_CAP[phoneInfo.messaging_limit_tier] ?? null)
+      : null;
+    const usedPct = tierCap && usage ? Math.min(100, Math.round((usage.sentLast24h / tierCap) * 100)) : null;
+
+    return (
+      <div className="space-y-5">
+        {/* Hero */}
+        <div className="relative overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-[#F0FDF5] via-[#F6FEF9] to-[#EEFBF3] p-7">
+          <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
+            <div className="relative shrink-0">
+              <span className="flex h-28 w-28 items-center justify-center rounded-full bg-white shadow-[0_10px_30px_rgba(16,185,129,0.18)] ring-8 ring-emerald-50">
+                <WhatsAppIcon className="h-16 w-16" />
+              </span>
+              <span className="absolute -right-1 bottom-1 flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500 ring-4 ring-white">
+                <CheckCircle2 className="h-5 w-5 text-white" />
+              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-700">
+                Connected
+              </span>
+              <h2 className="mt-3 text-[22px] font-bold tracking-tight text-slate-900">WhatsApp is connected</h2>
+              <p className="mt-1.5 text-[13px] text-slate-500">
+                Your WhatsApp Business account is connected and ready to use.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOverviewMode(false)}
+                  className="h-10 px-4 text-[13px] border-slate-200 bg-white"
+                >
+                  <Settings2 className="h-4 w-4" />
+                  Manage Connection
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={resetting}
+                  className="h-10 px-4 text-[13px] bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  {resetting ? <><Loader2 className="h-4 w-4 animate-spin" />Disconnecting…</> : 'Disconnect'}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-4 rounded-xl border border-emerald-100 bg-white/70 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+            <HeroStat icon={CheckCircle2} label="Connection status" value="Active" tone="emerald" />
+            <HeroStat icon={Phone} label="Phone number" value={phoneInfo?.display_phone_number ?? '—'} />
+            <HeroStat
+              icon={CalendarClock}
+              label="Connected on"
+              value={config?.connected_at
+                ? new Date(config.connected_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                : config?.registered_at
+                ? new Date(config.registered_at).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                : '—'}
+            />
+            <HeroStat icon={UserRound} label="Connected by" value={config?.connected_by ?? '—'} />
+          </div>
+        </div>
+
+        {/* Connection health */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-800">Connection health</h3>
+              <p className="text-[12px] text-slate-500 mt-0.5">
+                {allHealthy ? 'Everything looks good — your connection is working properly.' : 'One or more checks need attention.'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleVerifyRegistration}
+              disabled={verifyingRegistration}
+              className="h-9 px-3.5 text-[12.5px] border-slate-200 shrink-0"
+            >
+              {verifyingRegistration ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Run test again
+            </Button>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {health.map((h) => (
+              <div key={h.label} className="rounded-xl border border-slate-100 bg-white px-4 py-3.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11.5px] text-slate-400">{h.label}</p>
+                  {h.ok
+                    ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                    : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />}
+                </div>
+                <p className={cn('mt-1 text-[13.5px] font-semibold', h.ok ? 'text-emerald-600' : 'text-amber-600')}>
+                  {h.value}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className={cn(
+            'mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-[12.5px]',
+            allHealthy ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-amber-100 bg-amber-50 text-amber-700',
+          )}>
+            {allHealthy ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+            {allHealthy ? 'All checks passed' : 'Some checks need attention — open Manage Connection for detail.'}
+          </div>
+
+          {/* Detailed probe output, only after an explicit "Run test again" */}
+          {registrationProbe && (
+            <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 space-y-2">
+              <p className="text-[12px] font-semibold text-slate-700">
+                Latest diagnostic —{' '}
+                <span className={registrationProbe.live ? 'text-emerald-600' : 'text-amber-600'}>
+                  {registrationProbe.live ? 'Live' : 'Not live'}
+                </span>
+              </p>
+              <ul className="space-y-1">
+                {Object.entries(registrationProbe.checks).map(([k, v]) => (
+                  <li key={k} className="flex items-center gap-2 text-[12px]">
+                    {v === true
+                      ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      : v === false
+                      ? <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                      : <span className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0 inline-block" />}
+                    <code className="text-slate-600">{k}</code>
+                  </li>
+                ))}
+              </ul>
+              {(registrationProbe.errors ?? []).length > 0 && (
+                <ul className="space-y-0.5 text-[11px] text-rose-500">
+                  {registrationProbe.errors?.map((e, i) => <li key={i}>• {e}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Business details */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-[14px] font-semibold text-slate-800">WhatsApp Business details</h3>
+              <p className="text-[12px] text-slate-500 mt-0.5">Your connected WhatsApp Business account information.</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOverviewMode(false)}
+              className="h-9 px-3.5 text-[12.5px] border-slate-200 shrink-0"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              Edit details
+            </Button>
+          </div>
+          <div className="mt-5 flex items-start gap-5">
+            <span className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 sm:flex">
+              <Building2 className="h-6 w-6 text-emerald-600" />
+            </span>
+            <div className="grid flex-1 grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
+              <DetailField label="Business name" value={phoneInfo?.verified_name ?? '—'} />
+              <DetailField label="Phone number" value={phoneInfo?.display_phone_number ?? '—'} />
+              <DetailField label="WhatsApp Business ID" value={config?.waba_id ?? '—'} mono />
+              <DetailField label="Phone number ID" value={config?.phone_number_id ?? '—'} mono />
+            </div>
+          </div>
+        </div>
+
+        {/* Messaging limits */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
+          <h3 className="text-[14px] font-semibold text-slate-800">Messaging limits</h3>
+          <p className="text-[12px] text-slate-500 mt-0.5">
+            Your Meta messaging tier, alongside what this CRM has actually sent.
+          </p>
+
+          <div className="mt-5 grid grid-cols-1 gap-6 sm:grid-cols-2">
+            <div>
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-[11.5px] text-slate-400">Sent in the last 24 hours</p>
+                {usedPct !== null && <span className="text-[11.5px] text-slate-400">{usedPct}% of tier</span>}
+              </div>
+              <p className="mt-1 text-[17px] font-bold text-slate-900">
+                {usage ? usage.sentLast24h.toLocaleString() : '—'}
+                {tierCap && <span className="text-[13px] font-medium text-slate-400"> / {tierCap.toLocaleString()}</span>}
+              </p>
+              {usedPct !== null && (
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-emerald-500" style={{ width: `${usedPct}%` }} />
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="text-[11.5px] text-slate-400">Sent in the last 30 days</p>
+              <p className="mt-1 text-[17px] font-bold text-slate-900">
+                {usage ? usage.sentLast30d.toLocaleString() : '—'}
+              </p>
+              <p className="mt-2 text-[11.5px] text-slate-400">
+                Meta tier: <span className="font-medium text-slate-600">{tierLabel(phoneInfo?.messaging_limit_tier)}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-[11.5px] text-slate-500">
+            <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
+            <span>
+              Counts are this CRM&apos;s own sent messages, not Meta&apos;s official conversation quota — Meta counts
+              business-initiated <em>conversations</em> in a rolling 24-hour window, which their tier above caps.
+            </span>
+          </div>
+        </div>
+
+        {/* Help */}
+        <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF0FF] text-[#5B6CF9]">
+              <CircleHelp className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-slate-800">Need help with WhatsApp?</p>
+              <p className="mt-0.5 text-[12px] text-slate-500">Meta&apos;s Cloud API documentation covers setup and troubleshooting.</p>
+            </div>
+          </div>
+          <a
+            href="https://developers.facebook.com/docs/whatsapp/cloud-api"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-[12.5px] font-semibold text-[#5B6CF9] transition hover:bg-slate-50"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            View documentation
+          </a>
+        </div>
+
+        <p className="flex items-center justify-center gap-1.5 pt-1 text-[11px] text-slate-400">
+          <Lock className="h-3 w-3" />
+          Your access token is encrypted at rest and never shown in full.
+        </p>
+
+        <KeysDialog open={keysDialogOpen} onOpenChange={setKeysDialogOpen} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
+      {isConnected && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
+            <Settings2 className="h-4 w-4 text-[#5B6CF9]" />
+            WhatsApp connection settings
+          </div>
+          <button
+            type="button"
+            onClick={() => setOverviewMode(true)}
+            className="flex items-center gap-1.5 text-[12.5px] font-semibold text-[#5B6CF9] hover:text-[#4a5ce8]"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to overview
+          </button>
+        </div>
+      )}
+
       {!isConnected && (
         <ConnectChannelScreen
           icon={WhatsAppIcon}

@@ -310,6 +310,10 @@ export interface WhatsAppConfig {
   registered_at?: string;
   /** Set when POST /{waba_id}/subscribed_apps last succeeded. */
   subscribed_apps_at?: string;
+  /** Display name of whoever set the connection up — resolved from
+   *  user_id by GET /api/whatsapp/config for the connected-state view's
+   *  "Connected by" field. */
+  connected_by?: string | null;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
 }
