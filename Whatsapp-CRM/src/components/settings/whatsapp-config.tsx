@@ -8,19 +8,17 @@ import {
   Hash, Building2, Lock, Shield, CheckCheck, ChevronDown, ChevronUp,
   Wifi, WifiOff, RefreshCw, ArrowLeft, Phone, CalendarClock, UserRound,
   Settings2, CircleHelp, Gauge, MousePointerClick, Send, BookOpen, Pencil,
-  ArrowRight, Play, ListChecks, Check,
+  ArrowRight, Play, ListChecks, Check, Trash2,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '@/hooks/use-auth';
-import { useConfirm } from '@/hooks/use-confirm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 import { KeysDialog } from '@/components/flows/keys-dialog';
-import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
-import { ConnectChannelScreen } from '@/components/settings/connect-channel-screen';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { Stepper } from '@/components/settings/settings-ui-kit';
 
@@ -227,15 +225,19 @@ function SectionCard({ icon: Icon, accentBg = '#ECFDF5', accentColor = '#16A34A'
   )
 }
 
-export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConnectMethod?: 'quick' | 'manual' }) {
+// `defaultConnectMethod` is accepted only so this component still matches
+// the shared per-channel `Config` prop type in channels-tab.tsx (Facebook/
+// Instagram still use it) — WhatsApp itself no longer has its own Quick/
+// Manual picker screen (see note above the removed ConnectChannelScreen
+// usage below), so the value is intentionally unused here.
+export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manual' }) {
   const { userId, accountId, loading: authLoading, profileLoading } = useAuth();
-  const confirm = useConfirm();
   const reduceMotion = useReducedMotion();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [keysDialogOpen, setKeysDialogOpen] = useState(false);
-  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>(defaultConnectMethod);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   // The API Credentials card opens on a read-only summary once a config
   // exists (mirrors Profile's Personal Information card) — this only
   // controls whether the summary shows instead; the actual form always
@@ -309,11 +311,20 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         : config ? (statusMessage || 'Meta rejected these credentials') : 'Save credentials to check',
     },
     {
+      // Meta's own subscribed_apps_at is the real signal — if Meta has
+      // already confirmed the subscription, that's true regardless of
+      // whether THIS browser happens to be on localhost right now (the
+      // subscription was set up at save time, not at page-load time).
+      // has_verify_token/isLocalhost is only a readiness fallback for
+      // before that's ever succeeded.
       label: 'Webhook',
-      ok: Boolean(config?.has_verify_token) && !isLocalhost,
-      value: !config?.has_verify_token ? 'Not set' : isLocalhost ? 'Not public' : 'Ready',
-      detail: !config?.has_verify_token
-        ? 'Set a Webhook Verify Token above'
+      ok: Boolean(config?.subscribed_apps_at) || (Boolean(config?.has_verify_token) && !isLocalhost),
+      value: config?.subscribed_apps_at
+        ? 'Active'
+        : !config?.has_verify_token ? 'Not set' : isLocalhost ? 'Not public' : 'Ready',
+      detail: config?.subscribed_apps_at
+        ? 'Meta is subscribed and delivering events'
+        : !config?.has_verify_token ? 'Set a Webhook Verify Token above'
         : isLocalhost ? 'Needs a public HTTPS URL' : 'Callback URL configured',
     },
     {
@@ -499,15 +510,11 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
     }
   }
 
-  async function handleReset() {
-    const yes = await confirm({
-      title: 'Reset WhatsApp config?',
-      description: 'This will delete the current WhatsApp config so you can re-enter it.',
-      confirmLabel: 'Reset',
-      variant: 'destructive',
-    });
-    if (!yes) return;
+  function handleReset() {
+    setResetConfirmOpen(true);
+  }
 
+  async function performReset() {
     try {
       setResetting(true);
       const res = await fetch('/api/whatsapp/config', { method: 'DELETE' });
@@ -524,6 +531,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       setResetReason(null);
       setStatusMessage('');
       setCredentialsEditing(false);
+      setResetConfirmOpen(false);
     } catch {
       toast.error('Failed to reset configuration');
     } finally {
@@ -879,6 +887,18 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         </p>
 
         <KeysDialog open={keysDialogOpen} onOpenChange={setKeysDialogOpen} />
+        <ConfirmIconDialog
+          open={resetConfirmOpen}
+          onOpenChange={setResetConfirmOpen}
+          icon={Trash2}
+          tone="danger"
+          title="Reset WhatsApp config?"
+          description="This will delete the current WhatsApp config so you can re-enter it."
+          actionLabel="Reset"
+          actionPendingLabel="Resetting…"
+          onConfirm={performReset}
+          pending={resetting}
+        />
       </div>
     );
   }
@@ -892,20 +912,6 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
 
   return (
     <div className="space-y-5">
-      {!isConnected && (
-        <ConnectChannelScreen
-          icon={WhatsAppIcon}
-          channelName="WhatsApp"
-          method={connectMethod}
-          onMethodChange={setConnectMethod}
-          quickConnect={<EmbeddedSignupButton onConnected={() => fetchConfig('')} />}
-          manualConnect={null}
-          accentColor="#16A34A"
-        />
-      )}
-
-      {(isConnected || connectMethod === 'manual') && (
-      <>
       {isConnected && (
         <Button
           type="button"
@@ -966,7 +972,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           </div>
         </div>
 
-        {!isConnected && connectMethod === 'manual' && (
+        {!isConnected && (
           <div className="border-t border-emerald-100/70 px-7 py-4">
             <div className="flex flex-wrap items-center justify-center gap-2.5 sm:justify-start">
               {[
@@ -1601,10 +1607,19 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         )}
       </div>
 
-      </>
-      )}
-
       <KeysDialog open={keysDialogOpen} onOpenChange={setKeysDialogOpen} />
+      <ConfirmIconDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        icon={Trash2}
+        tone="danger"
+        title="Reset WhatsApp config?"
+        description="This will delete the current WhatsApp config so you can re-enter it."
+        actionLabel="Reset"
+        actionPendingLabel="Resetting…"
+        onConfirm={performReset}
+        pending={resetting}
+      />
 
       {/* ── "View test logs" — real saved/registered/subscribed timestamps
           plus the most recent diagnostic run. There's no persisted
