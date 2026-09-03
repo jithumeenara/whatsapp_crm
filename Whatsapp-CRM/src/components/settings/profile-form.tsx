@@ -308,46 +308,57 @@ export function ProfileForm() {
         className="relative overflow-hidden rounded-2xl border border-slate-200 px-6 py-10"
         style={{
           background:
-            'radial-gradient(130% 90% at 10% -15%, #E3E6FF 0%, transparent 55%), ' +
-            'radial-gradient(110% 90% at 105% 115%, #E9E6FF 0%, transparent 55%), ' +
-            'linear-gradient(135deg, #F1F1FE 0%, #F7F6FF 45%, #EEECFE 100%)',
+            // Visible colored glows (indigo / violet / a touch of cyan for
+            // richness), not just barely-tinted white — the earlier pass
+            // was too pale to read as "designed" at a glance.
+            'radial-gradient(55% 65% at 12% 8%, rgba(91,108,249,0.32) 0%, transparent 72%), ' +
+            'radial-gradient(50% 60% at 88% 12%, rgba(139,124,246,0.26) 0%, transparent 72%), ' +
+            'radial-gradient(60% 70% at 78% 92%, rgba(34,211,238,0.16) 0%, transparent 70%), ' +
+            'linear-gradient(135deg, #EEF0FF 0%, #F6F5FF 50%, #ECEEFF 100%)',
         }}
       >
         {/* Decorative background — ambient only, gated by prefers-reduced-motion */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
+          {/* Wide diagonal dot field instead of one small corner patch —
+              spans most of the card so the pattern actually reads. */}
+          <div
+            className="absolute inset-0 opacity-[0.35]"
+            style={{
+              backgroundImage: 'radial-gradient(#5B6CF9 1px, transparent 1.5px)',
+              backgroundSize: '22px 22px',
+              maskImage: 'radial-gradient(65% 90% at 82% 18%, black 0%, transparent 70%)',
+              WebkitMaskImage: 'radial-gradient(65% 90% at 82% 18%, black 0%, transparent 70%)',
+            }}
+          />
+
           <motion.div
-            className="absolute -left-12 -top-12 h-44 w-44 rounded-full bg-white/55 blur-2xl"
+            className="absolute -left-14 -top-14 h-52 w-52 rounded-full bg-[#5B6CF9]/30 blur-3xl"
             {...blobMotion}
           />
           <motion.div
-            className="absolute -right-8 bottom-0 h-28 w-28 rounded-full bg-[#D9DEFF]/60 blur-2xl"
+            className="absolute -right-10 -bottom-8 h-40 w-40 rounded-full bg-[#8B7CF6]/28 blur-3xl"
             {...blobMotion2}
           />
           <motion.div
-            className="absolute right-28 top-2 hidden h-16 w-16 rounded-full bg-[#CFE0FF]/55 blur-xl sm:block"
+            className="absolute right-20 top-0 hidden h-24 w-24 rounded-full bg-[#22D3EE]/25 blur-2xl sm:block"
             {...blobMotion3}
           />
 
           {PROFILE_HERO_PARTICLES.map((p, i) => (
             <motion.span
               key={i}
-              className="absolute rounded-full bg-[#5B6CF9]/40"
+              className="absolute rounded-full bg-[#5B6CF9] shadow-[0_0_6px_rgba(91,108,249,0.6)]"
               style={{ left: p.x, top: p.y, width: p.size, height: p.size }}
-              animate={reduceMotion ? undefined : { y: [0, -10, 0], opacity: [0.25, 0.7, 0.25] }}
+              animate={reduceMotion ? undefined : { y: [0, -12, 0], opacity: [0.4, 0.95, 0.4] }}
               transition={reduceMotion ? undefined : { duration: p.duration, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
             />
           ))}
 
-          <div className="absolute right-8 top-7 grid grid-cols-5 gap-2 opacity-30">
-            {Array.from({ length: 20 }).map((_, i) => (
-              <span key={i} className="h-1 w-1 rounded-full bg-[#5B6CF9]" />
-            ))}
-          </div>
-          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-25" preserveAspectRatio="none" viewBox="0 0 400 60">
-            <path d="M0 42 Q 100 14 200 36 T 400 30" fill="none" stroke="#5B6CF9" strokeWidth="1" />
+          <svg className="absolute inset-x-0 bottom-0 h-20 w-full opacity-40" preserveAspectRatio="none" viewBox="0 0 400 70">
+            <path d="M0 48 Q 100 16 200 42 T 400 34" fill="none" stroke="#5B6CF9" strokeWidth="1.5" />
           </svg>
-          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-15" preserveAspectRatio="none" viewBox="0 0 400 60">
-            <path d="M0 50 Q 120 24 220 44 T 400 40" fill="none" stroke="#5B6CF9" strokeWidth="1" />
+          <svg className="absolute inset-x-0 bottom-0 h-20 w-full opacity-25" preserveAspectRatio="none" viewBox="0 0 400 70">
+            <path d="M0 58 Q 120 28 220 50 T 400 46" fill="none" stroke="#5B6CF9" strokeWidth="1.5" />
           </svg>
         </div>
 
@@ -356,7 +367,7 @@ export function ProfileForm() {
               "focus on the head background" touch, drawing the eye to
               the photo instead of spreading everything evenly. */}
           <motion.div
-            className="pointer-events-none absolute left-1/2 top-0 h-40 w-40 -translate-x-1/2 rounded-full bg-[#5B6CF9]/25 blur-2xl"
+            className="pointer-events-none absolute left-1/2 top-0 h-40 w-40 -translate-x-1/2 rounded-full bg-[#5B6CF9]/35 blur-2xl"
             {...glowPulse}
           />
           {/* No `size` prop here on purpose — Avatar's own size="lg" variant
