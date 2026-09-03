@@ -7,7 +7,7 @@ import {
   Zap, AlertTriangle, RotateCcw, Info, Terminal, Globe, KeyRound,
   Hash, Building2, Lock, Shield, CheckCheck, ChevronDown, ChevronUp,
   Wifi, WifiOff, RefreshCw, ArrowLeft, Phone, CalendarClock, UserRound,
-  Settings2, CircleHelp, Gauge, MousePointerClick,
+  Settings2, CircleHelp, Gauge, MousePointerClick, Send, BookOpen,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -123,21 +123,36 @@ function DetailField({ label, value, mono }: { label: string; value: string; mon
   )
 }
 
-function SectionCard({ title, description, children, footer }: {
+/** A section's icon-square accent — defaults to the app's standard brand
+ *  violet (matching Security/Profile), overridable for the rare card that
+ *  needs to signal something else (e.g. amber for the PIN-security tile). */
+function SectionCard({ icon: Icon, accentBg = '#EEF0FF', accentColor = '#5B6CF9', title, description, statusPill, children, footer }: {
+  icon?: React.ElementType
+  accentBg?: string
+  accentColor?: string
   title: string
   description?: string
+  statusPill?: React.ReactNode
   children: React.ReactNode
   footer?: React.ReactNode
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-slate-100">
-        <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
-        {description && <p className="text-[12px] text-slate-500 mt-0.5">{description}</p>}
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        {Icon && (
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: accentBg }}>
+            <Icon className="h-4.5 w-4.5" style={{ color: accentColor }} />
+          </span>
+        )}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
+          {description && <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed">{description}</p>}
+        </div>
+        {statusPill && <div className="shrink-0">{statusPill}</div>}
       </div>
       <div className="px-6 py-5 space-y-4">{children}</div>
       {footer && (
-        <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+        <div className="px-6 py-3 border-t border-slate-100 bg-slate-50/70 rounded-b-2xl">
           {footer}
         </div>
       )}
@@ -767,6 +782,29 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         />
       )}
 
+      {!isConnected && connectMethod === 'manual' && (
+        <div className="flex items-center justify-center gap-2 pt-1 pb-2 text-[11.5px] font-medium text-slate-400">
+          {[
+            { n: 1, label: 'Add credentials' },
+            { n: 2, label: 'Configure webhook' },
+            { n: 3, label: 'Test connection' },
+          ].map((step, i, arr) => (
+            <span key={step.n} className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5">
+                <span className={cn(
+                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                  step.n === 1 ? 'bg-[#5B6CF9] text-white' : 'bg-slate-100 text-slate-400',
+                )}>
+                  {step.n}
+                </span>
+                <span className={step.n === 1 ? 'text-[#5B6CF9]' : undefined}>{step.label}</span>
+              </span>
+              {i < arr.length - 1 && <span className="h-px w-6 bg-slate-200" />}
+            </span>
+          ))}
+        </div>
+      )}
+
       {(isConnected || connectMethod === 'manual') && (
       <>
       {/* ── Status ── One merged green box once both connected AND
@@ -956,6 +994,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
       <div className="lg:col-span-2">
       <SectionCard
+        icon={KeyRound}
         title="API Credentials"
         description="Enter your Meta WhatsApp Business API credentials from Meta Developers."
         footer={
@@ -983,27 +1022,29 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           </div>
         }
       >
-        <FieldRow id="phoneNumberId" label="Phone Number ID" icon={Hash}
-          hint="Found in Meta Developers → WhatsApp → API Setup">
-          <Input
-            id="phoneNumberId"
-            placeholder="e.g. 100234567890123"
-            value={phoneNumberId}
-            onChange={(e) => setPhoneNumberId(e.target.value)}
-            className="h-9 text-[13px] border-slate-200 font-mono"
-          />
-        </FieldRow>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <FieldRow id="phoneNumberId" label="Phone Number ID" icon={Hash}
+            hint="Found in Meta Developers → WhatsApp → API Setup">
+            <Input
+              id="phoneNumberId"
+              placeholder="e.g. 100234567890123"
+              value={phoneNumberId}
+              onChange={(e) => setPhoneNumberId(e.target.value)}
+              className="h-9 text-[13px] border-slate-200 font-mono"
+            />
+          </FieldRow>
 
-        <FieldRow id="wabaId" label="WhatsApp Business Account ID" icon={Building2}
-          hint="Found next to your Phone Number ID in Meta Developers">
-          <Input
-            id="wabaId"
-            placeholder="e.g. 100234567890456"
-            value={wabaId}
-            onChange={(e) => setWabaId(e.target.value)}
-            className="h-9 text-[13px] border-slate-200 font-mono"
-          />
-        </FieldRow>
+          <FieldRow id="wabaId" label="WhatsApp Business Account ID" icon={Building2}
+            hint="Found next to your Phone Number ID in Meta Developers">
+            <Input
+              id="wabaId"
+              placeholder="e.g. 100234567890456"
+              value={wabaId}
+              onChange={(e) => setWabaId(e.target.value)}
+              className="h-9 text-[13px] border-slate-200 font-mono"
+            />
+          </FieldRow>
+        </div>
 
         <FieldRow id="accessToken" label="Permanent Access Token" icon={Lock}>
           <div className="relative">
@@ -1093,6 +1134,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
 
       {/* ── Encryption Keys ── */}
       <SectionCard
+        icon={Shield}
         title="WhatsApp Flows Encryption"
         description="RSA-2048 key pair for Meta WhatsApp Flows. If flow forms show errors, resync here."
       >
@@ -1105,6 +1147,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       {/* ── Test Message ── */}
       {config && (
         <SectionCard
+          icon={Send}
           title="Send Test Message"
           description="Send a Hello World message to verify your WhatsApp connection is working."
         >
@@ -1131,6 +1174,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       {/* ── Webhook ── */}
       <div className="lg:col-span-2">
       <SectionCard
+        icon={Globe}
         title="Webhook Configuration"
         description="Paste this URL into Meta Developers → WhatsApp → Configuration → Webhooks."
       >
@@ -1203,12 +1247,12 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           )}
         </div>
 
-        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-2">
+        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-2.5">
           <p className="text-[12px] font-semibold text-slate-700 flex items-center gap-1.5">
             <Info className="h-3.5 w-3.5 text-slate-400" />
             How to configure in Meta
           </p>
-          <ol className="space-y-1 text-[12px] text-slate-500">
+          <ol className="space-y-2">
             {[
               'Meta Developers → Your App → WhatsApp → Configuration',
               'Click Edit under Webhook',
@@ -1217,8 +1261,10 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               'Click Verify and Save',
               'Subscribe to the messages field',
             ].map((step, i) => (
-              <li key={i} className="flex items-start gap-2">
-                <span className="shrink-0 font-semibold text-slate-400">{i + 1}.</span>
+              <li key={i} className="flex items-start gap-2.5 text-[12px] text-slate-600">
+                <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-[#EEF0FF] text-[10px] font-bold text-[#5B6CF9] mt-px">
+                  {i + 1}
+                </span>
                 {step}
               </li>
             ))}
@@ -1233,15 +1279,18 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         <button
           type="button"
           onClick={() => setShowSetup((p) => !p)}
-          className="w-full flex items-center justify-between px-6 py-4 text-left"
+          className="w-full flex items-center gap-3 px-6 py-4 text-left transition-colors hover:bg-slate-50/70"
         >
-          <div>
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
+            <BookOpen className="h-4.5 w-4.5 text-[#5B6CF9]" />
+          </span>
+          <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold text-slate-800">Setup Guide</h3>
             <p className="text-[12px] text-slate-500 mt-0.5">Step-by-step Meta WhatsApp API setup instructions</p>
           </div>
           {showSetup
-            ? <ChevronUp className="h-4 w-4 text-slate-400" />
-            : <ChevronDown className="h-4 w-4 text-slate-400" />}
+            ? <ChevronUp className="h-4 w-4 shrink-0 text-slate-400" />
+            : <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />}
         </button>
 
         {showSetup && (
