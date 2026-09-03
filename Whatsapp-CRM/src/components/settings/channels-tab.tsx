@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useState, type ComponentType } from 'react';
 import {
+  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   ChartNoAxesCombined,
@@ -334,7 +335,7 @@ export function ChannelsTab() {
         <ChannelRail channel={channel} onSelect={selectChannel} />
         <PanelHeader
           icon={Settings2}
-          title={`${current.label} advanced setup`}
+          title={`${current.label} connection`}
           onBack={goHome}
         />
         <Config defaultConnectMethod={preferredConnectMethod} />
@@ -569,6 +570,13 @@ export function ChannelsTab() {
   );
 }
 
+/** A lightweight breadcrumb row — deliberately NOT a bordered/boxed bar
+ *  (that older shape read as a second, redundant header once a channel's
+ *  own config screen — WhatsApp's, so far — has its own rich hero
+ *  underneath). Labeled "All Channels" rather than "Back to overview" so
+ *  it reads as a distinct action from WhatsApp's own internal
+ *  "Back to overview" (which returns to ITS connected-dashboard view,
+ *  not out to the channel picker). */
 function PanelHeader({
   icon: Icon,
   title,
@@ -579,18 +587,22 @@ function PanelHeader({
   onBack: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
-        <Icon className="h-4 w-4 text-[#5B5CF6]" />
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-600">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
+          <Icon className="h-3.5 w-3.5 text-[#5B5CF6]" />
+        </span>
         {title}
       </div>
-      <button
+      <Button
         type="button"
+        variant="outline"
         onClick={onBack}
-        className="text-[12.5px] font-semibold text-[#5B5CF6] hover:text-[#4848df]"
+        className="h-8 px-3 text-[12.5px] border-slate-200"
       >
-        Back to overview
-      </button>
+        <ArrowLeft className="h-3.5 w-3.5" />
+        All Channels
+      </Button>
     </div>
   );
 }
