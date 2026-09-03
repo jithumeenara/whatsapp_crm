@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
         registered_at: now,
         subscribed_apps_at: now,
         connected_at: now,
+        connect_method: "quick",
       },
       update: {
         phone_number_id: phoneNumberId,
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
         subscribed_apps_at: now,
         connected_at: now,
         last_registration_error: null,
+        connect_method: "quick",
       },
     })
 

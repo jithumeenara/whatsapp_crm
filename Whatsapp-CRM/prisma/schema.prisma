@@ -567,6 +567,9 @@ model WhatsAppConfig {
   subscribed_apps_at     DateTime? @db.Timestamptz(6)
   last_registration_error String?
   connected_at           DateTime? @db.Timestamptz(6)
+  /// How this connection was set up — "quick" (Meta Embedded Signup popup)
+  /// or "manual" (credentials pasted into the API Credentials form).
+  connect_method         String    @default("manual")
   /// AES-256-GCM encrypted RSA private key for Meta Flows decryption.
   /// When set, takes priority over FLOWS_PRIVATE_KEY env var — no server restart needed.
   flows_private_key      String?

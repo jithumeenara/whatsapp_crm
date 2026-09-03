@@ -69,6 +69,7 @@ export async function GET() {
       registered_at: Date | null
       subscribed_apps_at: Date | null
       connected_at: Date | null
+      connect_method: string
       last_registration_error: string | null
     } | null
     try {
@@ -84,6 +85,7 @@ export async function GET() {
           registered_at: true,
           subscribed_apps_at: true,
           connected_at: true,
+          connect_method: true,
           last_registration_error: true,
         },
       })
@@ -145,6 +147,7 @@ export async function GET() {
       subscribed_apps_at: config.subscribed_apps_at,
       connected_at: config.connected_at,
       connected_by: connectedByProfile?.full_name || connectedByProfile?.email || null,
+      connect_method: config.connect_method,
       last_registration_error: config.last_registration_error,
     }
 
@@ -318,7 +321,7 @@ export async function POST(request: Request) {
     // /register when the user didn't provide a PIN this time around.
     const existing = await prisma.whatsAppConfig.findUnique({
       where: { account_id: accountId },
-      select: { id: true, registered_at: true, phone_number_id: true },
+      select: { id: true, registered_at: true, phone_number_id: true, connect_method: true },
     })
 
     const sameNumber =
@@ -381,6 +384,10 @@ export async function POST(request: Request) {
       registered_at: registrationError ? null : registeredAt,
       subscribed_apps_at: subscribedAppsAt ?? null,
       last_registration_error: registrationError,
+      // Preserve "quick" if this account was originally connected through
+      // Embedded Signup and the user is just editing a field here — this
+      // form is the "manual" path only the first time a config is created.
+      connect_method: existing?.connect_method ?? 'manual',
     }
 
     try {

@@ -314,6 +314,8 @@ export interface WhatsAppConfig {
    *  user_id by GET /api/whatsapp/config for the connected-state view's
    *  "Connected by" field. */
   connected_by?: string | null;
+  /** "quick" (Meta Embedded Signup popup) or "manual" (credentials form). */
+  connect_method?: 'quick' | 'manual' | string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
 }

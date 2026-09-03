@@ -7,7 +7,7 @@ import {
   Zap, AlertTriangle, RotateCcw, Info, Terminal, Globe, KeyRound,
   Hash, Building2, Lock, Shield, CheckCheck, ChevronDown, ChevronUp,
   Wifi, WifiOff, RefreshCw, ArrowLeft, Phone, CalendarClock, UserRound,
-  Settings2, CircleHelp, Gauge,
+  Settings2, CircleHelp, Gauge, MousePointerClick,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -37,6 +37,10 @@ type PhoneInfo = {
 
 /** Our OWN send counts — not Meta's official quota usage. */
 type Usage = { sentLast24h: number; sentLast30d: number };
+
+/** The exact WhatsApp Business Profile Meta has on file — About text and
+ *  profile photo, distinct from the connection credentials above. */
+type BusinessProfile = { about: string; profile_picture_url?: string };
 
 /** Meta's messaging tiers → the real cap each one allows per rolling
  *  24 hours (business-initiated conversations). */
@@ -157,6 +161,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
   const [phoneInfo, setPhoneInfo] = useState<PhoneInfo | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   // The connected view opens on the at-a-glance overview; "Manage
   // Connection" switches to the full credential/webhook/test panels
   // (everything that used to be the whole connected view).
@@ -251,6 +256,29 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
     if (!userId || !accountId) { setLoading(false); return; }
     fetchConfig('');
   }, [authLoading, profileLoading, userId, accountId, fetchConfig]);
+
+  // The exact configured WhatsApp Business Profile (About text + profile
+  // photo) for the overview's Business details card — a separate endpoint
+  // from the connection config above, so it's fetched once we know we're
+  // actually connected rather than bundled into fetchConfig.
+  useEffect(() => {
+    if (connectionStatus !== 'connected') { setBusinessProfile(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/whatsapp/profile');
+        if (!res.ok) return;
+        const json = await res.json();
+        if (!cancelled && json.profile) {
+          setBusinessProfile({ about: json.profile.about ?? '', profile_picture_url: json.profile.profile_picture_url });
+        }
+      } catch {
+        // Business Profile is a nice-to-have on the overview — the
+        // connection status itself doesn't depend on it.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [connectionStatus]);
 
   async function handleSave() {
     if (!phoneNumberId.trim()) { toast.error('Phone Number ID is required'); return; }
@@ -467,9 +495,16 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               </span>
             </div>
             <div className="min-w-0 flex-1">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-700">
-                Connected
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-700">
+                  Connected
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">
+                  {config?.connect_method === 'quick'
+                    ? <><MousePointerClick className="h-3 w-3" />via Quick Connect</>
+                    : <><Settings2 className="h-3 w-3" />via Manual Setup</>}
+                </span>
+              </div>
               <h2 className="mt-3 text-[22px] font-bold tracking-tight text-slate-900">WhatsApp is connected</h2>
               <p className="mt-1.5 text-[13px] text-slate-500">
                 Your WhatsApp Business account is connected and ready to use.
@@ -605,14 +640,29 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             </Button>
           </div>
           <div className="mt-5 flex items-start gap-5">
-            <span className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 sm:flex">
-              <Building2 className="h-6 w-6 text-emerald-600" />
-            </span>
+            {businessProfile?.profile_picture_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={businessProfile.profile_picture_url}
+                alt="WhatsApp Business profile photo"
+                className="hidden h-14 w-14 shrink-0 rounded-2xl object-cover ring-1 ring-slate-100 sm:block"
+              />
+            ) : (
+              <span className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 sm:flex">
+                <Building2 className="h-6 w-6 text-emerald-600" />
+              </span>
+            )}
             <div className="grid flex-1 grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
               <DetailField label="Business name" value={phoneInfo?.verified_name ?? '—'} />
               <DetailField label="Phone number" value={phoneInfo?.display_phone_number ?? '—'} />
               <DetailField label="WhatsApp Business ID" value={config?.waba_id ?? '—'} mono />
               <DetailField label="Phone number ID" value={config?.phone_number_id ?? '—'} mono />
+              {businessProfile?.about && (
+                <div className="min-w-0 sm:col-span-2">
+                  <p className="text-[11px] text-slate-400">About</p>
+                  <p className="mt-0.5 text-[13.5px] font-medium text-slate-700">{businessProfile.about}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -695,20 +745,15 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
   return (
     <div className="space-y-5">
       {isConnected && (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
-            <Settings2 className="h-4 w-4 text-[#5B6CF9]" />
-            WhatsApp connection settings
-          </div>
-          <button
-            type="button"
-            onClick={() => setOverviewMode(true)}
-            className="flex items-center gap-1.5 text-[12.5px] font-semibold text-[#5B6CF9] hover:text-[#4a5ce8]"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to overview
-          </button>
-        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setOverviewMode(true)}
+          className="h-9 px-3.5 text-[12.5px] border-slate-200"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to overview
+        </Button>
       )}
 
       {!isConnected && (
