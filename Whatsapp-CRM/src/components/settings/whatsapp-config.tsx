@@ -8,6 +8,7 @@ import {
   Hash, Building2, Lock, Shield, CheckCheck, ChevronDown, ChevronUp,
   Wifi, WifiOff, RefreshCw, ArrowLeft, Phone, CalendarClock, UserRound,
   Settings2, CircleHelp, Gauge, MousePointerClick, Send, BookOpen, Pencil,
+  ArrowRight, Play, ListChecks, Check,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useAuth } from '@/hooks/use-auth';
@@ -15,6 +16,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 import { KeysDialog } from '@/components/flows/keys-dialog';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
@@ -135,14 +137,26 @@ function CredentialRow({ icon: Icon, label, right, children }: {
 }) {
   return (
     <div className="flex items-center gap-3.5 px-6 py-4">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-        <Icon className="h-4 w-4 text-[#5B6CF9]" />
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+        <Icon className="h-4 w-4 text-emerald-600" />
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-[11px] font-medium text-slate-400">{label}</p>
         <div className="text-[13.5px] font-semibold text-slate-800 mt-0.5 truncate">{children}</div>
       </div>
       {right && <div className="shrink-0">{right}</div>}
+    </div>
+  )
+}
+
+/** One real timestamp row in the "View test logs" dialog. */
+function LogRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-[12.5px]">
+      <span className="text-slate-500">{label}</span>
+      <span className={cn('font-medium', value ? 'text-slate-800' : 'text-slate-300')}>
+        {value ? new Date(value).toLocaleString() : 'Not yet'}
+      </span>
     </div>
   )
 }
@@ -160,10 +174,12 @@ function ConfiguredPill({ ok, label }: { ok: boolean; label: string }) {
   )
 }
 
-/** A section's icon-square accent — defaults to the app's standard brand
- *  violet (matching Security/Profile), overridable for the rare card that
- *  needs to signal something else (e.g. amber for the PIN-security tile). */
-function SectionCard({ icon: Icon, accentBg = '#EEF0FF', accentColor = '#5B6CF9', title, description, statusPill, children, footer }: {
+/** A section's icon-square accent — defaults to WhatsApp's own brand green
+ *  (this whole page is WhatsApp-flavored, matching the Connected overview's
+ *  emerald hero), overridable for the one card that deliberately stays
+ *  the app's neutral violet (Test connection — a generic diagnostic tool,
+ *  not WhatsApp-branded content). */
+function SectionCard({ icon: Icon, accentBg = '#ECFDF5', accentColor = '#16A34A', title, description, statusPill, children, footer }: {
   icon?: React.ElementType
   accentBg?: string
   accentColor?: string
@@ -220,6 +236,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
   const [phoneInfo, setPhoneInfo] = useState<PhoneInfo | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
+  const [testLogsOpen, setTestLogsOpen] = useState(false);
   // The connected view opens on the at-a-glance overview; "Manage
   // Connection" switches to the full credential/webhook/test panels
   // (everything that used to be the whole connected view).
@@ -242,6 +259,12 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
   // No config yet → there's nothing to summarize, the form is always on.
   const showCredentialsForm = !config || credentialsEditing;
 
+  // Real setup progress for the hero's step strip — not a hardcoded
+  // "step 1", derived from what's actually saved/registered so far.
+  const credentialsStepDone = Boolean(config);
+  const webhookStepDone = credentialsStepDone && isRegistered;
+  const currentSetupStep = !credentialsStepDone ? 1 : !webhookStepDone ? 2 : 3;
+
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);
   type RegistrationProbe = {
     live: boolean;
@@ -259,6 +282,34 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
     window.location.hostname === '127.0.0.1' ||
     !webhookUrl.startsWith('https://')
   );
+
+  // Test connection's pre-flight checklist — readiness, not a claim that a
+  // live test has already passed.
+  const testTiles = [
+    {
+      label: 'API status',
+      ok: connectionStatus === 'connected',
+      value: connectionStatus === 'connected' ? 'Ready' : config ? 'Failing' : 'Not tested',
+      detail: connectionStatus === 'connected'
+        ? 'API credentials validated'
+        : config ? (statusMessage || 'Meta rejected these credentials') : 'Save credentials to check',
+    },
+    {
+      label: 'Webhook',
+      ok: Boolean(config?.has_verify_token) && !isLocalhost,
+      value: !config?.has_verify_token ? 'Not set' : isLocalhost ? 'Not public' : 'Ready',
+      detail: !config?.has_verify_token
+        ? 'Set a Webhook Verify Token above'
+        : isLocalhost ? 'Needs a public HTTPS URL' : 'Callback URL configured',
+    },
+    {
+      label: 'Credentials',
+      ok: Boolean(config),
+      value: config ? 'Saved' : 'Not saved',
+      detail: config ? 'All credentials are saved' : 'Save your credentials above first',
+    },
+  ];
+  const allTestReady = testTiles.every((t) => t.ok);
 
   const fetchConfig = useCallback(async (_acctId: string) => {
     setLoading(true);
@@ -508,7 +559,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
     return (
       <div className="flex items-center justify-center py-20">
         <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-[#5B6CF9] border-t-transparent" />
+          <div className="h-8 w-8 animate-spin rounded-full border-[3px] border-emerald-600 border-t-transparent" />
           <p className="text-[13px] text-slate-500">Loading configuration…</p>
         </div>
       </div>
@@ -789,7 +840,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         {/* Help */}
         <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF0FF] text-[#5B6CF9]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
               <CircleHelp className="h-5 w-5" />
             </span>
             <div>
@@ -801,7 +852,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             href="https://developers.facebook.com/docs/whatsapp/cloud-api"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-[12.5px] font-semibold text-[#5B6CF9] transition hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-[12.5px] font-semibold text-emerald-600 transition hover:bg-slate-50"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             View documentation
@@ -835,6 +886,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           onMethodChange={setConnectMethod}
           quickConnect={<EmbeddedSignupButton onConnected={() => fetchConfig('')} />}
           manualConnect={null}
+          accentColor="#16A34A"
         />
       )}
 
@@ -852,63 +904,84 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         </Button>
       )}
 
-      {/* ── Hero — same gradient-card language as the Profile page's hero:
-          soft violet gradient, ambient floating blobs, centered identity
-          (icon instead of an avatar photo) and a status pill. ── */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-[#EEF0FF] via-[#F4F3FD] to-[#ECEAFB] px-6 py-9">
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <motion.div className="absolute -left-12 -top-12 h-44 w-44 rounded-full bg-white/50 blur-2xl" {...blobMotion} />
-          <motion.div className="absolute -right-6 bottom-2 h-24 w-24 rounded-full bg-white/40 blur-xl" {...blobMotion2} />
-          <div className="absolute right-8 top-7 grid grid-cols-5 gap-2 opacity-40">
+      {/* ── Hero — WhatsApp's own brand green (matching the Connected
+          overview's hero) instead of the app's generic violet: a floating
+          "bubble on a platform" illustration, step badge + status pill,
+          and — real, not decorative — a progress strip built from actual
+          setup state (credentials saved / webhook registered), not a
+          hardcoded "step 1" like the first pass. ── */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-[#F0FDF5] via-[#F9FEFB] to-[#EEFBF3]">
+        <div className="relative flex flex-col gap-6 px-7 py-8 sm:flex-row sm:items-center">
+          <div className="pointer-events-none absolute right-8 top-7 grid grid-cols-5 gap-2 opacity-40">
             {Array.from({ length: 20 }).map((_, i) => (
-              <span key={i} className="h-1 w-1 rounded-full bg-[#5B6CF9]" />
+              <span key={i} className="h-1 w-1 rounded-full bg-emerald-400" />
             ))}
           </div>
-          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-30" preserveAspectRatio="none" viewBox="0 0 400 60">
-            <path d="M0 40 Q 100 10 200 35 T 400 30" fill="none" stroke="#5B6CF9" strokeWidth="1" />
-          </svg>
-        </div>
 
-        <div className="relative flex flex-col items-center text-center">
-          <span className="flex h-24 w-24 items-center justify-center rounded-full bg-white ring-4 ring-white shadow-md">
-            <WhatsAppIcon className="h-12 w-12" />
-          </span>
-          <h2 className="mt-4 text-[19px] font-bold text-slate-900">WhatsApp API Setup</h2>
-          <p className="text-[13px] text-slate-500 mt-1 max-w-sm">
-            Manually manage the Meta WhatsApp Business API credentials behind this connection.
-          </p>
-          <div className={cn(
-            'flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold mt-3',
-            isConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600',
-          )}>
-            {isConnected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
-            {isConnected ? 'Connected' : 'Not connected'}
+          {/* Floating illustration — plain divs/shadows, no external asset */}
+          <div className="relative mx-auto h-32 w-32 shrink-0 sm:mx-0">
+            <div className="absolute inset-x-5 bottom-1 h-8 rounded-[50%] bg-emerald-900/10 blur-md" />
+            <div className="absolute inset-x-7 bottom-3 h-20 -rotate-6 rounded-[24px] bg-white shadow-[0_16px_32px_-14px_rgba(15,23,42,0.18)] ring-1 ring-black/5" />
+            <motion.div
+              className="absolute left-1/2 top-0 flex h-24 w-24 -translate-x-1/2 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5"
+              {...blobMotion}
+            >
+              <WhatsAppIcon className="h-14 w-14" />
+            </motion.div>
+            <motion.span className="absolute -left-1 top-3 h-3 w-3 rounded-full bg-emerald-400 shadow-md" {...blobMotion2} />
+            <motion.span className="absolute right-0 top-16 h-2.5 w-2.5 rounded-full bg-emerald-300 shadow" {...blobMotion} />
+          </div>
+
+          <div className="relative min-w-0 flex-1 text-center sm:text-left">
+            {!isConnected && (
+              <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-bold text-emerald-700">
+                Step {currentSetupStep} of 3
+              </span>
+            )}
+            <h2 className="mt-3 text-[19px] font-bold text-slate-900">WhatsApp API Setup</h2>
+            <p className="mt-1 text-[13px] text-slate-500 max-w-md">
+              Manually manage the Meta WhatsApp Business API credentials behind this connection.
+            </p>
+            <div className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-semibold mt-3',
+              isConnected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600',
+            )}>
+              {isConnected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
+              {isConnected ? 'Connected' : 'Not connected'}
+            </div>
           </div>
         </div>
-      </div>
 
-      {!isConnected && connectMethod === 'manual' && (
-        <div className="flex items-center justify-center gap-2 pt-1 pb-2 text-[11.5px] font-medium text-slate-400">
-          {[
-            { n: 1, label: 'Add credentials' },
-            { n: 2, label: 'Configure webhook' },
-            { n: 3, label: 'Test connection' },
-          ].map((step, i, arr) => (
-            <span key={step.n} className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5">
-                <span className={cn(
-                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
-                  step.n === 1 ? 'bg-[#5B6CF9] text-white' : 'bg-slate-100 text-slate-400',
-                )}>
-                  {step.n}
-                </span>
-                <span className={step.n === 1 ? 'text-[#5B6CF9]' : undefined}>{step.label}</span>
-              </span>
-              {i < arr.length - 1 && <span className="h-px w-6 bg-slate-200" />}
-            </span>
-          ))}
-        </div>
-      )}
+        {!isConnected && connectMethod === 'manual' && (
+          <div className="border-t border-emerald-100/70 px-7 py-4">
+            <div className="flex flex-wrap items-center justify-center gap-2.5 sm:justify-start">
+              {[
+                { n: 1, label: 'Add credentials', done: credentialsStepDone },
+                { n: 2, label: 'Configure webhook', done: webhookStepDone },
+                { n: 3, label: 'Test connection', done: false },
+              ].map((step, i, arr) => {
+                const reached = step.done || currentSetupStep === step.n;
+                return (
+                  <span key={step.n} className="flex items-center gap-2.5">
+                    <span className="flex items-center gap-1.5">
+                      <span className={cn(
+                        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                        reached ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400',
+                      )}>
+                        {step.done ? <Check className="h-3 w-3" /> : step.n}
+                      </span>
+                      <span className={cn('text-[11.5px]', reached ? 'font-semibold text-emerald-700' : 'font-medium text-slate-400')}>
+                        {step.label}
+                      </span>
+                    </span>
+                    {i < arr.length - 1 && <ArrowRight className="h-3.5 w-3.5 text-slate-300" />}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* ── Status ── One merged green box once both connected AND
           registered (this used to be two separate stacked green boxes
@@ -1119,7 +1192,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               <Button
                 onClick={handleSave}
                 disabled={saving}
-                className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+                className="h-9 px-5 text-[13px] bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
               </Button>
@@ -1421,7 +1494,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               'Subscribe to the messages field',
             ].map((step, i) => (
               <li key={i} className="flex items-start gap-2.5 text-[12px] text-slate-600">
-                <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-[#EEF0FF] text-[10px] font-bold text-[#5B6CF9] mt-px">
+                <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] font-bold text-emerald-600 mt-px">
                   {i + 1}
                 </span>
                 {step}
@@ -1433,15 +1506,77 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       </div>
       </div>
 
+      {/* ── Test connection — a pre-flight checklist (are credentials
+          saved, is a verify token set, does the API actually validate),
+          not a fake "already tested" result. "Test connection" runs the
+          real diagnostic (same one Verify uses); "View test logs" opens
+          the real saved/registered/subscribed timestamps plus the most
+          recent diagnostic run — there's no persisted multi-run history
+          yet, so this is a timeline of real events, not a fabricated log. */}
+      <SectionCard
+        icon={allTestReady ? Wifi : WifiOff}
+        accentBg="#EEF0FF"
+        accentColor="#5B6CF9"
+        title="Test connection"
+        description="Verify your WhatsApp API and webhook configuration."
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {testTiles.map((tile) => (
+            <div key={tile.label} className="rounded-xl border border-slate-100 bg-white px-4 py-3.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11.5px] text-slate-400">{tile.label}</p>
+                {tile.ok
+                  ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                  : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />}
+              </div>
+              <p className={cn('mt-1 text-[13.5px] font-semibold', tile.ok ? 'text-emerald-600' : 'text-amber-600')}>
+                {tile.value}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-400 leading-relaxed">{tile.detail}</p>
+            </div>
+          ))}
+          <div className="rounded-xl border border-slate-100 bg-white px-4 py-3.5">
+            <p className="text-[11.5px] text-slate-400">Overall status</p>
+            <p className={cn('mt-1 text-[13.5px] font-semibold', allTestReady ? 'text-emerald-600' : 'text-amber-600')}>
+              {allTestReady ? 'Ready to test' : 'Needs setup'}
+            </p>
+            <p className="mt-0.5 text-[11px] text-slate-400 leading-relaxed">
+              {allTestReady ? 'You can test the connection now' : 'Finish the checks above first'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            onClick={handleVerifyRegistration}
+            disabled={verifyingRegistration}
+            className="h-9 px-4 text-[13px] bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {verifyingRegistration ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            Test connection
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setTestLogsOpen(true)}
+            className="h-9 px-4 text-[13px] border-slate-200"
+          >
+            <ListChecks className="h-4 w-4" />
+            View test logs
+          </Button>
+        </div>
+      </SectionCard>
+
       {/* ── Setup guide (collapsible) ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div id="wa-setup-guide" className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <button
           type="button"
           onClick={() => setShowSetup((p) => !p)}
           className="w-full flex items-center gap-3 px-6 py-4 text-left transition-colors hover:bg-slate-50/70"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-            <BookOpen className="h-4.5 w-4.5 text-[#5B6CF9]" />
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+            <BookOpen className="h-4.5 w-4.5 text-emerald-600" />
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold text-slate-800">Setup Guide</h3>
@@ -1478,7 +1613,7 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-[#5B6CF9] hover:underline"
+              className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-emerald-600 hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5" />
               Meta WhatsApp API Documentation
@@ -1491,6 +1626,62 @@ export function WhatsAppConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       )}
 
       <KeysDialog open={keysDialogOpen} onOpenChange={setKeysDialogOpen} />
+
+      {/* ── "View test logs" — real saved/registered/subscribed timestamps
+          plus the most recent diagnostic run. There's no persisted
+          multi-run history table (yet), so this is an honest activity
+          timeline built from data we actually have, not a fake log list. */}
+      <Dialog open={testLogsOpen} onOpenChange={setTestLogsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-emerald-600" />
+              Connection activity
+            </DialogTitle>
+            <DialogDescription>
+              Real timestamps for this connection — the latest diagnostic run appears below once you&apos;ve tested.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <LogRow label="Credentials saved" value={config?.connected_at} />
+            <LogRow label="Registered with Meta" value={config?.registered_at} />
+            <LogRow label="Webhook subscribed" value={config?.subscribed_apps_at} />
+
+            {lastRegistrationError && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[12px] text-amber-700">
+                Last registration error: {lastRegistrationError}
+              </div>
+            )}
+
+            {registrationProbe && (
+              <div className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 space-y-1.5">
+                <p className="text-[12px] font-semibold text-slate-700">
+                  Latest diagnostic —{' '}
+                  <span className={registrationProbe.live ? 'text-emerald-600' : 'text-amber-600'}>
+                    {registrationProbe.live ? 'Live' : 'Not live'}
+                  </span>
+                </p>
+                <ul className="space-y-1">
+                  {Object.entries(registrationProbe.checks).map(([k, v]) => (
+                    <li key={k} className="flex items-center gap-2 text-[11.5px]">
+                      {v === true
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        : v === false
+                        ? <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                        : <span className="h-3.5 w-3.5 rounded-full border border-slate-300 shrink-0 inline-block" />}
+                      <code className="text-slate-600">{k}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {!config && (
+              <p className="text-[12px] text-slate-400 text-center py-2">Nothing to show yet — save your credentials first.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

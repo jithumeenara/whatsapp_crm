@@ -17,6 +17,10 @@ interface Props {
    *  Manual Connect is picked. Kept only so existing call sites that still
    *  pass `manualConnect={null}` keep compiling. */
   manualConnect?: ReactNode;
+  /** Active-tab color — defaults to the app's brand violet; WhatsApp's own
+   *  config screen passes its brand green so the picker matches the rest
+   *  of that page instead of clashing with it. */
+  accentColor?: string;
 }
 
 /**
@@ -29,29 +33,34 @@ interface Props {
  * above it just duplicated that heading (reported by the user as "two
  * heads").
  */
-export function ConnectChannelScreen({ icon: Icon, channelName, method, onMethodChange, quickConnect }: Props) {
+export function ConnectChannelScreen({ icon: Icon, channelName, method, onMethodChange, quickConnect, accentColor = '#5B6CF9' }: Props) {
   return (
     <div className="flex flex-col items-center pt-6 pb-2 px-4">
       <div className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1">
         <button
           type="button"
           onClick={() => onMethodChange('quick')}
+          style={method === 'quick' ? { color: accentColor } : undefined}
           className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12.5px] font-medium whitespace-nowrap transition-all ${
-            method === 'quick' ? 'bg-white text-[#5B6CF9] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            method === 'quick' ? 'bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           Quick Connect
-          <span className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold ${
-            method === 'quick' ? 'bg-[#5B6CF9]/10 text-[#5B6CF9]' : 'bg-slate-200 text-slate-500'
-          }`}>
+          <span
+            style={method === 'quick' ? { background: `${accentColor}1A`, color: accentColor } : undefined}
+            className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold ${
+              method === 'quick' ? '' : 'bg-slate-200 text-slate-500'
+            }`}
+          >
             Recommended
           </span>
         </button>
         <button
           type="button"
           onClick={() => onMethodChange('manual')}
+          style={method === 'manual' ? { color: accentColor } : undefined}
           className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-medium whitespace-nowrap transition-all ${
-            method === 'manual' ? 'bg-white text-[#5B6CF9] shadow-sm' : 'text-slate-500 hover:text-slate-700'
+            method === 'manual' ? 'bg-white shadow-sm' : 'text-slate-500 hover:text-slate-700'
           }`}
         >
           Manual Connect

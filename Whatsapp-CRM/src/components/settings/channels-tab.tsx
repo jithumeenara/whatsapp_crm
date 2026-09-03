@@ -1,11 +1,12 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useEffect, useState, type ComponentType } from 'react';
+import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  BookOpen,
   ChartNoAxesCombined,
   Check,
   CircleHelp,
@@ -337,6 +338,17 @@ export function ChannelsTab() {
           icon={Settings2}
           title={`${current.label} connection`}
           onBack={goHome}
+          action={channel === 'whatsapp' ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => document.getElementById('wa-setup-guide')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="h-8 px-3 text-[12.5px] border-slate-200"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Setup guide
+            </Button>
+          ) : undefined}
         />
         <Config defaultConnectMethod={preferredConnectMethod} />
       </div>
@@ -570,39 +582,40 @@ export function ChannelsTab() {
   );
 }
 
-/** A lightweight breadcrumb row — deliberately NOT a bordered/boxed bar
- *  (that older shape read as a second, redundant header once a channel's
- *  own config screen — WhatsApp's, so far — has its own rich hero
- *  underneath). Labeled "All Channels" rather than "Back to overview" so
- *  it reads as a distinct action from WhatsApp's own internal
- *  "Back to overview" (which returns to ITS connected-dashboard view,
- *  not out to the channel picker). */
+/** The breadcrumb row above a channel's config screen — a plain icon +
+ *  title on the left, a right-side action that defaults to "All Channels"
+ *  (back to the channel picker) but can be swapped per-view: WhatsApp's
+ *  'config' view passes a "Setup guide" shortcut instead, since it has its
+ *  own internal "Back to overview" already (a different destination —
+ *  WhatsApp's own connected dashboard, not the channel picker). */
 function PanelHeader({
   icon: Icon,
   title,
   onBack,
+  action,
 }: {
   icon: IconComponent;
   title: string;
   onBack: () => void;
+  action?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-slate-600">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
-          <Icon className="h-3.5 w-3.5 text-[#5B5CF6]" />
-        </span>
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-3.5">
+      <div className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-800">
+        <Icon className="h-4 w-4 text-slate-400" />
         {title}
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        onClick={onBack}
-        className="h-8 px-3 text-[12.5px] border-slate-200"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        All Channels
-      </Button>
+      {action ?? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onBack}
+          className="h-8 px-3 text-[12.5px] border-slate-200"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          All Channels
+        </Button>
+      )}
     </div>
   );
 }
