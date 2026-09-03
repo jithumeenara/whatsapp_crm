@@ -23,6 +23,19 @@ import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-cod
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 
+// Scattered small dots that drift in the profile hero's background — each
+// with its own duration/delay so they read as organic ambient motion
+// rather than one shape repeated. Positions keep clear of the centered
+// avatar/name column. Module-level: static data, not per-render.
+const PROFILE_HERO_PARTICLES: { x: string; y: string; size: number; duration: number; delay: number }[] = [
+  { x: '7%', y: '20%', size: 6, duration: 5.5, delay: 0 },
+  { x: '15%', y: '68%', size: 4, duration: 6.5, delay: 0.6 },
+  { x: '93%', y: '28%', size: 5, duration: 6, delay: 1.1 },
+  { x: '88%', y: '74%', size: 4, duration: 7, delay: 0.3 },
+  { x: '48%', y: '8%', size: 3, duration: 5, delay: 1.6 },
+  { x: '35%', y: '88%', size: 4, duration: 6.2, delay: 0.9 },
+];
+
 // Classic gold, not Tailwind's amber — reads as an actual crown, not just
 // another warning-yellow badge.
 const GOLD = '#B8860B';
@@ -274,32 +287,78 @@ export function ProfileForm() {
   const blobMotion2 = reduceMotion
     ? {}
     : { animate: { y: [0, 14, 0], x: [0, -10, 0] }, transition: { duration: 8.5, repeat: Infinity, ease: 'easeInOut' as const } };
+  const blobMotion3 = reduceMotion
+    ? {}
+    : { animate: { y: [0, -11, 0], x: [0, -9, 0] }, transition: { duration: 6, repeat: Infinity, ease: 'easeInOut' as const } };
+  const glowPulse = reduceMotion
+    ? {}
+    : { animate: { scale: [1, 1.12, 1], opacity: [0.5, 0.8, 0.5] }, transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' as const } };
 
   return (
     <div className="space-y-5">
-      {/* ── Hero Card ── */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-[#EEF0FF] via-[#F4F3FD] to-[#ECEAFB] px-6 py-10">
+      {/* ── Hero Card ── layered mesh gradient (still the app's brand
+          violet — just built from two radial layers instead of one flat
+          linear gradient, for real depth) + a fuller set of independently
+          drifting ambient shapes: 3 blurred blobs at different speeds, a
+          scatter of small floating particles (each own duration/delay so
+          they don't move in lockstep), a soft pulsing glow seated right
+          behind the avatar, and two layered wave lines. Everything here
+          is decorative-only and gated by prefers-reduced-motion. */}
+      <div
+        className="relative overflow-hidden rounded-2xl border border-slate-200 px-6 py-10"
+        style={{
+          background:
+            'radial-gradient(130% 90% at 10% -15%, #E3E6FF 0%, transparent 55%), ' +
+            'radial-gradient(110% 90% at 105% 115%, #E9E6FF 0%, transparent 55%), ' +
+            'linear-gradient(135deg, #F1F1FE 0%, #F7F6FF 45%, #EEECFE 100%)',
+        }}
+      >
         {/* Decorative background — ambient only, gated by prefers-reduced-motion */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <motion.div
-            className="absolute -left-12 -top-12 h-44 w-44 rounded-full bg-white/50 blur-2xl"
+            className="absolute -left-12 -top-12 h-44 w-44 rounded-full bg-white/55 blur-2xl"
             {...blobMotion}
           />
           <motion.div
-            className="absolute -right-6 bottom-2 h-24 w-24 rounded-full bg-white/40 blur-xl"
+            className="absolute -right-8 bottom-0 h-28 w-28 rounded-full bg-[#D9DEFF]/60 blur-2xl"
             {...blobMotion2}
           />
-          <div className="absolute right-8 top-7 grid grid-cols-5 gap-2 opacity-40">
+          <motion.div
+            className="absolute right-28 top-2 hidden h-16 w-16 rounded-full bg-[#CFE0FF]/55 blur-xl sm:block"
+            {...blobMotion3}
+          />
+
+          {PROFILE_HERO_PARTICLES.map((p, i) => (
+            <motion.span
+              key={i}
+              className="absolute rounded-full bg-[#5B6CF9]/40"
+              style={{ left: p.x, top: p.y, width: p.size, height: p.size }}
+              animate={reduceMotion ? undefined : { y: [0, -10, 0], opacity: [0.25, 0.7, 0.25] }}
+              transition={reduceMotion ? undefined : { duration: p.duration, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
+            />
+          ))}
+
+          <div className="absolute right-8 top-7 grid grid-cols-5 gap-2 opacity-30">
             {Array.from({ length: 20 }).map((_, i) => (
               <span key={i} className="h-1 w-1 rounded-full bg-[#5B6CF9]" />
             ))}
           </div>
-          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-30" preserveAspectRatio="none" viewBox="0 0 400 60">
-            <path d="M0 40 Q 100 10 200 35 T 400 30" fill="none" stroke="#5B6CF9" strokeWidth="1" />
+          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-25" preserveAspectRatio="none" viewBox="0 0 400 60">
+            <path d="M0 42 Q 100 14 200 36 T 400 30" fill="none" stroke="#5B6CF9" strokeWidth="1" />
+          </svg>
+          <svg className="absolute inset-x-0 bottom-0 h-16 w-full opacity-15" preserveAspectRatio="none" viewBox="0 0 400 60">
+            <path d="M0 50 Q 120 24 220 44 T 400 40" fill="none" stroke="#5B6CF9" strokeWidth="1" />
           </svg>
         </div>
 
         <div className="relative flex flex-col items-center text-center">
+          {/* A soft glow seated directly behind the avatar — the one
+              "focus on the head background" touch, drawing the eye to
+              the photo instead of spreading everything evenly. */}
+          <motion.div
+            className="pointer-events-none absolute left-1/2 top-0 h-40 w-40 -translate-x-1/2 rounded-full bg-[#5B6CF9]/25 blur-2xl"
+            {...glowPulse}
+          />
           {/* No `size` prop here on purpose — Avatar's own size="lg" variant
               (data-[size=lg]:size-10, 40px) was winning the CSS cascade
               over this explicit className, collapsing the whole avatar to
