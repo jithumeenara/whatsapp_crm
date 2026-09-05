@@ -636,6 +636,13 @@ model MetaAdsConfig {
   /// Conversions API dataset — created automatically on first successful test, not user-entered.
   dataset_id               String?
   automatic_events_enabled Boolean   @default(true)
+  /// Standard Meta Pixel ID for a client's own website — separate from
+  /// dataset_id (that one's for WhatsApp messaging events specifically).
+  pixel_id                 String?
+  /// Plain-text secret embedded in the public tracking snippet's URL —
+  /// same convention as SmsConfig.webhook_secret. Not a login credential;
+  /// authorizes only the narrow "send one web conversion event" action.
+  web_events_secret        String?   @unique
   status                   String    @default("disconnected")
   last_tested_at           DateTime? @db.Timestamptz(6)
   test_error               String?

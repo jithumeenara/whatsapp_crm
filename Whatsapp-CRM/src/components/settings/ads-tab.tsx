@@ -6,7 +6,7 @@ import {
   Megaphone, MousePointerClick, FileSpreadsheet, Sparkles, LineChart,
   Clock, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2, RotateCcw,
   Pencil, Hash, Building2, Lock, WifiOff, Zap, Trash2, Database,
-  Users2, RefreshCw,
+  Users2, RefreshCw, Code2, Copy, ClipboardCheck, Globe,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -451,6 +451,7 @@ function MetaAdsOverview() {
 
       {config && <LeadAdFormsManager />}
       {config && <CustomAudiencesPanel />}
+      {config && <PixelPanel />}
 
       {/* Feature grid */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -492,22 +493,39 @@ function MetaAdsOverview() {
 }
 
 interface LeadFormRow { id: string; name: string; is_active: boolean; submission_count: number }
+interface DiscoveredForm { meta_form_id: string; name: string; tracked: boolean; is_active: boolean; submission_count: number }
 
-/** Fixes a real gap: forms auto-sync the moment a submission arrives
- *  (see facebook/webhook route), but until now there was no screen to
- *  see which forms are syncing, rename them, or pause one — the
- *  is_active column existed but nothing in the UI ever set it. */
+/** Fixes a real gap: forms used to only appear reactively, the first
+ *  time a submission arrived. Now tries the "browse every form on the
+ *  Page" discover endpoint first (needs Facebook connected) — showing
+ *  untracked forms with an Enable button — falling back to the plain
+ *  tracked-only list if Facebook isn't connected or Meta rejects the
+ *  call, so this never dead-ends into an empty screen for no reason. */
 function LeadAdFormsManager() {
   const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<'discover' | 'tracked-only'>('tracked-only');
+  const [discoverReason, setDiscoverReason] = useState('');
+  const [pageId, setPageId] = useState<string | null>(null);
+  const [discovered, setDiscovered] = useState<DiscoveredForm[]>([]);
   const [forms, setForms] = useState<LeadFormRow[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch('/api/meta-ads/lead-forms');
-      const data = await res.json();
-      setForms(data.forms ?? []);
+      const discoverRes = await fetch('/api/meta-ads/lead-forms/discover');
+      const discoverData = await discoverRes.json();
+      if (discoverData.discoverable) {
+        setMode('discover');
+        setPageId(discoverData.page_id);
+        setDiscovered(discoverData.forms ?? []);
+      } else {
+        setMode('tracked-only');
+        setDiscoverReason(discoverData.reason ?? '');
+        const res = await fetch('/api/meta-ads/lead-forms');
+        const data = await res.json();
+        setForms(data.forms ?? []);
+      }
     } catch {
       toast.error('Failed to load Lead Ads forms');
     } finally {
@@ -516,6 +534,25 @@ function LeadAdFormsManager() {
   }
 
   useEffect(() => { load(); }, []);
+
+  async function enableDiscovered(form: DiscoveredForm) {
+    if (!pageId) return;
+    setSavingId(form.meta_form_id);
+    try {
+      const res = await fetch('/api/meta-ads/lead-forms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meta_form_id: form.meta_form_id, name: form.name, page_id: pageId }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(`Now syncing "${form.name}"`);
+      setDiscovered((prev) => prev.map((f) => (f.meta_form_id === form.meta_form_id ? { ...f, tracked: true, is_active: true } : f)));
+    } catch {
+      toast.error('Failed to enable this form');
+    } finally {
+      setSavingId(null);
+    }
+  }
 
   async function toggleActive(form: LeadFormRow) {
     setSavingId(form.id);
@@ -531,6 +568,25 @@ function LeadAdFormsManager() {
     } catch {
       toast.error('Failed to update — reverting');
       setForms((prev) => prev.map((f) => (f.id === form.id ? { ...f, is_active: form.is_active } : f)));
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function toggleDiscoveredActive(form: DiscoveredForm) {
+    setSavingId(form.meta_form_id);
+    const next = !form.is_active;
+    setDiscovered((prev) => prev.map((f) => (f.meta_form_id === form.meta_form_id ? { ...f, is_active: next } : f)));
+    try {
+      const res = await fetch('/api/meta-ads/lead-forms', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ meta_form_id: form.meta_form_id, is_active: next }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      toast.error('Failed to update — reverting');
+      setDiscovered((prev) => prev.map((f) => (f.meta_form_id === form.meta_form_id ? { ...f, is_active: !next } : f)));
     } finally {
       setSavingId(null);
     }
@@ -558,15 +614,52 @@ function LeadAdFormsManager() {
         </span>
         <div className="flex-1 min-w-0">
           <h3 className="text-[14px] font-semibold text-slate-800">Lead Ads Forms</h3>
-          <p className="text-[12px] text-slate-500 mt-0.5">Discovered automatically the first time each form gets a submission.</p>
+          <p className="text-[12px] text-slate-500 mt-0.5">
+            {mode === 'discover' ? 'Every Instant Form on your connected Page — pick which ones sync.' : 'Discovered automatically the first time each form gets a submission.'}
+          </p>
         </div>
       </div>
       {loading ? (
         <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+      ) : mode === 'discover' ? (
+        discovered.length === 0 ? (
+          <p className="px-6 py-8 text-center text-[12.5px] text-slate-400">No Instant Forms found on this Page yet.</p>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {discovered.map((form) => (
+              <div key={form.meta_form_id} className="flex items-center gap-3 px-6 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-semibold text-slate-800 truncate">{form.name}</p>
+                  {form.tracked && <p className="text-[11.5px] text-slate-400">{form.submission_count} lead{form.submission_count === 1 ? '' : 's'}</p>}
+                </div>
+                {form.tracked ? (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={form.is_active}
+                    disabled={savingId === form.meta_form_id}
+                    onClick={() => toggleDiscoveredActive(form)}
+                    title={form.is_active ? 'Pause syncing' : 'Resume syncing'}
+                    className={cn('relative h-5.5 w-10 shrink-0 rounded-full transition-colors', form.is_active ? '' : 'bg-slate-300')}
+                    style={form.is_active ? { background: META_BLUE } : undefined}
+                  >
+                    <span className={cn('absolute top-0.5 h-4.5 w-4.5 rounded-full bg-white shadow transition-transform', form.is_active ? 'translate-x-[19px]' : 'translate-x-0.5')} />
+                  </button>
+                ) : (
+                  <Button type="button" variant="outline" size="sm" disabled={savingId === form.meta_form_id}
+                    onClick={() => enableDiscovered(form)} className="h-8 shrink-0 text-[12px] border-slate-200">
+                    {savingId === form.meta_form_id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Enable'}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )
       ) : forms.length === 0 ? (
-        <p className="px-6 py-8 text-center text-[12.5px] text-slate-400">
-          No Lead Ads forms yet — they&apos;ll show up here the moment someone submits one.
-        </p>
+        <div className="px-6 py-8 text-center">
+          <p className="text-[12.5px] text-slate-400">No Lead Ads forms yet — they&apos;ll show up here the moment someone submits one.</p>
+          {discoverReason && <p className="mt-1 text-[11px] text-slate-400">{discoverReason}</p>}
+        </div>
       ) : (
         <div className="divide-y divide-slate-100">
           {forms.map((form) => (
@@ -691,6 +784,177 @@ function CustomAudiencesPanel() {
               </Button>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Standard Meta Pixel + web Conversions API — for a client's own
+ *  website, distinct from everything else on this page (which is all
+ *  WhatsApp-side). Generates a real, working snippet: the standard
+ *  Pixel base code, plus a small server-relay helper that calls
+ *  /api/meta-ads/track alongside every fbq() call with a shared
+ *  event_id, which is what lets Meta deduplicate the browser and
+ *  server copies of one event. */
+function PixelPanel() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [pixelId, setPixelId] = useState('');
+  const [savedPixelId, setSavedPixelId] = useState<string | null>(null);
+  const [webEventsSecret, setWebEventsSecret] = useState<string | null>(null);
+  const [copied, setCopied] = useState<'pixel' | 'relay' | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/meta-ads/pixel');
+      const data = await res.json();
+      setPixelId(data.pixel_id || '');
+      setSavedPixelId(data.pixel_id || null);
+      setWebEventsSecret(data.web_events_secret || null);
+    } catch {
+      toast.error('Failed to load Pixel settings');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function save() {
+    if (!pixelId.trim()) { toast.error('Enter a Pixel ID'); return; }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/meta-ads/pixel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pixel_id: pixelId.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Failed to save'); return; }
+      toast.success('Pixel saved — snippet ready below');
+      setSavedPixelId(data.pixel_id);
+      setWebEventsSecret(data.web_events_secret);
+    } catch {
+      toast.error('Failed to save Pixel ID');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const trackUrl = `${origin}/api/meta-ads/track?secret=${webEventsSecret ?? '<SECRET>'}`;
+
+  const pixelSnippet = savedPixelId ? `<!-- Meta Pixel Code -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window, document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '${savedPixelId}');
+fbq('track', 'PageView');
+</script>
+<!-- End Meta Pixel Code -->` : '';
+
+  const relaySnippet = savedPixelId ? `<script>
+// Sends a matching server-side event for deduplication — call this
+// instead of a bare fbq('track', ...) whenever you want Meta's
+// Conversions API to also see the event (recommended for anything
+// beyond PageView, e.g. a form submit or a purchase).
+function sendWhatsAppCrmEvent(eventName, customData, userData) {
+  var eventId = eventName + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  fbq('track', eventName, customData || {}, { eventID: eventId });
+  fetch('${trackUrl}', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event_name: eventName,
+      event_id: eventId,
+      event_source_url: window.location.href,
+      custom_data: customData || {},
+      user_data: userData || {} // { email: '...', phone: '...' } if you have it
+    })
+  });
+}
+
+// Example — call when a purchase completes:
+// sendWhatsAppCrmEvent('Purchase', { currency: 'INR', value: 999 }, { email: customerEmail });
+</script>` : '';
+
+  function copy(which: 'pixel' | 'relay', text: string) {
+    navigator.clipboard.writeText(text);
+    setCopied(which);
+    toast.success('Copied');
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: META_BLUE_SOFT }}>
+          <Globe className="h-4.5 w-4.5" style={{ color: META_BLUE }} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">Website Tracking (Pixel)</h3>
+          <p className="text-[12px] text-slate-500 mt-0.5">For a client&apos;s own website — separate from everything else on this page, which is WhatsApp-only.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+      ) : (
+        <div className="px-6 py-5 space-y-5">
+          <div className="flex items-end gap-2">
+            <div className="flex-1 space-y-1.5">
+              <Label className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700">
+                <Hash className="h-3.5 w-3.5 text-slate-400" />
+                Pixel ID
+              </Label>
+              <Input value={pixelId} onChange={(e) => setPixelId(e.target.value)} placeholder="e.g. 1234567890123456"
+                className="h-9 text-[13px] border-slate-200 font-mono" />
+            </div>
+            <Button type="button" onClick={save} disabled={saving} className="h-9 px-4 text-[13px] text-white shrink-0" style={{ background: META_BLUE }}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
+            </Button>
+          </div>
+
+          {savedPixelId ? (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-700"><Code2 className="h-3.5 w-3.5 text-slate-400" />Base Pixel code</p>
+                  <button type="button" onClick={() => copy('pixel', pixelSnippet)} className="flex items-center gap-1 text-[11.5px] font-medium text-slate-500 hover:text-slate-800">
+                    {copied === 'pixel' ? <ClipboardCheck className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied === 'pixel' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="overflow-x-auto rounded-xl bg-slate-900 px-4 py-3 text-[11.5px] leading-relaxed text-slate-100 font-mono">{pixelSnippet}</pre>
+                <p className="mt-1.5 text-[11px] text-slate-400">Paste this once, right after the opening <code className="font-mono">&lt;head&gt;</code> tag of every page.</p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-700"><Code2 className="h-3.5 w-3.5 text-slate-400" />Server-relay helper (for real conversions)</p>
+                  <button type="button" onClick={() => copy('relay', relaySnippet)} className="flex items-center gap-1 text-[11.5px] font-medium text-slate-500 hover:text-slate-800">
+                    {copied === 'relay' ? <ClipboardCheck className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copied === 'relay' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="overflow-x-auto rounded-xl bg-slate-900 px-4 py-3 text-[11.5px] leading-relaxed text-slate-100 font-mono">{relaySnippet}</pre>
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                  Paste after the base Pixel code, then call <code className="font-mono">sendWhatsAppCrmEvent(...)</code> on real actions (a form submit, a completed order) —
+                  it fires the browser event and a matching server event together, so Meta counts it once instead of twice.
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="text-[12px] text-slate-400">Save a Pixel ID to generate the snippet.</p>
+          )}
         </div>
       )}
     </div>

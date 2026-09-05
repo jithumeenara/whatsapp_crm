@@ -134,6 +134,71 @@ export async function sendBusinessMessagingEvent(args: SendBusinessMessagingEven
 }
 
 // ============================================================
+// Standard Web Conversions API (a client's own website, not WhatsApp)
+// ============================================================
+//
+// Distinct from sendBusinessMessagingEvent above: this pairs with a
+// normal Meta Pixel on a website, uses action_source: "website", and
+// posts to the PIXEL's own events edge rather than a messaging dataset.
+// Real per-event dedup with the Pixel requires the same event_name +
+// event_id to appear in both — the caller (the /api/meta-ads/track relay
+// route, and the snippet it's paired with) is responsible for generating
+// one event_id and using it in both places.
+
+export interface WebConversionUserData {
+  email?: string
+  phone?: string
+  clientIpAddress?: string
+  clientUserAgent?: string
+  /** Facebook click ID cookie (_fbc) — read from the browser if present. */
+  fbc?: string
+  /** Facebook browser ID cookie (_fbp) — read from the browser if present. */
+  fbp?: string
+}
+
+export interface SendWebConversionEventArgs {
+  pixelId: string
+  accessToken: string
+  eventName: string
+  eventTime: number
+  eventId?: string
+  eventSourceUrl?: string
+  userData: WebConversionUserData
+  customData?: Record<string, unknown>
+}
+
+export async function sendWebConversionEvent(args: SendWebConversionEventArgs): Promise<void> {
+  const userData: Record<string, string> = {}
+  // em/ph are Meta's own field names for hashed email/phone — same
+  // SHA-256-over-normalized-value convention as Custom Audiences.
+  if (args.userData.email) userData.em = hashForAudience(args.userData.email, 'email')
+  if (args.userData.phone) userData.ph = hashForAudience(args.userData.phone, 'phone')
+  if (args.userData.clientIpAddress) userData.client_ip_address = args.userData.clientIpAddress
+  if (args.userData.clientUserAgent) userData.client_user_agent = args.userData.clientUserAgent
+  if (args.userData.fbc) userData.fbc = args.userData.fbc
+  if (args.userData.fbp) userData.fbp = args.userData.fbp
+
+  const res = await fetch(`${META_API_BASE}/${args.pixelId}/events`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${args.accessToken}` },
+    body: JSON.stringify({
+      data: [{
+        event_name: args.eventName,
+        event_time: args.eventTime,
+        ...(args.eventId ? { event_id: args.eventId } : {}),
+        action_source: 'website',
+        ...(args.eventSourceUrl ? { event_source_url: args.eventSourceUrl } : {}),
+        user_data: userData,
+        ...(args.customData ? { custom_data: args.customData } : {}),
+      }],
+    }),
+  })
+  if (!res.ok) {
+    await throwMetaError(res, `Failed to send ${args.eventName} to Meta's web Conversions API`)
+  }
+}
+
+// ============================================================
 // Connection test
 // ============================================================
 
