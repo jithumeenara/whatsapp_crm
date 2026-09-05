@@ -6,7 +6,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   User, MousePointerClick, Tag, LayoutGrid, MessageSquare,
   Layers, Users, Bot, Database, Bell, Key, Webhook, Settings,
-  Search, ShieldCheck, X, ChevronLeft, ChevronRight,
+  Search, ShieldCheck, X, ChevronLeft, ChevronRight, Megaphone,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -23,6 +23,7 @@ import { LeadsSettingsV2 } from "@/components/settings/leads-settings-v2"
 import { CustomFieldsPanel } from "@/components/settings/custom-fields-panel"
 import { ChannelsTab } from "@/components/settings/channels-tab"
 import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
+import { AdsTab } from "@/components/settings/ads-tab"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -53,6 +54,7 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
     tabs: [
       { key: "platform",  label: "Embedded Signup", icon: ShieldCheck,   ownerOnly: true, aliases: ["Meta App", "Tech Provider", "Quick Connect"] },
       { key: "channels",  label: "Channels",        icon: MessageSquare, ownerOnly: true, aliases: ["WhatsApp", "Instagram", "Facebook", "Messenger", "SMS", "Email", "RCS", "Business Profile"] },
+      { key: "ads",       label: "Ads",             icon: Megaphone,     ownerOnly: true, aliases: ["Meta Ads", "Google Ads", "Facebook Ads", "Advertising", "Pixel", "Conversions API", "Lead Ads"] },
     ],
   },
   {
@@ -84,6 +86,7 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
 const TAB_TITLES: Record<string, string> = {
   profile: "Profile",
   channels: "Channels",
+  ads: "Ads",
   platform: "Embedded Signup",
   capture: "Capture",
   tags: "Tags",
@@ -100,6 +103,7 @@ const TAB_TITLES: Record<string, string> = {
 const TAB_DESCRIPTIONS: Record<string, string> = {
   profile: "Your name, contact details and account security",
   channels: "Connect and configure every messaging channel",
+  ads: "Connect your ad platforms to track leads and ROI without leaving this CRM",
   platform: "One Meta App for the whole platform — set up once, every tenant gets one-click Facebook Connect",
   capture: "How new contacts get captured into the CRM",
   tags: "Organize your contacts with color-coded tags",
@@ -166,6 +170,7 @@ function SettingsContent() {
     switch (activeTab) {
       case "profile":          return <ProfileForm />
       case "channels":         return isOwner ? <ChannelsTab /> : null
+      case "ads":              return isOwner ? <AdsTab /> : null
       case "platform":         return isOwner ? <PlatformMetaTab /> : null
       case "capture":          return <CapturePanel />
       case "tags":             return <TagManager />

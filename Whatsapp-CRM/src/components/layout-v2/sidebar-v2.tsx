@@ -30,6 +30,7 @@ import {
   Globe,
   Plug,
   Kanban,
+  Megaphone,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -58,6 +59,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/pipelines", label: "Pipelines", icon: Kanban,          agentAllowed: false },
       { href: "/contacts",  label: "Contacts",  icon: Users,           agentAllowed: true },
       { href: "/reports",   label: "Reports",   icon: BarChart2,       agentAllowed: false },
+      { href: "/ads",       label: "Ads",       icon: Megaphone,       agentAllowed: false },
     ],
   },
   {
