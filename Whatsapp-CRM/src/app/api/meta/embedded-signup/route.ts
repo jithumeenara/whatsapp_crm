@@ -11,6 +11,7 @@ import {
   registerPhoneNumber,
   verifyPhoneNumber,
 } from "@/lib/whatsapp/meta-api"
+import { createOrGetDataset } from "@/lib/meta-ads/api"
 
 /**
  * POST /api/meta/embedded-signup
@@ -115,11 +116,15 @@ export async function POST(req: NextRequest) {
     // ── Facebook Page (→ Messenger) + Instagram, best-effort ───────────
     const social = await discoverAndSaveFacebookAndInstagram(ctx.accountId, accessToken)
 
+    // ── Meta Ads (ad account + Conversions API dataset), best-effort ──
+    const ads = await discoverAndSaveMetaAds(ctx.accountId, ctx.userId, accessToken, wabaId)
+
     return NextResponse.json({
       success: true,
       phoneDisplay: phoneInfo?.display_phone_number ?? "",
       verifiedName: phoneInfo?.verified_name ?? "",
       ...social,
+      ...ads,
     })
   } catch (err) {
     return toErrorResponse(err)
@@ -184,6 +189,69 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
     // Best-effort by design — never let a Page/Instagram discovery hiccup
     // fail the WhatsApp connection that already succeeded above.
     console.error("[embedded-signup] Facebook/Instagram discovery skipped (non-fatal):", err)
+  }
+  return result
+}
+
+/**
+ * Meta Ads' own "Quick Connect" — same one popup, same business token.
+ * Whether this finds anything at all depends entirely on whether the
+ * platform's Meta App Configuration was set up to request
+ * ads_management/whatsapp_business_manage_events — exactly the same
+ * best-effort shape as discoverAndSaveFacebookAndInstagram above. Finding
+ * nothing here isn't an error; it just means Manual Connect (pasting a
+ * System User token with those permissions) is the path for now.
+ */
+async function discoverAndSaveMetaAds(accountId: string, userId: string, businessToken: string, wabaId: string) {
+  const result = { metaAdsConnected: false, adAccountName: "" }
+  try {
+    const adAccountsRes = await fetch(`https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name&access_token=${businessToken}`, { cache: "no-store" })
+    const adAccountsData = (await adAccountsRes.json()) as { data?: Array<{ id: string; name: string }> }
+    const adAccount = adAccountsData.data?.[0]
+
+    // The dataset only needs whatsapp_business_manage_events, not
+    // ads_management — worth trying independently of ad account access,
+    // since Click-to-WhatsApp attribution can work even for a
+    // Configuration that never granted ad account visibility at all.
+    let datasetId: string | null = null
+    try {
+      const created = await createOrGetDataset({ wabaId, accessToken: businessToken })
+      datasetId = created.datasetId
+    } catch (err) {
+      console.warn("[embedded-signup] Meta Ads dataset creation skipped (non-fatal):", err instanceof Error ? err.message : err)
+    }
+
+    // Nothing this Configuration actually granted — Manual Connect is
+    // the path until the platform operator widens its permission set.
+    if (!adAccount && !datasetId) return result
+
+    const now = new Date()
+    await prisma.metaAdsConfig.upsert({
+      where: { account_id: accountId },
+      create: {
+        account_id: accountId,
+        user_id: userId,
+        waba_id: wabaId,
+        ad_account_id: adAccount?.id ?? null,
+        access_token: encrypt(businessToken),
+        dataset_id: datasetId,
+        status: "connected",
+        connected_at: now,
+        last_tested_at: now,
+      },
+      update: {
+        waba_id: wabaId,
+        ad_account_id: adAccount?.id ?? null,
+        access_token: encrypt(businessToken),
+        dataset_id: datasetId ?? undefined,
+        status: "connected",
+        last_tested_at: now,
+      },
+    })
+    result.metaAdsConnected = true
+    result.adAccountName = adAccount?.name ?? ""
+  } catch (err) {
+    console.error("[embedded-signup] Meta Ads discovery skipped (non-fatal):", err)
   }
   return result
 }

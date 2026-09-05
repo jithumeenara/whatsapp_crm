@@ -125,6 +125,7 @@ export function EmbeddedSignupButton({ onConnected, className }: Props) {
       const connected = [`WhatsApp (${data.phoneDisplay || 'connected'})`];
       if (data.facebookConnected) connected.push(`Facebook Page (${data.pageName})`);
       if (data.instagramConnected) connected.push(`Instagram (@${data.igUsername})`);
+      if (data.metaAdsConnected) connected.push(`Meta Ads${data.adAccountName ? ` (${data.adAccountName})` : ''}`);
       toast.success(`Connected — ${connected.join(', ')}`);
       onConnected?.();
     } finally {

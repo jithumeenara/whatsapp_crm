@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
+import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
 
 type Provider = 'meta' | 'google';
 
@@ -119,6 +120,10 @@ function MetaAdsOverview() {
   const [config, setConfig] = useState<AdsConfig | null>(null);
   const [connected, setConnected] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  // Only relevant before a connection exists — once config is saved
+  // (either way) the picker gets out of the way, same as every other
+  // channel's Quick/Manual pattern in this app.
+  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>('quick');
 
   const [wabaId, setWabaId] = useState('');
   const [adAccountId, setAdAccountId] = useState('');
@@ -259,7 +264,60 @@ function MetaAdsOverview() {
         </div>
       </div>
 
-      {/* Credentials */}
+      {/* Quick Connect / Manual Connect — only relevant pre-connection */}
+      {!config && (
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+          <div className="flex min-w-max items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setConnectMethod('quick')}
+              className={cn(
+                'flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors',
+                connectMethod === 'quick' ? 'bg-[#EAF2FF] text-[#0866FF]' : 'text-slate-500 hover:bg-slate-50',
+              )}
+            >
+              Quick Connect
+              <span className={cn(
+                'rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold',
+                connectMethod === 'quick' ? 'bg-[#0866FF]/10 text-[#0866FF]' : 'bg-slate-200 text-slate-500',
+              )}>
+                Recommended
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConnectMethod('manual')}
+              className={cn(
+                'rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors',
+                connectMethod === 'manual' ? 'bg-[#EAF2FF] text-[#0866FF]' : 'text-slate-500 hover:bg-slate-50',
+              )}
+            >
+              Manual Connect
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!config && connectMethod === 'quick' ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#EAF2FF]">
+            <Megaphone className="h-6 w-6" style={{ color: META_BLUE }} />
+          </span>
+          <h3 className="text-[16px] font-semibold text-slate-900">Connect with Facebook</h3>
+          <p className="max-w-sm text-[12.5px] text-slate-500">
+            Uses the exact same sign-in as WhatsApp Quick Connect. If this Meta App&apos;s permissions
+            include ads access, your ad account and Conversions API dataset connect automatically —
+            no tokens to copy.
+          </p>
+          <EmbeddedSignupButton
+            onConnected={fetchConfig}
+            className="mt-1 h-11 rounded-xl bg-[#0866FF] px-5 text-[14px] font-semibold text-white hover:bg-[#0655d1]"
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            Already connected WhatsApp this way? Click again to check for ad account access.
+          </p>
+        </div>
+      ) : (config || connectMethod === 'manual') && (
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: META_BLUE_SOFT }}>
@@ -388,6 +446,7 @@ function MetaAdsOverview() {
           )}
         </div>
       </div>
+      )}
 
       {/* Feature grid */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
