@@ -43,6 +43,23 @@ interface WhatsAppMessage {
   button?: { payload: string; text: string }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Present ONLY on the customer's first message when the conversation
+   * started from a Click-to-WhatsApp ad — `ctwa_clid` is Meta's own
+   * per-click attribution token, needed later to report a real outcome
+   * (qualified lead, closed deal) back via the Conversions API for
+   * Business Messaging. Never present on later messages in the thread.
+   */
+  referral?: {
+    source_url?: string
+    source_id?: string
+    source_type?: string
+    headline?: string
+    body?: string
+    media_type?: string
+    image_url?: string
+    ctwa_clid?: string
+  }
 }
 
 interface WhatsAppWebhookEntry {
@@ -589,6 +606,26 @@ async function processMessage(
     },
   })
   const isFirstInboundMessage = priorCustomerMsgCount === 0
+
+  // Click-to-WhatsApp ad attribution — Meta attaches this ONLY to the
+  // referral object of the customer's first message in the thread, so
+  // this is the one and only place it can ever be captured. Stored once,
+  // read later (Meta Ads Conversions API) whenever this conversation
+  // produces a real outcome — never overwritten by a later message.
+  if (isFirstInboundMessage && message.referral?.ctwa_clid && !conversation.ctwa_clid) {
+    try {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          ctwa_clid: message.referral.ctwa_clid,
+          ctwa_ad_headline: message.referral.headline ?? null,
+          ctwa_source_id: message.referral.source_id ?? null,
+        },
+      })
+    } catch (err) {
+      console.error('[webhook] failed to store ctwa_clid (non-fatal):', err)
+    }
+  }
 
   try {
     const savedMsg = await prisma.message.create({

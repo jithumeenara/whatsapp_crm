@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
+import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
 
 async function getLead(id: string, accountId: string) {
   return prisma.lead.findFirst({
@@ -154,6 +155,13 @@ export async function PATCH(
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
+
+    // Click-to-WhatsApp attribution — a lead qualifying is a real outcome
+    // worth reporting back to Meta, if this contact's conversation came
+    // from an ad in the first place (reportMetaAdsOutcome no-ops otherwise).
+    if (lead_quality === 'qualified' && existing.lead_quality !== 'qualified') {
+      void reportMetaAdsOutcome({ accountId: ctx.accountId, contactId: lead.contact_id, eventName: 'QualifiedLead' })
+    }
 
     const activities: Array<ReturnType<typeof prisma.leadActivity.create>> = []
 

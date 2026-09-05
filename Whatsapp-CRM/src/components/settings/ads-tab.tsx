@@ -1,19 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Megaphone, MousePointerClick, FileSpreadsheet, Sparkles, LineChart,
-  Clock, ShieldCheck, Link2, CheckCircle2,
+  Clock, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2, RotateCcw,
+  Pencil, Hash, Building2, Lock, WifiOff, Zap, Trash2, Database,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 
 type Provider = 'meta' | 'google';
 
 const META_BLUE = '#0866FF';
 const META_BLUE_SOFT = '#EAF2FF';
+const MASKED_TOKEN = '••••••••••••••••';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
+
+interface AdsConfig {
+  id: string
+  waba_id: string
+  ad_account_id: string | null
+  business_id: string | null
+  dataset_id: string | null
+  automatic_events_enabled: boolean
+  status: string
+  connected_at: string | null
+  test_error: string | null
+}
 
 /** Two-provider rail — same pill-strip shape as Channels' ChannelRail,
  *  deliberately built to grow: Google Ads sits here already, greyed out,
@@ -56,7 +73,7 @@ const FEATURES = [
   {
     icon: FileSpreadsheet,
     title: 'Lead Ads, synced automatically',
-    body: 'Every Instant Form submission lands in Leads within seconds, mapped to the right fields — no manual export, no missed 90-day retention window.',
+    body: 'Every Instant Form submission lands in Leads within seconds, mapped to a real contact — no manual export, no missed 90-day retention window.',
   },
   {
     icon: Sparkles,
@@ -66,15 +83,151 @@ const FEATURES = [
   {
     icon: LineChart,
     title: 'Ad spend, tied to real revenue',
-    body: "See what each campaign actually produced in closed deals inside Reports — not just clicks and cost-per-lead.",
+    body: "See what each campaign actually produced in closed deals — not just clicks and cost-per-lead.",
   },
 ];
 
+/** A label/value row in the connected summary — same shape used across
+ *  every other channel's read-only credentials view this session. */
+function InfoRow({ icon: Icon, label, children, right }: {
+  icon: React.ElementType; label: string; children: React.ReactNode; right?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-3.5 px-6 py-4">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: META_BLUE_SOFT }}>
+        <Icon className="h-4 w-4" style={{ color: META_BLUE }} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] font-medium text-slate-400">{label}</p>
+        <div className="text-[13.5px] font-semibold text-slate-800 mt-0.5 truncate">{children}</div>
+      </div>
+      {right && <div className="shrink-0">{right}</div>}
+    </div>
+  );
+}
+
 function MetaAdsOverview() {
-  function handleConnect() {
-    toast.message('Meta Ads is still in development', {
-      description: "It'll connect the same way WhatsApp does — one click, no tokens to paste in. We'll let you know the moment it's ready.",
-    });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [showToken, setShowToken] = useState(false);
+  const [tokenEdited, setTokenEdited] = useState(false);
+
+  const [config, setConfig] = useState<AdsConfig | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('');
+
+  const [wabaId, setWabaId] = useState('');
+  const [adAccountId, setAdAccountId] = useState('');
+  const [businessId, setBusinessId] = useState('');
+  const [accessToken, setAccessToken] = useState('');
+  const [automaticEvents, setAutomaticEvents] = useState(true);
+
+  async function fetchConfig() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/meta-ads/config');
+      const payload = await res.json();
+      setConnected(!!payload.connected);
+      setStatusMessage(payload.message || '');
+      const data = payload.config ?? null;
+      setConfig(data);
+      if (data) {
+        setWabaId(data.waba_id || '');
+        setAdAccountId(data.ad_account_id || '');
+        setBusinessId(data.business_id || '');
+        setAutomaticEvents(data.automatic_events_enabled);
+        setAccessToken(MASKED_TOKEN);
+        setTokenEdited(false);
+      } else {
+        setWabaId(''); setAdAccountId(''); setBusinessId(''); setAccessToken('');
+      }
+    } catch {
+      toast.error('Failed to load Meta Ads configuration');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { fetchConfig(); }, []);
+
+  const showForm = !config || editing;
+
+  function cancelEdit() {
+    setEditing(false);
+    if (config) {
+      setWabaId(config.waba_id || '');
+      setAdAccountId(config.ad_account_id || '');
+      setBusinessId(config.business_id || '');
+      setAccessToken(MASKED_TOKEN);
+      setTokenEdited(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!wabaId.trim()) { toast.error('WhatsApp Business Account ID is required'); return; }
+    if (!config && !accessToken.trim()) { toast.error('Access Token is required'); return; }
+    if (config && !tokenEdited) { toast.error('Re-enter the Access Token to save changes'); return; }
+
+    setSaving(true);
+    try {
+      const res = await fetch('/api/meta-ads/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          waba_id: wabaId.trim(),
+          ad_account_id: adAccountId.trim() || null,
+          business_id: businessId.trim() || null,
+          access_token: accessToken.trim(),
+          automatic_events_enabled: automaticEvents,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Failed to save'); return; }
+      toast.success(data.message || 'Meta Ads connected');
+      setEditing(false);
+      await fetchConfig();
+    } catch {
+      toast.error('Failed to save configuration');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    try {
+      await fetchConfig();
+      toast.success('Connection refreshed');
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function performReset() {
+    setResetting(true);
+    try {
+      const res = await fetch('/api/meta-ads/config', { method: 'DELETE' });
+      if (!res.ok) { toast.error('Failed to reset configuration'); return; }
+      toast.success('Meta Ads configuration cleared');
+      setResetConfirmOpen(false);
+      await fetchConfig();
+    } catch {
+      toast.error('Failed to reset configuration');
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin" style={{ color: META_BLUE }} />
+      </div>
+    );
   }
 
   return (
@@ -89,31 +242,157 @@ function MetaAdsOverview() {
             <Megaphone className="h-9 w-9" />
           </span>
           <div className="min-w-0 flex-1">
-            <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold" style={{ background: META_BLUE_SOFT, color: META_BLUE }}>
-              <Clock className="h-3 w-3" />
-              In development
+            <span className={cn(
+              'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-bold',
+              connected ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600',
+            )}>
+              {connected ? <CheckCircle2 className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+              {connected ? 'Connected' : 'Not connected'}
             </span>
             <h2 className="mt-3 text-[19px] font-bold text-slate-900">Meta Ads</h2>
             <p className="mt-1 text-[13px] text-slate-500 max-w-lg">
-              Connect Facebook &amp; Instagram advertising to this CRM — Click-to-WhatsApp attribution, Lead Ads sync, and a real ROI dashboard, all from one account.
+              {connected
+                ? (statusMessage || 'Facebook & Instagram advertising is connected to this CRM.')
+                : 'Connect Facebook & Instagram advertising — Click-to-WhatsApp attribution, Lead Ads sync, and a real ROI dashboard.'}
             </p>
-            <Button
-              type="button"
-              onClick={handleConnect}
-              className="mt-4 h-10 px-5 text-[13px] font-semibold text-white"
-              style={{ background: META_BLUE }}
-            >
-              <Link2 className="h-4 w-4" />
-              Connect Meta Ads
-            </Button>
           </div>
+        </div>
+      </div>
+
+      {/* Credentials */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: META_BLUE_SOFT }}>
+            <Lock className="h-4.5 w-4.5" style={{ color: META_BLUE }} />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[14px] font-semibold text-slate-800">API Credentials</h3>
+            <p className="text-[12px] text-slate-500 mt-0.5">
+              {showForm ? 'Paste the access token from a System User with ads_management and whatsapp_business_manage_events permissions.' : 'Saved and encrypted — click Edit to change any of these.'}
+            </p>
+          </div>
+          {config && !editing && (
+            <Button type="button" variant="outline" onClick={() => setEditing(true)} className="h-8 px-3.5 text-[12.5px] border-slate-200 shrink-0">
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          )}
+        </div>
+
+        {!showForm ? (
+          <div className="divide-y divide-slate-100">
+            <InfoRow icon={Hash} label="WhatsApp Business Account ID">
+              <span className="font-mono">{config?.waba_id}</span>
+            </InfoRow>
+            <InfoRow icon={Building2} label="Ad Account ID">
+              {config?.ad_account_id ? <span className="font-mono">{config.ad_account_id}</span> : <span className="text-slate-400 font-normal">Not set</span>}
+            </InfoRow>
+            <InfoRow icon={Lock} label="Access Token">
+              •••••••••••••••• <span className="text-slate-400 font-normal">(saved)</span>
+            </InfoRow>
+            <InfoRow
+              icon={Database}
+              label="Conversions API dataset"
+              right={config?.dataset_id
+                ? <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600"><CheckCircle2 className="h-3 w-3" />Ready</span>
+                : <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600"><AlertTriangle className="h-3 w-3" />Not created yet</span>}
+            >
+              {config?.dataset_id ? <span className="font-mono text-[12px]">{config.dataset_id}</span> : (config?.test_error || 'Will be created automatically once permissions allow')}
+            </InfoRow>
+          </div>
+        ) : (
+          <div className="px-6 py-5 space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700">
+                  <Hash className="h-3.5 w-3.5 text-slate-400" />
+                  WhatsApp Business Account ID
+                </Label>
+                <Input value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="e.g. 100234567890456"
+                  className="h-9 text-[13px] border-slate-200 font-mono" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700">
+                  <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                  Ad Account ID <span className="text-slate-400 font-normal">(optional)</span>
+                </Label>
+                <Input value={adAccountId} onChange={(e) => setAdAccountId(e.target.value)} placeholder="e.g. act_1234567890"
+                  className="h-9 text-[13px] border-slate-200 font-mono" />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="flex items-center gap-1.5 text-[13px] font-medium text-slate-700">
+                <Lock className="h-3.5 w-3.5 text-slate-400" />
+                Access Token
+              </Label>
+              <div className="relative">
+                <Input
+                  type={showToken ? 'text' : 'password'}
+                  value={accessToken}
+                  onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true); }}
+                  onFocus={() => { if (accessToken === MASKED_TOKEN) { setAccessToken(''); setTokenEdited(true); } }}
+                  placeholder="Enter your access token"
+                  className="h-9 text-[13px] border-slate-200 pr-10 font-mono"
+                />
+                <button type="button" onClick={() => setShowToken(!showToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {config && !tokenEdited && <p className="text-[11px] text-slate-400">Token hidden for security. Click to re-enter.</p>}
+              <p className="text-[11px] text-slate-400">
+                Needs <code className="font-mono">ads_management</code>, <code className="font-mono">whatsapp_business_manage_events</code>, and <code className="font-mono">leads_retrieval</code> — see Meta App Review requirements.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <div>
+                <p className="text-[13px] font-semibold text-slate-700">Automatic event detection</p>
+                <p className="text-[11.5px] text-slate-500 mt-0.5">Let Meta detect leads and sales from ad conversations automatically.</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={automaticEvents}
+                onClick={() => setAutomaticEvents((v) => !v)}
+                className={cn('relative h-6 w-11 shrink-0 rounded-full transition-colors', automaticEvents ? '' : 'bg-slate-300')}
+                style={automaticEvents ? { background: META_BLUE } : undefined}
+              >
+                <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform', automaticEvents ? 'translate-x-[22px]' : 'translate-x-0.5')} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2 px-6 py-3 border-t border-slate-100 bg-slate-50/70">
+          {showForm && (
+            <Button type="button" onClick={handleSave} disabled={saving} className="h-9 px-5 text-[13px] text-white" style={{ background: META_BLUE }}>
+              {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
+            </Button>
+          )}
+          {showForm && config && (
+            <Button type="button" variant="outline" onClick={cancelEdit} disabled={saving} className="h-9 text-[13px] border-slate-200">Cancel</Button>
+          )}
+          {config && !showForm && (
+            <Button type="button" variant="outline" onClick={handleTest} disabled={testing} className="h-9 text-[13px] border-slate-200">
+              {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              Test
+            </Button>
+          )}
+          {config && (
+            <Button type="button" variant="outline" onClick={() => setResetConfirmOpen(true)} disabled={resetting}
+              className="h-9 text-[12px] border-red-200 text-red-600 hover:bg-red-50 ml-auto">
+              <RotateCcw className="h-4 w-4" />
+              Reset
+            </Button>
+          )}
         </div>
       </div>
 
       {/* Feature grid */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100">
-          <h3 className="text-[14px] font-semibold text-slate-800">What connecting unlocks</h3>
+          <h3 className="text-[14px] font-semibold text-slate-800">What this unlocks</h3>
           <p className="text-[12px] text-slate-500 mt-0.5">Everything below runs on Meta&apos;s own APIs — nothing here is a third-party workaround.</p>
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2">
@@ -133,27 +412,18 @@ function MetaAdsOverview() {
         </div>
       </div>
 
-      {/* How it will connect */}
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6">
-        <h3 className="text-[14px] font-semibold text-slate-800">How it connects, once it&apos;s live</h3>
-        <p className="text-[12px] text-slate-500 mt-0.5 mb-5">The same one-click sign-in already used for WhatsApp — no separate setup process to learn.</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {[
-            { icon: ShieldCheck, title: 'One click to sign in', body: 'Log in with Facebook, same popup as WhatsApp Quick Connect.' },
-            { icon: CheckCircle2, title: 'Everything auto-discovered', body: 'Ad account, pixel, and Lead Ads forms found automatically — nothing to look up.' },
-            { icon: LineChart, title: 'Ready immediately', body: 'Attribution and reporting start working the moment the popup closes.' },
-          ].map((step, i) => (
-            <div key={step.title} className="relative rounded-xl border border-slate-100 bg-slate-50 p-4">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-[11px] font-bold text-slate-400 ring-1 ring-slate-200 mb-3">{i + 1}</span>
-              <p className="text-[13px] font-semibold text-slate-800 flex items-center gap-1.5">
-                <step.icon className="h-3.5 w-3.5 text-slate-400" />
-                {step.title}
-              </p>
-              <p className="mt-1 text-[12px] text-slate-500 leading-relaxed">{step.body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+      <ConfirmIconDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        icon={Trash2}
+        tone="danger"
+        title="Reset Meta Ads config?"
+        description="This deletes the saved credentials and dataset link so you can re-enter them."
+        actionLabel="Reset"
+        actionPendingLabel="Resetting…"
+        onConfirm={performReset}
+        pending={resetting}
+      />
     </div>
   );
 }
@@ -180,7 +450,8 @@ export function AdsTab() {
       <ProviderRail provider={provider} onSelect={setProvider} />
       {provider === 'meta' ? <MetaAdsOverview /> : <GoogleAdsComingSoon />}
       <p className="text-center text-[11px] text-slate-400">
-        Meta Ads is next up on the roadmap — this page will switch to the real connection automatically once it ships.
+        <Clock className="mr-1 inline h-3 w-3" />
+        Full ads access requires Meta App Review — the status above reflects whatever your token can do right now.
       </p>
     </div>
   );

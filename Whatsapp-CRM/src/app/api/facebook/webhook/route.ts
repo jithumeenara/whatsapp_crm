@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
+import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
+import { normalizePhone } from "@/lib/whatsapp/phone-utils"
+import { fetchLead, getLeadField } from "@/lib/meta-ads/api"
 
 type RawConfig = {
   account_id: string
@@ -126,6 +129,14 @@ interface FbFeedChange {
     comment_id?: string
     sender_id?: string
     message?: string
+    // Present when field === "leadgen" — a new Lead Ads / Instant Form
+    // submission. Meta's own documented shape: the webhook only carries
+    // the ID, a follow-up Graph API call (fetchLead) gets the answers.
+    leadgen_id?: string
+    form_id?: string
+    ad_id?: string
+    adgroup_id?: string
+    created_time?: number
   }
 }
 
@@ -174,6 +185,16 @@ async function processFacebookWebhook(body: FbWebhookBody) {
           changes: feedChanges.map((c) => ({ item: c.value.item, verb: c.value.verb })),
         })
       }
+
+      // Lead Ads / Instant Form submissions — same Page-object webhook,
+      // a different field. Each notification only carries an ID; the
+      // real answers are fetched with a follow-up Graph API call.
+      const leadgenChanges = entry.changes.filter((c) => c.field === "leadgen" && c.value.leadgen_id)
+      for (const change of leadgenChanges) {
+        processLeadgenChange(config.account_id, config.access_token ?? "", pageId, change.value).catch((err) =>
+          console.error("[Facebook] processLeadgenChange error:", err)
+        )
+      }
     }
 
     for (const event of entry.messaging ?? []) {
@@ -215,6 +236,112 @@ async function processFacebookWebhook(body: FbWebhookBody) {
       }
     }
   }
+}
+
+/**
+ * One Lead Ads / Instant Form submission — Meta's documented two-step
+ * flow: the webhook only carries `leadgen_id`, so the real answers are
+ * fetched with a follow-up Graph API call, then mapped into this app's
+ * own Contact/Lead model exactly the way /api/external/webhook does for
+ * any other external lead source.
+ */
+async function processLeadgenChange(
+  accountId: string,
+  accessToken: string,
+  pageId: string,
+  value: { leadgen_id?: string; form_id?: string; ad_id?: string },
+) {
+  const leadgenId = value.leadgen_id
+  if (!leadgenId || !accessToken) return
+
+  // Idempotent — Meta's webhooks can and do redeliver the same notification.
+  const already = await prisma.leadAdSubmission.findUnique({ where: { meta_leadgen_id: leadgenId } })
+  if (already) return
+
+  const ownerProfile = await prisma.profile.findFirst({
+    where: { account_id: accountId },
+    orderBy: { created_at: "asc" },
+    select: { user_id: true },
+  })
+  if (!ownerProfile) return
+  const ownerUserId = ownerProfile.user_id
+
+  const lead = await fetchLead({ leadId: leadgenId, accessToken })
+
+  const form = value.form_id
+    ? await prisma.leadAdForm.upsert({
+        where: { meta_form_id: value.form_id },
+        create: { account_id: accountId, meta_form_id: value.form_id, page_id: pageId, name: `Form ${value.form_id}` },
+        update: {},
+      })
+    : null
+
+  const fullName = getLeadField(lead, "full_name") ?? getLeadField(lead, "name")
+  const email = getLeadField(lead, "email")
+  const phoneRaw = getLeadField(lead, "phone_number") ?? getLeadField(lead, "phone")
+
+  // Contact.phone is NOT NULL — same "email:..."-style placeholder
+  // convention Broadcasts already uses for contacts with no real number.
+  const phoneValue = phoneRaw || (email ? `email:${email}` : `leadgen:${leadgenId}`)
+  const normalized = phoneRaw ? normalizePhone(phoneRaw) : null
+
+  const existingContact = normalized
+    ? await prisma.contact.findFirst({ where: { account_id: accountId, phone_normalized: normalized } })
+    : null
+
+  const contact = existingContact ?? await prisma.contact.create({
+    data: {
+      account_id: accountId,
+      user_id: ownerUserId,
+      name: fullName || phoneRaw || "Facebook Lead",
+      phone: phoneValue,
+      phone_normalized: normalized,
+      email: email ?? null,
+    },
+  })
+
+  const createdLead = await prisma.lead.create({
+    data: {
+      account_id: accountId,
+      user_id: ownerUserId,
+      title: form?.name ?? "Facebook Lead Ad",
+      source: "facebook_lead_ad",
+      status: "new",
+      contact_id: contact.id,
+      external_id: `fb_lead_ad:${leadgenId}`,
+    },
+  })
+
+  await prisma.leadActivity.create({
+    data: {
+      account_id: accountId,
+      lead_id: createdLead.id,
+      contact_id: contact.id,
+      user_id: ownerUserId,
+      type: "created",
+      title: "Lead captured from Facebook Lead Ad",
+      description: form?.name ? `Form: ${form.name}` : null,
+    },
+  })
+
+  if (form) {
+    await prisma.leadAdSubmission.create({
+      data: {
+        account_id: accountId,
+        form_id: form.id,
+        meta_leadgen_id: leadgenId,
+        ad_id: value.ad_id ?? null,
+        lead_id: createdLead.id,
+        // field_data is a plain array of {name, values} objects — fully
+        // JSON-serializable, just needs the structural cast Prisma's Json
+        // input type requires since it can't infer that from our own
+        // LeadFieldData[] type.
+        raw_field_data: lead.field_data as unknown as Prisma.InputJsonValue,
+      },
+    })
+  }
+
+  emitToAccount(accountId, "lead", { eventType: "INSERT", new: createdLead })
 }
 
 async function processFbMessage({
