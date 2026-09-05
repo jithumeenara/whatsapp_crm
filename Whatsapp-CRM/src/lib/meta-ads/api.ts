@@ -1,15 +1,17 @@
 /**
  * Meta Ads helpers — Conversions API for Business Messaging, plus the
- * Marketing API calls needed for Lead Ads sync and the Ads Insights
- * dashboard. Named-parameter functions throughout, same convention as
- * `@/lib/whatsapp/meta-api.ts` (positional args caused real swapped-
- * argument bugs there before that switch).
+ * Marketing API calls needed for Lead Ads sync, Custom Audiences, and
+ * the Ads Insights dashboard. Named-parameter functions throughout, same
+ * convention as `@/lib/whatsapp/meta-api.ts` (positional args caused
+ * real swapped-argument bugs there before that switch).
  *
  * Verified against Meta's own developer documentation this session:
  *   - Conversions API for Business Messaging onboarding guide
  *   - Lead Ads retrieval + webhooks integration guide
  *   - Ads Insights API reference
+ *   - Custom Audiences hashing convention (SHA-256 over normalized values)
  */
+import { createHash } from 'node:crypto'
 
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
@@ -240,4 +242,82 @@ export async function fetchAdAccountInsights(args: {
     date_start: row.date_start ?? '',
     date_stop: row.date_stop ?? '',
   }
+}
+
+// ============================================================
+// Custom Audiences (retargeting a CRM Segment on Meta)
+// ============================================================
+
+/** Normalizes + SHA-256 hashes one value, Meta's own documented
+ *  convention for Custom Audiences: lowercase + trim before hashing, no
+ *  raw PII ever sent. Email and phone need different normalization, so
+ *  the caller picks which via `kind`. */
+function hashForAudience(raw: string, kind: 'email' | 'phone'): string {
+  const normalized = kind === 'email'
+    ? raw.trim().toLowerCase()
+    : raw.replace(/[^\d]/g, '') // E.164 digits only, no leading '+'
+  return createHash('sha256').update(normalized).digest('hex')
+}
+
+function normalizeAdAccountId(id: string): string {
+  return id.startsWith('act_') ? id : `act_${id}`
+}
+
+/** Creates the Meta Custom Audience a Segment syncs into — called once;
+ *  after that, addUsersToCustomAudience is called on every re-sync. */
+export async function createCustomAudience(args: {
+  adAccountId: string
+  accessToken: string
+  name: string
+  description?: string
+}): Promise<{ audienceId: string }> {
+  const url = `${META_API_BASE}/${normalizeAdAccountId(args.adAccountId)}/customaudiences`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${args.accessToken}` },
+    body: JSON.stringify({
+      name: args.name,
+      description: args.description ?? 'Synced from WhatsApp CRM',
+      subtype: 'CUSTOM',
+      customer_file_source: 'USER_PROVIDED_ONLY',
+    }),
+  })
+  if (!res.ok) await throwMetaError(res, 'Failed to create a Meta Custom Audience')
+  const data = (await res.json()) as { id?: string }
+  if (!data.id) throw new Error('Meta did not return a Custom Audience ID')
+  return { audienceId: data.id }
+}
+
+/** Uploads (hashed, never raw) emails/phones into an existing audience.
+ *  Safe to call repeatedly — Meta de-dupes matching users on its side. */
+export async function addUsersToCustomAudience(args: {
+  audienceId: string
+  accessToken: string
+  emails: string[]
+  phones: string[]
+}): Promise<{ uploaded: number }> {
+  const schema: string[] = []
+  const rows: string[][] = []
+  const emails = args.emails.filter(Boolean)
+  const phones = args.phones.filter(Boolean)
+
+  if (emails.length) schema.push('EMAIL')
+  if (phones.length) schema.push('PHONE')
+  const count = Math.max(emails.length, phones.length)
+  for (let i = 0; i < count; i++) {
+    const row: string[] = []
+    if (emails.length) row.push(emails[i] ? hashForAudience(emails[i], 'email') : '')
+    if (phones.length) row.push(phones[i] ? hashForAudience(phones[i], 'phone') : '')
+    rows.push(row)
+  }
+  if (rows.length === 0) return { uploaded: 0 }
+
+  const res = await fetch(`${META_API_BASE}/${args.audienceId}/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${args.accessToken}` },
+    body: JSON.stringify({ payload: { schema, data: rows } }),
+  })
+  if (!res.ok) await throwMetaError(res, 'Failed to upload users to the Meta Custom Audience')
+  const data = (await res.json()) as { num_received?: number }
+  return { uploaded: data.num_received ?? rows.length }
 }

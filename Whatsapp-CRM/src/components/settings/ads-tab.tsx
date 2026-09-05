@@ -6,6 +6,7 @@ import {
   Megaphone, MousePointerClick, FileSpreadsheet, Sparkles, LineChart,
   Clock, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2, RotateCcw,
   Pencil, Hash, Building2, Lock, WifiOff, Zap, Trash2, Database,
+  Users2, RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -448,6 +449,9 @@ function MetaAdsOverview() {
       </div>
       )}
 
+      {config && <LeadAdFormsManager />}
+      {config && <CustomAudiencesPanel />}
+
       {/* Feature grid */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100">
@@ -483,6 +487,212 @@ function MetaAdsOverview() {
         onConfirm={performReset}
         pending={resetting}
       />
+    </div>
+  );
+}
+
+interface LeadFormRow { id: string; name: string; is_active: boolean; submission_count: number }
+
+/** Fixes a real gap: forms auto-sync the moment a submission arrives
+ *  (see facebook/webhook route), but until now there was no screen to
+ *  see which forms are syncing, rename them, or pause one — the
+ *  is_active column existed but nothing in the UI ever set it. */
+function LeadAdFormsManager() {
+  const [loading, setLoading] = useState(true);
+  const [forms, setForms] = useState<LeadFormRow[]>([]);
+  const [savingId, setSavingId] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/meta-ads/lead-forms');
+      const data = await res.json();
+      setForms(data.forms ?? []);
+    } catch {
+      toast.error('Failed to load Lead Ads forms');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function toggleActive(form: LeadFormRow) {
+    setSavingId(form.id);
+    setForms((prev) => prev.map((f) => (f.id === form.id ? { ...f, is_active: !f.is_active } : f)));
+    try {
+      const res = await fetch('/api/meta-ads/lead-forms', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: form.id, is_active: !form.is_active }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(!form.is_active ? 'Form syncing resumed' : 'Form syncing paused');
+    } catch {
+      toast.error('Failed to update — reverting');
+      setForms((prev) => prev.map((f) => (f.id === form.id ? { ...f, is_active: form.is_active } : f)));
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function rename(form: LeadFormRow, name: string) {
+    if (!name.trim() || name === form.name) return;
+    try {
+      await fetch('/api/meta-ads/lead-forms', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: form.id, name }),
+      });
+      setForms((prev) => prev.map((f) => (f.id === form.id ? { ...f, name } : f)));
+    } catch {
+      toast.error('Failed to rename form');
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: META_BLUE_SOFT }}>
+          <FileSpreadsheet className="h-4.5 w-4.5" style={{ color: META_BLUE }} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">Lead Ads Forms</h3>
+          <p className="text-[12px] text-slate-500 mt-0.5">Discovered automatically the first time each form gets a submission.</p>
+        </div>
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+      ) : forms.length === 0 ? (
+        <p className="px-6 py-8 text-center text-[12.5px] text-slate-400">
+          No Lead Ads forms yet — they&apos;ll show up here the moment someone submits one.
+        </p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {forms.map((form) => (
+            <div key={form.id} className="flex items-center gap-3 px-6 py-3.5">
+              <Input
+                defaultValue={form.name}
+                onBlur={(e) => rename(form, e.target.value)}
+                className="h-8 flex-1 text-[13px] border-transparent bg-transparent px-0 font-semibold text-slate-800 hover:border-slate-200 focus:border-slate-200 focus:bg-white focus:px-2"
+              />
+              <span className="shrink-0 text-[11.5px] text-slate-400">{form.submission_count} lead{form.submission_count === 1 ? '' : 's'}</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.is_active}
+                disabled={savingId === form.id}
+                onClick={() => toggleActive(form)}
+                title={form.is_active ? 'Pause syncing' : 'Resume syncing'}
+                className={cn('relative h-5.5 w-10 shrink-0 rounded-full transition-colors', form.is_active ? '' : 'bg-slate-300')}
+                style={form.is_active ? { background: META_BLUE } : undefined}
+              >
+                <span className={cn('absolute top-0.5 h-4.5 w-4.5 rounded-full bg-white shadow transition-transform', form.is_active ? 'translate-x-[19px]' : 'translate-x-0.5')} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface SegmentSyncRow {
+  id: string
+  name: string
+  description: string | null
+  sync: { meta_audience_id: string; synced_count: number; last_synced_at: string | null; last_error: string | null } | null
+}
+
+/** Push a CRM Segment to Meta as a hashed Custom Audience — retargeting/
+ *  lookalike seeding for the customers already in this CRM. */
+function CustomAudiencesPanel() {
+  const [loading, setLoading] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [segments, setSegments] = useState<SegmentSyncRow[]>([]);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/meta-ads/audiences');
+      const data = await res.json();
+      setReady(!!data.ready);
+      setSegments(data.segments ?? []);
+    } catch {
+      toast.error('Failed to load audiences');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function sync(segmentId: string) {
+    setSyncingId(segmentId);
+    try {
+      const res = await fetch('/api/meta-ads/audiences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ segment_id: segmentId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Sync failed'); return; }
+      toast.success(`Synced ${data.synced_count} contact${data.synced_count === 1 ? '' : 's'} to Meta`);
+      await load();
+    } catch {
+      toast.error('Sync failed');
+    } finally {
+      setSyncingId(null);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style={{ background: META_BLUE_SOFT }}>
+          <Users2 className="h-4.5 w-4.5" style={{ color: META_BLUE }} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold text-slate-800">Custom Audiences</h3>
+          <p className="text-[12px] text-slate-500 mt-0.5">Push a Segment to Meta for retargeting — hashed, never raw contact data.</p>
+        </div>
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div>
+      ) : !ready ? (
+        <p className="px-6 py-8 text-center text-[12.5px] text-slate-400">Add an Ad Account ID above to enable audience syncing.</p>
+      ) : segments.length === 0 ? (
+        <p className="px-6 py-8 text-center text-[12.5px] text-slate-400">No Segments yet — create one under Segments first.</p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {segments.map((seg) => (
+            <div key={seg.id} className="flex items-center gap-3 px-6 py-3.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-slate-800 truncate">{seg.name}</p>
+                <p className="text-[11.5px] text-slate-400 truncate">
+                  {seg.sync
+                    ? seg.sync.last_error
+                      ? <span className="text-red-500">{seg.sync.last_error}</span>
+                      : `${seg.sync.synced_count} contacts · synced ${seg.sync.last_synced_at ? new Date(seg.sync.last_synced_at).toLocaleDateString('en-IN') : 'never'}`
+                    : 'Not synced yet'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={syncingId === seg.id}
+                onClick={() => sync(seg.id)}
+                className="h-8 text-[12px] border-slate-200 shrink-0"
+              >
+                {syncingId === seg.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {seg.sync ? 'Re-sync' : 'Sync now'}
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

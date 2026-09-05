@@ -5,6 +5,7 @@ import { emitToAccount } from "@/lib/socket"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
 import { fetchLead, getLeadField } from "@/lib/meta-ads/api"
+import { runAutomationsForTrigger } from "@/lib/automations/engine"
 
 type RawConfig = {
   account_id: string
@@ -276,6 +277,11 @@ async function processLeadgenChange(
       })
     : null
 
+  // A form the account has explicitly paused in the Lead Ads form
+  // manager — the submission still happened on Meta's side, but this
+  // account chose not to sync it into the CRM.
+  if (form && !form.is_active) return
+
   const fullName = getLeadField(lead, "full_name") ?? getLeadField(lead, "name")
   const email = getLeadField(lead, "email")
   const phoneRaw = getLeadField(lead, "phone_number") ?? getLeadField(lead, "phone")
@@ -299,6 +305,30 @@ async function processLeadgenChange(
       email: email ?? null,
     },
   })
+
+  // Tag every ad-sourced contact (new or existing) — this is what makes
+  // "specifically ad leads" an actionable condition in the Automation
+  // builder's existing Tag Presence check, without inventing a whole new
+  // trigger-config filter just for this one source.
+  const adTag = await prisma.tag.findFirst({ where: { account_id: accountId, name: "Facebook Lead Ad" } })
+    ?? await prisma.tag.create({ data: { account_id: accountId, user_id: ownerUserId, name: "Facebook Lead Ad", color: "#0866FF" } })
+  await prisma.contactTag.upsert({
+    where: { contact_id_tag_id: { contact_id: contact.id, tag_id: adTag.id } },
+    create: { contact_id: contact.id, tag_id: adTag.id },
+    update: {},
+  })
+
+  // Real automation trigger — a brand-new contact from an ad ads now
+  // participates in "New Contact Created" automations exactly like a
+  // contact from any other channel does (it didn't before this feature).
+  if (!existingContact) {
+    runAutomationsForTrigger({
+      accountId,
+      triggerType: "new_contact_created",
+      contactId: contact.id,
+      context: { vars: { source: "facebook_lead_ad" } },
+    }).catch((err) => console.error("[Facebook] Lead Ad automation dispatch failed (non-fatal):", err))
+  }
 
   const createdLead = await prisma.lead.create({
     data: {

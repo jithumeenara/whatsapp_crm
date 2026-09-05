@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   Megaphone, MousePointerClick, FileSpreadsheet, LineChart, Link2, Clock,
-  Loader2, AlertTriangle, IndianRupee, MousePointer,
+  Loader2, AlertTriangle, IndianRupee, MousePointer, ArrowUpRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -20,6 +20,21 @@ interface DashboardData {
   lead_ads_captured?: number
   qualified_from_ads?: number
   cost_per_lead?: number | null
+  recent_leads?: Array<{
+    id: string
+    created_at: string
+    form_name: string
+    lead_id: string | null
+    contact_name: string | null
+    contact_phone: string | null
+    status: string | null
+    lead_quality: string | null
+  }>
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  new: "New", call_not_connected: "Not Connected", visited: "Visited",
+  appointment_fixed: "Appt Fixed", follow_up: "Follow-up", closed: "Closed",
 }
 
 function fmtNumber(n: number) { return n.toLocaleString('en-IN') }
@@ -96,6 +111,38 @@ export default function AdsPage() {
                 <Metric icon={MousePointer} label="Clicks" value={fmtNumber(data.insights.clicks)} />
                 <Metric label="Impressions" value={fmtNumber(data.insights.impressions)} />
                 <Metric label="CPC" value={data.insights.cpc != null ? fmtCurrency(data.insights.cpc) : '—'} />
+              </div>
+            </div>
+          )}
+
+          {!!data?.recent_leads?.length && (
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100">
+                <h3 className="text-[14px] font-semibold text-slate-800">Recent leads from your ads</h3>
+                <p className="text-[12px] text-slate-500 mt-0.5">The real people behind the numbers above — not just a count.</p>
+              </div>
+              <div className="divide-y divide-slate-100">
+                {data.recent_leads.map((lead) => (
+                  <a
+                    key={lead.id}
+                    href={lead.lead_id ? `/leads/${lead.lead_id}` : undefined}
+                    className="flex items-center gap-3 px-6 py-3.5 hover:bg-slate-50 transition-colors"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: META_BLUE_SOFT }}>
+                      <FileSpreadsheet className="h-3.5 w-3.5" style={{ color: META_BLUE }} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-slate-800 truncate">{lead.contact_name || lead.contact_phone || "Unknown contact"}</p>
+                      <p className="text-[11.5px] text-slate-400 truncate">{lead.form_name} · {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                    </div>
+                    {lead.status && (
+                      <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                        {STATUS_LABEL[lead.status] ?? lead.status}
+                      </span>
+                    )}
+                    {lead.lead_id && <ArrowUpRight className="h-3.5 w-3.5 shrink-0 text-slate-300" />}
+                  </a>
+                ))}
               </div>
             </div>
           )}

@@ -32,7 +32,7 @@ export async function GET() {
       return NextResponse.json({ connected: false })
     }
 
-    const [attributedConversations, leadAdsCaptured, qualifiedFromAds] = await Promise.all([
+    const [attributedConversations, leadAdsCaptured, qualifiedFromAds, recentSubmissions] = await Promise.all([
       prisma.conversation.count({
         where: { account_id: accountId, channel: 'whatsapp', ctwa_clid: { not: null } },
       }),
@@ -44,7 +44,27 @@ export async function GET() {
           contact: { conversations: { some: { channel: 'whatsapp', ctwa_clid: { not: null } } } },
         },
       }),
+      prisma.leadAdSubmission.findMany({
+        where: { account_id: accountId },
+        orderBy: { created_at: 'desc' },
+        take: 10,
+        include: {
+          form: { select: { name: true } },
+          lead: { select: { id: true, status: true, lead_quality: true, contact: { select: { name: true, phone: true } } } },
+        },
+      }),
     ])
+
+    const recentLeads = recentSubmissions.map((s) => ({
+      id: s.id,
+      created_at: s.created_at,
+      form_name: s.form.name,
+      lead_id: s.lead?.id ?? null,
+      contact_name: s.lead?.contact?.name ?? null,
+      contact_phone: s.lead?.contact?.phone ?? null,
+      status: s.lead?.status ?? null,
+      lead_quality: s.lead?.lead_quality ?? null,
+    }))
 
     let insights = null
     let insightsError: string | null = null
@@ -68,6 +88,7 @@ export async function GET() {
       lead_ads_captured: leadAdsCaptured,
       qualified_from_ads: qualifiedFromAds,
       cost_per_lead: costPerLead,
+      recent_leads: recentLeads,
     })
   } catch (error) {
     console.error('Error in Meta Ads dashboard GET:', error)

@@ -196,6 +196,7 @@ model Account {
   meta_ads_config              MetaAdsConfig?
   lead_ad_forms                LeadAdForm[]
   lead_ad_submissions          LeadAdSubmission[]
+  meta_custom_audiences        MetaCustomAudience[]
   message_templates            MessageTemplate[]
   pipelines                    Pipeline[]
   deals                        Deal[]
@@ -685,6 +686,26 @@ model LeadAdSubmission {
 
   @@index([account_id, created_at])
   @@map("lead_ad_submissions")
+}
+
+// One CRM Segment synced to Meta as a Custom Audience (hashed emails/
+// phones for retargeting/lookalikes) — a Segment can map to at most one
+// Meta audience, re-synced on demand rather than continuously.
+model MetaCustomAudience {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  segment_id      String    @unique @db.Uuid
+  meta_audience_id String
+  synced_count    Int       @default(0)
+  last_synced_at  DateTime? @db.Timestamptz(6)
+  last_error      String?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  segment Segment @relation(fields: [segment_id], references: [id], onDelete: Cascade)
+
+  @@map("meta_custom_audiences")
 }
 
 // ============================================================
@@ -1385,6 +1406,7 @@ model Segment {
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  meta_custom_audience MetaCustomAudience?
 
   @@map("segments")
 }
