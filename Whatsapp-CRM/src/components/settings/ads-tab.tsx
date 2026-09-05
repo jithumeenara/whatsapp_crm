@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
+import { Switch } from '@/components/ui/switch';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
 
 type Provider = 'meta' | 'google';
@@ -409,16 +410,11 @@ function MetaAdsOverview() {
                 <p className="text-[13px] font-semibold text-slate-700">Automatic event detection</p>
                 <p className="text-[11.5px] text-slate-500 mt-0.5">Let Meta detect leads and sales from ad conversations automatically.</p>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={automaticEvents}
-                onClick={() => setAutomaticEvents((v) => !v)}
-                className={cn('relative h-6 w-11 shrink-0 rounded-full transition-colors', automaticEvents ? '' : 'bg-slate-300')}
-                style={automaticEvents ? { background: META_BLUE } : undefined}
-              >
-                <span className={cn('absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform', automaticEvents ? 'translate-x-[22px]' : 'translate-x-0.5')} />
-              </button>
+              <Switch
+                checked={automaticEvents}
+                onCheckedChange={(v) => setAutomaticEvents(v)}
+                className="shrink-0 data-[checked]:bg-[#0866FF]"
+              />
             </div>
           </div>
         )}
@@ -633,18 +629,12 @@ function LeadAdFormsManager() {
                   {form.tracked && <p className="text-[11.5px] text-slate-400">{form.submission_count} lead{form.submission_count === 1 ? '' : 's'}</p>}
                 </div>
                 {form.tracked ? (
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={form.is_active}
+                  <Switch
+                    checked={form.is_active}
                     disabled={savingId === form.meta_form_id}
-                    onClick={() => toggleDiscoveredActive(form)}
-                    title={form.is_active ? 'Pause syncing' : 'Resume syncing'}
-                    className={cn('relative h-5.5 w-10 shrink-0 rounded-full transition-colors', form.is_active ? '' : 'bg-slate-300')}
-                    style={form.is_active ? { background: META_BLUE } : undefined}
-                  >
-                    <span className={cn('absolute top-0.5 h-4.5 w-4.5 rounded-full bg-white shadow transition-transform', form.is_active ? 'translate-x-[19px]' : 'translate-x-0.5')} />
-                  </button>
+                    onCheckedChange={() => toggleDiscoveredActive(form)}
+                    className="shrink-0 data-[checked]:bg-[#0866FF]"
+                  />
                 ) : (
                   <Button type="button" variant="outline" size="sm" disabled={savingId === form.meta_form_id}
                     onClick={() => enableDiscovered(form)} className="h-8 shrink-0 text-[12px] border-slate-200">
@@ -670,18 +660,12 @@ function LeadAdFormsManager() {
                 className="h-8 flex-1 text-[13px] border-transparent bg-transparent px-0 font-semibold text-slate-800 hover:border-slate-200 focus:border-slate-200 focus:bg-white focus:px-2"
               />
               <span className="shrink-0 text-[11.5px] text-slate-400">{form.submission_count} lead{form.submission_count === 1 ? '' : 's'}</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={form.is_active}
+              <Switch
+                checked={form.is_active}
                 disabled={savingId === form.id}
-                onClick={() => toggleActive(form)}
-                title={form.is_active ? 'Pause syncing' : 'Resume syncing'}
-                className={cn('relative h-5.5 w-10 shrink-0 rounded-full transition-colors', form.is_active ? '' : 'bg-slate-300')}
-                style={form.is_active ? { background: META_BLUE } : undefined}
-              >
-                <span className={cn('absolute top-0.5 h-4.5 w-4.5 rounded-full bg-white shadow transition-transform', form.is_active ? 'translate-x-[19px]' : 'translate-x-0.5')} />
-              </button>
+                onCheckedChange={() => toggleActive(form)}
+                className="shrink-0 data-[checked]:bg-[#0866FF]"
+              />
             </div>
           ))}
         </div>
