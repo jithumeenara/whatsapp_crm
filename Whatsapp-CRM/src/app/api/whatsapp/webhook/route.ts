@@ -10,6 +10,10 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import {
+  handleAccountAlertChange,
+  isAccountAlertField,
+} from '@/lib/whatsapp/account-webhook'
 import { emitToAccount } from '@/lib/socket'
 
 interface WhatsAppMessage {
@@ -25,6 +29,31 @@ interface WhatsAppMessage {
   sticker?: { id: string; mime_type: string }
   location?: { latitude: number; longitude: number; name?: string; address?: string }
   reaction?: { message_id: string; emoji: string }
+  /** Customer shared a delivery address via WhatsApp's address message type. */
+  address?: {
+    name?: string
+    phone_number?: string
+    house_number?: string
+    floor_number?: string
+    tower_number?: string
+    building_name?: string
+    address?: string
+    street?: string
+    landmark_area?: string
+    city?: string
+    state?: string
+    zip_code?: string
+    country?: string
+    country_code?: string
+    type?: string
+  }
+  /** Customer shared one or more vCard-style contact cards. */
+  contacts?: Array<{
+    name: { formatted_name: string; first_name?: string; last_name?: string }
+    phones?: Array<{ phone?: string; type?: string; wa_id?: string }>
+    emails?: Array<{ email?: string; type?: string }>
+    org?: { company?: string; title?: string; department?: string }
+  }>
   /**
    * Set when the customer taps a button or list row on an interactive
    * message we sent, OR completes a WhatsApp Flow we sent (nfm_reply).
@@ -207,6 +236,19 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       if (isTemplateWebhookField(change.field)) {
         await handleTemplateWebhookChange(
           { field: change.field, value: change.value as unknown },
+        )
+        continue
+      }
+
+      // Account/phone-number-level alerts (quality changes, Meta account
+      // alerts, display-name review decisions, account review decisions,
+      // security events) — also a different value shape per field, and
+      // none of them carry messages/statuses, so without this branch they
+      // silently fall through the checks below and do nothing at all.
+      if (isAccountAlertField(change.field)) {
+        await handleAccountAlertChange(
+          { field: change.field, value: change.value as unknown },
+          entry.id,
         )
         continue
       }
@@ -584,10 +626,11 @@ async function processMessage(
   }
 
   // The messages.content_type CHECK constraint allows:
-  //   text, image, document, audio, video, location, template, interactive
+  //   text, image, document, audio, video, location, template, interactive,
+  //   address, contacts
   const ALLOWED_CONTENT_TYPES = new Set([
     'text', 'image', 'document', 'audio', 'video',
-    'location', 'template', 'interactive',
+    'location', 'template', 'interactive', 'address', 'contacts',
   ])
   const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
     ? message.type
@@ -936,6 +979,39 @@ async function parseMessageContent(
       }
       return { ...empty, contentText: '[Button reply]' }
     }
+
+    case 'address':
+      if (message.address) {
+        const addr = message.address
+        // No structured lat/lng-style columns exist for this type (same
+        // as location above) — flatten into a readable multi-line summary.
+        const lines = [
+          addr.name,
+          [addr.house_number, addr.floor_number, addr.tower_number, addr.building_name]
+            .filter(Boolean)
+            .join(' '),
+          addr.street,
+          addr.landmark_area,
+          [addr.city, addr.state, addr.zip_code].filter(Boolean).join(', '),
+          addr.country,
+          addr.phone_number,
+        ].filter(Boolean)
+        return { ...empty, contentText: lines.length ? lines.join('\n') : '[Address shared]' }
+      }
+      return { ...empty, contentText: '[Address shared]' }
+
+    case 'contacts':
+      if (message.contacts?.length) {
+        const summary = message.contacts
+          .map((c) => {
+            const phone = c.phones?.[0]?.phone
+            const email = c.emails?.[0]?.email
+            return [c.name.formatted_name, phone, email].filter(Boolean).join(' — ')
+          })
+          .join('\n')
+        return { ...empty, contentText: summary || '[Contact shared]' }
+      }
+      return { ...empty, contentText: '[Contact shared]' }
 
     default:
       return {

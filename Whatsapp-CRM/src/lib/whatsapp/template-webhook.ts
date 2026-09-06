@@ -34,6 +34,7 @@ const TEMPLATE_WEBHOOK_FIELDS = new Set([
   'message_template_status_update',
   'message_template_quality_update',
   'message_template_components_update',
+  'message_template_category_update',
 ])
 
 export function isTemplateWebhookField(field: string): boolean {
@@ -89,6 +90,11 @@ export async function handleTemplateWebhookChange(
       return
     case 'message_template_components_update':
       handleComponentsUpdate(
+        change.value as TemplateComponentsUpdateValue,
+      )
+      return
+    case 'message_template_category_update':
+      handleCategoryUpdate(
         change.value as TemplateComponentsUpdateValue,
       )
       return
@@ -194,5 +200,20 @@ function handleComponentsUpdate(value: TemplateComponentsUpdateValue): void {
     value.message_template_id,
     value.message_template_name,
     '— run "Sync from Meta" in Settings to pull the new components.',
+  )
+}
+
+/**
+ * Meta recategorized the template (e.g. Marketing → Utility after content
+ * review) — same "log and let Sync from Meta pick it up" treatment as
+ * handleComponentsUpdate above, for the same reason: silently overwriting
+ * the category the user thinks they submitted would be surprising.
+ */
+function handleCategoryUpdate(value: TemplateComponentsUpdateValue): void {
+  console.info(
+    '[template-webhook] category updated by Meta for template',
+    value.message_template_id,
+    value.message_template_name,
+    '— run "Sync from Meta" in Settings to pull the new category.',
   )
 }

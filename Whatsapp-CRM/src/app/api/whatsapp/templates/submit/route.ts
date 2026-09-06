@@ -11,6 +11,13 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 
+// Unverified WABAs are capped at 250 total templates (verified ones go up
+// to 6,000). Meta doesn't expose verification tier anywhere this app reads
+// today, so this is a conservative, always-safe warning threshold — never
+// a hard block, since a verified account legitimately has room to keep
+// creating past it.
+const TEMPLATE_CEILING_WARNING = 250
+
 /**
  * Shared upsert payload builder — both the Meta-failure path and the
  * Meta-success path write nearly identical rows; dropping the shared
@@ -138,6 +145,15 @@ export async function POST(request: Request) {
 
     const metaPayload = buildMetaTemplatePayload(payload)
 
+    // Proactive heads-up only — never blocks the create. Meta is the real
+    // authority on the actual cap (250 unverified / 6,000 verified); this
+    // just warns before that call, using the conservative threshold.
+    const existingCount = await prisma.messageTemplate.count({ where: { account_id: accountId } })
+    const ceilingWarning =
+      existingCount >= TEMPLATE_CEILING_WARNING
+        ? `You have ${existingCount} templates. Unverified WhatsApp Business Accounts are capped at 250 total — this one may be rejected by Meta unless your business is verified (verified accounts go up to 6,000).`
+        : null
+
     const dryRun =
       process.env.WHATSAPP_TEMPLATES_DRY_RUN === 'true' ||
       process.env.WHATSAPP_TEMPLATES_DRY_RUN === '1'
@@ -225,6 +241,7 @@ export async function POST(request: Request) {
       success: true,
       template: row,
       dry_run: dryRun,
+      warning: ceilingWarning,
     })
   } catch (error) {
     console.error('Error submitting template:', error)

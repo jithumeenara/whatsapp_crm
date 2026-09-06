@@ -52,6 +52,15 @@ import {
 } from '@/lib/whatsapp/template-validators';
 
 const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
+
+// Unverified WhatsApp Business Accounts are capped at 250 total templates
+// (verified + approved display name accounts go up to 6,000). We have no
+// way to know which tier an account is on (Meta doesn't expose that here),
+// so we warn at the conservative 250 threshold for everyone — a verified
+// account just sees an unnecessary early heads-up, which is the safer
+// false-positive to accept over silently letting an unverified account
+// hit a hard rejection with no warning at all.
+const TEMPLATE_CEILING_WARNING = 250;
 type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
 const HEADER_FORMATS: HeaderFormat[] = ['none', 'text', 'image', 'video', 'document'];
 
@@ -283,6 +292,12 @@ export function TemplateManager() {
   }
 
   function openCreate() {
+    if (templates.length >= TEMPLATE_CEILING_WARNING) {
+      toast.error(
+        `You have ${templates.length} templates. Unverified WhatsApp Business Accounts are capped at 250 total — new templates beyond that may be rejected by Meta unless your business is verified (verified accounts go up to 6,000).`,
+        { duration: 10000 },
+      );
+    }
     setEditingId(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -321,6 +336,9 @@ export function TemplateManager() {
             ? 'Edit submitted — Meta typically reviews within 24 hours.'
             : 'Submitted to Meta — typical review time is 24 hours. Status updates automatically.',
       );
+      if (typeof data.warning === 'string' && data.warning) {
+        toast.error(data.warning, { duration: 10000 });
+      }
       setDialogOpen(false);
       setForm(emptyForm);
       setEditingId(null);

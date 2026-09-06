@@ -580,6 +580,10 @@ model WhatsAppConfig {
   subscribed_apps_at     DateTime? @db.Timestamptz(6)
   last_registration_error String?
   connected_at           DateTime? @db.Timestamptz(6)
+  /// Debounces re-notifying on webhook redelivery of the same account/
+  /// phone-number alert (quality change, account alert, review decision,
+  /// security event) — see src/lib/whatsapp/account-webhook.ts.
+  last_alert_notified_at DateTime? @db.Timestamptz(6)
   /// How this connection was set up — "quick" (Meta Embedded Signup popup)
   /// or "manual" (credentials pasted into the API Credentials form).
   connect_method         String    @default("manual")
