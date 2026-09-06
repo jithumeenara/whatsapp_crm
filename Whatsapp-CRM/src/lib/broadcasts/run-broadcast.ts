@@ -13,6 +13,7 @@ import { resolveVariables, resolveVariablesByKey, type VariableMapping } from "@
 import { buildDataStoreIndex } from "@/lib/broadcasts/resolve-data-store";
 import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
 import { resolveMediaRef } from "@/lib/whatsapp/media-ref";
+import { classifyMetaError } from "@/lib/whatsapp/meta-error-codes";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
@@ -20,10 +21,6 @@ const RATE_LIMIT_MAX_RETRIES = 2;
 
 function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
-function isRateLimitError(msg: string): boolean {
-  return /rate.?limit|too many|131048|80007/i.test(msg);
 }
 
 /** Reuses the contact's existing WhatsApp conversation if one already
@@ -257,6 +254,11 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     // suspended account, etc.). Only continue to the next variant for
     // "recipient not in allowed list" errors, which indicate a format mismatch.
     let permanentError = false;
+    // A code-190 (expired/invalid token) means every remaining send in
+    // this run is doomed too — not just this one recipient. Distinct from
+    // permanentError, which only stops trying phone variants for THIS
+    // recipient before moving on to the next one.
+    let tokenExpired = false;
 
     for (const variant of variants) {
       if (permanentError) break;
@@ -288,17 +290,23 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
           break;
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Unknown error";
-          if (isRateLimitError(msg) && attempt < RATE_LIMIT_MAX_RETRIES) {
+          const classified = classifyMetaError(msg);
+          if (classified.category === "rate_limited" && attempt < RATE_LIMIT_MAX_RETRIES) {
             await sleep(RATE_LIMIT_BACKOFF_MS * (attempt + 1));
             attempt++;
             continue;
           }
           lastError = msg;
-          if (!isRecipientNotAllowedError(msg)) permanentError = true;
+          if (classified.category === "auth_expired") {
+            tokenExpired = true;
+            permanentError = true;
+          } else if (!isRecipientNotAllowedError(msg)) {
+            permanentError = true;
+          }
           break;
         }
       }
-      if (sentMessageId) break;
+      if (sentMessageId || tokenExpired) break;
     }
 
     if (sentMessageId) {
@@ -324,6 +332,27 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       });
       failedCount++;
       await prisma.broadcast.update({ where: { id: broadcastId }, data: { failed_count: { increment: 1 } } });
+
+      // The token is bad for every remaining recipient too — stop burning
+      // API calls one doomed request at a time and bulk-fail whatever's
+      // still pending in one shot, instead of letting the loop keep
+      // grinding through the rest of the list.
+      if (tokenExpired) {
+        await prisma.broadcastRecipient.updateMany({
+          where: { broadcast_id: broadcastId, status: "pending" },
+          data: {
+            status: "failed",
+            error_message: "Broadcast aborted: WhatsApp access token expired mid-run. Reconnect WhatsApp in Settings, then retry the failed recipients.",
+          },
+        });
+        const remaining = broadcast.recipients.length - (i + 1);
+        if (remaining > 0) {
+          failedCount += remaining;
+          await prisma.broadcast.update({ where: { id: broadcastId }, data: { failed_count: { increment: remaining } } });
+        }
+        await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: "failed" } });
+        return;
+      }
     }
   }
 

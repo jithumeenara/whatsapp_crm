@@ -25,7 +25,15 @@ import { Stepper } from '@/components/settings/settings-ui-kit';
 const MASKED_TOKEN = '••••••••••••••••';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
-type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
+type ResetReason = 'token_corrupted' | 'token_expired' | 'meta_api_error' | null;
+
+/** Maps a /api/whatsapp/config failure payload to the banner it should show. */
+function resolveResetReason(payload: { needs_reset?: boolean; reason?: string }): ResetReason {
+  if (payload.needs_reset) return 'token_corrupted';
+  if (payload.reason === 'token_expired') return 'token_expired';
+  if (payload.reason === 'meta_api_error') return 'meta_api_error';
+  return null;
+}
 
 /** Live metadata Meta returns for the connected number. */
 type PhoneInfo = {
@@ -371,7 +379,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
           setStatusMessage('');
         } else {
           setConnectionStatus('disconnected');
-          setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
+          setResetReason(resolveResetReason(payload));
           setStatusMessage(payload.message || '');
         }
       } else {
@@ -478,7 +486,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
         toast.success(payload.phone_info?.verified_name ? `Connected to ${payload.phone_info.verified_name}` : 'API connection successful');
       } else {
         setConnectionStatus('disconnected');
-        setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
+        setResetReason(resolveResetReason(payload));
         setStatusMessage(payload.message || '');
         toast.error(payload.message || 'API connection failed');
       }
@@ -1050,7 +1058,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
         "rounded-2xl border px-5 py-4 flex items-center gap-4",
         isConnected
           ? "bg-emerald-50 border-emerald-200"
-          : resetReason === 'token_corrupted'
+          : resetReason === 'token_corrupted' || resetReason === 'token_expired'
           ? "bg-amber-50 border-amber-200"
           : "bg-slate-50 border-slate-200"
       )}>
@@ -1149,6 +1157,27 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
             >
               {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
               Reset Configuration
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {resetReason === 'token_expired' && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <p className="text-[13px] font-semibold text-amber-800">Your WhatsApp access token has expired</p>
+            <p className="text-[12px] text-amber-700 mt-0.5">
+              Meta rejected it as expired or invalid — messages won&apos;t send until you reconnect. This isn&apos;t a config problem; it just needs a fresh token.
+            </p>
+            <Button
+              size="sm"
+              onClick={handleReset}
+              disabled={resetting}
+              className="mt-3 h-7 text-[12px] bg-amber-500 hover:bg-amber-600 text-white"
+            >
+              {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+              Reconnect WhatsApp
             </Button>
           </div>
         </div>

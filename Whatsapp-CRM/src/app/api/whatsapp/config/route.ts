@@ -7,6 +7,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { classifyMetaError } from '@/lib/whatsapp/meta-error-codes'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -196,12 +197,19 @@ export async function GET() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Meta API error'
       console.error('[whatsapp/config GET] Meta API verification failed:', message)
+      // A code-190 (expired/invalid token) is a distinct, actionable case
+      // from any other Meta rejection — the fix is always "reconnect,"
+      // not "check your other settings." Surface it as its own reason so
+      // the client can show a clearer prompt instead of a generic error.
+      const isTokenExpired = classifyMetaError(message).category === 'auth_expired'
       return NextResponse.json(
         {
           connected: false,
           config: safeConfig,
-          reason: 'meta_api_error',
-          message: `Meta API rejected the credentials: ${message}`,
+          reason: isTokenExpired ? 'token_expired' : 'meta_api_error',
+          message: isTokenExpired
+            ? 'Your WhatsApp access token has expired. Reconnect your account to keep sending messages.'
+            : `Meta API rejected the credentials: ${message}`,
         },
         { status: 200 }
       )
