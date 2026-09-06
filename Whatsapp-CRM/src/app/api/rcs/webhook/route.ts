@@ -160,6 +160,9 @@ async function findOrCreateRcsContact(accountId: string, ownerUserId: string, ph
         phone,
         phone_normalized: phone.replace(/\D/g, ""),
         name: phone,
+        opt_in_status: "opted_in",
+        opt_in_source: "rcs_inbound",
+        opt_in_at: new Date(),
       },
     })
     return { contact, wasCreated: true }

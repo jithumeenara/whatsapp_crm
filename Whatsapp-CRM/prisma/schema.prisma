@@ -298,6 +298,17 @@ model Contact {
   // collisions if reused here.
   instagram_id     String?                        // Instagram-scoped platform ID (IGSID)
   facebook_id      String?                        // Facebook Messenger-scoped platform ID (PSID)
+  /// Tri-state: "unknown" (default — most creation paths have no explicit
+  /// consent signal), "opted_in" (an inbound message on any channel, or an
+  /// explicit action like a Lead Ads form submission, is itself consent),
+  /// "opted_out" (reserved for a future inbound-STOP-keyword handler — not
+  /// built yet, nothing sets this today).
+  opt_in_status    String   @default("unknown")
+  /// Which creation path captured this contact — see the tag list in
+  /// findOrCreateContact-style call sites across the webhook/import routes.
+  opt_in_source    String?
+  opt_in_at        DateTime? @db.Timestamptz(6)
+  opted_out_at     DateTime? @db.Timestamptz(6)
   created_at       DateTime @default(now()) @db.Timestamptz(6)
   updated_at       DateTime @updatedAt @db.Timestamptz(6)
 

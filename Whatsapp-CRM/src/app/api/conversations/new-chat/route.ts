@@ -69,6 +69,10 @@ export async function POST(request: Request) {
             phone: sanitized,
             phone_normalized: sanitized,
             name: name || sanitized,
+            // Agent-initiated, not the customer's own action — not real
+            // consent, so this stays 'unknown' rather than 'opted_in'.
+            opt_in_source: "new_chat",
+            opt_in_at: new Date(),
           },
         })
         contactCreated = true

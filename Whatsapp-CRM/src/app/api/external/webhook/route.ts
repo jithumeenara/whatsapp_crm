@@ -134,6 +134,8 @@ export async function POST(req: NextRequest) {
           email: email ?? null,
           company: company ?? null,
           external_id: externalId,
+          opt_in_source: 'external_webhook',
+          opt_in_at: new Date(),
         } as any,
       })
       contactId = created.id

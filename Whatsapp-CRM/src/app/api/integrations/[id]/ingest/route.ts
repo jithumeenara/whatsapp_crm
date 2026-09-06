@@ -80,7 +80,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const ownerProfile = await prisma.profile.findFirst({ where: { account_id: integration.account_id, account_role: "owner" } })
         if (ownerProfile) {
           await prisma.contact.create({
-            data: { account_id: integration.account_id, user_id: ownerProfile.user_id, phone, phone_normalized: normalized, name, email: row.email || null, external_id: externalId },
+            data: { account_id: integration.account_id, user_id: ownerProfile.user_id, phone, phone_normalized: normalized, name, email: row.email || null, external_id: externalId, opt_in_source: "integration_sync", opt_in_at: new Date() },
           })
           contactsCreated++
         }

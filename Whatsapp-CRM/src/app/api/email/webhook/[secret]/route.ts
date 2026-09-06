@@ -168,6 +168,9 @@ async function findOrCreateEmailContact(accountId: string, ownerUserId: string, 
         phone: `email:${email}`,
         email,
         name: email,
+        opt_in_status: "opted_in",
+        opt_in_source: "email_inbound",
+        opt_in_at: new Date(),
       },
     })
     return { contact, wasCreated: true }

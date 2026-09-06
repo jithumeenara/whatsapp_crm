@@ -107,6 +107,13 @@ export interface Contact {
   gender?: string | null;
   location?: string;
   avatar_url?: string;
+  /** Tri-state: "unknown" (default), "opted_in", "opted_out" (reserved —
+   *  nothing sets this yet, no inbound-STOP-keyword handler exists). */
+  opt_in_status?: 'unknown' | 'opted_in' | 'opted_out';
+  /** Which creation path captured this contact, e.g. "whatsapp_inbound". */
+  opt_in_source?: string | null;
+  opt_in_at?: string | null;
+  opted_out_at?: string | null;
   created_at: string;
   updated_at: string;
   /** Channels this contact has been seen on, e.g. ["whatsapp", "instagram"] */

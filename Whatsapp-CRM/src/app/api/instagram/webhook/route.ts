@@ -431,6 +431,9 @@ async function findOrCreateIgContact(
         phone_normalized: igsid.replace(/\D/g, ""),
         instagram_id:     igsid,
         name:             displayName,
+        opt_in_status:    "opted_in",
+        opt_in_source:    "instagram_inbound",
+        opt_in_at:        new Date(),
       },
     })
     return contact

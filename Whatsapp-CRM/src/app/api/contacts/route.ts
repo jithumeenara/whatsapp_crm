@@ -111,6 +111,8 @@ export async function POST(req: NextRequest) {
         email: email ?? null,
         company: company ?? null,
         avatar_url: avatar_url ?? null,
+        opt_in_source: "manual",
+        opt_in_at: new Date(),
       },
     })
 

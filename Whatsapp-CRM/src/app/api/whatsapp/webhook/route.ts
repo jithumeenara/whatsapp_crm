@@ -1270,6 +1270,11 @@ async function findOrCreateContact(
         phone,
         phone_normalized: phone.replace(/\D/g, ''),
         name: name || phone,
+        // An inbound WhatsApp message is itself an opt-in signal per
+        // WhatsApp's own policy.
+        opt_in_status: 'opted_in',
+        opt_in_source: 'whatsapp_inbound',
+        opt_in_at: new Date(),
       },
     })
     return { contact: newContact, wasCreated: true }

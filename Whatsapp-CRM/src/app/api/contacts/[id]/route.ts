@@ -128,7 +128,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const allowed = ["phone", "name", "email", "company", "avatar_url", "alternate_phone", "gender"] as const
+    const allowed = ["phone", "name", "email", "company", "avatar_url", "alternate_phone", "gender", "opt_in_status"] as const
     const data: Record<string, string | null> = {}
     for (const k of allowed) {
       if (k in body) data[k] = body[k] ?? null
@@ -136,6 +136,11 @@ export async function PATCH(
     // Keep phone_normalized in sync so the unique index stays valid
     if ("phone" in data && data.phone) {
       data.phone_normalized = normalizePhone(data.phone)
+    }
+    // Matches the contacts_opt_in_status_check CHECK constraint — reject
+    // early with a clear error instead of a raw DB constraint violation.
+    if (data.opt_in_status && !["unknown", "opted_in", "opted_out"].includes(data.opt_in_status)) {
+      return NextResponse.json({ error: "Invalid opt_in_status" }, { status: 400 })
     }
 
     const updated = await prisma.contact.update({ where: { id }, data })

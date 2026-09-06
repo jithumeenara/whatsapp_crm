@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
         name: row.name || null,
         email: row.email || null,
         company: row.company || null,
+        opt_in_source: "csv_import",
+        opt_in_at: new Date(),
       }))
 
       try {

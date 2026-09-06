@@ -87,6 +87,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
   const [email, setEmail] = useState("")
   const [company, setCompany] = useState("")
   const [gender, setGender] = useState("")
+  const [optInStatus, setOptInStatus] = useState("")
   const [saving, setSaving] = useState(false)
 
   // Tags
@@ -132,6 +133,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
         setEmail(c.email ?? "")
         setCompany(c.company ?? "")
         setGender(c.gender ?? "")
+        setOptInStatus(c.opt_in_status ?? "unknown")
       }
       setAllTags(tr?.tags ?? [])
       const ctags: { tag_id?: string; id?: string }[] = cr.tags ?? []
@@ -173,7 +175,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
       const res = await fetch(`/api/contacts/${contactId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), alternate_phone: alternatePhone.trim() || null, email: email.trim() || null, company: company.trim() || null, gender: gender || null }),
+        body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), alternate_phone: alternatePhone.trim() || null, email: email.trim() || null, company: company.trim() || null, gender: gender || null, opt_in_status: optInStatus || null }),
       })
       if (!res.ok) { toast.error("Failed to update"); return }
       const j = await res.json()
@@ -397,6 +399,21 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                       <option value="trans">Trans</option>
                       <option value="prefer_not_to_say">Prefer not to say</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Consent</label>
+                    <select value={optInStatus} onChange={(e) => setOptInStatus(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none appearance-none">
+                      <option value="unknown">Unknown</option>
+                      <option value="opted_in">Opted in</option>
+                      <option value="opted_out">Opted out</option>
+                    </select>
+                    {contact?.opt_in_source && (
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Captured via {contact.opt_in_source}
+                        {contact.opt_in_at ? ` on ${format(new Date(contact.opt_in_at), "d MMM yyyy")}` : ""}
+                      </p>
+                    )}
                   </div>
                   <button
                     type="button"

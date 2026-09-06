@@ -144,6 +144,8 @@ export async function POST(req: NextRequest) {
             name: row.description || null,
             email,
             external_id: payment_id,
+            opt_in_source: "razorpay",
+            opt_in_at: new Date(),
           },
         })
       }

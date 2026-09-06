@@ -303,6 +303,10 @@ async function processLeadgenChange(
       phone: phoneValue,
       phone_normalized: normalized,
       email: email ?? null,
+      // Submitting a Lead Ads form is an explicit consent action.
+      opt_in_status: "opted_in",
+      opt_in_source: "facebook_lead_ad",
+      opt_in_at: new Date(),
     },
   })
 
@@ -539,6 +543,9 @@ async function findOrCreateFbContact(
         phone_normalized: psid.replace(/\D/g, ""),
         facebook_id:      psid,
         name:             nameToSave,
+        opt_in_status:    "opted_in",
+        opt_in_source:    "facebook_inbound",
+        opt_in_at:        new Date(),
       },
       // Update name if we got a real name from the API (replaces old PSID or "Messenger User" default)
       update: displayName ? { name: displayName } : {},

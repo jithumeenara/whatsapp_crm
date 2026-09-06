@@ -354,6 +354,8 @@ async function upsertCsvContacts(
       phone: row.phone,
       name: row.name ?? null,
       company: row.company ?? null,
+      opt_in_source: "broadcast_csv",
+      opt_in_at: new Date(),
     }));
 
   const INSERT_CHUNK = 200;
