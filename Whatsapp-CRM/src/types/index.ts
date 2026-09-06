@@ -184,7 +184,11 @@ export type ContentType =
   | 'location'
   | 'template'
   /** Customer tapped a reply button or list row on a message we sent. */
-  | 'interactive';
+  | 'interactive'
+  /** Customer shared a delivery address. */
+  | 'address'
+  /** Customer shared one or more vCard-style contact cards. */
+  | 'contacts';
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {

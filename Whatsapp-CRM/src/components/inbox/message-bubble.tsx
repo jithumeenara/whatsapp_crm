@@ -25,6 +25,8 @@ import {
   Loader2,
   Download,
   Radio,
+  Home,
+  Contact as ContactIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -706,6 +708,26 @@ function MessageContent({ message }: { message: Message }) {
         <div className="flex items-center gap-2 text-[13px]">
           <MapPin className="h-4 w-4 shrink-0 text-slate-500" />
           <span>{message.content_text || "Location shared"}</span>
+        </div>
+      );
+
+    case "address":
+      return (
+        <div className="flex items-start gap-2 text-[13px]">
+          <Home className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" />
+          <span className="whitespace-pre-wrap" style={WRAP_STYLE}>
+            {message.content_text || "Address shared"}
+          </span>
+        </div>
+      );
+
+    case "contacts":
+      return (
+        <div className="flex items-start gap-2 text-[13px]">
+          <ContactIcon className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" />
+          <span className="whitespace-pre-wrap" style={WRAP_STYLE}>
+            {message.content_text || "Contact shared"}
+          </span>
         </div>
       );
 

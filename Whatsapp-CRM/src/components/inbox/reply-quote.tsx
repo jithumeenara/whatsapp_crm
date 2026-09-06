@@ -75,6 +75,10 @@ export function buildReplyPreview(message: Message): string {
       return "[Document]";
     case "location":
       return "[Location]";
+    case "address":
+      return "[Address]";
+    case "contacts":
+      return "[Contact]";
     case "template":
       return "[Template]";
     default:
