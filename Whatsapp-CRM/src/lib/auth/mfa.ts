@@ -197,7 +197,16 @@ export async function verifyChallenge(challengeId: string, code: string): Promis
 
   if (!valid) {
     await prisma.mfaChallenge.update({ where: { id: challengeId }, data: { attempts: { increment: 1 } } })
-    return { ok: false, error: "Incorrect code." }
+    return {
+      ok: false,
+      // A wrong TOTP code is, in practice, almost always a clock problem
+      // (the server's or the phone's) rather than a mistyped digit — this
+      // matches the hint /api/account/mfa/enroll/confirm already gives at
+      // setup time, which login verification was missing until now.
+      error: challenge.method === "totp"
+        ? "Incorrect code — check that your phone's clock is set to automatic/network time, wait for a fresh code, and try again."
+        : "Incorrect code.",
+    }
   }
 
   await prisma.mfaChallenge.update({ where: { id: challengeId }, data: { verified: true } })

@@ -69,8 +69,15 @@ function hotp(secret: Buffer, counter: number): string {
 }
 
 /** Verifies a 6-digit code against the current time step, tolerating clock
- *  drift of `window` steps either side (default ±30s, i.e. one step). */
-export function verifyTotp(base32Secret: string, token: string, window = 1): boolean {
+ *  drift of `window` steps either side (default ±2 steps = ±60s). Wider
+ *  than the bare-minimum ±1 step on purpose: the most common real-world
+ *  cause of "my authenticator app's code says incorrect even though it's
+ *  right" is the server's or the phone's clock being a little off, or the
+ *  few seconds of round-trip between reading the code and it landing here
+ *  straddling a 30-second boundary — ±60s absorbs both without materially
+ *  weakening the code (Google/Microsoft Authenticator both still show a
+ *  fresh code every 30s regardless of this server-side tolerance). */
+export function verifyTotp(base32Secret: string, token: string, window = 2): boolean {
   const clean = token.replace(/\D/g, "")
   if (clean.length !== DIGITS) return false
   const secret = base32Decode(base32Secret)

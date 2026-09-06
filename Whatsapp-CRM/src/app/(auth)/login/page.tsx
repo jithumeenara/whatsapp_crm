@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
 import { MessageSquare, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, KeyRound, Clock, CheckCircle2, CircleAlert } from "lucide-react"
+import { TotpCountdown } from "@/components/auth/totp-countdown"
 
 type Step = "credentials" | "mfa"
 type MfaMethod = "sms" | "whatsapp" | "totp"
@@ -222,6 +223,9 @@ function LoginContent() {
                   {mfaMethod ? MFA_LABEL[mfaMethod] : ""}
                   {maskedPhone && <> to <span className="font-medium text-slate-700">{maskedPhone}</span></>}
                 </p>
+                {mfaMethod === "totp" && (
+                  <TotpCountdown className="mt-2" />
+                )}
               </div>
 
               <div className="relative">

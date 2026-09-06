@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Stepper } from '@/components/settings/settings-ui-kit';
+import { TotpCountdown } from '@/components/auth/totp-countdown';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' '); }
 
@@ -331,13 +332,16 @@ export function MfaSettings() {
                 title: 'Enter the 6-digit code from the app',
                 state: totpQr ? 'active' : 'pending',
                 children: totpQr && (
-                  <div className="flex gap-2 mt-1">
-                    <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="123456" inputMode="numeric" maxLength={6}
-                      className="h-9 text-[13px] font-mono border-slate-200 text-center tracking-[0.3em]" />
-                    <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
-                      {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
-                    </Button>
+                  <div className="mt-1 space-y-1.5">
+                    <div className="flex gap-2">
+                      <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="123456" inputMode="numeric" maxLength={6}
+                        className="h-9 text-[13px] font-mono border-slate-200 text-center tracking-[0.3em]" />
+                      <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
+                        {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
+                      </Button>
+                    </div>
+                    <TotpCountdown />
                   </div>
                 ),
               },
