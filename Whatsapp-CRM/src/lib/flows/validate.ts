@@ -845,9 +845,11 @@ function validateNode(
 
     case "ai_reply": {
       const cfg = node.config as { system_prompt?: string; next_node_key?: string };
-      if (!cfg.system_prompt?.trim()) {
-        issues.push({ severity: "warning", scope: "node", node_key: node.node_key, field: "system_prompt", message: "AI-reply has no system prompt — the model will use its default behaviour." });
-      }
+      // No "empty system_prompt" warning here (there used to be one): the
+      // account-level AI Config persona + knowledge base always
+      // contributes something to the prompt now, so a node with no
+      // situational instructions of its own is the normal case, not a
+      // misconfiguration to flag.
       if (!cfg.next_node_key) {
         issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "AI-reply must point to a next node." });
       } else if (!knownKeys.has(cfg.next_node_key)) {

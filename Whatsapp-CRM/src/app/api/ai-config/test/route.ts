@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
-import { generateAiReply } from '@/lib/ai/gemini'
+import { decrypt } from '@/lib/whatsapp/encryption'
+import { PROVIDERS, generateAiReply, getProviderKeys } from '@/lib/ai/providers/registry'
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -18,74 +18,102 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json()
-  const { message, api_key: rawKey, model, temperature, max_tokens, system_prompt, training_data } =
-    body as {
-      message?: string
-      api_key?: string
-      model?: string
-      temperature?: number
-      max_tokens?: number
-      system_prompt?: string
-      training_data?: Array<{ question: string; answer: string }>
-    }
+  const {
+    message,
+    provider,
+    api_key: rawKey,
+    model,
+    base_url,
+    temperature,
+    max_tokens,
+    system_prompt,
+    training_data,
+  } = body as {
+    message?: string
+    provider?: string
+    api_key?: string
+    model?: string
+    base_url?: string
+    temperature?: number
+    max_tokens?: number
+    system_prompt?: string
+    training_data?: Array<{ question: string; answer: string }>
+  }
 
   if (!message?.trim()) {
     return NextResponse.json({ error: 'message is required' }, { status: 400 })
   }
 
-  // Resolve API key: prefer the one sent in the request body (unsaved),
-  // fall back to the stored encrypted key.
+  const providerId = provider || 'gemini'
+  const adapter = PROVIDERS[providerId]
+  if (!adapter) {
+    return NextResponse.json({ error: `Unknown AI provider: ${providerId}` }, { status: 400 })
+  }
+
+  // Resolve API key/model: prefer what was sent in the request body
+  // (unsaved — this is what makes "test before you save" possible), fall
+  // back to this provider's already-saved, decrypted key.
   let apiKey: string
+  let resolvedModel: string
   if (rawKey?.trim()) {
     apiKey = rawKey.trim()
+    resolvedModel = model || adapter.defaultModels[0]?.id || ''
   } else {
     const stored = await prisma.aiConfig.findUnique({
       where: { account_id: profile.account_id },
-      select: { api_key: true },
     })
-    if (!stored?.api_key) {
+    const entry = stored ? getProviderKeys(stored)[providerId] : undefined
+    if (!entry?.api_key) {
       return NextResponse.json(
-        { error: 'No API key configured. Save your API key first or enter one to test.' },
+        { error: `No API key configured for ${adapter.label}. Save one first or enter one to test.` },
         { status: 400 },
       )
     }
-    apiKey = decrypt(stored.api_key)
+    apiKey = decrypt(entry.api_key)
+    resolvedModel = model || entry.model
   }
+
+  if (!resolvedModel) {
+    return NextResponse.json({ error: 'A model is required for this provider.' }, { status: 400 })
+  }
+
+  // Same flattening the old Gemini-only implementation used — training
+  // data folded into the system prompt, unfiltered here since this is a
+  // manual one-off test message, not a real conversation turn (the real
+  // ai_reply node applies relevance filtering, see src/lib/ai/knowledge.ts).
+  const systemPrompt = buildTestSystemPrompt(system_prompt, training_data)
 
   try {
     const reply = await generateAiReply(
+      providerId,
       {
         apiKey,
-        model: model ?? 'gemini-2.0-flash',
+        model: resolvedModel,
+        baseUrl: base_url || (providerId === 'deepseek' ? 'https://api.deepseek.com' : undefined),
         temperature: temperature ?? 0.7,
         maxTokens: max_tokens ?? 500,
-        systemPrompt: system_prompt || undefined,
-        trainingData: training_data ?? [],
+        systemPrompt,
       },
       message.trim(),
     )
-    return NextResponse.json({ reply })
+    return NextResponse.json({ reply, provider: providerId })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    // Surface Gemini-specific errors clearly
-    if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid')) {
-      return NextResponse.json(
-        { error: 'Invalid API key. Check it at aistudio.google.com.' },
-        { status: 400 },
-      )
-    }
-    if (msg.includes('PERMISSION_DENIED')) {
-      return NextResponse.json(
-        { error: 'API key does not have permission for this model.' },
-        { status: 400 },
-      )
-    }
-    if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
-      return NextResponse.json(
-        { error: 'Quota exceeded. Check your Gemini API usage limits.' },
-        { status: 429 },
-      )
-    }
-    return NextResponse.json({ error: `Gemini error: ${msg}` }, { status: 500 })
+    const classified = adapter.classifyError(err)
+    return NextResponse.json({ error: classified.message }, { status: classified.retryable ? 429 : 400 })
   }
+}
+
+function buildTestSystemPrompt(
+  systemPrompt: string | undefined,
+  trainingData: Array<{ question: string; answer: string }> | undefined,
+): string {
+  const parts: string[] = []
+  if (systemPrompt) parts.push(systemPrompt)
+  if (trainingData && trainingData.length > 0) {
+    parts.push('Knowledge base (use these to answer questions accurately):')
+    for (const item of trainingData) {
+      if (item.question && item.answer) parts.push(`Q: ${item.question}\nA: ${item.answer}`)
+    }
+  }
+  return parts.join('\n\n') || 'You are a helpful assistant.'
 }

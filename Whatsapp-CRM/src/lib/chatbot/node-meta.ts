@@ -152,7 +152,7 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
   },
   ai_reply: {
     label: 'AI Reply',
-    description: 'Generate a context-aware response using OpenAI GPT',
+    description: 'Generate a context-aware response using your configured AI provider',
     icon: Sparkles,
     color: 'text-violet-500',
     bg: 'bg-violet-50',
@@ -432,8 +432,12 @@ export function summarizeChatbotNode(
       return val ? `${sk} ${op} "${t(val, 20)}"` : `${sk} ${op}`
     }
     case 'ai_reply': {
+      // No account context available here (this summary only sees the
+      // node's own config) — the actually-configured provider/model is
+      // shown in Settings > AI Config, the correct single source of truth
+      // for it, rather than fetched just to label this canvas summary.
       const sp = t(config.system_prompt, 50)
-      return sp ? `GPT: ${sp}` : 'AI-powered reply'
+      return sp ? `AI: ${sp}` : 'AI-powered reply'
     }
     case 'http_request': {
       const method = typeof config.method === 'string' ? config.method : 'GET'

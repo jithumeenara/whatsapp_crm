@@ -37,7 +37,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
-import { generateAiReply } from "@/lib/ai/gemini";
+import { generateAiReplyWithFallback } from "@/lib/ai/providers/registry";
+import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import {
   engineSendCtaUrlButton,
   engineSendFlow,
@@ -763,7 +764,10 @@ async function executeHandoff(
             });
             if (waConfig && agentPhone) {
               const lastMsg = await prisma.message.findFirst({
-                where: { conversation_id: run.conversation_id, sender_type: "contact" },
+                // "customer" — not "contact" (this was querying a value
+                // no message ever actually gets written with; every real
+                // sender_type value in this codebase is customer/agent/bot).
+                where: { conversation_id: run.conversation_id, sender_type: "customer" },
                 orderBy: { created_at: "desc" },
                 select: { content_text: true },
               });
@@ -1397,11 +1401,27 @@ async function advanceFromNodeKey(
       continue;
     }
 
-    // ai_reply — call Gemini with account config and send the response.
+    // ai_reply — call the account's configured AI provider (with automatic
+    // fallback to a second provider if the primary fails) and send the
+    // response. Real conversation history and a relevance-filtered
+    // knowledge base are built fresh below — see src/lib/ai/knowledge.ts
+    // and src/lib/ai/providers/registry.ts for why.
     if (node.node_type === "ai_reply") {
       const cfg = node.config as {
         next_node_key?: string;
-        var_key?: string;
+        /** Standardized on this key (matching what the flow-builder UI and
+         *  the built-in template both write) — the previous engine read
+         *  `var_key`, which nothing ever wrote, so "save the AI's reply to
+         *  a variable" silently did nothing. */
+        save_response_to?: string;
+        /** Situational instructions for this specific step — layered on
+         *  top of (never replacing) the account's persona/knowledge/
+         *  guardrails below, so a per-node prompt can't accidentally
+         *  discard those. */
+        system_prompt?: string;
+        include_history?: boolean;
+        history_depth?: number;
+        max_tokens?: number;
       };
       try {
         const aiConfig = await prisma.aiConfig.findUnique({
@@ -1412,22 +1432,77 @@ async function advanceFromNodeKey(
           await endRun(run.id, "failed", "ai_config_not_found");
           return { outcome: "completed" };
         }
-        const apiKey = decrypt(aiConfig.api_key);
-        const trainingData = Array.isArray(aiConfig.training_data)
-          ? (aiConfig.training_data as Array<{ question: string; answer: string }>)
-          : [];
+
         const lastUserMessage =
           inboundMessage?.kind === "text" ? inboundMessage.text : "";
-        const reply = await generateAiReply(
-          {
-            apiKey,
-            model: aiConfig.model,
-            temperature: aiConfig.temperature,
-            maxTokens: aiConfig.max_tokens,
-            systemPrompt: aiConfig.system_prompt ?? undefined,
-            trainingData,
-          },
+
+        // Real conversation history — the single biggest accuracy gap
+        // this replaces: previously only the current message was ever
+        // sent, with zero memory of anything said even one turn earlier.
+        // Excludes the just-arrived inbound message itself (already
+        // persisted by the webhook handler before the flow engine runs)
+        // by its provider message id, so it isn't duplicated against
+        // lastUserMessage above.
+        let conversationHistory: Array<{ role: "user" | "model"; text: string }> = [];
+        if (cfg.include_history !== false && run.conversation_id) {
+          const depth = cfg.history_depth ?? aiConfig.history_depth_default;
+          const pastMessages = await prisma.message.findMany({
+            where: {
+              conversation_id: run.conversation_id,
+              ...(inboundMessage ? { message_id: { not: inboundMessage.meta_message_id } } : {}),
+            },
+            orderBy: { created_at: "desc" },
+            take: depth,
+            select: { sender_type: true, content_text: true },
+          });
+          conversationHistory = pastMessages
+            .reverse()
+            .filter((m): m is typeof m & { content_text: string } => Boolean(m.content_text))
+            .map((m) => ({
+              role: m.sender_type === "customer" ? ("user" as const) : ("model" as const),
+              text: m.content_text,
+            }));
+        }
+
+        // Relevance-ranked knowledge — only what's actually relevant to
+        // this message, not the whole knowledge base every time.
+        const qaPairs = Array.isArray(aiConfig.training_data)
+          ? (aiConfig.training_data as Array<{ question: string; answer: string }>)
+          : [];
+        const documents = Array.isArray(aiConfig.knowledge_documents)
+          ? (aiConfig.knowledge_documents as Array<{ id: string; title: string; content: string }>)
+          : [];
+        const knowledgeBlock = formatKnowledgeBlock(selectRelevantContext(lastUserMessage, qaPairs, documents));
+
+        const promptParts = [aiConfig.system_prompt ?? undefined, knowledgeBlock || undefined].filter(
+          (p): p is string => Boolean(p),
+        );
+        // Guardrails — prompt-level guidance, not code-enforced (an LLM
+        // can still ignore an instruction; there's no second verification
+        // pass here). Stated as plainly in the Settings UI copy too.
+        if (aiConfig.fallback_answer) {
+          promptParts.push(
+            `If the knowledge above doesn't contain a confident answer to the user's question, respond with exactly: "${aiConfig.fallback_answer}" — do not guess or make up an answer.`,
+          );
+        }
+        const escalationTopics = Array.isArray(aiConfig.escalation_topics)
+          ? (aiConfig.escalation_topics as string[])
+          : [];
+        if (escalationTopics.length > 0) {
+          promptParts.push(
+            `If the user asks about any of: ${escalationTopics.join(", ")} — say a team member will follow up shortly, and don't try to answer it yourself.`,
+          );
+        }
+        if (cfg.system_prompt) {
+          promptParts.push(`Additionally, for this step: ${cfg.system_prompt}`);
+        }
+        const systemPrompt = promptParts.join("\n\n") || "You are a helpful assistant.";
+
+        const { reply } = await generateAiReplyWithFallback(
+          { ...aiConfig, max_tokens: cfg.max_tokens ?? aiConfig.max_tokens },
+          systemPrompt,
           lastUserMessage,
+          conversationHistory,
         );
         const { whatsapp_message_id } = await engineSendText({
           accountId: run.account_id,
@@ -1436,8 +1511,8 @@ async function advanceFromNodeKey(
           contactId: run.contact_id!,
           text: reply,
         });
-        if (cfg.var_key) {
-          const newVars = { ...run.vars, [cfg.var_key]: reply };
+        if (cfg.save_response_to) {
+          const newVars = { ...run.vars, [cfg.save_response_to]: reply };
           await prisma.flowRun.update({
             where: { id: run.id },
             data: { vars: newVars as Record<string, string> },

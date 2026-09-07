@@ -738,13 +738,43 @@ model AiConfig {
   id            String   @id @default(uuid()) @db.Uuid
   account_id    String   @unique @db.Uuid
   user_id       String   @db.Uuid
+  /// Legacy single-provider fields — kept in place, unread by new code, as
+  /// a rollback safety net for one release. Superseded by active_provider
+  /// + provider_keys below. Do not read these in new code.
   provider      String   @default("gemini")
   api_key       String
   model         String   @default("gemini-1.5-flash")
   temperature   Float    @default(0.7)
   max_tokens    Int      @default(500)
   system_prompt String?
+  /// Q&A pairs — { question, answer }[]. Re-scored for relevance against
+  /// each incoming message at generation time (src/lib/ai/knowledge.ts),
+  /// not dumped wholesale into every prompt.
   training_data Json?
+
+  /// Which provider key in provider_keys is actually used to generate.
+  active_provider   String  @default("gemini")
+  /// Optional second provider, retried once if the active one fails with a
+  /// retryable error (src/lib/ai/providers/registry.ts).
+  fallback_provider String?
+  /// Map of provider id -> { api_key (individually encrypted), model,
+  /// base_url? }. base_url is used by "custom" (any OpenAI-compatible
+  /// endpoint) and can override "deepseek"'s default. Never a plaintext
+  /// key anywhere in this JSON.
+  provider_keys     Json    @default("{}")
+
+  /// Free-text reference documents -- { id, title, content, created_at }[],
+  /// the richer half of "training" alongside training_data above.
+  knowledge_documents  Json    @default("[]")
+  /// Guardrail line the model is instructed to use instead of guessing
+  /// when nothing relevant is found in the knowledge base.
+  fallback_answer      String?
+  /// Topics/phrases that should trigger "hand this to a human" guidance.
+  escalation_topics    Json    @default("[]")
+  /// Account-level default for how many past messages to include as
+  /// conversation history; a flow node's own history_depth overrides this.
+  history_depth_default Int    @default(6)
+
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   updated_at    DateTime @updatedAt @db.Timestamptz(6)
 
