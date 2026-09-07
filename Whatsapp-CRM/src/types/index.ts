@@ -195,7 +195,15 @@ export type ContentType =
   /** Customer shared a delivery address. */
   | 'address'
   /** Customer shared one or more vCard-style contact cards. */
-  | 'contacts';
+  | 'contacts'
+  /** Customer submitted a cart built from a catalog/product_list message. */
+  | 'order'
+  /** We sent the whole connected catalog as a browsable message. */
+  | 'catalog'
+  /** We sent one highlighted product. */
+  | 'single_product'
+  /** We sent a curated, sectioned pick of up to 30 products. */
+  | 'multi_product';
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {
@@ -217,6 +225,15 @@ export interface Message {
    *  message first appears (see src/lib/whatsapp/audio-transcription.ts).
    *  Null while transcription hasn't run or isn't configured. */
   transcript?: string | null;
+  /** Structured snapshot of an inbound WhatsApp order — only ever set on
+   *  `content_type === 'order'` messages, populated a few seconds after
+   *  the message first appears (see src/lib/whatsapp/order-processing.ts). */
+  order_snapshot?: {
+    items: Array<{ retailer_id: string; quantity: number; item_price: number; name: string }>;
+    subtotal: number;
+    currency: string | null;
+    deal_id: string | null;
+  } | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;

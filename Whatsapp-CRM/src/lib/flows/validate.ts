@@ -923,6 +923,38 @@ function validateNode(
       break;
     }
 
+    case "send_catalog": {
+      const cfg = node.config as {
+        mode?: string;
+        body_text?: string;
+        header_text?: string;
+        product_retailer_id?: string;
+        product_retailer_ids?: string[];
+        next_node_key?: string;
+      };
+      const mode = cfg.mode || "catalog";
+      if (mode === "single_product" && !cfg.product_retailer_id?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "product_retailer_id", message: "Send-catalog (one product) needs a product selected." });
+      }
+      if (mode === "multi_product") {
+        if (!cfg.product_retailer_ids || cfg.product_retailer_ids.length === 0) {
+          issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "product_retailer_ids", message: "Send-catalog (product picks) needs at least one product selected." });
+        }
+        if (!cfg.header_text?.trim()) {
+          issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "header_text", message: "Send-catalog (product picks) needs a header." });
+        }
+      }
+      if (mode !== "single_product" && !cfg.body_text?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "body_text", message: "Send-catalog needs a message." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Send-catalog must point to a next node." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Send-catalog points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
     case "send_to_number": {
       const cfg = node.config as { phone?: string; text?: string; next_node_key?: string };
       if (!cfg.phone?.trim()) {
@@ -1011,7 +1043,8 @@ function outgoingEdges(node: NodeInput): string[] {
     case "crm_action":
     case "save_to_table":
     case "send_flow":
-    case "send_to_number": {
+    case "send_to_number":
+    case "send_catalog": {
       const cfg = node.config as { next_node_key?: string };
       return cfg.next_node_key ? [cfg.next_node_key] : [];
     }

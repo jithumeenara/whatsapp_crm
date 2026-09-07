@@ -461,6 +461,19 @@ export function runUntilInteractive(
         break
       }
 
+      case 'send_catalog': {
+        const mode = typeof cfg.mode === 'string' ? cfg.mode : 'catalog'
+        const label =
+          mode === 'single_product'
+            ? `🛍️ [Product: ${typeof cfg.product_retailer_id === 'string' && cfg.product_retailer_id ? cfg.product_retailer_id : '(none selected)'}]`
+            : mode === 'multi_product'
+              ? `🛍️ [${Array.isArray(cfg.product_retailer_ids) ? cfg.product_retailer_ids.length : 0} products]`
+              : `🛍️ [Whole catalog]`
+        state.msgs.push({ id: uid(), role: 'bot', text: label })
+        key = next(cfg.next_node_key)
+        break
+      }
+
       case 'join': {
         // Transparent pass-through — multiple branches converge here,
         // simulator just advances to next_node_key.

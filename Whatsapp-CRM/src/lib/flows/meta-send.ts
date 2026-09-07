@@ -10,6 +10,9 @@ import {
   sendTextMessage,
   sendFlowMessage,
   uploadMediaToMeta,
+  sendCatalogMessage,
+  sendSingleProductMessage,
+  sendMultiProductMessage,
   type InteractiveButton,
   type InteractiveListSection,
   type MediaKind,
@@ -602,6 +605,94 @@ export async function engineSendTemplate(
     data: { last_message_text: templatePreview, last_message_at: lastMessageAt },
   })
   await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: templatePreview, last_message_at: lastMessageAt.toISOString() })
+  return { whatsapp_message_id: waMessageId }
+}
+
+interface SendCatalogEngineArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  mode: 'catalog' | 'single_product' | 'multi_product'
+  bodyText: string
+  headerText?: string
+  footerText?: string
+  productRetailerId?: string
+  productRetailerIds?: string[]
+}
+
+/**
+ * Mirrors engineSendTemplate's shape, but the catalog itself comes from
+ * CatalogConfig (one per account, same as WhatsAppConfig) rather than
+ * being passed in — a flow author picks WHAT to send, not which catalog,
+ * same as they never pick which WABA to send from.
+ */
+export async function engineSendCatalog(
+  args: SendCatalogEngineArgs,
+): Promise<{ whatsapp_message_id: string }> {
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const accessToken = decrypt(config.access_token)
+
+  const catalogConfig = await prisma.catalogConfig.findUnique({ where: { account_id: args.accountId } })
+  if (!catalogConfig) throw new Error('No catalog connected for this account')
+
+  let contentText = args.bodyText
+  let preview = args.bodyText
+
+  const { waMessageId } = await retryWithVariants(sanitized, contact.id, (phone) => {
+    if (args.mode === 'single_product') {
+      if (!args.productRetailerId) throw new Error('send_catalog (single_product) requires a product selection')
+      return sendSingleProductMessage({
+        phoneNumberId: config.phone_number_id,
+        accessToken,
+        to: phone,
+        catalogId: catalogConfig.catalog_id,
+        productRetailerId: args.productRetailerId,
+        bodyText: args.bodyText || undefined,
+        footerText: args.footerText,
+      }).then((r) => r.messageId)
+    }
+    if (args.mode === 'multi_product') {
+      const ids = args.productRetailerIds ?? []
+      if (ids.length === 0) throw new Error('send_catalog (multi_product) requires at least one product')
+      preview = args.headerText || args.bodyText
+      contentText = args.bodyText
+      return sendMultiProductMessage({
+        phoneNumberId: config.phone_number_id,
+        accessToken,
+        to: phone,
+        catalogId: catalogConfig.catalog_id,
+        headerText: args.headerText || 'Take a look at these',
+        bodyText: args.bodyText,
+        footerText: args.footerText,
+        sections: [{ productRetailerIds: ids }],
+      }).then((r) => r.messageId)
+    }
+    return sendCatalogMessage({
+      phoneNumberId: config.phone_number_id,
+      accessToken,
+      to: phone,
+      bodyText: args.bodyText,
+      footerText: args.footerText,
+    }).then((r) => r.messageId)
+  })
+
+  const savedMsg = await prisma.message.create({
+    data: {
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: args.mode,
+      content_text: contentText || preview,
+      message_id: waMessageId,
+      status: 'sent',
+    },
+  })
+  const lastMessageAt = new Date()
+  await prisma.conversation.update({
+    where: { id: args.conversationId },
+    data: { last_message_text: preview, last_message_at: lastMessageAt },
+  })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: preview, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }
 

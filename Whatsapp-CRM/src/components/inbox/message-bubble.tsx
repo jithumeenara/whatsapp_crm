@@ -27,10 +27,14 @@ import {
   Radio,
   Home,
   Contact as ContactIcon,
+  ShoppingBag,
+  ShoppingCart,
+  Package,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import { formatCurrency } from "@/lib/currency";
 
 /**
  * Applied as an inline `style` (not a Tailwind class) on every element that
@@ -737,6 +741,89 @@ function MessageContent({ message }: { message: Message }) {
           <span className="whitespace-pre-wrap" style={WRAP_STYLE}>
             {message.content_text || "Contact shared"}
           </span>
+        </div>
+      );
+
+    case "order": {
+      const snap = message.order_snapshot;
+      if (!snap) {
+        // Order webhook landed, but processing hasn't finished yet
+        // (usually a second or two) — the realtime UPDATE event fills
+        // this in without a refresh, same as the audio transcript above.
+        return (
+          <div className="flex items-center gap-2 text-[13px] text-slate-500">
+            <ShoppingCart className="h-4 w-4 shrink-0" />
+            <span>{message.content_text || "Order received"}</span>
+          </div>
+        );
+      }
+      return (
+        <div className="min-w-[220px]">
+          <span className="mb-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+            <ShoppingCart className="h-3 w-3" />
+            Order
+          </span>
+          <div className="space-y-1 rounded-lg border border-amber-100 bg-amber-50/60 px-2.5 py-2">
+            {snap.items.map((item, i) => (
+              <div key={`${item.retailer_id}-${i}`} className="flex items-center justify-between gap-2 text-[12.5px]">
+                <span className="truncate text-slate-700">
+                  {item.quantity}× {item.name}
+                </span>
+                <span className="shrink-0 font-medium text-slate-600 [font-variant-numeric:tabular-nums]">
+                  {formatCurrency(item.item_price * item.quantity, snap.currency || undefined)}
+                </span>
+              </div>
+            ))}
+            <div className="mt-1 flex items-center justify-between border-t border-amber-200/70 pt-1 text-[12.5px] font-semibold text-slate-800">
+              <span>Subtotal</span>
+              <span className="[font-variant-numeric:tabular-nums]">{formatCurrency(snap.subtotal, snap.currency || undefined)}</span>
+            </div>
+          </div>
+          {snap.deal_id && (
+            <p className="mt-1 text-[10px] text-slate-400">Added to Deals as a new deal.</p>
+          )}
+        </div>
+      );
+    }
+
+    case "catalog":
+      return (
+        <div>
+          <span className="mb-1 inline-flex w-fit items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
+            <ShoppingBag className="h-3 w-3" />
+            Catalog
+          </span>
+          <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+            <WhatsAppText text={message.content_text || "Catalog shared"} />
+          </p>
+        </div>
+      );
+
+    case "single_product":
+      return (
+        <div>
+          <span className="mb-1 inline-flex w-fit items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
+            <Package className="h-3 w-3" />
+            Product
+          </span>
+          {message.content_text && (
+            <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+              <WhatsAppText text={message.content_text} />
+            </p>
+          )}
+        </div>
+      );
+
+    case "multi_product":
+      return (
+        <div>
+          <span className="mb-1 inline-flex w-fit items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
+            <ShoppingBag className="h-3 w-3" />
+            Product picks
+          </span>
+          <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+            <WhatsAppText text={message.content_text || "Products shared"} />
+          </p>
         </div>
       );
 

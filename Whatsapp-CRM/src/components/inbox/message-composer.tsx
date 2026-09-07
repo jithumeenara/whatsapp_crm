@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -25,6 +25,7 @@ interface MessageComposerProps {
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (mediaUrl: string, mediaType: 'image' | 'document' | 'audio' | 'video', filename?: string) => void;
   onOpenTemplates: () => void;
+  onOpenCatalog: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
 }
@@ -60,6 +61,7 @@ export function MessageComposer({
   onSend,
   onSendMedia,
   onOpenTemplates,
+  onOpenCatalog,
   replyTo,
   onClearReply,
 }: MessageComposerProps) {
@@ -296,6 +298,16 @@ export function MessageComposer({
                     >
                       <LayoutTemplate className="h-4 w-4 shrink-0 text-amber-500" />
                       Message Template
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sessionExpired}
+                      onClick={() => { setAttachOpen(false); onOpenCatalog(); }}
+                      title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                    >
+                      <ShoppingBag className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : "text-sky-500")} />
+                      Send Catalog
                     </button>
                     <div className="mx-3 my-1 border-t border-slate-100" />
                   </>

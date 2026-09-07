@@ -5,7 +5,7 @@ import { lookup as mimeLookup } from 'mime-types'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage, uploadMediaToMeta } from '@/lib/whatsapp/meta-api'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, uploadMediaToMeta, sendCatalogMessage, sendSingleProductMessage, sendMultiProductMessage, type MultiProductSection } from '@/lib/whatsapp/meta-api'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
@@ -387,6 +387,11 @@ export async function POST(request: Request) {
       template_params,
       template_message_params,
       reply_to_message_id,
+      catalog_footer_text,
+      catalog_thumbnail_retailer_id,
+      product_retailer_id,
+      catalog_header_text,
+      catalog_sections,
     } = body
 
     if (!conversation_id || !message_type) {
@@ -408,6 +413,16 @@ export async function POST(request: Request) {
         { error: 'template_name is required for template messages' },
         { status: 400 }
       )
+    }
+
+    if (message_type === 'catalog' && !content_text) {
+      return NextResponse.json({ error: 'content_text (body) is required for catalog messages' }, { status: 400 })
+    }
+    if (message_type === 'single_product' && !product_retailer_id) {
+      return NextResponse.json({ error: 'product_retailer_id is required for single product messages' }, { status: 400 })
+    }
+    if (message_type === 'multi_product' && (!catalog_header_text || !content_text || !Array.isArray(catalog_sections) || catalog_sections.length === 0)) {
+      return NextResponse.json({ error: 'catalog_header_text, content_text, and catalog_sections are required for multi-product messages' }, { status: 400 })
     }
 
     // Fetch conversation and contact.
@@ -528,6 +543,15 @@ export async function POST(request: Request) {
 
     const accessToken = decrypt(config.access_token)
 
+    let catalogId: string | null = null
+    if (['catalog', 'single_product', 'multi_product'].includes(message_type)) {
+      const catalogConfig = await prisma.catalogConfig.findUnique({ where: { account_id: accountId } })
+      if (!catalogConfig) {
+        return NextResponse.json({ error: 'No catalog connected. Connect one in Settings > Catalog first.' }, { status: 400 })
+      }
+      catalogId = catalogConfig.catalog_id
+    }
+
     // Self-heal legacy CBC-encrypted tokens. Fire-and-forget: we
     // return from the send without waiting, so a failed upgrade just
     // means the next send tries again.
@@ -643,6 +667,52 @@ export async function POST(request: Request) {
           template: templateRow ?? undefined,
           messageParams: template_message_params ?? undefined,
           params: template_params || [],
+          contextMessageId,
+        })
+        return result.messageId
+      }
+
+      if (message_type === 'catalog') {
+        const result = await sendCatalogMessage({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          to: phone,
+          bodyText: content_text,
+          footerText: catalog_footer_text || undefined,
+          thumbnailProductRetailerId: catalog_thumbnail_retailer_id || undefined,
+          contextMessageId,
+        })
+        return result.messageId
+      }
+
+      if (message_type === 'single_product') {
+        const result = await sendSingleProductMessage({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          to: phone,
+          catalogId: catalogId!,
+          productRetailerId: product_retailer_id,
+          bodyText: content_text || undefined,
+          footerText: catalog_footer_text || undefined,
+          contextMessageId,
+        })
+        return result.messageId
+      }
+
+      if (message_type === 'multi_product') {
+        const sections: MultiProductSection[] = (catalog_sections as Array<{ title?: string; productRetailerIds: string[] }>).map((s) => ({
+          title: s.title,
+          productRetailerIds: s.productRetailerIds,
+        }))
+        const result = await sendMultiProductMessage({
+          phoneNumberId: config.phone_number_id,
+          accessToken,
+          to: phone,
+          catalogId: catalogId!,
+          headerText: catalog_header_text,
+          bodyText: content_text,
+          footerText: catalog_footer_text || undefined,
+          sections,
           contextMessageId,
         })
         return result.messageId

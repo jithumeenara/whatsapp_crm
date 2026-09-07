@@ -26,6 +26,7 @@ export type ChatbotNodeType =
   | 'join'
   | 'switch_case'
   | 'send_to_number'
+  | 'send_catalog'
 
 // ─── Shared primitives ──────────────────────────────────────────
 
@@ -274,6 +275,22 @@ export interface SendTemplateNodeCfg {
   next_node_key: string
 }
 
+export interface SendCatalogNodeCfg {
+  /** 'catalog' sends the whole connected catalog; 'single_product' one
+   *  item; 'multi_product' a curated pick (≤30 items, one section). */
+  mode: 'catalog' | 'single_product' | 'multi_product'
+  /** Body text — supports {{vars.x}}/{{contact.x}} interpolation, same as send_text. */
+  body_text: string
+  /** Required for mode 'multi_product' (Meta requires a header there). */
+  header_text?: string
+  footer_text?: string
+  /** Required for mode 'single_product'. */
+  product_retailer_id?: string
+  /** Required for mode 'multi_product' — up to 30 retailer_ids. */
+  product_retailer_ids?: string[]
+  next_node_key: string
+}
+
 export interface JoinNodeCfg {
   /** Optional label to describe what flows are converging here */
   label?: string
@@ -335,6 +352,7 @@ export type ChatbotNodeConfig =
   | ({ node_type: 'join' } & JoinNodeCfg)
   | ({ node_type: 'switch_case' } & SwitchCaseNodeCfg)
   | ({ node_type: 'send_to_number' } & SendToNumberNodeCfg)
+  | ({ node_type: 'send_catalog' } & SendCatalogNodeCfg)
 
 // ─── Builder node (client state) ───────────────────────────────
 
@@ -374,6 +392,7 @@ export const CHATBOT_NODE_TYPES = [
   'collect_input', 'condition', 'ai_reply', 'http_request', 'delay',
   'set_variable', 'set_tag', 'update_contact', 'crm_action', 'handoff', 'end',
   'link_chatbot', 'send_flow', 'send_template', 'join', 'switch_case', 'send_to_number',
+  'send_catalog',
 ] as const satisfies readonly ChatbotNodeType[]
 
 export function isChatbotNodeType(v: unknown): v is ChatbotNodeType {
@@ -413,5 +432,6 @@ export function defaultConfigFor(type: ChatbotNodeType): Record<string, unknown>
       default_next: '',
     }
     case 'send_to_number': return { phone: '', text: '', next_node_key: '' }
+    case 'send_catalog':  return { mode: 'catalog', body_text: '', header_text: '', footer_text: '', product_retailer_id: '', product_retailer_ids: [], next_node_key: '' }
   }
 }

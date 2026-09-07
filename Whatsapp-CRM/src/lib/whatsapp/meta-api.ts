@@ -1196,6 +1196,212 @@ export async function sendInteractiveList(
   return { messageId: data.messages[0].id }
 }
 
+// ============================================================
+// Catalog / Commerce messages
+// ============================================================
+
+const CATALOG_LIMITS = {
+  maxMultiProductItems: 30,
+  maxMultiProductSections: 10,
+} as const
+
+export interface SendCatalogMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  bodyText: string
+  footerText?: string
+  /** Product shown as the message's thumbnail; defaults to the catalog's own default thumbnail when omitted. */
+  thumbnailProductRetailerId?: string
+  contextMessageId?: string
+}
+
+/**
+ * Send the account's entire connected catalog as a browsable message —
+ * `interactive.type: 'catalog_message'`. Requires the WABA to have a
+ * catalog connected in Commerce Manager; Meta resolves which catalog from
+ * the WABA's own commerce settings, not from this call.
+ */
+export async function sendCatalogMessage(
+  args: SendCatalogMessageArgs
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, bodyText, footerText, thumbnailProductRetailerId, contextMessageId } = args
+  validateInteractiveBody(bodyText)
+  validateInteractiveHeaderFooter(undefined, footerText)
+
+  const interactive: Record<string, unknown> = {
+    type: 'catalog_message',
+    body: { text: bodyText },
+    action: {
+      name: 'catalog_message',
+      ...(thumbnailProductRetailerId
+        ? { parameters: { thumbnail_product_retailer_id: thumbnailProductRetailerId } }
+        : {}),
+    },
+  }
+  if (footerText) interactive.footer = { text: footerText }
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface SendSingleProductMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  catalogId: string
+  productRetailerId: string
+  bodyText?: string
+  footerText?: string
+  contextMessageId?: string
+}
+
+/**
+ * Highlight one product — `interactive.type: 'product'`. bodyText/footerText
+ * are optional here (unlike other interactive types); when omitted, WhatsApp
+ * renders just the product card.
+ */
+export async function sendSingleProductMessage(
+  args: SendSingleProductMessageArgs
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, catalogId, productRetailerId, bodyText, footerText, contextMessageId } = args
+  if (!catalogId) throw new Error('sendSingleProductMessage requires catalogId.')
+  if (!productRetailerId) throw new Error('sendSingleProductMessage requires productRetailerId.')
+  if (bodyText) validateInteractiveBody(bodyText)
+  validateInteractiveHeaderFooter(undefined, footerText)
+
+  const interactive: Record<string, unknown> = {
+    type: 'product',
+    action: { catalog_id: catalogId, product_retailer_id: productRetailerId },
+  }
+  if (bodyText) interactive.body = { text: bodyText }
+  if (footerText) interactive.footer = { text: footerText }
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface MultiProductSection {
+  title?: string
+  productRetailerIds: string[]
+}
+
+export interface SendMultiProductMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  catalogId: string
+  headerText: string
+  bodyText: string
+  footerText?: string
+  /** Up to 10 sections, up to 30 products total across all sections. */
+  sections: MultiProductSection[]
+  contextMessageId?: string
+}
+
+/**
+ * Send a curated, sectioned pick of up to 30 products —
+ * `interactive.type: 'product_list'`. This is the message type that lets
+ * a customer build a cart entirely inside WhatsApp: tapping products adds
+ * them to WhatsApp's own native cart, no cart API on this side.
+ */
+export async function sendMultiProductMessage(
+  args: SendMultiProductMessageArgs
+): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, catalogId, headerText, bodyText, footerText, sections, contextMessageId } = args
+  if (!catalogId) throw new Error('sendMultiProductMessage requires catalogId.')
+  if (!headerText) throw new Error('sendMultiProductMessage requires headerText.')
+  validateInteractiveBody(bodyText)
+  validateInteractiveHeaderFooter(headerText, footerText)
+  if (sections.length < 1 || sections.length > CATALOG_LIMITS.maxMultiProductSections) {
+    throw new Error(
+      `Multi-product message requires 1-${CATALOG_LIMITS.maxMultiProductSections} sections (got ${sections.length}).`
+    )
+  }
+  const totalItems = sections.reduce((sum, s) => sum + s.productRetailerIds.length, 0)
+  if (totalItems < 1 || totalItems > CATALOG_LIMITS.maxMultiProductItems) {
+    throw new Error(
+      `Multi-product message requires 1-${CATALOG_LIMITS.maxMultiProductItems} products total across all sections (got ${totalItems}).`
+    )
+  }
+  for (const section of sections) {
+    if (section.productRetailerIds.length < 1) {
+      throw new Error(`Multi-product section "${section.title || '(untitled)'}" has no products.`)
+    }
+  }
+
+  const interactive: Record<string, unknown> = {
+    type: 'product_list',
+    header: { type: 'text', text: headerText },
+    body: { text: bodyText },
+    action: {
+      catalog_id: catalogId,
+      sections: sections.map((s) => ({
+        ...(s.title ? { title: s.title } : {}),
+        product_items: s.productRetailerIds.map((id) => ({ product_retailer_id: id })),
+      })),
+    },
+  }
+  if (footerText) interactive.footer = { text: footerText }
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  }
+  if (contextMessageId) body.context = { message_id: contextMessageId }
+
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 function validateInteractiveBody(bodyText: string): void {
   if (!bodyText) throw new Error('Interactive message requires bodyText.')
   if (bodyText.length > INTERACTIVE_LIMITS.bodyMaxLength) {

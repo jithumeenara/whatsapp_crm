@@ -48,6 +48,7 @@ import {
   engineSendTemplate,
   engineSendText,
   engineSendToNumber,
+  engineSendCatalog,
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import {
@@ -64,6 +65,7 @@ import {
   type SendMediaNodeConfig,
   type SendMessageNodeConfig,
   type SendTemplateNodeConfig,
+  type SendCatalogNodeConfig,
   type SetTagNodeConfig,
   type StartNodeConfig,
   type KeywordTriggerConfig,
@@ -1248,6 +1250,38 @@ async function advanceFromNodeKey(
           detail: err instanceof Error ? err.message : String(err),
         });
         await endRun(run.id, "failed", "send_template_failed");
+        return { outcome: "completed" };
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (node.node_type === "send_catalog") {
+      const cfg = node.config as unknown as SendCatalogNodeConfig;
+      const contact = await getContact();
+      try {
+        const { whatsapp_message_id } = await engineSendCatalog({
+          accountId: run.account_id,
+          userId: run.user_id,
+          conversationId: run.conversation_id!,
+          contactId: run.contact_id!,
+          mode: cfg.mode,
+          bodyText: interpolateWithContact(cfg.body_text || "", run.vars, contact),
+          headerText: cfg.header_text ? interpolateWithContact(cfg.header_text, run.vars, contact) : undefined,
+          footerText: cfg.footer_text ? interpolateWithContact(cfg.footer_text, run.vars, contact) : undefined,
+          productRetailerId: cfg.product_retailer_id,
+          productRetailerIds: cfg.product_retailer_ids,
+        });
+        await logEvent(run.id, "message_sent", node.node_key, {
+          node_type: "send_catalog",
+          mode: cfg.mode,
+          whatsapp_message_id,
+        });
+      } catch (err) {
+        await logEvent(run.id, "error", node.node_key, {
+          reason: "send_catalog_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(run.id, "failed", "send_catalog_failed");
         return { outcome: "completed" };
       }
       currentKey = cfg.next_node_key;

@@ -31,6 +31,7 @@ import {
   Plug,
   Kanban,
   Megaphone,
+  ShoppingBag,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -60,6 +61,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/contacts",  label: "Contacts",  icon: Users,           agentAllowed: true },
       { href: "/reports",   label: "Reports",   icon: BarChart2,       agentAllowed: false },
       { href: "/ads",       label: "Ads",       icon: Megaphone,       agentAllowed: false },
+      { href: "/catalog",   label: "Catalog",   icon: ShoppingBag,     agentAllowed: true },
     ],
   },
   {

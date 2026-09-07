@@ -34,6 +34,7 @@ import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MessageComposer } from "./message-composer";
 import { TemplatePicker } from "./template-picker";
+import { CatalogPicker, type CatalogSendPayload } from "./catalog-picker";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 
@@ -220,6 +221,7 @@ export function MessageThread({
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
@@ -690,6 +692,69 @@ export function MessageThread({
     [conversation, userId, onNewMessage, onUpdateMessage],
   );
 
+  const handleOpenCatalog = useCallback(() => {
+    const ch = (conversation as { channel?: string })?.channel
+    if (ch && ch !== 'whatsapp') {
+      toast.info('Catalogs are only supported on WhatsApp.')
+      return
+    }
+    setCatalogModalOpen(true);
+  }, [conversation]);
+
+  const handleSendCatalog = useCallback(
+    async (payload: CatalogSendPayload) => {
+      if (!conversation) return;
+
+      const tempId = `temp-${Date.now()}`;
+      const optimisticMsg: Message = {
+        id: tempId,
+        conversation_id: conversation.id,
+        sender_type: "agent",
+        sender_id: userId ?? undefined,
+        content_type: payload.message_type,
+        content_text: payload.content_text || payload.previewLabel,
+        status: "sending",
+        created_at: new Date().toISOString(),
+      };
+      onNewMessage(optimisticMsg);
+
+      try {
+        const res = await fetch("/api/whatsapp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversation.id,
+            message_type: payload.message_type,
+            content_text: payload.content_text,
+            catalog_footer_text: payload.catalog_footer_text,
+            catalog_thumbnail_retailer_id: payload.catalog_thumbnail_retailer_id,
+            product_retailer_id: payload.product_retailer_id,
+            catalog_header_text: payload.catalog_header_text,
+            catalog_sections: payload.catalog_sections,
+          }),
+        });
+
+        const responseBody = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          const reason = responseBody?.error || `HTTP ${res.status}`;
+          console.error("Failed to send catalog message:", reason);
+          toast.error(`Failed to send: ${reason}`);
+          onUpdateMessage(tempId, { status: "failed" });
+          return;
+        }
+
+        onUpdateMessage(tempId, { status: "sent" });
+      } catch (err) {
+        console.error("Failed to send catalog message:", err);
+        const reason = err instanceof Error ? err.message : "network error";
+        toast.error(`Failed to send: ${reason}`);
+        onUpdateMessage(tempId, { status: "failed" });
+      }
+    },
+    [conversation, userId, onNewMessage, onUpdateMessage],
+  );
+
   // Build a quick id → Message map so reply quotes can be rendered without
   // an extra fetch — the thread already holds the full conversation.
   const messagesById = useMemo(() => {
@@ -1146,6 +1211,7 @@ export function MessageThread({
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onOpenTemplates={handleOpenTemplates}
+        onOpenCatalog={handleOpenCatalog}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
       />
@@ -1155,6 +1221,12 @@ export function MessageThread({
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
         conversationId={conversation?.id}
+      />
+
+      <CatalogPicker
+        open={catalogModalOpen}
+        onOpenChange={setCatalogModalOpen}
+        onSend={handleSendCatalog}
       />
     </div>
   );

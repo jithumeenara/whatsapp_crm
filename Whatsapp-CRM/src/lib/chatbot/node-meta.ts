@@ -21,6 +21,7 @@ import {
   GitFork,
   Briefcase,
   Waypoints,
+  ShoppingBag,
 } from 'lucide-react'
 import type { ChatbotNodeType } from './types'
 
@@ -31,7 +32,7 @@ import type { ChatbotNodeType } from './types'
 
 /** Instagram: send_buttons works via its Quick Replies API; the rest don't have an equivalent. */
 const INSTAGRAM_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
-  'send_list', 'send_template', 'send_flow', 'send_to_number',
+  'send_list', 'send_template', 'send_flow', 'send_to_number', 'send_catalog',
 ])
 
 /**
@@ -52,6 +53,8 @@ const TEXT_ONLY_CHANNEL_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
   // either (engineSendMedia only branches for 'instagram') — same silent
   // misroute-to-WhatsApp risk as the node types above.
   'send_media',
+  // Catalogs/commerce are a WhatsApp-only Meta feature — no equivalent on SMS/email/RCS.
+  'send_catalog',
 ])
 
 export const CHANNEL_INCOMPATIBLE_NODES: Record<string, Set<ChatbotNodeType>> = {
@@ -270,6 +273,14 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     bg: 'bg-green-50',
     group: 'Messaging',
   },
+  send_catalog: {
+    label: 'Send Catalog',
+    description: 'Send the connected catalog, one product, or a curated pick of products',
+    icon: ShoppingBag,
+    color: 'text-sky-600',
+    bg: 'bg-sky-50',
+    group: 'Messaging',
+  },
 }
 
 // ─── Palette groups in display order ────────────────────────────
@@ -295,7 +306,7 @@ export const PALETTE_GROUP_COLORS: Record<PaletteGroup, string> = {
 /** All node types that can be dragged from the palette (excludes 'start'). */
 export const PALETTE_NODES: ChatbotNodeType[] = [
   'send_text', 'send_buttons', 'send_list', 'send_media',
-  'send_flow', 'send_template', 'send_to_number',
+  'send_flow', 'send_template', 'send_to_number', 'send_catalog',
   'collect_input',
   'condition', 'switch_case', 'join', 'delay', 'set_variable',
   'ai_reply', 'http_request',
@@ -512,6 +523,18 @@ export function summarizeChatbotNode(
       const phone = typeof config.phone === 'string' ? config.phone : ''
       const txt = t(config.text, 30)
       return phone ? (txt ? `→ ${phone}: ${txt}` : `→ ${phone}`) : txt ?? null
+    }
+    case 'send_catalog': {
+      const mode = typeof config.mode === 'string' ? config.mode : 'catalog'
+      if (mode === 'single_product') {
+        const id = typeof config.product_retailer_id === 'string' ? config.product_retailer_id : ''
+        return id ? `Product: ${id}` : 'Send one product'
+      }
+      if (mode === 'multi_product') {
+        const ids = Array.isArray(config.product_retailer_ids) ? config.product_retailer_ids : []
+        return ids.length ? `${ids.length} products` : 'Send product picks'
+      }
+      return 'Send whole catalog'
     }
   }
 }

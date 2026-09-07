@@ -2420,6 +2420,157 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   );
 }
 
+interface CatalogFormProduct {
+  id: string;
+  retailer_id: string;
+  name: string;
+  price: number | null;
+  currency: string | null;
+}
+
+const CATALOG_MODES: { value: string; label: string }[] = [
+  { value: "catalog", label: "Whole catalog" },
+  { value: "single_product", label: "One product" },
+  { value: "multi_product", label: "Product picks (up to 30)" },
+];
+
+function SendCatalogForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const vars = getFlowVars(allNodes, nodeKey);
+  const [products, setProducts] = useState<CatalogFormProduct[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/catalog/products")
+      .then((r) => r.json())
+      .then((j: { products?: CatalogFormProduct[] }) => setProducts(j.products ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingProducts(false));
+  }, []);
+
+  const mode = String(cfg.mode ?? "catalog");
+  const selectedIds: string[] = Array.isArray(cfg.product_retailer_ids) ? (cfg.product_retailer_ids as string[]) : [];
+
+  function toggleMultiSelect(retailerId: string) {
+    const next = selectedIds.includes(retailerId)
+      ? selectedIds.filter((id) => id !== retailerId)
+      : selectedIds.length < 30
+        ? [...selectedIds, retailerId]
+        : selectedIds;
+    onChange({ ...cfg, product_retailer_ids: next });
+  }
+
+  return (
+    <div className="space-y-4">
+      <Field label="Send *" hint="What to send from your connected catalog.">
+        <Select value={mode} onValueChange={(v) => onChange({ ...cfg, mode: v })}>
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATALOG_MODES.map((m) => (
+              <SelectItem key={m.value} value={m.value} className="text-xs">
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {products.length === 0 && !loadingProducts && mode !== "catalog" && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-1">
+          <p className="text-[10px] font-semibold text-amber-700">No products yet</p>
+          <p className="text-[10px] text-amber-600 leading-relaxed">
+            Go to <span className="font-semibold">Catalog</span> in the sidebar and add products first.
+          </p>
+        </div>
+      )}
+
+      {mode === "single_product" && products.length > 0 && (
+        <Field label="Product *">
+          <Select
+            value={String(cfg.product_retailer_id ?? "__none__")}
+            onValueChange={(v) => onChange({ ...cfg, product_retailer_id: v === "__none__" ? "" : v })}
+          >
+            <SelectTrigger className="h-auto min-h-[34px] py-1.5 text-xs">
+              <SelectValue placeholder="Choose a product…" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              <SelectItem value="__none__" className="text-xs text-slate-500">— none —</SelectItem>
+              {products.map((p) => (
+                <SelectItem key={p.id} value={p.retailer_id} className="text-xs">
+                  {p.name}{p.price != null ? ` — ${p.price} ${p.currency ?? ""}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
+
+      {mode === "multi_product" && products.length > 0 && (
+        <Field label={`Products * (${selectedIds.length}/30 selected)`}>
+          <div className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+            {products.map((p) => {
+              const checked = selectedIds.includes(p.retailer_id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => toggleMultiSelect(p.retailer_id)}
+                  className={cn(
+                    "flex w-full items-center justify-between px-3 py-1.5 text-left text-xs transition-colors",
+                    checked ? "bg-sky-50 text-sky-800" : "hover:bg-slate-50 text-slate-700",
+                  )}
+                >
+                  <span className="truncate">{p.name}</span>
+                  <span className={cn("ml-2 h-3.5 w-3.5 shrink-0 rounded-sm border", checked ? "border-sky-500 bg-sky-500" : "border-slate-300")} />
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      )}
+
+      {mode === "multi_product" && (
+        <Field label="Header *" hint="Required by WhatsApp for a product-picks message.">
+          <Input
+            value={String(cfg.header_text ?? "")}
+            onChange={(e) => onChange({ ...cfg, header_text: e.target.value })}
+            maxLength={60}
+            className="h-8 text-xs"
+          />
+        </Field>
+      )}
+
+      <Field label={mode === "single_product" ? "Message (optional)" : "Message *"}>
+        <RichTextArea
+          value={String(cfg.body_text ?? "")}
+          onChange={(v) => onChange({ ...cfg, body_text: v })}
+          placeholder="Have a look at what we've got!"
+          vars={vars}
+          minHeight={60}
+        />
+      </Field>
+
+      <Field label="Footer (optional)">
+        <Input
+          value={String(cfg.footer_text ?? "")}
+          onChange={(e) => onChange({ ...cfg, footer_text: e.target.value })}
+          maxLength={60}
+          className="h-8 text-xs"
+        />
+      </Field>
+
+      <NodeSelect
+        label="Next node"
+        value={String(cfg.next_node_key ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, next_node_key: v })}
+      />
+    </div>
+  );
+}
+
 function JoinForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   return (
     <div className="space-y-4">
@@ -2686,6 +2837,7 @@ export function NodeForm({ node, allNodes, onChange }: NodeFormProps) {
     join:           JoinForm,
     switch_case:    SwitchCaseForm,
     send_to_number: SendToNumberForm,
+    send_catalog:   SendCatalogForm,
   };
 
   const Form = formMap[node.node_type];

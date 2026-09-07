@@ -12,6 +12,7 @@ import {
   verifyPhoneNumber,
 } from "@/lib/whatsapp/meta-api"
 import { createOrGetDataset } from "@/lib/meta-ads/api"
+import { listOwnedCatalogs } from "@/lib/whatsapp/catalog-api"
 
 /**
  * POST /api/meta/embedded-signup
@@ -119,12 +120,16 @@ export async function POST(req: NextRequest) {
     // ── Meta Ads (ad account + Conversions API dataset), best-effort ──
     const ads = await discoverAndSaveMetaAds(ctx.accountId, ctx.userId, accessToken, wabaId)
 
+    // ── Product Catalog, best-effort ──────────────────────────────────
+    const catalog = await discoverAndSaveCatalog(ctx.accountId, ctx.userId, accessToken)
+
     return NextResponse.json({
       success: true,
       phoneDisplay: phoneInfo?.display_phone_number ?? "",
       verifiedName: phoneInfo?.verified_name ?? "",
       ...social,
       ...ads,
+      ...catalog,
     })
   } catch (err) {
     return toErrorResponse(err)
@@ -252,6 +257,59 @@ async function discoverAndSaveMetaAds(accountId: string, userId: string, busines
     result.adAccountName = adAccount?.name ?? ""
   } catch (err) {
     console.error("[embedded-signup] Meta Ads discovery skipped (non-fatal):", err)
+  }
+  return result
+}
+
+/**
+ * Product Catalog's own "Quick Connect" — same one popup, same business
+ * token. Catalogs are owned by a Meta Business (not directly by "me" or a
+ * WABA), so this first finds the business the token can manage, then lists
+ * that business's catalogs. Auto-connects when there's exactly one; when
+ * there are several, this best-effort pass connects none and leaves the
+ * choice to Manual Connect in Settings > Catalog (same "nothing granted
+ * yet, Manual Connect is the path" shape as the two functions above).
+ */
+async function discoverAndSaveCatalog(accountId: string, userId: string, businessToken: string) {
+  const result = { catalogConnected: false, catalogName: "" }
+  try {
+    const businessesRes = await fetch(`https://graph.facebook.com/v21.0/me/businesses?fields=id,name`, {
+      headers: { Authorization: `Bearer ${businessToken}` },
+      cache: "no-store",
+    })
+    const businessesData = (await businessesRes.json()) as { data?: Array<{ id: string; name: string }> }
+    const business = businessesData.data?.[0]
+    if (!business) return result
+
+    const catalogs = await listOwnedCatalogs({ businessId: business.id, accessToken: businessToken })
+    if (catalogs.length !== 1) return result // 0 or ambiguous — Manual Connect decides
+    const catalog = catalogs[0]
+
+    const now = new Date()
+    await prisma.catalogConfig.upsert({
+      where: { account_id: accountId },
+      create: {
+        account_id: accountId,
+        user_id: userId,
+        catalog_id: catalog.id,
+        business_id: business.id,
+        access_token: encrypt(businessToken),
+        status: "connected",
+        connected_at: now,
+        last_tested_at: now,
+      },
+      update: {
+        catalog_id: catalog.id,
+        business_id: business.id,
+        access_token: encrypt(businessToken),
+        status: "connected",
+        last_tested_at: now,
+      },
+    })
+    result.catalogConnected = true
+    result.catalogName = catalog.name
+  } catch (err) {
+    console.error("[embedded-signup] Catalog discovery skipped (non-fatal):", err)
   }
   return result
 }

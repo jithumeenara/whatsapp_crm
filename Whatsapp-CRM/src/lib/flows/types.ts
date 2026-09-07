@@ -205,6 +205,22 @@ export interface SendTemplateNodeConfig {
   next_node_key: string;
 }
 
+export interface SendCatalogNodeConfig {
+  /** 'catalog' sends the whole connected catalog; 'single_product' one
+   *  item; 'multi_product' a curated pick (≤30 items, one section). */
+  mode: "catalog" | "single_product" | "multi_product";
+  /** Body text — supports {{vars.x}}/{{contact.x}} interpolation, same as send_text. */
+  body_text: string;
+  /** Required for mode 'multi_product' (Meta requires a header there). */
+  header_text?: string;
+  footer_text?: string;
+  /** Required for mode 'single_product'. */
+  product_retailer_id?: string;
+  /** Required for mode 'multi_product' — up to 30 retailer_ids. */
+  product_retailer_ids?: string[];
+  next_node_key: string;
+}
+
 export interface SaveToTableNodeConfig {
   /** UUID of the DataTable to insert into */
   table_id: string;
@@ -234,6 +250,7 @@ export type FlowNodeConfig =
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
   | { node_type: "send_template"; config: SendTemplateNodeConfig }
+  | { node_type: "send_catalog"; config: SendCatalogNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "save_to_table"; config: SaveToTableNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };

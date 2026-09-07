@@ -65,6 +65,7 @@ model User {
   email_configs                EmailConfig[]
   rcs_configs                  RcsConfig[]
   meta_ads_configs             MetaAdsConfig[]
+  catalog_configs               CatalogConfig[]
   invitations_created          AccountInvitation[]          @relation("InvitationCreator")
   invitations_accepted         AccountInvitation[]          @relation("InvitationAcceptor")
   leads                        Lead[]
@@ -194,6 +195,9 @@ model Account {
   email_config                 EmailConfig?
   rcs_config                   RcsConfig?
   meta_ads_config              MetaAdsConfig?
+  catalog_config                CatalogConfig?
+  products                     Product[]
+  orders                       Order[]
   lead_ad_forms                LeadAdForm[]
   lead_ad_submissions          LeadAdSubmission[]
   meta_custom_audiences        MetaCustomAudience[]
@@ -482,6 +486,13 @@ model Message {
   // transcript deliberately does NOT re-trigger automations/flow dispatch
   // for that message — see the migration/plan for why.
   transcript          String?
+  // Structured snapshot of an inbound WhatsApp order message — populated
+  // post-hoc by src/lib/whatsapp/order-processing.ts once the matching
+  // Order row is created, same "dedicated column mirrored in after the
+  // fact" shape as `transcript` above. Read directly by the inbox bubble,
+  // no extra fetch/join: { items: [{retailer_id, quantity, item_price,
+  // name}], subtotal, currency, deal_id }.
+  order_snapshot      Json?
   template_name       String?
   message_id          String?
   status              String   @default("sent")
@@ -677,6 +688,111 @@ model MetaAdsConfig {
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("meta_ads_config")
+}
+
+// ============================================================
+// WHATSAPP CATALOGS — products, carts, orders (Finding #07)
+// ============================================================
+
+// One row per account — the connected Meta Commerce catalog this
+// account's WhatsApp number sends products from. Mirrors MetaAdsConfig's
+// shape exactly, including its own encrypted token (catalog read/write
+// needs a token with catalog_management permission — usually the same
+// Embedded Signup business token MetaAdsConfig's discovery already uses,
+// but stored separately so a Manual Connect can supply a different one).
+model CatalogConfig {
+  id                 String    @id @default(uuid()) @db.Uuid
+  account_id         String    @unique @db.Uuid
+  user_id            String    @db.Uuid
+  catalog_id         String
+  business_id        String?
+  /// AES-256-GCM encrypted, same cipher/helper as MetaAdsConfig.access_token.
+  access_token       String
+  // Optional — no default pipeline/stage means an inbound order still
+  // creates an Order row, just not an auto-created Deal. Nothing else in
+  // this codebase auto-creates a Deal today, so this is opt-in by design.
+  default_pipeline_id String?  @db.Uuid
+  default_stage_id    String?  @db.Uuid
+  status             String    @default("disconnected")
+  connected_at       DateTime? @db.Timestamptz(6)
+  last_synced_at     DateTime? @db.Timestamptz(6)
+  last_tested_at     DateTime? @db.Timestamptz(6)
+  test_error         String?
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("catalog_config")
+}
+
+// A product authored in this CRM and pushed to Meta's catalog via the
+// Catalog Batch API — this app is the source of truth, not a read-only
+// mirror of Commerce Manager (though "Sync products" can pull in products
+// added there directly too). Batch writes are asynchronous, so
+// sync_status reflects that honestly instead of pretending an immediate
+// confirmation exists.
+model Product {
+  id                String    @id @default(uuid()) @db.Uuid
+  account_id        String    @db.Uuid
+  catalog_id        String
+  // SKU sent to Meta as retailer_id — auto-generated ("prod-{uuid}") if
+  // the user doesn't set one, but always unique per account.
+  retailer_id       String
+  name              String
+  description       String?
+  price             Decimal?  @db.Decimal(12, 2)
+  currency          String?
+  image_url         String?
+  availability      String    @default("in stock")
+  category          String?
+  brand             String?
+  // pending (just saved, not yet confirmed against Meta) | synced | error
+  sync_status       String    @default("pending")
+  raw_meta_response Json?
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@unique([account_id, retailer_id])
+  @@index([account_id, catalog_id])
+  @@map("catalog_products")
+}
+
+// An order a customer placed from a WhatsApp cart, parsed from an inbound
+// `order` message. contact_id/conversation_id/message_id/deal_id are
+// deliberately unenforced soft references (this codebase's existing
+// loose-coupling style for optional cross-links), not Prisma relations.
+model Order {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  // Meta's wamid for the order message — the idempotency key, since a
+  // webhook can redeliver the same event.
+  wa_message_id   String    @unique
+  message_id      String?   @db.Uuid
+  contact_id      String?   @db.Uuid
+  conversation_id String?   @db.Uuid
+  catalog_id      String
+  currency        String?
+  // Snapshot at order time: [{retailer_id, quantity, item_price, name}].
+  // item_price comes from the webhook itself (authoritative at order
+  // time), not the Product's current price, which may have changed since.
+  items           Json
+  subtotal        Decimal?  @db.Decimal(12, 2)
+  // Set when CatalogConfig.default_pipeline_id/default_stage_id were
+  // configured at ingestion time and a Deal was auto-created.
+  deal_id         String?   @db.Uuid
+  status          String    @default("received") // received | converted | cancelled
+  raw_payload     Json?
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id, created_at])
+  @@map("catalog_orders")
 }
 
 // One row per Meta Lead Ads / Instant Form the account has chosen to sync.
@@ -977,6 +1093,11 @@ model Deal {
   notes               String?
   expected_close_date DateTime? @db.Date
   status              String    @default("open")
+  // Where this deal came from — mirrors Lead.source's documented-by-
+  // convention style. Only WhatsApp Order auto-creation sets this today
+  // ("whatsapp_order"); every other Deal is still created manually by an
+  // agent, so this stays null for those.
+  source              String?
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   updated_at          DateTime  @updatedAt @db.Timestamptz(6)
 

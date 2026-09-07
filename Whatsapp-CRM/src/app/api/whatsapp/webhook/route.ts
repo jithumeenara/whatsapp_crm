@@ -16,6 +16,7 @@ import {
 } from '@/lib/whatsapp/account-webhook'
 import { emitToAccount } from '@/lib/socket'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
+import { processInboundOrder } from '@/lib/whatsapp/order-processing'
 
 interface WhatsAppMessage {
   id: string
@@ -89,6 +90,16 @@ interface WhatsAppMessage {
     media_type?: string
     image_url?: string
     ctwa_clid?: string
+  }
+  /**
+   * Present when the customer submits a cart from a catalog/product_list
+   * message we sent — WhatsApp's cart is entirely native to their app,
+   * this is the only signal this app ever sees of it: the finished order.
+   */
+  order?: {
+    catalog_id: string
+    product_items: Array<{ product_retailer_id: string; quantity: string; item_price?: string; currency?: string }>
+    text?: string
   }
 }
 
@@ -631,7 +642,7 @@ async function processMessage(
   //   address, contacts
   const ALLOWED_CONTENT_TYPES = new Set([
     'text', 'image', 'document', 'audio', 'video',
-    'location', 'template', 'interactive', 'address', 'contacts',
+    'location', 'template', 'interactive', 'address', 'contacts', 'order',
   ])
   const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
     ? message.type
@@ -700,6 +711,20 @@ async function processMessage(
         mediaId: message.audio.id,
         accessToken,
       })
+    }
+
+    // Best-effort, fire-and-forget — same idiom as the transcription call
+    // above. A customer's cart lives entirely in their own WhatsApp app;
+    // this `order` message is the only signal this app ever sees of it.
+    if (message.type === 'order' && message.order) {
+      void processInboundOrder({
+        accountId,
+        waMessageId: message.id,
+        messageId: savedMsg.id,
+        contactId: contactRecord.id,
+        conversationId: conversation.id,
+        order: message.order,
+      }).catch((err) => console.error('[order-processing]', err))
     }
   } catch (err) {
     console.error('Error inserting message:', err)
@@ -1025,6 +1050,15 @@ async function parseMessageContent(
         return { ...empty, contentText: summary || '[Contact shared]' }
       }
       return { ...empty, contentText: '[Contact shared]' }
+
+    case 'order': {
+      const items = message.order?.product_items ?? []
+      const count = items.reduce((sum, it) => sum + (parseInt(it.quantity, 10) || 0), 0)
+      // Full item detail lands in Message.order_snapshot (set post-hoc by
+      // processInboundOrder) — this is just the conversation-list/preview
+      // summary text, same role as every other summarized message type here.
+      return { ...empty, contentText: `🛒 Order: ${count} item${count === 1 ? '' : 's'}` }
+    }
 
     default:
       return {
