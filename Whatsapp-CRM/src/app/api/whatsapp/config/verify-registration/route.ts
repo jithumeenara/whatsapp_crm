@@ -6,6 +6,7 @@ import {
   getSubscribedApps,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 
 /**
  * GET /api/whatsapp/config/verify-registration
@@ -29,16 +30,15 @@ import {
  * rather than a generic error toast. The combined `live` flag is
  * what the UI badges on.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const userId = session.user.id
 
-  // whatsapp_config is one-row-per-account. Resolve the caller's
-  // account_id so a teammate who joined an existing account sees the
-  // same registration state as the admin who set it up.
+  // Resolve the caller's account_id so a teammate who joined an existing
+  // account sees the same registration state as the admin who set it up.
   const profile = await prisma.profile.findUnique({
     where: { user_id: userId },
     select: { account_id: true },
@@ -52,16 +52,21 @@ export async function GET() {
     })
   }
 
-  const config = await prisma.whatsAppConfig.findUnique({
-    where: { account_id: accountId },
-  })
-
-  if (!config) {
-    return NextResponse.json({
-      live: false,
-      checks: { config_exists: false },
-      message: 'No WhatsApp configuration saved yet.',
-    })
+  // Which connected number to diagnose (Finding #14) — optional; falls
+  // back to the account's default number.
+  const requestedConfigId = new URL(request.url).searchParams.get('whatsapp_config_id') ?? undefined
+  let config
+  try {
+    config = await resolveWhatsAppConfig({ accountId, whatsappConfigId: requestedConfigId })
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) {
+      return NextResponse.json({
+        live: false,
+        checks: { config_exists: false },
+        message: 'No WhatsApp configuration saved yet.',
+      })
+    }
+    throw err
   }
 
   let accessToken: string

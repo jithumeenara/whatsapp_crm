@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import {
@@ -135,18 +136,22 @@ export async function POST(request: Request) {
       )
     }
 
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: accountId },
-    })
-
-    if (!config) {
-      return NextResponse.json(
-        {
-          error:
-            'WhatsApp not configured. Please set up your WhatsApp integration first.',
-        },
-        { status: 400 }
-      )
+    // Legacy ad-hoc/API-key-facing endpoint, no campaign or conversation
+    // context — always the account's default number (Finding #14).
+    let config
+    try {
+      config = await resolveWhatsAppConfig({ accountId })
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json(
+          {
+            error:
+              'WhatsApp not configured. Please set up your WhatsApp integration first.',
+          },
+          { status: 400 }
+        )
+      }
+      throw err
     }
 
     const accessToken = decrypt(config.access_token)

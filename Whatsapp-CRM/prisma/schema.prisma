@@ -66,6 +66,7 @@ model User {
   rcs_configs                  RcsConfig[]
   meta_ads_configs             MetaAdsConfig[]
   catalog_configs               CatalogConfig[]
+  payment_gateway_configs        PaymentGatewayConfig[]
   invitations_created          AccountInvitation[]          @relation("InvitationCreator")
   invitations_accepted         AccountInvitation[]          @relation("InvitationAcceptor")
   leads                        Lead[]
@@ -189,7 +190,7 @@ model Account {
   custom_fields                CustomField[]
   contact_notes                ContactNote[]
   conversations                Conversation[]
-  whatsapp_config              WhatsAppConfig?
+  whatsapp_configs              WhatsAppConfig[]
   ai_config                    AiConfig?
   sms_config                   SmsConfig?
   email_config                 EmailConfig?
@@ -198,6 +199,8 @@ model Account {
   catalog_config                CatalogConfig?
   products                     Product[]
   orders                       Order[]
+  payment_gateway_configs      PaymentGatewayConfig[]
+  whatsapp_payments            WhatsAppPayment[]
   lead_ad_forms                LeadAdForm[]
   lead_ad_submissions          LeadAdSubmission[]
   meta_custom_audiences        MetaCustomAudience[]
@@ -444,6 +447,15 @@ model Conversation {
   // Channel that originated this conversation
   channel         String   @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
 
+  // Which connected WhatsApp number this thread belongs to (Finding #14)
+  // — null for non-WhatsApp channels and for rows that predate multi-
+  // number support (migration 055 backfills every existing WhatsApp
+  // conversation to the account's sole pre-existing number). A contact
+  // messaging two different business numbers now gets two separate
+  // conversations instead of collapsing into one.
+  whatsapp_config_id String?         @db.Uuid
+  whatsapp_config     WhatsAppConfig? @relation(fields: [whatsapp_config_id], references: [id], onDelete: SetNull)
+
   // Contact name capture flow state
   capture_state   String?  // null | 'awaiting_confirm' | 'awaiting_name'
   capture_wa_name String?  // WhatsApp profile name shown in the confirmation prompt
@@ -458,6 +470,7 @@ model Conversation {
 
   @@index([account_id, unread_count])
   @@index([account_id, last_message_at])
+  @@index([account_id, contact_id, channel, whatsapp_config_id])
   @@map("conversations")
 }
 
@@ -597,9 +610,17 @@ model MessageReaction {
 // WHATSAPP CONFIG
 // ============================================================
 
+// Multiple rows per account as of migration 055 (Finding #14) — a tenant
+// can connect several real WhatsApp numbers (e.g. "Sales", "Support").
+// account_id is intentionally NOT @unique any more; is_default marks the
+// one fallback row used wherever a specific number isn't otherwise known
+// (an admin test message, a pre-migration conversation, etc.). The
+// existing app-level rule "one phone_number_id belongs to exactly one
+// account" (src/app/api/whatsapp/config/route.ts) still holds — this is
+// several rows per account, never a shared number.
 model WhatsAppConfig {
   id                     String    @id @default(uuid()) @db.Uuid
-  account_id             String    @unique @db.Uuid
+  account_id             String    @db.Uuid
   user_id                String    @db.Uuid
   phone_number_id        String
   waba_id                String?
@@ -620,12 +641,33 @@ model WhatsAppConfig {
   /// AES-256-GCM encrypted RSA private key for Meta Flows decryption.
   /// When set, takes priority over FLOWS_PRIVATE_KEY env var — no server restart needed.
   flows_private_key      String?
+  /// Display label for this number ("Sales Line") — shown wherever a
+  /// tenant with multiple numbers has to pick one.
+  label                  String?
+  /// Exactly one true per account — the fallback number used wherever a
+  /// specific one isn't otherwise resolvable. The first number an
+  /// account ever connects becomes the default automatically.
+  is_default             Boolean   @default(false)
+  /// Raw value of Meta's marketing_messages_onboarding_status WABA field
+  /// (Finding #10) — refreshed on demand, not polled. Only "ELIGIBLE"
+  /// (Meta's own literal) unlocks routing marketing sends through
+  /// /marketing_messages; every other value/null falls back to the
+  /// normal endpoint transparently.
+  marketing_messages_status String?
+  /// Off by default (Finding #08b). Meta's Direct Send beta requires
+  /// partner-manager approval per WABA that no API call can grant —
+  /// this toggle only matters once that approval already exists; it
+  /// never calls Meta itself.
+  direct_send_enabled    Boolean   @default(false)
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
 
-  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account         Account              @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user            User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  conversations   Conversation[]
+  payment_gateway_config PaymentGatewayConfig?
 
+  @@index([account_id])
   @@map("whatsapp_config")
 }
 
@@ -793,6 +835,80 @@ model Order {
 
   @@index([account_id, created_at])
   @@map("catalog_orders")
+}
+
+// ============================================================
+// IN-CHAT UPI PAYMENTS (India) — Finding #09, gated scaffolding
+// ============================================================
+//
+// Genuinely gated by TWO things no API call from this app can grant:
+// (1) Meta's WaBiz payments enablement is a manual support-case review
+//     per WABA, not a self-serve flag; (2) each tenant needs their own
+//     UPI-enabled payment-gateway account (Razorpay/PayU/Billdesk/
+//     Zaakpay — the only four Meta supports). This is real, working
+//     scaffolding — connect a gateway, send order_details/order_status
+//     messages, record payments — that activates the moment a tenant's
+//     approval lands; it is NOT a "Connected ✓" claim the way Catalogs'
+//     schema is, hence `status` defaulting to a state that says so.
+
+// One row per connected WhatsApp number (payments are approved per-WABA
+// on Meta's side, matching how CatalogConfig/MarketingMessages are
+// account-wide but this is deliberately number-scoped).
+model PaymentGatewayConfig {
+  id                 String    @id @default(uuid()) @db.Uuid
+  account_id         String    @db.Uuid
+  whatsapp_config_id String    @unique @db.Uuid
+  user_id            String    @db.Uuid
+  gateway            String    // 'razorpay' | 'payu' | 'billdesk' | 'zaakpay' — the only 4 Meta supports
+  /// AES-256-GCM encrypted key/secret pair, shape depends on `gateway`.
+  credentials        Json
+  // UPI Intent mode fields — VPA (Virtual Payment Address), Merchant
+  // Category Code, Payee Code — obtained from the payment gateway.
+  vpa                String?
+  mcc                String?
+  pc                 String?
+  /// Never flips to "connected" the way Catalogs' status does — stays
+  /// "pending_meta_approval" until the tenant confirms Meta has granted
+  /// the WaBiz payments case, since nothing here can verify that itself.
+  status             String    @default("pending_meta_approval")
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+
+  account         Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  whatsapp_config WhatsAppConfig @relation(fields: [whatsapp_config_id], references: [id], onDelete: Cascade)
+
+  @@map("payment_gateway_config")
+}
+
+// A payment collected (or in progress) via an order_details/order_status
+// message pair. contact_id/conversation_id are soft refs, matching this
+// codebase's existing loose-coupling style for optional cross-links —
+// same shape as the Catalogs Order model.
+model WhatsAppPayment {
+  id                      String    @id @default(uuid()) @db.Uuid
+  account_id              String    @db.Uuid
+  whatsapp_config_id      String    @db.Uuid
+  conversation_id         String?   @db.Uuid
+  contact_id              String?   @db.Uuid
+  /// Meta's wamid for the order_details message — idempotency key, same
+  /// pattern as the Catalogs Order model's wa_message_id.
+  wa_order_message_id     String    @unique
+  /// This app's own order/invoice reference, threaded through the UPI
+  /// intent link and the order_status follow-up.
+  reference_id            String
+  amount                  Decimal   @db.Decimal(12, 2)
+  currency                String    @default("INR")
+  status                  String    @default("pending") // pending | processing | completed | failed
+  gateway_transaction_id  String?
+  raw_payload             Json?
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime  @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id, created_at])
+  @@map("whatsapp_payments")
 }
 
 // One row per Meta Lead Ads / Instant Form the account has chosen to sync.
@@ -1013,6 +1129,12 @@ model MessageTemplate {
   id                String    @id @default(uuid()) @db.Uuid
   account_id        String    @db.Uuid
   user_id           String    @db.Uuid
+  // Which WABA this template belongs to (Finding #14) — templates are
+  // approved per-WABA on Meta's side, so a tenant with numbers on two
+  // different WABAs needs the same template name to exist as two
+  // distinct rows, not collide. Nullable for pre-migration rows
+  // (migration 055 backfills from the account's sole prior WhatsAppConfig).
+  waba_id           String?
   name              String
   category          String    @default("Marketing")
   language          String?   @default("en_US")
@@ -1036,7 +1158,7 @@ model MessageTemplate {
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  @@unique([account_id, name, language])
+  @@unique([account_id, waba_id, name, language])
   @@map("message_templates")
 }
 
@@ -1127,6 +1249,10 @@ model Broadcast {
   // Overrides the template's approved sample media for this campaign's
   // IMAGE/VIDEO/DOCUMENT header. NULL = use the template's own header_media_url.
   header_media_url   String?
+  // Which connected number to send from (Finding #14) — null falls back
+  // to the account's default number, so pre-migration/single-number
+  // broadcasts keep working unchanged.
+  whatsapp_config_id String?   @db.Uuid
   audience_filter    Json?
   scheduled_at       DateTime? @db.Timestamptz(6)
   // Scheduling -- 'now' (default, unchanged behavior: sent immediately by

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 const META_API_VERSION = 'v21.0'
 
@@ -35,9 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'publicKey is required' }, { status: 400 })
   }
 
-  const config = await prisma.whatsAppConfig.findUnique({
-    where: { account_id: profile.account_id },
-  })
+  const config = await resolveWhatsAppConfig({ accountId: profile.account_id }).catch(() => null)
   if (!config?.phone_number_id) {
     return NextResponse.json(
       { error: 'WhatsApp not configured. Connect your account in Settings first.' },

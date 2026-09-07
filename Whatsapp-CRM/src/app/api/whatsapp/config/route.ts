@@ -27,18 +27,137 @@ async function resolveAccountId(userId: string): Promise<string | null> {
   return profile?.account_id ?? null
 }
 
+type ConfigRow = {
+  id: string
+  user_id: string
+  phone_number_id: string
+  waba_id: string | null
+  access_token: string
+  verify_token: string | null
+  status: string
+  registered_at: Date | null
+  subscribed_apps_at: Date | null
+  connected_at: Date | null
+  connect_method: string
+  last_registration_error: string | null
+  label: string | null
+  is_default: boolean
+  marketing_messages_status: string | null
+  direct_send_enabled: boolean
+}
+
+const CONFIG_SELECT = {
+  id: true, user_id: true, phone_number_id: true, waba_id: true,
+  access_token: true, verify_token: true, status: true,
+  registered_at: true, subscribed_apps_at: true, connected_at: true,
+  connect_method: true, last_registration_error: true,
+  label: true, is_default: true, marketing_messages_status: true, direct_send_enabled: true,
+} as const
+
+/** Builds one number's client-safe, Meta-verified shape — reused for
+ *  every row in the list (Finding #14 — one account can now have
+ *  several connected numbers, each rendered as its own health card). */
+async function buildConfigSummary(config: ConfigRow, accountId: string) {
+  let accessToken: string
+  try {
+    accessToken = decrypt(config.access_token)
+  } catch (err) {
+    console.error('[whatsapp/config GET] Token decryption failed:', err)
+    return {
+      id: config.id,
+      connected: false,
+      reason: 'token_corrupted',
+      needs_reset: true,
+      message:
+        'The stored access token cannot be decrypted with the current ENCRYPTION_KEY. This usually means the key changed, or it differs between environments (local vs Hostinger vs Vercel). Click "Reset Configuration" below, then re-save.',
+    }
+  }
+
+  const connectedByProfile = await prisma.profile.findUnique({
+    where: { user_id: config.user_id },
+    select: { full_name: true, email: true },
+  })
+
+  const safeConfig = {
+    id: config.id,
+    user_id: config.user_id,
+    phone_number_id: config.phone_number_id,
+    waba_id: config.waba_id,
+    status: config.status,
+    registered_at: config.registered_at,
+    subscribed_apps_at: config.subscribed_apps_at,
+    connected_at: config.connected_at,
+    connected_by: connectedByProfile?.full_name || connectedByProfile?.email || null,
+    connect_method: config.connect_method,
+    has_verify_token: !!config.verify_token,
+    last_registration_error: config.last_registration_error,
+    label: config.label,
+    is_default: config.is_default,
+    marketing_messages_status: config.marketing_messages_status,
+    direct_send_enabled: config.direct_send_enabled,
+  }
+
+  try {
+    const phoneInfo = await verifyPhoneNumber({
+      phoneNumberId: config.phone_number_id,
+      accessToken,
+    })
+
+    // Our OWN send counts, scoped to THIS number's conversations
+    // (Finding #14 — used to be account-wide, which mixed multiple
+    // numbers' volume together once an account could have more than one).
+    const now = new Date()
+    const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const [sentLast24h, sentLast30d] = await Promise.all([
+      prisma.message.count({
+        where: {
+          sender_type: { in: ['agent', 'bot'] },
+          created_at: { gte: dayAgo },
+          conversation: { account_id: accountId, whatsapp_config_id: config.id },
+        },
+      }),
+      prisma.message.count({
+        where: {
+          sender_type: { in: ['agent', 'bot'] },
+          created_at: { gte: monthAgo },
+          conversation: { account_id: accountId, whatsapp_config_id: config.id },
+        },
+      }),
+    ])
+
+    return {
+      id: config.id,
+      connected: true,
+      config: safeConfig,
+      phone_info: phoneInfo,
+      usage: { sentLast24h, sentLast30d },
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown Meta API error'
+    console.error('[whatsapp/config GET] Meta API verification failed:', message)
+    const isTokenExpired = classifyMetaError(message).category === 'auth_expired'
+    return {
+      id: config.id,
+      connected: false,
+      config: safeConfig,
+      reason: isTokenExpired ? 'token_expired' : 'meta_api_error',
+      message: isTokenExpired
+        ? 'Your WhatsApp access token has expired. Reconnect your account to keep sending messages.'
+        : `Meta API rejected the credentials: ${message}`,
+    }
+  }
+}
+
 /**
  * GET /api/whatsapp/config
  *
- * Used by the "Test API Connection" button and by the page to check
- * whether the saved config is healthy. Returns 200 in all non-auth cases
- * so the UI can render an appropriate message rather than show a 500.
- *
- * Response shape:
- *   { connected: true,  phone_info: {...} }
- *   { connected: false, reason: 'no_config',        message: '...' }
- *   { connected: false, reason: 'token_corrupted',  message: '...', needs_reset: true }
- *   { connected: false, reason: 'meta_api_error',   message: '...' }
+ * Returns every connected number for the account (Finding #14 —
+ * previously exactly one). Response shape:
+ *   { connected: boolean, configs: [ { id, connected, config?, phone_info?, usage?, reason?, message? }, ... ] }
+ * `connected` at the top level is true when at least one number is
+ * healthy — the Settings UI still has an at-a-glance "is WhatsApp
+ * working" signal even with several numbers, some possibly degraded.
  */
 export async function GET() {
   try {
@@ -51,173 +170,48 @@ export async function GET() {
     const accountId = await resolveAccountId(userId)
     if (!accountId) {
       return NextResponse.json(
-        {
-          connected: false,
-          reason: 'no_account',
-          message: 'Your profile is not linked to an account.',
-        },
+        { connected: false, reason: 'no_account', message: 'Your profile is not linked to an account.', configs: [] },
         { status: 200 },
       )
     }
 
-    let config: {
-      id: string
-      user_id: string
-      phone_number_id: string
-      waba_id: string | null
-      access_token: string
-      verify_token: string | null
-      status: string
-      registered_at: Date | null
-      subscribed_apps_at: Date | null
-      connected_at: Date | null
-      connect_method: string
-      last_registration_error: string | null
-    } | null
+    let configs: ConfigRow[]
     try {
-      config = await prisma.whatsAppConfig.findUnique({
+      configs = await prisma.whatsAppConfig.findMany({
         where: { account_id: accountId },
-        select: {
-          id: true,
-          user_id: true,
-          phone_number_id: true,
-          waba_id: true,
-          access_token: true,
-          verify_token: true,
-          status: true,
-          registered_at: true,
-          subscribed_apps_at: true,
-          connected_at: true,
-          connect_method: true,
-          last_registration_error: true,
-        },
+        select: CONFIG_SELECT,
+        orderBy: [{ is_default: 'desc' }, { created_at: 'asc' }],
       })
     } catch (err) {
       console.error('Error fetching whatsapp_config:', err)
       return NextResponse.json(
-        { connected: false, reason: 'db_error', message: 'Failed to fetch configuration' },
+        { connected: false, reason: 'db_error', message: 'Failed to fetch configuration', configs: [] },
         { status: 200 }
       )
     }
 
-    if (!config) {
+    if (configs.length === 0) {
       return NextResponse.json(
         {
           connected: false,
           reason: 'no_config',
           message: 'No WhatsApp configuration saved yet. Fill in the form and click Save Configuration.',
+          configs: [],
         },
         { status: 200 }
       )
     }
 
-    // Try to decrypt the stored token with the current ENCRYPTION_KEY.
-    // If this fails, the key changed (or was never consistent across envs).
-    let accessToken: string
-    try {
-      accessToken = decrypt(config.access_token)
-    } catch (err) {
-      console.error('[whatsapp/config GET] Token decryption failed:', err)
-      return NextResponse.json(
-        {
-          connected: false,
-          reason: 'token_corrupted',
-          needs_reset: true,
-          message:
-            'The stored access token cannot be decrypted with the current ENCRYPTION_KEY. This usually means the key changed, or it differs between environments (local vs Hostinger vs Vercel). Click "Reset Configuration" below, then re-save.',
-        },
-        { status: 200 }
-      )
-    }
+    const summaries = await Promise.all(configs.map((c) => buildConfigSummary(c, accountId)))
 
-    // Who set this connection up — resolved to a display name for the
-    // connected-state view ("Connected by"), which otherwise only had a
-    // raw user_id to show.
-    const connectedByProfile = await prisma.profile.findUnique({
-      where: { user_id: config.user_id },
-      select: { full_name: true, email: true },
+    return NextResponse.json({
+      connected: summaries.some((s) => s.connected),
+      configs: summaries,
     })
-
-    // Safe (non-sensitive) config fields to return to the client.
-    // access_token is intentionally excluded — never expose encrypted secrets.
-    const safeConfig = {
-      id: config.id,
-      user_id: config.user_id,
-      phone_number_id: config.phone_number_id,
-      waba_id: config.waba_id,
-      status: config.status,
-      registered_at: config.registered_at,
-      subscribed_apps_at: config.subscribed_apps_at,
-      connected_at: config.connected_at,
-      connected_by: connectedByProfile?.full_name || connectedByProfile?.email || null,
-      connect_method: config.connect_method,
-      // A boolean only — the raw (encrypted) verify_token is never sent to
-      // the client, this just lets the summary view say "Configured".
-      has_verify_token: !!config.verify_token,
-      last_registration_error: config.last_registration_error,
-    }
-
-    // Validate credentials against Meta
-    try {
-      const phoneInfo = await verifyPhoneNumber({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-      })
-
-      // Our OWN send counts — deliberately not presented as Meta's
-      // official quota usage (that lives behind the conversation
-      // analytics API we don't call). Meta's real cap for this number
-      // comes back above as phone_info.messaging_limit_tier.
-      const now = new Date()
-      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      const [sentLast24h, sentLast30d] = await Promise.all([
-        prisma.message.count({
-          where: {
-            sender_type: { in: ['agent', 'bot'] },
-            created_at: { gte: dayAgo },
-            conversation: { account_id: accountId },
-          },
-        }),
-        prisma.message.count({
-          where: {
-            sender_type: { in: ['agent', 'bot'] },
-            created_at: { gte: monthAgo },
-            conversation: { account_id: accountId },
-          },
-        }),
-      ])
-
-      return NextResponse.json({
-        connected: true,
-        config: safeConfig,
-        phone_info: phoneInfo,
-        usage: { sentLast24h, sentLast30d },
-      })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('[whatsapp/config GET] Meta API verification failed:', message)
-      // A code-190 (expired/invalid token) is a distinct, actionable case
-      // from any other Meta rejection — the fix is always "reconnect,"
-      // not "check your other settings." Surface it as its own reason so
-      // the client can show a clearer prompt instead of a generic error.
-      const isTokenExpired = classifyMetaError(message).category === 'auth_expired'
-      return NextResponse.json(
-        {
-          connected: false,
-          config: safeConfig,
-          reason: isTokenExpired ? 'token_expired' : 'meta_api_error',
-          message: isTokenExpired
-            ? 'Your WhatsApp access token has expired. Reconnect your account to keep sending messages.'
-            : `Meta API rejected the credentials: ${message}`,
-        },
-        { status: 200 }
-      )
-    }
   } catch (error) {
     console.error('Error in WhatsApp config GET:', error)
     return NextResponse.json(
-      { connected: false, reason: 'unknown', message: 'Internal server error' },
+      { connected: false, reason: 'unknown', message: 'Internal server error', configs: [] },
       { status: 500 }
     )
   }
@@ -226,8 +220,15 @@ export async function GET() {
 /**
  * POST /api/whatsapp/config
  *
- * Saves or updates the WhatsApp config for the authenticated user.
- * Verifies credentials with Meta first, then encrypts and stores.
+ * Saves a WhatsApp number for the authenticated account. Verifies
+ * credentials with Meta first, then encrypts and stores.
+ *
+ * Body may include `id` to edit a specific already-connected number
+ * (Finding #14); without it, a `phone_number_id` matching an existing
+ * row for this account is treated as an edit-in-place (preserves the
+ * pre-multi-number single-config UX), and anything else creates a NEW
+ * number — the account's very first number automatically becomes its
+ * default.
  */
 export async function POST(request: Request) {
   try {
@@ -246,7 +247,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { phone_number_id, waba_id, access_token, verify_token, pin } = body
+    const { id, phone_number_id, waba_id, access_token, verify_token, pin, label } = body
 
     if (!access_token || !phone_number_id) {
       return NextResponse.json(
@@ -267,7 +268,9 @@ export async function POST(request: Request) {
     // Reject if another account has already claimed this phone_number_id.
     // wacrm is single-tenant-per-WhatsApp-number — letting two accounts
     // bind the same number causes the webhook's lookup to throw on multiple
-    // rows, silently dropping every inbound message.
+    // rows, silently dropping every inbound message. (Two ROWS under the
+    // SAME account with different phone_number_ds is fine — that's the
+    // whole point of Finding #14.)
     let claimed: { account_id: string } | null
     try {
       claimed = await prisma.whatsAppConfig.findFirst({
@@ -329,13 +332,18 @@ export async function POST(request: Request) {
       )
     }
 
-    // Look up any pre-existing row for this account so we know whether
-    // this number is already registered with Meta — if so we can skip
-    // /register when the user didn't provide a PIN this time around.
-    const existing = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: accountId },
-      select: { id: true, registered_at: true, phone_number_id: true, connect_method: true },
-    })
+    // Resolve which existing row this save targets, if any: an explicit
+    // `id`, else a match on phone_number_id for this account (edit-in-
+    // place), else this is a brand-new number.
+    const existing = id
+      ? await prisma.whatsAppConfig.findFirst({
+          where: { id, account_id: accountId },
+          select: { id: true, registered_at: true, phone_number_id: true, connect_method: true, is_default: true },
+        })
+      : await prisma.whatsAppConfig.findFirst({
+          where: { account_id: accountId, phone_number_id },
+          select: { id: true, registered_at: true, phone_number_id: true, connect_method: true, is_default: true },
+        })
 
     const sameNumber =
       existing?.phone_number_id === phone_number_id &&
@@ -386,6 +394,14 @@ export async function POST(request: Request) {
       }
     }
 
+    // Is this account's very first connected number? It becomes the
+    // default automatically (Finding #14) — every other case leaves
+    // is_default untouched (an existing default stays default when
+    // just being edited; a newly-added second+ number starts non-default).
+    const accountHasAnyConfig = existing
+      ? true
+      : (await prisma.whatsAppConfig.count({ where: { account_id: accountId } })) > 0
+
     // Persist everything in one shot.
     const baseData = {
       phone_number_id,
@@ -401,22 +417,27 @@ export async function POST(request: Request) {
       // Embedded Signup and the user is just editing a field here — this
       // form is the "manual" path only the first time a config is created.
       connect_method: existing?.connect_method ?? 'manual',
+      ...(typeof label === 'string' ? { label: label.trim() || null } : {}),
     }
 
+    let savedId: string
     try {
       if (existing) {
         await prisma.whatsAppConfig.update({
-          where: { account_id: accountId },
+          where: { id: existing.id },
           data: baseData,
         })
+        savedId = existing.id
       } else {
-        await prisma.whatsAppConfig.create({
+        const created = await prisma.whatsAppConfig.create({
           data: {
             account_id: accountId,
             user_id: userId,
+            is_default: !accountHasAnyConfig,
             ...baseData,
           },
         })
+        savedId = created.id
       }
     } catch (err) {
       console.error('Error saving whatsapp_config:', err)
@@ -433,6 +454,7 @@ export async function POST(request: Request) {
         registered: false,
         registration_error: registrationError,
         phone_info: phoneInfo,
+        id: savedId,
       })
     }
 
@@ -441,6 +463,7 @@ export async function POST(request: Request) {
       saved: true,
       registered: true,
       phone_info: phoneInfo,
+      id: savedId,
     })
   } catch (error) {
     console.error('Error in WhatsApp config POST:', error)
@@ -449,13 +472,15 @@ export async function POST(request: Request) {
 }
 
 /**
- * DELETE /api/whatsapp/config
+ * DELETE /api/whatsapp/config?id=<config_id>
  *
- * Removes the authenticated user's WhatsApp configuration row.
- * Used by the "Reset Configuration" button to recover from a corrupted
- * encrypted token (mismatched ENCRYPTION_KEY across environments).
+ * Removes one connected number (Finding #14 — `id` is now required when
+ * an account has more than one; omitting it falls back to "the account's
+ * sole number" for backward compatibility with any caller that predates
+ * multi-number support). If the removed number was the default and other
+ * numbers remain, the oldest remaining one becomes the new default.
  */
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) {
@@ -471,20 +496,35 @@ export async function DELETE() {
       )
     }
 
+    const { searchParams } = new URL(request.url)
+    const requestedId = searchParams.get('id')
+
+    const target = requestedId
+      ? await prisma.whatsAppConfig.findFirst({ where: { id: requestedId, account_id: accountId } })
+      : await prisma.whatsAppConfig.findFirst({ where: { account_id: accountId } })
+
+    if (!target) {
+      return NextResponse.json({ success: true }) // already gone
+    }
+
     try {
-      await prisma.whatsAppConfig.delete({
-        where: { account_id: accountId },
-      })
-    } catch (err: unknown) {
-      // P2025 = record not found — already deleted, treat as success
-      if ((err as { code?: string })?.code === 'P2025') {
-        return NextResponse.json({ success: true })
-      }
+      await prisma.whatsAppConfig.delete({ where: { id: target.id } })
+    } catch (err) {
       console.error('Error deleting whatsapp_config:', err)
       return NextResponse.json(
         { error: 'Failed to delete configuration' },
         { status: 500 }
       )
+    }
+
+    if (target.is_default) {
+      const nextDefault = await prisma.whatsAppConfig.findFirst({
+        where: { account_id: accountId },
+        orderBy: { created_at: 'asc' },
+      })
+      if (nextDefault) {
+        await prisma.whatsAppConfig.update({ where: { id: nextDefault.id }, data: { is_default: true } })
+      }
     }
 
     return NextResponse.json({ success: true })

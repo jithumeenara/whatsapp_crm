@@ -44,6 +44,9 @@ export async function POST(request: NextRequest) {
       variables: Record<string, VariableMapping>;
       audience: AudienceConfig;
       header_media_url?: string;
+      /** Which connected number to send from (Finding #14) — optional;
+       *  falls back to the account's default number when unset. */
+      whatsapp_config_id?: string;
       /** 'now' (default) sends immediately once the caller hits /process,
        *  same as before this field existed. 'once'/'recurring' create the
        *  row as status:'scheduled' instead -- the sweep in
@@ -100,6 +103,7 @@ export async function POST(request: NextRequest) {
         template_language: body.template_language,
         template_variables: body.variables,
         header_media_url: body.header_media_url?.trim() || null,
+        whatsapp_config_id: body.whatsapp_config_id?.trim() || null,
         audience_filter: {
           type: body.audience.type,
           tagIds: body.audience.tagIds,

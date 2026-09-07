@@ -156,11 +156,11 @@ export async function POST() {
       )
     }
 
-    const config = await prisma.whatsAppConfig.findUnique({
+    const configs = await prisma.whatsAppConfig.findMany({
       where: { account_id: accountId },
     })
 
-    if (!config) {
+    if (configs.length === 0) {
       return NextResponse.json(
         {
           error:
@@ -170,48 +170,59 @@ export async function POST() {
       )
     }
 
-    if (!config.waba_id) {
+    // Templates are approved per-WABA (Finding #14) — a tenant with
+    // several numbers can have several WABAs, or the same WABA shared
+    // across numbers. Sync every DISTINCT WABA once, not once per number.
+    const wabaEntries = new Map<string, { wabaId: string; accessToken: string }>()
+    for (const c of configs) {
+      if (c.waba_id && !wabaEntries.has(c.waba_id)) {
+        wabaEntries.set(c.waba_id, { wabaId: c.waba_id, accessToken: decrypt(c.access_token) })
+      }
+    }
+
+    if (wabaEntries.size === 0) {
       return NextResponse.json(
         {
           error:
-            'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+            'WABA (WhatsApp Business Account) ID missing on every connected number. Re-connect your account(s) in Settings.',
         },
         { status: 400 },
       )
     }
 
-    const accessToken = decrypt(config.access_token)
-
-    const metaTemplates: MetaTemplate[] = []
-    let nextUrl:
-      | string
-      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+    const metaTemplates: (MetaTemplate & { _waba_id: string })[] = []
     const PAGE_CAP = 20
-    let pageCount = 0
+    let truncatedAny = false
 
-    while (nextUrl && pageCount < PAGE_CAP) {
-      pageCount++
-      const metaRes: Response = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
+    for (const { wabaId, accessToken } of wabaEntries.values()) {
+      let nextUrl: string | null = `${META_API_BASE}/${wabaId}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+      let pageCount = 0
 
-      if (!metaRes.ok) {
-        let metaErr = `Meta API error: ${metaRes.status}`
-        try {
-          const body = await metaRes.json()
-          if (body?.error?.message) metaErr = body.error.message
-        } catch {
-          // response wasn't JSON — keep the fallback
+      while (nextUrl && pageCount < PAGE_CAP) {
+        pageCount++
+        const metaRes: Response = await fetch(nextUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
+
+        if (!metaRes.ok) {
+          let metaErr = `Meta API error: ${metaRes.status}`
+          try {
+            const body = await metaRes.json()
+            if (body?.error?.message) metaErr = body.error.message
+          } catch {
+            // response wasn't JSON — keep the fallback
+          }
+          return NextResponse.json({ error: `WABA ${wabaId}: ${metaErr}` }, { status: 502 })
         }
-        return NextResponse.json({ error: metaErr }, { status: 502 })
-      }
 
-      const metaBody: {
-        data?: MetaTemplate[]
-        paging?: { next?: string }
-      } = await metaRes.json()
-      if (metaBody.data) metaTemplates.push(...metaBody.data)
-      nextUrl = metaBody.paging?.next ?? null
+        const metaBody: {
+          data?: MetaTemplate[]
+          paging?: { next?: string }
+        } = await metaRes.json()
+        if (metaBody.data) metaTemplates.push(...metaBody.data.map((t) => ({ ...t, _waba_id: wabaId })))
+        nextUrl = metaBody.paging?.next ?? null
+      }
+      if (pageCount >= PAGE_CAP && nextUrl !== null) truncatedAny = true
     }
 
     let inserted = 0
@@ -239,6 +250,7 @@ export async function POST() {
       const sharedData = {
         account_id: accountId,
         user_id: userId,
+        waba_id: t._waba_id,
         name: t.name,
         category: normalizeCategory(t.category),
         language: t.language,
@@ -258,6 +270,7 @@ export async function POST() {
         const existingRow = await prisma.messageTemplate.findFirst({
           where: {
             account_id: accountId,
+            waba_id: t._waba_id,
             name: t.name,
             language: t.language,
           },
@@ -291,7 +304,7 @@ export async function POST() {
       inserted,
       updated,
       errors,
-      truncated: pageCount >= PAGE_CAP && nextUrl !== null,
+      truncated: truncatedAny,
     })
   } catch (error) {
     console.error('Error syncing WhatsApp templates:', error)

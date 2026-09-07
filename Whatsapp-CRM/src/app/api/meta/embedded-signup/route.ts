@@ -87,32 +87,50 @@ export async function POST(req: NextRequest) {
     const phoneInfo = await verifyPhoneNumber({ phoneNumberId, accessToken }).catch(() => null)
 
     const now = new Date()
-    await prisma.whatsAppConfig.upsert({
-      where: { account_id: ctx.accountId },
-      create: {
-        account_id: ctx.accountId,
-        user_id: ctx.userId,
-        phone_number_id: phoneNumberId,
-        waba_id: wabaId,
-        access_token: encrypt(accessToken),
-        status: "connected",
-        registered_at: now,
-        subscribed_apps_at: now,
-        connected_at: now,
-        connect_method: "quick",
-      },
-      update: {
-        phone_number_id: phoneNumberId,
-        waba_id: wabaId,
-        access_token: encrypt(accessToken),
-        status: "connected",
-        registered_at: now,
-        subscribed_apps_at: now,
-        connected_at: now,
-        last_registration_error: null,
-        connect_method: "quick",
-      },
+    // Finding #14 — an account can have several connected numbers, so
+    // this is no longer a plain upsert-by-account. A number already
+    // connected to this account (re-running Quick Connect for the same
+    // number) updates in place; a genuinely new number becomes a new
+    // row, auto-defaulted only if it's the account's very first.
+    const existingForThisNumber = await prisma.whatsAppConfig.findFirst({
+      where: { account_id: ctx.accountId, phone_number_id: phoneNumberId },
+      select: { id: true },
     })
+    const accountHasAnyNumber = existingForThisNumber
+      ? true
+      : (await prisma.whatsAppConfig.count({ where: { account_id: ctx.accountId } })) > 0
+
+    if (existingForThisNumber) {
+      await prisma.whatsAppConfig.update({
+        where: { id: existingForThisNumber.id },
+        data: {
+          waba_id: wabaId,
+          access_token: encrypt(accessToken),
+          status: "connected",
+          registered_at: now,
+          subscribed_apps_at: now,
+          connected_at: now,
+          last_registration_error: null,
+          connect_method: "quick",
+        },
+      })
+    } else {
+      await prisma.whatsAppConfig.create({
+        data: {
+          account_id: ctx.accountId,
+          user_id: ctx.userId,
+          phone_number_id: phoneNumberId,
+          waba_id: wabaId,
+          access_token: encrypt(accessToken),
+          status: "connected",
+          registered_at: now,
+          subscribed_apps_at: now,
+          connected_at: now,
+          connect_method: "quick",
+          is_default: !accountHasAnyNumber,
+        },
+      })
+    }
 
     // ── Facebook Page (→ Messenger) + Instagram, best-effort ───────────
     const social = await discoverAndSaveFacebookAndInstagram(ctx.accountId, accessToken)

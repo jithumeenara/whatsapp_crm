@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { sendTextMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 
 export async function POST(request: Request) {
   try {
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { phone } = body
+    const { phone, whatsapp_config_id } = body
 
     if (!phone || typeof phone !== 'string' || !phone.trim()) {
       return NextResponse.json({ error: 'Phone number is required' }, { status: 400 })
@@ -35,15 +36,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Profile not linked to an account' }, { status: 403 })
     }
 
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: profile.account_id },
-      select: { phone_number_id: true, access_token: true },
-    })
-    if (!config) {
-      return NextResponse.json(
-        { error: 'No WhatsApp configuration found. Save your credentials first.' },
-        { status: 400 },
-      )
+    let config
+    try {
+      config = await resolveWhatsAppConfig({ accountId: profile.account_id, whatsappConfigId: whatsapp_config_id })
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json(
+          { error: 'No WhatsApp configuration found. Save your credentials first.' },
+          { status: 400 },
+        )
+      }
+      throw err
     }
 
     let accessToken: string

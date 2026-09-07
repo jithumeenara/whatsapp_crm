@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import { verifyPhoneNumber } from "@/lib/whatsapp/meta-api"
 import { sanitizePhoneForMeta } from "@/lib/whatsapp/phone-utils"
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 
 /**
  * GET /api/whatsapp/qr-code
@@ -15,12 +16,15 @@ import { sanitizePhoneForMeta } from "@/lib/whatsapp/phone-utils"
  * pattern, generated server-side so the phone number lookup and
  * Meta access token never leave the server.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+    // Which connected number's QR code to generate (Finding #14) —
+    // optional; falls back to the account's default number.
+    const requestedConfigId = new URL(request.url).searchParams.get("whatsapp_config_id") ?? undefined
 
     const profile = await prisma.profile.findUnique({
       where: { user_id: session.user.id },
@@ -34,12 +38,17 @@ export async function GET() {
       )
     }
 
-    const config = await prisma.whatsAppConfig.findUnique({ where: { account_id: accountId } })
-    if (!config) {
-      return NextResponse.json(
-        { error: "WhatsApp is not connected yet. Set it up in Settings → WhatsApp." },
-        { status: 400 },
-      )
+    let config
+    try {
+      config = await resolveWhatsAppConfig({ accountId, whatsappConfigId: requestedConfigId })
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json(
+          { error: "WhatsApp is not connected yet. Set it up in Settings → WhatsApp." },
+          { status: 400 },
+        )
+      }
+      throw err
     }
 
     const accessToken = decrypt(config.access_token)

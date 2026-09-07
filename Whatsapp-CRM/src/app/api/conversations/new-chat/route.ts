@@ -5,6 +5,7 @@ import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe"
 import { sanitizePhoneForMeta, isValidE164 } from "@/lib/whatsapp/phone-utils"
 import { emitToAccount } from "@/lib/socket"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 
 /**
  * POST /api/conversations/new-chat
@@ -44,6 +45,19 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     const rawPhone = typeof body?.phone === "string" ? body.phone.trim() : ""
     const name = typeof body?.name === "string" ? body.name.trim() : ""
+    // Which number to start this chat from (Finding #14) — optional;
+    // an account with only one number never needs to send this.
+    const requestedConfigId = typeof body?.whatsapp_config_id === "string" ? body.whatsapp_config_id : undefined
+
+    let whatsappConfig
+    try {
+      whatsappConfig = await resolveWhatsAppConfig({ accountId, whatsappConfigId: requestedConfigId })
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json({ error: "Connect a WhatsApp number in Settings first." }, { status: 400 })
+      }
+      throw err
+    }
 
     if (!rawPhone) {
       return NextResponse.json({ error: "Phone number is required" }, { status: 400 })
@@ -98,7 +112,7 @@ export async function POST(request: Request) {
     // findOrCreateConversation so a contact shared across channels
     // never reuses another channel's conversation row.
     let conversation = await prisma.conversation.findFirst({
-      where: { account_id: accountId, contact_id: contact.id, channel: "whatsapp" },
+      where: { account_id: accountId, contact_id: contact.id, channel: "whatsapp", whatsapp_config_id: whatsappConfig.id },
     })
     let conversationCreated = false
     if (!conversation) {
@@ -109,6 +123,7 @@ export async function POST(request: Request) {
             user_id: userId,
             contact_id: contact.id,
             channel: "whatsapp",
+            whatsapp_config_id: whatsappConfig.id,
           },
         })
         conversationCreated = true

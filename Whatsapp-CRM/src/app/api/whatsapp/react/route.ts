@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -106,17 +107,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped.
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: accountId },
-      select: { phone_number_id: true, access_token: true },
-    });
-
-    if (!config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured.' },
-        { status: 400 },
-      );
+    // WhatsApp config + access token — reacts from the same number the
+    // original message arrived on (Finding #14).
+    let config;
+    try {
+      config = await resolveWhatsAppConfig({ accountId, conversationId: conversation.id });
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured.' },
+          { status: 400 },
+        );
+      }
+      throw err;
     }
 
     const accessToken = decrypt(config.access_token);

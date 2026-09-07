@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 const META_API_VERSION = 'v21.0'
 
@@ -36,9 +37,9 @@ export async function GET() {
     return NextResponse.json({ error: 'No account linked.' }, { status: 403 })
   }
 
-  const config = await prisma.whatsAppConfig.findUnique({
-    where: { account_id: profile.account_id },
-  })
+  // Account-level admin action, no conversation context (Finding #14) —
+  // resolves to the account's default number.
+  const config = await resolveWhatsAppConfig({ accountId: profile.account_id }).catch(() => null)
   if (!config?.phone_number_id || !config?.access_token) {
     return NextResponse.json(
       { error: 'WhatsApp not configured. Go to Settings → WhatsApp first.' },

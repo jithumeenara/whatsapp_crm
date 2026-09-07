@@ -1,5 +1,6 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -117,10 +118,15 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const sanitized = sanitizePhoneForMeta(contact.phone)
   if (!isValidE164(sanitized)) throw new Error(`contact phone invalid: ${contact.phone}`)
 
-  const config = await prisma.whatsAppConfig.findUnique({
-    where: { account_id: input.accountId },
-  })
-  if (!config) throw new Error('WhatsApp not configured for this account')
+  // Finding #14 — reply from the number that received this conversation's
+  // thread, not a blind account-wide default.
+  let config
+  try {
+    config = await resolveWhatsAppConfig({ accountId: input.accountId, conversationId: input.conversationId })
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
 
   const accessToken = decrypt(config.access_token)
 

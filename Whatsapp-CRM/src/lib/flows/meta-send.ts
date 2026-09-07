@@ -18,6 +18,7 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
 import { sendEmail } from '@/lib/messaging/channels/email'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
@@ -108,7 +109,7 @@ interface SendCtaUrlButtonEngineArgs {
   footerText?: string
 }
 
-async function resolveContactAndConfig(accountId: string, contactId: string) {
+async function resolveContactAndConfig(accountId: string, contactId: string, conversationId?: string) {
   const contact = await prisma.contact.findFirst({
     where: { id: contactId, account_id: accountId },
     select: { id: true, phone: true },
@@ -118,8 +119,17 @@ async function resolveContactAndConfig(accountId: string, contactId: string) {
   const sanitized = sanitizePhoneForMeta(contact.phone)
   if (!isValidE164(sanitized)) throw new Error(`contact phone invalid: ${contact.phone}`)
 
-  const config = await prisma.whatsAppConfig.findUnique({ where: { account_id: accountId } })
-  if (!config) throw new Error('WhatsApp not configured for this account')
+  // Resolves the specific number this conversation is bound to (Finding
+  // #14 — a reply should come from the number that received the thread,
+  // not a blind account-wide default), falling back to the account's
+  // default number when there's no conversation context.
+  let config
+  try {
+    config = await resolveWhatsAppConfig({ accountId, conversationId })
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
 
   return { contact, sanitized, config }
 }
@@ -357,7 +367,7 @@ export async function engineSendText(
     }
   }
 
-  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
   const { waMessageId } = await retryWithVariants(sanitized, contact.id, (phone) =>
@@ -384,7 +394,7 @@ export async function engineSendMedia(
   `.catch(() => [] as { channel: string | null }[])
   if (convRows[0]?.channel === 'instagram') return engineSendIgMedia(args)
 
-  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
   // Resolve local /api/files/… uploads to a Meta media_id so the chatbot
@@ -514,7 +524,7 @@ async function engineSendIgMedia(
 export async function engineSendTemplate(
   args: SendTemplateEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
   const params = args.bodyParams
@@ -630,7 +640,7 @@ interface SendCatalogEngineArgs {
 export async function engineSendCatalog(
   args: SendCatalogEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
   const catalogConfig = await prisma.catalogConfig.findUnique({ where: { account_id: args.accountId } })
@@ -712,7 +722,7 @@ interface SendFlowEngineArgs {
 export async function engineSendFlow(
   args: SendFlowEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
   const { waMessageId } = await retryWithVariants(sanitized, contact.id, (phone) =>
@@ -764,8 +774,15 @@ interface SendToNumberEngineArgs {
 export async function engineSendToNumber(
   args: SendToNumberEngineArgs,
 ): Promise<void> {
-  const config = await prisma.whatsAppConfig.findUnique({ where: { account_id: args.accountId } })
-  if (!config) throw new Error('WhatsApp not configured for this account')
+  // Admin notification, no conversation context — always the account's
+  // default number (Finding #14).
+  let config
+  try {
+    config = await resolveWhatsAppConfig({ accountId: args.accountId })
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
 
   const accessToken = decrypt(config.access_token)
   const sanitized = sanitizePhoneForMeta(args.phone)
@@ -883,7 +900,7 @@ type SendInput =
 async function sendInteractiveViaMeta(
   input: SendInput,
 ): Promise<{ whatsapp_message_id: string }> {
-  const { contact, sanitized, config } = await resolveContactAndConfig(input.accountId, input.contactId)
+  const { contact, sanitized, config } = await resolveContactAndConfig(input.accountId, input.contactId, input.conversationId)
   const accessToken = decrypt(config.access_token)
 
   const { waMessageId } = await retryWithVariants(sanitized, contact.id, async (phone) => {
@@ -920,7 +937,7 @@ export async function engineSendCtaUrlButton(
     return engineSendText({ ...args, text: fallbackText })
   }
 
-  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId)
+  const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
   const { waMessageId } = await retryWithVariants(sanitized, contact.id, async (phone) => {

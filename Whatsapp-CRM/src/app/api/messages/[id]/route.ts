@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { decrypt } from "@/lib/whatsapp/encryption"
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 
 async function ensureDeletedAtColumn() {
   await prisma.$executeRaw`
@@ -54,7 +55,7 @@ export async function DELETE(
       } else if (channel === "facebook") {
         await deleteFacebookMessage(user.accountId, platformMid)
       } else {
-        await deleteWhatsAppMessage(user.accountId, platformMid)
+        await deleteWhatsAppMessage(user.accountId, platformMid, msg.conversation_id)
       }
     }
 
@@ -71,9 +72,11 @@ export async function DELETE(
   }
 }
 
-async function deleteWhatsAppMessage(accountId: string, messageId: string) {
-  const config = await prisma.whatsAppConfig.findUnique({ where: { account_id: accountId } })
-  if (!config) throw new Error("WhatsApp not configured")
+async function deleteWhatsAppMessage(accountId: string, messageId: string, conversationId?: string) {
+  const config = await resolveWhatsAppConfig({ accountId, conversationId }).catch((err) => {
+    if (err instanceof NoWhatsAppConfigError) throw new Error("WhatsApp not configured")
+    throw err
+  })
   const accessToken = decrypt(config.access_token)
 
   const res = await fetch(

@@ -342,7 +342,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // the admin who saved the WhatsApp config.
           config.user_id,
           decryptedAccessToken,
-          config.phone_number_id
+          config.phone_number_id,
+          config.id
         )
       }
     }
@@ -589,7 +590,9 @@ async function processMessage(
   // Sender-of-record for inserts that need a NOT NULL user_id FK.
   configOwnerUserId: string,
   accessToken: string,
-  phoneNumberId: string
+  phoneNumberId: string,
+  // The specific WhatsAppConfig row this message arrived on (Finding #14).
+  whatsappConfigId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -608,7 +611,8 @@ async function processMessage(
   const conversation = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    whatsappConfigId
   )
   if (!conversation) return
 
@@ -1341,13 +1345,18 @@ async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  // Which connected WhatsApp number this message arrived on (Finding
+  // #14) — part of the lookup/create key so a contact messaging two
+  // different business numbers on the same account gets two separate
+  // conversations instead of collapsing into one.
+  whatsappConfigId: string,
 ) {
   // Scoped by channel too — a contact_id shared across channels (e.g. after
   // manual merge, or a rare cross-channel identity collision) must never
   // reuse another channel's conversation row. Matches Facebook's
   // findOrCreateFbConversation, which already does this correctly.
   const existing = await prisma.conversation.findFirst({
-    where: { account_id: accountId, contact_id: contactId, channel: 'whatsapp' },
+    where: { account_id: accountId, contact_id: contactId, channel: 'whatsapp', whatsapp_config_id: whatsappConfigId },
   })
 
   if (existing) {
@@ -1362,6 +1371,7 @@ async function findOrCreateConversation(
         user_id: configOwnerUserId,
         contact_id: contactId,
         channel: 'whatsapp',
+        whatsapp_config_id: whatsappConfigId,
       },
     })
   } catch (err) {

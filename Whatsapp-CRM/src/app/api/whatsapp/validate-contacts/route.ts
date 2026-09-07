@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { decrypt } from "@/lib/whatsapp/encryption";
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config";
 
 const META_API_VERSION = "v21.0";
 
@@ -26,15 +27,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ results: [] });
     }
 
-    const config = await ctx.db.whatsAppConfig.findUnique({
-      where: { account_id: ctx.accountId },
-    });
-
-    if (!config) {
-      return NextResponse.json(
-        { error: "WhatsApp not configured." },
-        { status: 400 }
-      );
+    let config;
+    try {
+      config = await resolveWhatsAppConfig({ accountId: ctx.accountId });
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json(
+          { error: "WhatsApp not configured." },
+          { status: 400 }
+        );
+      }
+      throw err;
     }
 
     const accessToken = decrypt(config.access_token);

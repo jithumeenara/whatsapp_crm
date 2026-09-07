@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -26,6 +26,8 @@ interface MessageComposerProps {
   onSendMedia: (mediaUrl: string, mediaType: 'image' | 'document' | 'audio' | 'video', filename?: string) => void;
   onOpenTemplates: () => void;
   onOpenCatalog: () => void;
+  onSendOtp: () => void;
+  onRequestPayment: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
 }
@@ -62,6 +64,8 @@ export function MessageComposer({
   onSendMedia,
   onOpenTemplates,
   onOpenCatalog,
+  onSendOtp,
+  onRequestPayment,
   replyTo,
   onClearReply,
 }: MessageComposerProps) {
@@ -301,6 +305,14 @@ export function MessageComposer({
                     </button>
                     <button
                       type="button"
+                      onClick={() => { setAttachOpen(false); onSendOtp(); }}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
+                    >
+                      <KeyRound className="h-4 w-4 shrink-0 text-fuchsia-500" />
+                      Send OTP
+                    </button>
+                    <button
+                      type="button"
                       disabled={sessionExpired}
                       onClick={() => { setAttachOpen(false); onOpenCatalog(); }}
                       title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
@@ -308,6 +320,14 @@ export function MessageComposer({
                     >
                       <ShoppingBag className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : "text-sky-500")} />
                       Send Catalog
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setAttachOpen(false); onRequestPayment(); }}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
+                    >
+                      <IndianRupee className="h-4 w-4 shrink-0 text-amber-500" />
+                      Request Payment
                     </button>
                     <div className="mx-3 my-1 border-t border-slate-100" />
                   </>

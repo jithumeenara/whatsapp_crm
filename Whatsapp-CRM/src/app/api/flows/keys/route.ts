@@ -3,6 +3,7 @@ import crypto from 'crypto'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 const META_API_VERSION = 'v21.0'
 
@@ -13,14 +14,9 @@ async function getAccountAndConfig(userId: string) {
   })
   if (!profile?.account_id) return null
 
-  const config = await prisma.whatsAppConfig.findUnique({
-    where: { account_id: profile.account_id },
-    select: {
-      flows_private_key: true,
-      phone_number_id: true,
-      access_token: true,
-    },
-  })
+  // Account-level admin action, no conversation context (Finding #14) —
+  // resolves to the account's default number.
+  const config = await resolveWhatsAppConfig({ accountId: profile.account_id }).catch(() => null)
   return { accountId: profile.account_id, config }
 }
 

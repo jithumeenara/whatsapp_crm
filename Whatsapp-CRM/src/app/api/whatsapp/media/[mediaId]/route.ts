@@ -3,6 +3,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 
 /**
  * Media WhatsApp has permanently expired (Graph API error code 100.33 —
@@ -56,9 +57,7 @@ export async function GET(
       deadMediaCache.delete(mediaId) // TTL elapsed — allow one more real check
     }
 
-    // Resolve the caller's account_id — whatsapp_config is one-per-
-    // account, so a teammate fetching media for a conversation in the
-    // shared inbox needs the account's config, not a personal row.
+    // Resolve the caller's account_id.
     const profile = await prisma.profile.findUnique({
       where: { user_id: userId },
       select: { account_id: true },
@@ -71,16 +70,31 @@ export async function GET(
       )
     }
 
-    // Fetch and decrypt WhatsApp config
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: accountId },
+    // Which connected number's token can actually fetch this media
+    // (Finding #14) — media belongs to whichever number's WABA received
+    // it, not necessarily the account's default number, so this looks up
+    // the specific message that stored this proxy URL to find its bound
+    // conversation/number. Falls back to the account's default when no
+    // matching message is found (e.g. a pre-migration/orphaned URL).
+    const owningMessage = await prisma.message.findFirst({
+      where: {
+        media_url: `/api/whatsapp/media/${mediaId}`,
+        conversation: { account_id: accountId },
+      },
+      select: { conversation_id: true },
     })
 
-    if (!config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured' },
-        { status: 400 }
-      )
+    let config
+    try {
+      config = await resolveWhatsAppConfig({ accountId, conversationId: owningMessage?.conversation_id })
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured' },
+          { status: 400 }
+        )
+      }
+      throw err
     }
 
     const accessToken = decrypt(config.access_token)

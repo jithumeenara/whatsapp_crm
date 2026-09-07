@@ -7,6 +7,7 @@ import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { sendTextMessage, sendTemplateMessage, sendMediaMessage, uploadMediaToMeta, sendCatalogMessage, sendSingleProductMessage, sendMultiProductMessage, type MultiProductSection } from '@/lib/whatsapp/meta-api'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -529,16 +530,20 @@ export async function POST(request: Request) {
       )
     }
 
-    // Fetch and decrypt WhatsApp config
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: accountId },
-    })
-
-    if (!config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
-        { status: 400 }
-      )
+    // Resolve which connected number this send goes out from (Finding
+    // #14) — the conversation's own bound number when it has one,
+    // falling back to the account's default.
+    let config
+    try {
+      config = await resolveWhatsAppConfig({ accountId, conversationId: conversation_id })
+    } catch (err) {
+      if (err instanceof NoWhatsAppConfigError) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured. Please set up your WhatsApp integration first.' },
+          { status: 400 }
+        )
+      }
+      throw err
     }
 
     const accessToken = decrypt(config.access_token)

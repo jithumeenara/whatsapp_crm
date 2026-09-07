@@ -5,6 +5,7 @@ import { join as pathJoin } from 'path'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 const UPLOADS_DIR = pathJoin(process.cwd(), 'uploads')
 
@@ -877,9 +878,7 @@ export async function POST(
 
     const cfg = flow.trigger_config as Record<string, unknown>
 
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: profile.account_id },
-    })
+    const config = await resolveWhatsAppConfig({ accountId: profile.account_id }).catch(() => null)
     if (!config?.waba_id) {
       return NextResponse.json(
         { error: 'WhatsApp not configured or WABA ID missing. Connect in Settings first.' },

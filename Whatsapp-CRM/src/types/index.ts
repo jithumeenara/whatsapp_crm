@@ -203,7 +203,11 @@ export type ContentType =
   /** We sent one highlighted product. */
   | 'single_product'
   /** We sent a curated, sectioned pick of up to 30 products. */
-  | 'multi_product';
+  | 'multi_product'
+  /** We sent an in-chat UPI payment request (order_details invoice). */
+  | 'payment_order_details'
+  /** A follow-up updating the customer on payment/fulfillment status. */
+  | 'payment_order_status';
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {
@@ -353,6 +357,17 @@ export interface WhatsAppConfig {
   has_verify_token?: boolean;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /** Display label for this number ("Sales Line") — Finding #14, a
+   *  tenant can connect several. */
+  label?: string | null;
+  /** Exactly one true per account — the fallback number used wherever a
+   *  specific one isn't otherwise resolvable. */
+  is_default?: boolean;
+  /** Raw value of Meta's marketing_messages_onboarding_status field. */
+  marketing_messages_status?: string | null;
+  /** Off by default — Meta's Direct Send beta requires partner-manager
+   *  approval per WABA no API call can grant. */
+  direct_send_enabled?: boolean;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

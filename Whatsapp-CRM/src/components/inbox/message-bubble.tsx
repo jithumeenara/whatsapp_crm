@@ -30,6 +30,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Package,
+  IndianRupee,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -824,6 +825,27 @@ function MessageContent({ message }: { message: Message }) {
           <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
             <WhatsAppText text={message.content_text || "Products shared"} />
           </p>
+        </div>
+      );
+
+    case "payment_order_details":
+      return (
+        <div>
+          <span className="mb-1 inline-flex w-fit items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+            <IndianRupee className="h-3 w-3" />
+            Payment request
+          </span>
+          <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+            <WhatsAppText text={message.content_text || "Payment request sent"} />
+          </p>
+        </div>
+      );
+
+    case "payment_order_status":
+      return (
+        <div className="flex items-center gap-2 text-[13px]">
+          <IndianRupee className="h-4 w-4 shrink-0 text-amber-600" />
+          <span>{message.content_text || "Payment status update"}</span>
         </div>
       );
 

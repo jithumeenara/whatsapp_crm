@@ -44,6 +44,9 @@ interface BroadcastPayload {
   headerMediaUrl?: string;
   /** Defaults to send-now (unchanged behavior) when omitted. */
   schedule?: BroadcastSchedule;
+  /** Which connected number to send from (Finding #14) — omit to fall
+   *  back to the account's default number. */
+  whatsappConfigId?: string;
 }
 
 interface UseBroadcastSendingReturn {
@@ -95,6 +98,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           variables: payload.variables,
           audience: payload.audience,
           header_media_url: payload.headerMediaUrl,
+          whatsapp_config_id: payload.whatsappConfigId,
           schedule_type: schedule?.type ?? 'now',
           scheduled_at: schedule?.scheduledAt,
           interval_value: schedule?.intervalValue,

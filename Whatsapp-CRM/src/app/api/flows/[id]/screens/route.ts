@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
@@ -53,9 +54,7 @@ export async function GET(
       return NextResponse.json({ screens: [] })
     }
 
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: profile.account_id },
-    })
+    const config = await resolveWhatsAppConfig({ accountId: profile.account_id }).catch(() => null)
     if (!config) {
       return NextResponse.json({ screens: [] })
     }

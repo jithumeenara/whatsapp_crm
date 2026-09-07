@@ -505,10 +505,8 @@ async function resolvePrivateKeyPem(flowId: string): Promise<string> {
   try {
     const flow = await prisma.flow.findUnique({ where: { id: flowId }, select: { account_id: true } })
     if (flow?.account_id) {
-      const config = await prisma.whatsAppConfig.findUnique({
-        where: { account_id: flow.account_id },
-        select: { flows_private_key: true },
-      })
+      const { resolveWhatsAppConfig } = await import('@/lib/whatsapp/resolve-config')
+      const config = await resolveWhatsAppConfig({ accountId: flow.account_id }).catch(() => null)
       if (config?.flows_private_key) {
         const { decrypt } = await import('@/lib/whatsapp/encryption')
         const pem = normalizePem(decrypt(config.flows_private_key))

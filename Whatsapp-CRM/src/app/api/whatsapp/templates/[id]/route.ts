@@ -12,6 +12,7 @@ import {
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 /**
  * Per-template lifecycle endpoint.
@@ -86,7 +87,7 @@ export async function PATCH(
     // Fetch the existing row to read meta_template_id and status.
     const existing = await prisma.messageTemplate.findFirst({
       where: { id, account_id: accountId },
-      select: { id: true, name: true, status: true, meta_template_id: true, language: true },
+      select: { id: true, name: true, status: true, meta_template_id: true, language: true, waba_id: true },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -133,9 +134,12 @@ export async function PATCH(
     const metaPayload = buildMetaTemplatePayload(payload)
 
     if (!isDryRun()) {
-      const config = await prisma.whatsAppConfig.findUnique({
-        where: { account_id: accountId },
-      })
+      // Edit on the same WABA this template was created under (Finding
+      // #14) — falls back to the account's default number for legacy
+      // rows that predate multi-number support.
+      const config = existing.waba_id
+        ? await prisma.whatsAppConfig.findFirst({ where: { account_id: accountId, waba_id: existing.waba_id } })
+        : await resolveWhatsAppConfig({ accountId }).catch(() => null)
       if (!config) {
         return NextResponse.json(
           { error: 'WhatsApp not configured.' },
@@ -243,16 +247,16 @@ export async function DELETE(
 
     const existing = await prisma.messageTemplate.findFirst({
       where: { id, account_id: accountId },
-      select: { id: true, name: true, meta_template_id: true },
+      select: { id: true, name: true, meta_template_id: true, waba_id: true },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
     }
 
     if (existing.meta_template_id && !isDryRun()) {
-      const config = await prisma.whatsAppConfig.findUnique({
-        where: { account_id: accountId },
-      })
+      const config = existing.waba_id
+        ? await prisma.whatsAppConfig.findFirst({ where: { account_id: accountId, waba_id: existing.waba_id } })
+        : await resolveWhatsAppConfig({ accountId }).catch(() => null)
       if (!config || !config.waba_id) {
         return NextResponse.json(
           { error: 'WhatsApp not configured — cannot delete on Meta.' },

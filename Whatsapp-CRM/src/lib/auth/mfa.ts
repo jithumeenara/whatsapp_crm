@@ -12,6 +12,7 @@ import { sendSmsText } from "@/lib/messaging/channels/sms"
 import { sendTemplateMessage } from "@/lib/whatsapp/meta-api"
 import { verifyTotp } from "@/lib/auth/totp"
 import { isMessageTemplate } from "@/lib/whatsapp/template-row-guard"
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 
 export type MfaMethod = "sms" | "whatsapp" | "totp"
 // 'profile_phone' confirms a team member's own WhatsApp number in Settings >
@@ -51,11 +52,21 @@ async function sendWhatsappOtp(userId: string, phone: string, code: string): Pro
   const accountId = await resolveAccountId(userId)
   if (!accountId) throw new Error("No account linked to this user")
 
-  const config = await prisma.whatsAppConfig.findUnique({ where: { account_id: accountId } })
-  if (!config) throw new Error("WhatsApp isn't connected for this account yet")
+  let config
+  try {
+    config = await resolveWhatsAppConfig({ accountId })
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) throw new Error("WhatsApp isn't connected for this account yet")
+    throw err
+  }
 
   const template = await prisma.messageTemplate.findFirst({
-    where: { account_id: accountId, category: "Authentication", status: "APPROVED" },
+    where: {
+      account_id: accountId,
+      category: "Authentication",
+      status: "APPROVED",
+      ...(config.waba_id ? { waba_id: config.waba_id } : {}),
+    },
     orderBy: { created_at: "asc" },
   })
   if (!template || !isMessageTemplate(template)) {

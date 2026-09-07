@@ -10,6 +10,7 @@ import {
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 // Unverified WABAs are capped at 250 total templates (verified ones go up
 // to 6,000). Meta doesn't expose verification tier anywhere this app reads
@@ -31,6 +32,7 @@ function buildUpsertData(
     status: 'DRAFT' | string
     metaTemplateId: string | null
     submissionError: string | null
+    wabaId: string | null
   },
 ) {
   return {
@@ -38,6 +40,9 @@ function buildUpsertData(
     account_id: accountId,
     // Original author — kept as audit only.
     user_id: userId,
+    // Which WABA this template belongs to (Finding #14) — null only for
+    // the dry-run path, where there's no real Meta connection at all.
+    waba_id: extras.wabaId,
     name: payload.name,
     category: payload.category,
     language: payload.language,
@@ -66,22 +71,24 @@ async function upsertTemplateRow(
     status: 'DRAFT' | string
     metaTemplateId: string | null
     submissionError: string | null
+    wabaId: string | null
   },
 ) {
   const data = buildUpsertData(accountId, userId, payload, extras)
 
-  // The unique index is on (account_id, name, language) in the Prisma schema.
-  return prisma.messageTemplate.upsert({
-    where: {
-      account_id_name_language: {
-        account_id: accountId,
-        name: payload.name,
-        language: payload.language ?? 'en_US',
-      },
-    },
-    create: data,
-    update: data,
+  // Manual find-then-create/update rather than Prisma's typed .upsert()
+  // — the compound unique key (account_id, waba_id, name, language) as
+  // of Finding #14 requires a non-null waba_id in its typed where-input
+  // even though the column itself is nullable (the dry-run path has no
+  // real WABA at all), so a plain findFirst sidesteps that mismatch.
+  const existingRow = await prisma.messageTemplate.findFirst({
+    where: { account_id: accountId, waba_id: extras.wabaId, name: payload.name, language: payload.language ?? 'en_US' },
+    select: { id: true },
   })
+  if (existingRow) {
+    return prisma.messageTemplate.update({ where: { id: existingRow.id }, data })
+  }
+  return prisma.messageTemplate.create({ data })
 }
 
 /**
@@ -160,14 +167,16 @@ export async function POST(request: Request) {
 
     let metaTemplateId: string
     let metaStatus: string
+    // Which WABA this template gets created under (Finding #14) — the
+    // account's default number for this pass; a future WABA picker in
+    // the Templates UI can widen this to an explicit choice.
+    let targetWabaId: string | null = null
 
     if (dryRun) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`
       metaStatus = 'PENDING'
     } else {
-      const config = await prisma.whatsAppConfig.findUnique({
-        where: { account_id: accountId },
-      })
+      const config = await resolveWhatsAppConfig({ accountId }).catch(() => null)
       if (!config) {
         return NextResponse.json(
           {
@@ -186,6 +195,7 @@ export async function POST(request: Request) {
           { status: 400 },
         )
       }
+      targetWabaId = config.waba_id
 
       const accessToken = decrypt(config.access_token)
       try {
@@ -204,6 +214,7 @@ export async function POST(request: Request) {
           status: 'DRAFT',
           metaTemplateId: null,
           submissionError: message,
+          wabaId: targetWabaId,
         }).catch(() => {/* best-effort */})
         const isRateLimit = /\b429\b/.test(message)
         return NextResponse.json(
@@ -223,6 +234,7 @@ export async function POST(request: Request) {
         status: normalizeStatus(metaStatus),
         metaTemplateId,
         submissionError: null,
+        wabaId: targetWabaId,
       })
     } catch (err) {
       // The submit succeeded on Meta's side but we failed to persist

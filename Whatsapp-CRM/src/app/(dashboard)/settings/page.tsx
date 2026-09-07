@@ -6,7 +6,7 @@ import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
   User, MousePointerClick, Tag, LayoutGrid, MessageSquare,
   Layers, Users, Bot, Database, Bell, Key, Webhook, Settings,
-  Search, ShieldCheck, X, ChevronLeft, ChevronRight, Megaphone, ShoppingBag,
+  Search, ShieldCheck, X, ChevronLeft, ChevronRight, Megaphone, ShoppingBag, IndianRupee,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -25,6 +25,7 @@ import { ChannelsTab } from "@/components/settings/channels-tab"
 import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
 import { AdsTab } from "@/components/settings/ads-tab"
 import { CatalogTab } from "@/components/settings/catalog-tab"
+import { PaymentsTab } from "@/components/settings/payments-tab"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -57,6 +58,7 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       { key: "channels",  label: "Channels",        icon: MessageSquare, ownerOnly: true, aliases: ["WhatsApp", "Instagram", "Facebook", "Messenger", "SMS", "Email", "RCS", "Business Profile"] },
       { key: "ads",       label: "Ads",             icon: Megaphone,     ownerOnly: true, aliases: ["Meta Ads", "Google Ads", "Facebook Ads", "Advertising", "Pixel", "Conversions API", "Lead Ads"] },
       { key: "catalog",   label: "Catalog",         icon: ShoppingBag,   ownerOnly: true, aliases: ["Products", "Commerce", "Meta Catalog", "WhatsApp Shop", "Orders"] },
+      { key: "payments",  label: "Payments",        icon: IndianRupee,   ownerOnly: true, aliases: ["UPI", "Razorpay", "In-chat Payments", "India"] },
     ],
   },
   {
@@ -90,6 +92,7 @@ const TAB_TITLES: Record<string, string> = {
   channels: "Channels",
   ads: "Ads",
   catalog: "Catalog",
+  payments: "Payments",
   platform: "Embedded Signup",
   capture: "Capture",
   tags: "Tags",
@@ -108,6 +111,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   channels: "Connect and configure every messaging channel",
   ads: "Connect your ad platforms to track leads and ROI without leaving this CRM",
   catalog: "Connect a Meta product catalog to sell through WhatsApp — products, carts, and orders",
+  payments: "Collect UPI payments in-chat — requires Meta's explicit per-number approval",
   platform: "One Meta App for the whole platform — set up once, every tenant gets one-click Facebook Connect",
   capture: "How new contacts get captured into the CRM",
   tags: "Organize your contacts with color-coded tags",
@@ -176,6 +180,7 @@ function SettingsContent() {
       case "channels":         return isOwner ? <ChannelsTab /> : null
       case "ads":              return isOwner ? <AdsTab /> : null
       case "catalog":          return isOwner ? <CatalogTab /> : null
+      case "payments":         return isOwner ? <PaymentsTab /> : null
       case "platform":         return isOwner ? <PlatformMetaTab /> : null
       case "capture":          return <CapturePanel />
       case "tags":             return <TagManager />

@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
+import { Switch } from '@/components/ui/switch';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 import { KeysDialog } from '@/components/flows/keys-dialog';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
@@ -238,7 +239,22 @@ function SectionCard({ icon: Icon, accentBg = '#ECFDF5', accentColor = '#16A34A'
 // Instagram still use it) — WhatsApp itself no longer has its own Quick/
 // Manual picker screen (see note above the removed ConnectChannelScreen
 // usage below), so the value is intentionally unused here.
-export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manual' }) {
+export function WhatsAppConfig(props: {
+  defaultConnectMethod?: 'quick' | 'manual'
+  /** Which connected number this instance manages (Finding #14) — omit
+   *  to connect a brand-new number, or to fall back to the account's
+   *  default when exactly one exists (pre-multi-number behavior). */
+  configId?: string | null
+  /** Fired after a save/delete that changes the account's number list,
+   *  so a wrapping number-switcher can refresh its own list. */
+  onChanged?: () => void
+}) {
+  // Distinguish "prop not given at all" (undefined — standalone/legacy
+  // usage, fall back to the account's default number) from "explicitly
+  // null" (the number-switcher wrapper asking for a blank Add Number
+  // form even though other numbers exist).
+  const { configId, onChanged } = props;
+  const isAddingNew = configId === null;
   const { userId, accountId, loading: authLoading, profileLoading } = useAuth();
   const reduceMotion = useReducedMotion();
 
@@ -348,7 +364,19 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
     setLoading(true);
     try {
       const res = await fetch('/api/whatsapp/config', { method: 'GET' });
-      const payload = await res.json();
+      const listPayload = await res.json();
+      // GET now returns every connected number (Finding #14) — pick the
+      // one this instance manages: an explicit configId, else the
+      // account's default, else the first (covers a brand-new "add
+      // number" instance, which has neither and should show the setup
+      // form since entries will be empty anyway).
+      const entries: Array<{ id: string; connected: boolean; config?: WhatsAppConfigType; phone_info?: PhoneInfo; usage?: Usage; reason?: string; message?: string }> = listPayload.configs ?? [];
+      const entry = isAddingNew
+        ? undefined // explicit "Add Number" — always the blank setup form, even if other numbers exist
+        : configId
+          ? entries.find((e) => e.id === configId)
+          : entries.find((e) => e.config?.is_default) ?? entries[0]; // no configId prop at all — legacy/standalone usage
+      const payload = entry ?? { connected: false, config: null, phone_info: null, usage: null, reason: listPayload.reason, message: listPayload.message };
       const data = payload.config ?? null;
       setPhoneInfo(payload.phone_info ?? null);
       setUsage(payload.usage ?? null);
@@ -393,7 +421,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [configId, isAddingNew]);
 
   useEffect(() => {
     if (authLoading || profileLoading) return;
@@ -435,6 +463,10 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
         waba_id: wabaId.trim() || null,
         verify_token: verifyToken.trim() || null,
         pin: pin.trim() || null,
+        // Editing a specific already-connected number (Finding #14) vs.
+        // connecting a brand-new one — undefined lets the API fall back
+        // to its own phone_number_id-match logic.
+        ...(configId ? { id: configId } : {}),
       };
 
       if (tokenEdited && accessToken !== MASKED_TOKEN && accessToken.trim()) {
@@ -466,6 +498,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
       }
       await fetchConfig('');
       setCredentialsEditing(false);
+      onChanged?.();
     } catch (err) {
       console.error('Save error:', err);
       toast.error('Failed to save configuration');
@@ -478,7 +511,10 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
     try {
       setTesting(true);
       const res = await fetch('/api/whatsapp/config', { method: 'GET' });
-      const payload = await res.json();
+      const listPayload = await res.json();
+      const entries: Array<{ id: string; connected: boolean; phone_info?: PhoneInfo; message?: string; needs_reset?: boolean; reason?: string }> = listPayload.configs ?? [];
+      const entry = configId ? entries.find((e) => e.id === configId) : entries[0];
+      const payload = entry ?? { connected: false as const, message: listPayload.message, needs_reset: undefined, reason: undefined, phone_info: undefined };
       if (payload.connected) {
         setConnectionStatus('connected');
         setResetReason(null);
@@ -502,7 +538,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
     setVerifyingRegistration(true);
     setRegistrationProbe(null);
     try {
-      const res = await fetch('/api/whatsapp/config/verify-registration', { method: 'GET' });
+      const res = await fetch(`/api/whatsapp/config/verify-registration${configId ? `?whatsapp_config_id=${configId}` : ''}`, { method: 'GET' });
       const data = (await res.json()) as RegistrationProbe;
       setRegistrationProbe(data);
       if (data.live) {
@@ -525,7 +561,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
   async function performReset() {
     try {
       setResetting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'DELETE' });
+      const res = await fetch(`/api/whatsapp/config${configId ? `?id=${configId}` : ''}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) { toast.error(data.error || 'Failed to reset configuration'); return; }
       toast.success('Configuration cleared. You can now re-enter your credentials.');
@@ -540,6 +576,7 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
       setStatusMessage('');
       setCredentialsEditing(false);
       setResetConfirmOpen(false);
+      onChanged?.();
     } catch {
       toast.error('Failed to reset configuration');
     } finally {
@@ -583,6 +620,54 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
     toast.success('Webhook URL copied');
+  }
+
+  // Finding #10 — self-serve, no Meta approval needed (unlike Direct
+  // Send/UPI payments below).
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
+  async function handleCheckEligibility() {
+    if (!config?.id) return;
+    setCheckingEligibility(true);
+    try {
+      const res = await fetch('/api/whatsapp/config/check-marketing-eligibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: config.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Eligibility check failed.'); return; }
+      setConfig((c) => (c ? { ...c, marketing_messages_status: data.status } : c));
+      toast.success(data.status === 'ELIGIBLE' ? 'Eligible — Marketing sends now use the faster endpoint.' : `Status: ${data.status ?? 'not eligible yet'}`);
+    } catch {
+      toast.error('Eligibility check failed.');
+    } finally {
+      setCheckingEligibility(false);
+    }
+  }
+
+  // Finding #08b — Direct Send beta. This toggle never calls Meta itself;
+  // it only changes which path this account's OTP/utility sends take,
+  // and only matters once Meta has separately granted partner-manager
+  // approval for this WABA (can't be self-served, stated plainly in the UI).
+  const [togglingDirectSend, setTogglingDirectSend] = useState(false);
+  async function handleToggleDirectSend(next: boolean) {
+    if (!config?.id) return;
+    setTogglingDirectSend(true);
+    try {
+      const res = await fetch('/api/whatsapp/config/direct-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: config.id, enabled: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Failed to update.'); return; }
+      setConfig((c) => (c ? { ...c, direct_send_enabled: next } : c));
+      toast.success(next ? 'Direct Send enabled for this number.' : 'Direct Send disabled.');
+    } catch {
+      toast.error('Failed to update.');
+    } finally {
+      setTogglingDirectSend(false);
+    }
   }
 
   if (loading) {
@@ -777,6 +862,63 @@ export function WhatsAppConfig(_props: { defaultConnectMethod?: 'quick' | 'manua
               )}
             </div>
           )}
+        </div>
+
+        {/* Beyond messaging — Marketing Messages eligibility (Finding
+            #10, self-serve) + Direct Send beta toggle (Finding #08b,
+            gated on Meta's own partner-manager approval). */}
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-800">
+                <Zap className="h-4 w-4 text-indigo-500" />
+                Marketing Messages
+              </h3>
+              <p className="mt-0.5 text-[12px] text-slate-500">
+                Self-serve — Meta&apos;s dedicated endpoint for marketing-category sends, no manual review needed.
+                {config?.marketing_messages_status === 'ELIGIBLE'
+                  ? ' Broadcasts using a Marketing-category template already route through it automatically.'
+                  : ' Check eligibility, then accept Meta’s terms in WhatsApp Manager > Overview > Alerts if prompted.'}
+              </p>
+            </div>
+            <span className={cn(
+              'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold',
+              config?.marketing_messages_status === 'ELIGIBLE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500',
+            )}>
+              {config?.marketing_messages_status || 'Not checked'}
+            </span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleCheckEligibility}
+            disabled={checkingEligibility}
+            className="h-9 px-3.5 text-[12.5px] border-slate-200"
+          >
+            {checkingEligibility ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Check eligibility
+          </Button>
+
+          <div className="border-t border-slate-100 pt-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-800">
+                  <Send className="h-4 w-4 text-violet-500" />
+                  Direct Send <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-600">Beta</span>
+                </h3>
+                <p className="mt-0.5 max-w-lg text-[12px] text-slate-500">
+                  Skips template approval for OTP/utility sends. Meta requires explicit partner-manager approval
+                  for this beta per WABA — this toggle doesn&apos;t call Meta itself; it only changes which path
+                  this number&apos;s OTP/utility sends take, and only matters once that approval already exists.
+                </p>
+              </div>
+              <Switch
+                checked={config?.direct_send_enabled ?? false}
+                onCheckedChange={handleToggleDirectSend}
+                disabled={togglingDirectSend}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Business details */}

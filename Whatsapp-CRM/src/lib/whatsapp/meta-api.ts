@@ -669,6 +669,129 @@ export async function sendTemplateMessage(
   return { messageId: data.messages[0].id }
 }
 
+/**
+ * Send a Marketing-category template through Meta's dedicated
+ * `/marketing_messages` endpoint (Finding #10) instead of the standard
+ * `/messages` endpoint — same request/response shape, Meta claims better
+ * deliverability + richer analytics for this specific traffic. Only
+ * ever call this once `checkMarketingMessagesEligibility()` (see
+ * marketing-messages-api.ts) has confirmed the WABA is "ELIGIBLE" — the
+ * caller (run-broadcast.ts) falls back to sendTemplateMessage()
+ * transparently otherwise; this function itself doesn't check.
+ */
+export async function sendMarketingTemplateMessage(
+  args: SendTemplateMessageArgs
+): Promise<MetaSendResult> {
+  const {
+    phoneNumberId,
+    accessToken,
+    to,
+    templateName,
+    language = 'en_US',
+    params,
+    template,
+    messageParams,
+    contextMessageId,
+  } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/marketing_messages`
+
+  const templatePayload: Record<string, unknown> = {
+    name: templateName,
+    language: { code: language },
+  }
+
+  if (template) {
+    const components = buildSendComponents(template, {
+      body: messageParams?.body ?? params,
+      bodyByName: messageParams?.bodyByName,
+      headerText: messageParams?.headerText,
+      headerMediaUrl: messageParams?.headerMediaUrl,
+      headerMediaId: messageParams?.headerMediaId,
+      buttonParams: messageParams?.buttonParams,
+    })
+    if (components.length > 0) {
+      templatePayload.components = components
+    }
+  } else if (params && params.length > 0) {
+    templatePayload.components = [
+      {
+        type: 'body',
+        parameters: params.map((p) => ({ type: 'text', text: String(p) })),
+      },
+    ]
+  }
+
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'template',
+    template: templatePayload,
+  }
+  if (contextMessageId) {
+    body.context = { message_id: contextMessageId }
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    signal: AbortSignal.timeout(30_000),
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta Marketing Messages API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
+export interface SendDirectMessageArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  text: string
+  category: 'utility' | 'authentication'
+}
+
+/**
+ * Meta's Direct Send beta (Finding #08b) — confirmed via live docs: the
+ * SAME `/messages` endpoint as a normal text send, just with a `category`
+ * field added and no `template`/`type: 'template'` at all. Meta matches
+ * or auto-generates a template behind the scenes. Still beta and gated
+ * on explicit Meta partner-manager approval per WABA — only call this
+ * when the resolved WhatsAppConfig has `direct_send_enabled: true`,
+ * which itself only means "this tenant says they have that approval,"
+ * not something this app can verify.
+ */
+export async function sendDirectMessage(args: SendDirectMessageArgs): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, text, category } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const body: Record<string, unknown> = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'text',
+    text: { body: text },
+    category,
+  }
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Direct Send failed: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}
+
 // ============================================================
 // Template submission (Business Management API)
 // ============================================================

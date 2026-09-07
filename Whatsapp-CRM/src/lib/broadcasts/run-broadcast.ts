@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { sendTemplateMessage } from "@/lib/whatsapp/meta-api";
+import { sendTemplateMessage, sendMarketingTemplateMessage } from "@/lib/whatsapp/meta-api";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { isMessageTemplate } from "@/lib/whatsapp/template-row-guard";
 import { emitToAccount } from "@/lib/socket";
@@ -14,6 +14,7 @@ import { buildDataStoreIndex } from "@/lib/broadcasts/resolve-data-store";
 import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
 import { resolveMediaRef } from "@/lib/whatsapp/media-ref";
 import { classifyMetaError } from "@/lib/whatsapp/meta-error-codes";
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
@@ -27,14 +28,14 @@ function sleep(ms: number) {
  *  exists (the normal case — most broadcast recipients have messaged in
  *  before), otherwise creates one. Mirrors the SMS webhook's
  *  findOrCreateSmsConversation, channel:'whatsapp' instead of 'sms'. */
-async function findOrCreateWhatsAppConversation(accountId: string, ownerUserId: string, contactId: string) {
+async function findOrCreateWhatsAppConversation(accountId: string, ownerUserId: string, contactId: string, whatsappConfigId: string) {
   const existing = await prisma.conversation.findFirst({
-    where: { account_id: accountId, contact_id: contactId, channel: "whatsapp" },
+    where: { account_id: accountId, contact_id: contactId, channel: "whatsapp", whatsapp_config_id: whatsappConfigId },
   });
   if (existing) return existing;
   try {
     return await prisma.conversation.create({
-      data: { account_id: accountId, user_id: ownerUserId, contact_id: contactId, channel: "whatsapp" },
+      data: { account_id: accountId, user_id: ownerUserId, contact_id: contactId, channel: "whatsapp", whatsapp_config_id: whatsappConfigId },
     });
   } catch (err) {
     console.error("[runBroadcast] conversation create failed:", err);
@@ -59,9 +60,10 @@ async function recordBroadcastMessage(args: {
   templateName: string
   renderedBody: string
   whatsappMessageId: string
+  whatsappConfigId: string
 }) {
   try {
-    const conversation = await findOrCreateWhatsAppConversation(args.accountId, args.ownerUserId, args.contactId);
+    const conversation = await findOrCreateWhatsAppConversation(args.accountId, args.ownerUserId, args.contactId, args.whatsappConfigId);
     if (!conversation) return;
 
     const savedMsg = await prisma.message.create({
@@ -110,12 +112,17 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
 
   if (!broadcast) return;
 
-  const config = await prisma.whatsAppConfig.findUnique({
-    where: { account_id: accountId },
-  });
-  if (!config) {
-    await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: "failed" } });
-    return;
+  // Which connected number this campaign sends from (Finding #14) —
+  // the broadcast's own choice, falling back to the account's default.
+  let config;
+  try {
+    config = await resolveWhatsAppConfig({ accountId, whatsappConfigId: broadcast.whatsapp_config_id });
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) {
+      await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: "failed" } });
+      return;
+    }
+    throw err;
   }
 
   const accessToken = decrypt(config.access_token);
@@ -143,6 +150,11 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   const templateRow = await prisma.messageTemplate.findFirst({
     where: {
       account_id: accountId,
+      // Templates are approved per-WABA (Finding #14) — filter to the
+      // WABA this campaign is actually sending on when known, so a
+      // same-named template on a different number's WABA can't be
+      // picked by mistake.
+      ...(config.waba_id ? { waba_id: config.waba_id } : {}),
       name: broadcast.template_name,
       language: broadcast.template_language,
     },
@@ -151,6 +163,14 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: "failed" } });
     return;
   }
+
+  // Finding #10 — Marketing-category sends on an eligible number route
+  // through Meta's dedicated /marketing_messages endpoint (better
+  // deliverability, per Meta's own claim). Never a hard requirement:
+  // an unenrolled number, or any non-Marketing template, uses the
+  // normal endpoint unchanged.
+  const useMarketingEndpoint = templateRow?.category === "Marketing" && config.marketing_messages_status === "ELIGIBLE";
+  const templateSendFn = useMarketingEndpoint ? sendMarketingTemplateMessage : sendTemplateMessage;
 
   const variables = (broadcast.template_variables ?? {}) as Record<string, VariableMapping>;
   // Mapping is never mandatory — a placeholder the user never touched in
@@ -265,7 +285,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       let attempt = 0;
       while (attempt <= RATE_LIMIT_MAX_RETRIES) {
         try {
-          const result = await sendTemplateMessage({
+          const result = await templateSendFn({
             phoneNumberId: config.phone_number_id,
             accessToken,
             to: variant,
@@ -324,6 +344,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         templateName: broadcast.template_name,
         renderedBody,
         whatsappMessageId: sentMessageId,
+        whatsappConfigId: config.id,
       });
     } else {
       await prisma.broadcastRecipient.update({

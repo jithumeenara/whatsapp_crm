@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
 /**
  * POST /api/flows/sync
@@ -126,9 +127,7 @@ export async function POST() {
       )
     }
 
-    const config = await prisma.whatsAppConfig.findUnique({
-      where: { account_id: accountId },
-    })
+    const config = await resolveWhatsAppConfig({ accountId }).catch(() => null)
     if (!config) {
       return NextResponse.json(
         {

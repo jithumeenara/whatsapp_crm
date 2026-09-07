@@ -1,9 +1,9 @@
 ﻿"use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Check, Radio } from "lucide-react"
+import { Check, Radio, Phone } from "lucide-react"
 import type { MessageTemplate } from "@/types"
 import type { VariableMapping } from "@/lib/broadcasts/resolve-variables"
 import { Step1ChooseTemplate } from "@/components/broadcasts/step1-choose-template"
@@ -32,6 +32,23 @@ export default function NewBroadcastV2() {
   const [name, setName] = useState("")
   const [headerMediaUrl, setHeaderMediaUrl] = useState("")
   const [schedule, setSchedule] = useState<BroadcastSchedule>({ type: "now" })
+  // Which connected number to send from (Finding #14) — only meaningful
+  // once an account has more than one; stays unset (account default)
+  // otherwise, so a single-number account sees no new UI at all.
+  const [numbers, setNumbers] = useState<{ id: string; label: string }[]>([])
+  const [whatsappConfigId, setWhatsappConfigId] = useState<string>("")
+
+  useEffect(() => {
+    fetch("/api/whatsapp/config")
+      .then((r) => r.json())
+      .then((d) => {
+        const list = (d.configs ?? []) as Array<{ id: string; config?: { label?: string | null; phone_number_id: string; is_default: boolean } }>
+        setNumbers(list.filter((n) => n.config).map((n) => ({ id: n.id, label: n.config!.label || n.config!.phone_number_id })))
+        const def = list.find((n) => n.config?.is_default)
+        if (def) setWhatsappConfigId(def.id)
+      })
+      .catch(() => {})
+  }, [])
 
   function handleSelectTemplate(t: MessageTemplate) {
     if (template?.id !== t.id) setHeaderMediaUrl("") // new template -> old media override no longer applies
@@ -41,7 +58,7 @@ export default function NewBroadcastV2() {
   async function handleSend() {
     if (!template) return
     try {
-      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule })
+      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
       toast.success(schedule.type === "now" ? "Broadcast sending…" : schedule.type === "once" ? "Broadcast scheduled" : "Recurring broadcast started")
       router.push(`/broadcasts/${id}`)
     } catch (err) {
@@ -54,7 +71,7 @@ export default function NewBroadcastV2() {
     const res = await fetch("/api/broadcasts/draft", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, header_media_url: headerMediaUrl || undefined, audience_filter: { type: audience.type, tagIds: audience.tagIds } }),
+      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, header_media_url: headerMediaUrl || undefined, whatsapp_config_id: whatsappConfigId || undefined, audience_filter: { type: audience.type, tagIds: audience.tagIds } }),
     })
     if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(`Failed: ${b?.error ?? `HTTP ${res.status}`}`); return }
     toast.success("Draft saved"); router.push("/broadcasts")
@@ -105,6 +122,21 @@ export default function NewBroadcastV2() {
           {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} />}
           {step === 1 && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && template && <Step3Personalize template={template} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
+          {step === 3 && template && numbers.length > 1 && (
+            <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+              <label className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium text-slate-600">
+                <Phone className="h-3.5 w-3.5" />
+                Send from
+              </label>
+              <select
+                value={whatsappConfigId}
+                onChange={(e) => setWhatsappConfigId(e.target.value)}
+                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+              >
+                {numbers.map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
+              </select>
+            </div>
+          )}
           {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template} audience={audience} schedule={schedule} onScheduleChange={setSchedule} onSend={handleSend} onSaveDraft={handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}
         </div>
       </div>

@@ -37,6 +37,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
+import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
 import { generateAiReplyWithFallback } from "@/lib/ai/providers/registry";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import {
@@ -761,9 +762,7 @@ async function executeHandoff(
           const agentEmail = agentUser?.email ?? "";
           if (agentEmail.endsWith("@agent.local")) {
             const agentPhone = agentEmail.replace("@agent.local", "");
-            const waConfig = await prisma.whatsAppConfig.findUnique({
-              where: { account_id: run.account_id },
-            });
+            const waConfig = await resolveWhatsAppConfig({ accountId: run.account_id, conversationId: run.conversation_id }).catch(() => null);
             if (waConfig && agentPhone) {
               const lastMsg = await prisma.message.findFirst({
                 // "customer" — not "contact" (this was querying a value

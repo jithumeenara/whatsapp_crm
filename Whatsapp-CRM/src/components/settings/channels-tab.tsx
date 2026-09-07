@@ -43,8 +43,8 @@ type IconComponent = ComponentType<{ className?: string }>;
 
 const WhatsAppConfig = dynamic(
   () =>
-    import('@/components/settings/whatsapp-config').then(
-      (m) => m.WhatsAppConfig
+    import('@/components/settings/whatsapp-numbers-manager').then(
+      (m) => m.WhatsAppNumbersManager
     ),
   { ssr: false, loading: () => <PanelLoader /> }
 );

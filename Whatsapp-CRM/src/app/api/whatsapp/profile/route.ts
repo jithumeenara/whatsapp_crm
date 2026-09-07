@@ -8,13 +8,22 @@ import {
   verifyPhoneNumber,
   WHATSAPP_BUSINESS_VERTICALS,
 } from "@/lib/whatsapp/meta-api"
+import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 
-async function resolveConfig(userId: string) {
+async function resolveConfig(userId: string, whatsappConfigId?: string) {
   const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
   if (!profile?.account_id) return { error: "Your profile is not linked to an account.", config: null }
-  const config = await prisma.whatsAppConfig.findUnique({ where: { account_id: profile.account_id } })
-  if (!config) return { error: "WhatsApp is not connected yet — set it up in Settings > WhatsApp first.", config: null }
-  return { error: null, config }
+  try {
+    // Which connected number's business profile to read/write (Finding
+    // #14) — optional; falls back to the account's default number.
+    const config = await resolveWhatsAppConfig({ accountId: profile.account_id, whatsappConfigId })
+    return { error: null, config }
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) {
+      return { error: "WhatsApp is not connected yet — set it up in Settings > WhatsApp first.", config: null }
+    }
+    throw err
+  }
 }
 
 /**
@@ -23,12 +32,13 @@ async function resolveConfig(userId: string) {
  * live display name + number (read-only — Meta requires a manual review to
  * change the display name, there's no simple API call for it).
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { error, config } = await resolveConfig(session.user.id)
+    const requestedConfigId = req.nextUrl.searchParams.get("whatsapp_config_id") ?? undefined
+    const { error, config } = await resolveConfig(session.user.id, requestedConfigId)
     if (error || !config) return NextResponse.json({ error }, { status: 400 })
 
     const accessToken = decrypt(config.access_token)
@@ -56,14 +66,14 @@ export async function PATCH(req: NextRequest) {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { error, config } = await resolveConfig(session.user.id)
-    if (error || !config) return NextResponse.json({ error }, { status: 400 })
-
     const body = await req.json().catch(() => ({}))
-    const { about, description, address, email, websites, vertical } = body as {
+    const { about, description, address, email, websites, vertical, whatsapp_config_id } = body as {
       about?: string; description?: string; address?: string; email?: string
-      websites?: string[]; vertical?: string
+      websites?: string[]; vertical?: string; whatsapp_config_id?: string
     }
+
+    const { error, config } = await resolveConfig(session.user.id, whatsapp_config_id)
+    if (error || !config) return NextResponse.json({ error }, { status: 400 })
 
     if (about && about.length > 139) {
       return NextResponse.json({ error: "About text must be 139 characters or fewer" }, { status: 400 })
