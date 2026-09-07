@@ -474,6 +474,14 @@ model Message {
   // content_text prefers the customer's caption when one is given, which
   // would otherwise be the ONLY thing stored, losing the real filename.
   media_filename      String?
+  // AI-generated transcript of an inbound WhatsApp voice note (audio
+  // messages only) — populated asynchronously after the message is
+  // created, by src/lib/whatsapp/audio-transcription.ts. Mirrored into
+  // content_text once ready so reply-quote previews and the conversation
+  // list show real content instead of "[Audio]", but a completed
+  // transcript deliberately does NOT re-trigger automations/flow dispatch
+  // for that message — see the migration/plan for why.
+  transcript          String?
   template_name       String?
   message_id          String?
   status              String   @default("sent")

@@ -15,6 +15,7 @@ import {
   isAccountAlertField,
 } from '@/lib/whatsapp/account-webhook'
 import { emitToAccount } from '@/lib/socket'
+import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 
 interface WhatsAppMessage {
   id: string
@@ -688,6 +689,18 @@ async function processMessage(
       },
     })
     emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
+
+    // Best-effort, fire-and-forget — never blocks the webhook's
+    // ack-and-return. Silently no-ops if neither Gemini nor OpenAI (the
+    // only two providers that support transcription today) is configured.
+    if (message.type === 'audio' && message.audio?.id) {
+      void transcribeInboundAudio({
+        accountId,
+        messageId: savedMsg.id,
+        mediaId: message.audio.id,
+        accessToken,
+      })
+    }
   } catch (err) {
     console.error('Error inserting message:', err)
     return

@@ -660,6 +660,15 @@ function MessageContent({ message }: { message: Message }) {
           ) : (
             <MediaUnavailable label="Audio" />
           )}
+          {message.transcript && (
+            <div className="mt-1.5 rounded-lg bg-black/5 px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Transcript</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+                <WhatsAppText text={message.transcript} />
+              </p>
+              <p className="mt-1 text-[10px] text-slate-400">AI-generated, may not be fully accurate</p>
+            </div>
+          )}
         </div>
       );
 

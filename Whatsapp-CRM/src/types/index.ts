@@ -212,6 +212,11 @@ export interface Message {
   /** Document's original filename, kept separate from content_text (which
    *  prefers the customer's caption). Only set for document messages. */
   media_filename?: string | null;
+  /** AI-generated transcript of an inbound WhatsApp voice note — only
+   *  ever set on audio messages, populated a few seconds after the
+   *  message first appears (see src/lib/whatsapp/audio-transcription.ts).
+   *  Null while transcription hasn't run or isn't configured. */
+  transcript?: string | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
