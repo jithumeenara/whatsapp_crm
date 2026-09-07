@@ -3,13 +3,17 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  ShoppingBag, CheckCircle2, AlertTriangle, Loader2, RefreshCw,
+  ShoppingBag, AlertTriangle, Loader2, RefreshCw,
   Building2, Hash, Package, Trash2, Search, Eye, EyeOff, Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
+import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
+
+const META_BLUE = '#0866FF';
+const META_BLUE_SOFT = '#EAF2FF';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
@@ -53,6 +57,8 @@ export function CatalogTab() {
   const [syncing, setSyncing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  const [connectMethod, setConnectMethod] = useState<'quick' | 'manual'>('quick');
 
   // Manual Connect form
   const [businessId, setBusinessId] = useState('');
@@ -224,14 +230,37 @@ export function CatalogTab() {
       </div>
 
       {!connected || !config ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="flex items-start gap-2 rounded-xl bg-sky-50 p-3 text-[12.5px] text-sky-800">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>
-              If your Business has exactly one product catalog, it connects automatically the next time you use
-              <span className="font-medium"> Quick Connect</span> for WhatsApp. Otherwise, connect manually below —
-              you&apos;ll need a Business ID and an access token with catalog permissions from Meta Business Manager.
-            </p>
+        <>
+          {/* Quick Connect / Manual Connect — same pill-switcher shape as the Ads tab */}
+          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+            <div className="flex min-w-max items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setConnectMethod('quick')}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors',
+                  connectMethod === 'quick' ? 'bg-[#EAF2FF] text-[#0866FF]' : 'text-slate-500 hover:bg-slate-50',
+                )}
+              >
+                Quick Connect
+                <span className={cn(
+                  'rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold',
+                  connectMethod === 'quick' ? 'bg-[#0866FF]/10 text-[#0866FF]' : 'bg-slate-200 text-slate-500',
+                )}>
+                  Recommended
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConnectMethod('manual')}
+                className={cn(
+                  'rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors',
+                  connectMethod === 'manual' ? 'bg-[#EAF2FF] text-[#0866FF]' : 'text-slate-500 hover:bg-slate-50',
+                )}
+              >
+                Manual Connect
+              </button>
+            </div>
           </div>
 
           {message && (
@@ -241,62 +270,83 @@ export function CatalogTab() {
             </div>
           )}
 
-          <div className="space-y-3">
-            <div>
-              <Label className="mb-1 flex items-center gap-1.5 text-[12px] text-slate-600"><Building2 className="h-3.5 w-3.5" /> Business ID</Label>
-              <Input value={businessId} onChange={(e) => setBusinessId(e.target.value)} placeholder="e.g. 123456789012345" className="h-9 text-sm" />
+          {connectMethod === 'quick' ? (
+            <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: META_BLUE_SOFT }}>
+                <ShoppingBag className="h-6 w-6" style={{ color: META_BLUE }} />
+              </span>
+              <h3 className="text-[16px] font-semibold text-slate-900">Connect with Facebook</h3>
+              <p className="max-w-sm text-[12.5px] text-slate-500">
+                Uses the exact same sign-in as WhatsApp Quick Connect. If your Business owns exactly one
+                product catalog, it connects automatically — no tokens to copy. If it owns more than one,
+                switch to Manual Connect to pick which one.
+              </p>
+              <EmbeddedSignupButton
+                onConnected={fetchConfig}
+                className="mt-1 h-11 rounded-xl bg-[#0866FF] px-5 text-[14px] font-semibold text-white hover:bg-[#0655d1]"
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                Already connected WhatsApp this way? Click again to check for catalog access.
+              </p>
             </div>
-            <div>
-              <Label className="mb-1 flex items-center gap-1.5 text-[12px] text-slate-600"><Hash className="h-3.5 w-3.5" /> Access Token</Label>
-              <div className="relative">
-                <Input
-                  type={showToken ? 'text' : 'password'}
-                  value={accessToken}
-                  onChange={(e) => setAccessToken(e.target.value)}
-                  placeholder="System user token with catalog_management"
-                  className="h-9 pr-9 text-sm"
-                />
-                <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                  {showToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </button>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
+              <div>
+                <Label className="mb-1 flex items-center gap-1.5 text-[12px] text-slate-600"><Building2 className="h-3.5 w-3.5" /> Business ID</Label>
+                <Input value={businessId} onChange={(e) => setBusinessId(e.target.value)} placeholder="e.g. 123456789012345" className="h-9 text-sm" />
               </div>
-            </div>
-
-            <Button variant="outline" size="sm" onClick={handleDiscover} disabled={discovering} className="gap-1.5">
-              {discovering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-              Find my catalogs
-            </Button>
-
-            {discovered && discovered.length > 0 && (
-              <div className="space-y-1.5 rounded-xl border border-slate-200 p-2">
-                {discovered.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setCatalogId(c.id)}
-                    className={cn(
-                      'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
-                      catalogId === c.id ? 'bg-sky-100 text-sky-800' : 'hover:bg-slate-50 text-slate-700',
-                    )}
-                  >
-                    <span>{c.name}</span>
-                    <span className="font-mono text-[11px] text-slate-400">{c.id}</span>
+              <div>
+                <Label className="mb-1 flex items-center gap-1.5 text-[12px] text-slate-600"><Hash className="h-3.5 w-3.5" /> Access Token</Label>
+                <div className="relative">
+                  <Input
+                    type={showToken ? 'text' : 'password'}
+                    value={accessToken}
+                    onChange={(e) => setAccessToken(e.target.value)}
+                    placeholder="System user token with catalog_management"
+                    className="h-9 pr-9 text-sm"
+                  />
+                  <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    {showToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
-                ))}
+                </div>
               </div>
-            )}
 
-            <div>
-              <Label className="mb-1 flex items-center gap-1.5 text-[12px] text-slate-600"><Package className="h-3.5 w-3.5" /> Catalog ID</Label>
-              <Input value={catalogId} onChange={(e) => setCatalogId(e.target.value)} placeholder="Pick one above, or paste it directly" className="h-9 font-mono text-sm" />
+              <Button variant="outline" size="sm" onClick={handleDiscover} disabled={discovering} className="gap-1.5">
+                {discovering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                Find my catalogs
+              </Button>
+
+              {discovered && discovered.length > 0 && (
+                <div className="space-y-1.5 rounded-xl border border-slate-200 p-2">
+                  {discovered.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setCatalogId(c.id)}
+                      className={cn(
+                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px] transition-colors',
+                        catalogId === c.id ? 'bg-sky-100 text-sky-800' : 'hover:bg-slate-50 text-slate-700',
+                      )}
+                    >
+                      <span>{c.name}</span>
+                      <span className="font-mono text-[11px] text-slate-400">{c.id}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <Label className="mb-1 flex items-center gap-1.5 text-[12px] text-slate-600"><Package className="h-3.5 w-3.5" /> Catalog ID</Label>
+                <Input value={catalogId} onChange={(e) => setCatalogId(e.target.value)} placeholder="Pick one above, or paste it directly" className="h-9 font-mono text-sm" />
+              </div>
+
+              <Button size="sm" onClick={handleConnect} disabled={connecting} className="w-full gap-1.5">
+                {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShoppingBag className="h-3.5 w-3.5" />}
+                {connecting ? 'Connecting…' : 'Connect Catalog'}
+              </Button>
             </div>
-
-            <Button size="sm" onClick={handleConnect} disabled={connecting} className="w-full gap-1.5">
-              {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShoppingBag className="h-3.5 w-3.5" />}
-              {connecting ? 'Connecting…' : 'Connect Catalog'}
-            </Button>
-          </div>
-        </div>
+          )}
+        </>
       ) : (
         <>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
