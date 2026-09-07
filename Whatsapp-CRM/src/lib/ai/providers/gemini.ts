@@ -39,11 +39,15 @@ function classifyError(err: unknown): ClassifiedAiError {
 export const geminiAdapter: AiProviderAdapter = {
   id: 'gemini',
   label: 'Google Gemini',
+  // Verified against ai.google.dev/gemini-api/docs/models, Sept 2026 —
+  // gemini-2.0-* is already shut down and the 1.5 series is long retired;
+  // 2.5-* is scheduled to shut down Oct 16-20, 2026, so it's deliberately
+  // not offered here even though it still technically works today.
   defaultModels: [
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (fast, recommended)' },
-    { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash-Lite (cheapest)' },
-    { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-    { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (highest quality)' },
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (recommended for CRM chat — fast, low cost)' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (most capable Flash, best for complex replies)' },
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (cheapest, highest volume)' },
   ],
   generateReply,
   classifyError,

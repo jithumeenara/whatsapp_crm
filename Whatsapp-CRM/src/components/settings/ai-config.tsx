@@ -30,38 +30,43 @@ interface ProviderMeta {
   label: string;
   defaultModels: { id: string; label: string }[];
 }
+// Model lists verified directly against each vendor's official docs,
+// Sept 2026 (see matching comments in src/lib/ai/providers/*.ts, which
+// this mirrors) — gemini-2.0-*/1.5-* are shut down, gpt-4o/4.1 and
+// deepseek-chat/deepseek-reasoner are legacy aliases on their way out.
 const PROVIDER_META: ProviderMeta[] = [
   {
     id: 'gemini', label: 'Google Gemini',
     defaultModels: [
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (fast, recommended)' },
-      { id: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash-Lite (cheapest)' },
-      { id: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-      { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (highest quality)' },
+      { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (recommended for CRM chat — fast, low cost)' },
+      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (most capable Flash, best for complex replies)' },
+      { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+      { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (cheapest, highest volume)' },
     ],
   },
   {
     id: 'openai', label: 'OpenAI (GPT)',
     defaultModels: [
-      { id: 'gpt-4o-mini', label: 'GPT-4o mini (fast, recommended)' },
-      { id: 'gpt-4o', label: 'GPT-4o' },
-      { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
-      { id: 'gpt-4.1', label: 'GPT-4.1 (highest quality)' },
+      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra (recommended for CRM chat)' },
+      { id: 'gpt-6-astra', label: 'GPT-6 Astra (flagship, best for complex replies)' },
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna (cheapest, highest volume)' },
     ],
   },
   {
     id: 'anthropic', label: 'Anthropic (Claude)',
     defaultModels: [
-      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (recommended)' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (fast, cheap)' },
-      { id: 'claude-opus-5', label: 'Claude Opus 5 (highest quality)' },
+      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (recommended for CRM chat)' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (fastest, cheapest)' },
+      { id: 'claude-opus-5', label: 'Claude Opus 5 (Anthropic’s pick for most workloads)' },
+      { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 (demanding reasoning, long-horizon agents)' },
     ],
   },
   {
     id: 'deepseek', label: 'DeepSeek',
     defaultModels: [
-      { id: 'deepseek-chat', label: 'DeepSeek-V3 (deepseek-chat)' },
-      { id: 'deepseek-reasoner', label: 'DeepSeek-R1 (deepseek-reasoner)' },
+      { id: 'deepseek-v4-flash', label: 'DeepSeek-V4-Flash (recommended for CRM chat)' },
+      { id: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro (highest quality)' },
     ],
   },
   {

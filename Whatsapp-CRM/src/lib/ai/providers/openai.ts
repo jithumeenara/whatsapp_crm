@@ -24,11 +24,14 @@ function classifyError(err: unknown): ClassifiedAiError {
 export const openaiAdapter: AiProviderAdapter = {
   id: 'openai',
   label: 'OpenAI (GPT)',
+  // Verified against developers.openai.com/api/docs/changelog, Sept 2026 —
+  // the GPT-4o/4.1 generation is legacy now that GPT-6 and the GPT-5.6
+  // tiers (Sol/Terra/Luna) are current.
   defaultModels: [
-    { id: 'gpt-4o-mini', label: 'GPT-4o mini (fast, recommended)' },
-    { id: 'gpt-4o', label: 'GPT-4o' },
-    { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini' },
-    { id: 'gpt-4.1', label: 'GPT-4.1 (highest quality)' },
+    { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra (recommended for CRM chat)' },
+    { id: 'gpt-6-astra', label: 'GPT-6 Astra (flagship, best for complex replies)' },
+    { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
+    { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna (cheapest, highest volume)' },
   ],
   generateReply: (args) => chatCompletionsRequest(OPENAI_BASE_URL, args),
   classifyError,

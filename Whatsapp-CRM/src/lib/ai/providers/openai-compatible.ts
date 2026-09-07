@@ -76,9 +76,12 @@ export const openaiCompatibleAdapter: AiProviderAdapter = {
 export const deepseekAdapter: AiProviderAdapter = {
   id: 'deepseek',
   label: 'DeepSeek',
+  // Verified against api-docs.deepseek.com/updates, Sept 2026 — V3/R1 and
+  // the deepseek-chat/deepseek-reasoner aliases that used to point to them
+  // are deprecated in favor of the unified V4 line.
   defaultModels: [
-    { id: 'deepseek-chat', label: 'DeepSeek-V3 (deepseek-chat)' },
-    { id: 'deepseek-reasoner', label: 'DeepSeek-R1 (deepseek-reasoner)' },
+    { id: 'deepseek-v4-flash', label: 'DeepSeek-V4-Flash (recommended for CRM chat)' },
+    { id: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro (highest quality)' },
   ],
   generateReply: (args) => chatCompletionsRequest(args.baseUrl || 'https://api.deepseek.com', args),
   classifyError: classifyOpenAiCompatibleError,

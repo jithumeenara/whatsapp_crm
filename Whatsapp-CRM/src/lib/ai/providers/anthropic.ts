@@ -90,10 +90,17 @@ function classifyError(err: unknown): ClassifiedAiError {
 export const anthropicAdapter: AiProviderAdapter = {
   id: 'anthropic',
   label: 'Anthropic (Claude)',
+  // Verified against platform.claude.com/docs/en/models/overview, Sept
+  // 2026 — Sonnet 5 is the best speed/intelligence balance for a
+  // high-volume CRM chat node; Opus 5 is Anthropic's own "start here for
+  // most workloads" pick when cost is less of a concern; Fable 5.1 is
+  // reserved for demanding, long-horizon reasoning most chatbot replies
+  // don't need.
   defaultModels: [
-    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (recommended)' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (fast, cheap)' },
-    { id: 'claude-opus-5', label: 'Claude Opus 5 (highest quality)' },
+    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (recommended for CRM chat)' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (fastest, cheapest)' },
+    { id: 'claude-opus-5', label: 'Claude Opus 5 (Anthropic’s pick for most workloads)' },
+    { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 (demanding reasoning, long-horizon agents)' },
   ],
   generateReply,
   classifyError,
