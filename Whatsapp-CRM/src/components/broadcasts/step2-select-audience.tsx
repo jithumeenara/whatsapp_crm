@@ -163,6 +163,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle');
   const [validationMap, setValidationMap] = useState<Map<string, 'valid' | 'invalid' | 'unknown'>>(new Map());
   const [validationProgress, setValidationProgress] = useState(0);
+  // 'unknown' means Meta's own check genuinely couldn't confirm the number
+  // either way (its WhatsApp Contacts API errored, timed out, or isn't
+  // available for this account) — NOT a synonym for valid. Excluded from
+  // the send by default; this lets someone explicitly accept the risk
+  // instead of the app silently deciding for them.
+  const [includeUnknown, setIncludeUnknown] = useState(false);
 
   /* ── Fetch WhatsApp contacts (paginated) ─────────────────────── */
   const loadContacts = useCallback(async () => {
@@ -282,39 +288,64 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
+  async function checkBatch(batch: string[]): Promise<{ phone: string; status: 'valid' | 'invalid' | 'unknown' }[]> {
+    const res = await fetch('/api/whatsapp/validate-contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phones: batch }),
+    });
+    if (!res.ok) throw new Error(`validate-contacts returned ${res.status}`);
+    const data = await res.json() as { results: { phone: string; status: 'valid' | 'invalid' | 'unknown' }[] };
+    return data.results;
+  }
+
   async function validateWhatsApp() {
     if (excelContacts.length === 0) return;
     setValidationStatus('validating');
     setValidationProgress(0);
+    setIncludeUnknown(false);
     const CHUNK = 50;
     const map = new Map<string, 'valid' | 'invalid' | 'unknown'>();
     for (let i = 0; i < excelContacts.length; i += CHUNK) {
       const batch = excelContacts.slice(i, i + CHUNK).map((c) => c.phone);
-      try {
-        const res = await fetch('/api/whatsapp/validate-contacts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phones: batch }),
-        });
-        if (res.ok) {
-          const data = await res.json() as { results: { phone: string; status: 'valid' | 'invalid' | 'unknown' }[] };
-          for (const r of data.results) map.set(r.phone, r.status);
-        } else {
-          for (const phone of batch) map.set(phone, 'unknown');
+      let results: { phone: string; status: 'valid' | 'invalid' | 'unknown' }[] | null = null;
+      // One retry before giving up as 'unknown' — a transient network blip
+      // or a momentary Meta API hiccup shouldn't count against accuracy the
+      // same way a genuinely unreachable check does.
+      for (let attempt = 0; attempt < 2 && results === null; attempt++) {
+        try {
+          results = await checkBatch(batch);
+        } catch (err) {
+          console.error('[validateWhatsApp] batch check failed:', err);
+          if (attempt === 0) await new Promise((r) => setTimeout(r, 800));
         }
-      } catch {
+      }
+      if (results) {
+        for (const r of results) map.set(r.phone, r.status);
+      } else {
         for (const phone of batch) map.set(phone, 'unknown');
       }
       setValidationProgress(Math.min(i + CHUNK, excelContacts.length));
     }
     setValidationMap(map);
     setValidationStatus('done');
-    // Only pass valid (or unknown if API unavailable) contacts forward
-    const validContacts = excelContacts.filter((c) => {
-      const s = map.get(c.phone);
-      return s === 'valid' || s === 'unknown';
+    // Only genuinely confirmed numbers go forward by default — 'unknown'
+    // means Meta's check couldn't say either way, which is not the same
+    // thing as valid. See the "include unverified anyway" toggle below,
+    // which re-runs this filter with includeUnknown=true.
+    onUpdate({ type: 'csv', csvContacts: excelContacts.filter((c) => map.get(c.phone) === 'valid') });
+  }
+
+  // Re-applies the valid/invalid/unknown filter whenever the "include
+  // unverified numbers anyway" checkbox changes, without re-hitting Meta's
+  // API — same validationMap, just a different inclusion rule.
+  function toggleIncludeUnknown(next: boolean) {
+    setIncludeUnknown(next);
+    const csvContacts = excelContacts.filter((c) => {
+      const s = validationMap.get(c.phone);
+      return s === 'valid' || (next && s === 'unknown');
     });
-    onUpdate({ type: 'csv', csvContacts: validContacts });
+    onUpdate({ type: 'csv', csvContacts });
   }
 
   /* ── Tag toggle ──────────────────────────────────────────────── */
@@ -379,16 +410,21 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   }, [excelContacts]);
 
   const validCount = validationStatus === 'done'
-    ? excelContacts.filter((c) => { const s = validationMap.get(c.phone); return s === 'valid' || s === 'unknown'; }).length
+    ? excelContacts.filter((c) => validationMap.get(c.phone) === 'valid').length
     : 0;
   const invalidCount = validationStatus === 'done'
     ? excelContacts.filter((c) => validationMap.get(c.phone) === 'invalid').length
     : 0;
+  const unknownCount = validationStatus === 'done'
+    ? excelContacts.filter((c) => validationMap.get(c.phone) === 'unknown').length
+    : 0;
+  // What will actually be sent to, given the current includeUnknown choice.
+  const sendCount = validCount + (includeUnknown ? unknownCount : 0);
 
   const isValid =
     (mode === 'all' && (!pickSpecific || selectedIds.size > 0)) ||
     (mode === 'tags' && selectedTagIds.length > 0) ||
-    (mode === 'excel' && validationStatus === 'done' && validCount > 0);
+    (mode === 'excel' && validationStatus === 'done' && sendCount > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
   const summaryLabel =
@@ -406,7 +442,9 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           ? `${excelContacts.length} contacts imported — validate WhatsApp numbers to continue`
           : validationStatus === 'validating'
             ? `Validating ${excelContacts.length} numbers…`
-            : `${validCount} valid WhatsApp numbers (${invalidCount} skipped)`;
+            : unknownCount === 0
+              ? `${validCount} valid WhatsApp numbers (${invalidCount} skipped)`
+              : `${sendCount} number${sendCount !== 1 ? 's' : ''} will be sent to (${invalidCount} confirmed not on WhatsApp, ${unknownCount} unverified)`;
 
   return (
     <div className="space-y-5">
@@ -649,7 +687,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           {validationStatus === 'done' && (
             <div className="space-y-3">
               {/* Summary */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className={cn('grid gap-3', unknownCount > 0 ? 'grid-cols-3' : 'grid-cols-2')}>
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex items-center gap-3">
                   <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
                   <div>
@@ -664,7 +702,29 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                     <p className="text-[11px] text-rose-500">Not on WhatsApp</p>
                   </div>
                 </div>
+                {unknownCount > 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 flex items-center gap-3">
+                    <AlertCircle className="h-5 w-5 text-slate-400 shrink-0" />
+                    <div>
+                      <p className="text-[15px] font-bold text-slate-600">{unknownCount}</p>
+                      <p className="text-[11px] text-slate-500">Unverified</p>
+                    </div>
+                  </div>
+                )}
               </div>
+              {unknownCount > 0 && (
+                <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeUnknown}
+                    onChange={(e) => toggleIncludeUnknown(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-300 text-amber-600 focus:ring-amber-400"
+                  />
+                  <span className="text-[12.5px] text-amber-800 leading-relaxed">
+                    Also send to the <b>{unknownCount}</b> number{unknownCount !== 1 ? 's' : ''} we couldn&apos;t confirm either way — Meta&apos;s WhatsApp check didn&apos;t return a result for these, so they&apos;re excluded by default. They may or may not actually be on WhatsApp.
+                  </span>
+                </label>
+              )}
               {/* Validated list */}
               <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
                 <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
@@ -679,7 +739,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                     return (
                       <div key={i} className={cn(
                         'grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2.5 items-center',
-                        s === 'invalid' ? 'bg-rose-50/50' : ''
+                        s === 'invalid' ? 'bg-rose-50/50' : s === 'unknown' && !includeUnknown ? 'bg-slate-50/70 opacity-70' : ''
                       )}>
                         <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
                         <p className="text-[13px] text-slate-500 truncate">{c.name || '—'}</p>
@@ -703,7 +763,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                   )}
                 </div>
               </div>
-              <button type="button" onClick={() => { setValidationStatus('idle'); setValidationMap(new Map()); onUpdate({ type: 'csv', csvContacts: excelContacts }); }}
+              <button type="button" onClick={() => { setValidationStatus('idle'); setValidationMap(new Map()); setIncludeUnknown(false); onUpdate({ type: 'csv', csvContacts: excelContacts }); }}
                 className="text-[12px] text-slate-500 hover:text-slate-700 underline underline-offset-2">
                 Re-validate
               </button>
