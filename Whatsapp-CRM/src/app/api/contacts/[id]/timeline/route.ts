@@ -62,7 +62,7 @@ export async function GET(
              m.content_text, m.media_url, m.media_mime_type, m.media_filename,
              m.template_name, m.message_id, m.status, m.broadcast_id,
              m.interactive_reply_id, m.reply_to_message_id, m.created_at, m.deleted_at,
-             m.email_subject, mt.buttons AS template_buttons
+             m.email_subject, m.transcript, m.order_snapshot, mt.buttons AS template_buttons
       FROM messages m
       LEFT JOIN LATERAL (
         SELECT buttons FROM message_templates
