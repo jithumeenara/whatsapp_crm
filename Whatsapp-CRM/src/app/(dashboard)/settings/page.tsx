@@ -4,23 +4,20 @@ import { Suspense, useId, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
-  User, MousePointerClick, Tag, LayoutGrid, MessageSquare,
-  Layers, Users, Bot, Database, Bell, Key, Webhook, Settings,
+  User, Contact, MessageSquare,
+  Users, Bot, Database, Bell, Key, Webhook, Settings,
   Search, ShieldCheck, X, ChevronLeft, ChevronRight, Megaphone, ShoppingBag, IndianRupee,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
 import { ProfileForm } from "@/components/settings/profile-form"
-import { CapturePanel } from "@/components/settings/capture-panel"
-import { TagManager } from "@/components/settings/tag-manager"
+import { ContactSettingsTab } from "@/components/settings/contact-settings-tab"
 import { MembersTab } from "@/components/settings/members-tab"
 import { AiConfig } from "@/components/settings/ai-config"
 import { DatabasePanel } from "@/components/settings/database-panel"
 import { NotificationsPanel } from "@/components/settings/notifications-panel"
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel"
 import { WebhooksPanel } from "@/components/settings/webhooks-panel"
-import { LeadsSettingsV2 } from "@/components/settings/leads-settings-v2"
-import { CustomFieldsPanel } from "@/components/settings/custom-fields-panel"
 import { ChannelsTab } from "@/components/settings/channels-tab"
 import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
 import { AdsTab } from "@/components/settings/ads-tab"
@@ -64,10 +61,13 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
   {
     label: "Configuration",
     tabs: [
-      { key: "capture",      label: "Capture",       icon: MousePointerClick },
-      { key: "tags",         label: "Tags",           icon: Tag },
-      { key: "custom-fields",label: "Custom Fields", icon: LayoutGrid },
-      { key: "leads",        label: "Leads",          icon: Layers, supervisorOnly: true },
+      // Capture/Tags/Custom Fields/Leads used to be four separate entries
+      // here — collapsed into one "Contact" entry with an inner tab bar
+      // (contact-settings-tab.tsx), since they're all facets of the same
+      // thing. Leads itself is still supervisor-gated inside that tab bar;
+      // this outer entry stays visible to everyone so Capture/Tags/Custom
+      // Fields aren't hidden from non-supervisors.
+      { key: "contact", label: "Contact", icon: Contact, aliases: ["Capture", "Tags", "Custom Fields", "Custom Field", "Leads", "Lead Scoring", "Call Outcomes"] },
     ],
   },
   {
@@ -94,10 +94,7 @@ const TAB_TITLES: Record<string, string> = {
   catalog: "Catalog",
   payments: "Payments",
   platform: "Embedded Signup",
-  capture: "Capture",
-  tags: "Tags",
-  "custom-fields": "Custom Fields",
-  leads: "Leads",
+  contact: "Contact",
   members: "Members",
   ai: "AI Config",
   database: "Database",
@@ -113,10 +110,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   catalog: "Connect a Meta product catalog to sell through WhatsApp — products, carts, and orders",
   payments: "Collect UPI payments in-chat — requires Meta's explicit per-number approval",
   platform: "One Meta App for the whole platform — set up once, every tenant gets one-click Facebook Connect",
-  capture: "How new contacts get captured into the CRM",
-  tags: "Organize your contacts with color-coded tags",
-  "custom-fields": "Add extra fields to contacts — lead source, budget, or anything your team needs",
-  leads: "Configure how leads are created, scored, and what call outcomes agents can record",
+  contact: "How contacts get captured, tagged, enriched with custom fields, and converted into leads",
   members: "People with access to this account — roles control what each teammate can do",
   ai: "Configure Google Gemini for AI-powered chatbot replies",
   database: "Backup and restore the whole database",
@@ -182,10 +176,7 @@ function SettingsContent() {
       case "catalog":          return isOwner ? <CatalogTab /> : null
       case "payments":         return isOwner ? <PaymentsTab /> : null
       case "platform":         return isOwner ? <PlatformMetaTab /> : null
-      case "capture":          return <CapturePanel />
-      case "tags":             return <TagManager />
-      case "custom-fields":    return <CustomFieldsPanel />
-      case "leads":            return isSupervisor ? <LeadsSettingsV2 /> : null
+      case "contact":          return <ContactSettingsTab />
       case "members":          return isAdmin ? <MembersTab /> : null
       case "ai":               return isAdmin ? <AiConfig /> : null
       case "database":         return isAdmin ? <DatabasePanel /> : null

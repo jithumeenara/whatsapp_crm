@@ -535,7 +535,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                       </div>
                       <p className="text-[14px] font-semibold text-slate-700">No tags yet</p>
                       <p className="text-[12px] text-slate-400">Create tags in Settings → Tags</p>
-                      <a href="/settings?tab=tags"
+                      <a href="/settings?tab=contact&sub=tags"
                         className="flex items-center gap-1 text-[13px] font-semibold text-indigo-600 hover:underline">
                         Go to Tags Settings <ChevronRight className="h-3.5 w-3.5" />
                       </a>
@@ -641,7 +641,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                       </div>
                       <p className="text-[14px] font-semibold text-slate-700">No custom fields</p>
                       <p className="text-[12px] text-slate-400">Define your custom fields in Settings first.</p>
-                      <a href="/settings?tab=custom-fields"
+                      <a href="/settings?tab=contact&sub=custom-fields"
                         className="flex items-center gap-1 text-[13px] font-semibold text-indigo-600 hover:underline">
                         Manage Custom Fields <ChevronRight className="h-3.5 w-3.5" />
                       </a>
