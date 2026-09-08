@@ -1505,7 +1505,15 @@ async function advanceFromNodeKey(
         const documents = Array.isArray(aiConfig.knowledge_documents)
           ? (aiConfig.knowledge_documents as Array<{ id: string; title: string; content: string }>)
           : [];
-        const knowledgeBlock = formatKnowledgeBlock(selectRelevantContext(lastUserMessage, qaPairs, documents));
+        // Cache key changes whenever this account edits its knowledge base
+        // (training_data/knowledge_documents), since both are saved through
+        // the same AiConfig row and bump its @updatedAt — a burst of
+        // messages against an unchanged knowledge base reuses the
+        // chunked/tokenized form instead of rebuilding it every call.
+        const knowledgeCacheKey = `${aiConfig.id}:${aiConfig.updated_at.getTime()}`;
+        const knowledgeBlock = formatKnowledgeBlock(
+          selectRelevantContext(lastUserMessage, qaPairs, documents, { cacheKey: knowledgeCacheKey }),
+        );
 
         const promptParts = [aiConfig.system_prompt ?? undefined, knowledgeBlock || undefined].filter(
           (p): p is string => Boolean(p),

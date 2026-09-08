@@ -39,7 +39,12 @@ interface MetaErrorResponse {
   }
 }
 
-async function throwMetaError(response: Response, fallback: string): Promise<never> {
+// Exported so other Graph API clients in this app (marketing-messages-api.ts,
+// catalog-api.ts, payments-api.ts) can format errors the same way —
+// classifyMetaError() (meta-error-codes.ts) regexes for the "(code X.Y)"
+// suffix this appends, so any client that hand-rolls its own error message
+// instead of reusing this silently loses rate-limit/auth-expired detection.
+export async function throwMetaError(response: Response, fallback: string): Promise<never> {
   let message = fallback
   try {
     const data = (await response.json()) as MetaErrorResponse

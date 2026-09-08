@@ -23,7 +23,10 @@ export type MfaPurpose = "login" | "enroll" | "profile_phone"
 const CODE_TTL_MS = 5 * 60_000 // 5 minutes
 const MAX_ATTEMPTS = 5
 
-function generateOtpCode(): string {
+// Exported so other OTP senders (e.g. send-otp/route.ts's customer-facing
+// quick-send) reuse this instead of reimplementing the same generator —
+// found duplicated in the full-app audit.
+export function generateOtpCode(): string {
   // crypto.randomInt is uniform (unlike Math.random-based mod bias) and
   // cryptographically sourced — appropriate for a security code.
   return String(crypto.randomInt(0, 1_000_000)).padStart(6, "0")

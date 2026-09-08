@@ -1,12 +1,7 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { fetchLeadForms } from '@/lib/meta-ads/api'
-
-async function resolveAccountId(userId: string): Promise<string | null> {
-  const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
-  return profile?.account_id ?? null
-}
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 type FbConfigRow = { access_token: string | null; page_id: string | null }
 
@@ -22,10 +17,8 @@ type FbConfigRow = { access_token: string | null; page_id: string | null }
  */
 export async function GET() {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    // Read-only — found with no role floor at all in the full-app audit.
+    const { accountId } = await requireRole('viewer')
 
     const rows = await prisma.$queryRaw<FbConfigRow[]>`
       SELECT access_token, page_id FROM facebook_config WHERE account_id = ${accountId}::uuid LIMIT 1
@@ -64,6 +57,8 @@ export async function GET() {
       }),
     })
   } catch (error) {
+    const status = (error as { status?: number })?.status
+    if (status === 401 || status === 403) return toErrorResponse(error)
     console.error('Error in Lead Ads forms discover GET:', error)
     return NextResponse.json({ discoverable: false, reason: 'Internal server error' }, { status: 500 })
   }

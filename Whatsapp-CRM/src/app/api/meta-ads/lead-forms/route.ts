@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-
-async function resolveAccountId(userId: string): Promise<string | null> {
-  const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
-  return profile?.account_id ?? null
-}
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /** GET /api/meta-ads/lead-forms — every Instant Form that has ever
  *  produced a submission for this account, newest first, with a real
@@ -15,10 +10,8 @@ async function resolveAccountId(userId: string): Promise<string | null> {
  *  itself needs). */
 export async function GET() {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    // Read-only — found with no role floor at all in the full-app audit.
+    const { accountId } = await requireRole('viewer')
 
     // Both reads are independent (scoped only by accountId) — run
     // concurrently instead of paying the sum of both query latencies on
@@ -63,8 +56,7 @@ export async function GET() {
       })),
     })
   } catch (error) {
-    console.error('Error in Lead Ads forms GET:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }
 
@@ -73,10 +65,9 @@ export async function GET() {
  *  endpoint, before it has ever produced a submission. */
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    // Enables lead syncing for a form — a real operational action, 'agent'
+    // floor. Found with no role check at all in the full-app audit.
+    const { accountId } = await requireRole('agent')
 
     const { meta_form_id, name, page_id } = await req.json().catch(() => ({}))
     if (!meta_form_id || !page_id) {
@@ -91,8 +82,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ form })
   } catch (error) {
-    console.error('Error in Lead Ads forms POST:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }
 
@@ -101,10 +91,7 @@ export async function POST(req: NextRequest) {
  *  Meta-side form ID for a form it hasn't loaded a CRM row for yet. */
 export async function PATCH(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    const { accountId } = await requireRole('agent')
 
     const { id, meta_form_id, name, is_active } = await req.json().catch(() => ({}))
     if (!id && !meta_form_id) return NextResponse.json({ error: 'id or meta_form_id is required' }, { status: 400 })
@@ -124,7 +111,6 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ form })
   } catch (error) {
-    console.error('Error in Lead Ads forms PATCH:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }

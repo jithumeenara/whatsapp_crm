@@ -6,32 +6,58 @@ import { sendOrderStatusMessage } from '@/lib/whatsapp/payments-api'
 import { emitToAccount } from '@/lib/socket'
 
 /**
- * POST /api/whatsapp/payments/webhook?ref=<whatsapp_payment_id>
+ * POST /api/whatsapp/payments/webhook
  *
- * Razorpay's own webhook (Finding #09) — the reliable, verifiable side
- * of this integration, unlike Meta's payment-status webhook event whose
+ * Razorpay's own webhook (Finding #09) — the reliable, verifiable side of
+ * this integration, unlike Meta's payment-status webhook event whose
  * exact payload shape this session's research could not fully confirm
  * (stated honestly rather than guessed — see payments-api.ts's header
  * comment). Razorpay posts here when a payment_link's payment completes;
  * this updates the matching WhatsAppPayment row and sends the customer
  * an order_status follow-up.
  *
- * The `ref` query param is this app's own WhatsAppPayment.id, embedded
- * in the payment link's callback/webhook URL at creation time — Razorpay
- * doesn't otherwise tell us which of our gateway configs signed a given
- * webhook, so a per-payment ref is how this route finds the right
- * decryption key without needing per-account webhook URLs configured
- * in every tenant's Razorpay dashboard.
+ * One shared URL across every tenant (Razorpay webhooks are configured
+ * account-wide in each tenant's own Razorpay Dashboard — there's no
+ * per-payment-link or per-account webhook URL Razorpay supports, so a
+ * `?ref=` query param has nothing to be populated from and was never
+ * wired anywhere; found and fixed in the full-app audit). Instead: every
+ * Razorpay webhook payload for a payment link echoes back whatever
+ * `reference_id` was set at link-creation time
+ * (payload.payment_link.entity.reference_id) — this app already sets
+ * that to WhatsAppPayment.reference_id (a unique, randomUUID-derived
+ * value) when creating the link, so the payment — and from it, which
+ * tenant's gateway credentials to verify the signature with — is looked
+ * up directly from the payload itself. The lookup happens before
+ * signature verification (the payload is otherwise untrusted at that
+ * point), but nothing is acted on until the signature check against that
+ * specific tenant's own webhook secret passes — a forged payload naming
+ * a real reference_id still can't get past that without knowing the
+ * matching tenant's secret.
  */
 export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-razorpay-signature') ?? ''
-  const ref = new URL(request.url).searchParams.get('ref')
 
-  if (!ref) return NextResponse.json({ error: 'Missing ref' }, { status: 400 })
+  let event: {
+    event?: string
+    payload?: {
+      payment_link?: { entity?: { reference_id?: string; status?: string } }
+      payment?: { entity?: { id?: string } }
+    }
+  }
+  try {
+    event = JSON.parse(rawBody)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+
+  const referenceId = event.payload?.payment_link?.entity?.reference_id
+  if (!referenceId) {
+    return NextResponse.json({ error: 'No payment_link.reference_id in payload' }, { status: 400 })
+  }
 
   try {
-    const payment = await prisma.whatsAppPayment.findUnique({ where: { id: ref } })
+    const payment = await prisma.whatsAppPayment.findUnique({ where: { reference_id: referenceId } })
     if (!payment) return NextResponse.json({ error: 'Unknown payment reference' }, { status: 404 })
 
     const gatewayConfig = await prisma.paymentGatewayConfig.findUnique({
@@ -46,14 +72,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 
-    const event = JSON.parse(rawBody) as { event?: string; payload?: { payment_link?: { entity?: { status?: string } }; payment?: { entity?: { id?: string } } } }
     const linkStatus = event.payload?.payment_link?.entity?.status // 'paid' | 'expired' | 'cancelled', per Razorpay's documented values
     const gatewayTxnId = event.payload?.payment?.entity?.id
 
     const newStatus = linkStatus === 'paid' ? 'completed' : linkStatus === 'expired' || linkStatus === 'cancelled' ? 'failed' : payment.status
 
     const updated = await prisma.whatsAppPayment.update({
-      where: { id: ref },
+      where: { id: payment.id },
       data: { status: newStatus, gateway_transaction_id: gatewayTxnId ?? payment.gateway_transaction_id, raw_payload: event as unknown as object },
     })
 

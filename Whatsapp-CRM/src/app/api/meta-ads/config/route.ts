@@ -1,14 +1,9 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { testMetaAdsConnection, createOrGetDataset } from '@/lib/meta-ads/api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
-
-async function resolveAccountId(userId: string): Promise<string | null> {
-  const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
-  return profile?.account_id ?? null
-}
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
  * GET /api/meta-ads/config
@@ -18,13 +13,12 @@ async function resolveAccountId(userId: string): Promise<string | null> {
  */
 export async function GET() {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) {
-      return NextResponse.json({ connected: false, reason: 'no_account', message: 'Your profile is not linked to an account.' })
-    }
+    // Read-only status (no secrets in the response) — any account member
+    // can view it. POST/DELETE below (which touch real credentials)
+    // require 'owner', found missing entirely in the full-app audit —
+    // this route previously had no role floor at all, only auth.
+    const ctx = await requireRole('viewer')
+    const accountId = ctx.accountId
 
     const config = await prisma.metaAdsConfig.findUnique({ where: { account_id: accountId } })
     if (!config) {
@@ -59,6 +53,10 @@ export async function GET() {
     const test = await testMetaAdsConnection({ wabaId: config.waba_id, accessToken })
     return NextResponse.json({ connected: test.ok, config: safeConfig, message: test.message })
   } catch (error) {
+    // requireRole() throws UnauthorizedError(401)/ForbiddenError(403) —
+    // both carry their own `.status`; anything else is a real 500.
+    const status = (error as { status?: number })?.status
+    if (status === 401 || status === 403) return toErrorResponse(error)
     console.error('Error in Meta Ads config GET:', error)
     return NextResponse.json({ connected: false, reason: 'unknown', message: 'Internal server error' }, { status: 500 })
   }
@@ -67,14 +65,15 @@ export async function GET() {
 /** POST /api/meta-ads/config — save/update, verifying credentials + creating the Conversions API dataset first. */
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Writes real credentials — 'owner' only, matching every other
+    // credentials-bearing settings route (this one had no role floor at
+    // all before the full-app audit).
+    const ctx = await requireRole('owner')
 
-    const rl = checkRateLimit(`meta-ads-config:${session.user.id}`, RATE_LIMITS.adminAction)
+    const rl = checkRateLimit(`meta-ads-config:${ctx.userId}`, RATE_LIMITS.adminAction)
     if (!rl.success) return NextResponse.json({ error: 'Too many attempts — wait a moment and try again.' }, { status: 429 })
 
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    const accountId = ctx.accountId
 
     const body = await request.json()
     const { waba_id, ad_account_id, business_id, access_token, automatic_events_enabled } = body
@@ -120,7 +119,7 @@ export async function POST(request: Request) {
     if (existing) {
       await prisma.metaAdsConfig.update({ where: { account_id: accountId }, data })
     } else {
-      await prisma.metaAdsConfig.create({ data: { account_id: accountId, user_id: session.user.id, ...data } })
+      await prisma.metaAdsConfig.create({ data: { account_id: accountId, user_id: ctx.userId, ...data } })
     }
 
     return NextResponse.json({
@@ -131,19 +130,15 @@ export async function POST(request: Request) {
         : test.message,
     })
   } catch (error) {
-    console.error('Error in Meta Ads config POST:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }
 
 /** DELETE /api/meta-ads/config — "Reset Configuration" recovery flow. */
 export async function DELETE() {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    // Destroys real credentials — 'owner' only, same floor as POST above.
+    const { accountId } = await requireRole('owner')
 
     try {
       await prisma.metaAdsConfig.delete({ where: { account_id: accountId } })
@@ -153,7 +148,6 @@ export async function DELETE() {
     }
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error in Meta Ads config DELETE:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }

@@ -43,6 +43,11 @@ interface SelectOptions {
    *  than no match, since the caller's fallback_answer guardrail only
    *  makes sense when nothing relevant was actually found. */
   minScore?: number
+  /** Opt into the chunk/tokenize cache — pass something that changes
+   *  whenever qaPairs/documents actually do, e.g. `${aiConfig.id}:${aiConfig.updated_at.getTime()}`.
+   *  Omit to always recompute (safe default when the caller can't cheaply
+   *  prove the knowledge base hasn't changed since the last call). */
+  cacheKey?: string
 }
 
 const STOPWORDS = new Set([
@@ -67,6 +72,57 @@ function overlapScore(queryTokens: string[], targetTokens: string[]): number {
   let hits = 0
   for (const t of queryTokens) if (targetSet.has(t)) hits++
   return hits
+}
+
+/**
+ * Chunking + tokenizing the whole knowledge base is the expensive part of
+ * this file — re-splitting every document into paragraphs and re-running
+ * the tokenizer over every chunk/Q&A pair, on every single ai_reply call,
+ * even though the underlying AiConfig row (training_data/knowledge_documents)
+ * rarely changes between messages in the same conversation, let alone
+ * between messages across an account's whole inbox. This module-level cache
+ * memoizes the chunked+tokenized form per AiConfig version (see cacheKey
+ * below) so a burst of messages against an unchanged knowledge base pays
+ * the tokenizing cost once, not once per message.
+ *
+ * Deliberately process-local (a plain Map), not Redis/a DB table — this is
+ * a hot-path micro-optimization, not state that needs to survive a
+ * restart or be shared across instances; the worst case of a cold cache
+ * (a fresh deploy, or an account not seen in a while getting evicted) is
+ * just paying the original per-call cost once more.
+ */
+interface CachedKnowledge {
+  chunks: Array<{ title: string; text: string; tokens: string[] }>
+  pairs: Array<{ pair: QaPair; tokens: string[] }>
+}
+const KNOWLEDGE_CACHE_MAX_ENTRIES = 500
+const knowledgeCache = new Map<string, CachedKnowledge>()
+
+function getOrBuildKnowledge(qaPairs: QaPair[], documents: KnowledgeDocument[], cacheKey?: string): CachedKnowledge {
+  if (cacheKey) {
+    const cached = knowledgeCache.get(cacheKey)
+    if (cached) return cached
+  }
+
+  const chunks = documents
+    .flatMap((doc) => chunkDocument(doc))
+    .map((c) => ({ ...c, tokens: tokenize(c.text) }))
+  const pairs = qaPairs
+    .filter((p) => p.question && p.answer)
+    .map((p) => ({ pair: p, tokens: tokenize(`${p.question} ${p.answer}`) }))
+
+  const built: CachedKnowledge = { chunks, pairs }
+  if (cacheKey) {
+    // Simple size bound — evict the oldest entry (Map preserves insertion
+    // order) rather than growing unbounded across every account this
+    // process ever serves an ai_reply for.
+    if (knowledgeCache.size >= KNOWLEDGE_CACHE_MAX_ENTRIES) {
+      const oldestKey = knowledgeCache.keys().next().value
+      if (oldestKey !== undefined) knowledgeCache.delete(oldestKey)
+    }
+    knowledgeCache.set(cacheKey, built)
+  }
+  return built
 }
 
 /** Splits a document into paragraph-sized chunks (falls back to fixed-size
@@ -96,20 +152,19 @@ export function selectRelevantContext(
   documents: KnowledgeDocument[] = [],
   opts: SelectOptions = {},
 ): SelectedContext {
-  const { maxQaPairs = 5, maxDocChunks = 3, minScore = 1 } = opts
+  const { maxQaPairs = 5, maxDocChunks = 3, minScore = 1, cacheKey } = opts
   const queryTokens = tokenize(userMessage)
+  const { chunks: allChunks, pairs: allPairs } = getOrBuildKnowledge(qaPairs, documents, cacheKey)
 
-  const scoredPairs = qaPairs
-    .filter((p) => p.question && p.answer)
-    .map((p) => ({ pair: p, score: overlapScore(queryTokens, tokenize(`${p.question} ${p.answer}`)) }))
+  const scoredPairs = allPairs
+    .map(({ pair, tokens }) => ({ pair, score: overlapScore(queryTokens, tokens) }))
     .filter((s) => s.score > minScore - 1 && s.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, maxQaPairs)
     .map((s) => s.pair)
 
-  const allChunks = documents.flatMap((doc) => chunkDocument(doc))
   const scoredChunks = allChunks
-    .map((c) => ({ chunk: c, score: overlapScore(queryTokens, tokenize(c.text)) }))
+    .map((c) => ({ chunk: { title: c.title, text: c.text }, score: overlapScore(queryTokens, c.tokens) }))
     .filter((s) => s.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .slice(0, maxDocChunks)

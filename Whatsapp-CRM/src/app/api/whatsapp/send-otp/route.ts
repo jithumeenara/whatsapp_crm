@@ -1,7 +1,7 @@
-import { randomInt } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { generateOtpCode } from '@/lib/auth/mfa'
 import { sendOtpToContact, NoOtpTemplateError } from '@/lib/whatsapp/send-otp'
 import { NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
@@ -14,8 +14,9 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
  * the proven template+COPY_CODE mechanism (works today, no Meta
  * approval needed) with an automatic upgrade path to the real Direct
  * Send beta once a tenant has that approval (see send-otp.ts).
- * Generates its own 6-digit code — crypto.randomInt is uniform (unlike
- * Math.random-based mod bias), same reasoning as mfa.ts's own generator.
+ * Code generation reuses mfa.ts's generateOtpCode() (found reimplemented
+ * here in the full-app audit) instead of a second copy of the same
+ * crypto.randomInt logic.
  */
 export async function POST(request: Request) {
   try {
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     })
     if (!conversation) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
 
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0')
+    const code = generateOtpCode()
 
     try {
       const result = await sendOtpToContact({

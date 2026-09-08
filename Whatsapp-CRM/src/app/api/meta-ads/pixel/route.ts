@@ -1,12 +1,7 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-
-async function resolveAccountId(userId: string): Promise<string | null> {
-  const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
-  return profile?.account_id ?? null
-}
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /** GET /api/meta-ads/pixel — the standard Meta Pixel settings for a
  *  client's own website, separate from the WhatsApp Ads connection
@@ -14,10 +9,11 @@ async function resolveAccountId(userId: string): Promise<string | null> {
  *  that same access token, it doesn't need its own). */
 export async function GET() {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    // Read-only — any account member can view the pixel_id/tracking
+    // snippet token (web_events_secret is explicitly not a login
+    // credential, only authorizes "send one web conversion event").
+    // Found with no role floor at all in the full-app audit.
+    const { accountId } = await requireRole('viewer')
 
     const config = await prisma.metaAdsConfig.findUnique({
       where: { account_id: accountId },
@@ -31,8 +27,7 @@ export async function GET() {
       web_events_secret: config.web_events_secret,
     })
   } catch (error) {
-    console.error('Error in Meta Ads pixel GET:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }
 
@@ -41,10 +36,10 @@ export async function GET() {
  *  time, same pattern as SmsConfig.webhook_secret. */
 export async function POST(req: Request) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    // Writes config — 'owner' floor, matching every other credentials-
+    // bearing settings route. Found with no role check at all in the
+    // full-app audit.
+    const { accountId } = await requireRole('owner')
 
     const { pixel_id } = await req.json().catch(() => ({}))
     if (!pixel_id || typeof pixel_id !== 'string' || !pixel_id.trim()) {
@@ -64,7 +59,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true, pixel_id: pixel_id.trim(), web_events_secret: webEventsSecret })
   } catch (error) {
-    console.error('Error in Meta Ads pixel POST:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }

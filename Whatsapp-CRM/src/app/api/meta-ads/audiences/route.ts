@@ -1,50 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Prisma } from '@prisma/client'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { createCustomAudience, addUsersToCustomAudience } from '@/lib/meta-ads/api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
-
-async function resolveAccountId(userId: string): Promise<string | null> {
-  const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
-  return profile?.account_id ?? null
-}
-
-// Same filter shape/logic as /api/segments/[id] — duplicated locally
-// rather than imported since it's a small, self-contained 15-line helper
-// and this route lives in a different domain (ads, not segments).
-type FilterRule = { field: string; op: string; value: string }
-type FilterConfig = { match?: 'all' | 'any'; rules?: FilterRule[] }
-
-function buildContactWhere(config: FilterConfig, accountId: string): Prisma.ContactWhereInput {
-  const { match = 'all', rules = [] } = config
-  const clauses: Prisma.ContactWhereInput[] = rules.map((rule) => {
-    const { field, op, value } = rule
-    switch (op) {
-      case 'contains': return { [field]: { contains: value, mode: 'insensitive' } }
-      case 'not_contains': return { NOT: { [field]: { contains: value, mode: 'insensitive' } } }
-      case 'equals': return { [field]: { equals: value, mode: 'insensitive' } }
-      case 'not_equals': return { NOT: { [field]: { equals: value, mode: 'insensitive' } } }
-      case 'starts_with': return { [field]: { startsWith: value, mode: 'insensitive' } }
-      case 'is_empty': return { OR: [{ [field]: null }, { [field]: '' }] }
-      case 'is_not_empty': return { AND: [{ NOT: { [field]: null } }, { NOT: { [field]: '' } }] }
-      default: return {}
-    }
-  })
-  return {
-    account_id: accountId,
-    ...(clauses.length > 0 ? (match === 'all' ? { AND: clauses } : { OR: clauses }) : {}),
-  }
-}
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { buildContactWhere, type FilterConfig } from '@/lib/segments/filter'
 
 /** GET /api/meta-ads/audiences — every Segment, with its Meta sync status if any. */
 export async function GET() {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
+    // Read-only — found with no role floor at all in the full-app audit.
+    const { accountId } = await requireRole('viewer')
 
     const [segments, adsConfig] = await Promise.all([
       prisma.segment.findMany({
@@ -72,22 +38,20 @@ export async function GET() {
       })),
     })
   } catch (error) {
-    console.error('Error in Meta Ads audiences GET:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }
 
 /** POST /api/meta-ads/audiences — { segment_id } — sync (or re-sync) one Segment to Meta. */
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Pushes contact PII (hashed) to Meta and writes DB state — 'agent'
+    // floor, same as this app's other real operational actions. Found
+    // with no role check at all in the full-app audit.
+    const { accountId, userId } = await requireRole('agent')
 
-    const rl = checkRateLimit(`meta-ads-audience-sync:${session.user.id}`, RATE_LIMITS.adminAction)
+    const rl = checkRateLimit(`meta-ads-audience-sync:${userId}`, RATE_LIMITS.adminAction)
     if (!rl.success) return NextResponse.json({ error: 'Too many syncs — wait a moment and try again.' }, { status: 429 })
-
-    const accountId = await resolveAccountId(session.user.id)
-    if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
 
     const { segment_id } = await req.json().catch(() => ({}))
     if (!segment_id) return NextResponse.json({ error: 'segment_id is required' }, { status: 400 })
@@ -144,7 +108,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 502 })
     }
   } catch (error) {
-    console.error('Error in Meta Ads audiences POST:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return toErrorResponse(error)
   }
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  IndianRupee, AlertTriangle, Loader2, Trash2, Eye, EyeOff, ExternalLink, ShieldAlert,
+  IndianRupee, AlertTriangle, Loader2, Trash2, Eye, EyeOff, ExternalLink, ShieldAlert, Copy, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,8 @@ export function PaymentsTab() {
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const webhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/whatsapp/payments/webhook` : '/api/whatsapp/payments/webhook';
 
   async function load() {
     setLoading(true);
@@ -179,6 +181,35 @@ export function PaymentsTab() {
             <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-500">
               <span className={cn('h-1.5 w-1.5 rounded-full', 'bg-amber-500')} />
               Status: <span className="font-medium text-slate-700">{selectedConfig.status.replace(/_/g, ' ')}</span>
+            </div>
+          )}
+
+          {selectedConfig && gateway === 'razorpay' && (
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <Label className="mb-1 text-[12px] text-slate-600">Razorpay webhook URL</Label>
+              <p className="mb-2 text-[11px] text-slate-400">
+                Paste this into your Razorpay Dashboard → Settings → Webhooks (subscribe to the{' '}
+                <code className="rounded bg-slate-100 px-1 py-0.5 font-mono">payment_link.paid</code> event) — one URL,
+                shared across every number/tenant, since Razorpay identifies which payment a webhook is about from the
+                payload itself.
+              </p>
+              <div className="flex items-center gap-2">
+                <Input readOnly value={webhookUrl} className="h-9 flex-1 bg-slate-50 font-mono text-[11.5px] text-slate-600" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(webhookUrl).catch(() => {});
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  }}
+                  className="h-9 shrink-0 gap-1.5"
+                >
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
             </div>
           )}
 

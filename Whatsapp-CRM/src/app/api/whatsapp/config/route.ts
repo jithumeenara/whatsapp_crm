@@ -440,6 +440,19 @@ export async function POST(request: Request) {
         savedId = created.id
       }
     } catch (err) {
+      // P2002 on phone_number_id here means the app-level ownership check
+      // above lost a race against a concurrent save for the same number —
+      // the DB-level unique constraint (migration 063) is the real backstop.
+      // Same 409 message the app-level check gives, not a generic 500.
+      if ((err as { code?: string })?.code === 'P2002') {
+        return NextResponse.json(
+          {
+            error:
+              'This WhatsApp phone number is already linked to another account on this instance. Each phone number can only be connected to one wacrm user.',
+          },
+          { status: 409 }
+        )
+      }
       console.error('Error saving whatsapp_config:', err)
       return NextResponse.json(
         { error: existing ? 'Failed to update configuration' : 'Failed to save configuration' },

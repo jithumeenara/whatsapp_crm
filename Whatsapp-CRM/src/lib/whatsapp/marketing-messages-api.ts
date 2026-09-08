@@ -8,6 +8,8 @@
  * check) transparently falls back to the normal /messages endpoint.
  */
 
+import { throwMetaError } from './meta-api'
+
 const GRAPH_API_VERSION = 'v21.0'
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`
 
@@ -18,16 +20,12 @@ export async function checkMarketingMessagesEligibility(args: {
   const { wabaId, accessToken } = args
   const url = `${GRAPH_API_BASE}/${wabaId}?fields=marketing_messages_onboarding_status`
   const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' })
-  if (!response.ok) {
-    let message = `Eligibility check failed: ${response.status}`
-    try {
-      const data = await response.json()
-      if (data?.error?.message) message = data.error.message
-    } catch {
-      // not JSON — keep the fallback
-    }
-    throw new Error(message)
-  }
+  // Reuse meta-api.ts's shared error formatter instead of hand-rolling one —
+  // it appends the "(code X.Y)" suffix classifyMetaError() depends on to
+  // detect rate-limit/auth-expired errors. A bare `throw new Error(message)`
+  // here (the original bug) meant every Marketing Messages error silently
+  // fell through to 'unknown', losing that classification entirely.
+  if (!response.ok) await throwMetaError(response, `Eligibility check failed: ${response.status}`)
   const data = await response.json()
   return { status: data.marketing_messages_onboarding_status ?? null }
 }

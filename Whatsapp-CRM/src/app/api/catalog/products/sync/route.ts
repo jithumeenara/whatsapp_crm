@@ -22,46 +22,62 @@ export async function POST() {
 
     const accessToken = decrypt(config.access_token)
 
+    // Upserting one product at a time, awaited sequentially, meant a large
+    // catalog (thousands of SKUs) paid one full DB round-trip per product
+    // in series — real risk of hitting a serverless function's execution
+    // timeout well before Meta's pagination even finished. Products within
+    // a page are independent writes (keyed by the retailer_id unique
+    // constraint), so they're safe to run concurrently; capped at
+    // CONCURRENCY per page instead of unbounded Promise.all so a huge page
+    // doesn't blow through the DB connection pool.
+    const CONCURRENCY = 10
     const seenRetailerIds = new Set<string>()
     let after: string | undefined
     let pulled = 0
     do {
       const page = await fetchCatalogProducts({ catalogId: config.catalog_id, accessToken, after })
-      for (const p of page.products as MetaCatalogProduct[]) {
-        if (!p.retailer_id) continue
-        seenRetailerIds.add(p.retailer_id)
-        const [priceAmount, priceCurrency] = parsePrice(p.price)
-        await prisma.product.upsert({
-          where: { account_id_retailer_id: { account_id: ctx.accountId, retailer_id: p.retailer_id } },
-          create: {
-            account_id: ctx.accountId,
-            catalog_id: config.catalog_id,
-            retailer_id: p.retailer_id,
-            name: p.name || p.retailer_id,
-            description: p.description || null,
-            price: priceAmount,
-            currency: priceCurrency || p.currency || null,
-            image_url: p.image_url || null,
-            availability: p.availability || "in stock",
-            category: p.category || null,
-            brand: p.brand || null,
-            sync_status: "synced",
-            raw_meta_response: p as unknown as object,
-          },
-          update: {
-            name: p.name || p.retailer_id,
-            description: p.description || null,
-            price: priceAmount,
-            currency: priceCurrency || p.currency || null,
-            image_url: p.image_url || null,
-            availability: p.availability || "in stock",
-            category: p.category || null,
-            brand: p.brand || null,
-            sync_status: "synced",
-            raw_meta_response: p as unknown as object,
-          },
-        })
-        pulled++
+      const products = (page.products as MetaCatalogProduct[]).filter(
+        (p): p is MetaCatalogProduct & { retailer_id: string } => !!p.retailer_id,
+      )
+      for (let i = 0; i < products.length; i += CONCURRENCY) {
+        const batch = products.slice(i, i + CONCURRENCY)
+        await Promise.all(
+          batch.map((p) => {
+            seenRetailerIds.add(p.retailer_id)
+            const [priceAmount, priceCurrency] = parsePrice(p.price)
+            return prisma.product.upsert({
+              where: { account_id_retailer_id: { account_id: ctx.accountId, retailer_id: p.retailer_id } },
+              create: {
+                account_id: ctx.accountId,
+                catalog_id: config.catalog_id,
+                retailer_id: p.retailer_id,
+                name: p.name || p.retailer_id,
+                description: p.description || null,
+                price: priceAmount,
+                currency: priceCurrency || p.currency || null,
+                image_url: p.image_url || null,
+                availability: p.availability || "in stock",
+                category: p.category || null,
+                brand: p.brand || null,
+                sync_status: "synced",
+                raw_meta_response: p as unknown as object,
+              },
+              update: {
+                name: p.name || p.retailer_id,
+                description: p.description || null,
+                price: priceAmount,
+                currency: priceCurrency || p.currency || null,
+                image_url: p.image_url || null,
+                availability: p.availability || "in stock",
+                category: p.category || null,
+                brand: p.brand || null,
+                sync_status: "synced",
+                raw_meta_response: p as unknown as object,
+              },
+            })
+          }),
+        )
+        pulled += batch.length
       }
       after = page.nextAfter ?? undefined
     } while (after)

@@ -712,6 +712,17 @@ model WhatsAppConfig {
   conversations   Conversation[]
   payment_gateway_config PaymentGatewayConfig?
 
+  // DB-level enforcement of the app-level "one phone_number_id, one
+  // account" rule checked in POST /api/whatsapp/config — that check is a
+  // read-then-write with no lock, so two concurrent POSTs for the same
+  // phone_number_id under different accounts could both pass it and
+  // create duplicate rows. A duplicate silently breaks inbound delivery
+  // forever after: the webhook's findMany-by-phone_number_id lookup sees
+  // >1 row and drops every message for that number (see webhook/route.ts).
+  // This constraint closes the race by rejecting the second insert
+  // outright (Prisma P2002), which the route surfaces as the same 409
+  // "already linked to another account" the app-level check gives today.
+  @@unique([phone_number_id])
   @@index([account_id])
   @@map("whatsapp_config")
 }
@@ -940,8 +951,14 @@ model WhatsAppPayment {
   /// pattern as the Catalogs Order model's wa_message_id.
   wa_order_message_id     String    @unique
   /// This app's own order/invoice reference, threaded through the UPI
-  /// intent link and the order_status follow-up.
-  reference_id            String
+  /// intent link, the order_status follow-up, and Razorpay's own
+  /// `reference_id` field on the payment link — Razorpay echoes that
+  /// field back on every webhook event for the link, which is how the
+  /// webhook route identifies which WhatsAppPayment (and therefore which
+  /// tenant's gateway credentials) a given webhook POST is about, since
+  /// Razorpay's webhook URL is one shared endpoint across every tenant,
+  /// not a per-payment or per-tenant URL. @unique so that lookup is safe.
+  reference_id            String    @unique
   amount                  Decimal   @db.Decimal(12, 2)
   currency                String    @default("INR")
   status                  String    @default("pending") // pending | processing | completed | failed

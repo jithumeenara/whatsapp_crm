@@ -1,40 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
-import { Prisma } from '@prisma/client'
-
-type FilterRule = { field: string; op: string; value: string }
-type FilterConfig = { match?: 'all' | 'any'; rules?: FilterRule[] }
-
-function buildContactWhere(config: FilterConfig, accountId: string): Prisma.ContactWhereInput {
-  const { match = 'all', rules = [] } = config
-  const clauses: Prisma.ContactWhereInput[] = rules.map((rule) => {
-    const { field, op, value } = rule
-    switch (op) {
-      case 'contains':
-        return { [field]: { contains: value, mode: 'insensitive' } }
-      case 'not_contains':
-        return { NOT: { [field]: { contains: value, mode: 'insensitive' } } }
-      case 'equals':
-        return { [field]: { equals: value, mode: 'insensitive' } }
-      case 'not_equals':
-        return { NOT: { [field]: { equals: value, mode: 'insensitive' } } }
-      case 'starts_with':
-        return { [field]: { startsWith: value, mode: 'insensitive' } }
-      case 'is_empty':
-        return { OR: [{ [field]: null }, { [field]: '' }] }
-      case 'is_not_empty':
-        return { AND: [{ NOT: { [field]: null } }, { NOT: { [field]: '' } }] }
-      default:
-        return {}
-    }
-  })
-
-  return {
-    account_id: accountId,
-    ...(clauses.length > 0 ? (match === 'all' ? { AND: clauses } : { OR: clauses }) : {}),
-  }
-}
+import { buildContactWhere, type FilterConfig } from '@/lib/segments/filter'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

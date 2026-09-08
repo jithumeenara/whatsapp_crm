@@ -52,7 +52,20 @@ export async function POST(req: NextRequest) {
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex")
 
-    if (generated !== razorpay_signature) {
+    // Constant-time comparison — a plain `!==` string compare leaks timing
+    // information proportional to how many leading characters match,
+    // letting an attacker recover a valid signature byte-by-byte. Mirrors
+    // the fix already applied in payment-gateways/razorpay.ts's webhook
+    // verifier. timingSafeEqual throws on length mismatch, which is itself
+    // proof of inequality — caught below.
+    let signaturesMatch: boolean
+    try {
+      signaturesMatch = crypto.timingSafeEqual(Buffer.from(generated), Buffer.from(razorpay_signature))
+    } catch {
+      signaturesMatch = false
+    }
+
+    if (!signaturesMatch) {
       return NextResponse.json({ error: "Invalid payment signature" }, { status: 400 })
     }
 

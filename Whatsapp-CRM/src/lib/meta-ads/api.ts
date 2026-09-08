@@ -12,6 +12,7 @@
  *   - Custom Audiences hashing convention (SHA-256 over normalized values)
  */
 import { createHash } from 'node:crypto'
+import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
 
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
@@ -351,9 +352,10 @@ export async function fetchAdAccountInsights(args: {
  *  raw PII ever sent. Email and phone need different normalization, so
  *  the caller picks which via `kind`. */
 function hashForAudience(raw: string, kind: 'email' | 'phone'): string {
-  const normalized = kind === 'email'
-    ? raw.trim().toLowerCase()
-    : raw.replace(/[^\d]/g, '') // E.164 digits only, no leading '+'
+  // Phone normalization reuses phone-utils.ts's sanitizePhoneForMeta —
+  // found reimplemented here (a second digits-only regex) in the
+  // full-app audit; both need the exact same E.164-digits-only shape.
+  const normalized = kind === 'email' ? raw.trim().toLowerCase() : sanitizePhoneForMeta(raw)
   return createHash('sha256').update(normalized).digest('hex')
 }
 

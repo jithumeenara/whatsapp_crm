@@ -79,7 +79,11 @@ export async function POST(request: Request) {
 
     let paymentLink: string
     try {
-      const webhookRef = paymentRecord.id
+      // Razorpay's own webhook (src/app/api/whatsapp/payments/webhook)
+      // identifies this payment by `referenceId` echoed back in the
+      // webhook payload — no per-payment callback/webhook URL needed;
+      // Razorpay doesn't support one distinct from the tenant's
+      // account-wide Dashboard webhook setting anyway.
       const link = await createRazorpayPaymentLink({
         credentials: { keyId, keySecret },
         amount,
@@ -91,7 +95,6 @@ export async function POST(request: Request) {
       paymentLink = gatewayConfig.vpa
         ? buildUpiIntentLink({ vpa: gatewayConfig.vpa, payeeName: description, amount, referenceId })
         : link.shortUrl
-      void webhookRef // documents intent: a real deployment wires this payment's id into the gateway's webhook/callback URL config
     } catch (err) {
       await prisma.whatsAppPayment.update({ where: { id: paymentRecord.id }, data: { status: 'failed' } })
       return NextResponse.json({ error: err instanceof Error ? err.message : 'Failed to create the payment link.' }, { status: 502 })
