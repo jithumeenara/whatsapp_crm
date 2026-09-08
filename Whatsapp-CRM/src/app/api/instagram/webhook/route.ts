@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
+import { runAutomationsForTrigger } from "@/lib/automations/engine"
 
 type RawConfig = {
   account_id: string
@@ -29,6 +30,10 @@ async function ensureTable() {
         ig_name              TEXT,
         last_tested_at       TIMESTAMPTZ,
         test_error           TEXT,
+        ice_breakers         JSONB,
+        persistent_menu      JSONB,
+        profile_synced_at    TIMESTAMPTZ,
+        comment_dm_status    TEXT        NOT NULL DEFAULT 'pending_meta_approval',
         created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
       )
@@ -107,6 +112,9 @@ interface IgMessagingEvent {
     attachments?: Array<{ type: string; payload: { url?: string } }>
     is_echo?: boolean
     quick_reply?: { payload: string }
+    // Present when the customer replied to one of the business's own
+    // Stories — a normal `messages` event, not a separate subscription.
+    reply_to?: { story?: { url?: string; id?: string }; mid?: string }
   }
   // Button Template tap fires messaging_postbacks (not messages)
   postback?: {
@@ -116,6 +124,38 @@ interface IgMessagingEvent {
   }
   read?:     { watermark: number }
   delivery?: { watermark: number }
+  // Present ONLY on the customer's first message when the conversation
+  // started from a Click-to-Instagram ad — mirrors WhatsApp's referral
+  // object (src/app/api/whatsapp/webhook/route.ts). Instagram's documented
+  // shape carries `ref`/`source_id` rather than a dedicated `ctwa_clid`
+  // field; whichever identifier Meta actually sends is stored into the
+  // same Conversation.ctwa_clid column WhatsApp uses, since it serves the
+  // identical purpose (the per-click attribution token).
+  referral?: {
+    ref?: string
+    source_id?: string
+    source_type?: string
+    source_url?: string
+    headline?: string
+  }
+}
+
+// IG·01 gated scaffolding — Meta's documented comments webhook shape.
+// Requires the instagram_business_manage_comments permission (App
+// Review) to ever actually be delivered — see comment_dm_status.
+interface IgCommentValue {
+  id: string
+  text?: string
+  from?: { id: string; username?: string }
+  media?: { id: string; media_product_type?: string }
+  parent_id?: string
+}
+
+// IG·02 gated scaffolding — Meta's story-mentions webhook is deliberately
+// minimal: just a media ID, a follow-up Graph API call fetches the actual
+// mention content. Same permission gate as comments.
+interface IgMentionValue {
+  media_id: string
 }
 
 interface IgWebhookBody {
@@ -173,12 +213,26 @@ async function processInstagramWebhook(body: IgWebhookBody) {
 
     // ── Changes format (what Meta actually sends) ────────────────
     for (const change of entry.changes ?? []) {
+      // Comments (IG·01, gated scaffolding) and story mentions (IG·02,
+      // gated scaffolding) use a completely different value shape than
+      // messaging events (no sender/recipient/timestamp) — handled first,
+      // before the messaging-only sender extraction below would otherwise
+      // silently skip them.
+      if (change.field === "comments") {
+        await processIgComment(config.account_id, config.access_token ?? "", change.value as unknown as IgCommentValue)
+        continue
+      }
+      if (change.field === "mentions") {
+        await processIgStoryMention(config.account_id, config.access_token ?? "", change.value as unknown as IgMentionValue)
+        continue
+      }
+
       const val = change.value
       const senderIgsid = val?.sender?.id
       if (!senderIgsid || senderIgsid === instagramAccountId) continue
       const ts = typeof val.timestamp === "string" ? parseInt(val.timestamp) : (val.timestamp ?? Date.now() / 1000)
 
-      // Regular message (text, media, quick reply tap)
+      // Regular message (text, media, quick reply tap, story reply)
       if (change.field === "messages") {
         const msg = val.message
         if (!msg || msg.is_echo) continue
@@ -193,6 +247,8 @@ async function processInstagramWebhook(body: IgWebhookBody) {
           timestamp:         ts,
           quickReplyPayload: msg.quick_reply?.payload ?? null,
           postbackPayload:   null,
+          storyReply:        msg.reply_to?.story ?? null,
+          referral:          val.referral ?? null,
         })
       }
 
@@ -213,6 +269,8 @@ async function processInstagramWebhook(body: IgWebhookBody) {
           timestamp:         ts,
           quickReplyPayload: null,
           postbackPayload:   postback.payload,
+          storyReply:        null,
+          referral:          val.referral ?? null,
         })
       }
     }
@@ -236,6 +294,8 @@ async function processInstagramWebhook(body: IgWebhookBody) {
           timestamp:         ts,
           quickReplyPayload: msg.quick_reply?.payload ?? null,
           postbackPayload:   null,
+          storyReply:        msg.reply_to?.story ?? null,
+          referral:          event.referral ?? null,
         })
       }
 
@@ -252,6 +312,8 @@ async function processInstagramWebhook(body: IgWebhookBody) {
           timestamp:         ts,
           quickReplyPayload: null,
           postbackPayload:   postback.payload,
+          storyReply:        null,
+          referral:          event.referral ?? null,
         })
       }
     }
@@ -268,6 +330,8 @@ async function processIgMessage({
   timestamp,
   quickReplyPayload,
   postbackPayload,
+  storyReply,
+  referral,
 }: {
   accountId:         string
   accessToken:       string
@@ -278,6 +342,8 @@ async function processIgMessage({
   timestamp:         number
   quickReplyPayload: string | null
   postbackPayload:   string | null
+  storyReply:        { url?: string; id?: string } | null
+  referral:          { ref?: string; source_id?: string; source_type?: string; source_url?: string; headline?: string } | null
 }) {
   // --- Find or create owner (admin) user for this account ---
   const ownerProfile = await prisma.profile.findFirst({
@@ -289,8 +355,9 @@ async function processIgMessage({
   const ownerUserId = ownerProfile.user_id
 
   // --- Find or create contact ---
-  const contact = await findOrCreateIgContact(accountId, ownerUserId, senderIgsid, accessToken)
-  if (!contact) return
+  const contactOutcome = await findOrCreateIgContact(accountId, ownerUserId, senderIgsid, accessToken)
+  if (!contactOutcome) return
+  const { contact, wasCreated } = contactOutcome
 
   // --- Find or create conversation (channel = instagram) ---
   const conversation = await findOrCreateIgConversation(accountId, ownerUserId, contact.id)
@@ -300,6 +367,8 @@ async function processIgMessage({
   let contentText: string | null = text
   let mediaUrl:    string | null = null
   let contentType: string = "text"
+  let storyMediaUrl: string | null = null
+  let storyMediaId:  string | null = null
 
   if (attachments.length > 0) {
     const att = attachments[0]
@@ -308,6 +377,15 @@ async function processIgMessage({
     if (att.type === "audio")  { contentType = "audio";    mediaUrl = att.payload.url ?? null }
     if (att.type === "file")   { contentType = "document"; mediaUrl = att.payload.url ?? null }
     if (!contentText && mediaUrl) contentText = `[${att.type}]`
+  }
+
+  // Story reply — takes priority over a plain-text classification since
+  // Meta sends both `text` and `reply_to.story` on the same event.
+  if (storyReply) {
+    contentType = "story_reply"
+    storyMediaUrl = storyReply.url ?? null
+    storyMediaId = storyReply.id ?? null
+    if (!contentText) contentText = "[replied to your story]"
   }
 
   if (!contentText && !mediaUrl) contentText = "[message]"
@@ -321,6 +399,8 @@ async function processIgMessage({
         content_type:    contentType,
         content_text:    contentText,
         media_url:       mediaUrl,
+        story_media_url: storyMediaUrl,
+        story_media_id:  storyMediaId,
         message_id:      messageId,
         status:          "delivered",
         created_at:      new Date(timestamp),
@@ -375,16 +455,126 @@ async function processIgMessage({
   const msgCount = await prisma.message.count({
     where: { conversation_id: conversation.id, sender_type: 'customer' },
   }).catch(() => 1)
+  const isFirstInboundMessage = msgCount <= 1
 
-  dispatchInboundToFlows({
+  // Click-to-Instagram ad attribution — mirrors WhatsApp's ctwa_clid capture
+  // (src/app/api/whatsapp/webhook/route.ts). Instagram's referral object
+  // doesn't document a dedicated ctwa_clid field the way WhatsApp's does —
+  // whichever click-identifier Meta actually sent (`ref` or `source_id`) is
+  // stored into the same Conversation.ctwa_clid column, since it serves the
+  // identical purpose. Also grants the 72h Free Entry Point window from
+  // this first reply — see fep_expires_at on Conversation.
+  if (isFirstInboundMessage && referral && !conversation.ctwa_clid) {
+    try {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          ctwa_clid: referral.ref ?? referral.source_id ?? null,
+          ctwa_ad_headline: referral.headline ?? null,
+          ctwa_source_id: referral.source_id ?? null,
+          fep_expires_at: new Date(Date.now() + 72 * 3600 * 1000),
+        },
+      })
+    } catch (err) {
+      console.error('[Instagram] failed to store ctwa attribution (non-fatal):', err)
+    }
+  }
+
+  // Awaited (not fire-and-forget) so we know whether the Flow engine
+  // consumed this message before also deciding which Automations to fire —
+  // mirrors the WhatsApp webhook's flowResult.consumed gate exactly
+  // (src/app/api/whatsapp/webhook/route.ts) so a flow reply and an
+  // automation reply never both fire for the same inbound message.
+  const flowResult = await dispatchInboundToFlows({
     accountId,
     userId:         ownerUserId,
     contactId:      contact.id,
     conversationId: conversation.id,
     channel:        "instagram",
     message:        engineMessage,
-    isFirstInboundMessage: msgCount <= 1,
-  }).catch((err) => console.error("[Instagram] dispatchInboundToFlows error:", err))
+    isFirstInboundMessage,
+  }).catch((err) => {
+    console.error("[Instagram] dispatchInboundToFlows error:", err)
+    return { consumed: false as const, outcome: "no_match" as const }
+  })
+
+  // --- Dispatch to the Automations engine too ---
+  // Previously Instagram never fired this at all (only WhatsApp/Facebook
+  // did) — keyword_match/new_contact_created/tag_added/etc. Automations
+  // silently never triggered for Instagram conversations. Wired here the
+  // same way the WhatsApp webhook does it.
+  const igAutomationTriggers: (
+    | 'new_contact_created'
+    | 'first_inbound_message'
+    | 'new_message_received'
+    | 'keyword_match'
+  )[] = []
+  if (!flowResult.consumed) {
+    igAutomationTriggers.push('new_message_received', 'keyword_match')
+  }
+  if (wasCreated) igAutomationTriggers.unshift('new_contact_created')
+  if (isFirstInboundMessage) igAutomationTriggers.unshift('first_inbound_message')
+  for (const triggerType of igAutomationTriggers) {
+    runAutomationsForTrigger({
+      accountId,
+      triggerType,
+      contactId: contact.id,
+      context: {
+        message_text: contentText ?? '',
+        conversation_id: conversation.id,
+      },
+    }).catch((err) => console.error('[automations] IG dispatch failed:', err))
+  }
+}
+
+/**
+ * IG·01 — Comment-to-DM, GATED scaffolding. This function is fully wired
+ * (contact resolution → keyword-match dispatch → DM reply via the normal
+ * Automations action chain) but will never actually run in production
+ * until Meta approves instagram_business_manage_comments for this app —
+ * Meta will not deliver the `comments` webhook field before that. Testable
+ * today only by hand-crafting a matching payload directly against this
+ * route (bypassing Meta's real delivery gate) to prove the logic itself
+ * is correct.
+ */
+async function processIgComment(accountId: string, accessToken: string, comment: IgCommentValue) {
+  if (!comment?.id || !comment.from?.id) return
+
+  const ownerProfile = await prisma.profile.findFirst({
+    where: { account_id: accountId },
+    orderBy: { created_at: "asc" },
+    select: { user_id: true },
+  })
+  if (!ownerProfile) return
+
+  // Comments and DMs share the same IGSID namespace per Meta's docs — the
+  // commenter can be found/created exactly like a DM sender.
+  const contactOutcome = await findOrCreateIgContact(accountId, ownerProfile.user_id, comment.from.id, accessToken)
+  if (!contactOutcome) return
+
+  runAutomationsForTrigger({
+    accountId,
+    triggerType: "comment_keyword_match",
+    contactId: contactOutcome.contact.id,
+    context: {
+      message_text: comment.text ?? "",
+      vars: { comment_id: comment.id, media_id: comment.media?.id ?? null },
+    },
+  }).catch((err) => console.error("[Instagram] comment_keyword_match dispatch failed:", err))
+}
+
+/**
+ * IG·02 — Story mentions, GATED scaffolding. Same Meta App Review gate as
+ * comments above (instagram_manage_mentions). Meta's mentions webhook is
+ * deliberately minimal (just a media ID) — the actual mention content
+ * would need a follow-up Graph API call (GET /{media-id}) once approved;
+ * not implemented here since it cannot be tested against real data before
+ * that approval exists, and Meta's exact response shape for that call
+ * should be re-verified live at implementation time rather than assumed.
+ */
+async function processIgStoryMention(accountId: string, _accessToken: string, mention: IgMentionValue) {
+  if (!mention?.media_id) return
+  console.log(`[Instagram] story mention received (media_id=${mention.media_id}) — scaffolding only, not yet processed into a Message/Contact (requires Meta App Review approval + a follow-up media-fetch call not yet built).`)
 }
 
 async function findOrCreateIgContact(
@@ -401,7 +591,7 @@ async function findOrCreateIgContact(
   const existing = await prisma.contact.findFirst({
     where: { account_id: accountId, instagram_id: igsid },
   })
-  if (existing) return existing
+  if (existing) return { contact: existing, wasCreated: false }
 
   // Try to fetch the user's display name from Instagram Graph API
   let displayName = igsid
@@ -436,10 +626,11 @@ async function findOrCreateIgContact(
         opt_in_at:        new Date(),
       },
     })
-    return contact
+    return { contact, wasCreated: true }
   } catch (err) {
     if (isUniqueViolation(err)) {
-      return prisma.contact.findFirst({ where: { account_id: accountId, instagram_id: igsid } })
+      const recovered = await prisma.contact.findFirst({ where: { account_id: accountId, instagram_id: igsid } })
+      return recovered ? { contact: recovered, wasCreated: false } : null
     }
     console.error("[Instagram] contact create failed:", err)
     return null

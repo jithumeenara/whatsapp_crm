@@ -17,6 +17,7 @@ type RawRow = {
   ig_name: string | null
   last_tested_at: Date | null
   test_error: string | null
+  comment_dm_status: string | null
 }
 
 export async function GET() {
@@ -43,6 +44,7 @@ export async function GET() {
       ig_name: row.ig_name,
       last_tested_at: row.last_tested_at,
       test_error: row.test_error,
+      comment_dm_status: row.comment_dm_status ?? "pending_meta_approval",
     })
   } catch (err) {
     return toErrorResponse(err)

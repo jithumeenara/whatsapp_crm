@@ -7,11 +7,12 @@ import type { Contact, Tag } from "@/types"
 import {
   Users, Search, Plus, Pencil, Trash2, ChevronLeft, ChevronRight,
   Phone, Mail, Upload, MoreHorizontal, MessageSquare, SortAsc,
-  Tag as TagIcon, X, ChevronDown, Camera, Radio,
+  Tag as TagIcon, X, ChevronDown, Camera, Radio, GitMerge,
 } from "lucide-react"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { ContactDetailViewV2 } from "@/components/contacts/contact-detail-view-v2"
 import { ImportModal } from "@/components/contacts/import-modal"
+import { MergeContactsDialog } from "@/components/contacts/merge-contacts-dialog"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
 import { formatDistanceToNow } from "date-fns"
@@ -230,6 +231,12 @@ export default function ContactsV2() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
 
+  // Merge contacts (IG·04) — mergeTarget is the contact "Merge with…" was
+  // opened from; mergeSecondary is set only via the bulk-select path
+  // (exactly 2 checked), which skips the search step entirely.
+  const [mergeTarget, setMergeTarget] = useState<Contact | null>(null)
+  const [mergeSecondary, setMergeSecondary] = useState<Contact | null>(null)
+
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sortRef = useRef<HTMLDivElement>(null)
   const tagRef = useRef<HTMLDivElement>(null)
@@ -359,6 +366,24 @@ export default function ContactsV2() {
 
           {/* Right: action buttons */}
           <div className="flex items-center gap-2">
+            {checkedIds.size === 2 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const [a, b] = [...checkedIds]
+                  const primaryContact = contacts.find((c) => c.id === a)
+                  const secondaryContact = contacts.find((c) => c.id === b)
+                  if (primaryContact && secondaryContact) {
+                    setMergeTarget(primaryContact)
+                    setMergeSecondary(secondaryContact)
+                  }
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[13px] font-medium text-indigo-600 shadow-sm hover:bg-indigo-100 transition-colors"
+              >
+                <GitMerge className="h-3.5 w-3.5" />
+                Merge These 2
+              </button>
+            )}
             {checkedIds.size > 0 && (
               <button
                 type="button"
@@ -727,6 +752,13 @@ export default function ContactsV2() {
                               >
                                 <Pencil className="h-3.5 w-3.5 text-slate-400" /> Edit
                               </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setMergeTarget(contact); setMergeSecondary(null); setOpenMenuId(null) }}
+                                className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                              >
+                                <GitMerge className="h-3.5 w-3.5 text-slate-400" /> Merge with…
+                              </button>
                               <div className="border-t border-slate-100 my-0.5" />
                               <button
                                 type="button"
@@ -842,6 +874,17 @@ export default function ContactsV2() {
           deleting={deleting}
           onCancel={() => setDeleteId(null)}
           onConfirm={() => handleDelete(deleteId)}
+        />
+      )}
+
+      {/* Merge contacts dialog (IG·04) */}
+      {mergeTarget && (
+        <MergeContactsDialog
+          open={Boolean(mergeTarget)}
+          onOpenChange={(o) => { if (!o) { setMergeTarget(null); setMergeSecondary(null); setCheckedIds(new Set()) } }}
+          primary={mergeTarget}
+          secondary={mergeSecondary ?? undefined}
+          onMerged={() => { setMergeTarget(null); setMergeSecondary(null); setCheckedIds(new Set()); loadContacts() }}
         />
       )}
     </div>

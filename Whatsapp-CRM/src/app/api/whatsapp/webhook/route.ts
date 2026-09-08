@@ -671,6 +671,8 @@ async function processMessage(
   // this is the one and only place it can ever be captured. Stored once,
   // read later (Meta Ads Conversions API) whenever this conversation
   // produces a real outcome — never overwritten by a later message.
+  // Also grants Meta's separate 72-hour Free Entry Point window from this
+  // first reply — see fep_expires_at on Conversation.
   if (isFirstInboundMessage && message.referral?.ctwa_clid && !conversation.ctwa_clid) {
     try {
       await prisma.conversation.update({
@@ -679,6 +681,7 @@ async function processMessage(
           ctwa_clid: message.referral.ctwa_clid,
           ctwa_ad_headline: message.referral.headline ?? null,
           ctwa_source_id: message.referral.source_id ?? null,
+          fep_expires_at: new Date(Date.now() + 72 * 3600 * 1000),
         },
       })
     } catch (err) {

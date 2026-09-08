@@ -8,6 +8,7 @@ import type {
   SendMessageStepConfig,
   SendTemplateStepConfig,
   SendWebhookStepConfig,
+  SendCatalogItemStepConfig,
   TagStepConfig,
   UpdateContactFieldStepConfig,
   WaitStepConfig,
@@ -15,7 +16,7 @@ import type {
 } from '@/types'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { engineSendText, engineSendTemplate } from './meta-send'
+import { engineSendText, engineSendTemplate, engineSendCatalogItem } from './meta-send'
 
 // ------------------------------------------------------------
 // Public API
@@ -367,6 +368,22 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       return 'conversation closed'
     }
 
+    case 'send_catalog_item': {
+      const cfg = step.step_config as SendCatalogItemStepConfig
+      if (!args.contactId) throw new Error('send_catalog_item needs a contact')
+      if (!cfg.catalog_id || !cfg.retailer_id) throw new Error('send_catalog_item needs catalog_id and retailer_id')
+      const conversationId = await resolveConversationId(args)
+      const { whatsapp_message_id } = await engineSendCatalogItem({
+        accountId: args.automation.account_id,
+        userId: args.automation.user_id,
+        conversationId,
+        contactId: args.contactId,
+        catalogId: cfg.catalog_id,
+        retailerId: cfg.retailer_id,
+      })
+      return `catalog item sent via Meta (${whatsapp_message_id})`
+    }
+
     default:
       return `unknown step: ${step.step_type}`
   }
@@ -400,7 +417,10 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
 }
 
 function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
-  if (automation.trigger_type !== 'keyword_match') return true
+  // comment_keyword_match (IG·01, gated scaffolding) reuses the exact same
+  // keyword-matching logic as keyword_match — comments and DM text are
+  // matched identically, only the webhook field that produced ctx differs.
+  if (!['keyword_match', 'comment_keyword_match'].includes(automation.trigger_type)) return true
   const cfg = automation.trigger_config as KeywordMatchTriggerConfig
   if (!cfg?.keywords || cfg.keywords.length === 0) return false
   const text = (ctx?.message_text ?? '').toString()

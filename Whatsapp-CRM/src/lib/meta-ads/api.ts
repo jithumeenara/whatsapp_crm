@@ -94,8 +94,18 @@ export interface SendBusinessMessagingEventArgs {
   eventName: BusinessMessagingEventName
   /** Unix seconds. */
   eventTime: number
-  wabaId: string
-  /** The click ID captured from the WhatsApp webhook's referral object —
+  /** Which surface this outcome happened on — changes both
+   *  `messaging_channel` and which id key `user_data` needs, per Meta's
+   *  Conversions API for Business Messaging docs. Defaults to 'whatsapp'
+   *  so every pre-existing call site keeps working unchanged. */
+  channel?: 'whatsapp' | 'instagram'
+  /** Required when channel is 'whatsapp' (or omitted). */
+  wabaId?: string
+  /** Required when channel is 'instagram' — the Facebook Page ID linked
+   *  to the Instagram account (Meta attributes Instagram messaging events
+   *  by Page, not by a WABA-equivalent id). */
+  pageId?: string
+  /** The click ID captured from the inbound webhook's referral object —
    *  the whole point of this call: tying a real outcome back to the ad
    *  that started the conversation. */
   ctwaClid?: string | null
@@ -104,13 +114,14 @@ export interface SendBusinessMessagingEventArgs {
 
 /**
  * Reports one real outcome (a lead qualifying, a deal closing) back to
- * Meta for a WhatsApp conversation. Silently a no-op from the caller's
- * side if there's no ctwa_clid — Meta has nothing to attribute the event
- * to without it, so sending anyway would just be a wasted call; call
+ * Meta for a WhatsApp or Instagram conversation. Silently a no-op from the
+ * caller's side if there's no ctwa_clid — Meta has nothing to attribute the
+ * event to without it, so sending anyway would just be a wasted call; call
  * sites check for a stored ctwa_clid before calling this at all.
  */
 export async function sendBusinessMessagingEvent(args: SendBusinessMessagingEventArgs): Promise<void> {
-  const { datasetId, accessToken, eventName, eventTime, wabaId, ctwaClid, customData } = args
+  const { datasetId, accessToken, eventName, eventTime, wabaId, pageId, ctwaClid, customData } = args
+  const channel = args.channel ?? 'whatsapp'
   const res = await fetch(`${META_API_BASE}/${datasetId}/events`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
@@ -119,9 +130,9 @@ export async function sendBusinessMessagingEvent(args: SendBusinessMessagingEven
         event_name: eventName,
         event_time: eventTime,
         action_source: 'business_messaging',
-        messaging_channel: 'whatsapp',
+        messaging_channel: channel,
         user_data: {
-          whatsapp_business_account_id: wabaId,
+          ...(channel === 'instagram' ? { page_id: pageId } : { whatsapp_business_account_id: wabaId }),
           ...(ctwaClid ? { ctwa_clid: ctwaClid } : {}),
         },
         ...(customData ? { custom_data: customData } : {}),
@@ -266,6 +277,28 @@ export async function fetchLead(args: { leadId: string; accessToken: string }): 
 export function getLeadField(lead: LeadDetail, fieldName: string): string | undefined {
   const match = lead.field_data.find((f) => f.name.toLowerCase() === fieldName.toLowerCase())
   return match?.values?.[0]
+}
+
+export interface AdTargetingPlatforms { publisher_platforms: string[] | null }
+
+/**
+ * Resolves an ad's publisher_platforms via its ad set — the ONLY way to
+ * infer Facebook vs Instagram vs "mixed" for a Lead Ads submission, since
+ * the lead object itself carries no platform field (confirmed against
+ * Meta's Retrieving Leads docs — id/created_time/ad_id/form_id/field_data/
+ * custom_disclaimer_responses/is_organic is the full list, nothing more).
+ * An Advantage+/automatic-placement ad set returns more than one platform
+ * (or none) here — that must be surfaced as "mixed", never guessed down
+ * to a single platform.
+ */
+export async function fetchAdTargeting(args: { adId: string; accessToken: string }): Promise<AdTargetingPlatforms> {
+  const res = await fetch(
+    `${META_API_BASE}/${args.adId}?fields=adset{targeting{publisher_platforms}}`,
+    { headers: { Authorization: `Bearer ${args.accessToken}` } },
+  )
+  if (!res.ok) await throwMetaError(res, 'Failed to fetch ad targeting from Meta')
+  const data = (await res.json()) as { adset?: { targeting?: { publisher_platforms?: string[] } } }
+  return { publisher_platforms: data.adset?.targeting?.publisher_platforms ?? null }
 }
 
 // ============================================================

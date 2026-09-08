@@ -22,7 +22,8 @@ import {
   RefreshCw,
   History,
 } from "lucide-react";
-import { format, isToday, isYesterday, differenceInHours } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
+import { useSessionWindow, useFepWindow } from "@/lib/hooks/use-session-window";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -278,32 +279,10 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer
-  const sessionInfo = useMemo(() => {
-    if (!messages.length) return { expired: false, remaining: "" };
-
-    // Find last customer message
-    const lastCustomerMsg = [...messages]
-      .reverse()
-      .find((m) => m.sender_type === "customer");
-
-    if (!lastCustomerMsg) return { expired: false, remaining: "" };
-
-    const hoursSince = differenceInHours(new Date(), new Date(lastCustomerMsg.created_at));
-    const expired = hoursSince >= 24;
-
-    if (expired) {
-      return { expired: true, remaining: "Expired" };
-    }
-
-    const hoursLeft = 24 - hoursSince;
-    const remaining =
-      hoursLeft >= 1
-        ? `${Math.floor(hoursLeft)}h remaining`
-        : `${Math.floor(hoursLeft * 60)}m remaining`;
-
-    return { expired, remaining };
-  }, [messages]);
+  // 24-hour session timer — shared with leads/[id]/page.tsx via useSessionWindow
+  const sessionInfo = useSessionWindow(messages);
+  // 72-hour Free Entry Point window (MA·02) — distinct from the 24h session above.
+  const fepInfo = useFepWindow(conversation?.fep_expires_at);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -1140,6 +1119,14 @@ export function MessageThread({
                 sessionInfo.expired ? "text-red-400" : "text-slate-400"
               )}>
                 · {sessionInfo.remaining}
+              </span>
+            )}
+            {fepInfo.active && (
+              <span
+                className="shrink-0 text-[11px] leading-none text-violet-500"
+                title="Meta's 72-hour Free Entry Point — template messages are billed free until this expires"
+              >
+                · Free window: {fepInfo.remaining}
               </span>
             )}
           </div>

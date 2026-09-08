@@ -82,6 +82,7 @@ model User {
   scheduled_messages           ScheduledMessage[]
   email_verification_tokens    EmailVerificationToken[]
   sessions                     UserSession[]
+  contact_merges_performed     ContactMerge[]
 
   @@map("users")
 }
@@ -203,6 +204,7 @@ model Account {
   whatsapp_payments            WhatsAppPayment[]
   lead_ad_forms                LeadAdForm[]
   lead_ad_submissions          LeadAdSubmission[]
+  contact_merges               ContactMerge[]
   meta_custom_audiences        MetaCustomAudience[]
   message_templates            MessageTemplate[]
   pipelines                    Pipeline[]
@@ -316,11 +318,18 @@ model Contact {
   opt_in_source    String?
   opt_in_at        DateTime? @db.Timestamptz(6)
   opted_out_at     DateTime? @db.Timestamptz(6)
+  // Set when this contact was absorbed by a "Merge contacts" action (IG·04)
+  // — soft-deleted rather than hard-deleted so every existing FK pointing
+  // at it (conversations, deals, leads, etc.) stays valid; UIs that list
+  // live contacts filter WHERE merged_into_contact_id IS NULL.
+  merged_into_contact_id String? @db.Uuid
   created_at       DateTime @default(now()) @db.Timestamptz(6)
   updated_at       DateTime @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  merged_into      Contact?  @relation("ContactMergedInto", fields: [merged_into_contact_id], references: [id], onDelete: SetNull)
+  absorbed_contacts Contact[] @relation("ContactMergedInto")
 
   tags                         ContactTag[]
   custom_values                ContactCustomValue[]
@@ -341,6 +350,31 @@ model Contact {
   @@unique([account_id, instagram_id], name: "contacts_account_instagram_id")
   @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
   @@map("contacts")
+}
+
+// Audit trail for IG·04 "Merge contacts across channels" — who merged what
+// into what, and when. There is no undo in v1 (merge is a deliberate,
+// explicit, manually-confirmed action, never automatic — same caution this
+// app already applies to opt-in status), so this row is what lets support/
+// an admin manually reconstruct what happened if a merge turns out wrong.
+model ContactMerge {
+  id                      String   @id @default(uuid()) @db.Uuid
+  account_id              String   @db.Uuid
+  survivor_contact_id     String   @db.Uuid
+  merged_contact_id       String   @db.Uuid
+  /// Full pre-merge row of the absorbed contact — kept even though that
+  /// row itself still exists (soft-deleted via merged_into_contact_id),
+  /// as a durable point-in-time reference independent of any future
+  /// changes to the absorbed row.
+  merged_contact_snapshot Json
+  performed_by_user_id    String   @db.Uuid
+  created_at              DateTime @default(now()) @db.Timestamptz(6)
+
+  account         Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  performed_by    User    @relation(fields: [performed_by_user_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id, created_at])
+  @@map("contact_merges")
 }
 
 model Tag {
@@ -467,6 +501,12 @@ model Conversation {
   ctwa_clid        String?
   ctwa_ad_headline String?
   ctwa_source_id   String?
+  // Meta's separate 72-hour Free Entry Point window — distinct from the
+  // general 24h customer-service session window above. Set when the first
+  // outbound reply to a referral-attributed conversation lands within 24h
+  // of the inbound message; while this is in the future, even TEMPLATE
+  // messages (not just session messages) are billed free by Meta.
+  fep_expires_at   DateTime? @db.Timestamptz(6)
 
   @@index([account_id, unread_count])
   @@index([account_id, last_message_at])
@@ -506,6 +546,11 @@ model Message {
   // no extra fetch/join: { items: [{retailer_id, quantity, item_price,
   // name}], subtotal, currency, deal_id }.
   order_snapshot      Json?
+  // Instagram story_reply/story_mention only — the replied-to (or
+  // mentioned) story's own media, so the inbox bubble can render a
+  // reply-context card above the message instead of just plain text.
+  story_media_url     String?
+  story_media_id      String?
   template_name       String?
   message_id          String?
   status              String   @default("sent")
@@ -940,6 +985,13 @@ model LeadAdSubmission {
   ad_id           String?
   lead_id         String?  @db.Uuid // set once mapped into a real Lead row
   raw_field_data  Json // the exact field_data array Meta returned — never discarded, even after mapping
+  // 'facebook' | 'instagram' | 'mixed' | null (unresolved). Resolved from
+  // the ad set's targeting.publisher_platforms — the lead object itself
+  // carries NO platform field (confirmed against Meta's Retrieving Leads
+  // docs). 'mixed' means the ad set targets multiple platforms and Meta
+  // gives no per-lead signal to split them — this is a real Meta API
+  // ceiling, not a gap to "fix" by guessing a single platform.
+  platform        String?
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 
   account Account    @relation(fields: [account_id], references: [id], onDelete: Cascade)

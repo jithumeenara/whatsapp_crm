@@ -85,6 +85,19 @@ export async function POST(request: Request) {
     }
 
     if (is_active) {
+      // IG·01 gated scaffolding — see the matching check in
+      // /api/automations/[id]'s PATCH handler for the full rationale.
+      if (effectiveTriggerType === 'comment_keyword_match') {
+        const igRows = await prisma.$queryRaw<{ comment_dm_status: string | null }[]>`
+          SELECT comment_dm_status FROM instagram_config WHERE account_id = ${accountId}::uuid LIMIT 1
+        `.catch(() => [] as { comment_dm_status: string | null }[])
+        if ((igRows[0]?.comment_dm_status ?? 'pending_meta_approval') !== 'approved') {
+          return NextResponse.json(
+            { error: 'Comment-to-DM requires Meta App Review approval for instagram_business_manage_comments — this automation can be saved, but not activated, until that approval lands.' },
+            { status: 400 },
+          )
+        }
+      }
       const issues = [
         ...validateTriggerForActivation(effectiveTriggerType, effectiveTriggerConfig ?? {}),
         ...validateStepsForActivation(

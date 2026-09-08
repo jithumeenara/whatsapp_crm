@@ -41,6 +41,14 @@ export async function ensureInstagramConfigTable() {
       ig_name              TEXT,
       last_tested_at       TIMESTAMPTZ,
       test_error           TEXT,
+      -- Ice breakers / persistent menu (Meta-native, POST /me/messenger_profile)
+      ice_breakers         JSONB,
+      persistent_menu      JSONB,
+      profile_synced_at    TIMESTAMPTZ,
+      -- Comment-to-DM scaffolding — stays 'pending_meta_approval' until a
+      -- human manually flips it once Meta grants instagram_business_manage_comments;
+      -- nothing in this codebase can set it to 'approved' itself.
+      comment_dm_status    TEXT        NOT NULL DEFAULT 'pending_meta_approval',
       created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
     )

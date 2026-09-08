@@ -95,6 +95,20 @@ const InstagramBusinessProfile = dynamic(
     ),
   { ssr: false, loading: () => <PanelLoader /> }
 );
+const InstagramIceBreakers = dynamic(
+  () =>
+    import('@/components/settings/instagram-ice-breakers').then(
+      (m) => m.InstagramIceBreakers
+    ),
+  { ssr: false, loading: () => <PanelLoader /> }
+);
+const InstagramGatedFeatures = dynamic(
+  () =>
+    import('@/components/settings/instagram-gated-features').then(
+      (m) => m.InstagramGatedFeatures
+    ),
+  { ssr: false, loading: () => <PanelLoader /> }
+);
 
 const CHANNELS: Record<
   ChannelKey,
@@ -351,6 +365,8 @@ export function ChannelsTab() {
           ) : undefined}
         />
         <Config defaultConnectMethod={preferredConnectMethod} />
+        {channel === 'instagram' && <InstagramIceBreakers />}
+        {channel === 'instagram' && <InstagramGatedFeatures />}
       </div>
     );
   if (view === 'profile' && Profile)

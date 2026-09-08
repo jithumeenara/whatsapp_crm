@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
-import { fetchLead, getLeadField } from "@/lib/meta-ads/api"
+import { fetchLead, getLeadField, fetchAdTargeting } from "@/lib/meta-ads/api"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
 
 type RawConfig = {
@@ -282,6 +282,34 @@ async function processLeadgenChange(
   // account chose not to sync it into the CRM.
   if (form && !form.is_active) return
 
+  // Resolve Facebook vs Instagram vs "mixed" — the lead object itself
+  // carries NO platform field (confirmed against Meta's Retrieving Leads
+  // docs), so this is the only way to know: the ad set's own
+  // targeting.publisher_platforms. A single-platform ad set resolves
+  // cleanly; an Advantage+/automatic-placement ad set (0 or >1 platforms)
+  // genuinely cannot be attributed per-lead by Meta — stored as 'mixed'
+  // rather than guessed down to a single platform. Best-effort: a failed
+  // lookup (revoked token, deleted ad) leaves platform unresolved (null),
+  // never treated as fatal for the rest of this lead's processing.
+  let platform: "facebook" | "instagram" | "mixed" | null = null
+  if (value.ad_id) {
+    try {
+      const targeting = await fetchAdTargeting({ adId: value.ad_id, accessToken })
+      const platforms = targeting.publisher_platforms ?? []
+      platform = platforms.length === 1
+        ? (platforms[0] as "facebook" | "instagram")
+        : "mixed"
+    } catch (err) {
+      console.error("[Facebook] fetchAdTargeting failed (non-fatal):", err)
+    }
+  }
+  const isInstagram = platform === "instagram"
+  const sourceTag = isInstagram ? "instagram_lead_ad" : "facebook_lead_ad"
+  const tagName = isInstagram ? "Instagram Lead Ad" : "Facebook Lead Ad"
+  const tagColor = isInstagram ? "#D946A6" : "#0866FF"
+  const externalIdPrefix = isInstagram ? "ig_lead_ad" : "fb_lead_ad"
+  const leadTitle = isInstagram ? "Instagram Lead Ad" : "Facebook Lead Ad"
+
   const fullName = getLeadField(lead, "full_name") ?? getLeadField(lead, "name")
   const email = getLeadField(lead, "email")
   const phoneRaw = getLeadField(lead, "phone_number") ?? getLeadField(lead, "phone")
@@ -305,7 +333,7 @@ async function processLeadgenChange(
       email: email ?? null,
       // Submitting a Lead Ads form is an explicit consent action.
       opt_in_status: "opted_in",
-      opt_in_source: "facebook_lead_ad",
+      opt_in_source: sourceTag,
       opt_in_at: new Date(),
     },
   })
@@ -313,9 +341,12 @@ async function processLeadgenChange(
   // Tag every ad-sourced contact (new or existing) — this is what makes
   // "specifically ad leads" an actionable condition in the Automation
   // builder's existing Tag Presence check, without inventing a whole new
-  // trigger-config filter just for this one source.
-  const adTag = await prisma.tag.findFirst({ where: { account_id: accountId, name: "Facebook Lead Ad" } })
-    ?? await prisma.tag.create({ data: { account_id: accountId, user_id: ownerUserId, name: "Facebook Lead Ad", color: "#0866FF" } })
+  // trigger-config filter just for this one source. Instagram- and
+  // Facebook-sourced leads get distinct tags once platform is resolved;
+  // an unresolved/mixed-placement lead keeps the generic Facebook tag
+  // rather than a separate "maybe Instagram" tag that would just add noise.
+  const adTag = await prisma.tag.findFirst({ where: { account_id: accountId, name: tagName } })
+    ?? await prisma.tag.create({ data: { account_id: accountId, user_id: ownerUserId, name: tagName, color: tagColor } })
   await prisma.contactTag.upsert({
     where: { contact_id_tag_id: { contact_id: contact.id, tag_id: adTag.id } },
     create: { contact_id: contact.id, tag_id: adTag.id },
@@ -330,7 +361,7 @@ async function processLeadgenChange(
       accountId,
       triggerType: "new_contact_created",
       contactId: contact.id,
-      context: { vars: { source: "facebook_lead_ad" } },
+      context: { vars: { source: sourceTag } },
     }).catch((err) => console.error("[Facebook] Lead Ad automation dispatch failed (non-fatal):", err))
   }
 
@@ -338,11 +369,11 @@ async function processLeadgenChange(
     data: {
       account_id: accountId,
       user_id: ownerUserId,
-      title: form?.name ?? "Facebook Lead Ad",
-      source: "facebook_lead_ad",
+      title: form?.name ?? leadTitle,
+      source: sourceTag,
       status: "new",
       contact_id: contact.id,
-      external_id: `fb_lead_ad:${leadgenId}`,
+      external_id: `${externalIdPrefix}:${leadgenId}`,
     },
   })
 
@@ -353,7 +384,7 @@ async function processLeadgenChange(
       contact_id: contact.id,
       user_id: ownerUserId,
       type: "created",
-      title: "Lead captured from Facebook Lead Ad",
+      title: `Lead captured from ${leadTitle}`,
       description: form?.name ? `Form: ${form.name}` : null,
     },
   })
@@ -366,6 +397,7 @@ async function processLeadgenChange(
         meta_leadgen_id: leadgenId,
         ad_id: value.ad_id ?? null,
         lead_id: createdLead.id,
+        platform,
         // field_data is a plain array of {name, values} objects — fully
         // JSON-serializable, just needs the structural cast Prisma's Json
         // input type requires since it can't infer that from our own

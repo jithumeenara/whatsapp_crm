@@ -1,4 +1,4 @@
-import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import { sendTextMessage, sendTemplateMessage, sendSingleProductMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import {
@@ -102,6 +102,74 @@ export async function engineSendTemplate(
   args: SendTemplateArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   return sendViaMeta({ ...args, kind: 'template' })
+}
+
+interface SendCatalogItemArgs {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  catalogId: string
+  retailerId: string
+}
+
+/**
+ * MA·05 — the Catalog + CTWA wiring gap: sendSingleProductMessage
+ * (src/lib/whatsapp/meta-api.ts) and CTWA's ctwa_source_id capture both
+ * already existed separately; this is what lets an Automation's action
+ * say "reply with product Y's catalog card" instead of only plain text.
+ * WhatsApp-only (Catalogs is a WhatsApp-only feature today), mirrors
+ * sendViaMeta's resolve-config + persist + notify shape above.
+ */
+export async function engineSendCatalogItem(args: SendCatalogItemArgs): Promise<{ whatsapp_message_id: string }> {
+  const contact = await prisma.contact.findFirst({
+    where: { id: args.contactId, account_id: args.accountId },
+    select: { id: true, phone: true },
+  })
+  if (!contact?.phone) throw new Error('contact not found for this account')
+
+  const sanitized = sanitizePhoneForMeta(contact.phone)
+  if (!isValidE164(sanitized)) throw new Error(`contact phone invalid: ${contact.phone}`)
+
+  let config
+  try {
+    config = await resolveWhatsAppConfig({ accountId: args.accountId, conversationId: args.conversationId })
+  } catch (err) {
+    if (err instanceof NoWhatsAppConfigError) throw new Error('WhatsApp not configured for this account')
+    throw err
+  }
+  const accessToken = decrypt(config.access_token)
+
+  const r = await sendSingleProductMessage({
+    phoneNumberId: config.phone_number_id,
+    accessToken,
+    to: sanitized,
+    catalogId: args.catalogId,
+    productRetailerId: args.retailerId,
+  })
+
+  const contentText = `[Catalog item: ${args.retailerId}]`
+  const savedMsg = await prisma.message.create({
+    data: {
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: 'single_product',
+      content_text: contentText,
+      message_id: r.messageId,
+      status: 'sent',
+    },
+  })
+  const lastMessageAt = new Date()
+  await prisma.conversation.update({
+    where: { id: args.conversationId },
+    data: { last_message_text: contentText, last_message_at: lastMessageAt },
+  })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, {
+    last_message_text: contentText,
+    last_message_at: lastMessageAt.toISOString(),
+  })
+
+  return { whatsapp_message_id: r.messageId }
 }
 
 type SendInput =

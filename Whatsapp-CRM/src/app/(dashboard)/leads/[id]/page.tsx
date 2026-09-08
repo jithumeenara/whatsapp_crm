@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { differenceInHours } from "date-fns"
+import { useSessionWindow } from "@/lib/hooks/use-session-window"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Paperclip, Send, Loader2,
@@ -141,17 +141,10 @@ export default function LeadDetailPage() {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 24-hour session window — same rule the main Inbox composer enforces
-  // (WhatsApp only allows free-form replies within 24h of the customer's
-  // last message; outside that window a template is required). This page
-  // previously had no such check at all, letting the composer stay
-  // enabled with a plain "Type a message…" placeholder even when a send
-  // would be rejected by Meta.
-  const sessionExpired = useMemo(() => {
-    const lastCustomerMsg = [...messages].reverse().find((m) => m.sender_type === "customer")
-    if (!lastCustomerMsg) return false
-    return differenceInHours(new Date(), new Date(lastCustomerMsg.created_at)) >= 24
-  }, [messages])
+  // 24-hour session window — same rule the main Inbox composer enforces,
+  // now shared with message-thread.tsx via useSessionWindow so the two
+  // surfaces can never drift out of sync.
+  const sessionExpired = useSessionWindow(messages).expired
 
   const loadLead = useCallback(() => {
     fetch(`/api/leads/${id}?from=${encodeURIComponent(fromTab)}`)

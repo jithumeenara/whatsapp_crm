@@ -42,6 +42,10 @@ export async function GET(req: NextRequest) {
 
     const where = {
       account_id: ctx.accountId,
+      // Merged-away contacts (IG·04) stay in the DB for their historical
+      // conversations/deals to keep resolving correctly, but shouldn't
+      // reappear in the normal contacts list.
+      merged_into_contact_id: null,
       ...(search
         ? {
             OR: [

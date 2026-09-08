@@ -849,6 +849,34 @@ function MessageContent({ message }: { message: Message }) {
         </div>
       );
 
+    case "story_reply":
+      return (
+        <div className="min-w-[160px]">
+          <span className="mb-1.5 inline-flex w-fit items-center gap-1 rounded-full bg-pink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-pink-700">
+            <Radio className="h-3 w-3" />
+            Replied to your story
+          </span>
+          {message.story_media_url && (
+            <div className="mb-1.5 overflow-hidden rounded-lg border border-pink-100" style={{ maxWidth: 140 }}>
+              <MediaImage url={message.story_media_url} alt="Story" mimeType="image/jpeg" />
+            </div>
+          )}
+          {message.content_text && message.content_text !== "[replied to your story]" && (
+            <p className="whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+              <WhatsAppText text={message.content_text} />
+            </p>
+          )}
+        </div>
+      );
+
+    case "story_mention":
+      return (
+        <div className="flex items-center gap-2 text-[13px]">
+          <Radio className="h-4 w-4 shrink-0 text-pink-600" />
+          <span>{message.content_text || "Mentioned you in their story"}</span>
+        </div>
+      );
+
     case "interactive": {
       // Customer tapped a reply button or list row on a message the bot
       // sent. Previously this was just a small grey "BUTTON REPLY" label

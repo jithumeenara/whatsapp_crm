@@ -29,6 +29,7 @@ import {
   Loader2,
   ArrowDown,
   ArrowUp,
+  ShoppingBag,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -95,6 +96,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   condition: { label: "Condition (If/Else)", icon: GitBranch, border: "border-l-amber-500" },
   send_webhook: { label: "Send Webhook", icon: Webhook, border: "border-l-primary" },
   close_conversation: { label: "Close Conversation", icon: CircleSlash, border: "border-l-primary" },
+  send_catalog_item: { label: "Send Catalog Item", icon: ShoppingBag, border: "border-l-primary" },
 }
 
 const ADDABLE_STEPS: AutomationStepType[] = [
@@ -108,6 +110,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "condition",
   "send_webhook",
   "close_conversation",
+  "send_catalog_item",
 ]
 
 const TRIGGER_OPTIONS: { value: AutomationTriggerType; label: string; hint: string }[] = [
@@ -122,6 +125,11 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType; label: string; hint: stri
   { value: "conversation_assigned", label: "Conversation Assigned", hint: "When assigned to an agent" },
   { value: "tag_added", label: "Tag Added", hint: "When a tag is added to a contact" },
   { value: "time_based", label: "Time-Based", hint: "On a recurring schedule" },
+  {
+    value: "comment_keyword_match",
+    label: "Instagram Comment Keyword (pending Meta approval)",
+    hint: "Someone comments a keyword on your Instagram post/reel. Fully built, but requires Meta App Review approval for instagram_business_manage_comments — can be saved now, won't activate until that approval lands.",
+  },
 ]
 
 function cid(): string {
@@ -154,6 +162,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { url: "", headers: {}, body_template: "" }
     case "close_conversation":
       return {}
+    case "send_catalog_item":
+      return { catalog_id: "", retailer_id: "" }
     default:
       return {}
   }
@@ -169,16 +179,26 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
 // an older deployment), so an automation is always authorable.
 // ------------------------------------------------------------
 
+interface CatalogProductOption {
+  id: string
+  catalog_id: string
+  retailer_id: string
+  name: string
+  image_url: string | null
+}
+
 interface AutomationResources {
   tags: TagRecord[]
   members: AccountMember[]
   templates: MessageTemplate[]
+  products: CatalogProductOption[]
 }
 
 const ResourcesContext = createContext<AutomationResources>({
   tags: [],
   members: [],
   templates: [],
+  products: [],
 })
 
 function useResources(): AutomationResources {
@@ -189,6 +209,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [tags, setTags] = useState<TagRecord[]>([])
   const [members, setMembers] = useState<AccountMember[]>([])
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
+  const [products, setProducts] = useState<CatalogProductOption[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -201,6 +222,20 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       setTags((tagsRes.tags as TagRecord[] | null) ?? [])
       setTemplates((templatesRes.templates as MessageTemplate[] | null) ?? [])
+    })()
+
+    // Catalog products — absent (empty array) on accounts with no
+    // connected Catalog, in which case send_catalog_item's picker falls
+    // back to a raw catalog_id/retailer_id input pair.
+    void (async () => {
+      try {
+        const res = await fetch("/api/catalog/products", { cache: "no-store" })
+        if (!res.ok) return
+        const json = (await res.json()) as { products?: CatalogProductOption[] }
+        if (!cancelled) setProducts(json.products ?? [])
+      } catch {
+        // Catalog not connected — caller falls back to raw input.
+      }
     })()
 
     // Members go through the API so we inherit its email-visibility
@@ -223,7 +258,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <ResourcesContext.Provider value={{ tags, members, templates }}>
+    <ResourcesContext.Provider value={{ tags, members, templates, products }}>
       {children}
     </ResourcesContext.Provider>
   )
@@ -275,6 +310,70 @@ function TagSelect({
             existing automation doesn't silently drop it. */}
         {value && !selected && (
           <option value={value}>{value} (unknown tag)</option>
+        )}
+      </select>
+    </div>
+  )
+}
+
+/** Catalog product dropdown by name (with a thumbnail), storing both the
+ *  product's catalog_id and retailer_id. Falls back to a raw pair of
+ *  inputs when no catalog is connected yet, so send_catalog_item stays
+ *  authorable even before Settings > Catalog has been set up. */
+function CatalogProductSelect({
+  value,
+  onChange,
+}: {
+  value: { catalog_id: string; retailer_id: string }
+  onChange: (v: { catalog_id: string; retailer_id: string }) => void
+}) {
+  const { products } = useResources()
+  if (products.length === 0) {
+    return (
+      <div className="space-y-2">
+        <p className="text-[11px] text-slate-400">
+          No connected catalog found — enter the IDs directly, or connect one in Settings &gt; Catalog first.
+        </p>
+        <Input
+          placeholder="Catalog ID"
+          value={value.catalog_id}
+          onChange={(e) => onChange({ ...value, catalog_id: e.target.value })}
+          className="bg-slate-100 text-slate-800"
+        />
+        <Input
+          placeholder="Product retailer ID"
+          value={value.retailer_id}
+          onChange={(e) => onChange({ ...value, retailer_id: e.target.value })}
+          className="bg-slate-100 text-slate-800"
+        />
+      </div>
+    )
+  }
+  const selected = products.find((p) => p.retailer_id === value.retailer_id)
+  return (
+    <div className="flex items-center gap-2">
+      {selected?.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={selected.image_url} alt="" className="h-7 w-7 shrink-0 rounded object-cover" />
+      ) : (
+        <ShoppingBag className="h-4 w-4 shrink-0 text-slate-400" />
+      )}
+      <select
+        value={value.retailer_id}
+        onChange={(e) => {
+          const product = products.find((p) => p.retailer_id === e.target.value)
+          onChange({ catalog_id: product?.catalog_id ?? "", retailer_id: e.target.value })
+        }}
+        className={SELECT_CLASS}
+      >
+        <option value="">Select a product…</option>
+        {products.map((p) => (
+          <option key={p.id} value={p.retailer_id}>
+            {p.name}
+          </option>
+        ))}
+        {value.retailer_id && !selected && (
+          <option value={value.retailer_id}>{value.retailer_id} (unknown product)</option>
         )}
       </select>
     </div>
@@ -628,11 +727,20 @@ function TriggerCard({
                 {TRIGGER_OPTIONS.find((o) => o.value === type)?.hint}
               </p>
             </div>
-            {type === "keyword_match" && (
+            {(type === "keyword_match" || type === "comment_keyword_match") && (
               <KeywordMatchConfig
                 config={config as unknown as KeywordMatchTriggerConfig}
                 onChange={onConfigChange}
               />
+            )}
+            {type === "comment_keyword_match" && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] text-amber-800">
+                <span>
+                  This trigger is fully built and will start working automatically once Meta approves this app&apos;s
+                  request for the <code className="font-mono">instagram_business_manage_comments</code> permission.
+                  You can save this automation now — activating it stays blocked until that approval lands.
+                </span>
+              </div>
             )}
             {type === "tag_added" && (
               <div>
@@ -1156,6 +1264,15 @@ function StepEditor({
           Sets the conversation status to &quot;closed&quot;. No configuration needed.
         </p>
       )
+    case "send_catalog_item":
+      return (
+        <FieldBlock label="Product">
+          <CatalogProductSelect
+            value={{ catalog_id: (cfg.catalog_id as string) ?? "", retailer_id: (cfg.retailer_id as string) ?? "" }}
+            onChange={(v) => set(v)}
+          />
+        </FieldBlock>
+      )
     default:
       return null
   }
@@ -1188,6 +1305,8 @@ function previewFor(step: BuilderStep): string {
       return `when ${step.step_config.subject ?? "?"}`
     case "send_webhook":
       return (step.step_config.url as string) || "no url"
+    case "send_catalog_item":
+      return (step.step_config.retailer_id as string) || "pick a product"
     default:
       return ""
   }

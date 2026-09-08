@@ -26,6 +26,24 @@ export async function GET() {
       orderBy: { created_at: 'desc' },
     })
 
+    // Platform breakdown per form — Facebook vs Instagram vs "mixed"
+    // (Advantage+/automatic-placement ad sets Meta gives no per-lead
+    // signal for) vs unresolved (older submissions, or a failed lookup).
+    // See LeadAdSubmission.platform's own comment for why this can't
+    // always be a clean single value.
+    const platformCounts = await prisma.leadAdSubmission.groupBy({
+      by: ['form_id', 'platform'],
+      where: { account_id: accountId },
+      _count: { _all: true },
+    })
+    const byForm = new Map<string, Record<string, number>>()
+    for (const row of platformCounts) {
+      const key = row.platform ?? 'unresolved'
+      const existing = byForm.get(row.form_id) ?? {}
+      existing[key] = row._count._all
+      byForm.set(row.form_id, existing)
+    }
+
     return NextResponse.json({
       forms: forms.map((f) => ({
         id: f.id,
@@ -33,6 +51,7 @@ export async function GET() {
         page_id: f.page_id,
         is_active: f.is_active,
         submission_count: f._count.submissions,
+        platform_counts: byForm.get(f.id) ?? {},
         created_at: f.created_at,
       })),
     })

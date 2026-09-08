@@ -6,7 +6,7 @@ import {
   Megaphone, MousePointerClick, FileSpreadsheet, Sparkles, LineChart,
   Clock, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2, RotateCcw,
   Pencil, Hash, Building2, Lock, WifiOff, Zap, Trash2, Database,
-  Users2, RefreshCw, Code2, Copy, ClipboardCheck, Globe,
+  Users2, RefreshCw, Code2, Copy, ClipboardCheck, Globe, Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -266,6 +266,27 @@ function MetaAdsOverview() {
         </div>
       </div>
 
+      {/* Campaign-objective guidance — this app doesn't create campaigns
+          (that still happens in Ads Manager), but a wrong objective is one
+          of the most common, costly Click-to-Message setup mistakes, so
+          this is shown regardless of connection status. */}
+      <div
+        className="flex items-start gap-3 rounded-2xl border px-5 py-4"
+        style={{ borderColor: `${META_BLUE}33`, background: META_BLUE_SOFT }}
+      >
+        <Target className="mt-0.5 h-4 w-4 shrink-0" style={{ color: META_BLUE }} />
+        <div className="text-[12.5px]" style={{ color: '#0d3a8c' }}>
+          <p className="font-semibold">Setting up a campaign? Choose Engagement, not Traffic.</p>
+          <p className="mt-1 text-slate-600">
+            When creating a Click-to-WhatsApp or Click-to-Instagram campaign in Meta Ads Manager, pick the{' '}
+            <b>Engagement</b> objective with the WhatsApp/Instagram destination — not Traffic or Awareness.
+            Traffic optimizes for link taps, not for someone actually starting a conversation, and is Meta&apos;s
+            own documented example of a common, costly mistake. This app doesn&apos;t create campaigns for you —
+            that still happens in Ads Manager — this is guidance only.
+          </p>
+        </div>
+      </div>
+
       {/* Quick Connect / Manual Connect — only relevant pre-connection */}
       {!config && (
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
@@ -488,7 +509,33 @@ function MetaAdsOverview() {
   );
 }
 
-interface LeadFormRow { id: string; name: string; is_active: boolean; submission_count: number }
+interface LeadFormRow { id: string; name: string; is_active: boolean; submission_count: number; platform_counts?: Record<string, number> }
+
+/** Small platform-breakdown badges for one form's leads — "mixed" and
+ *  unresolved are labeled plainly rather than guessed into a single
+ *  platform, since Meta genuinely gives no per-lead signal for either. */
+function PlatformBreakdown({ counts }: { counts?: Record<string, number> }) {
+  if (!counts || Object.keys(counts).length === 0) return null;
+  const order: { key: string; label: string; className: string }[] = [
+    { key: 'facebook', label: 'FB', className: 'bg-blue-50 text-blue-700' },
+    { key: 'instagram', label: 'IG', className: 'bg-pink-50 text-[#b93a89]' },
+    { key: 'mixed', label: 'Mixed', className: 'bg-slate-100 text-slate-500' },
+    { key: 'unresolved', label: 'Unresolved', className: 'bg-slate-100 text-slate-400' },
+  ];
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {order.filter((o) => counts[o.key]).map((o) => (
+        <span
+          key={o.key}
+          title={o.key === 'mixed' ? "Ad set targets multiple platforms — Meta doesn't report which one this lead came from" : undefined}
+          className={cn('rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold', o.className)}
+        >
+          {o.label} {counts[o.key]}
+        </span>
+      ))}
+    </div>
+  );
+}
 interface DiscoveredForm { meta_form_id: string; name: string; tracked: boolean; is_active: boolean; submission_count: number }
 
 /** Fixes a real gap: forms used to only appear reactively, the first
@@ -660,6 +707,7 @@ function LeadAdFormsManager() {
                 className="h-8 flex-1 text-[13px] border-transparent bg-transparent px-0 font-semibold text-slate-800 hover:border-slate-200 focus:border-slate-200 focus:bg-white focus:px-2"
               />
               <span className="shrink-0 text-[11.5px] text-slate-400">{form.submission_count} lead{form.submission_count === 1 ? '' : 's'}</span>
+              <PlatformBreakdown counts={form.platform_counts} />
               <Switch
                 checked={form.is_active}
                 disabled={savingId === form.id}

@@ -124,6 +124,11 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
     case 'close_conversation':
       // No config required.
       break
+    case 'send_catalog_item':
+      if (!nonEmpty(c.catalog_id) || !nonEmpty(c.retailer_id)) {
+        issues.push({ path: `${path}.retailer_id`, message: 'a catalog product must be selected' })
+      }
+      break
     default:
       issues.push({ path, message: `unknown step type: ${step.step_type}` })
   }
@@ -136,7 +141,7 @@ export function validateTriggerForActivation(
   const issues: ValidationIssue[] = []
   const cfg = (triggerConfig ?? {}) as Record<string, unknown>
 
-  if (triggerType === 'keyword_match') {
+  if (triggerType === 'keyword_match' || triggerType === 'comment_keyword_match') {
     const k = cfg.keywords
     if (!Array.isArray(k) || k.length === 0) {
       issues.push({ path: 'trigger.keywords', message: 'at least one keyword is required' })

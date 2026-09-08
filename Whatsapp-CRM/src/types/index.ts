@@ -118,6 +118,15 @@ export interface Contact {
   updated_at: string;
   /** Channels this contact has been seen on, e.g. ["whatsapp", "instagram"] */
   channels?: string[];
+  /** Instagram-scoped (IGSID) / Facebook-Messenger-scoped (PSID) platform
+   *  IDs — dedicated columns, never derived from `phone`. Used by the
+   *  Merge Contacts flow (IG·04) to show which channels a contact has an
+   *  identity on. */
+  instagram_id?: string | null;
+  facebook_id?: string | null;
+  /** Set once this contact has been absorbed by a "Merge with…" action —
+   *  the row stays in the DB but is excluded from normal contact lists. */
+  merged_into_contact_id?: string | null;
 }
 
 export interface Tag {
@@ -179,6 +188,11 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  /** Meta's separate 72-hour Free Entry Point window — set when the first
+   *  outbound reply to a referral-attributed (CTWA/Click-to-Instagram)
+   *  conversation lands within 24h of the inbound message. See
+   *  useFepWindow in src/lib/hooks/use-session-window.ts. */
+  fep_expires_at?: string | null;
 }
 
 export type SenderType = 'customer' | 'agent' | 'bot';
@@ -207,7 +221,12 @@ export type ContentType =
   /** We sent an in-chat UPI payment request (order_details invoice). */
   | 'payment_order_details'
   /** A follow-up updating the customer on payment/fulfillment status. */
-  | 'payment_order_status';
+  | 'payment_order_status'
+  /** Customer replied to one of our Instagram Stories. */
+  | 'story_reply'
+  /** Customer @mentioned us in their own Instagram Story (gated — see
+   *  IG·01/IG·02 scaffolding, requires Meta App Review approval). */
+  | 'story_mention';
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {
@@ -238,6 +257,11 @@ export interface Message {
     currency: string | null;
     deal_id: string | null;
   } | null;
+  /** Set only on `story_reply`/`story_mention` messages — the story's own
+   *  media, so the inbox bubble can render a reply-context card above the
+   *  message rather than plain text. */
+  story_media_url?: string | null;
+  story_media_id?: string | null;
   template_name?: string;
   message_id?: string;
   status: MessageStatus;
@@ -492,7 +516,13 @@ export type AutomationTriggerType =
   | 'new_contact_created'
   | 'conversation_assigned'
   | 'tag_added'
-  | 'time_based';
+  | 'time_based'
+  /** IG·01 — GATED scaffolding: requires Meta's instagram_business_manage_comments
+   *  permission (a fresh App Review submission this app cannot self-grant).
+   *  Fully wired end-to-end (webhook parsing, matching, dispatch) but will
+   *  never actually fire until that approval lands — see
+   *  instagram_config.comment_dm_status. */
+  | 'comment_keyword_match';
 
 export type AutomationStepType =
   | 'send_message'
@@ -504,7 +534,8 @@ export type AutomationStepType =
   | 'wait'
   | 'condition'
   | 'send_webhook'
-  | 'close_conversation';
+  | 'close_conversation'
+  | 'send_catalog_item';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
 
@@ -512,6 +543,17 @@ export interface KeywordMatchTriggerConfig {
   keywords: string[];
   match_type: 'exact' | 'contains';
   case_sensitive?: boolean;
+}
+
+/** IG·01 gated scaffolding — same shape as KeywordMatchTriggerConfig plus
+ *  an optional post/reel scope; kept as a separate type since it targets
+ *  comment text, not DM text. */
+export interface CommentKeywordMatchTriggerConfig {
+  keywords: string[];
+  match_type: 'exact' | 'contains';
+  case_sensitive?: boolean;
+  /** Optional — scope to one specific IG post/reel; omitted = any post. */
+  media_id?: string | null;
 }
 
 export interface TagTriggerConfig {
@@ -527,6 +569,7 @@ export interface TimeBasedTriggerConfig {
 export type AutomationTriggerConfig =
   | Record<string, never>
   | KeywordMatchTriggerConfig
+  | CommentKeywordMatchTriggerConfig
   | TagTriggerConfig
   | TimeBasedTriggerConfig
   | Record<string, unknown>;
@@ -581,6 +624,15 @@ export interface SendWebhookStepConfig {
   body_template?: string;
 }
 
+/** Sends one highlighted product from the connected WhatsApp Catalog —
+ *  the wiring MA·05 identified: Catalogs' sendSingleProductMessage and
+ *  CTWA's ctwa_source_id capture already both exist, but nothing let an
+ *  automation say "reply with product Y's catalog card." */
+export interface SendCatalogItemStepConfig {
+  catalog_id: string;
+  retailer_id: string;
+}
+
 export type AutomationStepConfig =
   | SendMessageStepConfig
   | SendTemplateStepConfig
@@ -590,6 +642,7 @@ export type AutomationStepConfig =
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig
+  | SendCatalogItemStepConfig
   | Record<string, never>
   | Record<string, unknown>;
 
