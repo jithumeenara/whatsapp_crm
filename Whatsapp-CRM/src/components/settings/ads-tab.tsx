@@ -40,7 +40,7 @@ interface AdsConfig {
  *  rather than being bolted on as an afterthought once it's real. */
 function ProviderRail({ provider, onSelect }: { provider: Provider; onSelect: (p: Provider) => void }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+    <div className="scroll-styled overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
       <div className="flex min-w-max items-center gap-1">
         <button
           type="button"
@@ -289,7 +289,7 @@ function MetaAdsOverview() {
 
       {/* Quick Connect / Manual Connect — only relevant pre-connection */}
       {!config && (
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+        <div className="scroll-styled overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
           <div className="flex min-w-max items-center gap-1">
             <button
               type="button"

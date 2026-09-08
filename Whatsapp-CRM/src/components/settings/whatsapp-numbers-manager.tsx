@@ -87,7 +87,7 @@ export function WhatsAppNumbersManager(props: { defaultConnectMethod?: 'quick' |
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : showSwitcher ? (
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+        <div className="scroll-styled overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
           <div className="flex min-w-max items-center gap-1">
             {numbers.map((n) => {
               const isActive = selectedId === n.id;

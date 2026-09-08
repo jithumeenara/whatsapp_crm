@@ -231,7 +231,7 @@ export function RcsConfig() {
 
       {/* ── Credentials ── */}
       <SectionCard title="Twilio Credentials" description="From your Twilio Console → Account → API keys & tokens." icon={KeyRound} accent={tileAccent(0)}>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FieldRow id="rcs-account-sid" label="Account SID" icon={Hash}>
             <Input id="rcs-account-sid" value={accountSid} onChange={(e) => setAccountSid(e.target.value)} placeholder="ACxxxxxxxxxxxxxxxx" className="h-9 text-[13px] font-mono border-slate-200" />
           </FieldRow>
@@ -247,7 +247,7 @@ export function RcsConfig() {
             />
           </FieldRow>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FieldRow id="rcs-messaging-service" label="Messaging Service SID" icon={Radio} hint="Recommended — lets Twilio pick RCS/SMS/MMS automatically per recipient.">
             <Input id="rcs-messaging-service" value={messagingServiceSid} onChange={(e) => setMessagingServiceSid(e.target.value)} placeholder="MGxxxxxxxxxxxxxxxx" className="h-9 text-[13px] font-mono border-slate-200" />
           </FieldRow>

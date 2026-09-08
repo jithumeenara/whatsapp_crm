@@ -163,7 +163,7 @@ export function PaymentsTab() {
           Connect a WhatsApp number in Settings &gt; Channels first.
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm space-y-4 sm:p-5">
           {numbers.length > 1 && (
             <div>
               <Label className="mb-1 text-[12px] text-slate-600">Number</Label>
@@ -193,8 +193,10 @@ export function PaymentsTab() {
                 shared across every number/tenant, since Razorpay identifies which payment a webhook is about from the
                 payload itself.
               </p>
-              <div className="flex items-center gap-2">
-                <Input readOnly value={webhookUrl} className="h-9 flex-1 bg-slate-50 font-mono text-[11.5px] text-slate-600" />
+              {/* Stacked on phones so the URL is actually readable —
+                  side by side left it about 200px wide for a full origin. */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input readOnly value={webhookUrl} className="h-9 w-full bg-slate-50 font-mono text-[11.5px] text-slate-600 sm:flex-1" />
                 <Button
                   type="button"
                   variant="outline"
@@ -204,7 +206,7 @@ export function PaymentsTab() {
                     setCopied(true);
                     setTimeout(() => setCopied(false), 1500);
                   }}
-                  className="h-9 shrink-0 gap-1.5"
+                  className="h-9 w-full shrink-0 gap-1.5 sm:w-auto"
                 >
                   {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                   {copied ? 'Copied' : 'Copy'}
@@ -232,10 +234,26 @@ export function PaymentsTab() {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          {/* Stacks on phones — two side-by-side credential fields left
+              roughly 150px each, enough to clip a Razorpay key ID mid-word. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <Label className="mb-1 text-[12px] text-slate-600">Key ID</Label>
-              <Input value={keyId} onChange={(e) => setKeyId(e.target.value)} placeholder={selectedConfig ? '••••••••' : ''} className="h-9 text-sm" />
+              {/* Password managers were offering (and Chrome autofilling)
+                  the signed-in user's own login email/password into this
+                  gateway credential pair — same guard the settings search
+                  field already uses. */}
+              <Input
+                value={keyId}
+                onChange={(e) => setKeyId(e.target.value)}
+                placeholder={selectedConfig ? '••••••••' : ''}
+                className="h-9 text-sm"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+              />
             </div>
             <div>
               <Label className="mb-1 text-[12px] text-slate-600">Key Secret</Label>
@@ -246,6 +264,11 @@ export function PaymentsTab() {
                   onChange={(e) => setKeySecret(e.target.value)}
                   placeholder={selectedConfig ? '••••••••' : ''}
                   className="h-9 pr-9 text-sm"
+                  autoComplete="new-password"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
                 />
                 <button type="button" onClick={() => setShowSecret((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   {showSecret ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -255,7 +278,9 @@ export function PaymentsTab() {
           </div>
 
           <p className="text-[11px] text-slate-400">UPI Intent mode fields — obtained from your payment gateway.</p>
-          <div className="grid grid-cols-3 gap-2">
+          {/* Three across is ~110px per field on a phone — VPAs are long
+              enough that even the placeholder clipped. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <div>
               <Label className="mb-1 text-[12px] text-slate-600">VPA</Label>
               <Input value={vpa} onChange={(e) => setVpa(e.target.value)} placeholder="business@upi" className="h-9 text-sm" />

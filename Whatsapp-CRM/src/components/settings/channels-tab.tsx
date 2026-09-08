@@ -643,7 +643,7 @@ function ChannelRail({
   onSelect: (channel: ChannelKey) => void;
 }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_4px_18px_rgba(42,51,86,0.035)]">
+    <div className="scroll-styled overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_4px_18px_rgba(42,51,86,0.035)]">
       <div className="flex min-w-max items-center gap-1">
         <div className="flex items-center gap-2 px-3 py-2 text-[12px] font-semibold text-[#5B5CF6]">
           <Sparkles className="h-4 w-4" />

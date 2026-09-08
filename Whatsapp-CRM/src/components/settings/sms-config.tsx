@@ -313,7 +313,7 @@ export function SmsConfig() {
               className="h-9 text-[13px] font-mono border-slate-200"
             />
           </FieldRow>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FieldRow id="sms-sender" label="Sender ID" icon={Hash} hint="6-char DLT-approved sender ID (e.g. ACSTIK).">
               <Input id="sms-sender" value={senderId} onChange={(e) => setSenderId(e.target.value)} placeholder="ACSTIK" className="h-9 text-[13px] border-slate-200" />
             </FieldRow>
@@ -321,7 +321,7 @@ export function SmsConfig() {
               <Input id="sms-route" value={route} onChange={(e) => setRoute(e.target.value)} placeholder="4" className="h-9 text-[13px] border-slate-200" />
             </FieldRow>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FieldRow id="sms-dlt-entity" label="DLT Entity ID" icon={ShieldCheck} hint="Your registered DLT Principal Entity ID (India compliance).">
               <Input id="sms-dlt-entity" value={dltEntityId} onChange={(e) => setDltEntityId(e.target.value)} placeholder="Optional" className="h-9 text-[13px] border-slate-200" />
             </FieldRow>

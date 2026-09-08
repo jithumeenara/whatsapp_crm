@@ -231,14 +231,17 @@ export function CatalogTab() {
 
       {!connected || !config ? (
         <>
-          {/* Quick Connect / Manual Connect — same pill-switcher shape as the Ads tab */}
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
-            <div className="flex min-w-max items-center gap-1">
+          {/* Quick Connect / Manual Connect — same pill-switcher shape as the Ads tab.
+              Two even halves on phones (the "Recommended" badge dropping under its
+              label) instead of a min-w-max row, which overflowed the card and left
+              "Manual Connect" clipped behind a scrollbar. */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm sm:overflow-x-auto">
+            <div className="grid grid-cols-2 gap-1 sm:flex sm:min-w-max sm:items-center">
               <button
                 type="button"
                 onClick={() => setConnectMethod('quick')}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors',
+                  'flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2 text-[13px] font-semibold transition-colors sm:flex-row sm:gap-1.5 sm:px-4 sm:py-2.5',
                   connectMethod === 'quick' ? 'bg-[#EAF2FF] text-[#0866FF]' : 'text-slate-500 hover:bg-slate-50',
                 )}
               >
@@ -254,7 +257,7 @@ export function CatalogTab() {
                 type="button"
                 onClick={() => setConnectMethod('manual')}
                 className={cn(
-                  'rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors',
+                  'rounded-xl px-2 py-2 text-[13px] font-semibold transition-colors sm:px-4 sm:py-2.5',
                   connectMethod === 'manual' ? 'bg-[#EAF2FF] text-[#0866FF]' : 'text-slate-500 hover:bg-slate-50',
                 )}
               >
@@ -383,7 +386,7 @@ export function CatalogTab() {
                 Optional. When a customer completes a cart order, a deal is created here automatically. Leave blank to just record orders without creating deals.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <select
                 value={pipelineId}
                 onChange={(e) => { setPipelineId(e.target.value); setStageId(''); }}

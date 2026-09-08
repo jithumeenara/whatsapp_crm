@@ -233,7 +233,7 @@ export function EmailConfig() {
             className="h-9 text-[13px] font-mono border-slate-200"
           />
         </FieldRow>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <FieldRow id="email-from" label="From Email" icon={Mail} hint="Must be a SendGrid-verified sender.">
             <Input id="email-from" type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="support@yourbusiness.com" className="h-9 text-[13px] border-slate-200" />
           </FieldRow>

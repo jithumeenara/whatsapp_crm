@@ -77,9 +77,12 @@ export function CountryCodeSelect({ value, onChange, className }: Props) {
         className="flex h-11 w-full items-center gap-2 rounded-full border border-slate-200 bg-white pl-4 pr-3.5 text-[13.5px] text-slate-900 outline-none transition-all hover:border-slate-300 focus:border-[#5B6CF9] focus:ring-2 focus:ring-[#5B6CF9]/15"
       >
         <Flag iso={selected.iso} />
-        <span className="min-w-0 flex-1 truncate text-left font-medium">
-          {selected.name} <span className="tabular-nums text-slate-500">({selected.dial})</span>
-        </span>
+        {/* The dial code is the part that actually matters, so it sits
+            outside the truncating span — when this control is narrow (a
+            phone-width form row) the country name shortens and the code
+            stays readable, instead of the whole label clipping to "Ind…". */}
+        <span className="min-w-0 flex-1 truncate text-left font-medium">{selected.name}</span>
+        <span className="shrink-0 tabular-nums text-slate-500">({selected.dial})</span>
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
         />

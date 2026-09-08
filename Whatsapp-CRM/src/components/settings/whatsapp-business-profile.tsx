@@ -121,7 +121,7 @@ export function WhatsAppBusinessProfile() {
               <p className="text-[11px] text-slate-400">{data.description.length}/512</p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-[13px] font-medium text-slate-700">Address</Label>
                 <Input value={data.address} onChange={(e) => setData({ ...data, address: e.target.value })}

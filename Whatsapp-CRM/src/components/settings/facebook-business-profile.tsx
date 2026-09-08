@@ -139,7 +139,7 @@ export function FacebookBusinessProfile() {
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-[#1877F2] focus:ring-2 focus:ring-[#1877F2]/20 resize-none" />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-[13px] font-medium text-slate-700">Website</Label>
                 <Input value={data.website} onChange={(e) => setData({ ...data, website: e.target.value })}

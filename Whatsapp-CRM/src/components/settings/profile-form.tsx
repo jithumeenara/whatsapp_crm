@@ -563,7 +563,9 @@ export function ProfileForm() {
               <div className="px-6 py-4 space-y-1.5">
                 <Label className="text-[13px] font-medium text-slate-700">WhatsApp Number</Label>
                 <div className="flex gap-2">
-                  <CountryCodeSelect value={phoneIso} onChange={setPhoneIso} className="w-[168px] shrink-0" />
+                  {/* Narrower on phones so the number field beside it keeps
+                      a usable width — the dial code stays visible either way. */}
+                  <CountryCodeSelect value={phoneIso} onChange={setPhoneIso} className="w-[124px] shrink-0 sm:w-[168px]" />
                   <div className="relative flex-1">
                     <Phone className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <Input
