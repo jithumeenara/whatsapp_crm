@@ -20,24 +20,31 @@ export async function GET() {
     const accountId = await resolveAccountId(session.user.id)
     if (!accountId) return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
 
-    const forms = await prisma.leadAdForm.findMany({
-      where: { account_id: accountId },
-      include: { _count: { select: { submissions: true } } },
-      orderBy: { created_at: 'desc' },
-    })
-
-    // Platform breakdown per form — Facebook vs Instagram vs "mixed"
-    // (Advantage+/automatic-placement ad sets Meta gives no per-lead
-    // signal for) vs unresolved (older submissions, or a failed lookup).
-    // See LeadAdSubmission.platform's own comment for why this can't
-    // always be a clean single value.
-    const platformCounts = await prisma.leadAdSubmission.groupBy({
-      by: ['form_id', 'platform'],
-      where: { account_id: accountId },
-      _count: { _all: true },
-    })
+    // Both reads are independent (scoped only by accountId) — run
+    // concurrently instead of paying the sum of both query latencies on
+    // every page load.
+    const [forms, platformCounts] = await Promise.all([
+      prisma.leadAdForm.findMany({
+        where: { account_id: accountId },
+        include: { _count: { select: { submissions: true } } },
+        orderBy: { created_at: 'desc' },
+      }),
+      // Platform breakdown per form — Facebook vs Instagram vs "mixed"
+      // (Advantage+/automatic-placement ad sets Meta gives no per-lead
+      // signal for) vs unresolved (older submissions, or a failed lookup).
+      // See LeadAdSubmission.platform's own comment for why this can't
+      // always be a clean single value.
+      prisma.leadAdSubmission.groupBy({
+        by: ['form_id', 'platform'],
+        where: { account_id: accountId },
+        _count: { _all: true },
+      }),
+    ])
     const byForm = new Map<string, Record<string, number>>()
     for (const row of platformCounts) {
+      // form_id is nullable (a submission with no resolvable form) — those
+      // rows have no per-form list entry to attach a breakdown to.
+      if (!row.form_id) continue
       const key = row.platform ?? 'unresolved'
       const existing = byForm.get(row.form_id) ?? {}
       existing[key] = row._count._all

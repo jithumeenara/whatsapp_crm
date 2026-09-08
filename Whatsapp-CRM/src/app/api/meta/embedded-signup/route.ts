@@ -132,14 +132,18 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // ── Facebook Page (→ Messenger) + Instagram, best-effort ───────────
-    const social = await discoverAndSaveFacebookAndInstagram(ctx.accountId, accessToken)
-
-    // ── Meta Ads (ad account + Conversions API dataset), best-effort ──
-    const ads = await discoverAndSaveMetaAds(ctx.accountId, ctx.userId, accessToken, wabaId)
-
-    // ── Product Catalog, best-effort ──────────────────────────────────
-    const catalog = await discoverAndSaveCatalog(ctx.accountId, ctx.userId, accessToken)
+    // Facebook Page (→ Messenger) + Instagram, Meta Ads (ad account +
+    // Conversions API dataset), and Product Catalog — three independent,
+    // best-effort discovery passes (each writes its own table, none reads
+    // what another wrote), run concurrently instead of one-after-another
+    // so this user-facing "Connected!" response doesn't pay the sum of
+    // three separate multi-call Graph API round trips (previously ~2-4s
+    // of avoidable extra latency).
+    const [social, ads, catalog] = await Promise.all([
+      discoverAndSaveFacebookAndInstagram(ctx.accountId, accessToken),
+      discoverAndSaveMetaAds(ctx.accountId, ctx.userId, accessToken, wabaId),
+      discoverAndSaveCatalog(ctx.accountId, ctx.userId, accessToken),
+    ])
 
     return NextResponse.json({
       success: true,

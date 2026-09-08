@@ -980,7 +980,14 @@ model LeadAdForm {
 model LeadAdSubmission {
   id              String   @id @default(uuid()) @db.Uuid
   account_id      String   @db.Uuid
-  form_id         String   @db.Uuid
+  // Nullable — a small but real slice of Meta's leadgen webhook payloads
+  // arrive with no form_id at all (and the follow-up lead-detail fetch
+  // doesn't always carry one either). This row is still created in that
+  // case (form_id: null) so the meta_leadgen_id uniqueness check below
+  // still dedupes Meta's webhook retries; before this, a formless lead
+  // never got a row at all, so every retry re-created a duplicate Contact/
+  // Lead.
+  form_id         String?  @db.Uuid
   meta_leadgen_id String   @unique
   ad_id           String?
   lead_id         String?  @db.Uuid // set once mapped into a real Lead row
@@ -994,8 +1001,8 @@ model LeadAdSubmission {
   platform        String?
   created_at      DateTime @default(now()) @db.Timestamptz(6)
 
-  account Account    @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  form    LeadAdForm @relation(fields: [form_id], references: [id], onDelete: Cascade)
+  account Account     @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  form    LeadAdForm? @relation(fields: [form_id], references: [id], onDelete: Cascade)
   lead    Lead?      @relation(fields: [lead_id], references: [id], onDelete: SetNull)
 
   @@index([account_id, created_at])

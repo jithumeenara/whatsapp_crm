@@ -1,20 +1,20 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { PROVIDERS, generateAiReply, getProviderKeys } from '@/lib/ai/providers/registry'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 export async function POST(req: Request) {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) {
-    return NextResponse.json({ error: 'No account linked.' }, { status: 403 })
+  // Same role floor as PUT /api/ai-config — this route can be made to
+  // send a live request (with this account's real or a caller-supplied
+  // API key) to any base_url the caller names, so it needs the same
+  // 'owner' gate the config-save route has, not just "any authenticated
+  // account member."
+  let accountId: string
+  try {
+    accountId = (await requireRole('owner')).accountId
+  } catch (err) {
+    return toErrorResponse(err)
   }
 
   const body = await req.json()
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     resolvedModel = model || adapter.defaultModels[0]?.id || ''
   } else {
     const stored = await prisma.aiConfig.findUnique({
-      where: { account_id: profile.account_id },
+      where: { account_id: accountId },
     })
     const entry = stored ? getProviderKeys(stored)[providerId] : undefined
     if (!entry?.api_key) {

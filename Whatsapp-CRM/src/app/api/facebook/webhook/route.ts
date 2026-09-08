@@ -267,12 +267,31 @@ async function processLeadgenChange(
   if (!ownerProfile) return
   const ownerUserId = ownerProfile.user_id
 
-  const lead = await fetchLead({ leadId: leadgenId, accessToken })
+  // fetchLead (the lead's answers) and fetchAdTargeting (the ad set's
+  // placement, for platform resolution below) are independent Graph API
+  // calls — neither's input depends on the other's output — so they run
+  // concurrently instead of paying the sum of both round trips on every
+  // lead, which matters when Lead Ads webhooks arrive in a campaign-spike
+  // burst.
+  const [lead, targetingResult] = await Promise.all([
+    fetchLead({ leadId: leadgenId, accessToken }),
+    value.ad_id
+      ? fetchAdTargeting({ adId: value.ad_id, accessToken }).catch((err) => {
+          console.error("[Facebook] fetchAdTargeting failed (non-fatal):", err)
+          return null
+        })
+      : Promise.resolve(null),
+  ])
 
-  const form = value.form_id
+  // The webhook notification itself sometimes omits form_id — fall back to
+  // whatever the follow-up lead-detail fetch returned before giving up on
+  // resolving a form at all (see LeadAdSubmission.form_id's own comment
+  // for why a submission row is still created either way).
+  const resolvedFormId = value.form_id ?? lead.form_id
+  const form = resolvedFormId
     ? await prisma.leadAdForm.upsert({
-        where: { meta_form_id: value.form_id },
-        create: { account_id: accountId, meta_form_id: value.form_id, page_id: pageId, name: `Form ${value.form_id}` },
+        where: { meta_form_id: resolvedFormId },
+        create: { account_id: accountId, meta_form_id: resolvedFormId, page_id: pageId, name: `Form ${resolvedFormId}` },
         update: {},
       })
     : null
@@ -292,16 +311,11 @@ async function processLeadgenChange(
   // lookup (revoked token, deleted ad) leaves platform unresolved (null),
   // never treated as fatal for the rest of this lead's processing.
   let platform: "facebook" | "instagram" | "mixed" | null = null
-  if (value.ad_id) {
-    try {
-      const targeting = await fetchAdTargeting({ adId: value.ad_id, accessToken })
-      const platforms = targeting.publisher_platforms ?? []
-      platform = platforms.length === 1
-        ? (platforms[0] as "facebook" | "instagram")
-        : "mixed"
-    } catch (err) {
-      console.error("[Facebook] fetchAdTargeting failed (non-fatal):", err)
-    }
+  if (targetingResult) {
+    const platforms = targetingResult.publisher_platforms ?? []
+    platform = platforms.length === 1
+      ? (platforms[0] as "facebook" | "instagram")
+      : "mixed"
   }
   const isInstagram = platform === "instagram"
   const sourceTag = isInstagram ? "instagram_lead_ad" : "facebook_lead_ad"
@@ -389,23 +403,25 @@ async function processLeadgenChange(
     },
   })
 
-  if (form) {
-    await prisma.leadAdSubmission.create({
-      data: {
-        account_id: accountId,
-        form_id: form.id,
-        meta_leadgen_id: leadgenId,
-        ad_id: value.ad_id ?? null,
-        lead_id: createdLead.id,
-        platform,
-        // field_data is a plain array of {name, values} objects — fully
-        // JSON-serializable, just needs the structural cast Prisma's Json
-        // input type requires since it can't infer that from our own
-        // LeadFieldData[] type.
-        raw_field_data: lead.field_data as unknown as Prisma.InputJsonValue,
-      },
-    })
-  }
+  // Always created, even when no form could be resolved (form_id: null) —
+  // this row is what makes the meta_leadgen_id idempotency check at the
+  // top of this function actually work for every lead, not just ones
+  // Meta happened to attach a form_id to.
+  await prisma.leadAdSubmission.create({
+    data: {
+      account_id: accountId,
+      form_id: form?.id ?? null,
+      meta_leadgen_id: leadgenId,
+      ad_id: value.ad_id ?? null,
+      lead_id: createdLead.id,
+      platform,
+      // field_data is a plain array of {name, values} objects — fully
+      // JSON-serializable, just needs the structural cast Prisma's Json
+      // input type requires since it can't infer that from our own
+      // LeadFieldData[] type.
+      raw_field_data: lead.field_data as unknown as Prisma.InputJsonValue,
+    },
+  })
 
   emitToAccount(accountId, "lead", { eventType: "INSERT", new: createdLead })
 }

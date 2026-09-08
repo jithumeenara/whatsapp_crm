@@ -58,7 +58,9 @@ export async function GET() {
     const recentLeads = recentSubmissions.map((s) => ({
       id: s.id,
       created_at: s.created_at,
-      form_name: s.form.name,
+      // form is nullable — a submission whose webhook never carried a
+      // resolvable form_id (see LeadAdSubmission.form_id's own comment).
+      form_name: s.form?.name ?? null,
       lead_id: s.lead?.id ?? null,
       contact_name: s.lead?.contact?.name ?? null,
       contact_phone: s.lead?.contact?.phone ?? null,

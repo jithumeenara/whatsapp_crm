@@ -1,5 +1,6 @@
 import type { AiGenerateArgs, AiProviderAdapter, ClassifiedAiError } from './types'
 import { errorMessage } from './types'
+import { assertSafeAiBaseUrl } from './ssrf-guard'
 
 /**
  * A generic OpenAI-chat-completions-compatible adapter, parameterized by
@@ -19,6 +20,7 @@ interface OpenAiChatResponse {
 }
 
 export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateArgs): Promise<string> {
+  assertSafeAiBaseUrl(baseUrl)
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
   if (args.systemPrompt) messages.push({ role: 'system', content: args.systemPrompt })
   for (const turn of args.conversationHistory) {

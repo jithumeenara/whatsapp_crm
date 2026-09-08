@@ -508,23 +508,36 @@ export async function DELETE(request: Request) {
     }
 
     try {
-      await prisma.whatsAppConfig.delete({ where: { id: target.id } })
+      // Delete + default-reassignment in one transaction — previously two
+      // separate awaits, so a crash/timeout between them could leave an
+      // account with zero is_default rows, silently breaking every
+      // conversation-less send path's "fall back to the default number"
+      // resolution until someone manually re-picked one.
+      await prisma.$transaction(async (tx) => {
+        await tx.whatsAppConfig.delete({ where: { id: target.id } })
+        if (target.is_default) {
+          const nextDefault = await tx.whatsAppConfig.findFirst({
+            where: { account_id: accountId },
+            orderBy: { created_at: 'asc' },
+          })
+          if (nextDefault) {
+            await tx.whatsAppConfig.update({ where: { id: nextDefault.id }, data: { is_default: true } })
+          }
+        }
+      })
     } catch (err) {
+      // P2025 = record already gone — a double-click or a retried request
+      // racing an already-completed delete. Previously this fell through
+      // to a generic 500; treat it as the idempotent success it actually
+      // is, same as the "already gone" branch above.
+      if ((err as { code?: string })?.code === 'P2025') {
+        return NextResponse.json({ success: true })
+      }
       console.error('Error deleting whatsapp_config:', err)
       return NextResponse.json(
         { error: 'Failed to delete configuration' },
         { status: 500 }
       )
-    }
-
-    if (target.is_default) {
-      const nextDefault = await prisma.whatsAppConfig.findFirst({
-        where: { account_id: accountId },
-        orderBy: { created_at: 'asc' },
-      })
-      if (nextDefault) {
-        await prisma.whatsAppConfig.update({ where: { id: nextDefault.id }, data: { is_default: true } })
-      }
     }
 
     return NextResponse.json({ success: true })

@@ -1,27 +1,33 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys, type ProviderKeys } from '@/lib/ai/providers/registry'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
-async function requireUser() {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return { ok: false as const, status: 401, body: { error: 'Unauthorized' } }
+// PUT/DELETE can rewrite this account's AI provider keys/base_url (a
+// custom base_url is a live SSRF vector — see ssrf-guard.ts) or exfiltrate
+// which providers are configured, so both require the 'owner' role,
+// matching every other credentials-bearing settings route in this app
+// (whatsapp/config/direct-send, whatsapp/payments/config, instagram/
+// ice-breakers, etc.) — this route previously only checked that the
+// caller was *any* authenticated member of the account, with no role
+// floor at all.
+async function requireUser(min: 'viewer' | 'owner' = 'owner') {
+  try {
+    const ctx = await requireRole(min)
+    return { ok: true as const, userId: ctx.userId, accountId: ctx.accountId }
+  } catch (err) {
+    const res = toErrorResponse(err)
+    const body = await res.json().catch(() => ({ error: 'Unauthorized' }))
+    return { ok: false as const, status: res.status, body }
   }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) {
-    return { ok: false as const, status: 403, body: { error: 'Profile not linked to an account.' } }
-  }
-  return { ok: true as const, userId: session.user.id, accountId: profile.account_id }
 }
 
 export async function GET() {
-  const guard = await requireUser()
+  // Read-only status (has_key booleans, no secrets) — any account member
+  // can view it, same as other Settings tabs' read paths.
+  const guard = await requireUser('viewer')
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
   const config = await prisma.aiConfig.findUnique({
