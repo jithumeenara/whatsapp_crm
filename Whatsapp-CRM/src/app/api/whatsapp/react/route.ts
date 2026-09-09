@@ -5,6 +5,7 @@ import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config';
+import { canSendMessages, isAccountRole } from '@/lib/auth/roles';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -45,6 +46,19 @@ export async function POST(request: Request) {
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      );
+    }
+
+    // Sending a reaction is an outbound WhatsApp action, so it needs the
+    // same agent-or-above floor as sending a message. This route had no
+    // role check at all: a viewer (read-only by definition) not only got
+    // through, they also skipped the `isAgent` narrowing below — so the
+    // least privileged role could react on ANY conversation in the
+    // account, while a real agent was limited to their assigned ones.
+    if (!isAccountRole(profile.account_role) || !canSendMessages(profile.account_role)) {
+      return NextResponse.json(
+        { error: 'Your role is read-only — you cannot react to messages.' },
         { status: 403 },
       );
     }

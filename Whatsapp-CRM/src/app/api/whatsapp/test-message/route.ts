@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { canEditWhatsAppConfig, isAccountRole } from '@/lib/auth/roles'
 import { sendTextMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
@@ -30,10 +31,23 @@ export async function POST(request: Request) {
 
     const profile = await prisma.profile.findUnique({
       where: { user_id: session.user.id },
-      select: { account_id: true },
+      select: { account_id: true, account_role: true },
     })
     if (!profile?.account_id) {
       return NextResponse.json({ error: 'Profile not linked to an account' }, { status: 403 })
+    }
+
+    // Had no role floor, so any account member — including a read-only
+    // viewer — could send a real WhatsApp message to an arbitrary number.
+    // Its only caller is the WhatsApp connection card in Settings >
+    // Channels, which is owner-only, so the owner floor matches the UI
+    // exactly (canEditWhatsAppConfig is literally "owner only: WhatsApp
+    // Config") without narrowing any legitimate use.
+    if (!isAccountRole(profile.account_role) || !canEditWhatsAppConfig(profile.account_role)) {
+      return NextResponse.json(
+        { error: 'Only the account owner can send a test message.' },
+        { status: 403 },
+      )
     }
 
     let config

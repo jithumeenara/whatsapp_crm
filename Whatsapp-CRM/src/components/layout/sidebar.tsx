@@ -33,7 +33,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import type { AccountRole } from "@/lib/auth/roles";
+import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
 import {
   Avatar,
   AvatarFallback,
@@ -120,9 +120,13 @@ export function Sidebar({ open = false, onClose, collapsed = false, onToggleColl
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
 
-  const isAgent = accountRole === "agent";
+  // Agent-or-below. Was `accountRole === "agent"`, which showed a viewer
+  // (the lowest, read-only role) more nav than an agent. NOTE: this legacy
+  // sidebar is currently not mounted anywhere — layout-v2/sidebar-v2 is the
+  // live one — but it is fixed here so reviving it does not revive the bug.
+  const isRestricted = !!accountRole && !hasMinRole(accountRole, "supervisor");
 
-  const visibleItems = isAgent
+  const visibleItems = isRestricted
     ? NAV_ITEMS.map((item) =>
         item === null ? null : item.agentAllowed ? item : null,
       )
@@ -296,7 +300,7 @@ export function Sidebar({ open = false, onClose, collapsed = false, onToggleColl
             })}
 
             {/* Settings */}
-            {!isAgent && (
+            {!isRestricted && (
               <>
                 {!collapsed && (
                   <li className="my-2 px-3">
@@ -402,7 +406,7 @@ export function Sidebar({ open = false, onClose, collapsed = false, onToggleColl
                 <User className="size-4" />
                 Profile
               </DropdownMenuItem>
-              {!isAgent && (
+              {!isRestricted && (
                 <DropdownMenuItem
                   render={
                     <Link

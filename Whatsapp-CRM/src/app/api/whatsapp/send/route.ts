@@ -5,6 +5,7 @@ import { lookup as mimeLookup } from 'mime-types'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
+import { canSendMessages, isAccountRole } from '@/lib/auth/roles'
 import { sendTextMessage, sendTemplateMessage, sendMediaMessage, uploadMediaToMeta, sendCatalogMessage, sendSingleProductMessage, sendMultiProductMessage, type MultiProductSection } from '@/lib/whatsapp/meta-api'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
@@ -329,7 +330,9 @@ export async function POST(request: Request) {
     const authHeader = request.headers.get('authorization') ?? ''
     let userId: string
     let accountId: string
-    let isApiKey = false
+    // Agents may only send to conversations assigned to them. API key
+    // callers have elevated access, so this stays false on that path.
+    let isAgent = false
 
     if (authHeader.startsWith('Bearer wcrm_')) {
       const result = await verifyApiKey(authHeader.slice('Bearer '.length))
@@ -352,7 +355,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Account has no members.' }, { status: 403 })
       }
       userId = owner.user_id
-      isApiKey = true
     } else {
       const session = await auth()
       if (!session?.user?.id) {
@@ -366,15 +368,32 @@ export async function POST(request: Request) {
 
       const profile = await prisma.profile.findUnique({
         where: { user_id: userId },
-        select: { account_id: true },
+        select: { account_id: true, account_role: true },
       })
       accountId = profile?.account_id ?? ''
-      if (!accountId) {
+      if (!profile || !accountId) {
         return NextResponse.json(
           { error: 'Your profile is not linked to an account.' },
           { status: 403 },
         )
       }
+
+      // This route had no role floor: a viewer — read-only by definition,
+      // per canSendMessages — could send WhatsApp messages, and because
+      // the agent restriction below keys off `role === "agent"` they also
+      // skipped the assigned-conversation narrowing that a real agent is
+      // held to. So the least privileged role could message ANY
+      // conversation in the account.
+      if (!isAccountRole(profile.account_role) || !canSendMessages(profile.account_role)) {
+        return NextResponse.json(
+          { error: 'Your role is read-only — you cannot send messages.' },
+          { status: 403 },
+        )
+      }
+      // Agents may only send to conversations explicitly assigned to them.
+      // Resolved here from the profile already loaded, rather than
+      // re-querying the same row further down.
+      isAgent = profile.account_role === 'agent'
     }
 
     const body = await request.json()
@@ -427,18 +446,8 @@ export async function POST(request: Request) {
     }
 
     // Fetch conversation and contact.
-    // API key callers have elevated access — no agent restriction.
-    // Session callers: agents may only send to their assigned conversations.
-    let isAgent = false
-    if (!isApiKey) {
-      const callerProfile = await prisma.profile.findUnique({
-        where: { user_id: userId },
-        select: { account_role: true },
-      })
-      isAgent = callerProfile?.account_role === "agent"
-    }
-
-    // Agents may only send to conversations explicitly assigned to them.
+    // `isAgent` was resolved during authentication above (alongside the
+    // read-only role check), so there's no second profile lookup here.
     const conversation = await prisma.conversation.findFirst({
       where: {
         id: conversation_id,

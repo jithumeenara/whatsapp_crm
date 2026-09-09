@@ -33,7 +33,7 @@ import {
   Megaphone,
   ShoppingBag,
 } from "lucide-react";
-import type { AccountRole } from "@/lib/auth/roles";
+import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
 
 // ---- types ----
 
@@ -133,7 +133,11 @@ export function SidebarV2({
   const pathname = usePathname();
   const { profile, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
-  const isAgent = accountRole === "agent";
+  // "Restricted" = agent or below. This was `accountRole === "agent"`,
+  // which let a viewer — the LOWEST role, read-only — see the full nav
+  // plus the Settings entry that agents are deliberately denied. Anything
+  // an agent may not see, a viewer must not see either.
+  const isRestricted = !!accountRole && !hasMinRole(accountRole, "supervisor");
 
   useEffect(() => {
     onClose?.();
@@ -229,7 +233,7 @@ export function SidebarV2({
         <nav className="flex-1 overflow-y-auto scroll-styled px-2 py-3 space-y-5">
           {NAV_SECTIONS.map((section) => {
             const visibleItems = section.items.filter(
-              (item) => !isAgent || item.agentAllowed,
+              (item) => !isRestricted || item.agentAllowed,
             );
             if (visibleItems.length === 0) return null;
 
@@ -297,7 +301,7 @@ export function SidebarV2({
           })}
 
           {/* Settings (non-agents only) */}
-          {!isAgent && (
+          {!isRestricted && (
             <div>
               {!collapsed && (
                 <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400">

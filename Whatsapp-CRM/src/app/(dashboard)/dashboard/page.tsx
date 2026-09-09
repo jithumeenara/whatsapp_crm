@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useAuth } from "@/hooks/use-auth"
+import { hasMinRole } from "@/lib/auth/roles"
 import {
   AreaChart,
   Area,
@@ -177,7 +178,13 @@ async function fetchSection(section: string, extra: Record<string, string> = {})
 }
 
 export default function DashboardV2() {
-  const { profile, isAgent } = useAuth()
+  const { profile, accountRole } = useAuth()
+  // The management panels below were gated on `!isAgent`, but useAuth's
+  // role flags are exact matches — so a viewer, who ranks BELOW an agent
+  // and is read-only, sailed past a gate that stopped agents and saw the
+  // team-wide pipeline and response-time analytics. Gate on "supervisor
+  // or above" instead, which is what those panels are actually for.
+  const isManager = !!accountRole && hasMinRole(accountRole, "supervisor")
 
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [series, setSeries] = useState<ConversationsSeriesPoint[]>([])
@@ -388,7 +395,7 @@ export default function DashboardV2() {
       {/* Bottom row: CRM stats + Response time + Quick links */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* CRM funnel */}
-        {!isAgent && (
+        {isManager && (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-5">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -425,7 +432,7 @@ export default function DashboardV2() {
         )}
 
         {/* Response time chart */}
-        {!isAgent && (
+        {isManager && (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-5">
             <div className="flex items-center justify-between mb-4">
               <div>

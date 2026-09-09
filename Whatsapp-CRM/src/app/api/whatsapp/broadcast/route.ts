@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { canSendMessages, isAccountRole } from '@/lib/auth/roles'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
@@ -85,15 +86,26 @@ export async function POST(request: Request) {
       return rateLimitResponse(limit)
     }
 
-    // Resolve the caller's account_id.
+    // Resolve the caller's account_id and role.
     const profile = await prisma.profile.findUnique({
       where: { user_id: userId },
-      select: { account_id: true },
+      select: { account_id: true, account_role: true },
     })
     const accountId = profile?.account_id
-    if (!accountId) {
+    if (!profile || !accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+
+    // This endpoint had no role floor at all, so a viewer — read-only by
+    // definition — could launch a mass WhatsApp send to the whole contact
+    // list. Floor matches POST /api/broadcasts (the endpoint the live
+    // broadcast wizard actually uses), which requires 'agent'.
+    if (!isAccountRole(profile.account_role) || !canSendMessages(profile.account_role)) {
+      return NextResponse.json(
+        { error: 'Your role is read-only — you cannot send broadcasts.' },
         { status: 403 },
       )
     }
