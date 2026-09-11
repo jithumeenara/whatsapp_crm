@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { PROVIDERS, generateAiReply, getProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { markdownToWhatsApp } from '@/lib/whatsapp/markdown-to-whatsapp'
 
 export async function POST(req: Request) {
   // Same role floor as PUT /api/ai-config — this route can be made to
@@ -96,7 +97,11 @@ export async function POST(req: Request) {
       },
       message.trim(),
     )
-    return NextResponse.json({ reply: result.text, truncated: result.truncated, provider: providerId })
+    // Converted the same way a real send is (engine.ts's ai_reply node) —
+    // this screen is meant to preview what a customer actually receives,
+    // so it needs to show the same WhatsApp-formatted text, not raw
+    // Markdown that only looks fine here and breaks on a real send.
+    return NextResponse.json({ reply: markdownToWhatsApp(result.text), truncated: result.truncated, provider: providerId })
   } catch (err) {
     const classified = adapter.classifyError(err)
     return NextResponse.json({ error: classified.message }, { status: classified.retryable ? 429 : 400 })

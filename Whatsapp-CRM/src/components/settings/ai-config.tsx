@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { WhatsAppText } from '@/components/inbox/message-bubble';
 
 /* ── Provider metadata ────────────────────────────────────────────
  * Presentational mirror of src/lib/ai/providers/registry.ts's PROVIDERS
@@ -917,7 +918,14 @@ export function AiConfig() {
                         : 'bg-slate-100 text-slate-800 rounded-bl-sm',
                     ].join(' ')}
                   >
-                    {m.text}
+                    {/* AI replies are converted to WhatsApp's own bold /
+                        italic syntax server-side (markdown-to-whatsapp.ts) —
+                        render them the same way the real inbox does, so
+                        this screen previews what a customer actually
+                        sees instead of showing literal asterisks. The
+                        user's own typed test message is plain text, not
+                        run through that conversion. */}
+                    {m.role === 'ai' ? <WhatsAppText text={m.text} /> : m.text}
                   </div>
                   {m.role === 'ai' && m.truncated && (
                     <span className="mt-1 flex items-center gap-1 text-[10.5px] text-amber-600">

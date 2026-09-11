@@ -39,6 +39,7 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
 import { generateAiReplyWithFallback, getProviderKeys } from "@/lib/ai/providers/registry";
+import { markdownToWhatsApp } from "@/lib/whatsapp/markdown-to-whatsapp";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import {
   engineSendCtaUrlButton,
@@ -1597,18 +1598,27 @@ async function advanceFromNodeKey(
         }
         const systemPrompt = promptParts.join("\n\n") || "You are a helpful assistant.";
 
-        const { reply, truncated } = await generateAiReplyWithFallback(
+        const { reply: rawReply, truncated } = await generateAiReplyWithFallback(
           { ...aiConfig, max_tokens: cfg.max_tokens ?? aiConfig.max_tokens },
           systemPrompt,
           lastUserMessage,
           conversationHistory,
         );
-        // `reply` still gets sent as-is — a genuine (if incomplete)
-        // answer beats sending nothing, and a real customer should never
-        // see an internal debug note in their WhatsApp message. The
-        // truncation itself is logged below so it's visible in flow-run
-        // history — an admin seeing this repeatedly for one node is the
-        // signal to raise that node's Max Response Tokens.
+        // Models default to standard Markdown (**bold**, # headers) —
+        // WhatsApp's own dialect is different (single *bold*, no
+        // headers at all) and doesn't render GitHub-flavored syntax, so
+        // an unconverted reply showed literal ** and # characters to
+        // real customers. Converted once here and reused below, so
+        // save_response_to also stores WhatsApp-ready text rather than
+        // raw Markdown a later node might re-send unconverted.
+        const reply = markdownToWhatsApp(rawReply);
+        // `reply` still gets sent as-is otherwise — a genuine (if
+        // incomplete) answer beats sending nothing, and a real customer
+        // should never see an internal debug note in their WhatsApp
+        // message. The truncation itself is logged below so it's
+        // visible in flow-run history — an admin seeing this repeatedly
+        // for one node is the signal to raise that node's Max Response
+        // Tokens.
         const { whatsapp_message_id } = await engineSendText({
           accountId: run.account_id,
           userId: run.user_id,
