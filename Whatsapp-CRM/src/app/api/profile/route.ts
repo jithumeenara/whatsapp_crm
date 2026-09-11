@@ -18,6 +18,7 @@ export async function PATCH(req: NextRequest) {
       full_name?: string
       avatar_url?: string | null
       phone?: string | null
+      preferred_language?: string | null
     }
 
     const data: Record<string, unknown> = {}
@@ -42,6 +43,10 @@ export async function PATCH(req: NextRequest) {
       data.phone = trimmed || null
       data.phone_verified_at = null
     }
+    if ("preferred_language" in body) {
+      const lang = typeof body.preferred_language === "string" ? body.preferred_language.trim() : ""
+      data.preferred_language = lang || null
+    }
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
@@ -59,6 +64,7 @@ export async function PATCH(req: NextRequest) {
         phone_verified_at: true,
         account_id: true,
         account_role: true,
+        preferred_language: true,
       },
     })
 

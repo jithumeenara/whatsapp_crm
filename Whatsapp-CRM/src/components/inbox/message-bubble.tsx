@@ -31,11 +31,13 @@ import {
   ShoppingCart,
   Package,
   IndianRupee,
+  Languages,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
 import { formatCurrency } from "@/lib/currency";
+import { useAuth } from "@/hooks/use-auth";
 
 /**
  * Applied as an inline `style` (not a Tailwind class) on every element that
@@ -908,6 +910,95 @@ function MessageContent({ message }: { message: Message }) {
   }
 }
 
+/**
+ * "Translate" link under an inbound (customer) text message — only
+ * rendered when the current agent has set a preferred_language in
+ * Settings > Profile. On click, calls POST /api/messages/translate
+ * (result gets cached on the Message row server-side, so re-opening
+ * the conversation later won't re-call Gemini for the same message).
+ * "Show original" toggle rather than replacing the text outright — the
+ * same honesty-first pattern Zendesk's own translation feature uses:
+ * never let an agent lose sight of what the customer actually wrote.
+ */
+function TranslateToggle({ message }: { message: Message }) {
+  const { profile } = useAuth();
+  const preferredLanguage = profile?.preferred_language;
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [translated, setTranslated] = useState<{ text: string; detectedLanguage: string | null; alreadyTarget: boolean } | null>(
+    message.translated_text && message.translated_lang === preferredLanguage
+      ? { text: message.translated_text, detectedLanguage: message.detected_lang ?? null, alreadyTarget: false }
+      : null,
+  );
+  const [showingOriginal, setShowingOriginal] = useState(false);
+
+  if (!preferredLanguage || message.content_type !== "text" || !message.content_text?.trim()) return null;
+
+  async function handleTranslate() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/messages/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_id: message.id, target_language: preferredLanguage }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Translation failed");
+      setTranslated({ text: data.translated_text, detectedLanguage: data.detected_language, alreadyTarget: !!data.already_target_language });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Translation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (translated) {
+    if (translated.alreadyTarget) {
+      // Already in the agent's own language — nothing useful to toggle,
+      // just a quiet confirmation rather than a translation that would
+      // be identical to the original.
+      return (
+        <p className="mt-1 flex items-center gap-1 text-[10.5px] text-slate-400">
+          <Languages className="h-3 w-3" />
+          Already in {preferredLanguage}
+        </p>
+      );
+    }
+    return (
+      <div className="mt-1">
+        {!showingOriginal && (
+          <p className="whitespace-pre-wrap text-[13px] italic text-slate-600" style={WRAP_STYLE}>
+            {translated.text}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={() => setShowingOriginal((s) => !s)}
+          className="mt-0.5 flex items-center gap-1 text-[10.5px] font-medium text-indigo-500 hover:text-indigo-700"
+        >
+          <Languages className="h-3 w-3" />
+          {showingOriginal
+            ? `Show translation${translated.detectedLanguage ? ` (from ${translated.detectedLanguage})` : ""}`
+            : "Show original"}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleTranslate}
+      disabled={loading}
+      className="mt-1 flex items-center gap-1 text-[10.5px] font-medium text-indigo-500 hover:text-indigo-700 disabled:opacity-50"
+    >
+      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Languages className="h-3 w-3" />}
+      {loading ? "Translating…" : error || `Translate to ${preferredLanguage}`}
+    </button>
+  );
+}
+
 export function MessageBubble({
   message,
   reply,
@@ -1006,6 +1097,11 @@ export function MessageBubble({
               <ReplyQuote authorLabel={reply.authorLabel} preview={reply.preview} />
             )}
             <MessageContent message={message} />
+            {/* Inbound only — an outbound agent/bot message translating
+                itself back at the person who wrote it doesn't make sense;
+                the composer's translate-before-send button covers that
+                direction instead. */}
+            {!isOutbound && <TranslateToggle message={message} />}
           </>
         )}
         <div

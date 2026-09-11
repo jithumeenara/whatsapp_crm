@@ -1241,6 +1241,7 @@ export function MessageThread({
         onRequestPayment={handleRequestPayment}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        contactDetectedLanguage={contact?.detected_language}
       />
 
       <TemplatePicker

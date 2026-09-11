@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Loader2, Camera, ShieldCheck, Mail, Phone, CheckCircle2, CircleAlert,
-  IdCard, User, Copy, Check, Pencil, X, Crown, UserCheck, UserCog, Palette,
+  IdCard, User, Copy, Check, Pencil, X, Crown, UserCheck, UserCog, Palette, Languages,
 } from 'lucide-react';
 import { motion, useReducedMotion, useMotionValue, useSpring, useTransform } from 'motion/react';
 
@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { SecurityCard } from '@/components/settings/security-card';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
+import { ChatTranslationPanel } from '@/components/settings/chat-translation-panel';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { CountryCodeSelect } from '@/components/shared/country-code-select';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
@@ -645,6 +646,22 @@ export function ProfileForm() {
         </div>
         <div className="px-6 py-5">
           <AppearancePanel />
+        </div>
+      </div>
+
+      {/* ── Chat Translation ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
+            <Languages className="h-4.5 w-4.5 text-[#5B6CF9]" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[14px] font-semibold text-slate-800">Chat Translation</h3>
+            <p className="text-[12px] text-slate-500 mt-0.5">Read and reply across languages in the Inbox.</p>
+          </div>
+        </div>
+        <div className="px-6 py-5">
+          <ChatTranslationPanel />
         </div>
       </div>
 

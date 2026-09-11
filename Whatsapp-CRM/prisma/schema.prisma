@@ -273,6 +273,13 @@ model Profile {
   account_id   String      @db.Uuid
   account_role          AccountRole
   restrict_to_assigned  Boolean     @default(false)
+  /// Personal chat-translation setting (Settings > Profile) — a free-text
+  /// language name (e.g. "Malayalam", "English"), not a fixed enum, since
+  /// Gemini's translation isn't limited to a short hardcoded list. Null =
+  /// translation UI (the "Translate" link on inbound messages, the
+  /// composer's translate button) doesn't render at all for this person —
+  /// off by default, zero behavior change for existing users.
+  preferred_language    String?
   created_at            DateTime    @default(now()) @db.Timestamptz(6)
   updated_at            DateTime    @updatedAt @db.Timestamptz(6)
 
@@ -323,6 +330,13 @@ model Contact {
   // at it (conversations, deals, leads, etc.) stays valid; UIs that list
   // live contacts filter WHERE merged_into_contact_id IS NULL.
   merged_into_contact_id String? @db.Uuid
+  /// Language this contact's messages were last detected in (chat
+  /// translation feature) — a free-text language name, e.g. "Arabic",
+  /// "Tamil". Updated whenever an inbound message from them is
+  /// translated; lets the composer's "Translate" button translate an
+  /// outbound draft into their language without re-detecting it. Null
+  /// until their first message is ever translated.
+  detected_language String?
   created_at       DateTime @default(now()) @db.Timestamptz(6)
   updated_at       DateTime @updatedAt @db.Timestamptz(6)
 
@@ -563,6 +577,16 @@ model Message {
   // both makes the message show up AND lets the bubble render a "Broadcast"
   // tag instead of looking like an indistinguishable one-off agent send.
   broadcast_id        String?   @db.Uuid
+  // Chat translation (agent-facing "Translate" link on inbound text
+  // messages) — same "populated after the fact, mirrored onto a
+  // dedicated column" shape as `transcript` above. Cached per-message so
+  // re-opening a conversation doesn't re-call Gemini for something
+  // already translated once; detected_lang/translated_lang together let
+  // a stale cache (e.g. the agent's preferred_language changed) be
+  // detected and re-translated rather than shown wrong.
+  detected_lang       String?
+  translated_text     String?
+  translated_lang     String?
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   deleted_at          DateTime? @db.Timestamptz(6)
 

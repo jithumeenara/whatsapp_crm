@@ -31,6 +31,10 @@ interface Profile {
   email_verified: boolean;
   account_id: string | null;
   account_role: AccountRole | null;
+  /** Chat translation target language (Settings > Profile), e.g.
+   *  "Malayalam". Null = feature off for this person — the inbox's
+   *  "Translate" link and the composer's translate button don't render. */
+  preferred_language: string | null;
 }
 
 interface AccountSummary {
@@ -93,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email_verified: !!data.profile.email_verified,
           account_id: data.profile.account_id,
           account_role: accountRole,
+          preferred_language: data.profile.preferred_language ?? null,
         });
         if (data.account) {
           setAccount({

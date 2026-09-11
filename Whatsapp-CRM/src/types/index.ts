@@ -127,6 +127,11 @@ export interface Contact {
   /** Set once this contact has been absorbed by a "Merge with…" action —
    *  the row stays in the DB but is excluded from normal contact lists. */
   merged_into_contact_id?: string | null;
+  /** Language this contact's messages were last detected in (chat
+   *  translation) — lets the composer's translate button target the
+   *  right language without re-detecting it every time. Null until
+   *  their first message is ever translated. */
+  detected_language?: string | null;
 }
 
 export interface Tag {
@@ -268,6 +273,14 @@ export interface Message {
   /** Set only when a Broadcast campaign sent this message — the inbox
    *  bubble renders a "Broadcast" tag when present. */
   broadcast_id?: string | null;
+  /** Chat translation cache (POST /api/messages/translate) — populated
+   *  the first time an agent clicks "Translate" on this message. Null
+   *  until then. translated_lang lets the bubble detect a stale cache
+   *  (the agent's preferred_language changed since this was cached) and
+   *  re-translate rather than show the wrong language. */
+  detected_lang?: string | null;
+  translated_text?: string | null;
+  translated_lang?: string | null;
   created_at: string;
   reply_to_message_id?: string;
   /**

@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { ReplyQuote } from "./reply-quote";
 import { toast } from "sonner";
@@ -30,6 +31,10 @@ interface MessageComposerProps {
   onRequestPayment: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** Language this contact's messages were last detected in (chat
+   *  translation) — lets the translate button below know what language
+   *  to translate the draft into. Undefined/null hides the button. */
+  contactDetectedLanguage?: string | null;
 }
 
 const ATTACH_OPTIONS = [
@@ -68,6 +73,7 @@ export function MessageComposer({
   onRequestPayment,
   replyTo,
   onClearReply,
+  contactDetectedLanguage,
 }: MessageComposerProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -76,6 +82,35 @@ export function MessageComposer({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const { profile } = useAuth();
+  const preferredLanguage = profile?.preferred_language;
+  // Nothing to translate into/from, or already in the same language —
+  // hide the button entirely rather than show it disabled with no
+  // explanation.
+  const canTranslateDraft =
+    !!preferredLanguage &&
+    !!contactDetectedLanguage &&
+    contactDetectedLanguage.trim().toLowerCase() !== preferredLanguage.trim().toLowerCase();
+
+  const handleTranslateDraft = useCallback(async () => {
+    if (!text.trim() || !contactDetectedLanguage || translating) return;
+    setTranslating(true);
+    try {
+      const res = await fetch("/api/messages/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, target_language: contactDetectedLanguage }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Translation failed");
+      setText(data.translated_text);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Translation failed");
+    } finally {
+      setTranslating(false);
+    }
+  }, [text, contactDetectedLanguage, translating]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentAttachType = useRef<typeof ATTACH_OPTIONS[number]['key']>('document');
@@ -390,6 +425,18 @@ export function MessageComposer({
             (sessionExpired || readOnly) && "cursor-not-allowed opacity-50",
           )}
         />
+
+        {canTranslateDraft && (
+          <button
+            type="button"
+            onClick={handleTranslateDraft}
+            disabled={!text.trim() || translating || readOnly}
+            title={`Translate your reply into ${contactDetectedLanguage}`}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
+          </button>
+        )}
 
         <GatedButton
           size="sm"

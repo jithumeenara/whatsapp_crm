@@ -43,6 +43,7 @@ export async function GET() {
       email_verified: profile.user?.email_verified !== null,
       account_id: profile.account_id,
       account_role: accountRole,
+      preferred_language: profile.preferred_language,
     },
     account: profile.account
       ? {
