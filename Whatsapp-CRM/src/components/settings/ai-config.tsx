@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 
 /* ── Provider metadata ────────────────────────────────────────────
  * Presentational mirror of src/lib/ai/providers/registry.ts's PROVIDERS
@@ -132,6 +133,15 @@ export function AiConfig() {
   const [escalationTopics, setEscalationTopics] = useState<string[]>([]);
   const [topicInput, setTopicInput] = useState('');
 
+  // Confidence-based handoff — off by default; see the schema comment on
+  // AiConfig.low_confidence_handoff_enabled for why.
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.35);
+  const [lowConfidenceHandoffEnabled, setLowConfidenceHandoffEnabled] = useState(false);
+  const [lowConfidenceAssignTo, setLowConfidenceAssignTo] = useState('');
+  const [lowConfidenceMessage, setLowConfidenceMessage] = useState('');
+  const [semanticSearchAvailable, setSemanticSearchAvailable] = useState(false);
+  const [agents, setAgents] = useState<{ user_id: string; full_name: string }[]>([]);
+
   // API key validation — scoped to whichever provider tile is selected.
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle');
   const [validationMsg, setValidationMsg] = useState('');
@@ -180,6 +190,11 @@ export function AiConfig() {
         setDocuments(Array.isArray(data.knowledge_documents) ? data.knowledge_documents : []);
         setFallbackAnswer(data.fallback_answer ?? '');
         setEscalationTopics(Array.isArray(data.escalation_topics) ? data.escalation_topics : []);
+        setConfidenceThreshold(data.confidence_threshold ?? 0.35);
+        setLowConfidenceHandoffEnabled(!!data.low_confidence_handoff_enabled);
+        setLowConfidenceAssignTo(data.low_confidence_assign_to ?? '');
+        setLowConfidenceMessage(data.low_confidence_message ?? '');
+        setSemanticSearchAvailable(!!data.semantic_search_available);
       }
     } finally {
       setLoading(false);
@@ -187,6 +202,18 @@ export function AiConfig() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Same "assignable agents" fetch the handoff flow-builder node uses,
+  // for the low-confidence handoff's own assignee picker below.
+  useEffect(() => {
+    fetch('/api/account/members')
+      .then((r) => (r.ok ? r.json() : { members: [] }))
+      .then((d) => {
+        const members = (d.members ?? []) as { user_id: string; full_name: string; role: string }[];
+        setAgents(members.filter((m) => m.role === 'agent'));
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -290,6 +317,10 @@ export function AiConfig() {
           knowledge_documents: documents.filter((d) => d.title.trim() && d.content.trim()),
           fallback_answer: fallbackAnswer || null,
           escalation_topics: escalationTopics,
+          confidence_threshold: confidenceThreshold,
+          low_confidence_handoff_enabled: lowConfidenceHandoffEnabled,
+          low_confidence_assign_to: lowConfidenceAssignTo || null,
+          low_confidence_message: lowConfidenceMessage || null,
         }),
       });
       if (res.ok) {
@@ -763,6 +794,74 @@ export function AiConfig() {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Semantic search status — read-only, reflects whether a
+              Gemini key is on file (any Save with a knowledge base keeps
+              embeddings in sync automatically, no separate button). */}
+          <div className={`rounded-2xl border p-4 text-[12.5px] ${semanticSearchAvailable ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+            {semanticSearchAvailable
+              ? 'Smarter search is active — the AI finds knowledge by meaning, not just matching words (e.g. "cost" now matches an entry that only says "pricing"). Kept in sync automatically every time you save.'
+              : 'Add a Gemini API key above to unlock smarter, meaning-based knowledge search. Without one, matching still works but relies on shared words between the question and your knowledge base.'}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label className="text-[13px] font-medium text-slate-700">Hand off to a human when the AI isn&apos;t confident</Label>
+                <p className="text-[11px] text-slate-400">
+                  Instead of guessing, the AI sends a short message and assigns the conversation to your team — a real handoff, not just a prompt instruction it might ignore.
+                </p>
+              </div>
+              <Switch checked={lowConfidenceHandoffEnabled} onCheckedChange={setLowConfidenceHandoffEnabled} />
+            </div>
+
+            <div className={lowConfidenceHandoffEnabled ? 'space-y-4' : 'space-y-4 pointer-events-none opacity-40'}>
+              <div className="space-y-1.5">
+                <Label htmlFor="confidence-threshold" className="text-[13px] font-medium text-slate-700">
+                  Confidence threshold
+                  <span className="ml-2 text-[11px] text-slate-400 font-normal">
+                    {confidenceThreshold.toFixed(2)} (lower = hands off less often, higher = hands off more often)
+                  </span>
+                </Label>
+                <input
+                  id="confidence-threshold"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={confidenceThreshold}
+                  onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+                  className="w-full accent-[#5B6CF9]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-[13px] font-medium text-slate-700">Assign to agent</Label>
+                <Select value={lowConfidenceAssignTo || '__unassigned__'} onValueChange={(v) => setLowConfidenceAssignTo(!v || v === '__unassigned__' ? '' : v)}>
+                  <SelectTrigger className="h-9 text-[13px] border-slate-200">
+                    <SelectValue placeholder="Select an agent (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__unassigned__">Unassigned — just move to pending</SelectItem>
+                    {agents.map((a) => (
+                      <SelectItem key={a.user_id} value={a.user_id}>{a.full_name || a.user_id}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="low-confidence-message" className="text-[13px] font-medium text-slate-700">Message sent before handoff</Label>
+                <Input
+                  id="low-confidence-message"
+                  placeholder="Let me connect you with a team member who can help with that."
+                  value={lowConfidenceMessage}
+                  onChange={(e) => setLowConfidenceMessage(e.target.value)}
+                  className="h-9 text-[13px] border-slate-200"
+                />
+              </div>
             </div>
           </div>
         </TabsContent>

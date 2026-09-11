@@ -1090,14 +1090,77 @@ model AiConfig {
   /// Account-level default for how many past messages to include as
   /// conversation history; a flow node's own history_depth overrides this.
   history_depth_default Int    @default(6)
+  /// Minimum retrieval confidence (0-1, cosine similarity when semantic
+  /// search is active, or a normalized keyword-overlap score otherwise)
+  /// for ai_reply to answer on its own. Below this, the node hands off
+  /// to a human instead of guessing — see engine.ts's ai_reply handler.
+  /// Only takes effect when low_confidence_handoff_enabled is true.
+  confidence_threshold  Float   @default(0.35)
+  /// Off by default — this is a real behavior change (a code-enforced
+  /// handoff, not just prompt guidance like escalation_topics above),
+  /// so existing accounts see zero difference until the owner turns it
+  /// on in Settings > AI Config.
+  low_confidence_handoff_enabled Boolean @default(false)
+  /// Optional default agent to assign a low-confidence handoff to;
+  /// unset means the conversation flips to "pending" with no specific
+  /// assignee, same as the handoff node's own behavior with no assign_to.
+  low_confidence_assign_to       String? @db.Uuid
+  /// Holding message sent to the customer right before handing off.
+  /// Falls back to a built-in default string when unset.
+  low_confidence_message         String?
 
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   updated_at    DateTime @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  knowledge_embeddings AiKnowledgeEmbedding[]
 
   @@map("ai_configs")
+}
+
+/// Caches a Gemini embedding vector for one piece of knowledge (a Q&A
+/// pair or a document chunk), keyed by a content hash so an edit to the
+/// source text invalidates and regenerates it automatically — no
+/// explicit cache-busting needed elsewhere. Deliberately additive:
+/// AiConfig.training_data/knowledge_documents (JSON) stay the source of
+/// truth; this table is purely a derived index over them, built by
+/// syncKnowledgeEmbeddings() when the account saves its knowledge base
+/// (src/lib/ai/embeddings.ts). Dropping this table entirely is a safe,
+/// full rollback — src/lib/ai/knowledge.ts falls back to its original
+/// keyword-overlap scorer whenever no embedding rows exist for an
+/// account, so semantic search is additive, never a hard dependency.
+///
+/// No ANN index (ivfflat/hnsw) on `embedding` — every real query already
+/// filters to one ai_config_id first (a WHERE clause, not a table scan),
+/// which keeps row counts in the tens-to-low-hundreds even for a large
+/// knowledge base; brute-force cosine distance over that few rows is
+/// fast without an index. Revisit only if an account's knowledge base
+/// genuinely grows into the thousands of entries.
+model AiKnowledgeEmbedding {
+  id              String   @id @default(uuid()) @db.Uuid
+  ai_config_id    String   @db.Uuid
+  /// SHA-256 hex of the exact text that was embedded.
+  content_hash    String
+  /// 'qa' | 'chunk' — which half of the knowledge base this came from.
+  kind            String
+  /// Model that produced this vector, e.g. "gemini-embedding-001" —
+  /// vectors from different models aren't comparable, so a future model
+  /// change means old rows are orphaned (mismatched embedding_model,
+  /// never matched by a query) and regenerated, not silently compared
+  /// cross-model.
+  embedding_model String
+  /// pgvector column — Prisma has no native vector type, so this is
+  /// Unsupported() and every read/write of the vector itself goes
+  /// through raw SQL (embeddings.ts, knowledge.ts). gemini-embedding-001's
+  /// documented default output size.
+  embedding       Unsupported("vector(3072)")
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  ai_config AiConfig @relation(fields: [ai_config_id], references: [id], onDelete: Cascade)
+
+  @@unique([ai_config_id, content_hash, embedding_model])
+  @@map("ai_knowledge_embeddings")
 }
 
 // ============================================================

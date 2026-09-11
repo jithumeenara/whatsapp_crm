@@ -38,7 +38,7 @@ import { prisma } from "@/lib/db";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
-import { generateAiReplyWithFallback } from "@/lib/ai/providers/registry";
+import { generateAiReplyWithFallback, getProviderKeys } from "@/lib/ai/providers/registry";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import {
   engineSendCtaUrlButton,
@@ -703,11 +703,19 @@ async function sendListAndSuspend(
   return { outcome: "advanced", node_key: node.node_key };
 }
 
+type HandoffConfigShape = { assign_to?: string; note?: string; notify_message?: string; timeout_hours?: number };
+
+/** Takes the handoff config directly (not a full FlowNodeRow) so both
+ *  the real `handoff` node and ai_reply's low-confidence handoff branch
+ *  can call this same, single implementation — no duplicated
+ *  assign/notify/push logic between "explicit handoff" and "AI wasn't
+ *  confident enough" handoffs. */
 async function executeHandoff(
   run: FlowRunRow,
-  node: FlowNodeRow,
+  cfg: HandoffConfigShape,
+  nodeKey: string | null,
+  endReason: string = "handoff_node",
 ): Promise<void> {
-  const cfg = node.config as { assign_to?: string; note?: string; notify_message?: string; timeout_hours?: number };
   if (run.conversation_id) {
     // Verify the agent still exists before assigning — the user may have been
     // deleted since the chatbot was configured, which would violate the FK.
@@ -801,11 +809,11 @@ async function executeHandoff(
       }
     }
   }
-  await logEvent(run.id, "handoff", node.node_key, {
+  await logEvent(run.id, "handoff", nodeKey, {
     note: cfg.note ?? null,
     assigned_to: cfg.assign_to ?? null,
   });
-  await endRun(run.id, "handed_off", "handoff_node");
+  await endRun(run.id, "handed_off", endReason);
 }
 
 /**
@@ -1329,7 +1337,7 @@ async function advanceFromNodeKey(
       return { outcome: "advanced" };
     }
     if (node.node_type === "handoff") {
-      await executeHandoff(run, node);
+      await executeHandoff(run, node.config as HandoffConfigShape, node.node_key);
       return { outcome: "handed_off" };
     }
     if (node.node_type === "end") {
@@ -1511,9 +1519,59 @@ async function advanceFromNodeKey(
         // messages against an unchanged knowledge base reuses the
         // chunked/tokenized form instead of rebuilding it every call.
         const knowledgeCacheKey = `${aiConfig.id}:${aiConfig.updated_at.getTime()}`;
-        const knowledgeBlock = formatKnowledgeBlock(
-          selectRelevantContext(lastUserMessage, qaPairs, documents, { cacheKey: knowledgeCacheKey }),
-        );
+        // Semantic (embeddings/pgvector) retrieval opts in automatically
+        // whenever this account has a saved Gemini key — same BYO-key
+        // model as chat replies, nothing extra to configure. No key (or
+        // no embeddings synced yet) falls back to the original keyword
+        // scorer inside selectRelevantContext itself; never a hard
+        // dependency for this node.
+        const geminiKeyEntry = getProviderKeys(aiConfig).gemini;
+        const geminiApiKey = geminiKeyEntry?.api_key ? decrypt(geminiKeyEntry.api_key) : null;
+        const selected = await selectRelevantContext(lastUserMessage, qaPairs, documents, {
+          cacheKey: knowledgeCacheKey,
+          ...(geminiApiKey ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey } } : {}),
+        });
+
+        // Code-enforced confidence guardrail — distinct from
+        // fallback_answer/escalation_topics below, which are prompt-level
+        // guidance the model can still ignore. This one never calls the
+        // model at all when confidence is too low: it sends a holding
+        // message and hands the conversation to a human, the same
+        // real handoff the `handoff` node performs. Opt-in
+        // (low_confidence_handoff_enabled) so existing accounts see zero
+        // behavior change until the owner turns this on in Settings.
+        if (aiConfig.low_confidence_handoff_enabled && selected.confidence < aiConfig.confidence_threshold) {
+          const holdingMessage =
+            aiConfig.low_confidence_message?.trim() ||
+            "Let me connect you with a team member who can help with that.";
+          const { whatsapp_message_id } = await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: holdingMessage,
+          });
+          await logEvent(run.id, "message_sent", node.node_key, {
+            node_type: "ai_reply",
+            whatsapp_message_id,
+            reason: "low_confidence_handoff",
+          });
+          // executeHandoff logs its own "handoff" event (assign/note) —
+          // the confidence numbers ride along in `note` rather than a
+          // second, duplicate log call.
+          await executeHandoff(
+            run,
+            {
+              assign_to: aiConfig.low_confidence_assign_to ?? undefined,
+              note: `AI confidence ${selected.confidence.toFixed(2)} below threshold ${aiConfig.confidence_threshold.toFixed(2)}`,
+            },
+            node.node_key,
+            "ai_reply_low_confidence",
+          );
+          return { outcome: "handed_off" };
+        }
+
+        const knowledgeBlock = formatKnowledgeBlock(selected);
 
         const promptParts = [aiConfig.system_prompt ?? undefined, knowledgeBlock || undefined].filter(
           (p): p is string => Boolean(p),

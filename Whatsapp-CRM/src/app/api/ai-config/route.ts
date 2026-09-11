@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { encrypt } from '@/lib/whatsapp/encryption'
+import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys, type ProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { syncKnowledgeEmbeddings, toKnowledgeItems } from '@/lib/ai/embeddings'
+import { chunkDocument, type QaPair, type KnowledgeDocument } from '@/lib/ai/knowledge'
 
 // PUT/DELETE can rewrite this account's AI provider keys/base_url (a
 // custom base_url is a live SSRF vector — see ssrf-guard.ts) or exfiltrate
@@ -60,6 +62,14 @@ export async function GET() {
     fallback_answer: config.fallback_answer,
     escalation_topics: config.escalation_topics,
     history_depth_default: config.history_depth_default,
+    confidence_threshold: config.confidence_threshold,
+    low_confidence_handoff_enabled: config.low_confidence_handoff_enabled,
+    low_confidence_assign_to: config.low_confidence_assign_to,
+    low_confidence_message: config.low_confidence_message,
+    // Lets the Settings UI show "embeddings ready" vs "not set up yet"
+    // (e.g. to explain why the Regenerate button matters) without
+    // exposing anything sensitive — has_key above already covers that.
+    semantic_search_available: !!keys.gemini?.api_key,
   })
 }
 
@@ -90,6 +100,10 @@ export async function PUT(req: Request) {
     fallback_answer,
     escalation_topics,
     history_depth_default,
+    confidence_threshold,
+    low_confidence_handoff_enabled,
+    low_confidence_assign_to,
+    low_confidence_message,
   } = body as {
     active_provider?: string
     fallback_provider?: string | null
@@ -102,6 +116,10 @@ export async function PUT(req: Request) {
     fallback_answer?: string | null
     escalation_topics?: unknown
     history_depth_default?: number
+    confidence_threshold?: number
+    low_confidence_handoff_enabled?: boolean
+    low_confidence_assign_to?: string | null
+    low_confidence_message?: string | null
   }
 
   const existing = await prisma.aiConfig.findUnique({
@@ -153,6 +171,16 @@ export async function PUT(req: Request) {
       : (existing?.escalation_topics ?? [])) as Prisma.InputJsonValue,
     history_depth_default:
       history_depth_default != null ? Number(history_depth_default) : (existing?.history_depth_default ?? 6),
+    confidence_threshold:
+      confidence_threshold != null ? Number(confidence_threshold) : (existing?.confidence_threshold ?? 0.35),
+    low_confidence_handoff_enabled:
+      low_confidence_handoff_enabled !== undefined
+        ? low_confidence_handoff_enabled
+        : (existing?.low_confidence_handoff_enabled ?? false),
+    low_confidence_assign_to:
+      low_confidence_assign_to !== undefined ? low_confidence_assign_to : (existing?.low_confidence_assign_to ?? null),
+    low_confidence_message:
+      low_confidence_message !== undefined ? low_confidence_message : (existing?.low_confidence_message ?? null),
   }
 
   const config = await prisma.aiConfig.upsert({
@@ -170,7 +198,34 @@ export async function PUT(req: Request) {
     },
   })
 
-  return NextResponse.json({ success: true, id: config.id })
+  // Re-sync embeddings only when this save actually touched the
+  // knowledge base (avoids extra DB round-trips on a save that just
+  // changed e.g. temperature) and only when a Gemini key is on file —
+  // an account with no Gemini key stays on keyword search, exactly as
+  // if this feature didn't exist. Best-effort: a sync failure (bad key,
+  // Gemini outage, etc.) never fails the config save itself — the
+  // account's settings are already safely persisted above regardless.
+  let embeddingsSync: { embedded: number; deleted: number; failed: number } | null = null
+  const knowledgeBaseTouched = training_data !== undefined || knowledge_documents !== undefined
+  const geminiApiKey = mergedKeys.gemini?.api_key ? decrypt(mergedKeys.gemini.api_key) : null
+  if (knowledgeBaseTouched && geminiApiKey) {
+    try {
+      const qaPairs = Array.isArray(config.training_data) ? (config.training_data as unknown as QaPair[]) : []
+      const documents = Array.isArray(config.knowledge_documents)
+        ? (config.knowledge_documents as unknown as KnowledgeDocument[])
+        : []
+      const chunks = documents.flatMap((doc) => chunkDocument(doc))
+      embeddingsSync = await syncKnowledgeEmbeddings({
+        aiConfigId: config.id,
+        apiKey: geminiApiKey,
+        items: toKnowledgeItems(qaPairs, chunks),
+      })
+    } catch (err) {
+      console.error('[ai-config] embedding sync failed (config itself still saved):', err instanceof Error ? err.message : err)
+    }
+  }
+
+  return NextResponse.json({ success: true, id: config.id, embeddings_sync: embeddingsSync })
 }
 
 export async function DELETE() {
