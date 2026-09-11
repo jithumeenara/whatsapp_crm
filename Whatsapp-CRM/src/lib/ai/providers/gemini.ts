@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
-import type { AiGenerateArgs, AiProviderAdapter, ClassifiedAiError } from './types'
+import { GoogleGenerativeAI, FinishReason } from '@google/generative-ai'
+import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
 
-async function generateReply(args: AiGenerateArgs): Promise<string> {
+async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
   const model = genAI.getGenerativeModel({
     model: args.model,
@@ -19,7 +19,8 @@ async function generateReply(args: AiGenerateArgs): Promise<string> {
 
   const chat = model.startChat({ history })
   const result = await chat.sendMessage(args.userMessage)
-  return result.response.text()
+  const finishReason = result.response.candidates?.[0]?.finishReason
+  return { text: result.response.text(), truncated: finishReason === FinishReason.MAX_TOKENS }
 }
 
 function classifyError(err: unknown): ClassifiedAiError {

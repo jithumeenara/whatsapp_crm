@@ -1,4 +1,4 @@
-import type { AiGenerateArgs, AiProviderAdapter, ClassifiedAiError } from './types'
+import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
 import { errorMessage } from './types'
 import { assertSafeAiBaseUrl } from './ssrf-guard'
 
@@ -15,11 +15,11 @@ import { assertSafeAiBaseUrl } from './ssrf-guard'
  */
 
 interface OpenAiChatResponse {
-  choices?: Array<{ message?: { content?: string } }>
+  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
   error?: { message?: string; type?: string; code?: string }
 }
 
-export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateArgs): Promise<string> {
+export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateArgs): Promise<AiGenerateResult> {
   assertSafeAiBaseUrl(baseUrl)
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = []
   if (args.systemPrompt) messages.push({ role: 'system', content: args.systemPrompt })
@@ -48,7 +48,10 @@ export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateAr
   }
   const reply = data.choices?.[0]?.message?.content
   if (!reply) throw new Error('No reply returned by the model.')
-  return reply
+  // OpenAI/DeepSeek/any OpenAI-compatible endpoint reports this as
+  // 'length' (not Gemini's 'MAX_TOKENS') when the response was cut off
+  // by max_tokens rather than the model actually finishing.
+  return { text: reply, truncated: data.choices?.[0]?.finish_reason === 'length' }
 }
 
 function classifyOpenAiCompatibleError(err: unknown): ClassifiedAiError {

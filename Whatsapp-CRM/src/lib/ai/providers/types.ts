@@ -29,6 +29,18 @@ export interface AiGenerateArgs {
   userMessage: string
 }
 
+export interface AiGenerateResult {
+  text: string
+  /** True when the provider stopped generating because it hit maxTokens,
+   *  not because it actually finished the thought — a mid-sentence-cut
+   *  reply looks identical to a complete one unless a caller checks this.
+   *  Found as a real bug (Sept 2026): every adapter silently returned
+   *  whatever partial text came back with no signal at all, so both the
+   *  Test AI screen and real customer-facing WhatsApp replies could be
+   *  truncated with nothing telling anyone it happened. */
+  truncated: boolean
+}
+
 export interface ClassifiedAiError {
   message: string
   /** True for rate limits / transient 5xx — worth retrying against a
@@ -45,7 +57,7 @@ export interface AiProviderAdapter {
   /** Shown in the model dropdown; the first entry doubles as the default
    *  used for the Settings page's live API-key validation call. */
   defaultModels: Array<{ id: string; label: string }>
-  generateReply(args: AiGenerateArgs): Promise<string>
+  generateReply(args: AiGenerateArgs): Promise<AiGenerateResult>
   classifyError(err: unknown): ClassifiedAiError
 }
 

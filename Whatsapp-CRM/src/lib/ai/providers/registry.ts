@@ -1,5 +1,5 @@
 import { decrypt } from '@/lib/whatsapp/encryption'
-import type { AiGenerateArgs, AiProviderAdapter } from './types'
+import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter } from './types'
 import { errorMessage } from './types'
 import { geminiAdapter } from './gemini'
 import { openaiAdapter } from './openai'
@@ -51,7 +51,7 @@ export async function generateAiReply(
   },
   userMessage: string,
   conversationHistory: AiGenerateArgs['conversationHistory'] = [],
-): Promise<string> {
+): Promise<AiGenerateResult> {
   const adapter = PROVIDERS[providerId]
   if (!adapter) throw new Error(`Unknown AI provider: ${providerId}`)
   return adapter.generateReply({ ...config, userMessage, conversationHistory })
@@ -61,6 +61,12 @@ export interface AiReplyResult {
   reply: string
   usedProvider: string
   usedFallback: boolean
+  /** True when the reply was cut off by maxTokens, not because the model
+   *  actually finished — see AiGenerateResult's own comment. Callers
+   *  decide what to do with this: the Test AI screen should show a clear
+   *  warning; a real customer-facing send should never expose this
+   *  internal signal in the message text itself. */
+  truncated: boolean
 }
 
 /**
@@ -110,22 +116,22 @@ export async function generateAiReplyWithFallback(
   // guaranteed to fail.
   if (!activeEntry?.api_key) {
     if (fallbackId && fallbackEntry?.api_key) {
-      const reply = await call(fallbackId, fallbackEntry)
-      return { reply, usedProvider: fallbackId, usedFallback: true }
+      const result = await call(fallbackId, fallbackEntry)
+      return { reply: result.text, usedProvider: fallbackId, usedFallback: true, truncated: result.truncated }
     }
     throw new Error(`No API key configured for the active AI provider (${aiConfig.active_provider}). Set one up in Settings > AI Config.`)
   }
 
   try {
-    const reply = await call(aiConfig.active_provider, activeEntry)
-    return { reply, usedProvider: aiConfig.active_provider, usedFallback: false }
+    const result = await call(aiConfig.active_provider, activeEntry)
+    return { reply: result.text, usedProvider: aiConfig.active_provider, usedFallback: false, truncated: result.truncated }
   } catch (err) {
     const adapter = PROVIDERS[aiConfig.active_provider]
     const classified = adapter ? adapter.classifyError(err) : { message: errorMessage(err), retryable: false }
     if (classified.retryable && fallbackId && fallbackEntry?.api_key) {
       try {
-        const reply = await call(fallbackId, fallbackEntry)
-        return { reply, usedProvider: fallbackId, usedFallback: true }
+        const result = await call(fallbackId, fallbackEntry)
+        return { reply: result.text, usedProvider: fallbackId, usedFallback: true, truncated: result.truncated }
       } catch (fallbackErr) {
         throw new Error(
           `Primary AI provider (${aiConfig.active_provider}) failed: ${classified.message}. Fallback (${fallbackId}) also failed: ${errorMessage(fallbackErr)}`,

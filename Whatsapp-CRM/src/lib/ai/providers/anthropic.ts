@@ -1,4 +1,4 @@
-import type { AiGenerateArgs, AiProviderAdapter, ClassifiedAiError } from './types'
+import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
 import { errorMessage } from './types'
 
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1'
@@ -6,6 +6,7 @@ const ANTHROPIC_VERSION = '2023-06-01'
 
 interface AnthropicResponse {
   content?: Array<{ type: string; text?: string }>
+  stop_reason?: string
   error?: { type?: string; message?: string }
 }
 
@@ -44,7 +45,7 @@ function buildMessages(args: AiGenerateArgs): Array<{ role: 'user' | 'assistant'
   return merged
 }
 
-async function generateReply(args: AiGenerateArgs): Promise<string> {
+async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   const res = await fetch(`${ANTHROPIC_BASE_URL}/messages`, {
     method: 'POST',
     headers: {
@@ -67,7 +68,7 @@ async function generateReply(args: AiGenerateArgs): Promise<string> {
   }
   const reply = data.content?.find((c) => c.type === 'text')?.text
   if (!reply) throw new Error('No reply returned by the model.')
-  return reply
+  return { text: reply, truncated: data.stop_reason === 'max_tokens' }
 }
 
 function classifyError(err: unknown): ClassifiedAiError {

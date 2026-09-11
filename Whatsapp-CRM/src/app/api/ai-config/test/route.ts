@@ -84,7 +84,7 @@ export async function POST(req: Request) {
   const systemPrompt = buildTestSystemPrompt(system_prompt, training_data)
 
   try {
-    const reply = await generateAiReply(
+    const result = await generateAiReply(
       providerId,
       {
         apiKey,
@@ -96,7 +96,7 @@ export async function POST(req: Request) {
       },
       message.trim(),
     )
-    return NextResponse.json({ reply, provider: providerId })
+    return NextResponse.json({ reply: result.text, truncated: result.truncated, provider: providerId })
   } catch (err) {
     const classified = adapter.classifyError(err)
     return NextResponse.json({ error: classified.message }, { status: classified.retryable ? 429 : 400 })

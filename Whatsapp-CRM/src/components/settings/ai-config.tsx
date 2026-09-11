@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Plus, Trash2, Bot, BookOpen, Save, Eye, EyeOff, Loader2,
-  CheckCircle2, XCircle, Send, RotateCcw, X, ShieldQuestion,
+  CheckCircle2, XCircle, Send, RotateCcw, X, ShieldQuestion, AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -110,6 +110,11 @@ interface ChatMessage {
   /** Only meaningful on 'ai' messages — whether this turn has already
    *  been saved as a training Q&A pair via the feedback-loop button. */
   saved?: boolean;
+  /** Only meaningful on 'ai' messages — the provider hit Max Response
+   *  Tokens mid-reply, so `text` is genuinely incomplete, not just a
+   *  short answer. Found as a real bug: this was previously silent —
+   *  a cut-off reply looked identical to a complete one. */
+  truncated?: boolean;
 }
 
 export function AiConfig() {
@@ -371,7 +376,7 @@ export function AiConfig() {
       });
       const data = await res.json();
       if (res.ok && data.reply) {
-        setChatMessages((prev) => [...prev, { role: 'ai', text: data.reply }]);
+        setChatMessages((prev) => [...prev, { role: 'ai', text: data.reply, truncated: !!data.truncated }]);
       } else {
         setChatError(data.error ?? 'No response from AI.');
       }
@@ -914,7 +919,13 @@ export function AiConfig() {
                   >
                     {m.text}
                   </div>
-                  {m.role === 'ai' && (
+                  {m.role === 'ai' && m.truncated && (
+                    <span className="mt-1 flex items-center gap-1 text-[10.5px] text-amber-600">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      Cut off — hit Max Response Tokens ({maxTokens}). Raise it above to get the full reply.
+                    </span>
+                  )}
+                  {m.role === 'ai' && !m.truncated && (
                     m.saved ? (
                       <span className="mt-1 flex items-center gap-1 text-[10.5px] text-emerald-600">
                         <CheckCircle2 className="h-3 w-3" /> Saved as training example

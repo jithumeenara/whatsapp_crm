@@ -1597,12 +1597,18 @@ async function advanceFromNodeKey(
         }
         const systemPrompt = promptParts.join("\n\n") || "You are a helpful assistant.";
 
-        const { reply } = await generateAiReplyWithFallback(
+        const { reply, truncated } = await generateAiReplyWithFallback(
           { ...aiConfig, max_tokens: cfg.max_tokens ?? aiConfig.max_tokens },
           systemPrompt,
           lastUserMessage,
           conversationHistory,
         );
+        // `reply` still gets sent as-is — a genuine (if incomplete)
+        // answer beats sending nothing, and a real customer should never
+        // see an internal debug note in their WhatsApp message. The
+        // truncation itself is logged below so it's visible in flow-run
+        // history — an admin seeing this repeatedly for one node is the
+        // signal to raise that node's Max Response Tokens.
         const { whatsapp_message_id } = await engineSendText({
           accountId: run.account_id,
           userId: run.user_id,
@@ -1621,6 +1627,7 @@ async function advanceFromNodeKey(
         await logEvent(run.id, "message_sent", node.node_key, {
           node_type: "ai_reply",
           whatsapp_message_id,
+          ...(truncated ? { truncated: true } : {}),
         });
       } catch (err) {
         await logEvent(run.id, "error", node.node_key, {
