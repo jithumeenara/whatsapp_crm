@@ -56,7 +56,20 @@ async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   const chat = model.startChat({ history })
   const result = await chat.sendMessage(args.userMessage)
   const finishReason = result.response.candidates?.[0]?.finishReason
-  return { text: result.response.text(), truncated: finishReason === FinishReason.MAX_TOKENS }
+  const usage = result.response.usageMetadata
+  return {
+    text: result.response.text(),
+    truncated: finishReason === FinishReason.MAX_TOKENS,
+    ...(usage
+      ? {
+          usage: {
+            inputTokens: usage.promptTokenCount ?? 0,
+            outputTokens: usage.candidatesTokenCount ?? 0,
+            totalTokens: usage.totalTokenCount ?? 0,
+          },
+        }
+      : {}),
+  }
 }
 
 function classifyError(err: unknown): ClassifiedAiError {

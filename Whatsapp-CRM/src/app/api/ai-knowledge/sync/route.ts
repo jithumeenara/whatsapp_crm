@@ -41,7 +41,10 @@ export async function POST() {
     )
   }
 
-  const { qaPairs, documents } = await loadKnowledge(config.id)
+  // Everything is embedded, including internal-only entries — the
+  // audience boundary is applied at retrieval time, so Admin search
+  // can still find staff-only material by meaning.
+  const { qaPairs, documents } = await loadKnowledge(config.id, 'all')
   const chunks = documents.flatMap((doc) => chunkDocument(doc))
   const items = toKnowledgeItems(qaPairs, chunks)
 
@@ -61,6 +64,7 @@ export async function POST() {
     aiConfigId: config.id,
     apiKey: decrypt(geminiEntry.api_key),
     items,
+    accountId,
   })
 
   // Only claim 'trained' when the run didn't report failures. A partial

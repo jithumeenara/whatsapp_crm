@@ -21,6 +21,7 @@ import { GoogleGenerativeAI, TaskType } from '@google/generative-ai'
 import { createHash } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { recordAiUsage, estimateTokensFromText } from './usage'
 import type { QaPair, KnowledgeDocument } from './knowledge'
 
 /** GA/stable — deliberately not gemini-embedding-2-preview, whose name
@@ -184,8 +185,15 @@ export async function syncKnowledgeEmbeddings(args: {
   aiConfigId: string
   apiKey: string
   items: KnowledgeItem[]
+  /** Optional so existing callers keep working; when given, the run is
+   *  recorded in the Usage tab. Training can be the largest single
+   *  consumer of an account's Gemini quota, so a Usage tab that ignored
+   *  it would understate the bill it is there to explain. */
+  accountId?: string
 }): Promise<{ embedded: number; deleted: number; failed: number }> {
-  const { aiConfigId, apiKey, items } = args
+  const { aiConfigId, apiKey, items, accountId } = args
+  const startedAt = Date.now()
+  let estimatedTokens = 0
   const currentHashes = new Set(items.map((i) => i.contentHash))
 
   const existing = await prisma.$queryRaw<Array<{ content_hash: string }>>(
@@ -215,6 +223,7 @@ export async function syncKnowledgeEmbeddings(args: {
   for (const item of missing) {
     try {
       const vector = await embedDocument(apiKey, item.text)
+      estimatedTokens += estimateTokensFromText(item.text)
       embedded += await prisma.$executeRaw(
         Prisma.sql`
           INSERT INTO ai_knowledge_embeddings (ai_config_id, content_hash, kind, embedding_model, embedding)
@@ -231,6 +240,20 @@ export async function syncKnowledgeEmbeddings(args: {
         err instanceof Error ? err.message : err,
       )
     }
+  }
+
+  if (accountId && embedded > 0) {
+    void recordAiUsage({
+      accountId,
+      model: EMBEDDING_MODEL,
+      feature: 'embedding',
+      // Estimated, not vendor-reported — embedContent returns no usage
+      // metadata at all. See estimateTokensFromText.
+      tokens: { inputTokens: estimatedTokens, outputTokens: 0, totalTokens: estimatedTokens },
+      status: failed > 0 ? 'error' : 'success',
+      error: failed > 0 ? `${failed} of ${items.length} entries failed to embed` : undefined,
+      latencyMs: Date.now() - startedAt,
+    })
   }
 
   return { embedded, deleted, failed }

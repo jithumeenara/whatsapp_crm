@@ -207,7 +207,7 @@ export function AiMenuContent({
       <MenuPrimitive.Positioner className="isolate z-50 outline-none" align={align} sideOffset={sideOffset}>
         <MenuPrimitive.Popup
           className={cn(
-            'min-w-[220px] origin-(--transform-origin) overflow-hidden rounded-2xl bg-white p-1.5',
+            'w-[min(220px,calc(100vw-2rem))] min-w-[200px] origin-(--transform-origin) overflow-hidden rounded-2xl bg-white p-1.5 sm:w-auto sm:min-w-[220px]',
             'ring-1 ring-slate-200/80 shadow-[0_4px_12px_rgba(15,23,42,0.06),0_16px_40px_-12px_rgba(15,23,42,0.25)]',
             'outline-none duration-150',
             'data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-open:slide-in-from-top-1',
@@ -298,8 +298,8 @@ export function AiModal({
         />
         <DialogPrimitive.Popup
           className={cn(
-            'fixed left-1/2 top-1/2 z-50 w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2',
-            'max-h-[calc(100vh-3rem)] overflow-y-auto rounded-3xl bg-white outline-none',
+            'fixed left-1/2 top-1/2 z-50 w-full max-w-[calc(100%-1.5rem)] -translate-x-1/2 -translate-y-1/2 sm:max-w-[calc(100%-2rem)]',
+            'max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl bg-white outline-none sm:rounded-3xl',
             'ring-1 ring-slate-200/70 shadow-[0_8px_24px_rgba(15,23,42,0.08),0_32px_80px_-24px_rgba(15,23,42,0.45)]',
             'duration-200',
             'data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95',
@@ -327,11 +327,11 @@ export function AiModalHeader({
   onClose?: () => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 px-6 pt-6 pb-5">
-      <div className="flex min-w-0 items-start gap-3.5">
+    <div className="flex items-start justify-between gap-3 px-5 pb-4 pt-5 sm:px-6 sm:pb-5 sm:pt-6">
+      <div className="flex min-w-0 items-start gap-3 sm:gap-3.5">
         {icon}
         <div className="min-w-0">
-          <h3 className="text-[18px] font-bold tracking-[-0.015em] text-slate-900">{title}</h3>
+          <h3 className="text-[16.5px] font-bold tracking-[-0.015em] text-slate-900 sm:text-[18px]">{title}</h3>
           {subtitle && <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-500">{subtitle}</p>}
         </div>
       </div>
@@ -350,14 +350,14 @@ export function AiModalHeader({
 }
 
 export function AiModalBody({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cn('border-t border-slate-100 px-6 py-6', className)}>{children}</div>;
+  return <div className={cn('border-t border-slate-100 px-5 py-5 sm:px-6 sm:py-6', className)}>{children}</div>;
 }
 
 export function AiModalFooter({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-3 rounded-b-3xl border-t border-slate-100 bg-slate-50/70 px-6 py-4',
+        'flex items-center justify-between gap-3 rounded-b-2xl border-t border-slate-100 bg-slate-50/70 px-5 py-3.5 sm:rounded-b-3xl sm:px-6 sm:py-4',
         className,
       )}
     >
@@ -451,7 +451,7 @@ export function AiSegmented<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={cn('inline-flex rounded-xl bg-slate-100/90 p-1', className)}>
+    <div className={cn('inline-flex max-w-full flex-wrap rounded-xl bg-slate-100/90 p-1', className)}>
       {options.map((option) => {
         const active = option.value === value;
         return (

@@ -12,6 +12,7 @@ import { OverviewTab } from './ai/overview-tab';
 import { TrainingTab } from './ai/training-tab';
 import { AdvancedFeatures } from './ai/advanced-features';
 import { TestTab } from './ai/test-tab';
+import { UsageTab } from './ai/usage-tab';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
@@ -70,6 +71,13 @@ function emptyProviderFields(): Record<string, ProviderFieldState> {
 
 type ValidationStatus = 'idle' | 'checking' | 'valid' | 'invalid';
 
+const AI_TABS = [
+  { value: 'overview', label: 'Overview', Icon: Bot },
+  { value: 'training', label: 'AI Training', Icon: BookOpen },
+  { value: 'test', label: 'Test AI', Icon: Send },
+  { value: 'usage', label: 'Usage', Icon: BarChart3 },
+] as const;
+
 export function AiConfig() {
   const [tab, setTab] = useState<'overview' | 'training' | 'test' | 'usage'>('overview');
   const [loading, setLoading] = useState(true);
@@ -97,6 +105,8 @@ export function AiConfig() {
   const [maxContextResults, setMaxContextResults] = useState(5);
   const [autoSyncWebsite, setAutoSyncWebsite] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [adminSystemPrompt, setAdminSystemPrompt] = useState('');
+  const [customerContextEnabled, setCustomerContextEnabled] = useState(true);
   const [fallbackAnswer, setFallbackAnswer] = useState('');
   const [escalationTopics, setEscalationTopics] = useState<string[]>([]);
   const [topicInput, setTopicInput] = useState('');
@@ -151,6 +161,8 @@ export function AiConfig() {
         setMaxContextResults(data.max_context_results ?? 5);
         setAutoSyncWebsite(data.auto_sync_website ?? false);
         setSystemPrompt(data.system_prompt ?? '');
+        setAdminSystemPrompt(data.admin_system_prompt ?? '');
+        setCustomerContextEnabled(data.customer_context_enabled ?? true);
         setFallbackAnswer(data.fallback_answer ?? '');
         setEscalationTopics(Array.isArray(data.escalation_topics) ? data.escalation_topics : []);
         setConfidenceThreshold(data.confidence_threshold ?? 0.35);
@@ -284,6 +296,8 @@ export function AiConfig() {
           retrieval_mode: retrievalMode,
           max_context_results: maxContextResults,
           auto_sync_website: autoSyncWebsite,
+          admin_system_prompt: adminSystemPrompt || null,
+          customer_context_enabled: customerContextEnabled,
         }),
       });
       if (res.ok) {
@@ -367,17 +381,17 @@ export function AiConfig() {
     <div className="space-y-5">
       {/* ── Connected header ── */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <Sparkles className="mt-0.5 h-8 w-8 shrink-0 text-[#5B6CF9]" strokeWidth={1.5} />
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-[20px] font-bold tracking-tight text-slate-900">{activeMeta.label}</h2>
+              <h2 className="text-[18px] font-bold tracking-[-0.02em] text-slate-900 sm:text-[20px]">{activeMeta.label}</h2>
               <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Connected
               </span>
             </div>
-            <p className="mt-0.5 text-[13px] text-slate-500">
+            <p className="mt-0.5 max-w-prose text-[12.5px] leading-relaxed text-slate-500 sm:text-[13px]">
               Your AI assistant is ready to use. Manage settings, train with your data, and test performance.
             </p>
           </div>
@@ -385,7 +399,7 @@ export function AiConfig() {
         <Button
           variant="outline"
           onClick={() => setWizardOpen(true)}
-          className="h-9 gap-2 rounded-xl border-slate-200 bg-white px-4 text-[13px]"
+          className="h-9 shrink-0 gap-2 rounded-xl border-slate-200 bg-white px-4 text-[13px]"
         >
           <Settings2 className="h-4 w-4 text-slate-400" />
           Reconfigure
@@ -395,23 +409,19 @@ export function AiConfig() {
       {wizard}
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-        <TabsList className="h-9 bg-slate-100 rounded-xl p-1">
-          <TabsTrigger value="overview" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
-            <Bot className="h-3.5 w-3.5" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="training" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
-            <BookOpen className="h-3.5 w-3.5" />
-            AI Training
-          </TabsTrigger>
-          <TabsTrigger value="test" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
-            <Send className="h-3.5 w-3.5" />
-            Test AI
-          </TabsTrigger>
-          <TabsTrigger value="usage" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
-            <BarChart3 className="h-3.5 w-3.5" />
-            Usage
-          </TabsTrigger>
+        {/* -mx-1 px-1 keeps the focus ring of the first/last trigger from
+            being clipped by the scroll container. */}
+        <TabsList className="-mx-1 h-10 max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {AI_TABS.map(({ value, label, Icon }) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="shrink-0 gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] transition-all duration-150 data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_2px_8px_-2px_rgba(15,23,42,0.12)]"
+            >
+              <Icon className="h-3.5 w-3.5 shrink-0" />
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         {/* ── Overview tab ── */}
@@ -433,14 +443,7 @@ export function AiConfig() {
             app records tokens or cost, so there is genuinely nothing to
             chart. Says so plainly instead of rendering empty axes. */}
         <TabsContent value="usage" className="mt-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-            <BarChart3 className="mx-auto h-8 w-8 text-slate-300" />
-            <p className="mt-3 text-[14px] font-semibold text-slate-800">Usage tracking isn&apos;t recording yet</p>
-            <p className="mx-auto mt-1.5 max-w-md text-[12.5px] leading-relaxed text-slate-500">
-              Requests, token counts and estimated cost aren&apos;t being logged anywhere in the app today, so there is
-              no data to show here. This tab is next in the rebuild.
-            </p>
-          </div>
+          <UsageTab />
         </TabsContent>
 
 
@@ -463,6 +466,10 @@ export function AiConfig() {
           <AdvancedFeatures
             systemPrompt={systemPrompt}
             onSystemPromptChange={setSystemPrompt}
+            adminSystemPrompt={adminSystemPrompt}
+            onAdminSystemPromptChange={setAdminSystemPrompt}
+            customerContextEnabled={customerContextEnabled}
+            onCustomerContextEnabledChange={setCustomerContextEnabled}
             fallbackAnswer={fallbackAnswer}
             onFallbackAnswerChange={setFallbackAnswer}
             escalationTopics={escalationTopics}

@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { encrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys, type ProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { syncKnowledgeEmbeddings, toKnowledgeItems } from '@/lib/ai/embeddings'
-import { chunkDocument } from '@/lib/ai/knowledge'
-import { loadKnowledge } from '@/lib/ai/knowledge-store'
 
 // PUT/DELETE can rewrite this account's AI provider keys/base_url (a
 // custom base_url is a live SSRF vector — see ssrf-guard.ts) or exfiltrate
@@ -73,6 +70,8 @@ export async function GET() {
     retrieval_mode: config.retrieval_mode,
     max_context_results: config.max_context_results,
     auto_sync_website: config.auto_sync_website,
+    admin_system_prompt: config.admin_system_prompt,
+    customer_context_enabled: config.customer_context_enabled,
     // Lets the Settings UI show "embeddings ready" vs "not set up yet"
     // (e.g. to explain why the Regenerate button matters) without
     // exposing anything sensitive — has_key above already covers that.
@@ -117,6 +116,8 @@ export async function PUT(req: Request) {
     retrieval_mode,
     max_context_results,
     auto_sync_website,
+    admin_system_prompt,
+    customer_context_enabled,
   } = body as {
     active_provider?: string
     fallback_provider?: string | null
@@ -139,6 +140,8 @@ export async function PUT(req: Request) {
     retrieval_mode?: string
     max_context_results?: number
     auto_sync_website?: boolean
+    admin_system_prompt?: string | null
+    customer_context_enabled?: boolean
   }
 
   const existing = await prisma.aiConfig.findUnique({
@@ -225,6 +228,12 @@ export async function PUT(req: Request) {
         : (existing?.max_context_results ?? 5),
     auto_sync_website:
       auto_sync_website !== undefined ? auto_sync_website : (existing?.auto_sync_website ?? false),
+    admin_system_prompt:
+      admin_system_prompt !== undefined ? admin_system_prompt : (existing?.admin_system_prompt ?? null),
+    customer_context_enabled:
+      customer_context_enabled !== undefined
+        ? customer_context_enabled
+        : (existing?.customer_context_enabled ?? true),
   }
 
   const config = await prisma.aiConfig.upsert({
@@ -242,35 +251,17 @@ export async function PUT(req: Request) {
     },
   })
 
-  // Re-sync embeddings only when this save actually touched the
-  // knowledge base (avoids extra DB round-trips on a save that just
-  // changed e.g. temperature) and only when a Gemini key is on file —
-  // an account with no Gemini key stays on keyword search, exactly as
-  // if this feature didn't exist. Best-effort: a sync failure (bad key,
-  // Gemini outage, etc.) never fails the config save itself — the
-  // account's settings are already safely persisted above regardless.
-  let embeddingsSync: { embedded: number; deleted: number; failed: number } | null = null
-  const knowledgeBaseTouched = training_data !== undefined || knowledge_documents !== undefined
-  const geminiApiKey = mergedKeys.gemini?.api_key ? decrypt(mergedKeys.gemini.api_key) : null
-  if (knowledgeBaseTouched && geminiApiKey) {
-    try {
-      // Reads from ai_knowledge_items (migration 068), not the JSON
-      // columns this branch is still triggered by — the Q&A editor on
-      // the Training tab writes through this route, and POST
-      // /api/ai-knowledge/sync is the same operation on demand.
-      const { qaPairs, documents } = await loadKnowledge(config.id)
-      const chunks = documents.flatMap((doc) => chunkDocument(doc))
-      embeddingsSync = await syncKnowledgeEmbeddings({
-        aiConfigId: config.id,
-        apiKey: geminiApiKey,
-        items: toKnowledgeItems(qaPairs, chunks),
-      })
-    } catch (err) {
-      console.error('[ai-config] embedding sync failed (config itself still saved):', err instanceof Error ? err.message : err)
-    }
-  }
+  // Embedding/training deliberately does NOT happen here any more.
+  //
+  // It used to be triggered by this route seeing training_data or
+  // knowledge_documents in the body, but the knowledge base moved to
+  // its own table (migration 068) and nothing sends those fields now —
+  // leaving the branch in place meant a block of code whose comment
+  // claimed it kept embeddings fresh while it could never actually run.
+  // Training is one explicit action instead: POST /api/ai-knowledge/sync,
+  // behind the Training tab's "Train now".
 
-  return NextResponse.json({ success: true, id: config.id, embeddings_sync: embeddingsSync })
+  return NextResponse.json({ success: true, id: config.id })
 }
 
 export async function DELETE() {

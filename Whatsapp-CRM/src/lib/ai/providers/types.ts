@@ -36,6 +36,12 @@ export interface AiGenerateArgs {
 
 export interface AiGenerateResult {
   text: string
+  /** What the provider itself reported this call consumed, when it
+   *  reports anything. Gemini always does; the REST adapters only
+   *  sometimes, so this is optional rather than zero-filled — a missing
+   *  count and a genuine zero are different facts, and recording the
+   *  second when you mean the first would quietly understate usage. */
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
   /** True when the provider stopped generating because it hit maxTokens,
    *  not because it actually finished the thought — a mid-sentence-cut
    *  reply looks identical to a complete one unless a caller checks this.

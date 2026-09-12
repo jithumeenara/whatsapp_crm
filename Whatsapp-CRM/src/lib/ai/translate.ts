@@ -18,7 +18,7 @@ import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
  *  chat model (which might be tuned/prompted for something else entirely)
  *  — a fixed, known-good model keeps this feature's behavior predictable
  *  regardless of what the account has set as active_provider elsewhere. */
-const TRANSLATE_MODEL = 'gemini-3.5-flash-lite'
+export const TRANSLATE_MODEL = 'gemini-3.5-flash-lite'
 
 export interface TranslateResult {
   /** Best-effort language name Gemini detected the source text as being
@@ -27,6 +27,10 @@ export interface TranslateResult {
    *  Arabic"). */
   detectedLanguage: string
   translatedText: string
+  /** Gemini-reported token counts for this call, so the caller (which
+   *  has the account context this module deliberately doesn't) can
+   *  record it in the Usage tab. */
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
 }
 
 /** True when the detected source language is already close enough to the
@@ -75,5 +79,21 @@ export async function detectAndTranslate(args: {
     throw new Error('Translation model response missing required fields.')
   }
 
-  return { detectedLanguage: parsed.detected_language, translatedText: parsed.translated_text }
+  const usage = result.response.usageMetadata
+  return {
+    detectedLanguage: parsed.detected_language,
+    translatedText: parsed.translated_text,
+    // Returned rather than recorded here: this module is a pure
+    // Gemini wrapper with no account context, and the route that calls
+    // it already has one. Keeps the usage write where the session is.
+    ...(usage
+      ? {
+          usage: {
+            inputTokens: usage.promptTokenCount ?? 0,
+            outputTokens: usage.candidatesTokenCount ?? 0,
+            totalTokens: usage.totalTokenCount ?? 0,
+          },
+        }
+      : {}),
+  }
 }

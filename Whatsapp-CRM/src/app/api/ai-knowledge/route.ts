@@ -21,6 +21,9 @@ const READ_ROLE = 'viewer' as const
 const KINDS = ['qa', 'document', 'website', 'text', 'database'] as const
 type Kind = (typeof KINDS)[number]
 
+/** Who an entry may be said to — see AiKnowledgeItem.audience. */
+const AUDIENCES = ['customer', 'internal', 'both'] as const
+
 async function resolveConfigId(accountId: string): Promise<string | null> {
   const config = await prisma.aiConfig.findUnique({
     where: { account_id: accountId },
@@ -41,12 +44,14 @@ export async function GET(req: Request) {
   const q = url.searchParams.get('q')?.trim() ?? ''
   const kind = url.searchParams.get('kind') ?? ''
   const status = url.searchParams.get('status') ?? ''
+  const audience = url.searchParams.get('audience') ?? ''
   const page = Math.max(1, Number(url.searchParams.get('page') ?? '1') || 1)
   const limit = Math.min(100, Math.max(1, Number(url.searchParams.get('limit') ?? '10') || 10))
 
   const where: Prisma.AiKnowledgeItemWhereInput = { account_id: accountId }
   if (kind && (KINDS as readonly string[]).includes(kind)) where.kind = kind
   if (status) where.status = status
+  if (audience && (AUDIENCES as readonly string[]).includes(audience)) where.audience = audience
   if (q) {
     // Searches what a person would actually recognize the entry by —
     // its name, and the text of a Q&A pair. Not `content`: a full-text
@@ -66,7 +71,8 @@ export async function GET(req: Request) {
       skip: (page - 1) * limit,
       take: limit,
       select: {
-        id: true, kind: true, name: true, source: true, question: true, answer: true,
+        id: true, kind: true, name: true, source: true, audience: true, description: true,
+        question: true, answer: true,
         source_url: true, source_ref: true, status: true, last_error: true,
         last_synced_at: true, created_at: true, updated_at: true,
         // Length only, never the body — a synced page can be hundreds of
@@ -100,6 +106,10 @@ interface CreateBody {
   source_url?: string
   /** DataTable id, for kind 'database'. */
   source_ref?: string
+  /** 'customer' (default) | 'internal' | 'both'. */
+  audience?: string
+  /** What the entry is for, prepended to its text in the prompt. */
+  description?: string
 }
 
 export async function POST(req: Request) {
@@ -135,6 +145,13 @@ export async function POST(req: Request) {
     let sourceUrl: string | null = null
     let sourceRef: string | null = null
     let lastSyncedAt: Date | null = null
+    // Unrecognized values fall back to 'customer' rather than being
+    // rejected — the restrictive end of the range is the safe one to
+    // land on if a client sends something unexpected.
+    const resolvedAudience = (AUDIENCES as readonly string[]).includes(body?.audience ?? '')
+      ? (body!.audience as string)
+      : 'customer'
+    const resolvedDescription = body?.description?.trim()?.slice(0, 2000) || null
 
     if (kind === 'qa') {
       const question = body?.question?.trim()
@@ -151,6 +168,8 @@ export async function POST(req: Request) {
           source: 'manual',
           question,
           answer,
+          audience: resolvedAudience,
+          description: resolvedDescription,
           status: 'pending',
         },
       })
@@ -194,6 +213,8 @@ export async function POST(req: Request) {
         source_url: sourceUrl,
         source_ref: sourceRef,
         last_synced_at: lastSyncedAt,
+        audience: resolvedAudience,
+        description: resolvedDescription,
         status: 'pending',
       },
     })

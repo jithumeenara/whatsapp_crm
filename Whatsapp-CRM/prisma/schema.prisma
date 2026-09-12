@@ -194,6 +194,8 @@ model Account {
   whatsapp_configs              WhatsAppConfig[]
   ai_config                    AiConfig?
   ai_knowledge_items           AiKnowledgeItem[]
+  ai_usage_events              AiUsageEvent[]
+  company_profile              CompanyProfile?
   sms_config                   SmsConfig?
   email_config                 EmailConfig?
   rcs_config                   RcsConfig?
@@ -1181,6 +1183,22 @@ model AiConfig {
   /// route is a no-op for accounts with this off.
   auto_sync_website      Boolean @default(false)
 
+  /// The Admin assistant's own instructions, kept separate from
+  /// system_prompt (which is the customer-facing persona).
+  ///
+  /// They are genuinely different jobs: the customer prompt shapes tone
+  /// and sales/support behaviour for a stranger on WhatsApp, while this
+  /// one shapes how internal data questions are answered for staff. One
+  /// shared prompt meant every tweak aimed at customers quietly changed
+  /// the analytics answers too.
+  admin_system_prompt    String?
+
+  /// Include the contact's own CRM context (lead stage, recent
+  /// activity, where they came from) in customer replies, so the same
+  /// person is understood across WhatsApp, Instagram, Messenger and the
+  /// rest rather than being a stranger on every channel.
+  customer_context_enabled Boolean @default(true)
+
   reply_language                 String?
   /// How aggressively Gemini's own safety filters block a generation:
   /// 'strict' | 'balanced' (Gemini's own default) | 'relaxed'. Mapped to
@@ -1272,6 +1290,31 @@ model AiKnowledgeItem {
   /// | 'test_feedback' (a Test AI reply saved as an example).
   source       String @default("manual")
 
+  /// Who this entry may be said to: 'customer' (safe to send to a
+  /// person on WhatsApp/Instagram/Messenger/RCS/Email), 'internal'
+  /// (staff-only — margins, supplier terms, escalation scripts) or
+  /// 'both'.
+  ///
+  /// This is the enforced half of the Customer/Admin split. The
+  /// customer reply path loads knowledge with an audience filter, so an
+  /// 'internal' entry is never retrieved, never embedded into a
+  /// customer prompt, and therefore cannot be quoted back to a
+  /// customer even if the model is asked to. Prompt instructions alone
+  /// would not be a boundary — a model can be talked out of those.
+  /// Defaults to 'customer' so nothing an account already added
+  /// silently disappears from replies.
+  audience     String @default("customer")
+
+  /// What this entry is for, in the account's own words — "our 2026 fee
+  /// structure for all courses", "hostel rules, staff reference only".
+  ///
+  /// Not decoration: it is prepended to the entry's text in the prompt,
+  /// so the model is told what a chunk *is* rather than having to infer
+  /// it from a fragment. A table of numbers with no context is the
+  /// classic case where retrieval finds the right chunk and the model
+  /// still misreads it.
+  description  String?
+
   /// Q&A entries only.
   question     String?
   answer       String?
@@ -1299,9 +1342,114 @@ model AiKnowledgeItem {
   ai_config AiConfig @relation(fields: [ai_config_id], references: [id], onDelete: Cascade)
   account   Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
-  @@index([ai_config_id, status])
+  @@index([ai_config_id, status, audience])
   @@index([account_id, kind])
   @@map("ai_knowledge_items")
+}
+
+/// The business itself, in structured form.
+///
+/// Fills the gap that made generic replies generic: the AI had no idea
+/// what the company actually is, so every account's bot sounded like a
+/// template unless someone hand-wrote all of it into the system prompt.
+/// This is rendered into the customer prompt as a short company block,
+/// and into the Admin assistant's prompt as context for what the data
+/// is about.
+///
+/// Category and section carry an "other" escape hatch each: the picker
+/// lists what most accounts are, and anything else is typed in rather
+/// than forced into a wrong bucket.
+model CompanyProfile {
+  id         String @id @default(uuid()) @db.Uuid
+  account_id String @unique @db.Uuid
+
+  legal_name   String?
+  display_name String?
+  /// Broad industry, from the picker — or 'other', in which case
+  /// category_other holds what was typed.
+  category       String?
+  category_other String?
+  /// The narrower line of business within that category, same
+  /// picker-or-type-your-own rule.
+  section        String?
+  section_other  String?
+
+  /// A paragraph in the account's own words — what the business does,
+  /// who it serves. The single most useful field here for reply quality.
+  about        String?
+  /// Comma-separated headline offerings, kept as plain text rather than
+  /// a relation: this is prompt context, not a catalogue.
+  services     String?
+
+  website      String?
+  email        String?
+  phone        String?
+  address      String?
+  city         String?
+  state        String?
+  country      String?
+  /// Free text, because real working hours are full of exceptions
+  /// ("9-6 Mon-Sat, closed 1-2, Sunday appointments only").
+  working_hours String?
+  /// Languages the business actually serves customers in.
+  languages     String?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("company_profiles")
+}
+
+/// One AI API call, recorded after the fact.
+///
+/// Exists because nothing in this app measured AI usage before: the
+/// Usage tab had no source for requests, tokens or cost, and neither
+/// did anyone wondering why a Gemini bill looked the way it did.
+///
+/// Written best-effort and never inside the request's critical path — a
+/// failure to record usage must never turn into a customer not getting
+/// a reply. Token counts come from the provider's own response
+/// (Gemini's usageMetadata), so they are what the vendor actually
+/// billed, not an estimate; `cost_usd` IS an estimate, derived from a
+/// local price table that can drift from the vendor's current pricing,
+/// which is why the UI labels it "estimated".
+model AiUsageEvent {
+  id         String @id @default(uuid()) @db.Uuid
+  account_id String @db.Uuid
+
+  /// 'gemini' today — kept general so a second provider doesn't need a
+  /// schema change to be measurable.
+  provider String
+  model    String
+  /// Which part of the product spent this: 'chat_customer' (a real
+  /// WhatsApp reply), 'chat_admin' (Admin Test), 'test' (Customer
+  /// Test), 'embedding' (knowledge training), 'translation', or
+  /// 'validation' (the key check on the Configure screen).
+  feature  String
+
+  input_tokens  Int @default(0)
+  output_tokens Int @default(0)
+  total_tokens  Int @default(0)
+  /// Estimated, in USD, to 6dp — a single Flash call costs far less
+  /// than a cent, and rounding to 2dp would record every call as zero.
+  cost_usd      Decimal @default(0) @db.Decimal(12, 6)
+
+  /// 'success' | 'error'. Failures are recorded too: a run of errors is
+  /// exactly what someone looking at this tab needs to see, and tokens
+  /// are often still billed for a failed generation.
+  status     String  @default("success")
+  error      String?
+  latency_ms Int?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([account_id, created_at])
+  @@index([account_id, feature, created_at])
+  @@map("ai_usage_events")
 }
 
 // ============================================================

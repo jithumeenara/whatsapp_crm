@@ -5,6 +5,11 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Tailwind's smallest default breakpoint is sm (40rem/640px), which
+     leaves the whole 360-640px band — most phones in landscape, and
+     every phone this CRM is actually used on — with no step between
+     "one column" and the tablet layout. xs fills that gap. */
+  --breakpoint-xs: 26rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);

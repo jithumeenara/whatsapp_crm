@@ -28,8 +28,8 @@ export function ProviderLanding({ onConfigure }: { onConfigure: () => void }) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[22px] font-bold tracking-tight text-slate-900">AI Config</h2>
+        <div className="min-w-0">
+          <h2 className="text-[19px] font-bold tracking-[-0.02em] text-slate-900 sm:text-[22px]">AI Config</h2>
           <p className="mt-0.5 text-[13px] text-slate-500">Configure AI providers for your chatbot</p>
         </div>
         <a
@@ -49,16 +49,16 @@ export function ProviderLanding({ onConfigure }: { onConfigure: () => void }) {
       </div>
 
       {/* ── Gemini hero ── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#EFF1FF] via-[#F7F8FF] to-white p-7 ring-1 ring-[#5B6CF9]/12 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_20px_48px_-24px_rgba(91,108,249,0.45)]">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#EFF1FF] via-[#F7F8FF] to-white p-5 ring-1 ring-[#5B6CF9]/12 sm:p-7 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_20px_48px_-24px_rgba(91,108,249,0.45)]">
         <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#5B6CF9]/[0.07] blur-2xl" />
         <div className="pointer-events-none absolute -bottom-20 left-1/3 h-52 w-52 rounded-full bg-violet-400/[0.07] blur-2xl" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center">
-          <div className="flex flex-1 items-start gap-5">
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#6B7BFF] to-[#4E5FEE] shadow-[0_8px_20px_-6px_rgba(91,108,249,0.7)]">
-              <Sparkles className="h-7 w-7 text-white" strokeWidth={1.75} />
+          <div className="flex min-w-0 flex-1 items-start gap-4 sm:gap-5">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#6B7BFF] to-[#4E5FEE] shadow-[0_8px_20px_-6px_rgba(91,108,249,0.7)] sm:h-14 sm:w-14">
+              <Sparkles className="h-6 w-6 text-white sm:h-7 sm:w-7" strokeWidth={1.75} />
             </span>
             <div className="min-w-0">
-              <h4 className="text-[21px] font-bold tracking-[-0.02em] text-slate-900">Google Gemini</h4>
+              <h4 className="text-[19px] font-bold tracking-[-0.02em] text-slate-900 sm:text-[21px]">Google Gemini</h4>
               <p className="mt-1 max-w-md text-[13px] leading-relaxed text-slate-600">
                 Most capable model for multilingual, natural and context-aware conversations.
               </p>
@@ -77,6 +77,9 @@ export function ProviderLanding({ onConfigure }: { onConfigure: () => void }) {
           </div>
 
           <div className="flex flex-col gap-4 border-slate-200/70 lg:flex-row lg:items-center lg:gap-8 lg:border-l lg:pl-8">
+            {/* Strengths + CTA stack under the hero copy on anything
+                narrower than lg, where a side-by-side split would leave
+                both halves too tight to read. */}
             <ul className="space-y-2">
               {GEMINI_STRENGTHS.map((s) => (
                 <li key={s} className="flex items-center gap-2 text-[13px] text-slate-700">
@@ -85,7 +88,7 @@ export function ProviderLanding({ onConfigure }: { onConfigure: () => void }) {
                 </li>
               ))}
             </ul>
-            <AiButton onClick={onConfigure} size="lg" className="group">
+            <AiButton onClick={onConfigure} size="lg" className="group w-full justify-center lg:w-auto">
               <Settings2 className="h-4 w-4" />
               Configure
               <ArrowRight className="h-4 w-4 transition-transform duration-200 motion-safe:group-hover:translate-x-0.5" />

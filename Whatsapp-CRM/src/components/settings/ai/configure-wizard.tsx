@@ -106,11 +106,11 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
           onClose={close}
         />
 
-        <div className="px-6 pb-5">
+        <div className="px-5 pb-5 sm:px-6">
           {/* ── Stepper ── */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {STEPS.map((s, i) => (
-              <div key={s.n} className="flex flex-1 items-center gap-2">
+              <div key={s.n} className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-2">
                 <div className="flex items-center gap-2.5">
                   <span
                     className={[
@@ -143,7 +143,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
           </div>
         </div>
 
-        <AiModalBody className="grid gap-6 lg:grid-cols-[1fr_280px]">
+        <AiModalBody className="grid gap-6 px-5 py-5 sm:px-6 sm:py-6 xl:grid-cols-[minmax(0,1fr)_250px]">
           <div className="min-w-0 space-y-4">
             {step === 1 && (
               <>

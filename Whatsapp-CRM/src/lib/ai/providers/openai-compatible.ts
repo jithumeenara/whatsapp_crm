@@ -16,6 +16,9 @@ import { assertSafeAiBaseUrl } from './ssrf-guard'
 
 interface OpenAiChatResponse {
   choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+  /** Every OpenAI-compatible endpoint that reports usage uses this
+   *  shape; ones that don't simply omit it. */
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
   error?: { message?: string; type?: string; code?: string }
 }
 
@@ -55,7 +58,19 @@ export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateAr
   // OpenAI/DeepSeek/any OpenAI-compatible endpoint reports this as
   // 'length' (not Gemini's 'MAX_TOKENS') when the response was cut off
   // by max_tokens rather than the model actually finishing.
-  return { text: reply, truncated: data.choices?.[0]?.finish_reason === 'length' }
+  return {
+    text: reply,
+    truncated: data.choices?.[0]?.finish_reason === 'length',
+    ...(data.usage
+      ? {
+          usage: {
+            inputTokens: data.usage.prompt_tokens ?? 0,
+            outputTokens: data.usage.completion_tokens ?? 0,
+            totalTokens: data.usage.total_tokens ?? 0,
+          },
+        }
+      : {}),
+  }
 }
 
 function classifyOpenAiCompatibleError(err: unknown): ClassifiedAiError {

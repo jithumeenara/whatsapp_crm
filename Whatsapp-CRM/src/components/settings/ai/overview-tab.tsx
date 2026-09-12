@@ -48,7 +48,7 @@ export function OverviewTab(props: OverviewTabProps) {
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0 space-y-5">
         {/* ── Connected banner ── */}
         <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-50/40 p-5 ring-1 ring-emerald-500/15 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_12px_28px_-20px_rgba(16,185,129,0.55)]">
@@ -85,7 +85,7 @@ export function OverviewTab(props: OverviewTabProps) {
         <AiCard className="p-6">
           <h3 className="text-[15px] font-semibold text-slate-900">What you can do now</h3>
           <p className="mt-0.5 text-[12.5px] text-slate-500">Configure training data, test your AI, and monitor performance.</p>
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 xs:grid-cols-2 sm:grid-cols-3">
             {quickActions.map(({ key, label, blurb, Icon, tint }) => (
               <button
                 key={key}

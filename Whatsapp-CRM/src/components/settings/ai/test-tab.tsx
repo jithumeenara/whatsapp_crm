@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Send, Loader2, Sparkles, RotateCcw, AlertTriangle, Database, Users, MessageSquare,
   BookOpen, BarChart3, Server, ShieldCheck, Mic, MicOff, Bot, UserRound, CheckCircle2, ChevronRight,
+  Volume2, VolumeX,
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { AiButton, AiCard, AiCardHeader, AiInput, AiHint, AiNotice, AiSegmented, AiBadge } from './ui-kit';
 import { WhatsAppText } from '@/components/inbox/message-bubble';
 import { MarkdownAnswer } from './markdown-answer';
@@ -102,13 +104,25 @@ export function TestTab(props: TestTabProps) {
   const [voiceLang, setVoiceLang] = useState('en-IN');
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  const [autoSpeak, setAutoSpeak] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
     setVoiceSupported(!!(w.SpeechRecognition ?? w.webkitSpeechRecognition));
+    // Speaking a reply and dictating one are separate browser APIs with
+    // separate support — Safari has had speechSynthesis for years while
+    // lacking usable recognition, so they're checked independently
+    // rather than behind one "voice supported" flag.
+    setSpeechSupported(typeof window !== 'undefined' && 'speechSynthesis' in window);
   }, []);
+
+  // Anything still queued when the component unmounts would keep talking
+  // over the rest of the app.
+  useEffect(() => () => window.speechSynthesis?.cancel(), []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -138,6 +152,29 @@ export function TestTab(props: TestTabProps) {
     setListening(true);
     recognition.start();
   }, [listening, voiceLang]);
+
+  /** Reads a reply out loud, so a Malayalam or Hindi answer can be
+   *  checked for how it actually sounds — the thing a text preview
+   *  can't tell you. Uses the browser's own voices; quality and which
+   *  languages exist vary by device, which the UI says plainly. */
+  const speak = useCallback(
+    (index: number, text: string) => {
+      if (!('speechSynthesis' in window)) return;
+      if (speakingIndex === index) {
+        window.speechSynthesis.cancel();
+        setSpeakingIndex(null);
+        return;
+      }
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voiceLang;
+      utterance.onend = () => setSpeakingIndex(null);
+      utterance.onerror = () => setSpeakingIndex(null);
+      setSpeakingIndex(index);
+      window.speechSynthesis.speak(utterance);
+    },
+    [speakingIndex, voiceLang],
+  );
 
   async function send(text?: string) {
     const msg = (text ?? input).trim();
@@ -186,16 +223,20 @@ export function TestTab(props: TestTabProps) {
         });
         const data = await res.json();
         if (!res.ok || !data.reply) throw new Error(data.error ?? 'No response from AI.');
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'ai',
-            text: data.reply,
-            mode: 'customer',
-            truncated: !!data.truncated,
-            confidence: data.retrieval_confidence ?? null,
-          },
-        ]);
+        setMessages((prev) => {
+          const next: TestMessage[] = [
+            ...prev,
+            {
+              role: 'ai',
+              text: data.reply,
+              mode: 'customer',
+              truncated: !!data.truncated,
+              confidence: data.retrieval_confidence ?? null,
+            },
+          ];
+          if (autoSpeak && speechSupported) speak(next.length - 1, data.reply);
+          return next;
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.');
@@ -219,9 +260,9 @@ export function TestTab(props: TestTabProps) {
   const examples = mode === 'admin' ? ADMIN_EXAMPLES : CUSTOMER_EXAMPLES;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
       {/* ── Chat ── */}
-      <AiCard className="flex min-w-0 flex-col" style={{ height: 560 }}>
+      <AiCard className="flex h-[68vh] max-h-[620px] min-h-[420px] min-w-0 flex-col lg:h-[560px]">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-5">
           <div>
             <h3 className="text-[16px] font-bold tracking-tight text-slate-900">Test AI</h3>
@@ -231,7 +272,7 @@ export function TestTab(props: TestTabProps) {
                 : 'Exactly what a customer would get, including knowledge base grounding.'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <AiSegmented
               value={mode}
               onChange={setMode}
@@ -311,6 +352,17 @@ export function TestTab(props: TestTabProps) {
                   </p>
                 )}
 
+                {m.role === 'ai' && speechSupported && (
+                  <button
+                    type="button"
+                    onClick={() => speak(i, m.text)}
+                    className="mt-1 mr-3 inline-flex items-center gap-1 text-[10.5px] text-slate-400 transition-colors hover:text-[#5B6CF9]"
+                  >
+                    {speakingIndex === i ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}
+                    {speakingIndex === i ? 'Stop' : 'Listen'}
+                  </button>
+                )}
+
                 {m.role === 'ai' && !m.truncated && (
                   m.saved ? (
                     <p className="mt-1 flex items-center gap-1 text-[10.5px] text-emerald-600">
@@ -344,6 +396,7 @@ export function TestTab(props: TestTabProps) {
         <div className="border-t border-slate-100 p-4">
           <div className="flex items-center gap-2">
             <AiInput
+              className="min-w-0 flex-1"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -458,7 +511,7 @@ export function TestTab(props: TestTabProps) {
           )}
         </AiCard>
 
-        {voiceSupported && (
+        {(voiceSupported || speechSupported) && (
           <AiCard className="p-5">
             <div className="flex items-center gap-2">
               <Mic className="h-4 w-4 text-slate-400" />
@@ -475,8 +528,20 @@ export function TestTab(props: TestTabProps) {
                 ))}
               </SelectContent>
             </Select>
+            {speechSupported && (
+              <label className="mt-3 flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3">
+                <span className="min-w-0">
+                  <span className="block text-[12.5px] font-medium text-slate-700">Read replies out loud</span>
+                  <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">
+                    Hear how a Malayalam or Hindi answer actually sounds, not just how it reads.
+                  </span>
+                </span>
+                <Switch checked={autoSpeak} onCheckedChange={setAutoSpeak} />
+              </label>
+            )}
             <AiHint className="mt-2">
-              Uses your browser&apos;s own speech recognition — accuracy varies by browser and language.
+              Speech recognition and playback both come from your browser — the available voices, and how good they
+              are, vary by device and language.
             </AiHint>
           </AiCard>
         )}

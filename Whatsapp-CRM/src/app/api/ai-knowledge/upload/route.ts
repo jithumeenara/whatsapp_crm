@@ -69,6 +69,10 @@ export async function POST(req: Request) {
   }
 
   const name = (form?.get('name') as string | null)?.trim() || file.name
+  const requested = (form?.get('audience') as string | null)?.trim()
+  // Same restrictive fallback as the JSON create path: anything
+  // unrecognized lands on 'customer'.
+  const audience = ['customer', 'internal', 'both'].includes(requested ?? '') ? requested! : 'customer'
 
   const item = await prisma.aiKnowledgeItem.create({
     data: {
@@ -78,6 +82,8 @@ export async function POST(req: Request) {
       name: name.slice(0, 200),
       source: 'upload',
       content: text,
+      description: (form?.get('description') as string | null)?.trim()?.slice(0, 2000) || null,
+      audience,
       status: 'pending',
     },
   })

@@ -3,7 +3,8 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { detectAndTranslate, isAlreadyTargetLanguage } from '@/lib/ai/translate'
+import { detectAndTranslate, isAlreadyTargetLanguage, TRANSLATE_MODEL } from '@/lib/ai/translate'
+import { recordAiUsage } from '@/lib/ai/usage'
 
 /**
  * POST /api/messages/translate
@@ -80,6 +81,12 @@ export async function POST(req: Request) {
       let result
       try {
         result = await detectAndTranslate({ apiKey: geminiApiKey, text: message.content_text, targetLanguage })
+        void recordAiUsage({
+          accountId: ctx.accountId,
+          model: TRANSLATE_MODEL,
+          feature: 'translation',
+          tokens: result.usage,
+        })
       } catch (err) {
         return NextResponse.json(
           { error: err instanceof Error ? err.message : 'Translation failed' },
@@ -114,6 +121,12 @@ export async function POST(req: Request) {
       let result
       try {
         result = await detectAndTranslate({ apiKey: geminiApiKey, text: text.trim(), targetLanguage })
+        void recordAiUsage({
+          accountId: ctx.accountId,
+          model: TRANSLATE_MODEL,
+          feature: 'translation',
+          tokens: result.usage,
+        })
       } catch (err) {
         return NextResponse.json(
           { error: err instanceof Error ? err.message : 'Translation failed' },

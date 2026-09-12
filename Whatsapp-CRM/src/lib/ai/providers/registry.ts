@@ -62,6 +62,12 @@ export interface AiReplyResult {
   reply: string
   usedProvider: string
   usedFallback: boolean
+  /** Provider-reported token counts for the call that actually
+   *  produced this reply (the fallback's, if one was used). */
+  usage?: AiGenerateResult['usage']
+  /** The model id that produced it — needed to price the call, and not
+   *  necessarily the active provider's model when a fallback ran. */
+  usedModel?: string
   /** True when the reply was cut off by maxTokens, not because the model
    *  actually finished — see AiGenerateResult's own comment. Callers
    *  decide what to do with this: the Test AI screen should show a clear
@@ -120,21 +126,42 @@ export async function generateAiReplyWithFallback(
   if (!activeEntry?.api_key) {
     if (fallbackId && fallbackEntry?.api_key) {
       const result = await call(fallbackId, fallbackEntry)
-      return { reply: result.text, usedProvider: fallbackId, usedFallback: true, truncated: result.truncated }
+      return {
+        reply: result.text,
+        usedProvider: fallbackId,
+        usedFallback: true,
+        truncated: result.truncated,
+        usage: result.usage,
+        usedModel: fallbackEntry.model,
+      }
     }
     throw new Error(`No API key configured for the active AI provider (${aiConfig.active_provider}). Set one up in Settings > AI Config.`)
   }
 
   try {
     const result = await call(aiConfig.active_provider, activeEntry)
-    return { reply: result.text, usedProvider: aiConfig.active_provider, usedFallback: false, truncated: result.truncated }
+    return {
+      reply: result.text,
+      usedProvider: aiConfig.active_provider,
+      usedFallback: false,
+      truncated: result.truncated,
+      usage: result.usage,
+      usedModel: activeEntry.model,
+    }
   } catch (err) {
     const adapter = PROVIDERS[aiConfig.active_provider]
     const classified = adapter ? adapter.classifyError(err) : { message: errorMessage(err), retryable: false }
     if (classified.retryable && fallbackId && fallbackEntry?.api_key) {
       try {
         const result = await call(fallbackId, fallbackEntry)
-        return { reply: result.text, usedProvider: fallbackId, usedFallback: true, truncated: result.truncated }
+        return {
+          reply: result.text,
+          usedProvider: fallbackId,
+          usedFallback: true,
+          truncated: result.truncated,
+          usage: result.usage,
+          usedModel: fallbackEntry.model,
+        }
       } catch (fallbackErr) {
         throw new Error(
           `Primary AI provider (${aiConfig.active_provider}) failed: ${classified.message}. Fallback (${fallbackId}) also failed: ${errorMessage(fallbackErr)}`,

@@ -6,6 +6,8 @@ import { getProviderKeys } from '@/lib/ai/providers/registry'
 import { AI_REQUEST_TIMEOUT_MS } from '@/lib/ai/providers/types'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { TOOL_DECLARATIONS, runTool } from '@/lib/ai/insights/tools'
+import { recordAiUsage } from '@/lib/ai/usage'
+import { loadCompanyProfile, formatCompanyBlock } from '@/lib/ai/company-profile'
 
 /**
  * Admin Test — ask questions about this account's own CRM data in plain
@@ -31,7 +33,7 @@ export const dynamic = 'force-dynamic'
  *  "recent enquiries"); the cap stops a confused model from looping. */
 const MAX_TOOL_ROUNDS = 4
 
-const SYSTEM_PROMPT = `You are the internal data assistant for this WhatsApp CRM account. You are talking to an owner or admin of the business, not to a customer.
+const BASE_SYSTEM_PROMPT = `You are the internal data assistant for this WhatsApp CRM account. You are talking to an owner or admin of the business, not to a customer.
 
 Answer questions about their CRM data by calling the provided tools. Never invent a number: if a tool didn't return it, say you don't have it. If a question needs data no tool provides, say so plainly and suggest the closest thing you can actually answer.
 
@@ -67,11 +69,26 @@ export async function POST(req: Request) {
     )
   }
 
+  // The admin assistant's instructions are assembled from three parts:
+  // the fixed behaviour above, what this business is, and whatever the
+  // account added in Settings. admin_system_prompt is deliberately
+  // separate from the customer-facing system_prompt — they shape
+  // different jobs, and sharing one meant tuning the sales tone also
+  // changed how analytics questions were answered.
+  const companyProfile = await loadCompanyProfile(accountId).catch(() => null)
+  const systemInstruction = [
+    BASE_SYSTEM_PROMPT,
+    formatCompanyBlock(companyProfile, 'admin') || undefined,
+    config?.admin_system_prompt?.trim() || undefined,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
   const genAI = new GoogleGenerativeAI(decrypt(geminiEntry.api_key))
   const model = genAI.getGenerativeModel(
     {
       model: geminiEntry.model,
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction,
       tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
       generationConfig: {
         // Analytical answers over real numbers — near-deterministic is
@@ -87,9 +104,20 @@ export async function POST(req: Request) {
     .filter((m) => m.text?.trim())
     .map((m) => ({ role: m.role, parts: [{ text: m.text }] }))
 
+  const startedAt = Date.now()
+  // Every round trip in the tool loop bills separately, so they are
+  // summed rather than only the final turn being counted.
+  let inputTokens = 0
+  let outputTokens = 0
+  const addUsage = (meta?: { promptTokenCount?: number; candidatesTokenCount?: number }) => {
+    inputTokens += meta?.promptTokenCount ?? 0
+    outputTokens += meta?.candidatesTokenCount ?? 0
+  }
+
   try {
     const chat = model.startChat({ history })
     let result = await chat.sendMessage(message)
+    addUsage(result.response.usageMetadata)
     const toolsUsed: string[] = []
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -113,6 +141,7 @@ export async function POST(req: Request) {
       }
 
       result = await chat.sendMessage(responses)
+      addUsage(result.response.usageMetadata)
     }
 
     const text = result.response.text()
@@ -130,6 +159,14 @@ export async function POST(req: Request) {
       )
     }
 
+    void recordAiUsage({
+      accountId,
+      model: geminiEntry.model,
+      feature: 'chat_admin',
+      tokens: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+      latencyMs: Date.now() - startedAt,
+    })
+
     return NextResponse.json({
       reply: text,
       // Shown in the UI so an admin can see which data was actually read
@@ -139,6 +176,15 @@ export async function POST(req: Request) {
     })
   } catch (err) {
     const messageText = err instanceof Error ? err.message : String(err)
+    void recordAiUsage({
+      accountId,
+      model: geminiEntry.model,
+      feature: 'chat_admin',
+      tokens: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+      status: 'error',
+      error: messageText,
+      latencyMs: Date.now() - startedAt,
+    })
     const retryable = /rate|quota|RESOURCE_EXHAUSTED|timeout|aborted|503|overloaded/i.test(messageText)
     return NextResponse.json(
       { error: retryable ? `Gemini is busy right now — try again shortly. (${messageText})` : messageText },

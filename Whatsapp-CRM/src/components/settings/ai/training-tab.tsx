@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FileText, MessageSquare, Link2, StickyNote, Database, Plus, Search, Filter,
   Loader2, RefreshCw, Trash2, MoreHorizontal, CheckCircle2, AlertTriangle, Clock,
-  EyeOff, ChevronLeft, ChevronRight, Upload, X, Sparkles,
+  EyeOff, ChevronLeft, ChevronRight, Upload, X, Sparkles, Lock, Users, ShieldCheck,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -28,6 +28,8 @@ export interface KnowledgeItem {
   kind: 'qa' | 'document' | 'website' | 'text' | 'database';
   name: string;
   source: string;
+  audience: string;
+  description: string | null;
   question: string | null;
   answer: string | null;
   source_url: string | null;
@@ -72,15 +74,41 @@ const KIND_LABEL: Record<string, string> = {
   database: 'Database',
 };
 
-const SOURCE_LABEL: Record<string, string> = {
-  manual: 'Manual Entry',
-  upload: 'Manual Upload',
-  web_sync: 'Web Sync',
-  data_store: 'Data Store',
-  test_feedback: 'Saved from Test AI',
-};
-
 const PAGE_SIZE = 8;
+
+/** Who an entry may be said to. 'internal' is the boundary the customer
+ *  reply path enforces — such an entry is never loaded into a
+ *  customer-facing prompt at all, so it cannot be quoted back. */
+const AUDIENCES = [
+  { value: 'customer', label: 'Customers', hint: 'Safe to say to a customer on any channel.' },
+  { value: 'internal', label: 'Staff only', hint: 'Never sent to a customer. Admin Test can still find it.' },
+  { value: 'both', label: 'Both', hint: 'Used in customer replies and internal answers.' },
+] as const;
+
+function AudiencePill({ audience }: { audience: string }) {
+  if (audience === 'internal') {
+    return (
+      <AiBadge tone="amber">
+        <Lock className="h-3 w-3" />
+        Staff only
+      </AiBadge>
+    );
+  }
+  if (audience === 'both') {
+    return (
+      <AiBadge tone="indigo">
+        <Users className="h-3 w-3" />
+        Both
+      </AiBadge>
+    );
+  }
+  return (
+    <AiBadge tone="slate">
+      <MessageSquare className="h-3 w-3" />
+      Customers
+    </AiBadge>
+  );
+}
 
 function StatusPill({ status, error }: { status: string; error: string | null }) {
   if (status === 'trained') {
@@ -128,6 +156,7 @@ export function TrainingTab(props: TrainingTabProps) {
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
   const [kindFilter, setKindFilter] = useState('');
+  const [audienceFilter, setAudienceFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');
 
@@ -142,6 +171,7 @@ export function TrainingTab(props: TrainingTabProps) {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
       if (query.trim()) params.set('q', query.trim());
       if (kindFilter) params.set('kind', kindFilter);
+      if (audienceFilter) params.set('audience', audienceFilter);
       const res = await fetch(`/api/ai-knowledge?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Could not load the knowledge base.');
@@ -152,7 +182,7 @@ export function TrainingTab(props: TrainingTabProps) {
     } finally {
       setLoading(false);
     }
-  }, [page, query, kindFilter]);
+  }, [page, query, kindFilter, audienceFilter]);
 
   useEffect(() => {
     // Debounced so typing in the search box doesn't fire a request per
@@ -200,10 +230,10 @@ export function TrainingTab(props: TrainingTabProps) {
   }
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0 space-y-5">
         {/* ── Sources ── */}
-        <AiCard className="p-6">
+        <AiCard className="p-5 sm:p-6">
           <AiCardHeader
             title={<span className="text-[16px] tracking-[-0.015em]">AI Training</span>}
             subtitle="Add your business knowledge so AI gives accurate and relevant answers."
@@ -223,19 +253,21 @@ export function TrainingTab(props: TrainingTabProps) {
             </AiNotice>
           )}
 
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          <div className="mt-4 grid grid-cols-1 gap-2.5 xs:grid-cols-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
             {SOURCE_CARDS.map(({ kind, label, blurb, Icon, tint }) => (
               <button
                 key={kind}
                 type="button"
                 onClick={() => setAddKind(kind)}
-                className="group flex flex-col rounded-2xl bg-white p-3.5 text-left ring-1 ring-slate-200/70 transition-all duration-150 hover:-translate-y-0.5 hover:ring-[#5B6CF9]/35 hover:shadow-[0_8px_20px_-12px_rgba(15,23,42,0.35)] motion-safe:active:translate-y-0"
+                className="group flex items-center gap-3 rounded-2xl bg-white p-3.5 text-left ring-1 ring-slate-200/70 transition-all duration-150 hover:ring-[#5B6CF9]/35 hover:shadow-[0_8px_20px_-12px_rgba(15,23,42,0.35)] xs:flex-col xs:items-start xs:gap-0 motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0"
               >
-                <span className={`flex h-9 w-9 items-center justify-center rounded-xl ring-1 ring-inset ring-white/0 ${tint}`}>
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ring-white/0 ${tint}`}>
                   <Icon className="h-4 w-4" />
                 </span>
-                <span className="mt-2.5 text-[12.5px] font-semibold text-slate-800">{label}</span>
-                <span className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{blurb}</span>
+                <span className="min-w-0">
+                  <span className="block text-[12.5px] font-semibold text-slate-800 xs:mt-2.5">{label}</span>
+                  <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-500">{blurb}</span>
+                </span>
               </button>
             ))}
           </div>
@@ -243,7 +275,7 @@ export function TrainingTab(props: TrainingTabProps) {
 
         {/* ── Knowledge base table ── */}
         <AiCard>
-          <div className="p-6 pb-4">
+          <div className="p-5 pb-4 sm:p-6 sm:pb-4">
             <AiCardHeader
               title="Knowledge Base"
               subtitle="Manage the information used by your AI assistant."
@@ -269,7 +301,7 @@ export function TrainingTab(props: TrainingTabProps) {
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 px-6 pb-4">
+          <div className="flex flex-wrap items-center gap-2 px-5 pb-4 sm:px-6">
             <div className="relative min-w-[200px] flex-1">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <AiInput
@@ -279,8 +311,22 @@ export function TrainingTab(props: TrainingTabProps) {
                 className="h-9 pl-9"
               />
             </div>
+            <Select value={audienceFilter || 'all'} onValueChange={(v) => { setAudienceFilter(!v || v === 'all' ? '' : v); setPage(1); }}>
+              <SelectTrigger className="h-9 w-full min-w-[130px] rounded-xl border-slate-200 text-[13px] sm:w-[150px]">
+                <span className="flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5 text-slate-400" />
+                  <SelectValue />
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Any audience</SelectItem>
+                {AUDIENCES.map((a) => (
+                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={kindFilter || 'all'} onValueChange={(v) => { setKindFilter(!v || v === 'all' ? '' : v); setPage(1); }}>
-              <SelectTrigger className="h-9 w-[150px] rounded-xl border-slate-200 text-[13px]">
+              <SelectTrigger className="h-9 w-full min-w-[130px] rounded-xl border-slate-200 text-[13px] sm:w-[150px]">
                 <span className="flex items-center gap-1.5">
                   <Filter className="h-3.5 w-3.5 text-slate-400" />
                   <SelectValue />
@@ -301,8 +347,8 @@ export function TrainingTab(props: TrainingTabProps) {
             <table className="w-full min-w-[640px] border-collapse">
               <thead>
                 <tr className="border-y border-slate-100 bg-slate-50/70 text-left">
-                  {['Name', 'Type', 'Source', 'Updated', 'Status', ''].map((h) => (
-                    <th key={h} className="px-6 py-2.5 text-[11.5px] font-semibold text-slate-500">{h}</th>
+                  {['Name', 'Type', 'Audience', 'Updated', 'Status', ''].map((h) => (
+                    <th key={h} className="px-5 py-2.5 text-[11.5px] font-semibold text-slate-500 sm:px-6">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -325,6 +371,9 @@ export function TrainingTab(props: TrainingTabProps) {
                   <tr key={item.id} className="border-b border-slate-50 transition-colors last:border-0 hover:bg-slate-50/60">
                     <td className="max-w-[260px] px-6 py-3">
                       <p className="truncate text-[13px] font-medium text-slate-800" title={item.name}>{item.name}</p>
+                      {item.description && (
+                        <p className="truncate text-[11px] text-slate-500" title={item.description}>{item.description}</p>
+                      )}
                       {item.source_url && (
                         <p className="truncate text-[11px] text-slate-400" title={item.source_url}>{item.source_url}</p>
                       )}
@@ -337,7 +386,7 @@ export function TrainingTab(props: TrainingTabProps) {
                         {KIND_LABEL[item.kind] ?? item.kind}
                       </span>
                     </td>
-                    <td className="px-6 py-3 text-[12.5px] text-slate-500">{SOURCE_LABEL[item.source] ?? item.source}</td>
+                    <td className="px-6 py-3"><AudiencePill audience={item.audience} /></td>
                     <td className="px-6 py-3 text-[12.5px] text-slate-500">{formatDate(item.last_synced_at ?? item.updated_at)}</td>
                     <td className="px-6 py-3"><StatusPill status={item.status} error={item.last_error} /></td>
                     <td className="px-6 py-3 text-right">
@@ -357,6 +406,16 @@ export function TrainingTab(props: TrainingTabProps) {
                               description="Fetch the latest content"
                             />
                           )}
+                          {AUDIENCES.filter((a) => a.value !== item.audience).map((a) => (
+                            <AiMenuItem
+                              key={a.value}
+                              onClick={() => updateItem(item.id, { audience: a.value })}
+                              icon={a.value === 'internal' ? <Lock className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+                              title={`Move to ${a.label}`}
+                              description={a.hint}
+                            />
+                          ))}
+                          <AiMenuSeparator />
                           <AiMenuItem
                             onClick={() => updateItem(item.id, { status: item.status === 'disabled' ? 'pending' : 'disabled' })}
                             icon={<EyeOff className="h-4 w-4" />}
@@ -379,7 +438,7 @@ export function TrainingTab(props: TrainingTabProps) {
             </table>
           </div>
 
-          <div className="flex items-center justify-between gap-3 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6">
             <p className="text-[12px] text-slate-500">
               {total === 0 ? 'No entries' : `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} of ${total}`}
             </p>
@@ -500,6 +559,8 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
   const [content, setContent] = useState('');
   const [url, setUrl] = useState('');
   const [tableId, setTableId] = useState('');
+  const [description, setDescription] = useState('');
+  const [audience, setAudience] = useState('customer');
   const [tables, setTables] = useState<Array<{ id: string; name: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -523,6 +584,8 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
         const form = new FormData();
         form.append('file', file);
         if (name.trim()) form.append('name', name.trim());
+        if (description.trim()) form.append('description', description.trim());
+        form.append('audience', audience);
         const res = await fetch('/api/ai-knowledge/upload', { method: 'POST', body: form });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? 'Upload failed.');
@@ -538,6 +601,8 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
             content: content.trim() || undefined,
             source_url: url.trim() || undefined,
             source_ref: tableId || undefined,
+            description: description.trim() || undefined,
+            audience,
           }),
         });
         const data = await res.json();
@@ -674,6 +739,49 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
               </AiHint>
             </div>
           )}
+
+          <div className="space-y-1.5 border-t border-slate-100 pt-4">
+            <AiLabel>What is this for?</AiLabel>
+            <AiInput
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={
+                kind === 'database'
+                  ? 'e.g. Course fees per programme — use for any pricing question'
+                  : 'e.g. Our 2026 fee structure for all courses'
+              }
+            />
+            <AiHint>
+              Sent to the AI alongside the content, so it knows what this entry <em>is</em> rather than guessing from a
+              fragment of it. The single most useful thing you can add for tables of numbers.
+            </AiHint>
+          </div>
+
+          <div className="space-y-1.5">
+            <AiLabel>Who can this be said to?</AiLabel>
+            <div className="grid gap-2 xs:grid-cols-3">
+              {AUDIENCES.map((a) => (
+                <button
+                  key={a.value}
+                  type="button"
+                  onClick={() => setAudience(a.value)}
+                  className={[
+                    'rounded-xl p-2.5 text-left ring-1 transition-all duration-150',
+                    audience === a.value
+                      ? 'bg-[#5B6CF9]/[0.05] ring-[#5B6CF9]/30'
+                      : 'bg-white ring-slate-200/70 hover:ring-slate-300',
+                  ].join(' ')}
+                >
+                  <span
+                    className={`block text-[12.5px] font-semibold ${audience === a.value ? 'text-[#5B6CF9]' : 'text-slate-700'}`}
+                  >
+                    {a.label}
+                  </span>
+                  <span className="mt-0.5 block text-[10.5px] leading-snug text-slate-500">{a.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
           {error && (
             <AiNotice tone="error" icon={<X className="h-3.5 w-3.5" />}>{error}</AiNotice>

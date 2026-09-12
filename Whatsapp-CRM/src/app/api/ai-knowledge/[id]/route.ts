@@ -33,6 +33,11 @@ interface PatchBody {
    *  and 'pending' (re-enable); 'trained' is set by the sync run, never
    *  by hand, so it can't claim a state nothing verified. */
   status?: string
+  /** 'customer' | 'internal' | 'both' — who this entry may be said to. */
+  audience?: string
+  /** What the entry is for. Changing it does not invalidate the
+   *  embedding: it is prompt framing, not part of the indexed text. */
+  description?: string
   /** Re-fetch a website entry, or re-read a connected Data Store table. */
   resync?: boolean
 }
@@ -91,6 +96,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof body.answer === 'string') data.answer = body.answer.trim()
   if (typeof body.content === 'string') data.content = body.content
   if (body.status === 'disabled' || body.status === 'pending') data.status = body.status
+  if (typeof body.description === 'string') data.description = body.description.trim().slice(0, 2000) || null
+  if (body.audience && ['customer', 'internal', 'both'].includes(body.audience)) {
+    // Note this does NOT invalidate the embedding: the vector is the
+    // same text either way, and the audience is applied when
+    // knowledge is loaded, not when it is indexed.
+    data.audience = body.audience
+  }
 
   // Any edit to the embedded text invalidates the existing embedding.
   if (!body.resync && ('question' in data || 'answer' in data || 'content' in data)) {

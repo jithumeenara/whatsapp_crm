@@ -6,6 +6,7 @@ const ANTHROPIC_VERSION = '2023-06-01'
 
 interface AnthropicResponse {
   content?: Array<{ type: string; text?: string }>
+  usage?: { input_tokens?: number; output_tokens?: number }
   stop_reason?: string
   error?: { type?: string; message?: string }
 }
@@ -71,7 +72,19 @@ async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   }
   const reply = data.content?.find((c) => c.type === 'text')?.text
   if (!reply) throw new Error('No reply returned by the model.')
-  return { text: reply, truncated: data.stop_reason === 'max_tokens' }
+  return {
+    text: reply,
+    truncated: data.stop_reason === 'max_tokens',
+    ...(data.usage
+      ? {
+          usage: {
+            inputTokens: data.usage.input_tokens ?? 0,
+            outputTokens: data.usage.output_tokens ?? 0,
+            totalTokens: (data.usage.input_tokens ?? 0) + (data.usage.output_tokens ?? 0),
+          },
+        }
+      : {}),
+  }
 }
 
 function classifyError(err: unknown): ClassifiedAiError {

@@ -42,6 +42,9 @@ import { generateAiReplyWithFallback, getProviderKeys } from "@/lib/ai/providers
 import { markdownToWhatsApp } from "@/lib/whatsapp/markdown-to-whatsapp";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import { loadKnowledge } from "@/lib/ai/knowledge-store";
+import { recordAiUsage } from "@/lib/ai/usage";
+import { loadCompanyProfile, formatCompanyBlock } from "@/lib/ai/company-profile";
+import { buildCustomerContext } from "@/lib/ai/customer-context";
 import {
   engineSendCtaUrlButton,
   engineSendFlow,
@@ -1514,7 +1517,10 @@ async function advanceFromNodeKey(
         // chunking, hashing and already-synced embeddings are unaffected
         // by where it's stored.
         const { qaPairs, documents, version: knowledgeVersion } = aiConfig.knowledge_base_enabled
-          ? await loadKnowledge(aiConfig.id)
+          // 'customer' explicitly: this is the reply a real person on
+          // WhatsApp/Instagram/Messenger/RCS receives, so staff-only
+          // entries must not even enter the prompt.
+          ? await loadKnowledge(aiConfig.id, 'customer')
           : { qaPairs: [], documents: [], version: "off" };
         // Cache key changes whenever this account edits its knowledge
         // base — knowledge rows now change without the AiConfig row being
@@ -1585,9 +1591,31 @@ async function advanceFromNodeKey(
 
         const knowledgeBlock = formatKnowledgeBlock(selected);
 
-        const promptParts = [aiConfig.system_prompt ?? undefined, knowledgeBlock || undefined].filter(
-          (p): p is string => Boolean(p),
-        );
+        // Company details and this contact's own CRM context are loaded
+        // in parallel — neither depends on the other, and this sits
+        // directly in the path between a customer's message and their
+        // reply, so the two round trips overlap rather than stack.
+        const [companyProfile, customerContext] = await Promise.all([
+          loadCompanyProfile(run.account_id).catch(() => null),
+          aiConfig.customer_context_enabled && run.contact_id
+            ? buildCustomerContext({
+                accountId: run.account_id,
+                contactId: run.contact_id,
+                currentChannel: "whatsapp",
+              }).catch(() => "")
+            : Promise.resolve(""),
+        ]);
+
+        const promptParts = [
+          // Order matters: who the business is, then who this customer
+          // is, then what the assistant was told to be, then the
+          // knowledge retrieved for this specific question. The model
+          // reads it as context narrowing down to the task.
+          formatCompanyBlock(companyProfile, "customer") || undefined,
+          customerContext || undefined,
+          aiConfig.system_prompt ?? undefined,
+          knowledgeBlock || undefined,
+        ].filter((p): p is string => Boolean(p));
         // Guardrails — prompt-level guidance, not code-enforced (an LLM
         // can still ignore an instruction; there's no second verification
         // pass here). Stated as plainly in the Settings UI copy too.
@@ -1620,12 +1648,26 @@ async function advanceFromNodeKey(
         }
         const systemPrompt = promptParts.join("\n\n") || "You are a helpful assistant.";
 
-        const { reply: rawReply, truncated } = await generateAiReplyWithFallback(
+        const aiStartedAt = Date.now();
+        const aiResult = await generateAiReplyWithFallback(
           { ...aiConfig, max_tokens: cfg.max_tokens ?? aiConfig.max_tokens },
           systemPrompt,
           lastUserMessage,
           conversationHistory,
         );
+        const { reply: rawReply, truncated } = aiResult;
+        // Not awaited: this is the customer-facing reply path, and a
+        // usage-analytics insert must never sit between the model
+        // answering and the message going out. recordAiUsage swallows
+        // its own failures (see its module header).
+        void recordAiUsage({
+          accountId: run.account_id,
+          provider: aiResult.usedProvider,
+          model: aiResult.usedModel ?? "unknown",
+          feature: "chat_customer",
+          tokens: aiResult.usage,
+          latencyMs: Date.now() - aiStartedAt,
+        });
         // Models default to standard Markdown (**bold**, # headers) —
         // WhatsApp's own dialect is different (single *bold*, no
         // headers at all) and doesn't render GitHub-flavored syntax, so

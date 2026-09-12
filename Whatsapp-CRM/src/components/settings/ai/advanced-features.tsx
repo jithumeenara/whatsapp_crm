@@ -1,6 +1,6 @@
 'use client';
 
-import { Sliders, ShieldQuestion, UserCheck, X, Plus } from 'lucide-react';
+import { Sliders, ShieldQuestion, UserCheck, X, Plus, MessageSquare, Database } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AiButton, AiCard, AiCardHeader, AiIconTile, AiInput, AiTextarea, AiLabel, AiHint } from './ui-kit';
@@ -22,6 +22,10 @@ import {
 export interface AdvancedFeaturesProps {
   systemPrompt: string;
   onSystemPromptChange: (v: string) => void;
+  adminSystemPrompt: string;
+  onAdminSystemPromptChange: (v: string) => void;
+  customerContextEnabled: boolean;
+  onCustomerContextEnabledChange: (v: boolean) => void;
 
   fallbackAnswer: string;
   onFallbackAnswerChange: (v: string) => void;
@@ -59,27 +63,66 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                 <Sliders className="h-4 w-4" />
               </AiIconTile>
               <span className="text-left">
-                <span className="block font-medium text-slate-800">Prompt &amp; Persona</span>
+                <span className="block font-medium text-slate-800">Prompts &amp; Persona</span>
                 <span className="block text-[11.5px] font-normal text-slate-500">
-                  Who the assistant is and how it should speak.
+                  Separate instructions for customer replies and for internal answers.
                 </span>
               </span>
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-1.5 pb-4 pl-[42px]">
-              <AiLabel htmlFor="system-prompt">System Prompt</AiLabel>
-              <AiTextarea
-                id="system-prompt"
-                placeholder="You are a helpful assistant for [Your Business]. Be friendly and concise."
-                value={props.systemPrompt}
-                onChange={(e) => props.onSystemPromptChange(e.target.value)}
-                rows={4}
-              />
-              <AiHint>
-                Keep it short and clear. WhatsApp renders *bold* and _italic_ only — replies are converted
-                automatically, so there&apos;s no need to ask for Markdown here.
-              </AiHint>
+            <div className="space-y-5 pb-4 sm:pl-[42px]">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-3.5 w-3.5 text-[#5B6CF9]" />
+                  <AiLabel htmlFor="system-prompt">Customer prompt</AiLabel>
+                </div>
+                <AiTextarea
+                  id="system-prompt"
+                  placeholder="You are the assistant for [Your Business]. Be warm, professional and brief. Answer only what you were asked."
+                  value={props.systemPrompt}
+                  onChange={(e) => props.onSystemPromptChange(e.target.value)}
+                  rows={4}
+                />
+                <AiHint>
+                  Shapes replies sent to real people on WhatsApp, Instagram, Messenger, RCS and email. Your company
+                  details are added automatically, so this is for tone and rules — not for repeating facts. WhatsApp
+                  renders *bold* and _italic_ only, and replies are converted for you.
+                </AiHint>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Database className="h-3.5 w-3.5 text-slate-500" />
+                  <AiLabel htmlFor="admin-system-prompt">Admin prompt</AiLabel>
+                </div>
+                <AiTextarea
+                  id="admin-system-prompt"
+                  placeholder="Answer in short tables. Always show totals. Flag anything that looks like a drop week over week."
+                  value={props.adminSystemPrompt}
+                  onChange={(e) => props.onAdminSystemPromptChange(e.target.value)}
+                  rows={3}
+                />
+                <AiHint>
+                  Shapes Admin Test answers about your own CRM data. Kept separate on purpose — tuning the customer
+                  tone should not change how your numbers are reported.
+                </AiHint>
+              </div>
+
+              <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3.5">
+                <div className="min-w-0">
+                  <p className="text-[12.5px] font-medium text-slate-700">Let replies use the customer&apos;s own record</p>
+                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                    Adds that one person&apos;s enquiry stage, recent follow-ups, tags and which ad they came from — so
+                    the same customer is recognised across every channel instead of starting over each time. Never
+                    includes anyone else&apos;s data.
+                  </p>
+                </div>
+                <Switch
+                  checked={props.customerContextEnabled}
+                  onCheckedChange={props.onCustomerContextEnabledChange}
+                />
+              </div>
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -100,7 +143,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-4 pb-4 pl-[42px]">
+            <div className="space-y-4 pb-4 sm:pl-[42px]">
               <div className="space-y-1.5">
                 <AiLabel htmlFor="fallback-answer">Fallback answer</AiLabel>
                 <AiInput
@@ -177,7 +220,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-4 pb-4 pl-[42px]">
+            <div className="space-y-4 pb-4 sm:pl-[42px]">
               <div className="flex items-start justify-between gap-3">
                 <p className="text-[12.5px] leading-relaxed text-slate-500">
                   Enforced in code, not just asked for in the prompt: below the threshold the model is never called —

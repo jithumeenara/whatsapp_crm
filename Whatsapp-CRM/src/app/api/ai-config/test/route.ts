@@ -5,6 +5,8 @@ import { PROVIDERS, generateAiReply, getProviderKeys } from '@/lib/ai/providers/
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { markdownToWhatsApp } from '@/lib/whatsapp/markdown-to-whatsapp'
 import { loadKnowledge } from '@/lib/ai/knowledge-store'
+import { loadCompanyProfile, formatCompanyBlock } from '@/lib/ai/company-profile'
+import { recordAiUsage } from '@/lib/ai/usage'
 import { selectRelevantContext, formatKnowledgeBlock } from '@/lib/ai/knowledge'
 
 export async function POST(req: Request) {
@@ -98,7 +100,10 @@ export async function POST(req: Request) {
     const storedConfig = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
     if (storedConfig?.knowledge_base_enabled) {
       try {
-        const { qaPairs, documents, version } = await loadKnowledge(storedConfig.id)
+        // Customer Test mirrors the real customer path exactly,
+        // including the audience boundary — a preview that could see
+        // staff-only entries would not be a preview.
+        const { qaPairs, documents, version } = await loadKnowledge(storedConfig.id, 'customer')
         if (qaPairs.length > 0 || documents.length > 0) {
           const geminiEntry = getProviderKeys(storedConfig).gemini
           const geminiApiKey = geminiEntry?.api_key ? decrypt(geminiEntry.api_key) : null
@@ -121,8 +126,18 @@ export async function POST(req: Request) {
     }
   }
 
-  const systemPrompt = buildTestSystemPrompt(system_prompt, training_data, reply_language, knowledgeBlock)
+  // Same company block the live reply path prepends, so the preview is
+  // grounded in the same identity a customer would get.
+  const companyProfile = await loadCompanyProfile(accountId).catch(() => null)
+  const systemPrompt = buildTestSystemPrompt(
+    system_prompt,
+    training_data,
+    reply_language,
+    knowledgeBlock,
+    formatCompanyBlock(companyProfile, 'customer'),
+  )
 
+  const startedAt = Date.now()
   try {
     const result = await generateAiReply(
       providerId,
@@ -137,6 +152,13 @@ export async function POST(req: Request) {
       },
       message.trim(),
     )
+    void recordAiUsage({
+      accountId,
+      model: resolvedModel,
+      feature: 'test',
+      tokens: result.usage,
+      latencyMs: Date.now() - startedAt,
+    })
     // Converted the same way a real send is (engine.ts's ai_reply node) —
     // this screen is meant to preview what a customer actually receives,
     // so it needs to show the same WhatsApp-formatted text, not raw
@@ -151,6 +173,16 @@ export async function POST(req: Request) {
       retrieval_confidence: retrievalConfidence,
     })
   } catch (err) {
+    // Failures are recorded too — a run of errors in the Usage tab is
+    // exactly what someone debugging a key or quota needs to see.
+    void recordAiUsage({
+      accountId,
+      model: resolvedModel,
+      feature: 'test',
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err),
+      latencyMs: Date.now() - startedAt,
+    })
     const classified = adapter.classifyError(err)
     return NextResponse.json({ error: classified.message }, { status: classified.retryable ? 429 : 400 })
   }
@@ -161,8 +193,10 @@ function buildTestSystemPrompt(
   trainingData: Array<{ question: string; answer: string }> | undefined,
   replyLanguage?: string | null,
   knowledgeBlock?: string,
+  companyBlock?: string,
 ): string {
   const parts: string[] = []
+  if (companyBlock) parts.push(companyBlock)
   if (systemPrompt) parts.push(systemPrompt)
   if (knowledgeBlock) parts.push(knowledgeBlock)
   // Same instruction the real ai_reply node adds (engine.ts) — this

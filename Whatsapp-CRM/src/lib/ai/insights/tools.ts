@@ -293,7 +293,7 @@ const TOOLS: Record<string, ToolImpl> = {
     declaration: {
       name: 'search_knowledge_base',
       description:
-        "Searches what the chatbot has been taught — the account's own knowledge base entries — and returns the most relevant ones. Use to answer 'what do we tell customers about X' or to check whether something has been trained at all.",
+        "Searches what the chatbot has been taught — the account's own knowledge base entries, including staff-only ones — and returns the most relevant ones. Use to answer 'what do we tell customers about X' or to check whether something has been trained at all.",
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
@@ -310,7 +310,9 @@ const TOOLS: Record<string, ToolImpl> = {
         select: { id: true },
       })
       if (!config) return { matches: [], note: 'No AI configuration exists for this account.' }
-      const { qaPairs, documents } = await loadKnowledge(config.id)
+      // 'all': the Admin side is exactly where staff-only entries
+      // should be findable. The customer path never sees them.
+      const { qaPairs, documents } = await loadKnowledge(config.id, 'all')
       // Keyword scoring only here: this runs inside a tool call that is
       // already inside a model turn, and paying an extra embedding round
       // trip mid-conversation to rank a handful of entries isn't worth

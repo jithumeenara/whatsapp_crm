@@ -17,6 +17,7 @@ import { SecurityCard } from '@/components/settings/security-card';
 import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { ChatTranslationPanel } from '@/components/settings/chat-translation-panel';
+import { CompanyProfilePanel } from '@/components/settings/company-profile-panel';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { CountryCodeSelect } from '@/components/shared/country-code-select';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
@@ -664,6 +665,12 @@ export function ProfileForm() {
           <ChatTranslationPanel />
         </div>
       </div>
+
+      {/* ── Company Details ──
+          Sits with the profile because it is "who we are" information an
+          owner fills in once, and it is what stops the AI describing the
+          business generically. */}
+      <CompanyProfilePanel />
 
       {/* ── Security (Password + 2FA merged) ── */}
       <SecurityCard />
