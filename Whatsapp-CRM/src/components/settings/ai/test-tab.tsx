@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { AiButton, AiCard, AiCardHeader, AiInput, AiHint, AiNotice, AiSegmented, AiBadge } from './ui-kit';
 import { WhatsAppText } from '@/components/inbox/message-bubble';
 import { MarkdownAnswer } from './markdown-answer';
+import { ContactSyncPanel } from './contact-sync-panel';
 
 /**
  * Screen 5 — two genuinely different tests behind one screen:
@@ -166,7 +167,14 @@ export function TestTab(props: TestTabProps) {
         return;
       }
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      // WhatsApp's own markers would otherwise be read out as
+      // punctuation ("star bold star"), which is exactly the opposite of
+      // what listening to a reply is for.
+      const spoken = text
+        .replace(/[*_~]/g, '')
+        .replace(/```[\s\S]*?```/g, '')
+        .trim();
+      const utterance = new SpeechSynthesisUtterance(spoken);
       utterance.lang = voiceLang;
       utterance.onend = () => setSpeakingIndex(null);
       utterance.onerror = () => setSpeakingIndex(null);
@@ -223,8 +231,10 @@ export function TestTab(props: TestTabProps) {
         });
         const data = await res.json();
         if (!res.ok || !data.reply) throw new Error(data.error ?? 'No response from AI.');
+        let spokenIndex = -1;
         setMessages((prev) => {
-          const next: TestMessage[] = [
+          spokenIndex = prev.length;
+          return [
             ...prev,
             {
               role: 'ai',
@@ -234,9 +244,10 @@ export function TestTab(props: TestTabProps) {
               confidence: data.retrieval_confidence ?? null,
             },
           ];
-          if (autoSpeak && speechSupported) speak(next.length - 1, data.reply);
-          return next;
         });
+        // Outside the updater on purpose: React is free to call an
+        // updater more than once, which would start the utterance twice.
+        if (autoSpeak && speechSupported && spokenIndex >= 0) speak(spokenIndex, data.reply);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.');
@@ -545,6 +556,8 @@ export function TestTab(props: TestTabProps) {
             </AiHint>
           </AiCard>
         )}
+
+        <ContactSyncPanel />
 
         <AiCard className="p-5">
           <div className="flex items-center gap-2">

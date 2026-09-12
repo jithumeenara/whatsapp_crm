@@ -35,8 +35,12 @@ interface PatchBody {
   status?: string
   /** 'customer' | 'internal' | 'both' — who this entry may be said to. */
   audience?: string
-  /** What the entry is for. Changing it does not invalidate the
-   *  embedding: it is prompt framing, not part of the indexed text. */
+  /** What the entry is for. This IS part of the indexed text — the
+   *  description is folded into the chunk title, which
+   *  chunkEmbeddingText() hashes and embeds — so changing it
+   *  invalidates the entry's embeddings and sends it back to 'pending'.
+   *  That is deliberate: it means semantic search can match on the
+   *  purpose too ("our fee structure" finding a table of numbers). */
   description?: string
   /** Re-fetch a website entry, or re-read a connected Data Store table. */
   resync?: boolean
@@ -70,7 +74,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         data.status = 'pending'
         data.last_error = null
       } else if (existing.kind === 'database' && existing.source_ref) {
-        const serialized = await serializeDataTable(accountId, existing.source_ref)
+        // Re-serialize with whatever purpose the entry carries now, so
+        // editing the purpose and re-syncing actually updates the header
+        // the model reads.
+        const serialized = await serializeDataTable(
+          accountId,
+          existing.source_ref,
+          typeof body.description === 'string' ? body.description : existing.description,
+        )
         data.content = serialized.text
         data.last_synced_at = new Date()
         data.status = 'pending'
@@ -96,6 +107,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof body.answer === 'string') data.answer = body.answer.trim()
   if (typeof body.content === 'string') data.content = body.content
   if (body.status === 'disabled' || body.status === 'pending') data.status = body.status
+  const descriptionChanged =
+    typeof body.description === 'string' && (body.description.trim() || null) !== existing.description
   if (typeof body.description === 'string') data.description = body.description.trim().slice(0, 2000) || null
   if (body.audience && ['customer', 'internal', 'both'].includes(body.audience)) {
     // Note this does NOT invalidate the embedding: the vector is the
@@ -105,7 +118,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   // Any edit to the embedded text invalidates the existing embedding.
-  if (!body.resync && ('question' in data || 'answer' in data || 'content' in data)) {
+  // `description` counts: knowledge-store folds it into the chunk title,
+  // and chunkEmbeddingText() embeds the title along with the body — so a
+  // changed purpose changes every chunk hash for this entry. Leaving the
+  // status alone here would have left it showing "Trained" while its
+  // vectors were orphaned and retrieval quietly degraded.
+  if (
+    !body.resync &&
+    ('question' in data || 'answer' in data || 'content' in data || descriptionChanged)
+  ) {
     data.status = data.status === 'disabled' ? 'disabled' : 'pending'
   }
 

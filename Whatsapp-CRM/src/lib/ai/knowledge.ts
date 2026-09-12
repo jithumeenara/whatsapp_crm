@@ -76,6 +76,17 @@ interface SelectOptions {
   semantic?: { aiConfigId: string; geminiApiKey: string }
 }
 
+/** How many extra candidates to pull from the vector search relative to
+ *  how many will be used, so post-ranking filtering (audience scope,
+ *  stale hashes) still leaves enough to fill the context. Four is
+ *  generous enough to survive a knowledge base that is mostly
+ *  staff-only, and small enough that the extra rows cost nothing at
+ *  this scale — the query is already filtered to one config. */
+const OVERFETCH_FACTOR = 4
+/** Absolute ceiling, so a large max_context_results can't turn one reply
+ *  into an unbounded scan. */
+const MAX_SEMANTIC_CANDIDATES = 100
+
 const STOPWORDS = new Set([
   'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
   'to', 'of', 'in', 'on', 'at', 'for', 'with', 'about', 'as', 'by', 'and',
@@ -225,10 +236,23 @@ async function selectBySemantic(
 
   try {
     const queryVector = await embedQuery(semantic.geminiApiKey, userMessage)
+    // Over-fetch, because a match can be dropped after ranking.
+    //
+    // The vector search covers every embedding for this AI config, but
+    // the caller's knowledge may be a subset of it — most importantly
+    // when the customer path loads only customer-safe entries while
+    // staff-only ones are still indexed (see knowledge-store's audience
+    // filter), and also when an entry was edited or deleted since the
+    // last sync so its old hash lingers. Asking for exactly as many
+    // matches as we intend to use meant a handful of staff-only entries
+    // at the top could push every usable customer entry below the cut,
+    // leaving the reply with little or no grounding while relevant
+    // material sat just underneath.
+    const wanted = limits.maxQaPairs + limits.maxDocChunks
     const matches = await findSimilarKnowledge({
       aiConfigId: semantic.aiConfigId,
       queryVector,
-      limit: limits.maxQaPairs + limits.maxDocChunks,
+      limit: Math.min(wanted * OVERFETCH_FACTOR, MAX_SEMANTIC_CANDIDATES),
     })
 
     const pairsByHash = new Map(allPairs.map((p) => [qaPairContentHash(p.pair), p.pair]))
@@ -236,21 +260,36 @@ async function selectBySemantic(
 
     const qaPairs: QaPair[] = []
     const documentChunks: Array<{ title: string; text: string }> = []
+    // The best score among matches this caller may actually use — not
+    // simply the best score returned.
+    let usableTopScore = 0
+
     for (const m of matches) {
       if (m.kind === 'qa') {
         const pair = pairsByHash.get(m.contentHash)
-        // A match whose hash isn't in the account's current knowledge
-        // base any more (edited/deleted since the last sync) is simply
-        // skipped — the next Settings save will clean up the stale
-        // embedding row itself (syncKnowledgeEmbeddings' delete step).
-        if (pair && qaPairs.length < limits.maxQaPairs) qaPairs.push(pair)
+        // A match whose hash isn't in this caller's knowledge is skipped:
+        // either it is out of scope for them (a staff-only entry on the
+        // customer path) or it is stale (edited/deleted since the last
+        // sync, which syncKnowledgeEmbeddings' delete step cleans up).
+        if (pair && qaPairs.length < limits.maxQaPairs) {
+          qaPairs.push(pair)
+          usableTopScore = Math.max(usableTopScore, m.similarity)
+        }
       } else {
         const chunk = chunksByHash.get(m.contentHash)
-        if (chunk && documentChunks.length < limits.maxDocChunks) documentChunks.push(chunk)
+        if (chunk && documentChunks.length < limits.maxDocChunks) {
+          documentChunks.push(chunk)
+          usableTopScore = Math.max(usableTopScore, m.similarity)
+        }
       }
     }
 
-    const confidence = matches.length > 0 ? Math.max(0, matches[0].similarity) : 0
+    // Confidence must describe what was actually retrieved. Reading it
+    // off matches[0] meant a staff-only entry scoring 0.9 reported 0.9
+    // confidence while the returned context was empty — so the
+    // low-confidence handoff stayed quiet and the model answered with
+    // nothing to answer from. Empty context is now honestly 0.
+    const confidence = Math.max(0, usableTopScore)
     return { qaPairs, documentChunks, confidence }
   } catch (err) {
     console.error('[knowledge] semantic retrieval failed, falling back to keyword search:', err instanceof Error ? err.message : err)

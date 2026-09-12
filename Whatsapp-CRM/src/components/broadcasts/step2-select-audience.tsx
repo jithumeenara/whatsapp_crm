@@ -45,8 +45,75 @@ const GRADS = [
   'from-violet-400 to-violet-600', 'from-sky-400 to-sky-600',
   'from-amber-400 to-amber-600', 'from-rose-400 to-rose-600',
 ];
+/** Meta's own verdict on whether a number is reachable on WhatsApp.
+ *  'unknown' is distinct from 'invalid': it means the check could not
+ *  confirm either way, which must not be shown to the user as a failure. */
+type NumberStatus = 'valid' | 'invalid' | 'unknown';
+
+/** Hoisted out of the component: it closes over no state, so redefining
+ *  it on every render bought nothing, and at module scope it can be
+ *  tested on its own. */
+async function checkBatch(batch: string[]): Promise<{ phone: string; status: NumberStatus }[]> {
+  const res = await fetch('/api/whatsapp/validate-contacts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phones: batch }),
+  });
+  if (!res.ok) throw new Error(`validate-contacts returned ${res.status}`);
+  const data = (await res.json()) as { results: { phone: string; status: NumberStatus }[] };
+  return data.results;
+}
+
+/** Stable keys for fixed-length placeholder rows — see the same note in
+ *  the chatbot page. */
+const SKELETON_ROWS = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6'] as const;
+
+/** The 's' in "3 contacts". Written out inline a dozen times before,
+ *  each one its own small ternary. */
+function plural(n: number): string {
+  return n === 1 ? '' : 's';
+}
+
+/** Background tint for one row of the validation table. Was a nested
+ *  ternary inline in the className; as a function each state is named
+ *  and the order they are checked in is visible. */
+function rowTint(status: NumberStatus, includeUnknown: boolean): string {
+  if (status === 'invalid') return 'bg-rose-50/50';
+  if (status === 'unknown' && !includeUnknown) return 'bg-slate-50/70 opacity-70';
+  return '';
+}
+
+/** The loading state for a contact list. Two near-identical skeleton
+ *  blocks were written out inline; they differ only by row count and
+ *  whether the row has a checkbox. */
+function ContactRowSkeletons({
+  count,
+  withCheckbox = false,
+  trailingDot = false,
+}: {
+  count: number;
+  withCheckbox?: boolean;
+  trailingDot?: boolean;
+}) {
+  return (
+    <>
+      {SKELETON_ROWS.slice(0, count).map((rowId) => (
+        <div key={rowId} className="flex items-center gap-3 px-4 py-3 animate-pulse">
+          {withCheckbox && <div className="h-4 w-4 rounded bg-slate-100 shrink-0" />}
+          <div className="h-8 w-8 rounded-full bg-slate-100 shrink-0" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-3 w-32 rounded bg-slate-100" />
+            <div className="h-2.5 w-24 rounded bg-slate-100" />
+          </div>
+          {trailingDot && <div className="h-4 w-4 rounded bg-indigo-100 shrink-0" />}
+        </div>
+      ))}
+    </>
+  );
+}
+
 function grad(id: string) {
-  const s = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const s = id.split('').reduce((a, c) => a + (c.codePointAt(0) ?? 0), 0);
   return GRADS[s % GRADS.length];
 }
 
@@ -99,7 +166,7 @@ async function downloadDemoTemplate() {
     // is what makes the download reliably fire everywhere.
     document.body.appendChild(a)
     a.click()
-    document.body.removeChild(a)
+    a.remove()
     // Revoke on a delay, not immediately — revoking synchronously right
     // after click() can race the browser's own read of the blob and
     // silently abort the download in some browsers.
@@ -161,7 +228,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   /* WhatsApp validation */
   type ValidationStatus = 'idle' | 'validating' | 'done';
   const [validationStatus, setValidationStatus] = useState<ValidationStatus>('idle');
-  const [validationMap, setValidationMap] = useState<Map<string, 'valid' | 'invalid' | 'unknown'>>(new Map());
+  const [validationMap, setValidationMap] = useState<Map<string, NumberStatus>>(new Map());
   const [validationProgress, setValidationProgress] = useState(0);
   // 'unknown' means Meta's own check genuinely couldn't confirm the number
   // either way (its WhatsApp Contacts API errored, timed out, or isn't
@@ -286,17 +353,6 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setValidationProgress(0);
     onUpdate({ type: 'csv', csvContacts: [] });
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }
-
-  async function checkBatch(batch: string[]): Promise<{ phone: string; status: 'valid' | 'invalid' | 'unknown' }[]> {
-    const res = await fetch('/api/whatsapp/validate-contacts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phones: batch }),
-    });
-    if (!res.ok) throw new Error(`validate-contacts returned ${res.status}`);
-    const data = await res.json() as { results: { phone: string; status: 'valid' | 'invalid' | 'unknown' }[] };
-    return data.results;
   }
 
   async function validateWhatsApp() {
@@ -427,24 +483,29 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     (mode === 'excel' && validationStatus === 'done' && sendCount > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
-  const summaryLabel =
-    mode === 'all' && pickSpecific
-      ? `${selectedIds.size} contact${selectedIds.size !== 1 ? 's' : ''} selected`
-      : mode === 'all'
-      ? `${totalWa.toLocaleString()} WhatsApp contacts`
-      : mode === 'tags'
-      ? selectedTagIds.length === 0
-        ? 'Select at least one tag'
-        : `Contacts with ${selectedTagIds.length} tag${selectedTagIds.length !== 1 ? 's' : ''}`
-      : excelContacts.length === 0
-        ? 'Upload an Excel file to continue'
-        : validationStatus === 'idle'
-          ? `${excelContacts.length} contacts imported — validate WhatsApp numbers to continue`
-          : validationStatus === 'validating'
-            ? `Validating ${excelContacts.length} numbers…`
-            : unknownCount === 0
-              ? `${validCount} valid WhatsApp numbers (${invalidCount} skipped)`
-              : `${sendCount} number${sendCount !== 1 ? 's' : ''} will be sent to (${invalidCount} confirmed not on WhatsApp, ${unknownCount} unverified)`;
+  function buildSummaryLabel(): string {
+    if (mode === 'all') {
+      return pickSpecific
+        ? `${selectedIds.size} contact${plural(selectedIds.size)} selected`
+        : `${totalWa.toLocaleString()} WhatsApp contacts`;
+    }
+
+    if (mode === 'tags') {
+      if (selectedTagIds.length === 0) return 'Select at least one tag';
+      return `Contacts with ${selectedTagIds.length} tag${plural(selectedTagIds.length)}`;
+    }
+
+    // Excel import: the label walks the same path the user does —
+    // nothing uploaded, uploaded but unvalidated, validating, done.
+    if (excelContacts.length === 0) return 'Upload an Excel file to continue';
+    if (validationStatus === 'idle') {
+      return `${excelContacts.length} contacts imported — validate WhatsApp numbers to continue`;
+    }
+    if (validationStatus === 'validating') return `Validating ${excelContacts.length} numbers…`;
+    if (unknownCount === 0) return `${validCount} valid WhatsApp numbers (${invalidCount} skipped)`;
+    return `${sendCount} number${plural(sendCount)} will be sent to (${invalidCount} confirmed not on WhatsApp, ${unknownCount} unverified)`;
+  }
+  const summaryLabel = buildSummaryLabel();
 
   return (
     <div className="space-y-5">
@@ -532,12 +593,14 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
               </div>
 
               {/* Drop zone */}
-              <div
+              <button
+                type="button"
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleFileDrop}
                 className={cn(
-                  'rounded-xl border-2 border-dashed p-10 text-center transition-all cursor-pointer',
+                  'w-full rounded-xl border-2 border-dashed p-10 text-center transition-all cursor-pointer',
+                  'outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50 focus-visible:ring-offset-2',
                   isDragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-slate-50 hover:border-indigo-300 hover:bg-indigo-50/30'
                 )}
                 onClick={() => fileInputRef.current?.click()}
@@ -568,7 +631,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                     </div>
                   </div>
                 )}
-              </div>
+              </button>
 
               {/* Format hint */}
               {!excelLoading && (
@@ -638,8 +701,8 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
               </div>
               {/* Rows (max 8 preview) */}
               <div className="divide-y divide-slate-50 max-h-52 overflow-y-auto">
-                {excelContacts.slice(0, 50).map((c, i) => (
-                  <div key={i} className="grid grid-cols-4 gap-4 px-4 py-2.5">
+                {excelContacts.slice(0, 50).map((c) => (
+                  <div key={c.phone} className="grid grid-cols-4 gap-4 px-4 py-2.5">
                     <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
                     <p className="text-[13px] text-slate-500 truncate">{c.name || <span className="italic text-slate-300">—</span>}</p>
                     <p className="text-[13px] text-slate-500 truncate">{c.company || <span className="italic text-slate-300">—</span>}</p>
@@ -734,12 +797,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                   <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</p>
                 </div>
                 <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto">
-                  {excelContacts.slice(0, 100).map((c, i) => {
+                  {excelContacts.slice(0, 100).map((c) => {
                     const s = validationMap.get(c.phone) ?? 'unknown';
                     return (
-                      <div key={i} className={cn(
+                      <div key={c.phone} className={cn(
                         'grid grid-cols-[1fr_auto_auto_auto] gap-4 px-4 py-2.5 items-center',
-                        s === 'invalid' ? 'bg-rose-50/50' : s === 'unknown' && !includeUnknown ? 'bg-slate-50/70 opacity-70' : ''
+                        rowTint(s, includeUnknown)
                       )}>
                         <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
                         <p className="text-[13px] text-slate-500 truncate">{c.name || '—'}</p>
@@ -829,16 +892,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           {/* Contact rows */}
           <div className="divide-y divide-slate-50 max-h-72 overflow-y-auto">
             {loadingContacts ? (
-              [...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center gap-3 px-4 py-3 animate-pulse">
-                  <div className="h-4 w-4 rounded bg-slate-100 shrink-0" />
-                  <div className="h-8 w-8 rounded-full bg-slate-100 shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3 w-32 rounded bg-slate-100" />
-                    <div className="h-2.5 w-24 rounded bg-slate-100" />
-                  </div>
-                </div>
-              ))
+              <ContactRowSkeletons count={5} withCheckbox />
             ) : allContacts.length === 0 ? (
               <p className="py-10 text-center text-[13px] text-slate-400">
                 {query ? 'No WhatsApp contacts match.' : 'No WhatsApp contacts found.'}
@@ -911,17 +965,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           </div>
           <div className="divide-y divide-slate-50 max-h-56 overflow-y-auto">
             {loadingContacts ? (
-              [...Array(4)].map((_, i) => (
-                <div key={i} className="flex items-center gap-3 px-4 py-3 animate-pulse">
-                  <div className="h-8 w-8 rounded-full bg-slate-100 shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3 w-32 rounded bg-slate-100" />
-                    <div className="h-2.5 w-24 rounded bg-slate-100" />
-                  </div>
-                  {/* checked indicator */}
-                  <div className="h-4 w-4 rounded bg-indigo-100 shrink-0" />
-                </div>
-              ))
+              <ContactRowSkeletons count={4} trailingDot />
             ) : allContacts.length === 0 ? (
               <p className="py-8 text-center text-[13px] text-slate-400">
                 {mode === 'tags' ? 'No contacts with selected tags.' : 'No WhatsApp contacts found.'}

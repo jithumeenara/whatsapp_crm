@@ -188,7 +188,7 @@ export async function POST(req: Request) {
     } else if (kind === 'database') {
       const tableId = body?.source_ref?.trim()
       if (!tableId) return NextResponse.json({ error: 'Pick a table to connect.' }, { status: 400 })
-      const serialized = await serializeDataTable(ctx.accountId, tableId)
+      const serialized = await serializeDataTable(ctx.accountId, tableId, resolvedDescription)
       content = serialized.text
       name = name || serialized.tableName
       source = 'data_store'

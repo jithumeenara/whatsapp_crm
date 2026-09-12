@@ -24,6 +24,10 @@ export interface SerializedTable {
   tableName: string
   recordCount: number
   truncated: boolean
+  /** The field labels actually included, so the caller can show an
+   *  account exactly what the AI will be able to read from this table
+   *  rather than leaving them to guess. */
+  fields: string[]
   text: string
 }
 
@@ -48,7 +52,19 @@ function formatValue(value: unknown): string | null {
   return null
 }
 
-export async function serializeDataTable(accountId: string, tableId: string): Promise<SerializedTable> {
+/**
+ * @param purpose What this table is for, in the account's own words,
+ *   written into the serialized header so the model is told what the
+ *   rows represent and when to use them. A "Programmes" table whose
+ *   purpose says "course catalogue — use for questions about what we
+ *   teach, duration or eligibility" is answerable; the same rows with
+ *   no purpose are just nouns.
+ */
+export async function serializeDataTable(
+  accountId: string,
+  tableId: string,
+  purpose?: string | null,
+): Promise<SerializedTable> {
   const table = await prisma.dataTable.findFirst({
     where: { id: tableId, account_id: accountId },
     select: {
@@ -78,8 +94,17 @@ export async function serializeDataTable(accountId: string, tableId: string): Pr
   const truncated = records.length > MAX_RECORDS
   const used = truncated ? records.slice(0, MAX_RECORDS) : records
 
-  const blocks: string[] = []
-  if (table.description?.trim()) blocks.push(`${table.name}: ${table.description.trim()}`)
+  // A structured header, so the model knows what it is reading before
+  // it reads it: what the table is, what it is for, and which fields
+  // each record carries. Without it a retrieved record is a bare list of
+  // label/value pairs with no indication of what the set represents.
+  const header = [`TABLE: ${table.name}`]
+  const purposeText = purpose?.trim() || table.description?.trim()
+  if (purposeText) header.push(`PURPOSE: ${purposeText}`)
+  header.push(`FIELDS: ${fields.map((f) => f.label).join(', ')}`)
+  header.push('Each block below is one record from this table.')
+
+  const blocks: string[] = [header.join('\n')]
 
   for (const record of used) {
     const data = (record.data ?? {}) as Record<string, unknown>
@@ -92,12 +117,14 @@ export async function serializeDataTable(accountId: string, tableId: string): Pr
     if (lines.length > 0) blocks.push(lines.join('\n'))
   }
 
-  if (blocks.length === 0) throw new Error('That table has no records with any content yet.')
+  // 1, not 0 — the header always occupies the first slot.
+  if (blocks.length === 1) throw new Error('That table has no records with any content yet.')
 
   return {
     tableName: table.name,
     recordCount: used.length,
     truncated,
+    fields: fields.map((f) => f.label),
     text: blocks.join('\n\n').slice(0, MAX_TEXT_CHARS),
   }
 }

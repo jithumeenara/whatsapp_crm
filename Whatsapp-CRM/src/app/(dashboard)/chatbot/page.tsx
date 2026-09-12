@@ -106,6 +106,20 @@ function getKeywords(bot: Chatbot): string[] {
 
 type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs"
 
+/** Stable keys for fixed-length placeholder rows. Using the array index
+ *  as a React key is fine only while a list never reorders; naming the
+ *  slots removes the question entirely and satisfies the lint rule that
+ *  exists to catch the cases where it is not fine. */
+/** Label for the enable/disable switch: the three states are
+ *  mid-request, on, and off. Was a nested ternary inline in the JSX. */
+function toggleLabel(isToggling: boolean, isActive: boolean): string {
+  if (isToggling) return "…";
+  return isActive ? "Active" : "Paused";
+}
+
+const SKELETON_CARDS = ['s1', 's2', 's3', 's4'] as const;
+const SPARKLINE_BARS = Array.from({ length: 14 }, (_, i) => `bar-${i}`);
+
 export default function ChatbotV2() {
   const router = useRouter()
   const [chatbots, setChatbots] = useState<Chatbot[]>([])
@@ -113,12 +127,27 @@ export default function ChatbotV2() {
   const [creating, setCreating] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+
+
   const [togglingId, setTogglingId] = useState<string | null>(null)
   const [view, setView] = useState<"grid" | "table">("table")
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all")
   const [channelFilterOpen, setChannelFilterOpen] = useState(false)
   const channelFilterRef = useRef<HTMLDivElement>(null)
   const [showPlatformPicker, setShowPlatformPicker] = useState(false)
+
+  // Escape closes whichever dialog is open. The backdrop click was the
+  // only dismiss path before, which left keyboard users stuck inside.
+  useEffect(() => {
+    if (!showPlatformPicker && !deleteId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (showPlatformPicker) setShowPlatformPicker(false);
+      else if (deleteId && !deleting) setDeleteId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showPlatformPicker, deleteId, deleting]);
   const [importing, setImporting] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
 
@@ -295,8 +324,8 @@ export default function ChatbotV2() {
     if (view === "grid") {
       content = (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm animate-pulse">
+          {SKELETON_CARDS.map((skeletonId) => (
+            <div key={skeletonId} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm animate-pulse">
               <div className="h-[64px] bg-indigo-50" />
               <div className="p-2.5 space-y-1.5">
                 <div className="h-2 bg-slate-100 rounded w-3/4" />
@@ -413,11 +442,11 @@ export default function ChatbotV2() {
               </div>
               <div className="px-2.5 py-1.5 bg-slate-50/60 border-b border-slate-100">
                 <div className="flex items-end gap-0.5 h-3">
-                  {[...Array(14)].map((_, i) => (
+                  {SPARKLINE_BARS.map((barId, i) => (
                     <div
-                      key={i}
+                      key={barId}
                       className={cn("flex-1 rounded-sm", isIg ? "bg-pink-100" : "bg-indigo-100")}
-                      style={{ height: `${30 + Math.abs(Math.sin(i * 1.4 + bot.id.charCodeAt(0))) * 70}%` }}
+                      style={{ height: `${30 + Math.abs(Math.sin(i * 1.4 + (bot.id.codePointAt(0) ?? 0))) * 70}%` }}
                     />
                   ))}
                 </div>
@@ -550,7 +579,7 @@ export default function ChatbotV2() {
                         active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
                       )}>
                         <span className={cn("h-1.5 w-1.5 rounded-full", active ? "bg-emerald-500" : "bg-slate-400")} />
-                        {togglingId === bot.id ? "…" : active ? "Active" : "Paused"}
+                        {toggleLabel(togglingId === bot.id, active)}
                       </span>
                     </div>
                   </td>
@@ -729,7 +758,12 @@ export default function ChatbotV2() {
       {/* Platform picker modal */}
       {showPlatformPicker && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowPlatformPicker(false)} />
+          <button
+            type="button"
+            aria-label="Close"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setShowPlatformPicker(false)}
+          />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="h-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400" />
             <div className="p-6">
@@ -846,7 +880,13 @@ export default function ChatbotV2() {
       {/* Delete confirm */}
       {deleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => !deleting && setDeleteId(null)} />
+          <button
+            type="button"
+            aria-label="Close"
+            disabled={deleting}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => !deleting && setDeleteId(null)}
+          />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
             <div className="h-1 bg-gradient-to-r from-rose-400 to-rose-600" />
             <div className="p-6">
