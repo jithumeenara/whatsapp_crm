@@ -48,6 +48,7 @@ export async function generateAiReply(
     temperature: number
     maxTokens: number
     systemPrompt?: string
+    safetyFilter?: string
   },
   userMessage: string,
   conversationHistory: AiGenerateArgs['conversationHistory'] = [],
@@ -86,6 +87,7 @@ export async function generateAiReplyWithFallback(
     provider_keys: unknown
     temperature: number
     max_tokens: number
+    safety_filter?: string
   },
   systemPrompt: string,
   userMessage: string,
@@ -106,6 +108,7 @@ export async function generateAiReplyWithFallback(
         temperature: aiConfig.temperature,
         maxTokens: aiConfig.max_tokens,
         systemPrompt,
+        safetyFilter: aiConfig.safety_filter,
       },
       userMessage,
       conversationHistory,

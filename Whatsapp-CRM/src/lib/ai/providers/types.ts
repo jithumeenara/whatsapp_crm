@@ -27,6 +27,11 @@ export interface AiGenerateArgs {
    */
   conversationHistory: Array<{ role: 'user' | 'model'; text: string }>
   userMessage: string
+  /** AiConfig.safety_filter ('strict' | 'balanced' | 'relaxed'). Only
+   *  Gemini acts on it today — it's the one provider here that exposes
+   *  per-request safety thresholds. Other adapters ignore it rather than
+   *  pretending to honor a setting they can't actually apply. */
+  safetyFilter?: string
 }
 
 export interface AiGenerateResult {

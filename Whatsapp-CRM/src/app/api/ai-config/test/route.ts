@@ -4,6 +4,8 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { PROVIDERS, generateAiReply, getProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { markdownToWhatsApp } from '@/lib/whatsapp/markdown-to-whatsapp'
+import { loadKnowledge } from '@/lib/ai/knowledge-store'
+import { selectRelevantContext, formatKnowledgeBlock } from '@/lib/ai/knowledge'
 
 export async function POST(req: Request) {
   // Same role floor as PUT /api/ai-config — this route can be made to
@@ -29,6 +31,8 @@ export async function POST(req: Request) {
     max_tokens,
     system_prompt,
     training_data,
+    safety_filter,
+    reply_language,
   } = body as {
     message?: string
     provider?: string
@@ -39,6 +43,8 @@ export async function POST(req: Request) {
     max_tokens?: number
     system_prompt?: string
     training_data?: Array<{ question: string; answer: string }>
+    safety_filter?: string
+    reply_language?: string | null
   }
 
   if (!message?.trim()) {
@@ -78,11 +84,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'A model is required for this provider.' }, { status: 400 })
   }
 
-  // Same flattening the old Gemini-only implementation used — training
-  // data folded into the system prompt, unfiltered here since this is a
-  // manual one-off test message, not a real conversation turn (the real
-  // ai_reply node applies relevance filtering, see src/lib/ai/knowledge.ts).
-  const systemPrompt = buildTestSystemPrompt(system_prompt, training_data)
+  // Knowledge: when the caller doesn't pass its own training_data, this
+  // runs the SAME retrieval the real ai_reply node runs — load the
+  // account's knowledge items, rank them against this message, and fold
+  // only the relevant ones into the prompt. Previously the test screen
+  // flattened a client-supplied copy of the Q&A pairs and ignored
+  // documents entirely, so it could answer better or worse than
+  // production for reasons that had nothing to do with the model. A
+  // preview that doesn't match what customers get isn't a preview.
+  let knowledgeBlock = ''
+  let retrievalConfidence: number | null = null
+  if (!training_data) {
+    const storedConfig = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
+    if (storedConfig?.knowledge_base_enabled) {
+      try {
+        const { qaPairs, documents, version } = await loadKnowledge(storedConfig.id)
+        if (qaPairs.length > 0 || documents.length > 0) {
+          const geminiEntry = getProviderKeys(storedConfig).gemini
+          const geminiApiKey = geminiEntry?.api_key ? decrypt(geminiEntry.api_key) : null
+          const useSemantic = storedConfig.retrieval_mode !== 'keyword' && !!geminiApiKey
+          const limit = Math.max(1, storedConfig.max_context_results)
+          const selected = await selectRelevantContext(message.trim(), qaPairs, documents, {
+            cacheKey: `${storedConfig.id}:${version}`,
+            maxQaPairs: limit,
+            maxDocChunks: limit,
+            ...(useSemantic ? { semantic: { aiConfigId: storedConfig.id, geminiApiKey: geminiApiKey! } } : {}),
+          })
+          knowledgeBlock = formatKnowledgeBlock(selected)
+          retrievalConfidence = selected.confidence
+        }
+      } catch (err) {
+        // Retrieval is an enhancement here, not the point of the test —
+        // a failure still gets a reply, just without grounding.
+        console.error('[ai-config/test] knowledge retrieval failed:', err instanceof Error ? err.message : err)
+      }
+    }
+  }
+
+  const systemPrompt = buildTestSystemPrompt(system_prompt, training_data, reply_language, knowledgeBlock)
 
   try {
     const result = await generateAiReply(
@@ -94,6 +133,7 @@ export async function POST(req: Request) {
         temperature: temperature ?? 0.7,
         maxTokens: max_tokens ?? 500,
         systemPrompt,
+        safetyFilter: safety_filter,
       },
       message.trim(),
     )
@@ -101,7 +141,15 @@ export async function POST(req: Request) {
     // this screen is meant to preview what a customer actually receives,
     // so it needs to show the same WhatsApp-formatted text, not raw
     // Markdown that only looks fine here and breaks on a real send.
-    return NextResponse.json({ reply: markdownToWhatsApp(result.text), truncated: result.truncated, provider: providerId })
+    return NextResponse.json({
+      reply: markdownToWhatsApp(result.text),
+      truncated: result.truncated,
+      provider: providerId,
+      // Lets the Test AI screen show what the bot actually retrieved for
+      // this message — the same number the confidence-handoff guardrail
+      // compares against in production.
+      retrieval_confidence: retrievalConfidence,
+    })
   } catch (err) {
     const classified = adapter.classifyError(err)
     return NextResponse.json({ error: classified.message }, { status: classified.retryable ? 429 : 400 })
@@ -111,9 +159,18 @@ export async function POST(req: Request) {
 function buildTestSystemPrompt(
   systemPrompt: string | undefined,
   trainingData: Array<{ question: string; answer: string }> | undefined,
+  replyLanguage?: string | null,
+  knowledgeBlock?: string,
 ): string {
   const parts: string[] = []
   if (systemPrompt) parts.push(systemPrompt)
+  if (knowledgeBlock) parts.push(knowledgeBlock)
+  // Same instruction the real ai_reply node adds (engine.ts) — this
+  // screen is a preview of production behavior, so it has to apply the
+  // same language rule rather than diverging from it.
+  if (replyLanguage) {
+    parts.push(`Always reply in ${replyLanguage}, regardless of which language the customer writes in.`)
+  }
   if (trainingData && trainingData.length > 0) {
     parts.push('Knowledge base (use these to answer questions accurately):')
     for (const item of trainingData) {

@@ -1,6 +1,35 @@
-import { GoogleGenerativeAI, FinishReason } from '@google/generative-ai'
+import { GoogleGenerativeAI, FinishReason, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
 import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
 import { AI_REQUEST_TIMEOUT_MS } from './types'
+
+/**
+ * AiConfig.safety_filter -> Gemini's own HarmBlockThreshold, applied to
+ * every harm category the SDK defines (enum values ground-truthed from
+ * the installed SDK's .d.ts, not assumed).
+ *
+ * 'balanced' is BLOCK_MEDIUM_AND_ABOVE, which is Gemini's own default —
+ * so an account that never touches this setting behaves exactly as it
+ * did before the setting existed. BLOCK_NONE is deliberately not
+ * reachable: fully disabling safety on a bot that talks to real
+ * customers is not something to expose as a dropdown option.
+ */
+const SAFETY_THRESHOLDS: Record<string, HarmBlockThreshold> = {
+  strict: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+  balanced: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+  relaxed: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+}
+
+const HARM_CATEGORIES = [
+  HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+  HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+  HarmCategory.HARM_CATEGORY_HARASSMENT,
+  HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+]
+
+function buildSafetySettings(filter: string | undefined) {
+  const threshold = SAFETY_THRESHOLDS[filter ?? 'balanced'] ?? SAFETY_THRESHOLDS.balanced
+  return HARM_CATEGORIES.map((category) => ({ category, threshold }))
+}
 
 async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
@@ -11,6 +40,7 @@ async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
         temperature: args.temperature,
         maxOutputTokens: args.maxTokens,
       },
+      safetySettings: buildSafetySettings(args.safetyFilter),
       systemInstruction: args.systemPrompt || 'You are a helpful assistant.',
     },
     // Ground-truthed against the installed SDK's own .d.ts (RequestOptions.timeout,

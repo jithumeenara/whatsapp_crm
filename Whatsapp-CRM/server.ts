@@ -7,6 +7,7 @@ import { Server as SocketIOServer } from "socket.io";
 // app relies on.
 import { sweepScheduledMessages } from "./src/lib/scheduled-messages/sweep";
 import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
+import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -79,6 +80,15 @@ app.prepare().then(() => {
       console.error("[broadcasts] sweep interval failed:", err);
     });
   }, 60_000);
+
+  // Website knowledge re-sync -- hourly rather than per-minute: the sweep
+  // itself only touches entries older than 24h, so checking more often
+  // just costs DB round-trips for accounts that have this off anyway.
+  setInterval(() => {
+    sweepWebsiteKnowledge().catch((err) => {
+      console.error("[ai-knowledge] website sweep failed:", err);
+    });
+  }, 60 * 60_000);
 });
 
 /** Emit a real-time event to all sockets in an account's room. */

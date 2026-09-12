@@ -193,6 +193,7 @@ model Account {
   conversations                Conversation[]
   whatsapp_configs              WhatsAppConfig[]
   ai_config                    AiConfig?
+  ai_knowledge_items           AiKnowledgeItem[]
   sms_config                   SmsConfig?
   email_config                 EmailConfig?
   rcs_config                   RcsConfig?
@@ -1159,12 +1160,43 @@ model AiConfig {
   /// Falls back to a built-in default string when unset.
   low_confidence_message         String?
 
+  /// Language the bot should reply in, as a plain language name
+  /// ("Malayalam", "English", …). Null = auto-detect, i.e. reply in
+  /// whatever language the customer wrote in — the right default for a
+  /// Kerala customer base that mixes Malayalam, English and Manglish in
+  /// one thread. Applied as a system-prompt instruction, not a provider
+  /// setting, since no provider exposes a hard output-language switch.
+  /// Master switch for grounding replies in the knowledge base at all.
+  /// Off means the model answers from the system prompt alone — useful
+  /// while an account is still filling its knowledge base in.
+  knowledge_base_enabled Boolean @default(true)
+  /// 'auto' (semantic when embeddings exist, keyword otherwise — the
+  /// behavior that already existed), 'semantic' or 'keyword' to pin it.
+  retrieval_mode         String  @default("auto")
+  /// How many knowledge chunks may be pulled into one prompt. Was two
+  /// separate hardcoded caps inside knowledge.ts; this is the single
+  /// account-level control the Training tab exposes.
+  max_context_results    Int     @default(5)
+  /// Re-fetch website-sourced knowledge items on a schedule. The cron
+  /// route is a no-op for accounts with this off.
+  auto_sync_website      Boolean @default(false)
+
+  reply_language                 String?
+  /// How aggressively Gemini's own safety filters block a generation:
+  /// 'strict' | 'balanced' (Gemini's own default) | 'relaxed'. Mapped to
+  /// HarmBlockThreshold across all four harm categories in
+  /// src/lib/ai/providers/gemini.ts. Deliberately does NOT offer
+  /// BLOCK_NONE — fully disabling safety on a customer-facing bot is not
+  /// a one-click setting.
+  safety_filter                  String  @default("balanced")
+
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   updated_at    DateTime @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   knowledge_embeddings AiKnowledgeEmbedding[]
+  knowledge_items      AiKnowledgeItem[]
 
   @@map("ai_configs")
 }
@@ -1211,6 +1243,65 @@ model AiKnowledgeEmbedding {
 
   @@unique([ai_config_id, content_hash, embedding_model])
   @@map("ai_knowledge_embeddings")
+}
+
+/// One entry in the account's knowledge base, as a real row.
+///
+/// Replaces the two JSON blobs this used to live in
+/// (ai_configs.training_data for Q&A pairs, ai_configs.knowledge_documents
+/// for free text). Those columns are kept, unread by new code, as a
+/// rollback safety net for one release — the same treatment the legacy
+/// single-provider fields above got. Migration 068 backfills every
+/// existing entry into this table.
+///
+/// Rows, not JSON, because the rebuilt Training tab needs per-entry
+/// state that a blob can't carry: where each entry came from, when it
+/// last synced, whether its embedding is current, and which one failed.
+model AiKnowledgeItem {
+  id           String @id @default(uuid()) @db.Uuid
+  ai_config_id String @db.Uuid
+  account_id   String @db.Uuid
+
+  /// What this entry is: 'qa' | 'document' | 'website' | 'text' | 'database'.
+  /// Drives both how `content` is built and what the Training tab shows
+  /// in its Type column.
+  kind         String
+  /// Display name in the knowledge base table.
+  name         String
+  /// Where it came from: 'manual' | 'upload' | 'web_sync' | 'data_store'
+  /// | 'test_feedback' (a Test AI reply saved as an example).
+  source       String @default("manual")
+
+  /// Q&A entries only.
+  question     String?
+  answer       String?
+  /// Everything else — the extracted/entered text that actually gets
+  /// chunked and embedded.
+  content      String?
+  /// Website entries: the URL to (re-)fetch. Database entries: the
+  /// DataTable id whose records are serialized in.
+  source_url   String?
+  source_ref   String? @db.Uuid
+
+  /// 'trained' (embedded and in use) | 'pending' (saved, not embedded
+  /// yet) | 'failed' (last sync or embed attempt errored — see
+  /// last_error) | 'disabled' (kept but excluded from retrieval).
+  status       String  @default("pending")
+  last_error   String?
+  /// Set when a website/database entry was last re-fetched, so the
+  /// Training tab can show real "Updated" values rather than just the
+  /// row's own mtime.
+  last_synced_at DateTime? @db.Timestamptz(6)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  ai_config AiConfig @relation(fields: [ai_config_id], references: [id], onDelete: Cascade)
+  account   Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@index([ai_config_id, status])
+  @@index([account_id, kind])
+  @@map("ai_knowledge_items")
 }
 
 // ============================================================

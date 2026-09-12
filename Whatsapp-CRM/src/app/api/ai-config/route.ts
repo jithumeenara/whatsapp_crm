@@ -5,7 +5,8 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys, type ProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { syncKnowledgeEmbeddings, toKnowledgeItems } from '@/lib/ai/embeddings'
-import { chunkDocument, type QaPair, type KnowledgeDocument } from '@/lib/ai/knowledge'
+import { chunkDocument } from '@/lib/ai/knowledge'
+import { loadKnowledge } from '@/lib/ai/knowledge-store'
 
 // PUT/DELETE can rewrite this account's AI provider keys/base_url (a
 // custom base_url is a live SSRF vector — see ssrf-guard.ts) or exfiltrate
@@ -66,6 +67,12 @@ export async function GET() {
     low_confidence_handoff_enabled: config.low_confidence_handoff_enabled,
     low_confidence_assign_to: config.low_confidence_assign_to,
     low_confidence_message: config.low_confidence_message,
+    reply_language: config.reply_language,
+    safety_filter: config.safety_filter,
+    knowledge_base_enabled: config.knowledge_base_enabled,
+    retrieval_mode: config.retrieval_mode,
+    max_context_results: config.max_context_results,
+    auto_sync_website: config.auto_sync_website,
     // Lets the Settings UI show "embeddings ready" vs "not set up yet"
     // (e.g. to explain why the Regenerate button matters) without
     // exposing anything sensitive — has_key above already covers that.
@@ -104,6 +111,12 @@ export async function PUT(req: Request) {
     low_confidence_handoff_enabled,
     low_confidence_assign_to,
     low_confidence_message,
+    reply_language,
+    safety_filter,
+    knowledge_base_enabled,
+    retrieval_mode,
+    max_context_results,
+    auto_sync_website,
   } = body as {
     active_provider?: string
     fallback_provider?: string | null
@@ -120,6 +133,12 @@ export async function PUT(req: Request) {
     low_confidence_handoff_enabled?: boolean
     low_confidence_assign_to?: string | null
     low_confidence_message?: string | null
+    reply_language?: string | null
+    safety_filter?: string
+    knowledge_base_enabled?: boolean
+    retrieval_mode?: string
+    max_context_results?: number
+    auto_sync_website?: boolean
   }
 
   const existing = await prisma.aiConfig.findUnique({
@@ -181,6 +200,31 @@ export async function PUT(req: Request) {
       low_confidence_assign_to !== undefined ? low_confidence_assign_to : (existing?.low_confidence_assign_to ?? null),
     low_confidence_message:
       low_confidence_message !== undefined ? low_confidence_message : (existing?.low_confidence_message ?? null),
+    reply_language: reply_language !== undefined ? reply_language : (existing?.reply_language ?? null),
+    // Only the three known values are accepted — an unrecognized string
+    // would silently fall back to 'balanced' in the adapter anyway, so
+    // reject it here rather than storing something misleading.
+    safety_filter:
+      safety_filter && ['strict', 'balanced', 'relaxed'].includes(safety_filter)
+        ? safety_filter
+        : (existing?.safety_filter ?? 'balanced'),
+    knowledge_base_enabled:
+      knowledge_base_enabled !== undefined
+        ? knowledge_base_enabled
+        : (existing?.knowledge_base_enabled ?? true),
+    retrieval_mode:
+      retrieval_mode && ['auto', 'semantic', 'keyword'].includes(retrieval_mode)
+        ? retrieval_mode
+        : (existing?.retrieval_mode ?? 'auto'),
+    // Clamped rather than rejected — this is a UI slider/select value,
+    // and a silently-huge context window is a real cost and accuracy
+    // problem, not just a validation nicety.
+    max_context_results:
+      max_context_results != null
+        ? Math.min(20, Math.max(1, Math.round(Number(max_context_results))))
+        : (existing?.max_context_results ?? 5),
+    auto_sync_website:
+      auto_sync_website !== undefined ? auto_sync_website : (existing?.auto_sync_website ?? false),
   }
 
   const config = await prisma.aiConfig.upsert({
@@ -210,10 +254,11 @@ export async function PUT(req: Request) {
   const geminiApiKey = mergedKeys.gemini?.api_key ? decrypt(mergedKeys.gemini.api_key) : null
   if (knowledgeBaseTouched && geminiApiKey) {
     try {
-      const qaPairs = Array.isArray(config.training_data) ? (config.training_data as unknown as QaPair[]) : []
-      const documents = Array.isArray(config.knowledge_documents)
-        ? (config.knowledge_documents as unknown as KnowledgeDocument[])
-        : []
+      // Reads from ai_knowledge_items (migration 068), not the JSON
+      // columns this branch is still triggered by — the Q&A editor on
+      // the Training tab writes through this route, and POST
+      // /api/ai-knowledge/sync is the same operation on demand.
+      const { qaPairs, documents } = await loadKnowledge(config.id)
       const chunks = documents.flatMap((doc) => chunkDocument(doc))
       embeddingsSync = await syncKnowledgeEmbeddings({
         aiConfigId: config.id,

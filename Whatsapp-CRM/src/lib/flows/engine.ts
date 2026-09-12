@@ -41,6 +41,7 @@ import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
 import { generateAiReplyWithFallback, getProviderKeys } from "@/lib/ai/providers/registry";
 import { markdownToWhatsApp } from "@/lib/whatsapp/markdown-to-whatsapp";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
+import { loadKnowledge } from "@/lib/ai/knowledge-store";
 import {
   engineSendCtaUrlButton,
   engineSendFlow,
@@ -1507,30 +1508,40 @@ async function advanceFromNodeKey(
         }
 
         // Relevance-ranked knowledge — only what's actually relevant to
-        // this message, not the whole knowledge base every time.
-        const qaPairs = Array.isArray(aiConfig.training_data)
-          ? (aiConfig.training_data as Array<{ question: string; answer: string }>)
-          : [];
-        const documents = Array.isArray(aiConfig.knowledge_documents)
-          ? (aiConfig.knowledge_documents as Array<{ id: string; title: string; content: string }>)
-          : [];
-        // Cache key changes whenever this account edits its knowledge base
-        // (training_data/knowledge_documents), since both are saved through
-        // the same AiConfig row and bump its @updatedAt — a burst of
-        // messages against an unchanged knowledge base reuses the
-        // chunked/tokenized form instead of rebuilding it every call.
-        const knowledgeCacheKey = `${aiConfig.id}:${aiConfig.updated_at.getTime()}`;
+        // this message, not the whole knowledge base every time. Loaded
+        // from ai_knowledge_items (real rows since migration 068); the
+        // loader returns the same shapes the old JSON columns did, so
+        // chunking, hashing and already-synced embeddings are unaffected
+        // by where it's stored.
+        const { qaPairs, documents, version: knowledgeVersion } = aiConfig.knowledge_base_enabled
+          ? await loadKnowledge(aiConfig.id)
+          : { qaPairs: [], documents: [], version: "off" };
+        // Cache key changes whenever this account edits its knowledge
+        // base — knowledge rows now change without the AiConfig row being
+        // touched, so the version comes from the items themselves. A
+        // burst of messages against an unchanged knowledge base reuses
+        // the chunked/tokenized form instead of rebuilding it every call.
+        const knowledgeCacheKey = `${aiConfig.id}:${knowledgeVersion}`;
         // Semantic (embeddings/pgvector) retrieval opts in automatically
         // whenever this account has a saved Gemini key — same BYO-key
         // model as chat replies, nothing extra to configure. No key (or
         // no embeddings synced yet) falls back to the original keyword
         // scorer inside selectRelevantContext itself; never a hard
-        // dependency for this node.
+        // dependency for this node. retrieval_mode can pin it either way:
+        // 'keyword' skips the embedding call entirely, 'semantic' is the
+        // same opt-in as 'auto' (selectRelevantContext still falls back
+        // on a live failure rather than dropping the reply).
         const geminiKeyEntry = getProviderKeys(aiConfig).gemini;
         const geminiApiKey = geminiKeyEntry?.api_key ? decrypt(geminiKeyEntry.api_key) : null;
+        const useSemantic = aiConfig.retrieval_mode !== "keyword" && !!geminiApiKey;
+        const contextLimit = Math.max(1, aiConfig.max_context_results);
         const selected = await selectRelevantContext(lastUserMessage, qaPairs, documents, {
           cacheKey: knowledgeCacheKey,
-          ...(geminiApiKey ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey } } : {}),
+          // One account-level budget, split between the two kinds rather
+          // than two independent caps the user can't see or reason about.
+          maxQaPairs: contextLimit,
+          maxDocChunks: contextLimit,
+          ...(useSemantic ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey: geminiApiKey! } } : {}),
         });
 
         // Code-enforced confidence guardrail — distinct from
@@ -1595,6 +1606,17 @@ async function advanceFromNodeKey(
         }
         if (cfg.system_prompt) {
           promptParts.push(`Additionally, for this step: ${cfg.system_prompt}`);
+        }
+        // Reply language — prompt-level, because no provider exposes a
+        // hard output-language switch. Unset (the default) deliberately
+        // adds nothing: "reply in whatever language the customer wrote
+        // in" is both the model's natural behavior and the right one for
+        // a customer base that mixes Malayalam, English and Manglish
+        // inside a single thread.
+        if (aiConfig.reply_language) {
+          promptParts.push(
+            `Always reply in ${aiConfig.reply_language}, regardless of which language the customer writes in.`,
+          );
         }
         const systemPrompt = promptParts.join("\n\n") || "You are a helpful assistant.";
 

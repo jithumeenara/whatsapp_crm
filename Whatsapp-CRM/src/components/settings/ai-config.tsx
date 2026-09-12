@@ -2,23 +2,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Plus, Trash2, Bot, BookOpen, Save, Eye, EyeOff, Loader2,
-  CheckCircle2, XCircle, Send, RotateCcw, X, ShieldQuestion, AlertTriangle,
+  Bot, BookOpen, Save, Loader2,
+  CheckCircle2, XCircle, Send,
+  Sparkles, Settings2, BarChart3,
 } from 'lucide-react';
+import { ProviderLanding } from './ai/provider-landing';
+import { ConfigureWizard } from './ai/configure-wizard';
+import { OverviewTab } from './ai/overview-tab';
+import { TrainingTab } from './ai/training-tab';
+import { AdvancedFeatures } from './ai/advanced-features';
+import { TestTab } from './ai/test-tab';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Switch } from '@/components/ui/switch';
-import { WhatsAppText } from '@/components/inbox/message-bubble';
 
 /* ── Provider metadata ────────────────────────────────────────────
  * Presentational mirror of src/lib/ai/providers/registry.ts's PROVIDERS
@@ -73,38 +68,14 @@ function emptyProviderFields(): Record<string, ProviderFieldState> {
   );
 }
 
-interface TrainingPair {
-  question: string;
-  answer: string;
-}
-interface KnowledgeDoc {
-  id: string;
-  title: string;
-  content: string;
-}
-
 type ValidationStatus = 'idle' | 'checking' | 'valid' | 'invalid';
 
-interface ChatMessage {
-  role: 'user' | 'ai';
-  text: string;
-  /** Only meaningful on 'ai' messages — whether this turn has already
-   *  been saved as a training Q&A pair via the feedback-loop button. */
-  saved?: boolean;
-  /** Only meaningful on 'ai' messages — the provider hit Max Response
-   *  Tokens mid-reply, so `text` is genuinely incomplete, not just a
-   *  short answer. Found as a real bug: this was previously silent —
-   *  a cut-off reply looked identical to a complete one. */
-  truncated?: boolean;
-}
-
 export function AiConfig() {
-  const [tab, setTab] = useState<'config' | 'training' | 'test'>('config');
+  const [tab, setTab] = useState<'overview' | 'training' | 'test' | 'usage'>('overview');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saveOk, setSaveOk] = useState(false);
-  const [showKey, setShowKey] = useState(false);
 
   // Always 'gemini' now — no other provider is offered from this screen
   // any more (see PROVIDER_META's own comment), so there's nothing left
@@ -114,9 +85,18 @@ export function AiConfig() {
 
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(500);
+  // '' = auto-detect (reply in the customer's own language) — see the
+  // schema comment on AiConfig.reply_language for why that's the default.
+  const [replyLanguage, setReplyLanguage] = useState('');
+  const [safetyFilter, setSafetyFilter] = useState('balanced');
+  const [wizardOpen, setWizardOpen] = useState(false);
+  // Retrieval controls surfaced on the Training tab — defaults match what
+  // knowledge.ts did before they were configurable.
+  const [knowledgeBaseEnabled, setKnowledgeBaseEnabled] = useState(true);
+  const [retrievalMode, setRetrievalMode] = useState('auto');
+  const [maxContextResults, setMaxContextResults] = useState(5);
+  const [autoSyncWebsite, setAutoSyncWebsite] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
-  const [trainingPairs, setTrainingPairs] = useState<TrainingPair[]>([{ question: '', answer: '' }]);
-  const [documents, setDocuments] = useState<KnowledgeDoc[]>([]);
   const [fallbackAnswer, setFallbackAnswer] = useState('');
   const [escalationTopics, setEscalationTopics] = useState<string[]>([]);
   const [topicInput, setTopicInput] = useState('');
@@ -135,12 +115,6 @@ export function AiConfig() {
   const [validationMsg, setValidationMsg] = useState('');
   const validateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Test AI chat
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatError, setChatError] = useState('');
-  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const activeMeta = PROVIDER_META.find((p) => p.id === activeProvider) ?? PROVIDER_META[0];
   const activeFields = providerFields[activeProvider];
@@ -170,13 +144,13 @@ export function AiConfig() {
         });
         setTemperature(data.temperature ?? 0.7);
         setMaxTokens(data.max_tokens ?? 500);
+        setReplyLanguage(data.reply_language ?? '');
+        setSafetyFilter(data.safety_filter ?? 'balanced');
+        setKnowledgeBaseEnabled(data.knowledge_base_enabled ?? true);
+        setRetrievalMode(data.retrieval_mode ?? 'auto');
+        setMaxContextResults(data.max_context_results ?? 5);
+        setAutoSyncWebsite(data.auto_sync_website ?? false);
         setSystemPrompt(data.system_prompt ?? '');
-        const pairs =
-          Array.isArray(data.training_data) && data.training_data.length > 0
-            ? data.training_data
-            : [{ question: '', answer: '' }];
-        setTrainingPairs(pairs);
-        setDocuments(Array.isArray(data.knowledge_documents) ? data.knowledge_documents : []);
         setFallbackAnswer(data.fallback_answer ?? '');
         setEscalationTopics(Array.isArray(data.escalation_topics) ? data.escalation_topics : []);
         setConfidenceThreshold(data.confidence_threshold ?? 0.35);
@@ -203,10 +177,6 @@ export function AiConfig() {
       })
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages, chatLoading]);
 
   const validateKey = useCallback(async (providerId: string, key: string, model: string, baseUrl: string) => {
     if (!key.trim()) {
@@ -263,7 +233,10 @@ export function AiConfig() {
     }
   }
 
-  const save = async () => {
+  /** Returns whether the save actually succeeded — the Configure wizard
+   *  only closes itself on a real success, rather than dismissing over an
+   *  error the user would then never see. */
+  const save = async (): Promise<boolean> => {
     setSaving(true);
     setSaveError('');
     setSaveOk(false);
@@ -271,7 +244,7 @@ export function AiConfig() {
       if (!activeFields?.hasKey && !activeFields?.apiKey.trim()) {
         setSaveError(`Enter an API key for ${activeMeta.label} first.`);
         setSaving(false);
-        return;
+        return false;
       }
       const providerKeys: Record<string, { api_key?: string; model?: string; base_url?: string }> = {};
       for (const meta of PROVIDER_META) {
@@ -285,7 +258,6 @@ export function AiConfig() {
           };
         }
       }
-      const pairs = trainingPairs.filter((p) => p.question.trim() && p.answer.trim());
       const res = await fetch('/api/ai-config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -300,14 +272,18 @@ export function AiConfig() {
           temperature,
           max_tokens: maxTokens,
           system_prompt: systemPrompt || null,
-          training_data: pairs.length > 0 ? pairs : null,
-          knowledge_documents: documents.filter((d) => d.title.trim() && d.content.trim()),
           fallback_answer: fallbackAnswer || null,
           escalation_topics: escalationTopics,
           confidence_threshold: confidenceThreshold,
           low_confidence_handoff_enabled: lowConfidenceHandoffEnabled,
           low_confidence_assign_to: lowConfidenceAssignTo || null,
           low_confidence_message: lowConfidenceMessage || null,
+          reply_language: replyLanguage || null,
+          safety_filter: safetyFilter,
+          knowledge_base_enabled: knowledgeBaseEnabled,
+          retrieval_mode: retrievalMode,
+          max_context_results: maxContextResults,
+          auto_sync_website: autoSyncWebsite,
         }),
       });
       if (res.ok) {
@@ -318,90 +294,18 @@ export function AiConfig() {
         setValidationStatus('idle');
         setSaveOk(true);
         setTimeout(() => setSaveOk(false), 3000);
-      } else {
-        const d = await res.json();
-        setSaveError(d.error ?? 'Save failed.');
+        return true;
       }
+      const d = await res.json();
+      setSaveError(d.error ?? 'Save failed.');
+      return false;
     } catch {
       setSaveError('Network error.');
+      return false;
     } finally {
       setSaving(false);
     }
   };
-
-  const sendChat = async () => {
-    const msg = chatInput.trim();
-    if (!msg || chatLoading) return;
-    setChatInput('');
-    setChatError('');
-    setChatMessages((prev) => [...prev, { role: 'user', text: msg }]);
-    setChatLoading(true);
-    try {
-      const pairs = trainingPairs.filter((p) => p.question.trim() && p.answer.trim());
-      const res = await fetch('/api/ai-config/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: msg,
-          provider: activeProvider,
-          api_key: activeFields?.apiKey || undefined,
-          model: activeFields?.model,
-          base_url: activeFields?.baseUrl || undefined,
-          temperature,
-          max_tokens: maxTokens,
-          system_prompt: systemPrompt || undefined,
-          training_data: pairs.length > 0 ? pairs : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.reply) {
-        setChatMessages((prev) => [...prev, { role: 'ai', text: data.reply, truncated: !!data.truncated }]);
-      } else {
-        setChatError(data.error ?? 'No response from AI.');
-      }
-    } catch {
-      setChatError('Network error.');
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
-  /** Feedback loop: turn a good test reply directly into a saved training
-   *  Q&A pair, one click, without a separate eval-harness UI. Persists
-   *  immediately (not just in local state) so it isn't lost if the user
-   *  navigates away before hitting the main Save button below. */
-  async function saveAsTrainingExample(index: number) {
-    const answerMsg = chatMessages[index];
-    const questionMsg = chatMessages[index - 1];
-    if (!answerMsg || answerMsg.role !== 'ai' || !questionMsg || questionMsg.role !== 'user') return;
-    const updatedPairs = [
-      ...trainingPairs.filter((p) => p.question.trim() && p.answer.trim()),
-      { question: questionMsg.text, answer: answerMsg.text },
-    ];
-    setTrainingPairs(updatedPairs);
-    setChatMessages((prev) => prev.map((m, i) => (i === index ? { ...m, saved: true } : m)));
-    try {
-      await fetch('/api/ai-config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ training_data: updatedPairs }),
-      });
-    } catch {
-      // Best-effort — the pair still shows in the Training tab and gets
-      // saved for real next time the main Save button is used.
-    }
-  }
-
-  const addPair = () => setTrainingPairs((prev) => [...prev, { question: '', answer: '' }]);
-  const removePair = (i: number) => setTrainingPairs((prev) => prev.filter((_, idx) => idx !== i));
-  const updatePair = (i: number, field: 'question' | 'answer', value: string) =>
-    setTrainingPairs((prev) => prev.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
-
-  const addDocument = () =>
-    setDocuments((prev) => [...prev, { id: crypto.randomUUID(), title: '', content: '' }]);
-  const removeDocument = (id: string) => setDocuments((prev) => prev.filter((d) => d.id !== id));
-  const updateDocument = (id: string, field: 'title' | 'content', value: string) =>
-    setDocuments((prev) => prev.map((d) => (d.id === id ? { ...d, [field]: value } : d)));
 
   function addTopic() {
     const t = topicInput.trim();
@@ -421,28 +325,80 @@ export function AiConfig() {
 
   const anyKeyConfigured = PROVIDER_META.some((p) => providerFields[p.id]?.hasKey);
 
+  const wizard = (
+    <ConfigureWizard
+      open={wizardOpen}
+      onOpenChange={setWizardOpen}
+      models={activeMeta.defaultModels}
+      apiKey={activeFields?.apiKey ?? ''}
+      onApiKeyChange={handleApiKeyChange}
+      hasSavedKey={!!activeFields?.hasKey}
+      validationStatus={validationStatus}
+      validationMsg={validationMsg}
+      model={activeFields?.model ?? ''}
+      onModelChange={(v) => updateActiveField('model', v)}
+      temperature={temperature}
+      onTemperatureChange={setTemperature}
+      maxTokens={maxTokens}
+      onMaxTokensChange={setMaxTokens}
+      replyLanguage={replyLanguage}
+      onReplyLanguageChange={setReplyLanguage}
+      safetyFilter={safetyFilter}
+      onSafetyFilterChange={setSafetyFilter}
+      saving={saving}
+      saveError={saveError}
+      onSave={save}
+    />
+  );
+
+  // Nothing connected yet — the provider landing is the whole screen,
+  // with the wizard as its only action. No tabs: there's nothing to
+  // train or test against until a key exists.
+  if (!anyKeyConfigured) {
+    return (
+      <>
+        <ProviderLanding onConfigure={() => setWizardOpen(true)} />
+        {wizard}
+      </>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      {/* ── Provider badge ── Gemini-only (see PROVIDER_META's own
-          comment) — not a picker any more, since there's nothing else
-          to switch to. */}
-      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
-        <span className="flex items-center gap-2 rounded-xl bg-[#EEF0FF] px-4 py-1.5 text-[13px] font-semibold text-[#5B6CF9]">
-          {activeMeta.label}
-          {activeFields?.hasKey && (
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Configured" />
-          )}
-        </span>
-        <span className="text-[11.5px] text-slate-400">
-          Chosen for the best Malayalam/Indic-language quality — the only AI provider this screen configures.
-        </span>
+      {/* ── Connected header ── */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <Sparkles className="mt-0.5 h-8 w-8 shrink-0 text-[#5B6CF9]" strokeWidth={1.5} />
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[20px] font-bold tracking-tight text-slate-900">{activeMeta.label}</h2>
+              <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Connected
+              </span>
+            </div>
+            <p className="mt-0.5 text-[13px] text-slate-500">
+              Your AI assistant is ready to use. Manage settings, train with your data, and test performance.
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => setWizardOpen(true)}
+          className="h-9 gap-2 rounded-xl border-slate-200 bg-white px-4 text-[13px]"
+        >
+          <Settings2 className="h-4 w-4 text-slate-400" />
+          Reconfigure
+        </Button>
       </div>
+
+      {wizard}
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList className="h-9 bg-slate-100 rounded-xl p-1">
-          <TabsTrigger value="config" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
+          <TabsTrigger value="overview" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
             <Bot className="h-3.5 w-3.5" />
-            Configuration
+            Overview
           </TabsTrigger>
           <TabsTrigger value="training" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
             <BookOpen className="h-3.5 w-3.5" />
@@ -452,494 +408,93 @@ export function AiConfig() {
             <Send className="h-3.5 w-3.5" />
             Test AI
           </TabsTrigger>
+          <TabsTrigger value="usage" className="gap-1.5 text-[12.5px] rounded-lg data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-sm">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Usage
+          </TabsTrigger>
         </TabsList>
 
-        {/* ── Configuration tab ── */}
-        <TabsContent value="config" className="mt-4 space-y-5">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-5">
-            {/* API key field */}
-            <div className="space-y-1.5">
-              <Label htmlFor="api-key" className="text-[13px] font-medium text-slate-700">
-                {activeMeta.label} API Key
-                {activeFields?.hasKey && !activeFields.apiKey && (
-                  <span className="ml-2 text-[11px] text-emerald-600 font-normal">
-                    (saved — enter a new key to replace)
-                  </span>
-                )}
-              </Label>
-              <div className="relative">
-                <Input
-                  id="api-key"
-                  type={showKey ? 'text' : 'password'}
-                  // Real bug, found live (Sept 2026): the browser was
-                  // filling the signed-in account's own saved login
-                  // password into this field — plain autoComplete="off"
-                  // (the shared Input default, see ui/input.tsx) is
-                  // documented to be ignored by browsers specifically for
-                  // type="password" fields. "new-password" is the token
-                  // that actually tells the browser this isn't the site's
-                  // login credential, not just an inert override.
-                  autoComplete="new-password"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-bwignore="true"
-                  data-form-type="other"
-                  placeholder={activeFields?.hasKey ? '••••••••••••••••' : `Paste your ${activeMeta.label} API key…`}
-                  value={activeFields?.apiKey ?? ''}
-                  onChange={(e) => handleApiKeyChange(e.target.value)}
-                  className={[
-                    'h-9 text-[13px] border-slate-200 pr-10 font-mono',
-                    validationStatus === 'valid'
-                      ? 'border-emerald-500 focus-visible:ring-emerald-500/30'
-                      : validationStatus === 'invalid'
-                        ? 'border-rose-400 focus-visible:ring-rose-400/30'
-                        : '',
-                  ].join(' ')}
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  onClick={() => setShowKey((v) => !v)}
-                >
-                  {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
+        {/* ── Overview tab ── */}
+        <TabsContent value="overview" className="mt-4">
+          <OverviewTab
+            model={activeFields?.model ?? ''}
+            modelLabel={activeMeta.defaultModels.find((m) => m.id === activeFields?.model)?.label ?? activeFields?.model ?? ''}
+            temperature={temperature}
+            maxTokens={maxTokens}
+            replyLanguage={replyLanguage}
+            safetyFilter={safetyFilter}
+            semanticSearchAvailable={semanticSearchAvailable}
+            onReconfigure={() => setWizardOpen(true)}
+            onGoToTab={setTab}
+          />
+        </TabsContent>
 
-              {validationStatus === 'checking' && (
-                <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Validating key…
-                </p>
-              )}
-              {validationStatus === 'valid' && (
-                <p className="flex items-center gap-1.5 text-[11px] text-emerald-600">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {validationMsg}
-                </p>
-              )}
-              {validationStatus === 'invalid' && (
-                <p className="flex items-center gap-1.5 text-[11px] text-rose-600">
-                  <XCircle className="h-3.5 w-3.5" />
-                  {validationMsg}
-                </p>
-              )}
-            </div>
-
-            {/* Model */}
-            <div className="space-y-1.5">
-              <Label className="text-[13px] font-medium text-slate-700">Model</Label>
-              {activeMeta.defaultModels.length > 0 ? (
-                <Select value={activeFields?.model ?? ''} onValueChange={(v) => v && updateActiveField('model', v)}>
-                  <SelectTrigger className="w-full h-9 text-[13px] border-slate-200">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeMeta.defaultModels.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  placeholder="e.g. llama-3.3-70b-versatile"
-                  value={activeFields?.model ?? ''}
-                  onChange={(e) => updateActiveField('model', e.target.value)}
-                  className="h-9 text-[13px] border-slate-200 font-mono"
-                />
-              )}
-            </div>
-
-            {/* Temperature + Max tokens — shared across providers */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="temperature" className="text-[13px] font-medium text-slate-700">
-                  Temperature
-                  <span className="ml-2 text-[11px] text-slate-400 font-normal">
-                    {temperature} (0 = precise, 1 = creative)
-                  </span>
-                </Label>
-                <input autoComplete="off"
-                  id="temperature"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={temperature}
-                  onChange={(e) => setTemperature(Number(e.target.value))}
-                  className="w-full accent-[#5B6CF9]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="max-tokens" className="text-[13px] font-medium text-slate-700">Max Response Tokens</Label>
-                <Input
-                  id="max-tokens"
-                  type="number"
-                  min={50}
-                  max={2048}
-                  step={50}
-                  value={maxTokens}
-                  onChange={(e) => setMaxTokens(Number(e.target.value))}
-                  className="h-9 text-[13px] border-slate-200"
-                />
-              </div>
-            </div>
+        {/* ── Usage tab ── not wired to anything yet: no AI call in this
+            app records tokens or cost, so there is genuinely nothing to
+            chart. Says so plainly instead of rendering empty axes. */}
+        <TabsContent value="usage" className="mt-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+            <BarChart3 className="mx-auto h-8 w-8 text-slate-300" />
+            <p className="mt-3 text-[14px] font-semibold text-slate-800">Usage tracking isn&apos;t recording yet</p>
+            <p className="mx-auto mt-1.5 max-w-md text-[12.5px] leading-relaxed text-slate-500">
+              Requests, token counts and estimated cost aren&apos;t being logged anywhere in the app today, so there is
+              no data to show here. This tab is next in the rebuild.
+            </p>
           </div>
         </TabsContent>
 
+
         {/* ── Training tab ── */}
         <TabsContent value="training" className="mt-4 space-y-5">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
-            <div className="flex items-start gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-3">
-              <ShieldQuestion className="h-4 w-4 shrink-0 text-slate-400 mt-0.5" />
-              <p className="text-[11.5px] text-slate-500 leading-relaxed">
-                The AI only uses what&apos;s relevant to each question from what&apos;s below — no system can guarantee fully accurate answers, but this reduces guesswork.
-              </p>
-            </div>
+          <TrainingTab
+            knowledgeBaseEnabled={knowledgeBaseEnabled}
+            onKnowledgeBaseEnabledChange={setKnowledgeBaseEnabled}
+            retrievalMode={retrievalMode}
+            onRetrievalModeChange={setRetrievalMode}
+            maxContextResults={maxContextResults}
+            onMaxContextResultsChange={setMaxContextResults}
+            autoSyncWebsite={autoSyncWebsite}
+            onAutoSyncWebsiteChange={setAutoSyncWebsite}
+            semanticSearchAvailable={semanticSearchAvailable}
+            onSaveSettings={save}
+            savingSettings={saving}
+          />
 
-            <div className="space-y-1.5">
-              <Label htmlFor="system-prompt" className="text-[13px] font-medium text-slate-700">System Prompt</Label>
-              <Textarea
-                id="system-prompt"
-                placeholder="You are a helpful assistant for [Your Business]. Be friendly and concise. Always respond in the same language the user writes in."
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-                rows={4}
-                className="resize-none text-[13px] border-slate-200"
-              />
-              <p className="text-[11px] text-slate-400">
-                This tells the AI who it is and how to behave. Keep it short and clear.
-              </p>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[13.5px] font-semibold text-slate-800">Knowledge Base (Q&amp;A)</p>
-                <p className="text-[11.5px] text-slate-500 mt-0.5">
-                  Add question-answer pairs so the AI knows your business facts.
-                </p>
-              </div>
-              <Button size="sm" variant="outline" onClick={addPair} className="h-8 text-[12px] gap-1.5 border-slate-200">
-                <Plus className="h-3.5 w-3.5" />
-                Add pair
-              </Button>
-            </div>
-
-            <div className="space-y-3">
-              {trainingPairs.map((pair, i) => (
-                <div key={i} className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-medium text-slate-500">Pair {i + 1}</span>
-                    {trainingPairs.length > 1 && (
-                      <button type="button" onClick={() => removePair(i)} className="text-slate-400 hover:text-rose-500 transition-colors">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <Input
-                    placeholder="Question (e.g. What are your working hours?)"
-                    value={pair.question}
-                    onChange={(e) => updatePair(i, 'question', e.target.value)}
-                    className="h-9 text-[13px] border-slate-200 bg-white"
-                  />
-                  <Textarea
-                    placeholder="Answer (e.g. We are open Monday to Saturday, 9am to 6pm.)"
-                    value={pair.answer}
-                    onChange={(e) => updatePair(i, 'answer', e.target.value)}
-                    rows={2}
-                    className="resize-none text-[13px] border-slate-200 bg-white"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[13.5px] font-semibold text-slate-800">Reference documents</p>
-                <p className="text-[11.5px] text-slate-500 mt-0.5">
-                  Longer material — policies, product details — the AI checks alongside the Q&amp;A above.
-                </p>
-              </div>
-              <Button size="sm" variant="outline" onClick={addDocument} className="h-8 text-[12px] gap-1.5 border-slate-200">
-                <Plus className="h-3.5 w-3.5" />
-                Add document
-              </Button>
-            </div>
-            <div className="space-y-3">
-              {documents.map((doc) => (
-                <div key={doc.id} className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="Document title (e.g. Refund Policy)"
-                      value={doc.title}
-                      onChange={(e) => updateDocument(doc.id, 'title', e.target.value)}
-                      className="h-9 text-[13px] border-slate-200 bg-white flex-1"
-                    />
-                    <button type="button" onClick={() => removeDocument(doc.id)} className="text-slate-400 hover:text-rose-500 transition-colors shrink-0">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <Textarea
-                    placeholder="Paste the document content…"
-                    value={doc.content}
-                    onChange={(e) => updateDocument(doc.id, 'content', e.target.value)}
-                    rows={4}
-                    className="resize-none text-[13px] border-slate-200 bg-white"
-                  />
-                </div>
-              ))}
-              {documents.length === 0 && (
-                <p className="text-[11.5px] text-slate-400">No reference documents yet.</p>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="fallback-answer" className="text-[13px] font-medium text-slate-700">Fallback answer</Label>
-              <Input
-                id="fallback-answer"
-                placeholder="I don't have that information — let me connect you with someone who does."
-                value={fallbackAnswer}
-                onChange={(e) => setFallbackAnswer(e.target.value)}
-                className="h-9 text-[13px] border-slate-200"
-              />
-              <p className="text-[11px] text-slate-400">
-                What the AI says instead of guessing when nothing above answers the question. Prompt-level guidance — not a hard guarantee an AI will never say anything else.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-[13px] font-medium text-slate-700">Escalate to a human when the customer asks about…</Label>
-              <div className="flex gap-2">
-                <Input
-                  placeholder="e.g. refunds, cancellations"
-                  value={topicInput}
-                  onChange={(e) => setTopicInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTopic(); } }}
-                  className="h-9 text-[13px] border-slate-200"
-                />
-                <Button type="button" size="sm" variant="outline" onClick={addTopic} className="h-9 text-[12px] border-slate-200 shrink-0">
-                  Add
-                </Button>
-              </div>
-              {escalationTopics.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {escalationTopics.map((t) => (
-                    <span key={t} className="inline-flex items-center gap-1 rounded-full bg-[#EEF0FF] px-2.5 py-1 text-[11.5px] font-medium text-[#5B6CF9]">
-                      {t}
-                      <button type="button" onClick={() => removeTopic(t)} className="hover:text-rose-500">
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Semantic search status — read-only, reflects whether a
-              Gemini key is on file (any Save with a knowledge base keeps
-              embeddings in sync automatically, no separate button). */}
-          <div className={`rounded-2xl border p-4 text-[12.5px] ${semanticSearchAvailable ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
-            {semanticSearchAvailable
-              ? 'Smarter search is active — the AI finds knowledge by meaning, not just matching words (e.g. "cost" now matches an entry that only says "pricing"). Kept in sync automatically every time you save.'
-              : 'Add a Gemini API key above to unlock smarter, meaning-based knowledge search. Without one, matching still works but relies on shared words between the question and your knowledge base.'}
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <Label className="text-[13px] font-medium text-slate-700">Hand off to a human when the AI isn&apos;t confident</Label>
-                <p className="text-[11px] text-slate-400">
-                  Instead of guessing, the AI sends a short message and assigns the conversation to your team — a real handoff, not just a prompt instruction it might ignore.
-                </p>
-              </div>
-              <Switch checked={lowConfidenceHandoffEnabled} onCheckedChange={setLowConfidenceHandoffEnabled} />
-            </div>
-
-            <div className={lowConfidenceHandoffEnabled ? 'space-y-4' : 'space-y-4 pointer-events-none opacity-40'}>
-              <div className="space-y-1.5">
-                <Label htmlFor="confidence-threshold" className="text-[13px] font-medium text-slate-700">
-                  Confidence threshold
-                  <span className="ml-2 text-[11px] text-slate-400 font-normal">
-                    {confidenceThreshold.toFixed(2)} (lower = hands off less often, higher = hands off more often)
-                  </span>
-                </Label>
-                <input autoComplete="off"
-                  id="confidence-threshold"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={confidenceThreshold}
-                  onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
-                  className="w-full accent-[#5B6CF9]"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-[13px] font-medium text-slate-700">Assign to agent</Label>
-                <Select value={lowConfidenceAssignTo || '__unassigned__'} onValueChange={(v) => setLowConfidenceAssignTo(!v || v === '__unassigned__' ? '' : v)}>
-                  <SelectTrigger className="h-9 text-[13px] border-slate-200">
-                    <SelectValue placeholder="Select an agent (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__unassigned__">Unassigned — just move to pending</SelectItem>
-                    {agents.map((a) => (
-                      <SelectItem key={a.user_id} value={a.user_id}>{a.full_name || a.user_id}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="low-confidence-message" className="text-[13px] font-medium text-slate-700">Message sent before handoff</Label>
-                <Input
-                  id="low-confidence-message"
-                  placeholder="Let me connect you with a team member who can help with that."
-                  value={lowConfidenceMessage}
-                  onChange={(e) => setLowConfidenceMessage(e.target.value)}
-                  className="h-9 text-[13px] border-slate-200"
-                />
-              </div>
-            </div>
-          </div>
+          <AdvancedFeatures
+            systemPrompt={systemPrompt}
+            onSystemPromptChange={setSystemPrompt}
+            fallbackAnswer={fallbackAnswer}
+            onFallbackAnswerChange={setFallbackAnswer}
+            escalationTopics={escalationTopics}
+            topicInput={topicInput}
+            onTopicInputChange={setTopicInput}
+            onAddTopic={addTopic}
+            onRemoveTopic={removeTopic}
+            lowConfidenceHandoffEnabled={lowConfidenceHandoffEnabled}
+            onLowConfidenceHandoffEnabledChange={setLowConfidenceHandoffEnabled}
+            confidenceThreshold={confidenceThreshold}
+            onConfidenceThresholdChange={setConfidenceThreshold}
+            lowConfidenceAssignTo={lowConfidenceAssignTo}
+            onLowConfidenceAssignToChange={setLowConfidenceAssignTo}
+            lowConfidenceMessage={lowConfidenceMessage}
+            onLowConfidenceMessageChange={setLowConfidenceMessage}
+            agents={agents}
+            semanticSearchAvailable={semanticSearchAvailable}
+          />
         </TabsContent>
 
         {/* ── Test AI tab ── */}
         <TabsContent value="test" className="mt-4">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col" style={{ height: 460 }}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-[#5B6CF9]" />
-                <span className="text-[13px] font-semibold text-slate-800">Test your AI</span>
-                <span className="text-[11px] text-slate-400">
-                  — {activeMeta.label}, current (unsaved) settings
-                </span>
-              </div>
-              {chatMessages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => { setChatMessages([]); setChatError(''); }}
-                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700 transition-colors"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Clear
-                </button>
-              )}
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-              {chatMessages.length === 0 && !chatLoading && (
-                <div className="flex flex-col items-center justify-center h-full text-center gap-2 text-slate-400">
-                  <Bot className="h-8 w-8 opacity-30" />
-                  <p className="text-[13px]">Send a message to test your AI configuration.</p>
-                  {!activeFields?.hasKey && !activeFields?.apiKey && (
-                    <p className="text-[11px] text-rose-500">
-                      No API key saved for {activeMeta.label} yet. Enter one in Configuration first.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {chatMessages.map((m, i) => (
-                <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                  <div
-                    className={[
-                      'max-w-[80%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap',
-                      m.role === 'user'
-                        ? 'bg-[#5B6CF9] text-white rounded-br-sm'
-                        : 'bg-slate-100 text-slate-800 rounded-bl-sm',
-                    ].join(' ')}
-                  >
-                    {/* AI replies are converted to WhatsApp's own bold /
-                        italic syntax server-side (markdown-to-whatsapp.ts) —
-                        render them the same way the real inbox does, so
-                        this screen previews what a customer actually
-                        sees instead of showing literal asterisks. The
-                        user's own typed test message is plain text, not
-                        run through that conversion. */}
-                    {m.role === 'ai' ? <WhatsAppText text={m.text} /> : m.text}
-                  </div>
-                  {m.role === 'ai' && m.truncated && (
-                    <span className="mt-1 flex items-center gap-1 text-[10.5px] text-amber-600">
-                      <AlertTriangle className="h-3 w-3 shrink-0" />
-                      Cut off — hit Max Response Tokens ({maxTokens}). Raise it above to get the full reply.
-                    </span>
-                  )}
-                  {m.role === 'ai' && !m.truncated && (
-                    m.saved ? (
-                      <span className="mt-1 flex items-center gap-1 text-[10.5px] text-emerald-600">
-                        <CheckCircle2 className="h-3 w-3" /> Saved as training example
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => saveAsTrainingExample(i)}
-                        className="mt-1 text-[10.5px] text-slate-400 hover:text-[#5B6CF9] transition-colors"
-                      >
-                        Save as training example
-                      </button>
-                    )
-                  )}
-                </div>
-              ))}
-
-              {chatLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-3.5 py-2.5 flex gap-1 items-center">
-                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
-                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
-                    <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
-                  </div>
-                </div>
-              )}
-
-              {chatError && (
-                <div className="flex justify-start">
-                  <div className="bg-rose-50 border border-rose-200 text-rose-600 rounded-xl px-3.5 py-2 text-[11px] flex items-center gap-1.5">
-                    <XCircle className="h-3.5 w-3.5 shrink-0" />
-                    {chatError}
-                  </div>
-                </div>
-              )}
-
-              <div ref={chatBottomRef} />
-            </div>
-
-            <div className="px-4 py-3 border-t border-slate-100 shrink-0">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Type a message to test…"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      sendChat();
-                    }
-                  }}
-                  className="h-9 text-[13px] border-slate-200"
-                  disabled={chatLoading}
-                />
-                <Button
-                  size="sm"
-                  onClick={sendChat}
-                  disabled={!chatInput.trim() || chatLoading}
-                  className="h-9 shrink-0 gap-1.5 text-[12.5px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
-                >
-                  {chatLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  Send
-                </Button>
-              </div>
-            </div>
-          </div>
+          <TestTab
+            model={activeFields?.model ?? ''}
+            temperature={temperature}
+            maxTokens={maxTokens}
+            systemPrompt={systemPrompt}
+            safetyFilter={safetyFilter}
+            replyLanguage={replyLanguage}
+            unsavedApiKey={activeFields?.apiKey ?? ''}
+            semanticSearchAvailable={semanticSearchAvailable}
+          />
         </TabsContent>
       </Tabs>
 
