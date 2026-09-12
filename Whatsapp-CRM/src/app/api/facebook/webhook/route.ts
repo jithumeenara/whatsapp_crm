@@ -6,6 +6,7 @@ import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
 import { fetchLead, getLeadField, fetchAdTargeting } from "@/lib/meta-ads/api"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
+import { isUniqueViolation } from "@/lib/contacts/dedupe"
 
 type RawConfig = {
   account_id: string
@@ -619,6 +620,19 @@ async function findOrCreateFbConversation(
       data: { account_id: accountId, user_id: ownerUserId, contact_id: contactId, channel: "facebook" },
     })
   } catch (err) {
+    // Lost a race: a concurrent inbound delivery created this conversation
+    // between our findFirst and our insert. No DB-level unique constraint
+    // backs this for Facebook/Instagram (whatsapp_config_id is always null
+    // here, and a plain UNIQUE constraint doesn't treat two NULLs as a
+    // collision) — but re-checking on any unexpected error still recovers
+    // cleanly if one ever does land here. Same pattern as WhatsApp's
+    // findOrCreateConversation (src/app/api/whatsapp/webhook/route.ts).
+    if (isUniqueViolation(err)) {
+      const raced = await prisma.conversation.findFirst({
+        where: { account_id: accountId, contact_id: contactId, channel: "facebook" },
+      })
+      if (raced) return raced
+    }
     console.error("[Facebook] conversation create failed:", err)
     return null
   }

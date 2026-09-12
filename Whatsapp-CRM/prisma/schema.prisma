@@ -524,7 +524,33 @@ model Conversation {
 
   @@index([account_id, unread_count])
   @@index([account_id, last_message_at])
-  @@index([account_id, contact_id, channel, whatsapp_config_id])
+  // Was a plain, non-enforcing @@index — findOrCreateConversation
+  // (webhook/route.ts) did an unguarded findFirst-then-create with no DB
+  // backstop, so two near-simultaneous inbound deliveries for the same
+  // contact/number could both pass the findFirst and both insert,
+  // producing two permanent threads for one contact (found live, Sept
+  // 2026: contact "jithulr44" showing as both an unassigned and an
+  // agent-assigned conversation). Same bug class, same fix, as
+  // WhatsAppConfig.phone_number_id (migration 063). See migration 066
+  // for the one-time dedupe of any existing duplicates this backfills
+  // before the constraint is added.
+  //
+  // Only closes the race for the WhatsApp channel — whatsapp_config_id
+  // is non-null there (every inbound message names the number it
+  // arrived on). Facebook/Instagram conversations always have a null
+  // whatsapp_config_id, and a plain UNIQUE constraint treats every NULL
+  // as distinct from every other NULL, so it gives those two channels no
+  // DB-level protection. Closing that too would need a NULLS NOT
+  // DISTINCT / expression index, which Prisma's schema DSL can't
+  // declare — an un-declared raw index is a real risk of being silently
+  // dropped by a future `prisma db push` (it syncs the DB to exactly
+  // match this file). findOrCreateFbConversation/findOrCreateIgConversation
+  // still get the same code-level retry-on-conflict fix for defense in
+  // depth, just without this backstop.
+  // Superseded by the @@unique below, which Postgres already backs with
+  // an index covering these same columns in the same order — a second
+  // plain index here would just be dead weight.
+  @@unique([account_id, contact_id, channel, whatsapp_config_id])
   @@map("conversations")
 }
 

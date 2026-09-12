@@ -128,8 +128,20 @@ export async function POST(request: Request) {
         })
         conversationCreated = true
       } catch (err) {
-        console.error("[new-chat] conversation create failed:", err)
-        return NextResponse.json({ error: "Could not create conversation" }, { status: 500 })
+        // Lost a race: an inbound webhook delivery created this same
+        // conversation between our findFirst and our insert (now
+        // backstopped by a real DB unique constraint, migration 066) —
+        // re-resolve instead of surfacing an error for something that
+        // actually succeeded from the other caller's side.
+        if (isUniqueViolation(err)) {
+          conversation = await prisma.conversation.findFirst({
+            where: { account_id: accountId, contact_id: contact.id, channel: "whatsapp", whatsapp_config_id: whatsappConfig.id },
+          })
+        }
+        if (!conversation) {
+          console.error("[new-chat] conversation create failed:", err)
+          return NextResponse.json({ error: "Could not create conversation" }, { status: 500 })
+        }
       }
     }
 

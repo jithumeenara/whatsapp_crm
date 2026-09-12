@@ -1378,6 +1378,17 @@ async function findOrCreateConversation(
       },
     })
   } catch (err) {
+    // Lost a race: a concurrent inbound delivery created this conversation
+    // between our findFirst and our insert (now backstopped by a real DB
+    // unique constraint, migration 066 — this catch is what turns that
+    // constraint violation into "just use the other one" instead of a
+    // dropped message). Same pattern as findOrCreateContact above.
+    if (isUniqueViolation(err)) {
+      const raced = await prisma.conversation.findFirst({
+        where: { account_id: accountId, contact_id: contactId, channel: 'whatsapp', whatsapp_config_id: whatsappConfigId },
+      })
+      if (raced) return raced
+    }
     console.error('Error creating conversation:', err)
     return null
   }

@@ -665,6 +665,19 @@ async function findOrCreateIgConversation(
       },
     })
   } catch (err) {
+    // Lost a race: a concurrent inbound delivery created this conversation
+    // between our findFirst and our insert. No DB-level unique constraint
+    // backs this for Instagram/Facebook (whatsapp_config_id is always null
+    // here, and a plain UNIQUE constraint doesn't treat two NULLs as a
+    // collision) — but re-checking on any unexpected error still recovers
+    // cleanly if one ever does land here. Same pattern as WhatsApp's
+    // findOrCreateConversation (src/app/api/whatsapp/webhook/route.ts).
+    if (isUniqueViolation(err)) {
+      const raced = await prisma.conversation.findFirst({
+        where: { account_id: accountId, contact_id: contactId, channel: "instagram" },
+      })
+      if (raced) return raced
+    }
     console.error("[Instagram] conversation create failed:", err)
     return null
   }
