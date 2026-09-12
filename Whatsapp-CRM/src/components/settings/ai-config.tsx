@@ -24,18 +24,27 @@ import { WhatsAppText } from '@/components/inbox/message-bubble';
  * Presentational mirror of src/lib/ai/providers/registry.ts's PROVIDERS
  * map — kept here rather than imported because that module also pulls in
  * server-only pieces (decrypt, provider SDKs/fetch logic) with no reason
- * to ship any of it to the browser just to render a picker. Adding a new
- * provider means updating both this list and the registry, the same way
- * ads-tab.tsx's ProviderRail hardcodes its own tile labels locally. */
+ * to ship any of it to the browser just to render a picker.
+ *
+ * Gemini-only by deliberate choice (Sept 2026), not an oversight — this
+ * app's actual customer base needs strong Malayalam/Indic-language
+ * quality, and Gemini measurably outperforms OpenAI/Anthropic/DeepSeek
+ * there (the same reasoning already applied to embeddings and chat
+ * translation, see src/lib/ai/embeddings.ts and translate.ts). The
+ * server-side adapters for the other providers (src/lib/ai/providers/
+ * openai-compatible.ts, anthropic.ts) are left in place rather than
+ * deleted — an account that already saved a non-Gemini key keeps it
+ * working untouched (PUT /api/ai-config merges provider_keys, it never
+ * overwrites an entry this screen doesn't mention) — this UI now simply
+ * never offers picking one. */
 interface ProviderMeta {
   id: string;
   label: string;
   defaultModels: { id: string; label: string }[];
 }
-// Model lists verified directly against each vendor's official docs,
-// Sept 2026 (see matching comments in src/lib/ai/providers/*.ts, which
-// this mirrors) — gemini-2.0-*/1.5-* are shut down, gpt-4o/4.1 and
-// deepseek-chat/deepseek-reasoner are legacy aliases on their way out.
+// Model list verified directly against ai.google.dev, Sept 2026 (see the
+// matching comment in src/lib/ai/providers/gemini.ts) — gemini-2.0-*/
+// 1.5-* are shut down.
 const PROVIDER_META: ProviderMeta[] = [
   {
     id: 'gemini', label: 'Google Gemini',
@@ -45,35 +54,6 @@ const PROVIDER_META: ProviderMeta[] = [
       { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
       { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (cheapest, highest volume)' },
     ],
-  },
-  {
-    id: 'openai', label: 'OpenAI (GPT)',
-    defaultModels: [
-      { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra (recommended for CRM chat)' },
-      { id: 'gpt-6-astra', label: 'GPT-6 Astra (flagship, best for complex replies)' },
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-      { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna (cheapest, highest volume)' },
-    ],
-  },
-  {
-    id: 'anthropic', label: 'Anthropic (Claude)',
-    defaultModels: [
-      { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 (recommended for CRM chat)' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (fastest, cheapest)' },
-      { id: 'claude-opus-5', label: 'Claude Opus 5 (Anthropic’s pick for most workloads)' },
-      { id: 'claude-fable-5-1', label: 'Claude Fable 5.1 (demanding reasoning, long-horizon agents)' },
-    ],
-  },
-  {
-    id: 'deepseek', label: 'DeepSeek',
-    defaultModels: [
-      { id: 'deepseek-v4-flash', label: 'DeepSeek-V4-Flash (recommended for CRM chat)' },
-      { id: 'deepseek-v4-pro', label: 'DeepSeek-V4-Pro (highest quality)' },
-    ],
-  },
-  {
-    id: 'custom', label: 'Custom (OpenAI-compatible)',
-    defaultModels: [], // no fixed list for an arbitrary endpoint — free-text input instead
   },
 ];
 const PROVIDER_LABEL: Record<string, string> = Object.fromEntries(PROVIDER_META.map((p) => [p.id, p.label]));
@@ -126,8 +106,10 @@ export function AiConfig() {
   const [saveOk, setSaveOk] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
-  const [activeProvider, setActiveProvider] = useState('gemini');
-  const [fallbackProvider, setFallbackProvider] = useState(''); // '' = none
+  // Always 'gemini' now — no other provider is offered from this screen
+  // any more (see PROVIDER_META's own comment), so there's nothing left
+  // to switch between and no separate fallback-provider concept.
+  const activeProvider = 'gemini';
   const [providerFields, setProviderFields] = useState<Record<string, ProviderFieldState>>(emptyProviderFields);
 
   const [temperature, setTemperature] = useState(0.7);
@@ -169,16 +151,17 @@ export function AiConfig() {
       const res = await fetch('/api/ai-config');
       const data = await res.json();
       if (data) {
-        setActiveProvider(data.active_provider ?? 'gemini');
-        setFallbackProvider(data.fallback_provider ?? '');
         setProviderFields((prev) => {
           const next = { ...prev };
           const keys = (data.provider_keys ?? {}) as Record<string, { model?: string; base_url?: string; has_key?: boolean }>;
-          for (const [id, entry] of Object.entries(keys)) {
-            const meta = PROVIDER_META.find((p) => p.id === id);
-            next[id] = {
+          // Only Gemini's saved entry is loaded into editable state — a
+          // legacy non-Gemini key (if any account still has one) stays
+          // in the database untouched, just not surfaced on this screen.
+          const entry = keys.gemini;
+          if (entry) {
+            next.gemini = {
               apiKey: '',
-              model: entry.model ?? meta?.defaultModels[0]?.id ?? '',
+              model: entry.model ?? PROVIDER_META[0].defaultModels[0]?.id ?? '',
               baseUrl: entry.base_url ?? '',
               hasKey: !!entry.has_key,
             };
@@ -280,12 +263,6 @@ export function AiConfig() {
     }
   }
 
-  function selectProvider(id: string) {
-    setActiveProvider(id);
-    setValidationStatus('idle');
-    setValidationMsg('');
-  }
-
   const save = async () => {
     setSaving(true);
     setSaveError('');
@@ -314,7 +291,11 @@ export function AiConfig() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           active_provider: activeProvider,
-          fallback_provider: fallbackProvider || null,
+          // No other provider is offered from this screen any more —
+          // explicitly clears any fallback a legacy config might still
+          // have pointed at a hidden provider, rather than leaving a
+          // stale reference nothing here can show or edit.
+          fallback_provider: null,
           provider_keys: providerKeys,
           temperature,
           max_tokens: maxTokens,
@@ -333,9 +314,6 @@ export function AiConfig() {
         setProviderFields((prev) => ({
           ...prev,
           [activeProvider]: { ...prev[activeProvider], apiKey: '', hasKey: true },
-          ...(fallbackProvider
-            ? { [fallbackProvider]: { ...prev[fallbackProvider], apiKey: '', hasKey: prev[fallbackProvider]?.hasKey || !!prev[fallbackProvider]?.apiKey.trim() } }
-            : {}),
         }));
         setValidationStatus('idle');
         setSaveOk(true);
@@ -442,34 +420,22 @@ export function AiConfig() {
   }
 
   const anyKeyConfigured = PROVIDER_META.some((p) => providerFields[p.id]?.hasKey);
-  const fallbackOptions = PROVIDER_META.filter((p) => p.id !== activeProvider && providerFields[p.id]?.hasKey);
 
   return (
     <div className="space-y-5">
-      {/* ── Provider rail ── */}
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
-        <div className="flex min-w-max items-center gap-1">
-          {PROVIDER_META.map((p) => {
-            const configured = providerFields[p.id]?.hasKey;
-            const isActive = activeProvider === p.id;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => selectProvider(p.id)}
-                className={[
-                  'flex items-center gap-2 rounded-xl px-4 py-2.5 text-[13px] font-semibold transition-colors',
-                  isActive ? 'bg-[#EEF0FF] text-[#5B6CF9]' : 'text-slate-500 hover:bg-slate-50',
-                ].join(' ')}
-              >
-                {p.label}
-                {configured && (
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Configured" />
-                )}
-              </button>
-            );
-          })}
-        </div>
+      {/* ── Provider badge ── Gemini-only (see PROVIDER_META's own
+          comment) — not a picker any more, since there's nothing else
+          to switch to. */}
+      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+        <span className="flex items-center gap-2 rounded-xl bg-[#EEF0FF] px-4 py-1.5 text-[13px] font-semibold text-[#5B6CF9]">
+          {activeMeta.label}
+          {activeFields?.hasKey && (
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="Configured" />
+          )}
+        </span>
+        <span className="text-[11.5px] text-slate-400">
+          Chosen for the best Malayalam/Indic-language quality — the only AI provider this screen configures.
+        </span>
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
@@ -546,23 +512,6 @@ export function AiConfig() {
               )}
             </div>
 
-            {/* Base URL — custom provider only */}
-            {activeProvider === 'custom' && (
-              <div className="space-y-1.5">
-                <Label htmlFor="base-url" className="text-[13px] font-medium text-slate-700">API Base URL</Label>
-                <Input
-                  id="base-url"
-                  placeholder="https://api.groq.com/openai/v1"
-                  value={activeFields?.baseUrl ?? ''}
-                  onChange={(e) => updateActiveField('baseUrl', e.target.value)}
-                  className="h-9 text-[13px] border-slate-200 font-mono"
-                />
-                <p className="text-[11px] text-slate-400">
-                  Any OpenAI-compatible chat completions endpoint — Groq, Mistral, OpenRouter, a self-hosted Ollama/vLLM server, etc.
-                </p>
-              </div>
-            )}
-
             {/* Model */}
             <div className="space-y-1.5">
               <Label className="text-[13px] font-medium text-slate-700">Model</Label>
@@ -623,28 +572,6 @@ export function AiConfig() {
                 />
               </div>
             </div>
-          </div>
-
-          {/* Fallback provider */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-6 space-y-2">
-            <Label className="text-[13px] font-medium text-slate-700">Fallback provider</Label>
-            <p className="text-[11.5px] text-slate-500">
-              Used automatically if {activeMeta.label} fails or is rate-limited — real reliability, not just more choices.
-            </p>
-            <Select value={fallbackProvider || 'none'} onValueChange={(v) => setFallbackProvider(!v || v === 'none' ? '' : v)}>
-              <SelectTrigger className="w-full h-9 text-[13px] border-slate-200">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {fallbackOptions.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {fallbackOptions.length === 0 && (
-              <p className="text-[11px] text-slate-400">Configure and save a second provider to enable a fallback.</p>
-            )}
           </div>
         </TabsContent>
 
