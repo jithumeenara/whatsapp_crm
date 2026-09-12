@@ -524,7 +524,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
               {/* Required toggle — not for display types */}
               {!isDisplayType && (
                 <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                  <input
+                  <input autoComplete="off"
                     type="checkbox"
                     checked={form.required}
                     onChange={(e) => set('required', e.target.checked)}

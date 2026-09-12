@@ -273,7 +273,7 @@ export default function CatalogPage() {
                 <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50">
                   {uploadingPhoto ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
                   {uploadingPhoto ? "Uploading…" : "Upload photo"}
-                  <input
+                  <input autoComplete="off"
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif"
                     className="hidden"

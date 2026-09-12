@@ -123,7 +123,7 @@ export default function DataStorePage() {
           <div className="flex items-center gap-2">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
+              <input autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Find table…"

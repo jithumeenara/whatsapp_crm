@@ -184,7 +184,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             Notes
           </div>
           <div className="flex gap-2">
-            <textarea
+            <textarea autoComplete="off"
               value={newNote}
               onChange={(e) => setNewNote(e.target.value)}
               placeholder="Add a note..."

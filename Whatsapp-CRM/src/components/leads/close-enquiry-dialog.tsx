@@ -37,7 +37,7 @@ export function CloseEnquiryDialog({ open, onOpenChange, onConfirm }: CloseEnqui
         <div className="space-y-4 pt-1">
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Closing Remarks <span className="text-destructive">*</span></Label>
-            <textarea
+            <textarea autoComplete="off"
               className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm min-h-[100px] resize-none"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}

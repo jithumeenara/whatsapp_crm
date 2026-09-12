@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useId, useMemo, useState } from "react"
+import { Suspense, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "motion/react"
 import {
@@ -127,7 +127,20 @@ function SettingsContent() {
   // stable name/id, so a random one each load stops them matching a
   // saved account email into this field (autoComplete="off" alone isn't
   // honored by most of them any more).
-  const searchFieldId = useId()
+  //
+  // Was useId() — a real bug: React's useId() is deliberately
+  // deterministic (it must match server and client output for
+  // hydration), so it returns the SAME string on every page load for
+  // this same component tree, not a random one. That gave every visit
+  // the identical field name/id, which is exactly what a browser's
+  // "remembered value for this field" history keys off — so the very
+  // thing this comment claimed to defend against was never actually
+  // happening. Found live (Sept 2026): the search box kept getting
+  // autofilled with the signed-in account's own email despite every
+  // other anti-autofill attribute already being set below. A value
+  // generated once per mount with Math.random() actually changes every
+  // time, which useId() never did.
+  const [searchFieldId] = useState(() => Math.random().toString(36).slice(2))
   const { collapsed: sidebarCollapsed, toggle: toggleMainSidebar } = useSidebarCollapse()
 
   const isOwner = accountRole === "owner"

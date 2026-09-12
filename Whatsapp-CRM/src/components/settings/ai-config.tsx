@@ -547,7 +547,7 @@ export function AiConfig() {
                     {temperature} (0 = precise, 1 = creative)
                   </span>
                 </Label>
-                <input
+                <input autoComplete="off"
                   id="temperature"
                   type="range"
                   min={0}
@@ -758,7 +758,7 @@ export function AiConfig() {
                     {confidenceThreshold.toFixed(2)} (lower = hands off less often, higher = hands off more often)
                   </span>
                 </Label>
-                <input
+                <input autoComplete="off"
                   id="confidence-threshold"
                   type="range"
                   min={0}

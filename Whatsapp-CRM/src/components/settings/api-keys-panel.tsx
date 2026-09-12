@@ -116,7 +116,7 @@ export function ApiKeysPanel() {
       {showForm ? (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-3">
           <p className="text-[13px] font-semibold text-slate-800">New API Key</p>
-          <input
+          <input autoComplete="off"
             autoFocus
             value={newName}
             onChange={(e) => setNewName(e.target.value)}

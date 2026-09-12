@@ -31,7 +31,7 @@ function TaskFormDialog({ open, onOpenChange, onSave }: { open: boolean; onOpenC
         <form onSubmit={submit} className="space-y-4">
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1">Title</label>
-            <input required placeholder="Task title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            <input autoComplete="off" required placeholder="Task title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
           </div>
           <div>
@@ -43,12 +43,12 @@ function TaskFormDialog({ open, onOpenChange, onSave }: { open: boolean; onOpenC
           </div>
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1">Due Date (optional)</label>
-            <input type="datetime-local" value={form.due_at} onChange={(e) => setForm((f) => ({ ...f, due_at: e.target.value }))}
+            <input autoComplete="off" type="datetime-local" value={form.due_at} onChange={(e) => setForm((f) => ({ ...f, due_at: e.target.value }))}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
           </div>
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1">Description (optional)</label>
-            <textarea rows={2} placeholder="Details…" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+            <textarea autoComplete="off" rows={2} placeholder="Details…" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
           </div>
           <div className="flex gap-3 pt-1">

@@ -176,7 +176,7 @@ export function NewChatDialog({ onSent, className, initialPhone, initialName, la
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
               Phone number
             </label>
-            <input
+            <input autoComplete="off"
               autoFocus
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -187,7 +187,7 @@ export function NewChatDialog({ onSent, className, initialPhone, initialName, la
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
               Name (optional)
             </label>
-            <input
+            <input autoComplete="off"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Contact's name"

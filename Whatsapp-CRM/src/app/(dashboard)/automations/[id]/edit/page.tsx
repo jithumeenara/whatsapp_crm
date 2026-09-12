@@ -92,12 +92,12 @@ export default function AutomationEditPage() {
           <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm space-y-4">
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)}
+              <input autoComplete="off" value={name} onChange={(e) => setName(e.target.value)}
                 className="w-full h-9 px-3 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-400" />
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 mb-1.5">Description</label>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
+              <textarea autoComplete="off" value={description} onChange={(e) => setDescription(e.target.value)} rows={3}
                 className="w-full px-3 py-2 text-[13px] bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-indigo-400 resize-none" />
             </div>
           </div>

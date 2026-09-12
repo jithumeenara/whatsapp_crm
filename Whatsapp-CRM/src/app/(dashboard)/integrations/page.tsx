@@ -414,7 +414,7 @@ export default function IntegrationsPage() {
               {/* Fields */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field label="Integration Name" required>
-                  <input value={form.name} onChange={(e) => setF({ name: e.target.value })} placeholder="e.g. Shopify Store Orders" className="inp" />
+                  <input autoComplete="off" value={form.name} onChange={(e) => setF({ name: e.target.value })} placeholder="e.g. Shopify Store Orders" className="inp" />
                 </Field>
                 <Field label="Update Frequency">
                   <select value={form.sync_interval} onChange={(e) => setF({ sync_interval: e.target.value })} className="inp">
@@ -422,11 +422,11 @@ export default function IntegrationsPage() {
                   </select>
                 </Field>
                 <Field label="Base URL" required>
-                  <input value={form.base_url} onChange={(e) => setF({ base_url: e.target.value })}
+                  <input autoComplete="off" value={form.base_url} onChange={(e) => setF({ base_url: e.target.value })}
                     placeholder="https://api.yourapp.com" className="inp" />
                 </Field>
                 <Field label={form.source_type === "fhir" ? "FHIR Resource" : "API Endpoint"} required>
-                  <input value={form.resource} onChange={(e) => setF({ resource: e.target.value })}
+                  <input autoComplete="off" value={form.resource} onChange={(e) => setF({ resource: e.target.value })}
                     placeholder={form.source_type === "fhir" ? "Patient" : "/api/orders"} className="inp" />
                 </Field>
                 <Field label="Data Source Type">
@@ -463,19 +463,19 @@ export default function IntegrationsPage() {
                     )}
                   </p>
                   <Field label={form.auth_type === "api_key" ? "Header Name" : form.auth_type === "basic" ? "Key ID / Username" : "Token"}>
-                    <input value={form.auth_header} onChange={(e) => setF({ auth_header: e.target.value })}
+                    <input autoComplete="off" value={form.auth_header} onChange={(e) => setF({ auth_header: e.target.value })}
                       placeholder={form.auth_type === "api_key" ? "X-API-Key" : form.auth_type === "basic" ? "e.g. rzp_test_..." : ""}
                       className="inp" />
                   </Field>
                   <Field label={form.auth_type === "api_key" ? "API Key" : form.auth_type === "basic" ? "Key Secret / Password" : "Bearer Token"}>
-                    <input type="password" value={form.auth_value} onChange={(e) => setF({ auth_value: e.target.value })}
+                    <input autoComplete="off" type="password" value={form.auth_value} onChange={(e) => setF({ auth_value: e.target.value })}
                       placeholder="••••••••" className="inp" />
                   </Field>
                 </div>
               )}
 
               <Field label="Custom Table Name (optional)">
-                <input value={form.table_name} onChange={(e) => setF({ table_name: e.target.value })}
+                <input autoComplete="off" value={form.table_name} onChange={(e) => setF({ table_name: e.target.value })}
                   placeholder="Auto-generated from integration name" className="inp" />
               </Field>
 
@@ -676,7 +676,7 @@ export default function IntegrationsPage() {
                           </label>
                           <div className="relative">
                             <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                            <input
+                            <input autoComplete="off"
                               type="number"
                               min="1"
                               step="1"
@@ -732,7 +732,7 @@ export default function IntegrationsPage() {
                             <div className="flex gap-2">
                               <div className="flex-1">
                                 <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">Key ID (rzp_test_…)</label>
-                                <input
+                                <input autoComplete="off"
                                   type="text"
                                   value={fixCreds.keyId}
                                   onChange={(e) => setFixCreds((p) => ({ ...p, keyId: e.target.value }))}
@@ -742,7 +742,7 @@ export default function IntegrationsPage() {
                               </div>
                               <div className="flex-1">
                                 <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">Key Secret</label>
-                                <input
+                                <input autoComplete="off"
                                   type="password"
                                   value={fixCreds.keySecret}
                                   onChange={(e) => setFixCreds((p) => ({ ...p, keySecret: e.target.value }))}

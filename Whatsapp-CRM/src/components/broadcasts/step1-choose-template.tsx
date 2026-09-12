@@ -94,7 +94,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
       {!loading && !error && templates.length > 0 && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input
+          <input autoComplete="off"
             className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-[13px] placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
             placeholder="Search templates…"
             value={search}

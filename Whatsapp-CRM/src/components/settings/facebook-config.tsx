@@ -208,7 +208,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <input autoComplete="off"
                   type={showToken ? "text" : "password"}
                   value={accessToken}
                   onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true) }}
@@ -239,7 +239,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <input autoComplete="off"
                   type={showSecret ? "text" : "password"}
                   value={appSecret}
                   onChange={(e) => { setAppSecret(e.target.value); setSecretEdited(true) }}
@@ -271,7 +271,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
         </div>
         <div className="p-4">
           <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Facebook Page ID</label>
-          <input
+          <input autoComplete="off"
             value={pageId}
             onChange={(e) => setPageId(e.target.value)}
             placeholder="e.g. 101489656173087"
@@ -295,7 +295,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">
               Your App URL <span className="text-rose-500 text-[10px] font-semibold ml-1">← enter your ngrok or production URL</span>
             </label>
-            <input
+            <input autoComplete="off"
               value={appUrl}
               onChange={(e) => setAppUrl(e.target.value)}
               placeholder="https://xxxx.ngrok-free.dev"
@@ -306,7 +306,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Callback URL <span className="text-slate-400 text-[10px]">(paste in Meta)</span></label>
             <div className="flex gap-2">
-              <input readOnly value={webhookUrl}
+              <input autoComplete="off" readOnly value={webhookUrl}
                 className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] bg-slate-50 text-slate-600 font-mono outline-none" />
               <button type="button" onClick={() => copyToClipboard(webhookUrl)}
                 className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
@@ -318,7 +318,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Verify Token <span className="text-slate-400 text-[10px]">(paste in Meta)</span></label>
             <div className="flex gap-2">
-              <input
+              <input autoComplete="off"
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
                 placeholder="Type or generate a secret string…"

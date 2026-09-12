@@ -925,7 +925,7 @@ function NodeContextMenu({
                     <div className="p-2">
                       <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1">
                         <Search className="h-3 w-3 shrink-0 text-slate-400" />
-                        <input
+                        <input autoComplete="off"
                           autoFocus
                           type="text"
                           value={query}
@@ -1061,7 +1061,7 @@ function QuickAddMenu({
       <div className="shrink-0 border-b border-slate-100 px-2.5 py-2">
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
           <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <input
+          <input autoComplete="off"
             ref={inputRef}
             type="text"
             value={query}
@@ -1158,7 +1158,7 @@ function NodePalette({ channel = 'whatsapp' }: { channel?: string }) {
       <div className="border-b border-slate-100 px-3 py-2.5">
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5">
           <Search className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          <input
+          <input autoComplete="off"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

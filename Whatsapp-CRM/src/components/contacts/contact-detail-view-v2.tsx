@@ -63,7 +63,7 @@ function FieldInput({ label, value, onChange, required, type = "text", placehold
         {label}
         {required && <span className="text-rose-500 text-[10px]">required</span>}
       </label>
-      <input
+      <input autoComplete="off"
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -579,7 +579,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                 <div className="p-5 space-y-4">
                   {/* Add note */}
                   <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <textarea
+                    <textarea autoComplete="off"
                       rows={3}
                       value={noteText}
                       onChange={(e) => setNoteText(e.target.value)}
@@ -659,7 +659,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                             )}
                           </label>
                           {field.field_type === "textarea" ? (
-                            <textarea
+                            <textarea autoComplete="off"
                               rows={3}
                               value={values[field.id] ?? ""}
                               onChange={(e) => setValues((p) => ({ ...p, [field.id]: e.target.value }))}
@@ -667,7 +667,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                               className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-slate-900 placeholder:text-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-all shadow-sm"
                             />
                           ) : (
-                            <input
+                            <input autoComplete="off"
                               type={field.field_type === "number" ? "number" : field.field_type === "date" ? "date" : "text"}
                               value={values[field.id] ?? ""}
                               onChange={(e) => setValues((p) => ({ ...p, [field.id]: e.target.value }))}

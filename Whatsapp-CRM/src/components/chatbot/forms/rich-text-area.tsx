@@ -330,7 +330,7 @@ function ExpandModal({
 
         {/* Textarea */}
         <div className="p-5">
-          <textarea
+          <textarea autoComplete="off"
             ref={taRef}
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -453,7 +453,7 @@ export function RichTextArea({
         </div>
 
         {/* Controlled textarea */}
-        <textarea
+        <textarea autoComplete="off"
           ref={taRef}
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -519,7 +519,7 @@ export function VarInput({
 
   return (
     <div className="relative flex items-center gap-1">
-      <input
+      <input autoComplete="off"
         ref={inputRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}

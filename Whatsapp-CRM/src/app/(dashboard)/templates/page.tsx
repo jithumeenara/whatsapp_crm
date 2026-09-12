@@ -265,7 +265,7 @@ function FlowButtonFields({ btn, onChange }: {
       {action === "navigate" && (
         <div>
           <label className="mb-1 block text-[11px] text-slate-500">Screen ID</label>
-          <input value={btn.navigate_screen ?? ""}
+          <input autoComplete="off" value={btn.navigate_screen ?? ""}
             onChange={e => onChange({ ...btn, navigate_screen: e.target.value } as TemplateButton)}
             placeholder="e.g. SCREEN_1" className={INPUT_SM} />
         </div>
@@ -309,20 +309,20 @@ function ButtonRow({ btn, onChange, onRemove }: {
       </div>
       <div>
         <label className="mb-1 block text-[11px] text-slate-500">Button Text</label>
-        <input value={btn.text} onChange={e => onChange({ ...btn, text: e.target.value })}
+        <input autoComplete="off" value={btn.text} onChange={e => onChange({ ...btn, text: e.target.value })}
           placeholder="Label (max 25 chars)" maxLength={25} className={INPUT_SM} />
       </div>
       {btn.type === "URL" && (
         <div className="space-y-2">
           <div>
             <label className="mb-1 block text-[11px] text-slate-500">URL</label>
-            <input value={urlBtn.url} onChange={e => onChange({ ...btn, url: e.target.value } as TemplateButton)}
+            <input autoComplete="off" value={urlBtn.url} onChange={e => onChange({ ...btn, url: e.target.value } as TemplateButton)}
               placeholder="https://example.com  or  https://example.com/{{1}}" className={INPUT_SM} />
           </div>
           {/\{\{1\}\}/.test(urlBtn.url ?? "") && (
             <div>
               <label className="mb-1 block text-[11px] text-slate-500">Example for {"{{1}}"}</label>
-              <input value={urlBtn.example ?? ""} onChange={e => onChange({ ...btn, example: e.target.value } as TemplateButton)}
+              <input autoComplete="off" value={urlBtn.example ?? ""} onChange={e => onChange({ ...btn, example: e.target.value } as TemplateButton)}
                 placeholder="e.g. summer-sale" className={INPUT_SM} />
             </div>
           )}
@@ -331,14 +331,14 @@ function ButtonRow({ btn, onChange, onRemove }: {
       {btn.type === "PHONE_NUMBER" && (
         <div>
           <label className="mb-1 block text-[11px] text-slate-500">Phone Number</label>
-          <input value={phoneBtn.phone_number} onChange={e => onChange({ ...btn, phone_number: e.target.value } as TemplateButton)}
+          <input autoComplete="off" value={phoneBtn.phone_number} onChange={e => onChange({ ...btn, phone_number: e.target.value } as TemplateButton)}
             placeholder="+91 98765 43210" className={INPUT_SM} />
         </div>
       )}
       {btn.type === "COPY_CODE" && (
         <div>
           <label className="mb-1 block text-[11px] text-slate-500">Sample Promo Code</label>
-          <input value={codeBtn.example ?? ""} onChange={e => onChange({ ...btn, example: e.target.value } as TemplateButton)}
+          <input autoComplete="off" value={codeBtn.example ?? ""} onChange={e => onChange({ ...btn, example: e.target.value } as TemplateButton)}
             placeholder="e.g. SUMMER25" className={INPUT_SM} />
         </div>
       )}
@@ -645,7 +645,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="mb-1.5 block text-[12px] font-semibold text-slate-700">Template Name</label>
-                  <input value={name} onChange={e => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  <input autoComplete="off" value={name} onChange={e => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
                     placeholder="e.g. order_confirmation"
                     disabled={isEditMode}
                     className={cn(INPUT, isEditMode && "bg-slate-50 text-slate-500 cursor-not-allowed")} />
@@ -682,7 +682,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                 {headerType === "text" && (
                   <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                     <div className="relative">
-                      <input ref={headerRef} value={headerContent} onChange={e => setHeaderContent(e.target.value)}
+                      <input autoComplete="off" ref={headerRef} value={headerContent} onChange={e => setHeaderContent(e.target.value)}
                         placeholder="Header text (max 60 chars)" maxLength={60} className={INPUT} />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">{headerContent.length}/60</span>
                     </div>
@@ -692,7 +692,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                     {headerVars.length > 0 && (
                       <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
                         <label className="mb-1.5 block text-[11px] font-medium text-slate-600">Sample for {"{{1}}"}</label>
-                        <input value={headerSamples[0] ?? ""} onChange={e => setHeaderSamples([e.target.value])}
+                        <input autoComplete="off" value={headerSamples[0] ?? ""} onChange={e => setHeaderSamples([e.target.value])}
                           placeholder="Example text for Meta reviewers" className={INPUT_SM} />
                       </div>
                     )}
@@ -701,7 +701,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                 {(headerType === "image" || headerType === "video" || headerType === "document") && (
                   <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                     {/* Hidden file input */}
-                    <input
+                    <input autoComplete="off"
                       ref={mediaFileRef}
                       type="file"
                       className="hidden"
@@ -775,7 +775,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                           <label className="text-[11px] font-medium text-slate-600">Media URL</label>
                           <button type="button" onClick={() => setShowUrlInput(false)} className="text-[11px] text-slate-400 hover:text-slate-600">Hide</button>
                         </div>
-                        <input value={headerMediaUrl} onChange={e => { setHeaderMediaUrl(e.target.value); setMediaFileName("") }}
+                        <input autoComplete="off" value={headerMediaUrl} onChange={e => { setHeaderMediaUrl(e.target.value); setMediaFileName("") }}
                           placeholder={`https://example.com/sample.${headerType === "image" ? "jpg" : headerType === "video" ? "mp4" : "pdf"}`}
                           className={INPUT} />
                       </div>
@@ -791,7 +791,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                 <label className="mb-2 block text-[12px] font-semibold text-slate-700">Body</label>
                 <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
                   <div className="relative">
-                    <textarea ref={bodyRef} value={bodyText} onChange={e => setBodyText(e.target.value)}
+                    <textarea autoComplete="off" ref={bodyRef} value={bodyText} onChange={e => setBodyText(e.target.value)}
                       placeholder={"Hi {{1}}, your order {{2}} has been confirmed!\nExpected delivery: {{3}}."}
                       rows={5} maxLength={1024} className={cn(INPUT, "resize-none leading-relaxed")} />
                     <span className="absolute bottom-3 right-3 text-[11px] text-slate-400">{bodyText.length}/1024</span>
@@ -809,7 +809,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                       {bodyVars.map((n, i) => (
                         <div key={n} className="flex items-center gap-2 sm:gap-3">
                           <span className="shrink-0 w-10 sm:w-12 text-center rounded-md bg-white border border-slate-200 text-[10px] sm:text-[11px] font-mono text-slate-600 py-1">{`{{${n}}}`}</span>
-                          <input value={bodySamples[i] ?? ""}
+                          <input autoComplete="off" value={bodySamples[i] ?? ""}
                             onChange={e => setBodySamples(p => { const x = [...p]; x[i] = e.target.value; return x })}
                             placeholder={`Sample for {{${n}}}`} className={INPUT_SM} />
                         </div>
@@ -827,7 +827,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-white p-4">
                   <div className="relative">
-                    <input value={footerText} onChange={e => setFooterText(e.target.value)}
+                    <input autoComplete="off" value={footerText} onChange={e => setFooterText(e.target.value)}
                       placeholder="e.g. Reply STOP to unsubscribe" maxLength={60} className={INPUT} />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-slate-400">{footerText.length}/60</span>
                   </div>

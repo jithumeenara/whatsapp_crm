@@ -351,7 +351,7 @@ function MediaUrlField({
       )}
 
       {/* Hidden file input — device upload */}
-      <input
+      <input autoComplete="off"
         ref={fileRef}
         type="file"
         accept={accept}
@@ -1193,7 +1193,7 @@ function ConditionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       {/* Case sensitivity toggle — only relevant for text operators */}
       {needsValue && !["gt", "lt", "gte", "lte"].includes(String(cfg.operator ?? "equals")) && (
         <label className="flex items-center gap-2 cursor-pointer select-none">
-          <input
+          <input autoComplete="off"
             type="checkbox"
             className="h-3.5 w-3.5 rounded border-slate-200 accent-indigo-600"
             checked={cfg.case_sensitive !== false}
@@ -1654,7 +1654,7 @@ function HandoffForm({ cfg, onChange }: FormProps) {
         hint="If the agent doesn't respond, reopen the conversation after this many hours. Leave empty to disable."
       >
         <div className="flex items-center gap-2">
-          <input
+          <input autoComplete="off"
             type="number"
             min={1}
             max={720}
@@ -1912,7 +1912,7 @@ function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             />
           </Field>
           <Field label="Due in (hours)" hint="Hours from now when the follow-up is due. Default: 24 hours.">
-            <input
+            <input autoComplete="off"
               type="number"
               min={1}
               className="h-8 w-24 rounded-md border border-slate-200 bg-white px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -1964,7 +1964,7 @@ function CrmActionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               </Select>
             </Field>
             <Field label="Due in (days)" hint="Days from now.">
-              <input
+              <input autoComplete="off"
                 type="number"
                 min={1}
                 className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -2661,7 +2661,7 @@ function SwitchCaseForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       </Field>
 
       <label className="flex items-center gap-2 cursor-pointer select-none">
-        <input
+        <input autoComplete="off"
           type="checkbox"
           className="h-3.5 w-3.5 rounded border-slate-200 accent-indigo-600"
           checked={cfg.case_sensitive === true}

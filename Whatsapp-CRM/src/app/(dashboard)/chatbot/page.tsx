@@ -689,7 +689,7 @@ export default function ChatbotV2() {
             </div>
 
             {/* Hidden import file input */}
-            <input
+            <input autoComplete="off"
               ref={importRef}
               type="file"
               accept=".json"

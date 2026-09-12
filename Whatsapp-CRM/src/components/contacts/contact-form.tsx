@@ -213,7 +213,7 @@ export function ContactForm({
                 </label>
                 <div className="relative">
                   <User className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
+                  <input autoComplete="off"
                     ref={firstInputRef}
                     id="cf-name"
                     value={name}
@@ -230,7 +230,7 @@ export function ContactForm({
                 </label>
                 <div className="relative">
                   <Building2 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                  <input
+                  <input autoComplete="off"
                     id="cf-company"
                     value={company}
                     onChange={(e) => setCompany(e.target.value)}
@@ -248,7 +248,7 @@ export function ContactForm({
               </label>
               <div className="relative">
                 <Phone className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <input
+                <input autoComplete="off"
                   id="cf-phone"
                   value={phone}
                   onChange={(e) => { setPhone(e.target.value); if (dupMatch) setDupMatch(null); }}
@@ -290,7 +290,7 @@ export function ContactForm({
               </label>
               <div className="relative">
                 <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <input
+                <input autoComplete="off"
                   id="cf-email"
                   type="email"
                   value={email}

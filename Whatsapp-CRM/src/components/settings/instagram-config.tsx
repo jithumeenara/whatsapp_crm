@@ -229,7 +229,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <input autoComplete="off"
                   type={showToken ? "text" : "password"}
                   value={accessToken}
                   onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true) }}
@@ -276,7 +276,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
         <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Instagram Account ID</label>
-            <input
+            <input autoComplete="off"
               value={igAccountId}
               onChange={(e) => setIgAccountId(e.target.value)}
               placeholder="e.g. 17841400000000000"
@@ -286,7 +286,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
           </div>
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Facebook Page ID <span className="text-slate-400 font-normal">(optional)</span></label>
-            <input
+            <input autoComplete="off"
               value={pageId}
               onChange={(e) => setPageId(e.target.value)}
               placeholder="e.g. 100000000000000"
@@ -313,7 +313,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">
               Your App URL <span className="text-rose-500 text-[10px] font-semibold ml-1">← enter your ngrok URL here</span>
             </label>
-            <input
+            <input autoComplete="off"
               value={appUrl}
               onChange={(e) => setAppUrl(e.target.value)}
               placeholder="https://xxxx.ngrok-free.dev  (or your production domain)"
@@ -329,7 +329,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Webhook URL <span className="text-slate-400 text-[10px]">(paste this in Meta)</span></label>
             <div className="flex gap-2">
-              <input
+              <input autoComplete="off"
                 readOnly
                 value={webhookUrl}
                 className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] bg-slate-50 text-slate-600 font-mono outline-none"
@@ -348,7 +348,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Verify Token <span className="text-slate-400 text-[10px]">(paste this in Meta)</span></label>
             <div className="flex gap-2">
-              <input
+              <input autoComplete="off"
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
                 placeholder="Type or generate a secret string…"

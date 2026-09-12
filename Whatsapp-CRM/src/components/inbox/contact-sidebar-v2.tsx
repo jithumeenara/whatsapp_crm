@@ -358,7 +358,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
             <div className="mt-2.5 rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5 space-y-2">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                <input value={tagQuery} onChange={(e) => setTagQuery(e.target.value)}
+                <input autoComplete="off" value={tagQuery} onChange={(e) => setTagQuery(e.target.value)}
                   placeholder="Search or create a tag…" autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && tagQuery.trim() && !exactMatch && matchingTags.length === 0) {
@@ -411,7 +411,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
 
           {noteOpen && (
             <div className="mb-3 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
-              <textarea rows={3} value={newNote} onChange={(e) => setNewNote(e.target.value)}
+              <textarea autoComplete="off" rows={3} value={newNote} onChange={(e) => setNewNote(e.target.value)}
                 placeholder="Write a note…" autoFocus
                 className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-colors" />
               <div className="flex gap-2">

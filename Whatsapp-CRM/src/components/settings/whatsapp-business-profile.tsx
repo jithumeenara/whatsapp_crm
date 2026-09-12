@@ -115,7 +115,7 @@ export function WhatsAppBusinessProfile() {
 
             <div className="space-y-1.5">
               <Label className="text-[13px] font-medium text-slate-700">Description</Label>
-              <textarea value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })}
+              <textarea autoComplete="off" value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })}
                 maxLength={512} rows={3} placeholder="What your business does"
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-[#5B6CF9] focus:ring-2 focus:ring-[#5B6CF9]/20 resize-none" />
               <p className="text-[11px] text-slate-400">{data.description.length}/512</p>

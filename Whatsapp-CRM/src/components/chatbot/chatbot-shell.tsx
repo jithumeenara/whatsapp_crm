@@ -255,7 +255,7 @@ export function ChatbotShell({
 
         {/* Name */}
         {editingName ? (
-          <input
+          <input autoComplete="off"
             ref={nameInputRef}
             className="h-8 max-w-[180px] rounded-lg border border-indigo-300 bg-white px-2.5 text-[13px] font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-100"
             value={name}
@@ -326,7 +326,7 @@ export function ChatbotShell({
           </button>
           {noReplyEnabled && (
             <div className="flex items-center gap-1">
-              <input
+              <input autoComplete="off"
                 type="number" min={1} max={1440} value={noReplyMinutes}
                 onChange={(e) => { setNoReplyMinutes(Math.max(1, parseInt(e.target.value, 10) || 1)); scheduleSave(); }}
                 className="h-6 w-12 rounded-lg border border-slate-200 bg-slate-50 px-1.5 text-center text-[11px] text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-400"
@@ -360,7 +360,7 @@ export function ChatbotShell({
                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                     Timeout (minutes)
                   </label>
-                  <input
+                  <input autoComplete="off"
                     type="number" min={1} max={1440} value={noReplyMinutes}
                     onChange={(e) => { setNoReplyMinutes(Math.max(1, parseInt(e.target.value, 10) || 1)); scheduleSave(); }}
                     className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[12px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
@@ -370,7 +370,7 @@ export function ChatbotShell({
                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                     Message to send when ending <span className="font-normal text-slate-400">(optional)</span>
                   </label>
-                  <textarea
+                  <textarea autoComplete="off"
                     rows={3}
                     value={noReplyMessage}
                     onChange={(e) => { setNoReplyMessage(e.target.value); scheduleSave(); }}

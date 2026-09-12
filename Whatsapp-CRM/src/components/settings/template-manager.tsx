@@ -890,7 +890,7 @@ export function TemplateManager() {
               {headerNeedsMedia && (
                 <div className="space-y-2 mt-2">
                   {/* Hidden file input */}
-                  <input
+                  <input autoComplete="off"
                     ref={mediaFileRef}
                     type="file"
                     className="hidden"

@@ -199,7 +199,7 @@ export function ImportModal({ open, onOpenChange, onImported }: ImportModalProps
             )}
           </div>
 
-          <input
+          <input autoComplete="off"
             ref={fileInputRef}
             type="file"
             accept=".csv,text/csv"

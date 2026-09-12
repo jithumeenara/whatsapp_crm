@@ -65,7 +65,7 @@ export default function ForgotPasswordV2() {
                   <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">Email Address</label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input type="email" placeholder="email@company.com" required value={email} onChange={(e) => setEmail(e.target.value)}
+                    <input autoComplete="off" type="email" placeholder="email@company.com" required value={email} onChange={(e) => setEmail(e.target.value)}
                       className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100" />
                   </div>
                 </div>

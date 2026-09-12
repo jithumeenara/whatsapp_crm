@@ -173,7 +173,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
 
           <div className="space-y-1.5">
             <label className="text-[12px] font-medium text-slate-600">Name</label>
-            <input
+            <input autoComplete="off"
               autoFocus
               value={fName}
               onChange={(e) => setFName(e.target.value)}
@@ -184,7 +184,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
 
           <div className="space-y-1.5">
             <label className="text-[12px] font-medium text-slate-600">URL <span className="text-slate-400">(must be HTTPS)</span></label>
-            <input
+            <input autoComplete="off"
               value={fUrl}
               onChange={(e) => setFUrl(e.target.value)}
               placeholder="https://your-app.com/webhooks/crm"
@@ -197,7 +197,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
             <div className="flex flex-wrap gap-3">
               {ALL_EVENTS.map((ev) => (
                 <label key={ev} className="flex items-center gap-1.5 cursor-pointer">
-                  <input
+                  <input autoComplete="off"
                     type="checkbox"
                     checked={fEvents.includes(ev)}
                     onChange={() => toggleEvent(ev)}

@@ -48,7 +48,7 @@ export function FollowupInlineForm({ onSave, onCancel }: FollowupInlineFormProps
       </div>
       <div className="space-y-1">
         <Label className="text-xs">Remarks</Label>
-        <textarea
+        <textarea autoComplete="off"
           className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm min-h-[60px] resize-none"
           value={note}
           onChange={(e) => setNote(e.target.value)}

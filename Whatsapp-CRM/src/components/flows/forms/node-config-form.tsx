@@ -1187,7 +1187,7 @@ function SendMediaForm({
             )}
           </button>
         )}
-        <input
+        <input autoComplete="off"
           ref={fileInputRef}
           type="file"
           accept={MEDIA_ACCEPT[mediaType]}

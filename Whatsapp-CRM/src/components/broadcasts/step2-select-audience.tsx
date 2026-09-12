@@ -542,7 +542,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 )}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <input
+                <input autoComplete="off"
                   ref={fileInputRef}
                   type="file"
                   accept=".xlsx,.xls,.csv"
@@ -714,7 +714,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
               </div>
               {unknownCount > 0 && (
                 <label className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 cursor-pointer">
-                  <input
+                  <input autoComplete="off"
                     type="checkbox"
                     checked={includeUnknown}
                     onChange={(e) => toggleIncludeUnknown(e.target.checked)}
@@ -803,7 +803,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
+              <input autoComplete="off"
                 className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-[13px] placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 placeholder="Search name or phone…"
                 value={search}
@@ -901,7 +901,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
+              <input autoComplete="off"
                 className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-[13px] placeholder:text-slate-400 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
                 placeholder="Preview contacts…"
                 value={search}

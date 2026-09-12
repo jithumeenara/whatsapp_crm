@@ -180,7 +180,7 @@ export function ChatbotPlayground({ nodes, entryNodeKey }: ChatbotPlaygroundProp
           <div className="shrink-0 border-t border-black/5 bg-[#F0F2F5] px-3 py-2">
             {awaitingInput ? (
               <div className="flex gap-2">
-                <input
+                <input autoComplete="off"
                   type="text"
                   className="flex-1 rounded-full border-0 bg-white px-4 py-2 text-[13px] text-slate-800 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#25D366]/30"
                   value={inputText}

@@ -374,7 +374,7 @@ function CreateLeadDialog({
           {/* Title */}
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Lead Title *</label>
-            <input
+            <input autoComplete="off"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
               placeholder="e.g. Building Project, Hospital Enquiry"
               value={form.title}
@@ -438,7 +438,7 @@ function CreateLeadDialog({
             </div>
             <div>
               <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Place</label>
-              <input
+              <input autoComplete="off"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
                 placeholder="Town / area"
                 value={form.place}
@@ -449,7 +449,7 @@ function CreateLeadDialog({
 
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Notes</label>
-            <textarea
+            <textarea autoComplete="off"
               rows={3}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none resize-none"
               placeholder="Optional notes…"
@@ -1186,7 +1186,7 @@ export default function LeadsV2() {
         <div className="border-b border-slate-100 bg-white px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="relative w-full sm:flex-1 sm:max-w-xs shrink-0">
             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
+            <input autoComplete="off"
               className="w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 py-1.5 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-colors"
               placeholder="Search leads…"
               value={search}
@@ -1495,7 +1495,7 @@ function AddToPipelineModal({ lead, onClose }: { lead: Lead; onClose: () => void
           <form onSubmit={handleSubmit} className="p-5 space-y-4">
             <div>
               <label className="block text-[12px] font-semibold text-slate-600 mb-1">Deal Title</label>
-              <input
+              <input autoComplete="off"
                 value={title} onChange={(e) => setTitle(e.target.value)} required
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               />
@@ -1527,7 +1527,7 @@ function AddToPipelineModal({ lead, onClose }: { lead: Lead; onClose: () => void
             </div>
             <div>
               <label className="block text-[12px] font-semibold text-slate-600 mb-1">Deal Value (optional)</label>
-              <input
+              <input autoComplete="off"
                 type="number" min="0" step="any" value={value} onChange={(e) => setValue(e.target.value)}
                 placeholder="0"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"

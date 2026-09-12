@@ -437,7 +437,7 @@ export function ProfileForm() {
               <Camera className="h-6 w-6 text-white" />
             </span>
           </button>
-          <input
+          <input autoComplete="off"
             ref={fileInputRef}
             type="file"
             accept="image/png,image/jpeg,image/webp,image/gif"

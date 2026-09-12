@@ -62,7 +62,7 @@ function FileUploadField({
 
   return (
     <div className="space-y-2">
-      <input
+      <input autoComplete="off"
         ref={inputRef}
         type="file"
         className="hidden"
@@ -523,7 +523,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
 
         {field.field_type === 'boolean' && (
           <div className="flex items-center gap-2">
-            <input type="checkbox" id={`f-${field.field_key}`}
+            <input autoComplete="off" type="checkbox" id={`f-${field.field_key}`}
               checked={!!value} onChange={(e) => set(field.field_key, e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 accent-indigo-600" />
             <label htmlFor={`f-${field.field_key}`} className="text-[13px] text-slate-600">Yes</label>
@@ -552,7 +552,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
                     ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
                     : 'border-slate-200 text-slate-500 hover:border-indigo-300',
                 )}>
-                  <input type="checkbox" className="sr-only" checked={selected}
+                  <input autoComplete="off" type="checkbox" className="sr-only" checked={selected}
                     onChange={(e) => {
                       const curr = Array.isArray(value) ? (value as string[]) : [];
                       set(field.field_key, e.target.checked
@@ -570,7 +570,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
           <div className="flex flex-col gap-2">
             {(tableSourceOptions[field.field_key] ?? getSelectItems(field.options)).map((opt) => (
               <label key={opt.value} className="flex items-center gap-2 cursor-pointer text-[13px] text-slate-700">
-                <input type="radio" name={`radio-${field.field_key}`} value={opt.value}
+                <input autoComplete="off" type="radio" name={`radio-${field.field_key}`} value={opt.value}
                   checked={strVal === opt.value}
                   onChange={() => set(field.field_key, opt.value)}
                   className="accent-indigo-600" />

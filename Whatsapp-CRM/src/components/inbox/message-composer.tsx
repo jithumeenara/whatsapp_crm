@@ -240,7 +240,7 @@ export function MessageComposer({
       style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
     >
       {/* Hidden file input */}
-      <input
+      <input autoComplete="off"
         ref={fileInputRef}
         type="file"
         className="hidden"
@@ -405,7 +405,7 @@ export function MessageComposer({
           )}
         </div>
 
-        <textarea
+        <textarea autoComplete="off"
           ref={textareaRef}
           value={text}
           onChange={handleChange}

@@ -118,7 +118,7 @@ export function LeadDetailForm({ lead, scoringMode, sources = DEFAULT_SOURCES, o
       {/* Notes */}
       <div className="space-y-1">
         <Label className="text-sm font-medium">Notes</Label>
-        <textarea
+        <textarea autoComplete="off"
           className="w-full rounded-md border border-input bg-white px-3 py-2 text-sm min-h-[80px] resize-none"
           value={lead.notes ?? ''}
           onChange={(e) => onChange({ notes: e.target.value || null })}

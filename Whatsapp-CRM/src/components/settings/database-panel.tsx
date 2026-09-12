@@ -188,7 +188,7 @@ export function DatabasePanel() {
         </div>
 
         <div className="flex items-center gap-3">
-          <input
+          <input autoComplete="off"
             ref={fileRef}
             type="file"
             accept=".sql,application/sql,text/plain"

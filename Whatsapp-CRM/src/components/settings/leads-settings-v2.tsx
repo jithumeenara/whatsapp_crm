@@ -121,7 +121,7 @@ function EmojiPicker({ value, onChange }: { value: string; onChange: (e: string)
                 Browse PNG / SVG
               </button>
               <p className="text-[10px] text-slate-400 text-center">PNG, SVG, JPEG accepted. Shown at 16×16px.</p>
-              <input ref={fileRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
+              <input autoComplete="off" ref={fileRef} type="file" accept="image/png,image/svg+xml,image/jpeg,image/webp" className="hidden" onChange={handleFile} />
             </div>
           )}
 
@@ -209,7 +209,7 @@ function EditableItemList({
           <div key={i} className="flex items-center gap-2 group">
             <GripVertical className="h-3.5 w-3.5 text-slate-300 shrink-0" />
             <EmojiPicker value={item.icon} onChange={(e) => updateIcon(i, e)} />
-            <input
+            <input autoComplete="off"
               value={item.label}
               onChange={(e) => updateLabel(i, e.target.value)}
               placeholder="Label…"

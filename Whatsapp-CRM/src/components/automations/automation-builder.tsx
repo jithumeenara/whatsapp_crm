@@ -615,7 +615,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <input
+        <input autoComplete="off"
           value={state.name}
           onChange={(e) => patchTop("name", e.target.value)}
           placeholder="Untitled automation"

@@ -135,7 +135,7 @@ export default function SegmentsV2() {
             <div className="space-y-4">
               <div>
                 <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Name</label>
-                <input
+                <input autoComplete="off"
                   autoFocus
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
                   placeholder="e.g. VIP Customer"

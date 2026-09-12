@@ -273,7 +273,7 @@ export default function DataTablePage() {
           <div className="flex items-center gap-1.5 flex-wrap">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
+              <input autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search…"
@@ -303,7 +303,7 @@ export default function DataTablePage() {
               {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
               Import
             </button>
-            <input ref={importRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+            <input autoComplete="off" ref={importRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleImport(f); e.target.value = "" } }} />
 
             <div className="h-5 w-px bg-slate-200" />
@@ -365,7 +365,7 @@ export default function DataTablePage() {
                 <thead>
                   <tr>
                     <th className="sticky top-0 left-0 z-20 bg-indigo-50/70 backdrop-blur-sm px-3 py-2.5 text-left w-10 border-b-2 border-indigo-100">
-                      <input
+                      <input autoComplete="off"
                         type="checkbox"
                         checked={allPageSelected}
                         onChange={toggleSelectAll}
@@ -399,7 +399,7 @@ export default function DataTablePage() {
                     return (
                       <tr key={rec.id} className={cn("group border-b border-slate-100 last:border-0 hover:bg-indigo-50/50 transition-colors", rowBg)}>
                         <td className={cn("sticky left-0 z-10 px-3 py-2.5 border-r border-slate-100 w-10 transition-colors", isSelected ? "bg-indigo-50" : zebra, "group-hover:bg-indigo-50/50")}>
-                          <input
+                          <input autoComplete="off"
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggleSelectOne(rec.id)}

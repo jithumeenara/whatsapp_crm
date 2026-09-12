@@ -52,20 +52,20 @@ export function ScheduleFollowupDialog({ open, onOpenChange, onSave }: ScheduleF
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                 Date <span className="text-rose-500">*</span>
               </label>
-              <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              <input autoComplete="off" type="date" value={date} onChange={(e) => setDate(e.target.value)}
                 min={new Date().toISOString().split('T')[0]}
                 className="w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400" />
             </div>
             <div className="space-y-1.5">
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Time</label>
-              <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+              <input autoComplete="off" type="time" value={time} onChange={(e) => setTime(e.target.value)}
                 className="w-full h-11 rounded-2xl border border-slate-200 bg-slate-50 px-3.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400" />
             </div>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Remarks</label>
-            <textarea
+            <textarea autoComplete="off"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-800 min-h-[80px] resize-none focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-400"
               value={note}
               onChange={(e) => setNote(e.target.value)}

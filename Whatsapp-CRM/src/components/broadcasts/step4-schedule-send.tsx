@@ -116,7 +116,7 @@ export function Step4ScheduleSend({
       {/* Name field */}
       <div>
         <label className="mb-1.5 block text-[12px] font-semibold text-slate-700">Broadcast Name</label>
-        <input
+        <input autoComplete="off"
           type="text"
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
@@ -196,13 +196,13 @@ export function Step4ScheduleSend({
                 <label className="mb-1 block text-[11px] font-medium text-slate-500">
                   {schedule.type === 'recurring' ? 'First send date' : 'Date'}
                 </label>
-                <input type="date" value={date} min={toLocalDateInput(new Date().toISOString())}
+                <input autoComplete="off" type="date" value={date} min={toLocalDateInput(new Date().toISOString())}
                   onChange={(e) => updateDateTime(e.target.value, time)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
               </div>
               <div>
                 <label className="mb-1 block text-[11px] font-medium text-slate-500">Time</label>
-                <input type="time" value={time}
+                <input autoComplete="off" type="time" value={time}
                   onChange={(e) => updateDateTime(date, e.target.value)}
                   className="h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
               </div>
@@ -214,7 +214,7 @@ export function Step4ScheduleSend({
                   <div>
                     <label className="mb-1 block text-[11px] font-medium text-slate-500">Repeat every</label>
                     <div className="flex gap-1.5">
-                      <input type="number" min={1} value={schedule.intervalValue ?? 1}
+                      <input autoComplete="off" type="number" min={1} value={schedule.intervalValue ?? 1}
                         onChange={(e) => onScheduleChange({ ...schedule, intervalValue: Math.max(1, Number(e.target.value) || 1) })}
                         className="h-9 w-16 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                       <select value={schedule.intervalUnit ?? 'days'}
@@ -229,7 +229,7 @@ export function Step4ScheduleSend({
                   <div>
                     <label className="mb-1 block text-[11px] font-medium text-slate-500">Stop after</label>
                     <div className="flex items-center gap-1.5">
-                      <input type="number" min={1} value={schedule.maxSends ?? 3}
+                      <input autoComplete="off" type="number" min={1} value={schedule.maxSends ?? 3}
                         onChange={(e) => onScheduleChange({ ...schedule, maxSends: Math.max(1, Number(e.target.value) || 1) })}
                         className="h-9 w-16 rounded-lg border border-slate-200 bg-white px-2.5 text-[13px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" />
                       <span className="text-[12px] text-slate-500">sends</span>

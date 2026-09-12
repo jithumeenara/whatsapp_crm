@@ -114,7 +114,7 @@ export function FacebookBusinessProfile() {
                   className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
                   {uploadingPhoto ? <Loader2 className="h-4 w-4 text-white animate-spin" /> : <Camera className="h-4 w-4 text-white" />}
                 </button>
-                <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onPickPhoto} />
+                <input autoComplete="off" ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onPickPhoto} />
               </div>
               <div>
                 <p className="text-[13px] font-semibold text-slate-800">{data.name || 'Your Page'}</p>
@@ -134,7 +134,7 @@ export function FacebookBusinessProfile() {
 
             <div className="space-y-1.5">
               <Label className="text-[13px] font-medium text-slate-700">Description</Label>
-              <textarea value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })}
+              <textarea autoComplete="off" value={data.description} onChange={(e) => setData({ ...data, description: e.target.value })}
                 rows={3} placeholder="What your business does"
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-[#1877F2] focus:ring-2 focus:ring-[#1877F2]/20 resize-none" />
             </div>

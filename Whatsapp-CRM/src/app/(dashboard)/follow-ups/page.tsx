@@ -29,17 +29,17 @@ function FollowUpFormDialog({ open, onOpenChange, onSave }: { open: boolean; onO
         <form onSubmit={submit} className="space-y-4">
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1">Title</label>
-            <input required placeholder="e.g. Follow up on proposal" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            <input autoComplete="off" required placeholder="e.g. Follow up on proposal" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
           </div>
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1">Due Date & Time</label>
-            <input type="datetime-local" required value={form.due_at} onChange={(e) => setForm((f) => ({ ...f, due_at: e.target.value }))}
+            <input autoComplete="off" type="datetime-local" required value={form.due_at} onChange={(e) => setForm((f) => ({ ...f, due_at: e.target.value }))}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
           </div>
           <div>
             <label className="block text-[12px] font-medium text-slate-600 mb-1">Notes (optional)</label>
-            <textarea rows={2} placeholder="Any notes…" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+            <textarea autoComplete="off" rows={2} placeholder="Any notes…" value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
           </div>
           <div className="flex gap-3 pt-1">

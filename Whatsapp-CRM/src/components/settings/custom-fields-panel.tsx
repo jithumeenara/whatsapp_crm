@@ -106,7 +106,7 @@ export function CustomFieldsPanel() {
             <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block">
               Field Name
             </label>
-            <input
+            <input autoComplete="off"
               type="text"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}

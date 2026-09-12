@@ -326,7 +326,7 @@ function DealModal({
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           <div>
             <label className="block text-[12px] font-semibold text-slate-600 mb-1">Deal Title *</label>
-            <input
+            <input autoComplete="off"
               value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus
               placeholder="e.g. Website Redesign Project"
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
@@ -344,7 +344,7 @@ function DealModal({
             </div>
             <div>
               <label className="block text-[12px] font-semibold text-slate-600 mb-1">Value (₹)</label>
-              <input
+              <input autoComplete="off"
                 type="number" min="0" step="any" value={value} onChange={(e) => setValue(e.target.value)}
                 placeholder="0"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
@@ -353,14 +353,14 @@ function DealModal({
           </div>
           <div>
             <label className="block text-[12px] font-semibold text-slate-600 mb-1">Expected Close Date</label>
-            <input
+            <input autoComplete="off"
               type="date" value={closeDate} onChange={(e) => setCloseDate(e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
           <div>
             <label className="block text-[12px] font-semibold text-slate-600 mb-1">Notes</label>
-            <textarea
+            <textarea autoComplete="off"
               rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
               placeholder="Add any relevant notes..."
               className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
@@ -485,7 +485,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
           <div>
             <label className="block text-[12px] font-semibold text-slate-600 mb-1">Pipeline Name *</label>
-            <input
+            <input autoComplete="off"
               ref={inputRef} value={name} onChange={(e) => setName(e.target.value)} required
               placeholder="Enter pipeline name"
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
@@ -521,7 +521,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
               {openStages.map((s, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <GripVertical className="h-4 w-4 text-slate-300 shrink-0" />
-                  <input
+                  <input autoComplete="off"
                     value={s}
                     onChange={(e) => {
                       const updated = [...openStages]
@@ -548,7 +548,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
               {/* Pinned close stages — Won / Lost */}
               <div className="flex items-center gap-2 pt-1">
                 <Trophy className="h-4 w-4 text-emerald-500 shrink-0" />
-                <input
+                <input autoComplete="off"
                   value={wonName}
                   onChange={(e) => setWonName(e.target.value)}
                   placeholder="Won stage name"
@@ -557,7 +557,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
               </div>
               <div className="flex items-center gap-2">
                 <XCircle className="h-4 w-4 text-rose-500 shrink-0" />
-                <input
+                <input autoComplete="off"
                   value={lostName}
                   onChange={(e) => setLostName(e.target.value)}
                   placeholder="Lost stage name"
@@ -889,7 +889,7 @@ export default function PipelinesPage() {
               <div key={p.id} className="group relative">
                 {renamingPipelineId === p.id ? (
                   <div className="flex items-center gap-1 px-3 py-1.5">
-                    <input
+                    <input autoComplete="off"
                       value={renamePipelineName}
                       onChange={(e) => setRenamePipelineName(e.target.value)}
                       onKeyDown={(e) => {
@@ -1068,7 +1068,7 @@ export default function PipelinesPage() {
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => { setAddingStage(false); setNewStageName("") }} />
           <div className="relative z-10 w-80 rounded-2xl bg-white shadow-2xl border border-slate-100 p-5 space-y-3">
             <h3 className="text-[14px] font-bold text-slate-900">Add Stage</h3>
-            <input
+            <input autoComplete="off"
               value={newStageName} onChange={(e) => setNewStageName(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAddStage()
@@ -1107,7 +1107,7 @@ export default function PipelinesPage() {
           <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setEditingStage(null)} />
           <div className="relative z-10 w-80 rounded-2xl bg-white shadow-2xl border border-slate-100 p-5 space-y-3">
             <h3 className="text-[14px] font-bold text-slate-900">Rename Stage</h3>
-            <input
+            <input autoComplete="off"
               value={editStageName} onChange={(e) => setEditStageName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleEditStage(); if (e.key === "Escape") setEditingStage(null) }}
               autoFocus

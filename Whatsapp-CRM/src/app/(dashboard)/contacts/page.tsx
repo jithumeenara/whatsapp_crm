@@ -420,7 +420,7 @@ export default function ContactsV2() {
           {/* Search box */}
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-            <input
+            <input autoComplete="off"
               className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-9 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-colors"
               placeholder="Search by name, phone or email…"
               value={search}
@@ -529,7 +529,7 @@ export default function ContactsV2() {
           <thead className="sticky top-0 z-10">
             <tr className="bg-slate-100/80 backdrop-blur-sm">
               <th className="pl-4 pr-2 py-2.5 border-b border-slate-200 w-10">
-                <input
+                <input autoComplete="off"
                   type="checkbox"
                   checked={allChecked}
                   ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked }}
@@ -607,7 +607,7 @@ export default function ContactsV2() {
                 >
                   {/* Checkbox column */}
                   <td className="pl-4 pr-2 py-4" onClick={(e) => e.stopPropagation()}>
-                    <input
+                    <input autoComplete="off"
                       type="checkbox"
                       checked={checkedIds.has(contact.id)}
                       onChange={(e) => {

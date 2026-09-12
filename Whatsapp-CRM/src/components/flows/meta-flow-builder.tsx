@@ -1591,7 +1591,7 @@ function LabelSourcesAndTemplate({
             ))}
           </div>
         )}
-        <textarea
+        <textarea autoComplete="off"
           ref={textareaRef}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
@@ -1827,7 +1827,7 @@ function CompFooterAction({ action, allScreens, onChange }: {
       <div className="flex flex-col gap-1">
         {(['navigate', 'complete', 'data_exchange'] as const).map((act) => (
           <label key={act} className="flex cursor-pointer items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-xs hover:bg-slate-50">
-            <input
+            <input autoComplete="off"
               type="radio"
               className="h-3 w-3 accent-[#25D366]"
               checked={currentName === act}
@@ -1897,7 +1897,7 @@ function CompImageForm({
             {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
             <span>{uploading ? 'Uploading…' : 'Click to upload image'}</span>
             <span className="text-[10px] text-slate-400">PNG, JPG, WEBP · max 300KB (hosted on your server)</span>
-            <input
+            <input autoComplete="off"
               type="file"
               accept="image/png,image/jpeg,image/webp"
               className="sr-only"
@@ -2759,7 +2759,7 @@ function SimPreviewComponent({
         <div className="space-y-1">
           <label><FieldLabel label={ti.label} required={req} /></label>
           {simMode ? (
-            <input
+            <input autoComplete="off"
               className="h-8 w-full rounded border border-gray-300 bg-white px-2 text-[11px] text-gray-800 focus:border-[#25D366] focus:outline-none"
               placeholder={ti['helper-text'] ?? ti.label}
               value={simValues[ti.name] ?? ''}
@@ -2780,7 +2780,7 @@ function SimPreviewComponent({
         <div className="space-y-1">
           <label><FieldLabel label={ta.label} required={req} /></label>
           {simMode ? (
-            <textarea
+            <textarea autoComplete="off"
               className="h-16 w-full resize-none rounded border border-gray-300 bg-white p-2 text-[11px] text-gray-800 focus:border-[#25D366] focus:outline-none"
               placeholder={ta.label}
               value={simValues[ta.name] ?? ''}
@@ -2911,7 +2911,7 @@ function SimPreviewComponent({
         <div className="space-y-1">
           <label><FieldLabel label={dp.label} required={req} /></label>
           {simMode ? (
-            <input
+            <input autoComplete="off"
               type="date"
               className="h-8 w-full rounded border border-gray-300 bg-white px-2 text-[11px] text-gray-800 focus:border-[#25D366] focus:outline-none"
               value={simValues[dp.name] ?? ''}

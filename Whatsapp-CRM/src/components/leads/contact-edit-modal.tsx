@@ -122,7 +122,7 @@ export function ContactEditModal({
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
               <span className="flex items-center gap-1"><User className="h-3 w-3" /> Name</span>
             </label>
-            <input type="text" value={name} onChange={(e) => setName(e.target.value)}
+            <input autoComplete="off" type="text" value={name} onChange={(e) => setName(e.target.value)}
               placeholder="Contact name" className={fieldCls} />
           </div>
 
@@ -142,7 +142,7 @@ export function ContactEditModal({
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
               <span className="flex items-center gap-1"><Phone className="h-3 w-3" /> Phone Number</span>
             </label>
-            <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+            <input autoComplete="off" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
               placeholder="e.g. 919526218159" className={fieldCls} />
           </div>
 
@@ -151,7 +151,7 @@ export function ContactEditModal({
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
               <span className="flex items-center gap-1"><PhoneCall className="h-3 w-3" /> Alternate Phone</span>
             </label>
-            <input type="tel" value={altPhone} onChange={(e) => setAltPhone(e.target.value)}
+            <input autoComplete="off" type="tel" value={altPhone} onChange={(e) => setAltPhone(e.target.value)}
               placeholder="Optional alternate number" className={fieldCls} />
           </div>
 
@@ -160,7 +160,7 @@ export function ContactEditModal({
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
               <span className="flex items-center gap-1"><Mail className="h-3 w-3" /> Email</span>
             </label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+            <input autoComplete="off" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="email@example.com" className={fieldCls} />
           </div>
 
@@ -169,7 +169,7 @@ export function ContactEditModal({
             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
               <span className="flex items-center gap-1"><Building2 className="h-3 w-3" /> Company</span>
             </label>
-            <input type="text" value={company} onChange={(e) => setCompany(e.target.value)}
+            <input autoComplete="off" type="text" value={company} onChange={(e) => setCompany(e.target.value)}
               placeholder="Acme Corp" className={fieldCls} />
           </div>
 

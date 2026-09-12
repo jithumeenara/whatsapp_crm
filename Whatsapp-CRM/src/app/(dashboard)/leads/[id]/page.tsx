@@ -594,7 +594,7 @@ export default function LeadDetailPage() {
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Place / Area</label>
-                  <input value={place} onChange={(e) => { setPlace(e.target.value); dirtyRef.current = true }}
+                  <input autoComplete="off" value={place} onChange={(e) => { setPlace(e.target.value); dirtyRef.current = true }}
                     placeholder="City / area"
                     className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
                 </div>
@@ -628,7 +628,7 @@ export default function LeadDetailPage() {
 
                   {newNoteOpen && (
                     <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 space-y-2">
-                      <textarea rows={3} value={newNoteText} onChange={(e) => setNewNoteText(e.target.value)}
+                      <textarea autoComplete="off" rows={3} value={newNoteText} onChange={(e) => setNewNoteText(e.target.value)}
                         placeholder="Write a note…" autoFocus
                         className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none" />
                       <div className="flex gap-2">
@@ -699,7 +699,7 @@ export default function LeadDetailPage() {
                   "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
                   callMode === "connected" ? "border-emerald-400 bg-emerald-50" : "border-slate-100 bg-white hover:border-emerald-200",
                 )}>
-                  <input type="radio" name="call-mode" checked={callMode === "connected"}
+                  <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "connected"}
                     onChange={() => setCallMode("connected")} className="accent-emerald-500" />
                   <span className={cn("text-[12.5px] font-bold", callMode === "connected" ? "text-emerald-700" : "text-slate-500")}>Connected</span>
                 </label>
@@ -707,7 +707,7 @@ export default function LeadDetailPage() {
                   "flex cursor-pointer items-center gap-2 rounded-xl border-2 px-3 py-2 transition-all",
                   callMode === "not_connected" ? "border-rose-400 bg-rose-50" : "border-slate-100 bg-white hover:border-rose-200",
                 )}>
-                  <input type="radio" name="call-mode" checked={callMode === "not_connected"}
+                  <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "not_connected"}
                     onChange={() => setCallMode("not_connected")} className="accent-rose-500" />
                   <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-600" : "text-slate-500")}>Call Not Connected</span>
                 </label>
@@ -802,7 +802,7 @@ export default function LeadDetailPage() {
           </div>
 
           <div className="border-t border-slate-100 p-3 shrink-0">
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected}
+            <input autoComplete="off" ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected}
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
 
             {sessionExpired && (
@@ -855,7 +855,7 @@ export default function LeadDetailPage() {
                   </>
                 )}
               </div>
-              <input value={composerText} onChange={(e) => setComposerText(e.target.value)}
+              <input autoComplete="off" value={composerText} onChange={(e) => setComposerText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                 placeholder={
                   !conversationId

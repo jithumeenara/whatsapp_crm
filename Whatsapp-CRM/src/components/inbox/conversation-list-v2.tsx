@@ -323,7 +323,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
           <div className="mb-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-              <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
+              <input autoComplete="off" autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search conversations…"
                 className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-colors" />
             </div>

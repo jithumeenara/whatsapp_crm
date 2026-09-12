@@ -246,13 +246,13 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                     {scheduleType === 'once' ? 'Date' : 'Start date (optional)'} {scheduleType === 'once' && <span className="text-rose-500">*</span>}
                   </label>
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+                  <input autoComplete="off" type="date" value={date} onChange={(e) => setDate(e.target.value)}
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Time</label>
-                  <input type="time" value={time} onChange={(e) => setTime(e.target.value)}
+                  <input autoComplete="off" type="time" value={time} onChange={(e) => setTime(e.target.value)}
                     className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
                 </div>
               </div>
@@ -262,7 +262,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Repeat every</label>
                     <div className="flex items-center gap-2">
-                      <input type="number" min={1} value={intervalValue} onChange={(e) => setIntervalValue(Math.max(1, Number(e.target.value) || 1))}
+                      <input autoComplete="off" type="number" min={1} value={intervalValue} onChange={(e) => setIntervalValue(Math.max(1, Number(e.target.value) || 1))}
                         className="w-20 h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
                       <select value={intervalUnit} onChange={(e) => setIntervalUnit(e.target.value as typeof intervalUnit)}
                         className="flex-1 h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100">
@@ -283,7 +283,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
 
                   <div className="space-y-1.5">
                     <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Maximum times to send</label>
-                    <input type="number" min={1} value={maxSends} onChange={(e) => setMaxSends(Math.max(1, Number(e.target.value) || 1))}
+                    <input autoComplete="off" type="number" min={1} value={maxSends} onChange={(e) => setMaxSends(Math.max(1, Number(e.target.value) || 1))}
                       className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
                   </div>
                 </>

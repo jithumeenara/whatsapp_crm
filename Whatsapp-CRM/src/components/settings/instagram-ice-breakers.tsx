@@ -127,14 +127,14 @@ export function InstagramIceBreakers() {
               )}
               {iceBreakers.map((ib, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <input
+                  <input autoComplete="off"
                     value={ib.question}
                     onChange={(e) => setIceBreakers((prev) => prev.map((x, j) => j === i ? { ...x, question: e.target.value } : x))}
                     placeholder="What are your store hours?"
                     maxLength={80}
                     className="h-9 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-pink-100"
                   />
-                  <input
+                  <input autoComplete="off"
                     value={ib.payload}
                     onChange={(e) => setIceBreakers((prev) => prev.map((x, j) => j === i ? { ...x, payload: e.target.value } : x))}
                     placeholder="STORE_HOURS"
@@ -182,7 +182,7 @@ export function InstagramIceBreakers() {
                 const isLink = "type" in item && item.type === "web_url"
                 return (
                   <div key={i} className="flex items-center gap-2">
-                    <input
+                    <input autoComplete="off"
                       value={item.title}
                       onChange={(e) => setMenuItems((prev) => prev.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
                       placeholder="View Catalog"
@@ -201,14 +201,14 @@ export function InstagramIceBreakers() {
                       <LinkIcon className="h-3 w-3" /> {isLink ? "Link" : "Payload"}
                     </button>
                     {isLink ? (
-                      <input
+                      <input autoComplete="off"
                         value={(item as { url: string }).url}
                         onChange={(e) => setMenuItems((prev) => prev.map((x, j) => j === i ? { ...x, url: e.target.value } as MenuItem : x))}
                         placeholder="https://example.com/catalog"
                         className="h-9 w-56 rounded-lg border border-slate-200 bg-slate-50 px-3 text-[12px] text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-100"
                       />
                     ) : (
-                      <input
+                      <input autoComplete="off"
                         value={(item as { payload: string }).payload}
                         onChange={(e) => setMenuItems((prev) => prev.map((x, j) => j === i ? { ...x, payload: e.target.value } as MenuItem : x))}
                         placeholder="VIEW_CATALOG"

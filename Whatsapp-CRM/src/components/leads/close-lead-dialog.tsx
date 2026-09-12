@@ -155,7 +155,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: Cl
             <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
               {outcome === 'won' ? 'Closing Notes' : 'Reason for Losing'} <span className="text-rose-500">*</span>
             </label>
-            <textarea
+            <textarea autoComplete="off"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-800 min-h-[90px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
@@ -182,7 +182,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: Cl
             </div>
             {addToPipeline && (
               <div className="space-y-2">
-                <input
+                <input autoComplete="off"
                   type="text"
                   value={dealTitle}
                   onChange={(e) => setDealTitle(e.target.value)}
