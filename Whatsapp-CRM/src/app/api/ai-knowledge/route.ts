@@ -73,6 +73,7 @@ export async function GET(req: Request) {
       select: {
         id: true, kind: true, name: true, source: true, audience: true, description: true,
         question: true, answer: true,
+        effective_from: true, effective_until: true, language: true, department: true, priority: true,
         source_url: true, source_ref: true, status: true, last_error: true,
         last_synced_at: true, created_at: true, updated_at: true,
         // Length only, never the body — a synced page can be hundreds of

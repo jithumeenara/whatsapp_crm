@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI, FinishReason } from '@google/generative-ai'
+import { GoogleGenerativeAI, FinishReason, type Content } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
@@ -115,8 +115,21 @@ export async function POST(req: Request) {
   }
 
   try {
-    const chat = model.startChat({ history })
-    let result = await chat.sendMessage(message)
+    // Built explicitly rather than through startChat/sendMessage.
+    //
+    // ChatSession.sendMessage() wraps function results in a turn with
+    // role 'function' (the older v1beta convention), and this model
+    // rejects that outright: "Role 'function' is not supported. Please
+    // use a valid role: ... USER, MODEL ...". Every Admin question that
+    // needed a lookup failed with a 400. Managing `contents` here lets
+    // the results go back under 'user', which is what the model asks
+    // for, and costs nothing else — the tool loop is identical.
+    const contents: Content[] = [
+      ...history,
+      { role: 'user', parts: [{ text: message }] },
+    ]
+
+    let result = await model.generateContent({ contents })
     addUsage(result.response.usageMetadata)
     const toolsUsed: string[] = []
 
@@ -124,11 +137,25 @@ export async function POST(req: Request) {
       const calls = result.response.functionCalls()
       if (!calls || calls.length === 0) break
 
-      const responses = []
+      // Echo the model's own turn back VERBATIM rather than rebuilding
+      // it from functionCalls().
+      //
+      // Gemini 3.x attaches a thoughtSignature to each function-call
+      // part and refuses the follow-up without it — "Function call is
+      // missing a thought_signature", a 400. A reconstructed
+      // { functionCall } part loses that field, so every Admin question
+      // needing a lookup failed. Passing the candidate's content
+      // through keeps whatever the model attached, including fields a
+      // future version adds.
+      const modelTurn = result.response.candidates?.[0]?.content
+      if (!modelTurn) break
+      contents.push(modelTurn)
+
+      const responseParts = []
       for (const call of calls) {
         toolsUsed.push(call.name)
         const output = await runTool(call.name, (call.args ?? {}) as Record<string, unknown>, { accountId })
-        responses.push({
+        responseParts.push({
           functionResponse: {
             name: call.name,
             // The SDK requires an object here; primitives and arrays are
@@ -140,7 +167,9 @@ export async function POST(req: Request) {
         })
       }
 
-      result = await chat.sendMessage(responses)
+      contents.push({ role: 'user', parts: responseParts })
+
+      result = await model.generateContent({ contents })
       addUsage(result.response.usageMetadata)
     }
 

@@ -2,6 +2,7 @@
 
 import {
   Sliders, ShieldQuestion, UserCheck, X, Plus, MessageSquare, Database, AlertTriangle, Sparkles,
+  BadgeCheck,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,6 +10,7 @@ import {
   AiButton, AiCard, AiCardHeader, AiIconTile, AiInput, AiLabel, AiHint,
   AiBadge, AiNotice, AiPromptEditor,
 } from './ui-kit';
+import { TTS_VOICES } from '@/lib/ai/tts-voices';
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
@@ -50,6 +52,18 @@ export interface AdvancedFeaturesProps {
   onLowConfidenceMessageChange: (v: string) => void;
   agents: Array<{ user_id: string; full_name: string }>;
   semanticSearchAvailable: boolean;
+
+  responseValidationEnabled: boolean;
+  onResponseValidationEnabledChange: (v: boolean) => void;
+  compositeConfidenceEnabled: boolean;
+  onCompositeConfidenceEnabledChange: (v: boolean) => void;
+
+  voiceReplyEnabled: boolean;
+  onVoiceReplyEnabledChange: (v: boolean) => void;
+  voiceName: string;
+  onVoiceNameChange: (v: string) => void;
+  voiceMaxChars: number;
+  onVoiceMaxCharsChange: (v: number) => void;
 }
 
 /** A usable starting point, so "required" doesn't mean staring at an
@@ -338,6 +352,113 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                     />
                   </div>
                 </>
+              )}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ── Accuracy & Voice ── */}
+        <AccordionItem value="accuracy">
+          <AccordionTrigger className="text-[13.5px]">
+            <span className="flex min-w-0 items-center gap-2.5">
+              <AiIconTile tint="violet" size="sm">
+                <BadgeCheck className="h-4 w-4" />
+              </AiIconTile>
+              <span className="min-w-0 text-left">
+                <span className="block font-medium text-slate-800">Accuracy &amp; Voice</span>
+                <span className="block text-[11.5px] font-normal text-slate-500">
+                  Checks before a reply is sent, and answering voice notes by voice.
+                </span>
+              </span>
+            </span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="space-y-4 pb-4">
+
+              <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-slate-800">Check facts before sending</p>
+                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                    Every price, date, phone number and link in a reply is checked against the knowledge it came
+                    from. Anything that appears nowhere in your material is treated as invented, and the
+                    conversation goes to a person instead of the customer receiving a made-up figure.
+                  </p>
+                </div>
+                <Switch
+                  checked={props.responseValidationEnabled}
+                  onCheckedChange={props.onResponseValidationEnabledChange}
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-slate-800">Smarter handoff decisions</p>
+                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                    Also considers whether the question was too vague to answer, whether the customer has asked
+                    the same thing several times, and whether they sound frustrated — not just how well the
+                    knowledge base matched. Turn off to judge on knowledge match alone.
+                  </p>
+                </div>
+                <Switch
+                  checked={props.compositeConfidenceEnabled}
+                  onCheckedChange={props.onCompositeConfidenceEnabledChange}
+                />
+              </div>
+
+              <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-slate-800">Reply to voice notes with voice</p>
+                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                    Someone who records a voice message usually does so because typing is awkward — in their
+                    language, or at that moment. They get a spoken reply back. Typed questions still get typed
+                    answers.
+                  </p>
+                </div>
+                <Switch checked={props.voiceReplyEnabled} onCheckedChange={props.onVoiceReplyEnabledChange} />
+              </div>
+
+              {props.voiceReplyEnabled && (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <AiLabel>Voice</AiLabel>
+                    <Select
+                      value={props.voiceName || 'Kore'}
+                      onValueChange={(v) => v && props.onVoiceNameChange(v)}
+                    >
+                      <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TTS_VOICES.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <AiLabel htmlFor="voice-max-chars">
+                      Speak replies up to
+                      <span className="ml-2 text-[11px] font-normal text-slate-400">
+                        {props.voiceMaxChars} characters
+                      </span>
+                    </AiLabel>
+                    <input
+                      id="voice-max-chars"
+                      autoComplete="off"
+                      type="range"
+                      min={200}
+                      max={2000}
+                      step={50}
+                      value={props.voiceMaxChars}
+                      onChange={(e) => props.onVoiceMaxCharsChange(Number(e.target.value))}
+                      className="w-full accent-[#5B6CF9]"
+                    />
+                    <AiHint>
+                      Longer answers are sent as text instead. A spoken reply full of fees and dates can&apos;t be
+                      skimmed or screenshotted, which is exactly what people do with those.
+                    </AiHint>
+                  </div>
+                </div>
               )}
             </div>
           </AccordionContent>

@@ -965,3 +965,74 @@ export async function engineSendCtaUrlButton(
   await notifyBotMessage(args.accountId, savedMsg, args.conversationId, { last_message_text: args.bodyText, last_message_at: lastMessageAt.toISOString() })
   return { whatsapp_message_id: waMessageId }
 }
+
+/**
+ * Sends generated speech as a WhatsApp audio message.
+ *
+ * Separate from engineSendMedia because that helper's input is a link or
+ * an on-disk upload path, and synthesized speech is neither — it exists
+ * only as bytes in memory. Writing it to the uploads directory first
+ * just to read it back would leave a file per voice reply with nothing
+ * to clean them up.
+ *
+ * The transcript is stored as the message's text so the conversation
+ * list, search and the agent reading the thread all see what the bot
+ * actually said, rather than "[audio]".
+ */
+export async function engineSendVoiceNote(args: {
+  accountId: string
+  userId: string
+  conversationId: string
+  contactId: string
+  audio: Buffer
+  mimeType: string
+  /** The text that was spoken — stored, not sent. */
+  transcript: string
+}): Promise<{ whatsapp_message_id: string }> {
+  const { contact, sanitized, config } = await resolveContactAndConfig(
+    args.accountId,
+    args.contactId,
+    args.conversationId,
+  )
+  const accessToken = decrypt(config.access_token)
+
+  const mediaId = await uploadMediaToMeta({
+    phoneNumberId: config.phone_number_id,
+    accessToken,
+    fileBuffer: args.audio,
+    mimeType: args.mimeType,
+    filename: args.mimeType.includes('mpeg') ? 'reply.mp3' : 'reply.ogg',
+  })
+
+  const { waMessageId } = await retryWithVariants(sanitized, contact.id, (phone) =>
+    sendMediaMessage({
+      phoneNumberId: config.phone_number_id,
+      accessToken,
+      to: phone,
+      kind: 'audio',
+      id: mediaId,
+    }).then((r) => r.messageId),
+  )
+
+  const savedMsg = await prisma.message.create({
+    data: {
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      content_type: 'audio',
+      content_text: args.transcript,
+      transcript: args.transcript,
+      message_id: waMessageId,
+      status: 'sent',
+    },
+  })
+  const lastMessageAt = new Date()
+  await prisma.conversation.update({
+    where: { id: args.conversationId },
+    data: { last_message_text: args.transcript.slice(0, 120), last_message_at: lastMessageAt },
+  })
+  await notifyBotMessage(args.accountId, savedMsg, args.conversationId, {
+    last_message_text: args.transcript.slice(0, 120),
+    last_message_at: lastMessageAt.toISOString(),
+  })
+  return { whatsapp_message_id: waMessageId }
+}

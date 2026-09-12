@@ -195,6 +195,8 @@ model Account {
   ai_config                    AiConfig?
   ai_knowledge_items           AiKnowledgeItem[]
   ai_usage_events              AiUsageEvent[]
+  ai_eval_cases                AiEvalCase[]
+  ai_eval_runs                 AiEvalRun[]
   company_profile              CompanyProfile?
   sms_config                   SmsConfig?
   email_config                 EmailConfig?
@@ -1114,7 +1116,11 @@ model AiConfig {
   api_key       String
   model         String   @default("gemini-1.5-flash")
   temperature   Float    @default(0.7)
-  max_tokens    Int      @default(500)
+  /// A ceiling, not a target — providers bill for what they actually
+  /// generate, so a generous limit costs nothing on short replies and
+  /// stops long ones being cut off mid-sentence. 500 was the old value
+  /// and truncated ordinary answers.
+  max_tokens    Int      @default(2048)
   system_prompt String?
   /// Q&A pairs — { question, answer }[]. Re-scored for relevance against
   /// each incoming message at generation time (src/lib/ai/knowledge.ts),
@@ -1199,7 +1205,36 @@ model AiConfig {
   /// rest rather than being a stranger on every channel.
   customer_context_enabled Boolean @default(true)
 
+  /// Pinned output language. Now always null: a language chosen during
+  /// setup is a guess made before any customer has written in, and it
+  /// then overrides their actual language on every message. Language is
+  /// inferred per message instead — see src/lib/ai/language.ts. Kept as
+  /// a column because "always reply in X" is a legitimate future
+  /// override, but nothing writes it today.
   reply_language                 String?
+
+  /// Answer a voice note with a voice note.
+  ///
+  /// Someone who records audio usually does so because typing is
+  /// inconvenient — sending back a wall of text ignores the thing they
+  /// just told you about themselves. Text questions still get text
+  /// answers; this only mirrors the channel the customer chose.
+  voice_reply_enabled            Boolean @default(true)
+  /// Gemini prebuilt voice name (Kore, Puck, Charon, Fenrir, Aoede...).
+  voice_name                     String  @default("Kore")
+  /// Replies longer than this are sent as text instead. A spoken
+  /// two-minute answer cannot be skimmed, searched or screenshotted,
+  /// which is exactly what someone does with fees and dates.
+  voice_max_chars                Int     @default(700)
+
+  /// Check a reply against its own retrieved context before sending,
+  /// and hand off rather than send an unsupported figure.
+  /// See src/lib/ai/validator.ts.
+  response_validation_enabled    Boolean @default(true)
+  /// Blend retrieval similarity with question ambiguity, repeated
+  /// rephrasing and customer sentiment, instead of gating on similarity
+  /// alone. See src/lib/ai/confidence.ts.
+  composite_confidence_enabled   Boolean @default(true)
   /// How aggressively Gemini's own safety filters block a generation:
   /// 'strict' | 'balanced' (Gemini's own default) | 'relaxed'. Mapped to
   /// HarmBlockThreshold across all four harm categories in
@@ -1215,6 +1250,8 @@ model AiConfig {
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   knowledge_embeddings AiKnowledgeEmbedding[]
   knowledge_items      AiKnowledgeItem[]
+  eval_cases           AiEvalCase[]
+  eval_runs            AiEvalRun[]
 
   @@map("ai_configs")
 }
@@ -1335,6 +1372,25 @@ model AiKnowledgeItem {
   /// Training tab can show real "Updated" values rather than just the
   /// row's own mtime.
   last_synced_at DateTime? @db.Timestamptz(6)
+
+  /// When this entry starts and stops being true.
+  ///
+  /// Without these, last term's fee list and this term's are equally
+  /// retrievable and the model answers with whichever embeds closer to
+  /// the question. That is the most damaging kind of wrong answer,
+  /// because it is fluent, specific and confidently out of date. Null
+  /// on either side means "no bound that way" — the common case.
+  effective_from  DateTime? @db.Timestamptz(6)
+  effective_until DateTime? @db.Timestamptz(6)
+
+  /// The language this entry is written in, as a plain name. Null means
+  /// it applies regardless of what the customer writes in.
+  language    String?
+  /// "Admissions", "Accounts", "Hostel". Rides along into the handoff
+  /// note so the right person picks the conversation up.
+  department  String?
+  /// Tie-breaker when two entries match a question equally well.
+  priority    Int     @default(0)
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
@@ -2303,4 +2359,95 @@ model IntegrationSync {
   integration Integration @relation(fields: [integration_id], references: [id], onDelete: Cascade)
 
   @@map("integration_syncs")
+}
+
+
+/// One question the AI is expected to handle correctly.
+///
+/// The suite exists so that "did that prompt change help?" has an
+/// answer. Without it, accuracy can only be discussed anecdotally —
+/// somebody notices a bad reply, somebody edits the prompt, and nobody
+/// finds out what else moved.
+model AiEvalCase {
+  id           String @id @default(uuid()) @db.Uuid
+  account_id   String @db.Uuid
+  ai_config_id String @db.Uuid
+
+  question String
+  /// What a correct answer must convey. Graded by a model rather than
+  /// string-matched, so "45,000" and "forty-five thousand" both pass.
+  expected String?
+  /// Cases that SHOULD refuse or hand off. A suite without these only
+  /// measures eagerness — a bot that answers everything scores perfectly
+  /// right up until it invents a refund policy.
+  expect_handoff Boolean @default(false)
+  /// Free text ('fees', 'admissions', 'safety'), so a run's failures can
+  /// be read by area instead of as a single number.
+  category String?
+  notes    String?
+  enabled  Boolean @default(true)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account   Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  ai_config AiConfig       @relation(fields: [ai_config_id], references: [id], onDelete: Cascade)
+  results   AiEvalResult[]
+
+  @@index([ai_config_id, enabled])
+  @@map("ai_eval_cases")
+}
+
+/// One replay of the whole suite.
+model AiEvalRun {
+  id           String @id @default(uuid()) @db.Uuid
+  account_id   String @db.Uuid
+  ai_config_id String @db.Uuid
+
+  /// 'running' | 'completed' | 'failed'
+  status String @default("running")
+  total  Int    @default(0)
+  passed Int    @default(0)
+  failed Int    @default(0)
+
+  /// The settings this run was measured under. A later comparison can
+  /// then say what actually differed, rather than only that the score
+  /// moved.
+  settings_snapshot Json?
+  label             String?
+  error             String?
+
+  started_at  DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at DateTime? @db.Timestamptz(6)
+
+  account   Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  ai_config AiConfig       @relation(fields: [ai_config_id], references: [id], onDelete: Cascade)
+  results   AiEvalResult[]
+
+  @@index([ai_config_id, started_at(sort: Desc)])
+  @@map("ai_eval_runs")
+}
+
+/// How one case did in one run.
+model AiEvalResult {
+  id      String @id @default(uuid()) @db.Uuid
+  run_id  String @db.Uuid
+  case_id String @db.Uuid
+
+  passed     Boolean
+  reply      String?
+  handed_off Boolean @default(false)
+  confidence Float?
+  /// The grader's one-line reason, so a failure can be acted on without
+  /// re-reading the full reply.
+  verdict    String?
+  latency_ms Int?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  run      AiEvalRun  @relation(fields: [run_id], references: [id], onDelete: Cascade)
+  eva_case AiEvalCase @relation(fields: [case_id], references: [id], onDelete: Cascade)
+
+  @@index([run_id])
+  @@map("ai_eval_results")
 }

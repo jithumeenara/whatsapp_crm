@@ -3,8 +3,7 @@
 import { useState } from 'react';
 import {
   Check, Eye, EyeOff, ExternalLink, Loader2, ArrowRight, ArrowLeft,
-  CheckCircle2, XCircle, Sparkles, ShieldCheck,
-} from 'lucide-react';
+  CheckCircle2, XCircle, Sparkles, ShieldCheck, Languages } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   AiButton, AiModal, AiModalHeader, AiModalBody, AiModalFooter,
@@ -58,10 +57,6 @@ const STEPS = [
   { n: 2, title: 'Model & Parameters', sub: 'Set preferences' },
   { n: 3, title: 'Review & Save', sub: 'Confirm and finish' },
 ];
-
-/** Quick-pick languages, matching the set the inbox translation panel
- *  offers — "Auto-detect" (empty value) stays the default. */
-const LANGUAGES = ['Auto-detect', 'Malayalam', 'English', 'Tamil', 'Hindi', 'Arabic'];
 
 const SAFETY_OPTIONS = [
   { id: 'strict', label: 'Strict — block anything borderline' },
@@ -259,7 +254,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                     <AiInput
                       type="number"
                       min={50}
-                      max={2048}
+                      max={8192}
                       step={50}
                       value={props.maxTokens}
                       onChange={(e) => props.onMaxTokensChange(Number(e.target.value))}
@@ -268,23 +263,6 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <AiLabel>Reply language</AiLabel>
-                    <Select
-                      value={props.replyLanguage || 'Auto-detect'}
-                      onValueChange={(v) => props.onReplyLanguageChange(!v || v === 'Auto-detect' ? '' : v)}
-                    >
-                      <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 text-[13px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {LANGUAGES.map((l) => (
-                          <SelectItem key={l} value={l}>{l}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <AiHint>Auto-detect replies in whatever language the customer wrote in.</AiHint>
-                  </div>
                   <div className="space-y-1.5">
                     <AiLabel>Safety filter</AiLabel>
                     <Select value={props.safetyFilter} onValueChange={(v) => v && props.onSafetyFilterChange(v)}>
@@ -298,6 +276,18 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                       </SelectContent>
                     </Select>
                     <AiHint>Gemini&apos;s own content filtering threshold.</AiHint>
+                  </div>
+                  <div className="space-y-1.5">
+                    <AiLabel>Reply language</AiLabel>
+                    <div className="flex h-10 items-center gap-2 rounded-xl bg-[#F4F5FA] px-3 ring-1 ring-slate-200/80">
+                      <Languages className="h-3.5 w-3.5 shrink-0 text-[#5B6CF9]" />
+                      <span className="text-[13px] font-medium text-slate-700">Matched to each customer</span>
+                    </div>
+                    <AiHint>
+                      Every reply goes out in the language and script the customer just used — Malayalam script,
+                      Manglish, English, Tamil — and follows them if they switch mid-chat. There is nothing to set,
+                      because choosing one language here would override everyone who writes in another.
+                    </AiHint>
                   </div>
                 </div>
               </>
@@ -316,7 +306,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                     ['Model', modelLabel],
                     ['Temperature', String(props.temperature)],
                     ['Max response tokens', String(props.maxTokens)],
-                    ['Reply language', props.replyLanguage || 'Auto-detect'],
+                    ['Reply language', 'Matched to each customer'],
                     ['Safety filter', SAFETY_OPTIONS.find((o) => o.id === props.safetyFilter)?.label ?? props.safetyFilter],
                   ].map(([k, v]) => (
                     <div key={k} className="flex items-center justify-between gap-4 bg-white px-4 py-2.5">

@@ -626,6 +626,11 @@ async function processMessage(
   const { contentText, mediaUrl, mediaType, mediaFilename, interactiveReplyId, flowReply } =
     await parseMessageContent(message, accessToken)
 
+  // Set when this message is a voice note, so flow dispatch can be held
+  // back until its transcript exists rather than running against an
+  // empty string. See the dispatch block at the end of this function.
+  let pendingVoice: { messageId: string; mediaId: string } | null = null
+
   // Resolve swipe-reply context if present.
   let replyToInternalId: string | null = null
   if (message.context?.id) {
@@ -708,16 +713,12 @@ async function processMessage(
     })
     emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
 
-    // Best-effort, fire-and-forget — never blocks the webhook's
-    // ack-and-return. Silently no-ops if neither Gemini nor OpenAI (the
-    // only two providers that support transcription today) is configured.
+
+    // A voice note's transcription is started below rather than here,
+    // because the flow dispatch has to wait for its result. See the
+    // `pendingVoice` handling further down.
     if (message.type === 'audio' && message.audio?.id) {
-      void transcribeInboundAudio({
-        accountId,
-        messageId: savedMsg.id,
-        mediaId: message.audio.id,
-        accessToken,
-      })
+      pendingVoice = { messageId: savedMsg.id, mediaId: message.audio.id }
     }
 
     // Best-effort, fire-and-forget — same idiom as the transcription call
@@ -821,59 +822,105 @@ async function processMessage(
 
   // ============================================================
   // Flow runner dispatch.
+  //
+  // Everything the dispatch needs is closed over here so it can run
+  // either immediately (the normal case) or after transcription
+  // finishes (a voice note). The behaviour is identical apart from
+  // where the text comes from.
   // ============================================================
-  const flowResult = await dispatchInboundToFlows({
-    accountId,
-    userId: configOwnerUserId,
-    contactId: contactRecord.id,
-    conversationId: conversation.id,
-    channel: 'whatsapp',
-    message:
-      flowReply
-        ? {
-            kind: 'flow_reply',
-            flow_token: flowReply.token,
-            response: flowReply.response,
-            meta_message_id: message.id,
-          }
-        : interactiveReplyId
-        ? {
-            kind: 'interactive_reply',
-            reply_id: interactiveReplyId,
-            reply_title: contentText ?? '',
-            meta_message_id: message.id,
-          }
-        : {
-            kind: 'text',
-            text: contentText ?? message.text?.body ?? '',
-            meta_message_id: message.id,
-          },
-    isFirstInboundMessage,
-  })
-  const flowConsumed = flowResult.consumed
-
-  const automationTriggers: (
-    | 'new_contact_created'
-    | 'first_inbound_message'
-    | 'new_message_received'
-    | 'keyword_match'
-  )[] = []
-  if (!flowConsumed) {
-    automationTriggers.push('new_message_received', 'keyword_match')
-  }
-  if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
-  if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
-  for (const triggerType of automationTriggers) {
-    runAutomationsForTrigger({
+  const dispatchAndRunAutomations = async (overrideText?: string, wasVoice = false) => {
+    const text = overrideText ?? contentText ?? message.text?.body ?? ''
+    const flowResult = await dispatchInboundToFlows({
       accountId,
-      triggerType,
+      userId: configOwnerUserId,
       contactId: contactRecord.id,
-      context: {
-        message_text: inboundText,
-        conversation_id: conversation.id,
-      },
-    }).catch((err) => console.error('[automations] dispatch failed:', err))
+      conversationId: conversation.id,
+      channel: 'whatsapp',
+      message:
+        flowReply
+          ? {
+              kind: 'flow_reply',
+              flow_token: flowReply.token,
+              response: flowReply.response,
+              meta_message_id: message.id,
+            }
+          : interactiveReplyId
+          ? {
+              kind: 'interactive_reply',
+              reply_id: interactiveReplyId,
+              reply_title: contentText ?? '',
+              meta_message_id: message.id,
+            }
+          : {
+              kind: 'text',
+              text,
+              meta_message_id: message.id,
+              was_voice: wasVoice,
+            },
+      isFirstInboundMessage,
+    })
+
+    const automationTriggers: (
+      | 'new_contact_created'
+      | 'first_inbound_message'
+      | 'new_message_received'
+      | 'keyword_match'
+    )[] = []
+    if (!flowResult.consumed) {
+      automationTriggers.push('new_message_received', 'keyword_match')
+    }
+    if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
+    if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
+    for (const triggerType of automationTriggers) {
+      runAutomationsForTrigger({
+        accountId,
+        triggerType,
+        contactId: contactRecord.id,
+        context: {
+          // Automations keyed on message text need the transcript too —
+          // a keyword trigger that works when typed should also work
+          // when spoken.
+          message_text: overrideText ?? inboundText,
+          conversation_id: conversation.id,
+        },
+      }).catch((err) => console.error('[automations] dispatch failed:', err))
+    }
   }
+
+  if (pendingVoice) {
+    // A voice note carries no text at this point — content_text is
+    // "[audio]" — so dispatching now would hand the assistant an empty
+    // message and it would reply to nothing. That was the behaviour
+    // until this change, and it made voice notes look like a model
+    // failure when they were a sequencing one.
+    //
+    // Detached deliberately: the webhook still acks immediately, which
+    // is what Meta requires. The customer waits a second or two longer
+    // for a reply to a voice note than to a text, which is the correct
+    // trade.
+    const voice = pendingVoice
+    void (async () => {
+      try {
+        const transcript = await transcribeInboundAudio({
+          accountId,
+          messageId: voice.messageId,
+          mediaId: voice.mediaId,
+          accessToken,
+        })
+        // No transcript means no provider key, or the audio failed to
+        // download. Dispatching an empty string would restart the exact
+        // bug this exists to fix, so the message is simply left in the
+        // inbox for a human — which is what already happens for any
+        // other media type.
+        if (transcript?.trim()) await dispatchAndRunAutomations(transcript, true)
+      } catch (err) {
+        console.error('[voice-dispatch] failed:', err instanceof Error ? err.message : err)
+      }
+    })()
+    return
+  }
+
+  await dispatchAndRunAutomations()
 }
 
 async function parseMessageContent(

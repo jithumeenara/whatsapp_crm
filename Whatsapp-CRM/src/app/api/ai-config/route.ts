@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { TTS_VOICES } from '@/lib/ai/tts-voices'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
@@ -72,6 +73,11 @@ export async function GET() {
     auto_sync_website: config.auto_sync_website,
     admin_system_prompt: config.admin_system_prompt,
     customer_context_enabled: config.customer_context_enabled,
+    response_validation_enabled: config.response_validation_enabled,
+    composite_confidence_enabled: config.composite_confidence_enabled,
+    voice_reply_enabled: config.voice_reply_enabled,
+    voice_name: config.voice_name,
+    voice_max_chars: config.voice_max_chars,
     // Lets the Settings UI show "embeddings ready" vs "not set up yet"
     // (e.g. to explain why the Regenerate button matters) without
     // exposing anything sensitive — has_key above already covers that.
@@ -118,6 +124,11 @@ export async function PUT(req: Request) {
     auto_sync_website,
     admin_system_prompt,
     customer_context_enabled,
+    response_validation_enabled,
+    composite_confidence_enabled,
+    voice_reply_enabled,
+    voice_name,
+    voice_max_chars,
   } = body as {
     active_provider?: string
     fallback_provider?: string | null
@@ -142,6 +153,11 @@ export async function PUT(req: Request) {
     auto_sync_website?: boolean
     admin_system_prompt?: string | null
     customer_context_enabled?: boolean
+    response_validation_enabled?: boolean
+    composite_confidence_enabled?: boolean
+    voice_reply_enabled?: boolean
+    voice_name?: string
+    voice_max_chars?: number
   }
 
   const existing = await prisma.aiConfig.findUnique({
@@ -178,7 +194,7 @@ export async function PUT(req: Request) {
     fallback_provider: fallback_provider === undefined ? existing?.fallback_provider ?? null : fallback_provider,
     provider_keys: mergedKeys as unknown as Prisma.InputJsonValue,
     temperature: temperature != null ? Number(temperature) : (existing?.temperature ?? 0.7),
-    max_tokens: max_tokens != null ? Number(max_tokens) : (existing?.max_tokens ?? 500),
+    max_tokens: max_tokens != null ? Number(max_tokens) : (existing?.max_tokens ?? 2048),
     system_prompt: system_prompt !== undefined ? system_prompt : (existing?.system_prompt ?? null),
     training_data:
       training_data !== undefined
@@ -234,6 +250,27 @@ export async function PUT(req: Request) {
       customer_context_enabled !== undefined
         ? customer_context_enabled
         : (existing?.customer_context_enabled ?? true),
+    response_validation_enabled:
+      response_validation_enabled !== undefined
+        ? response_validation_enabled
+        : (existing?.response_validation_enabled ?? true),
+    composite_confidence_enabled:
+      composite_confidence_enabled !== undefined
+        ? composite_confidence_enabled
+        : (existing?.composite_confidence_enabled ?? true),
+    voice_reply_enabled:
+      voice_reply_enabled !== undefined ? voice_reply_enabled : (existing?.voice_reply_enabled ?? true),
+    // Only a name the API actually accepts — an unknown voice is
+    // rejected by Gemini at send time, which would turn every voice
+    // reply into a silent fallback to text.
+    voice_name:
+      voice_name && TTS_VOICES.some((v) => v.id === voice_name)
+        ? voice_name
+        : (existing?.voice_name ?? 'Kore'),
+    voice_max_chars:
+      voice_max_chars !== undefined
+        ? Math.min(4000, Math.max(100, Number(voice_max_chars)))
+        : (existing?.voice_max_chars ?? 700),
   }
 
   const config = await prisma.aiConfig.upsert({

@@ -52,6 +52,27 @@ export async function loadKnowledge(
   aiConfigId: string,
   audience: KnowledgeAudience = 'customer',
 ): Promise<LoadedKnowledge> {
+  // Entries are filtered by their validity window at load time, not
+  // ranked down afterwards.
+  //
+  // This matters more than it looks. Last term's fee list and this
+  // term's are equally retrievable without it, and the model answers
+  // with whichever happens to embed closer to the question — producing
+  // an answer that is fluent, specific and confidently out of date,
+  // which is the most damaging kind of wrong. Excluding the expired row
+  // from the query means it cannot be quoted at all, the same reasoning
+  // that makes the audience filter a real boundary rather than advice.
+  //
+  // Both bounds are null for the overwhelming majority of entries, and a
+  // null bound means "no limit that way".
+  const now = new Date()
+  const withinValidityWindow = {
+    AND: [
+      { OR: [{ effective_from: null }, { effective_from: { lte: now } }] },
+      { OR: [{ effective_until: null }, { effective_until: { gte: now } }] },
+    ],
+  }
+
   const items = await prisma.aiKnowledgeItem.findMany({
     where: {
       ai_config_id: aiConfigId,
@@ -60,6 +81,7 @@ export async function loadKnowledge(
       // call site that forgets to pass an audience gets the safe,
       // restrictive behavior rather than accidentally widening it.
       ...(audience === 'customer' ? { audience: { in: CUSTOMER_VISIBLE } } : {}),
+      ...withinValidityWindow,
     },
     select: {
       id: true,
@@ -70,8 +92,14 @@ export async function loadKnowledge(
       answer: true,
       content: true,
       updated_at: true,
+      department: true,
+      priority: true,
     },
-    orderBy: { created_at: 'asc' },
+    // Priority first, so an entry marked important wins a tie against
+    // one that merely embeds slightly closer. created_at breaks the
+    // remaining ties, keeping chunk order stable across loads — which
+    // the content-hash cache depends on.
+    orderBy: [{ priority: 'desc' }, { created_at: 'asc' }],
   })
 
   const qaPairs: QaPair[] = []
@@ -98,5 +126,15 @@ export async function loadKnowledge(
   // Audience is part of the version: the customer and admin scopes
   // return different sets, and a shared cache key would let one be
   // served the other's chunked form.
-  return { qaPairs, documents, version: `${audience}:${items.length}:${newest}` }
+  //
+  // The hour is part of it too, because of the validity windows above.
+  // Count-plus-newest-mtime does not change when one entry expires at
+  // the same moment another becomes effective — the cache would then
+  // keep serving chunks built from an entry that is no longer valid,
+  // which is exactly the stale-fee-list failure the windows exist to
+  // prevent. Hour granularity bounds that to an hour and costs one
+  // rebuild per hour on an unchanged knowledge base; windows are set to
+  // a date in practice, never to a minute.
+  const hourBucket = Math.floor(Date.now() / 3_600_000)
+  return { qaPairs, documents, version: `${audience}:${items.length}:${newest}:${hourBucket}` }
 }

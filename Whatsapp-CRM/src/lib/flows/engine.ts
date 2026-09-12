@@ -38,8 +38,18 @@ import { prisma } from "@/lib/db";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
-import { generateAiReplyWithFallback, getProviderKeys } from "@/lib/ai/providers/registry";
-import { markdownToWhatsApp } from "@/lib/whatsapp/markdown-to-whatsapp";
+import { getProviderKeys } from "@/lib/ai/providers/registry";
+import { generateCustomerReply } from "@/lib/ai/customer-agent";
+import { CUSTOMER_TOOL_INSTRUCTION } from "@/lib/ai/customer-tools";
+import { buildLanguageBlock } from "@/lib/ai/language";
+import { assessConfidence } from "@/lib/ai/confidence";
+import { validateReply } from "@/lib/ai/validator";
+import { buildHandoffNote } from "@/lib/ai/handoff-context";
+import { scanActionTokens } from "@/lib/ai/action-tokens";
+import { checkSafetyGuard } from "@/lib/ai/safety-guard";
+import { synthesizeSpeech } from "@/lib/ai/tts";
+import { engineSendVoiceNote } from "@/lib/flows/meta-send";
+import { markdownToWhatsApp, WHATSAPP_REPLY_STYLE } from "@/lib/whatsapp/markdown-to-whatsapp";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import { loadKnowledge } from "@/lib/ai/knowledge-store";
 import { recordAiUsage } from "@/lib/ai/usage";
@@ -1469,6 +1479,10 @@ async function advanceFromNodeKey(
         history_depth?: number;
         max_tokens?: number;
       };
+      // Hoisted above the try so the catch block can still say what the
+      // customer asked when generation fails.
+      const lastUserMessage =
+        inboundMessage?.kind === "text" ? inboundMessage.text : "";
       try {
         const aiConfig = await prisma.aiConfig.findUnique({
           where: { account_id: run.account_id },
@@ -1479,8 +1493,10 @@ async function advanceFromNodeKey(
           return { outcome: "completed" };
         }
 
-        const lastUserMessage =
-          inboundMessage?.kind === "text" ? inboundMessage.text : "";
+        // Set by the webhook once a voice note has been transcribed —
+        // the customer chose to speak, so the reply should speak back.
+        const inboundWasVoice =
+          inboundMessage?.kind === "text" && inboundMessage.was_voice === true;
 
         // Real conversation history — the single biggest accuracy gap
         // this replaces: previously only the current message was ever
@@ -1550,15 +1566,10 @@ async function advanceFromNodeKey(
           ...(useSemantic ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey: geminiApiKey! } } : {}),
         });
 
-        // Code-enforced confidence guardrail — distinct from
-        // fallback_answer/escalation_topics below, which are prompt-level
-        // guidance the model can still ignore. This one never calls the
-        // model at all when confidence is too low: it sends a holding
-        // message and hands the conversation to a human, the same
-        // real handoff the `handoff` node performs. Opt-in
-        // (low_confidence_handoff_enabled) so existing accounts see zero
-        // behavior change until the owner turns this on in Settings.
-        if (aiConfig.low_confidence_handoff_enabled && selected.confidence < aiConfig.confidence_threshold) {
+        // Hands the conversation to a person, with a note they can act
+        // on. Used for both of the code-enforced handoffs below, so the
+        // holding message and the logging stay identical between them.
+        const handOverToHuman = async (note: string, reason: string) => {
           const holdingMessage =
             aiConfig.low_confidence_message?.trim() ||
             "Let me connect you with a team member who can help with that.";
@@ -1572,18 +1583,96 @@ async function advanceFromNodeKey(
           await logEvent(run.id, "message_sent", node.node_key, {
             node_type: "ai_reply",
             whatsapp_message_id,
-            reason: "low_confidence_handoff",
+            reason,
           });
           // executeHandoff logs its own "handoff" event (assign/note) —
-          // the confidence numbers ride along in `note` rather than a
-          // second, duplicate log call.
+          // the detail rides along in `note` rather than a second,
+          // duplicate log call.
+          await executeHandoff(
+            run,
+            { assign_to: aiConfig.low_confidence_assign_to ?? undefined, note },
+            node.node_key,
+            reason,
+          );
+        };
+
+        // Requests no account should have to configure its way out of:
+        // asking the assistant to reveal its instructions, asking for
+        // another customer's details, or asking for a guarantee nobody
+        // can give. The evaluation suite showed all of these being
+        // answered happily at 0.59-0.62 confidence, because they are
+        // well-formed questions that match the knowledge base — no
+        // threshold catches them, and a prompt rule is exactly what the
+        // first category is trying to defeat. The model is not asked.
+        const safetyMatch = checkSafetyGuard(lastUserMessage);
+        if (safetyMatch) {
+          const { whatsapp_message_id: safetyMsgId } = await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: safetyMatch.customerMessage,
+          });
+          await logEvent(run.id, "message_sent", node.node_key, {
+            node_type: "ai_reply",
+            whatsapp_message_id: safetyMsgId,
+            reason: `safety_${safetyMatch.category}`,
+          });
           await executeHandoff(
             run,
             {
               assign_to: aiConfig.low_confidence_assign_to ?? undefined,
-              note: `AI confidence ${selected.confidence.toFixed(2)} below threshold ${aiConfig.confidence_threshold.toFixed(2)}`,
+              note: buildHandoffNote({
+                reason: "escalation_topic",
+                customerMessage: lastUserMessage,
+                matchedTopic: safetyMatch.reason,
+              }),
             },
             node.node_key,
+            "ai_reply_safety_guard",
+          );
+          return { outcome: "handed_off" };
+        }
+
+        // Confidence is a blend, not just retrieval similarity.
+        //
+        // Similarity alone is blind to the two most common ways a reply
+        // goes wrong while retrieval looks healthy: a question so vague
+        // it embeds close to everything, and a customer who has now
+        // asked the same thing three times. Both are visible here.
+        // composite_confidence_enabled falls back to the old single
+        // signal, so the behaviour can be compared rather than argued
+        // about.
+        const recentCustomerMessages = conversationHistory
+          .filter((m) => m.role === "user")
+          .map((m) => m.text);
+        const confidence = assessConfidence({
+          retrievalConfidence: selected.confidence,
+          customerMessage: lastUserMessage,
+          recentCustomerMessages,
+          knowledgeEmpty: selected.qaPairs.length === 0 && selected.documentChunks.length === 0,
+        });
+        const effectiveConfidence = aiConfig.composite_confidence_enabled
+          ? confidence.score
+          : selected.confidence;
+
+        // Code-enforced confidence guardrail — distinct from
+        // fallback_answer/escalation_topics below, which are prompt-level
+        // guidance the model can still ignore. This one never calls the
+        // model at all when confidence is too low. Opt-in
+        // (low_confidence_handoff_enabled) so existing accounts see zero
+        // behavior change until the owner turns this on in Settings.
+        if (aiConfig.low_confidence_handoff_enabled && effectiveConfidence < aiConfig.confidence_threshold) {
+          await handOverToHuman(
+            buildHandoffNote({
+              reason: "low_confidence",
+              customerMessage: lastUserMessage,
+              confidence,
+              knowledgeUsed: [
+                ...selected.qaPairs.map((q) => q.question),
+                ...selected.documentChunks.map((d) => d.title),
+              ],
+            }),
             "ai_reply_low_confidence",
           );
           return { outcome: "handed_off" };
@@ -1635,26 +1724,49 @@ async function advanceFromNodeKey(
         if (cfg.system_prompt) {
           promptParts.push(`Additionally, for this step: ${cfg.system_prompt}`);
         }
-        // Reply language — prompt-level, because no provider exposes a
-        // hard output-language switch. Unset (the default) deliberately
-        // adds nothing: "reply in whatever language the customer wrote
-        // in" is both the model's natural behavior and the right one for
-        // a customer base that mixes Malayalam, English and Manglish
-        // inside a single thread.
+        // Language is worked out from what the customer actually wrote,
+        // per message, rather than pinned in settings. A language chosen
+        // during setup is a guess made before anybody has written in, and
+        // it then overrides their real language forever after. The block
+        // combines a certain signal (Unicode script) with rules for the
+        // genuinely ambiguous parts — romanized Malayalam, threads that
+        // mix two languages, a customer who switches mid-conversation.
+        //
+        // reply_language is still honoured when explicitly set, so an
+        // account that deliberately wants one fixed language can have it.
         if (aiConfig.reply_language) {
           promptParts.push(
             `Always reply in ${aiConfig.reply_language}, regardless of which language the customer writes in.`,
           );
+        } else {
+          promptParts.push(buildLanguageBlock(lastUserMessage));
         }
+
+        // Lookups are only offered when there is a contact to scope them
+        // to. Without one there is no "this customer" to be safe about,
+        // and the tools must not run at all.
+        const customerToolContext = run.contact_id
+          ? { accountId: run.account_id, contactId: run.contact_id }
+          : null;
+        if (customerToolContext) promptParts.push(CUSTOMER_TOOL_INSTRUCTION);
+        // Appended last so it is the most recent instruction the model
+        // reads, and applies regardless of what the account wrote above.
+        promptParts.push(WHATSAPP_REPLY_STYLE);
         const systemPrompt = promptParts.join("\n\n") || "You are a helpful assistant.";
 
         const aiStartedAt = Date.now();
-        const aiResult = await generateAiReplyWithFallback(
-          { ...aiConfig, max_tokens: cfg.max_tokens ?? aiConfig.max_tokens },
+        // Routed through the customer agent so the model can look up this
+        // customer's own records — their enquiry status, appointments,
+        // orders — which no knowledge document can answer. Falls straight
+        // back to the provider-agnostic path when the account isn't on
+        // Gemini or has no contact to scope lookups to.
+        const aiResult = await generateCustomerReply({
+          aiConfig: { ...aiConfig, max_tokens: cfg.max_tokens ?? aiConfig.max_tokens },
           systemPrompt,
-          lastUserMessage,
+          userMessage: lastUserMessage,
           conversationHistory,
-        );
+          toolContext: customerToolContext,
+        });
         const { reply: rawReply, truncated } = aiResult;
         // Not awaited: this is the customer-facing reply path, and a
         // usage-analytics insert must never sit between the model
@@ -1675,7 +1787,113 @@ async function advanceFromNodeKey(
         // real customers. Converted once here and reused below, so
         // save_response_to also stores WhatsApp-ready text rather than
         // raw Markdown a later node might re-send unconverted.
-        const reply = markdownToWhatsApp(rawReply);
+        // An account's own prompt may tell the model to append a
+        // directive like [ACTION: TRIGGER_HUMAN_ADMIN]. Until now that
+        // literal string was sent to the customer, because nothing knew
+        // it meant anything. It is stripped here and honoured as a real
+        // handoff, which is plainly what whoever wrote that instruction
+        // intended. Citation artifacts from pasted PDFs ([cite: 1]) are
+        // removed at the same time.
+        const scanned = scanActionTokens(rawReply);
+        const reply = markdownToWhatsApp(scanned.cleanedText);
+        const modelAskedForHuman = scanned.actions.includes("handoff");
+
+        // Last gate before a real person reads this.
+        //
+        // A model with no fee list does not say "I don't know" — it
+        // produces a fluent, specific, plausible number, and the customer
+        // acts on it. Prompt instructions reduce how often that happens
+        // and cannot stop it. Every figure, date and contact detail in
+        // the reply is checked against the material it was supposed to
+        // come from; anything unsupported is a reason to fetch a person
+        // rather than something to send and hope about.
+        if (aiConfig.response_validation_enabled) {
+          const validation = validateReply({
+            reply,
+            contextParts: [
+              knowledgeBlock,
+              customerContext,
+              formatCompanyBlock(companyProfile, "customer"),
+              // Tool results are legitimate sources: a price that came
+              // from the catalog is supported even though it appears in
+              // no knowledge document.
+              ...aiResult.toolOutputs,
+              // The customer's own message and the recent thread, so
+              // quoting their own phone number or order number back to
+              // them doesn't trip the check.
+              lastUserMessage,
+              ...conversationHistory.map((m) => m.text),
+            ],
+          });
+          if (!validation.ok) {
+            await logEvent(run.id, "error", node.node_key, {
+              node_type: "ai_reply",
+              reason: "ai_reply_blocked_unsupported_details",
+              issues: validation.issues,
+            });
+            await handOverToHuman(
+              buildHandoffNote({
+                reason: "unsupported_details",
+                customerMessage: lastUserMessage,
+                draftReply: reply,
+                validation,
+                confidence,
+                toolsUsed: aiResult.toolsUsed,
+                knowledgeUsed: [
+                  ...selected.qaPairs.map((q) => q.question),
+                  ...selected.documentChunks.map((d) => d.title),
+                ],
+              }),
+              "ai_reply_unsupported_details",
+            );
+            return { outcome: "handed_off" };
+          }
+        }
+
+        // Answer a voice note with a voice note.
+        //
+        // Best-effort by design: if speech synthesis fails for any
+        // reason the text reply still goes out, because a slightly wrong
+        // format beats silence. Long answers stay as text regardless —
+        // a spoken two-minute reply cannot be skimmed, searched or
+        // screenshotted, which is exactly what someone does with fees
+        // and dates.
+        let voiceSent = false;
+        if (
+          inboundWasVoice &&
+          aiConfig.voice_reply_enabled &&
+          geminiApiKey &&
+          reply.length <= aiConfig.voice_max_chars
+        ) {
+          try {
+            const speech = await synthesizeSpeech({
+              apiKey: geminiApiKey,
+              text: reply,
+              voiceName: aiConfig.voice_name,
+            });
+            const sent = await engineSendVoiceNote({
+              accountId: run.account_id,
+              userId: run.user_id,
+              conversationId: run.conversation_id!,
+              contactId: run.contact_id!,
+              audio: speech.buffer,
+              mimeType: speech.mimeType,
+              transcript: reply,
+            });
+            await logEvent(run.id, "message_sent", node.node_key, {
+              node_type: "ai_reply",
+              whatsapp_message_id: sent.whatsapp_message_id,
+              format: "voice",
+              duration_sec: Math.round(speech.durationSec),
+            });
+            voiceSent = true;
+          } catch (err) {
+            console.error(
+              "[ai_reply] voice synthesis failed, sending text instead:",
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }
         // `reply` still gets sent as-is otherwise — a genuine (if
         // incomplete) answer beats sending nothing, and a real customer
         // should never see an internal debug note in their WhatsApp
@@ -1683,13 +1901,25 @@ async function advanceFromNodeKey(
         // visible in flow-run history — an admin seeing this repeatedly
         // for one node is the signal to raise that node's Max Response
         // Tokens.
-        const { whatsapp_message_id } = await engineSendText({
-          accountId: run.account_id,
-          userId: run.user_id,
-          conversationId: run.conversation_id!,
-          contactId: run.contact_id!,
-          text: reply,
-        });
+        //
+        // Skipped when the same answer already went out as speech — the
+        // voice message carries the text as its stored transcript, so
+        // nothing is lost from the thread, and sending both would have
+        // the customer read what they just listened to.
+        if (!voiceSent) {
+          const { whatsapp_message_id } = await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: reply,
+          });
+          await logEvent(run.id, "message_sent", node.node_key, {
+            node_type: "ai_reply",
+            whatsapp_message_id,
+            ...(truncated ? { truncated: true } : {}),
+          });
+        }
         if (cfg.save_response_to) {
           const newVars = { ...run.vars, [cfg.save_response_to]: reply };
           await prisma.flowRun.update({
@@ -1698,16 +1928,76 @@ async function advanceFromNodeKey(
           });
           run = { ...run, vars: newVars };
         }
-        await logEvent(run.id, "message_sent", node.node_key, {
-          node_type: "ai_reply",
-          whatsapp_message_id,
-          ...(truncated ? { truncated: true } : {}),
-        });
+
+        // The model itself asked for a person, via a directive the
+        // account's own prompt told it to emit.
+        //
+        // Handed off *after* sending, and with no holding message: the
+        // instruction says to append the token **to your reply**, so the
+        // reply is meant to go out. In live testing that reply was
+        // "I have flagged your request — could you share your
+        // registration ID?", which is genuinely useful to the customer
+        // and would be thrown away by treating this like a
+        // low-confidence stop. executeHandoff still assigns the
+        // conversation and writes the note, so a person picks it up.
+        if (modelAskedForHuman) {
+          await executeHandoff(
+            run,
+            {
+              assign_to: aiConfig.low_confidence_assign_to ?? undefined,
+              note: buildHandoffNote({
+                reason: "customer_requested",
+                customerMessage: lastUserMessage,
+                draftReply: reply,
+                confidence,
+                toolsUsed: aiResult.toolsUsed,
+                knowledgeUsed: [
+                  ...selected.qaPairs.map((q) => q.question),
+                  ...selected.documentChunks.map((d) => d.title),
+                ],
+              }),
+            },
+            node.node_key,
+            "ai_reply_action_token",
+          );
+          return { outcome: "handed_off" };
+        }
       } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
         await logEvent(run.id, "error", node.node_key, {
           reason: "ai_reply_failed",
-          detail: err instanceof Error ? err.message : String(err),
+          detail,
         });
+        // Hand the conversation to a person rather than ending the run.
+        //
+        // Ending it sent the customer nothing at all, and the evaluation
+        // suite showed exactly when that happens: an angry message
+        // ("this is the third time I am asking... useless service")
+        // tripped the provider's own safety filter, generation threw,
+        // and the run quietly died. The customer most in need of a reply
+        // was the one guaranteed to get silence. A failure here is
+        // precisely when a human should be looking at the thread.
+        try {
+          if (run.conversation_id && run.contact_id) {
+            await executeHandoff(
+              run,
+              {
+                note:
+                  buildHandoffNote({
+                    reason: "low_confidence",
+                    customerMessage: lastUserMessage,
+                  }) + `
+
+The assistant could not generate a reply: ${detail}`,
+              },
+              node.node_key,
+              "ai_reply_generation_failed",
+            );
+            return { outcome: "handed_off" };
+          }
+        } catch (handoffErr) {
+          console.error("[ai_reply] handoff after generation failure also failed:", handoffErr);
+        }
         await endRun(run.id, "failed", "ai_reply_failed");
         return { outcome: "completed" };
       }

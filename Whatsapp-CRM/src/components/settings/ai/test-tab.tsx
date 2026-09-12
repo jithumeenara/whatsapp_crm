@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Send, Loader2, Sparkles, RotateCcw, AlertTriangle, Database, Users, MessageSquare,
   BookOpen, BarChart3, Server, ShieldCheck, Mic, MicOff, Bot, UserRound, CheckCircle2, ChevronRight,
-  Volume2, VolumeX,
+  Volume2, VolumeX, ArrowUp,
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -49,6 +49,10 @@ export interface TestTabProps {
   replyLanguage: string;
   unsavedApiKey: string;
   semanticSearchAvailable: boolean;
+  /** Raises the token ceiling and saves, straight from the truncation
+   *  warning — the alternative is sending someone to another screen to
+   *  change one number. */
+  onRaiseMaxTokens?: (value: number) => void;
 }
 
 const DATA_ACCESS = [
@@ -417,10 +421,22 @@ export function TestTab(props: TestTabProps) {
                 </div>
 
                 {m.role === 'ai' && m.truncated && (
-                  <p className="mt-1 flex items-start gap-1.5 text-[11px] text-amber-600">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-                    Cut off — hit Max Response Tokens ({props.maxTokens}). Raise it in Reconfigure for the full reply.
-                  </p>
+                  <div className="mt-1.5 rounded-xl bg-amber-50 px-3 py-2 ring-1 ring-amber-500/15">
+                    <p className="flex items-start gap-1.5 text-[11.5px] font-medium text-amber-800">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                      Cut off at {props.maxTokens.toLocaleString()} tokens — the model had more to say.
+                    </p>
+                    {props.onRaiseMaxTokens && props.maxTokens < 8192 && (
+                      <button
+                        type="button"
+                        onClick={() => props.onRaiseMaxTokens?.(Math.min(8192, Math.max(2048, props.maxTokens * 2)))}
+                        className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-900 ring-1 ring-amber-500/25 transition-colors hover:bg-amber-100"
+                      >
+                        <ArrowUp className="h-3 w-3" />
+                        Raise to {Math.min(8192, Math.max(2048, props.maxTokens * 2)).toLocaleString()} and save
+                      </button>
+                    )}
+                  </div>
                 )}
 
                 {m.role === 'ai' && m.mode === 'admin' && m.toolsUsed && m.toolsUsed.length > 0 && (

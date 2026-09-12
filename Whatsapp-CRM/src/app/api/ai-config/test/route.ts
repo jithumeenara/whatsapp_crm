@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { PROVIDERS, generateAiReply, getProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { markdownToWhatsApp } from '@/lib/whatsapp/markdown-to-whatsapp'
+import { markdownToWhatsApp, WHATSAPP_REPLY_STYLE } from '@/lib/whatsapp/markdown-to-whatsapp'
 import { loadKnowledge } from '@/lib/ai/knowledge-store'
 import { loadCompanyProfile, formatCompanyBlock } from '@/lib/ai/company-profile'
 import { recordAiUsage } from '@/lib/ai/usage'
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
         model: resolvedModel,
         baseUrl: base_url || (providerId === 'deepseek' ? 'https://api.deepseek.com' : undefined),
         temperature: temperature ?? 0.7,
-        maxTokens: max_tokens ?? 500,
+        maxTokens: max_tokens ?? 2048,
         systemPrompt,
         safetyFilter: safety_filter,
       },
@@ -199,6 +199,9 @@ function buildTestSystemPrompt(
   if (companyBlock) parts.push(companyBlock)
   if (systemPrompt) parts.push(systemPrompt)
   if (knowledgeBlock) parts.push(knowledgeBlock)
+  // Same style rule the live reply path appends, so the preview shows
+  // the shape a customer actually receives.
+  parts.push(WHATSAPP_REPLY_STYLE)
   // Same instruction the real ai_reply node adds (engine.ts) — this
   // screen is a preview of production behavior, so it has to apply the
   // same language rule rather than diverging from it.

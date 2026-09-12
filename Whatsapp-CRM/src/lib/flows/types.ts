@@ -392,10 +392,20 @@ export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
 export type ParsedInbound =
   | {
       kind: "text";
-      /** The user's typed message body. */
+      /** The user's typed message body — or, for a voice note, its
+       *  transcript. */
       text: string;
       /** Meta's `messages[0].id` — used for idempotency. */
       meta_message_id: string;
+      /** True when this text is the transcript of a voice note rather
+       *  than something the customer typed.
+       *
+       *  Carried through so the assistant can answer in the same form
+       *  the customer chose. Somebody who records audio is usually doing
+       *  it because typing is inconvenient — for them, or in their
+       *  language — and a wall of text back ignores what they just told
+       *  you about themselves. */
+      was_voice?: boolean;
     }
   | {
       kind: "interactive_reply";

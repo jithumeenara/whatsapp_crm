@@ -21,13 +21,13 @@ export async function transcribeInboundAudio(args: {
    *  webhook handler already has this decrypted for the inbound-message
    *  send path, no reason to decrypt it a second time here. */
   accessToken: string
-}): Promise<void> {
+}): Promise<string | null> {
   try {
     const aiConfig = await prisma.aiConfig.findUnique({ where: { account_id: args.accountId } })
-    if (!aiConfig) return // no AI configured at all — nothing to transcribe with
+    if (!aiConfig) return null // no AI configured at all — nothing to transcribe with
 
     const picked = pickTranscriptionProvider(getProviderKeys(aiConfig))
-    if (!picked) return // only Gemini/OpenAI support transcription; neither is configured
+    if (!picked) return null // only Gemini/OpenAI support transcription; neither is configured
 
     const { url, mimeType } = await getMediaUrl({ mediaId: args.mediaId, accessToken: args.accessToken })
     const { buffer } = await downloadMedia({ downloadUrl: url, accessToken: args.accessToken })
@@ -42,14 +42,19 @@ export async function transcribeInboundAudio(args: {
     const updated = await prisma.message.update({
       where: { id: args.messageId },
       // Mirrored into content_text so reply-quote previews and the
-      // conversation list show real content instead of "[Audio]" — this
-      // deliberately does NOT re-run automations/flow dispatch for this
-      // message; that already happened (or didn't) at inbound time.
+      // conversation list show real content instead of "[Audio]".
+      //
+      // Flow dispatch for an audio message is deliberately deferred
+      // until after this returns (see the webhook's processMessage) —
+      // dispatching at inbound time handed the assistant an empty
+      // string, so every voice note got a reply to nothing.
       data: { transcript, content_text: transcript },
     })
 
     emitToAccount(args.accountId, 'message', { eventType: 'UPDATE', new: updated, old: {} })
+    return transcript
   } catch (err) {
     console.error('[audio-transcription] failed:', err instanceof Error ? err.message : err)
+    return null
   }
 }

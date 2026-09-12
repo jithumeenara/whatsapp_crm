@@ -22,6 +22,10 @@ export type UsageFeature =
   | 'embedding'
   | 'translation'
   | 'validation'
+  /// Grading a run of the evaluation suite. Tracked separately from
+  /// 'test' so a suite run's cost is visible as its own line rather
+  /// than blurred into the Test AI screen's usage.
+  | 'eval_grading'
 
 export interface TokenCounts {
   inputTokens: number

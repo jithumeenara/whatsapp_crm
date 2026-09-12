@@ -44,5 +44,65 @@ export function markdownToWhatsApp(text: string): string {
   // does render those).
   out = out.replace(/(?<!`)`([^`\n]+)`(?!`)/g, '$1')
 
+  out = breakOutInlineLists(out)
+
+  // Three or more blank lines in a row is the model padding, not
+  // structure; collapse to one blank line.
+  out = out.replace(/\n{3,}/g, '\n\n')
+
+  return out.trim()
+}
+
+/**
+ * Moves list items that the model wrote inline onto their own lines.
+ *
+ * Real example from a live reply: "...could you please let us know: 1.
+ * *Which organization* do you belong to? 2. *Which training program*..."
+ * — in a chat bubble that is an unreadable wall. The items are the
+ * structure of the message and need to look like it.
+ *
+ * Conservative by design. A numbered item only counts when it follows
+ * sentence-ending punctuation or a colon AND is followed by a capital
+ * letter or a bold marker, so ordinary prose survives untouched:
+ * "invoice No. 4 was paid", "arrive at 9. 30 people expected", and any
+ * decimal or version number are all left alone. When in doubt it does
+ * nothing, because mangling a correct message is worse than leaving an
+ * ugly one.
+ */
+function breakOutInlineLists(text: string): string {
+  let out = text
+
+  // "…: 1. Something"  /  "…? 2. *Something*"  ->  each on its own line.
+  out = out.replace(
+    /([:.?!*])[ \t]+(\d{1,2})\.[ \t]+(?=[A-Z\u0D00-\u0D7F*])/g,
+    (_match, punctuation: string, number: string) => `${punctuation}\n${number}. `,
+  )
+
+  // Same for dash bullets written inline after a colon.
+  out = out.replace(/([:.?!])[ \t]+-[ \t]+(?=\S)/g, (_m, punctuation: string) => `${punctuation}\n- `)
+
   return out
 }
+
+/**
+ * How a reply should be shaped for a messaging app, appended to every
+ * customer-facing prompt.
+ *
+ * Deliberately about form, never content — an account's own prompt owns
+ * what to say, and this owns how it looks on a phone. Without it the
+ * default is a single dense paragraph with numbered questions buried
+ * mid-sentence, which is unreadable in a chat bubble and reads as
+ * machine-generated.
+ *
+ * Kept short on purpose: every line here competes for the same context
+ * budget as the knowledge the answer actually comes from.
+ */
+export const WHATSAPP_REPLY_STYLE = [
+  "HOW TO WRITE THE REPLY (this is about format, not content):",
+  "- Keep it short. Two or three sentences is usually enough. This is a chat message, not an email.",
+  "- Ask at most one question per message. If you need several answers, ask the most important one first.",
+  "- Put each list item on its own line, starting with a dash. Never write a numbered list inside a sentence.",
+  "- Use a blank line between ideas so the message is skimmable on a phone.",
+  "- No headings, no tables, no bullet characters other than a dash. Use *bold* sparingly, for one key phrase at most.",
+  "- Write plainly, the way a helpful colleague would type it. No corporate phrasing, no restating the question back.",
+].join("\n")

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Bot, BookOpen, Save, Loader2,
   CheckCircle2, XCircle, Send,
-  Sparkles, Settings2, BarChart3,
+  Sparkles, Settings2, BarChart3, FlaskConical,
 } from 'lucide-react';
 import { ProviderLanding } from './ai/provider-landing';
 import { ConfigureWizard } from './ai/configure-wizard';
@@ -13,6 +13,7 @@ import { TrainingTab } from './ai/training-tab';
 import { AdvancedFeatures } from './ai/advanced-features';
 import { TestTab } from './ai/test-tab';
 import { UsageTab } from './ai/usage-tab';
+import { EvalTab } from './ai/eval-tab';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
@@ -75,11 +76,12 @@ const AI_TABS = [
   { value: 'overview', label: 'Overview', Icon: Bot },
   { value: 'training', label: 'AI Training', Icon: BookOpen },
   { value: 'test', label: 'Test AI', Icon: Send },
+  { value: 'accuracy', label: 'Accuracy', Icon: FlaskConical },
   { value: 'usage', label: 'Usage', Icon: BarChart3 },
 ] as const;
 
 export function AiConfig() {
-  const [tab, setTab] = useState<'overview' | 'training' | 'test' | 'usage'>('overview');
+  const [tab, setTab] = useState<'overview' | 'training' | 'test' | 'accuracy' | 'usage'>('overview');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -92,7 +94,7 @@ export function AiConfig() {
   const [providerFields, setProviderFields] = useState<Record<string, ProviderFieldState>>(emptyProviderFields);
 
   const [temperature, setTemperature] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(500);
+  const [maxTokens, setMaxTokens] = useState(2048);
   // '' = auto-detect (reply in the customer's own language) — see the
   // schema comment on AiConfig.reply_language for why that's the default.
   const [replyLanguage, setReplyLanguage] = useState('');
@@ -110,6 +112,15 @@ export function AiConfig() {
   const [fallbackAnswer, setFallbackAnswer] = useState('');
   const [escalationTopics, setEscalationTopics] = useState<string[]>([]);
   const [topicInput, setTopicInput] = useState('');
+
+  // Accuracy checks and voice replies. Both default on: a reply carrying
+  // an invented price is worse than a slow one, and someone who sends a
+  // voice note is telling you something about how they want answering.
+  const [responseValidationEnabled, setResponseValidationEnabled] = useState(true);
+  const [compositeConfidenceEnabled, setCompositeConfidenceEnabled] = useState(true);
+  const [voiceReplyEnabled, setVoiceReplyEnabled] = useState(true);
+  const [voiceName, setVoiceName] = useState('Kore');
+  const [voiceMaxChars, setVoiceMaxChars] = useState(700);
 
   // Confidence-based handoff — off by default; see the schema comment on
   // AiConfig.low_confidence_handoff_enabled for why.
@@ -153,7 +164,7 @@ export function AiConfig() {
           return next;
         });
         setTemperature(data.temperature ?? 0.7);
-        setMaxTokens(data.max_tokens ?? 500);
+        setMaxTokens(data.max_tokens ?? 2048);
         setReplyLanguage(data.reply_language ?? '');
         setSafetyFilter(data.safety_filter ?? 'balanced');
         setKnowledgeBaseEnabled(data.knowledge_base_enabled ?? true);
@@ -170,6 +181,11 @@ export function AiConfig() {
         setLowConfidenceAssignTo(data.low_confidence_assign_to ?? '');
         setLowConfidenceMessage(data.low_confidence_message ?? '');
         setSemanticSearchAvailable(!!data.semantic_search_available);
+        setResponseValidationEnabled(data.response_validation_enabled ?? true);
+        setCompositeConfidenceEnabled(data.composite_confidence_enabled ?? true);
+        setVoiceReplyEnabled(data.voice_reply_enabled ?? true);
+        setVoiceName(data.voice_name ?? 'Kore');
+        setVoiceMaxChars(data.voice_max_chars ?? 700);
       }
     } finally {
       setLoading(false);
@@ -248,7 +264,7 @@ export function AiConfig() {
   /** Returns whether the save actually succeeded — the Configure wizard
    *  only closes itself on a real success, rather than dismissing over an
    *  error the user would then never see. */
-  const save = async (): Promise<boolean> => {
+  const save = async (overrides?: { maxTokens?: number }): Promise<boolean> => {
     setSaving(true);
     setSaveError('');
     setSaveOk(false);
@@ -295,7 +311,7 @@ export function AiConfig() {
           fallback_provider: null,
           provider_keys: providerKeys,
           temperature,
-          max_tokens: maxTokens,
+          max_tokens: overrides?.maxTokens ?? maxTokens,
           system_prompt: systemPrompt || null,
           fallback_answer: fallbackAnswer || null,
           escalation_topics: escalationTopics,
@@ -311,6 +327,11 @@ export function AiConfig() {
           auto_sync_website: autoSyncWebsite,
           admin_system_prompt: adminSystemPrompt || null,
           customer_context_enabled: customerContextEnabled,
+          response_validation_enabled: responseValidationEnabled,
+          composite_confidence_enabled: compositeConfidenceEnabled,
+          voice_reply_enabled: voiceReplyEnabled,
+          voice_name: voiceName,
+          voice_max_chars: voiceMaxChars,
         }),
       });
       if (res.ok) {
@@ -456,6 +477,10 @@ export function AiConfig() {
         {/* ── Usage tab ── not wired to anything yet: no AI call in this
             app records tokens or cost, so there is genuinely nothing to
             chart. Says so plainly instead of rendering empty axes. */}
+        <TabsContent value="accuracy" className="mt-4">
+          <EvalTab configured={anyKeyConfigured} />
+        </TabsContent>
+
         <TabsContent value="usage" className="mt-4">
           <UsageTab />
         </TabsContent>
@@ -500,6 +525,16 @@ export function AiConfig() {
               onLowConfidenceMessageChange={setLowConfidenceMessage}
               agents={agents}
               semanticSearchAvailable={semanticSearchAvailable}
+              responseValidationEnabled={responseValidationEnabled}
+              onResponseValidationEnabledChange={setResponseValidationEnabled}
+              compositeConfidenceEnabled={compositeConfidenceEnabled}
+              onCompositeConfidenceEnabledChange={setCompositeConfidenceEnabled}
+              voiceReplyEnabled={voiceReplyEnabled}
+              onVoiceReplyEnabledChange={setVoiceReplyEnabled}
+              voiceName={voiceName}
+              onVoiceNameChange={setVoiceName}
+              voiceMaxChars={voiceMaxChars}
+              onVoiceMaxCharsChange={setVoiceMaxChars}
             />
             }
           />
@@ -516,6 +551,13 @@ export function AiConfig() {
             replyLanguage={replyLanguage}
             unsavedApiKey={activeFields?.apiKey ?? ''}
             semanticSearchAvailable={semanticSearchAvailable}
+            onRaiseMaxTokens={(value) => {
+              setMaxTokens(value);
+              // Saved immediately: the point of the button is that the
+              // next message isn't cut off too, and that only holds if
+              // the new ceiling is actually persisted.
+              void save({ maxTokens: value });
+            }}
           />
         </TabsContent>
       </Tabs>
@@ -539,7 +581,7 @@ export function AiConfig() {
             <span className="text-slate-400">No AI provider configured yet.</span>
           )}
         </div>
-        <Button onClick={save} disabled={saving} className="h-9 px-5 text-[13px] gap-2 bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+        <Button onClick={() => void save()} disabled={saving} className="h-9 px-5 text-[13px] gap-2 bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save AI Settings
         </Button>
