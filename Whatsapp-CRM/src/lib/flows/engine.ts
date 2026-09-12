@@ -47,7 +47,7 @@ import { validateReply } from "@/lib/ai/validator";
 import { buildHandoffNote } from "@/lib/ai/handoff-context";
 import { scanActionTokens } from "@/lib/ai/action-tokens";
 import { checkSafetyGuard } from "@/lib/ai/safety-guard";
-import { synthesizeSpeech } from "@/lib/ai/tts";
+import { speak } from "@/lib/ai/speech";
 import { engineSendVoiceNote } from "@/lib/flows/meta-send";
 import { markdownToWhatsApp, WHATSAPP_REPLY_STYLE } from "@/lib/whatsapp/markdown-to-whatsapp";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
@@ -1862,14 +1862,18 @@ async function advanceFromNodeKey(
         if (
           inboundWasVoice &&
           aiConfig.voice_reply_enabled &&
-          geminiApiKey &&
           reply.length <= aiConfig.voice_max_chars
         ) {
           try {
-            const speech = await synthesizeSpeech({
-              apiKey: geminiApiKey,
+            // Cloud TTS when the server has it — a Malayalam reply then
+            // gets a Malayalam voice, and the audio arrives as a real
+            // voice note rather than a file attachment. Falls back to the
+            // account's own Gemini key automatically.
+            const speech = await speak({
               text: reply,
-              voiceName: aiConfig.voice_name,
+              geminiApiKey,
+              cloudVoice: aiConfig.cloud_voice,
+              geminiVoice: aiConfig.voice_name,
             });
             const sent = await engineSendVoiceNote({
               accountId: run.account_id,
@@ -1884,7 +1888,9 @@ async function advanceFromNodeKey(
               node_type: "ai_reply",
               whatsapp_message_id: sent.whatsapp_message_id,
               format: "voice",
-              duration_sec: Math.round(speech.durationSec),
+              engine: speech.engine,
+              language: speech.languageCode,
+              ...(speech.durationSec ? { duration_sec: Math.round(speech.durationSec) } : {}),
             });
             voiceSent = true;
           } catch (err) {

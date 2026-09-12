@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { TTS_VOICES } from '@/lib/ai/tts-voices'
+import { CLOUD_VOICE_CHARACTERS } from '@/lib/ai/cloud-voices'
+import { cloudTtsAvailable } from '@/lib/ai/cloud-tts'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
@@ -78,6 +80,13 @@ export async function GET() {
     voice_reply_enabled: config.voice_reply_enabled,
     voice_name: config.voice_name,
     voice_max_chars: config.voice_max_chars,
+    cloud_voice: config.cloud_voice,
+    live_voice_enabled: config.live_voice_enabled,
+    live_voice_name: config.live_voice_name,
+    // A server fact, not a per-account setting: whether this deployment
+    // has Google Cloud credentials at all. The Settings screen uses it to
+    // say which voice engine is really in use.
+    cloud_tts_available: cloudTtsAvailable(),
     // Lets the Settings UI show "embeddings ready" vs "not set up yet"
     // (e.g. to explain why the Regenerate button matters) without
     // exposing anything sensitive — has_key above already covers that.
@@ -129,6 +138,9 @@ export async function PUT(req: Request) {
     voice_reply_enabled,
     voice_name,
     voice_max_chars,
+    cloud_voice,
+    live_voice_enabled,
+    live_voice_name,
   } = body as {
     active_provider?: string
     fallback_provider?: string | null
@@ -158,6 +170,9 @@ export async function PUT(req: Request) {
     voice_reply_enabled?: boolean
     voice_name?: string
     voice_max_chars?: number
+    cloud_voice?: string
+    live_voice_enabled?: boolean
+    live_voice_name?: string
   }
 
   const existing = await prisma.aiConfig.findUnique({
@@ -271,6 +286,16 @@ export async function PUT(req: Request) {
       voice_max_chars !== undefined
         ? Math.min(4000, Math.max(100, Number(voice_max_chars)))
         : (existing?.voice_max_chars ?? 700),
+    cloud_voice:
+      cloud_voice && CLOUD_VOICE_CHARACTERS.some((v) => v.id === cloud_voice)
+        ? cloud_voice
+        : (existing?.cloud_voice ?? 'Achernar'),
+    live_voice_enabled:
+      live_voice_enabled !== undefined ? live_voice_enabled : (existing?.live_voice_enabled ?? false),
+    live_voice_name:
+      live_voice_name && TTS_VOICES.some((v) => v.id === live_voice_name)
+        ? live_voice_name
+        : (existing?.live_voice_name ?? 'Kore'),
   }
 
   const config = await prisma.aiConfig.upsert({

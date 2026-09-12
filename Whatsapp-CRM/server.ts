@@ -8,6 +8,8 @@ import { Server as SocketIOServer } from "socket.io";
 import { sweepScheduledMessages } from "./src/lib/scheduled-messages/sweep";
 import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
+import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
+import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -43,6 +45,13 @@ app.prepare().then(() => {
 
   // Expose io globally so API routes can emit events
   (global as unknown as { io: SocketIOServer }).io = io;
+
+  // Real-time voice console. A raw WebSocket rather than a socket.io
+  // channel: this carries continuous binary audio, where socket.io's
+  // framing and acknowledgement machinery is overhead in the one place
+  // latency is audible. It claims only its own path and ignores every
+  // other upgrade, so socket.io's own handshake is untouched.
+  attachLiveVoiceServer(httpServer, loadLiveVoiceContext);
 
   io.on("connection", (socket) => {
     // Client joins a room scoped to their account for targeted broadcasts

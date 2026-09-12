@@ -14,6 +14,7 @@ import { AdvancedFeatures } from './ai/advanced-features';
 import { TestTab } from './ai/test-tab';
 import { UsageTab } from './ai/usage-tab';
 import { EvalTab } from './ai/eval-tab';
+import { LiveVoicePanel } from './ai/live-voice-panel';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
@@ -121,6 +122,13 @@ export function AiConfig() {
   const [voiceReplyEnabled, setVoiceReplyEnabled] = useState(true);
   const [voiceName, setVoiceName] = useState('Kore');
   const [voiceMaxChars, setVoiceMaxChars] = useState(700);
+  const [cloudVoice, setCloudVoice] = useState('Achernar');
+  // Whether the *server* has Google Cloud credentials. Not a preference:
+  // the screen reports which voice engine is actually in use rather than
+  // promising Cloud quality on a deployment without it.
+  const [cloudTtsAvailable, setCloudTtsAvailable] = useState(false);
+  const [liveVoiceEnabled, setLiveVoiceEnabled] = useState(false);
+  const [liveVoiceName, setLiveVoiceName] = useState('Kore');
 
   // Confidence-based handoff — off by default; see the schema comment on
   // AiConfig.low_confidence_handoff_enabled for why.
@@ -186,6 +194,10 @@ export function AiConfig() {
         setVoiceReplyEnabled(data.voice_reply_enabled ?? true);
         setVoiceName(data.voice_name ?? 'Kore');
         setVoiceMaxChars(data.voice_max_chars ?? 700);
+        setCloudVoice(data.cloud_voice ?? 'Achernar');
+        setCloudTtsAvailable(!!data.cloud_tts_available);
+        setLiveVoiceEnabled(!!data.live_voice_enabled);
+        setLiveVoiceName(data.live_voice_name ?? 'Kore');
       }
     } finally {
       setLoading(false);
@@ -332,6 +344,9 @@ export function AiConfig() {
           voice_reply_enabled: voiceReplyEnabled,
           voice_name: voiceName,
           voice_max_chars: voiceMaxChars,
+          cloud_voice: cloudVoice,
+          live_voice_enabled: liveVoiceEnabled,
+          live_voice_name: liveVoiceName,
         }),
       });
       if (res.ok) {
@@ -535,13 +550,23 @@ export function AiConfig() {
               onVoiceNameChange={setVoiceName}
               voiceMaxChars={voiceMaxChars}
               onVoiceMaxCharsChange={setVoiceMaxChars}
+              cloudVoice={cloudVoice}
+              onCloudVoiceChange={setCloudVoice}
+              cloudTtsAvailable={cloudTtsAvailable}
+              liveVoiceEnabled={liveVoiceEnabled}
+              onLiveVoiceEnabledChange={setLiveVoiceEnabled}
+              liveVoiceName={liveVoiceName}
+              onLiveVoiceNameChange={setLiveVoiceName}
             />
             }
           />
         </TabsContent>
 
         {/* ── Test AI tab ── */}
-        <TabsContent value="test" className="mt-4">
+        <TabsContent value="test" className="mt-4 space-y-5">
+          {/* Above the text tester: someone opening this tab has come to
+              try the assistant out, and hearing it is the faster judgement. */}
+          <LiveVoicePanel enabled={liveVoiceEnabled} mode="customer" />
           <TestTab
             model={activeFields?.model ?? ''}
             temperature={temperature}

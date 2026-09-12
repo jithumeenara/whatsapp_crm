@@ -1227,6 +1227,33 @@ model AiConfig {
   /// which is exactly what someone does with fees and dates.
   voice_max_chars                Int     @default(700)
 
+  /// Google Cloud TTS voice "character" (Achernar, Charon, Aoede...).
+  ///
+  /// Used whenever the server has a Cloud service account, which is
+  /// preferred over the built-in Gemini voice: ~1s per reply instead of
+  /// ~8s, native Malayalam voices instead of an English-trained one
+  /// reading Malayalam, and OGG/Opus output that WhatsApp shows as a
+  /// real voice note rather than an attached file.
+  ///
+  /// Only the character is stored. The language half of the voice name
+  /// is derived from the reply text at send time, so one choice here
+  /// sounds like the same person in every language it answers in.
+  cloud_voice                    String  @default("Achernar")
+
+  /// The real-time voice console in Settings — talk to the assistant and
+  /// hear it answer, over the Gemini Live API.
+  ///
+  /// Off by default. It streams audio in both directions for as long as
+  /// the session is open, which bills differently from a text reply, and
+  /// it is a testing tool: no customer ever reaches it.
+  live_voice_enabled             Boolean @default(false)
+  /// Stored rather than hardcoded because every native-audio model is
+  /// currently a preview and previews get withdrawn without notice.
+  live_voice_model               String  @default("models/gemini-2.5-flash-native-audio-preview-12-2025")
+  /// The Live API speaks with its own voice set, separate from Cloud
+  /// TTS's, so this cannot share cloud_voice.
+  live_voice_name                String  @default("Kore")
+
   /// Check a reply against its own retrieved context before sending,
   /// and hand off rather than send an unsupported figure.
   /// See src/lib/ai/validator.ts.

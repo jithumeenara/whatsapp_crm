@@ -11,6 +11,7 @@ import {
   AiBadge, AiNotice, AiPromptEditor,
 } from './ui-kit';
 import { TTS_VOICES } from '@/lib/ai/tts-voices';
+import { CLOUD_VOICE_CHARACTERS } from '@/lib/ai/cloud-voices';
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
@@ -64,6 +65,16 @@ export interface AdvancedFeaturesProps {
   onVoiceNameChange: (v: string) => void;
   voiceMaxChars: number;
   onVoiceMaxCharsChange: (v: number) => void;
+  cloudVoice: string;
+  onCloudVoiceChange: (v: string) => void;
+  /** True when the server has Google Cloud credentials. Reported
+   *  honestly rather than promising Cloud quality without them. */
+  cloudTtsAvailable: boolean;
+
+  liveVoiceEnabled: boolean;
+  onLiveVoiceEnabledChange: (v: boolean) => void;
+  liveVoiceName: string;
+  onLiveVoiceNameChange: (v: string) => void;
 }
 
 /** A usable starting point, so "required" doesn't mean staring at an
@@ -421,19 +432,49 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <AiLabel>Voice</AiLabel>
-                    <Select
-                      value={props.voiceName || 'Kore'}
-                      onValueChange={(v) => v && props.onVoiceNameChange(v)}
-                    >
-                      <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {TTS_VOICES.map((v) => (
-                          <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {props.cloudTtsAvailable ? (
+                      <>
+                        <Select
+                          value={props.cloudVoice || 'Achernar'}
+                          onValueChange={(v) => v && props.onCloudVoiceChange(v)}
+                        >
+                          <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CLOUD_VOICE_CHARACTERS.map((v) => (
+                              <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <AiHint>
+                          Google Cloud voices. A Malayalam reply is spoken by a Malayalam voice and a Tamil one by
+                          a Tamil voice &mdash; the language comes from the reply itself, so this single choice
+                          sounds like the same person throughout.
+                        </AiHint>
+                      </>
+                    ) : (
+                      <>
+                        <Select
+                          value={props.voiceName || 'Kore'}
+                          onValueChange={(v) => v && props.onVoiceNameChange(v)}
+                        >
+                          <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TTS_VOICES.map((v) => (
+                              <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <AiHint>
+                          Built-in voices. Adding Google Cloud credentials on the server gets native Malayalam and
+                          Tamil voices, replies in about a second instead of eight, and true voice notes rather
+                          than audio attachments.
+                        </AiHint>
+                      </>
+                    )}
                   </div>
                   <div className="space-y-1.5">
                     <AiLabel htmlFor="voice-max-chars">
@@ -458,6 +499,41 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                       skimmed or screenshotted, which is exactly what people do with those.
                     </AiHint>
                   </div>
+                </div>
+              )}
+
+              <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-slate-800">Live voice console</p>
+                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                    Adds a panel to Test AI where you speak to the assistant and hear it answer in real time,
+                    interruptions and all. A rehearsal tool &mdash; customers reach the assistant by voice note,
+                    not by call. It streams audio both ways for as long as it is open, which is billed
+                    differently from a text reply.
+                  </p>
+                </div>
+                <Switch checked={props.liveVoiceEnabled} onCheckedChange={props.onLiveVoiceEnabledChange} />
+              </div>
+
+              {props.liveVoiceEnabled && (
+                <div className="space-y-1.5">
+                  <AiLabel>Live conversation voice</AiLabel>
+                  <Select
+                    value={props.liveVoiceName || 'Kore'}
+                    onValueChange={(v) => v && props.onLiveVoiceNameChange(v)}
+                  >
+                    <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px] sm:max-w-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TTS_VOICES.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <AiHint>
+                    A live conversation speaks with its own voice set, separate from the one used for voice notes.
+                  </AiHint>
                 </div>
               )}
             </div>
