@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { AiButton, AiCard, AiCardHeader, AiInput, AiHint, AiNotice, AiSegmented, AiBadge } from './ui-kit';
+import { AiButton, AiCard, AiCardHeader, AiInput, AiHint, AiNotice, AiBadge } from './ui-kit';
 import { WhatsAppText } from '@/components/inbox/message-bubble';
 import { MarkdownAnswer } from './markdown-answer';
 import { ContactSyncPanel } from './contact-sync-panel';
@@ -75,6 +75,21 @@ const CUSTOMER_EXAMPLES = [
   'Do you have hostel facilities?',
 ];
 
+const MODE_OPTIONS = [
+  {
+    id: 'admin' as const,
+    label: 'Admin Test',
+    blurb: 'Access your data and get insights across the system.',
+    Icon: Database,
+  },
+  {
+    id: 'customer' as const,
+    label: 'Customer Test',
+    blurb: 'Answers as the chatbot would to a real customer.',
+    Icon: UserRound,
+  },
+];
+
 const VOICE_LANGS = [
   { id: 'en-IN', label: 'English (India)' },
   { id: 'ml-IN', label: 'Malayalam' },
@@ -109,7 +124,7 @@ export function TestTab(props: TestTabProps) {
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const w = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
@@ -126,7 +141,12 @@ export function TestTab(props: TestTabProps) {
   useEffect(() => () => window.speechSynthesis?.cancel(), []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Deliberately NOT scrollIntoView: that walks up and scrolls every
+    // scrollable ancestor, so sending a message yanked the whole
+    // Settings page down. Scrolling the container directly moves only
+    // the message list.
+    const el = messagesRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages, loading]);
 
   const toggleVoice = useCallback(() => {
@@ -271,9 +291,71 @@ export function TestTab(props: TestTabProps) {
   const examples = mode === 'admin' ? ADMIN_EXAMPLES : CUSTOMER_EXAMPLES;
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-      {/* ── Chat ── */}
-      <AiCard className="flex h-[68vh] max-h-[620px] min-h-[420px] min-w-0 flex-col lg:h-[560px]">
+    <div className="space-y-5">
+      {/* ── 1. Test mode — the choice that changes everything below it,
+             so it comes first and reads left to right. ── */}
+      <AiCard className="p-5">
+        <AiCardHeader title="Test Mode" subtitle="Choose how the AI should respond." />
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {MODE_OPTIONS.map(({ id, label, blurb, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setMode(id)}
+              className={[
+                'flex items-start gap-2.5 rounded-2xl p-3.5 text-left ring-1 transition-all duration-150',
+                mode === id
+                  ? 'bg-[#5B6CF9]/[0.05] ring-[#5B6CF9]/30 shadow-[0_4px_14px_-10px_rgba(91,108,249,0.8)]'
+                  : 'bg-white ring-slate-200/70 hover:bg-slate-50 hover:ring-slate-300',
+              ].join(' ')}
+            >
+              <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${mode === id ? 'text-[#5B6CF9]' : 'text-slate-400'}`} />
+              <span className="min-w-0">
+                <span className={`block text-[13px] font-semibold ${mode === id ? 'text-[#5B6CF9]' : 'text-slate-700'}`}>
+                  {label}
+                </span>
+                <span className="mt-0.5 block text-[11.5px] leading-relaxed text-slate-500">{blurb}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {mode === 'admin' ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[12.5px] font-semibold text-slate-700">Data Access</p>
+              <AiBadge tone="emerald">
+                <CheckCircle2 className="h-3 w-3" />
+                Read-only
+              </AiBadge>
+            </div>
+            {/* Across, not down: six short labels in a column was the
+                single tallest thing in the old rail. */}
+            <ul className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-6">
+              {DATA_ACCESS.map(({ label, Icon }) => (
+                <li key={label} className="flex items-center gap-2 text-[12.5px] text-slate-600">
+                  <Icon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  <span className="truncate">{label}</span>
+                </li>
+              ))}
+            </ul>
+            <AiHint className="mt-3">
+              Answers are computed by fixed, read-only queries scoped to this account — the AI can&apos;t write
+              queries, change data, or see another account.
+            </AiHint>
+          </div>
+        ) : (
+          <AiHint className="mt-4 border-t border-slate-100 pt-4">
+            {props.semanticSearchAvailable
+              ? 'Grounding: uses the same semantic knowledge retrieval as live replies, so this preview matches production.'
+              : 'Grounding: uses keyword matching over your knowledge base — save a Gemini key and train to enable semantic search.'}
+          </AiHint>
+        )}
+      </AiCard>
+
+      {/* ── 2. The conversation ── */}
+      <AiCard className="flex h-[clamp(420px,60vh,640px)] min-w-0 flex-col">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 p-5">
           <div>
             <h3 className="text-[16px] font-bold tracking-tight text-slate-900">Test AI</h3>
@@ -284,14 +366,6 @@ export function TestTab(props: TestTabProps) {
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <AiSegmented
-              value={mode}
-              onChange={setMode}
-              options={[
-                { value: 'admin', label: 'Admin Test', icon: <Database className="h-3.5 w-3.5" /> },
-                { value: 'customer', label: 'Customer Test', icon: <UserRound className="h-3.5 w-3.5" /> },
-              ]}
-            />
             {messages.length > 0 && (
               <AiButton
                 tone="ghost" size="icon"
@@ -401,7 +475,7 @@ export function TestTab(props: TestTabProps) {
             </div>
           )}
           {error && <AiNotice tone="error">{error}</AiNotice>}
-          <div ref={bottomRef} />
+
         </div>
 
         <div className="border-t border-slate-100 p-4">
@@ -456,72 +530,8 @@ export function TestTab(props: TestTabProps) {
         </div>
       </AiCard>
 
-      {/* ── Rail ── */}
-      <div className="space-y-5">
-        <AiCard className="p-5">
-          <AiCardHeader title="Test Mode" subtitle="Choose how the AI should respond." />
-
-          <div className="mt-3 space-y-2">
-            {([
-              { id: 'admin' as const, label: 'Admin Test', blurb: 'Access your data and get insights across the system.', Icon: Database },
-              { id: 'customer' as const, label: 'Customer Test', blurb: 'Answers as the chatbot would to a real customer.', Icon: UserRound },
-            ]).map(({ id, label, blurb, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setMode(id)}
-                className={[
-                  'flex w-full items-start gap-2.5 rounded-2xl p-3 text-left ring-1 transition-all duration-150',
-                  mode === id
-                    ? 'bg-[#5B6CF9]/[0.05] ring-[#5B6CF9]/30 shadow-[0_4px_14px_-10px_rgba(91,108,249,0.8)]'
-                    : 'bg-white ring-slate-200/70 hover:bg-slate-50 hover:ring-slate-300',
-                ].join(' ')}
-              >
-                <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${mode === id ? 'text-[#5B6CF9]' : 'text-slate-400'}`} />
-                <span>
-                  <span className={`block text-[13px] font-semibold ${mode === id ? 'text-[#5B6CF9]' : 'text-slate-700'}`}>
-                    {label}
-                  </span>
-                  <span className="mt-0.5 block text-[11.5px] leading-relaxed text-slate-500">{blurb}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-
-          {mode === 'admin' ? (
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[12.5px] font-semibold text-slate-700">Data Access</p>
-                <AiBadge tone="emerald">
-                  <CheckCircle2 className="h-3 w-3" />
-                  Read-only
-                </AiBadge>
-              </div>
-              <ul className="mt-2.5 space-y-1.5">
-                {DATA_ACCESS.map(({ label, Icon }) => (
-                  <li key={label} className="flex items-center gap-2 text-[12.5px] text-slate-600">
-                    <Icon className="h-3.5 w-3.5 text-slate-400" />
-                    {label}
-                  </li>
-                ))}
-              </ul>
-              <AiHint className="mt-3">
-                Answers are computed by fixed, read-only queries scoped to this account — the AI can&apos;t write
-                queries, change data, or see another account.
-              </AiHint>
-            </div>
-          ) : (
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              <p className="text-[12.5px] font-semibold text-slate-700">Grounding</p>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-slate-500">
-                {props.semanticSearchAvailable
-                  ? 'Uses the same semantic knowledge retrieval as live replies, so this preview matches production.'
-                  : 'Uses keyword matching over your knowledge base — save a Gemini key and train to enable semantic search.'}
-              </p>
-            </div>
-          )}
-        </AiCard>
-
+      {/* ── 3. Voice and examples — two short blocks, so side by side ── */}
+      <div className="grid gap-5 lg:grid-cols-2">
         {(voiceSupported || speechSupported) && (
           <AiCard className="p-5">
             <div className="flex items-center gap-2">
@@ -557,14 +567,14 @@ export function TestTab(props: TestTabProps) {
           </AiCard>
         )}
 
-        <ContactSyncPanel />
-
         <AiCard className="p-5">
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-slate-400" />
             <p className="text-[14px] font-semibold text-slate-900">Example Queries</p>
           </div>
-          <div className="mt-3 space-y-1">
+          {/* Two columns at full width — the same five prompts took five
+              stacked rows in the old 320px rail. */}
+          <div className="mt-3 grid gap-1 sm:grid-cols-2">
             {examples.map((ex) => (
               <button
                 key={ex}
@@ -580,6 +590,11 @@ export function TestTab(props: TestTabProps) {
           </div>
         </AiCard>
       </div>
+
+      {/* ── 4. Contact save & sync — grows with the account's data, so it
+             gets a full row of its own instead of driving a column's
+             height. ── */}
+      <ContactSyncPanel />
     </div>
   );
 }

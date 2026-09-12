@@ -258,6 +258,19 @@ export function AiConfig() {
         setSaving(false);
         return false;
       }
+      // The customer prompt is required, not advisory. Without it the
+      // bot answers as a generic assistant with no idea what business it
+      // works for or how it should behave — which is worse than not
+      // replying, because it looks like it is working. Blocked at save
+      // rather than at reply time so an account that already has one
+      // running is never cut off mid-conversation by a validation rule.
+      if (!systemPrompt.trim()) {
+        setSaveError(
+          'A customer prompt is required — open Advanced Features under AI Training to write one, or start from the template.',
+        );
+        setSaving(false);
+        return false;
+      }
       const providerKeys: Record<string, { api_key?: string; model?: string; base_url?: string }> = {};
       for (const meta of PROVIDER_META) {
         const f = providerFields[meta.id];
@@ -434,6 +447,7 @@ export function AiConfig() {
             replyLanguage={replyLanguage}
             safetyFilter={safetyFilter}
             semanticSearchAvailable={semanticSearchAvailable}
+            systemPromptMissing={!systemPrompt.trim()}
             onReconfigure={() => setWizardOpen(true)}
             onGoToTab={setTab}
           />
@@ -461,32 +475,33 @@ export function AiConfig() {
             semanticSearchAvailable={semanticSearchAvailable}
             onSaveSettings={save}
             savingSettings={saving}
-          />
-
-          <AdvancedFeatures
-            systemPrompt={systemPrompt}
-            onSystemPromptChange={setSystemPrompt}
-            adminSystemPrompt={adminSystemPrompt}
-            onAdminSystemPromptChange={setAdminSystemPrompt}
-            customerContextEnabled={customerContextEnabled}
-            onCustomerContextEnabledChange={setCustomerContextEnabled}
-            fallbackAnswer={fallbackAnswer}
-            onFallbackAnswerChange={setFallbackAnswer}
-            escalationTopics={escalationTopics}
-            topicInput={topicInput}
-            onTopicInputChange={setTopicInput}
-            onAddTopic={addTopic}
-            onRemoveTopic={removeTopic}
-            lowConfidenceHandoffEnabled={lowConfidenceHandoffEnabled}
-            onLowConfidenceHandoffEnabledChange={setLowConfidenceHandoffEnabled}
-            confidenceThreshold={confidenceThreshold}
-            onConfidenceThresholdChange={setConfidenceThreshold}
-            lowConfidenceAssignTo={lowConfidenceAssignTo}
-            onLowConfidenceAssignToChange={setLowConfidenceAssignTo}
-            lowConfidenceMessage={lowConfidenceMessage}
-            onLowConfidenceMessageChange={setLowConfidenceMessage}
-            agents={agents}
-            semanticSearchAvailable={semanticSearchAvailable}
+            rail={
+            <AdvancedFeatures
+              systemPrompt={systemPrompt}
+              onSystemPromptChange={setSystemPrompt}
+              adminSystemPrompt={adminSystemPrompt}
+              onAdminSystemPromptChange={setAdminSystemPrompt}
+              customerContextEnabled={customerContextEnabled}
+              onCustomerContextEnabledChange={setCustomerContextEnabled}
+              fallbackAnswer={fallbackAnswer}
+              onFallbackAnswerChange={setFallbackAnswer}
+              escalationTopics={escalationTopics}
+              topicInput={topicInput}
+              onTopicInputChange={setTopicInput}
+              onAddTopic={addTopic}
+              onRemoveTopic={removeTopic}
+              lowConfidenceHandoffEnabled={lowConfidenceHandoffEnabled}
+              onLowConfidenceHandoffEnabledChange={setLowConfidenceHandoffEnabled}
+              confidenceThreshold={confidenceThreshold}
+              onConfidenceThresholdChange={setConfidenceThreshold}
+              lowConfidenceAssignTo={lowConfidenceAssignTo}
+              onLowConfidenceAssignToChange={setLowConfidenceAssignTo}
+              lowConfidenceMessage={lowConfidenceMessage}
+              onLowConfidenceMessageChange={setLowConfidenceMessage}
+              agents={agents}
+              semanticSearchAvailable={semanticSearchAvailable}
+            />
+            }
           />
         </TabsContent>
 

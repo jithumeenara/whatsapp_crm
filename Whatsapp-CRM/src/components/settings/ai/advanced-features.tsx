@@ -1,9 +1,14 @@
 'use client';
 
-import { Sliders, ShieldQuestion, UserCheck, X, Plus, MessageSquare, Database } from 'lucide-react';
+import {
+  Sliders, ShieldQuestion, UserCheck, X, Plus, MessageSquare, Database, AlertTriangle, Sparkles,
+} from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AiButton, AiCard, AiCardHeader, AiIconTile, AiInput, AiTextarea, AiLabel, AiHint } from './ui-kit';
+import {
+  AiButton, AiCard, AiCardHeader, AiIconTile, AiInput, AiLabel, AiHint,
+  AiBadge, AiNotice, AiPromptEditor,
+} from './ui-kit';
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
@@ -47,7 +52,24 @@ export interface AdvancedFeaturesProps {
   semanticSearchAvailable: boolean;
 }
 
+/** A usable starting point, so "required" doesn't mean staring at an
+ *  empty box. Written as rules rather than facts: company details are
+ *  injected separately, and repeating them here only creates two places
+ *  to keep in sync. */
+const STARTER_CUSTOMER_PROMPT = `You are the assistant for our business, replying to customers on WhatsApp and our other channels.
+
+How to reply:
+- Be warm, professional and brief. Two or three sentences is usually right.
+- Reply in the same language the customer wrote in.
+- Answer only what was asked. Don't volunteer unrelated offers.
+- Use the knowledge you were given. If it doesn't cover the question, say you'll check with the team rather than guessing.
+- Never invent prices, dates, availability or policies.
+- If the customer is upset, or asks for something you can't confirm, hand over to a human.`;
+
 export function AdvancedFeatures(props: AdvancedFeaturesProps) {
+  // Trimmed: whitespace is not instructions.
+  const customerPromptMissing = !props.systemPrompt.trim();
+
   return (
     <AiCard>
       <div className="px-6 pt-5">
@@ -58,12 +80,20 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
         {/* ── Persona / system prompt ── */}
         <AccordionItem value="persona">
           <AccordionTrigger className="text-[13.5px]">
-            <span className="flex items-center gap-2.5">
+            <span className="flex min-w-0 items-center gap-2.5">
               <AiIconTile tint="indigo" size="sm">
                 <Sliders className="h-4 w-4" />
               </AiIconTile>
-              <span className="text-left">
-                <span className="block font-medium text-slate-800">Prompts &amp; Persona</span>
+              <span className="min-w-0 text-left">
+                <span className="flex flex-wrap items-center gap-2 font-medium text-slate-800">
+                  Prompts &amp; Persona
+                  {customerPromptMissing && (
+                    <AiBadge tone="rose">
+                      <AlertTriangle className="h-3 w-3" />
+                      Customer prompt missing
+                    </AiBadge>
+                  )}
+                </span>
                 <span className="block text-[11.5px] font-normal text-slate-500">
                   Separate instructions for customer replies and for internal answers.
                 </span>
@@ -71,24 +101,45 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-5 pb-4 sm:pl-[42px]">
+            <div className="space-y-5 pb-4">
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <MessageSquare className="h-3.5 w-3.5 text-[#5B6CF9]" />
                   <AiLabel htmlFor="system-prompt">Customer prompt</AiLabel>
+                  <AiBadge tone={customerPromptMissing ? 'rose' : 'slate'}>Required</AiBadge>
                 </div>
-                <AiTextarea
+                <AiPromptEditor
                   id="system-prompt"
+                  title="Customer prompt"
+                  subtitle="Shapes every reply sent to a real customer, on every channel."
                   placeholder="You are the assistant for [Your Business]. Be warm, professional and brief. Answer only what you were asked."
                   value={props.systemPrompt}
-                  onChange={(e) => props.onSystemPromptChange(e.target.value)}
+                  onChange={props.onSystemPromptChange}
                   rows={4}
+                  required
+                  invalid={customerPromptMissing}
                 />
-                <AiHint>
-                  Shapes replies sent to real people on WhatsApp, Instagram, Messenger, RCS and email. Your company
-                  details are added automatically, so this is for tone and rules — not for repeating facts. WhatsApp
-                  renders *bold* and _italic_ only, and replies are converted for you.
-                </AiHint>
+                {customerPromptMissing ? (
+                  <AiNotice tone="error" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
+                    <span className="block">
+                      The AI has no instructions of its own, so replies fall back to a generic assistant.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => props.onSystemPromptChange(STARTER_CUSTOMER_PROMPT)}
+                      className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5AE8] ring-1 ring-[#5B6CF9]/25 transition-colors hover:bg-[#EEF0FF]"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      Start from a template
+                    </button>
+                  </AiNotice>
+                ) : (
+                  <AiHint>
+                    Shapes replies sent to real people on WhatsApp, Instagram, Messenger, RCS and email. Your company
+                    details are added automatically, so this is for tone and rules — not for repeating facts. WhatsApp
+                    renders *bold* and _italic_ only, and replies are converted for you.
+                  </AiHint>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -96,11 +147,13 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                   <Database className="h-3.5 w-3.5 text-slate-500" />
                   <AiLabel htmlFor="admin-system-prompt">Admin prompt</AiLabel>
                 </div>
-                <AiTextarea
+                <AiPromptEditor
                   id="admin-system-prompt"
+                  title="Admin prompt"
+                  subtitle="Shapes answers about your own CRM data, for your team."
                   placeholder="Answer in short tables. Always show totals. Flag anything that looks like a drop week over week."
                   value={props.adminSystemPrompt}
-                  onChange={(e) => props.onAdminSystemPromptChange(e.target.value)}
+                  onChange={props.onAdminSystemPromptChange}
                   rows={3}
                 />
                 <AiHint>
@@ -130,11 +183,11 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
         {/* ── Guardrails ── */}
         <AccordionItem value="guardrails">
           <AccordionTrigger className="text-[13.5px]">
-            <span className="flex items-center gap-2.5">
+            <span className="flex min-w-0 items-center gap-2.5">
               <AiIconTile tint="amber" size="sm">
                 <ShieldQuestion className="h-4 w-4" />
               </AiIconTile>
-              <span className="text-left">
+              <span className="min-w-0 text-left">
                 <span className="block font-medium text-slate-800">Guardrails</span>
                 <span className="block text-[11.5px] font-normal text-slate-500">
                   What to say when it doesn&apos;t know, and what never to answer.
@@ -143,7 +196,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-4 pb-4 sm:pl-[42px]">
+            <div className="space-y-4 pb-4">
               <div className="space-y-1.5">
                 <AiLabel htmlFor="fallback-answer">Fallback answer</AiLabel>
                 <AiInput
@@ -207,11 +260,11 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
         {/* ── Confidence handoff ── */}
         <AccordionItem value="handoff">
           <AccordionTrigger className="text-[13.5px]">
-            <span className="flex items-center gap-2.5">
+            <span className="flex min-w-0 items-center gap-2.5">
               <AiIconTile tint="emerald" size="sm">
                 <UserCheck className="h-4 w-4" />
               </AiIconTile>
-              <span className="text-left">
+              <span className="min-w-0 text-left">
                 <span className="block font-medium text-slate-800">Hand off when unsure</span>
                 <span className="block text-[11.5px] font-normal text-slate-500">
                   Pass the chat to a human instead of guessing. {props.lowConfidenceHandoffEnabled ? 'On' : 'Off'}.
@@ -220,7 +273,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
             </span>
           </AccordionTrigger>
           <AccordionContent>
-            <div className="space-y-4 pb-4 sm:pl-[42px]">
+            <div className="space-y-4 pb-4">
               <div className="flex items-start justify-between gap-3">
                 <p className="text-[12.5px] leading-relaxed text-slate-500">
                   Enforced in code, not just asked for in the prompt: below the threshold the model is never called —

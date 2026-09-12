@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   FileText, MessageSquare, Link2, StickyNote, Database, Plus, Search, Filter,
   Loader2, RefreshCw, Trash2, MoreHorizontal, CheckCircle2, AlertTriangle, Clock,
@@ -54,6 +54,11 @@ export interface TrainingTabProps {
   /** Persists the settings above (the page's shared save). */
   onSaveSettings: () => Promise<boolean>;
   savingSettings: boolean;
+  /** Rendered under Training Settings in the right-hand rail. The
+   *  behaviour settings live here rather than in a full-width block
+   *  below the grid, which left the rail ending short beside a very
+   *  tall knowledge table. */
+  rail?: ReactNode;
 }
 
 type AddKind = 'qa' | 'document' | 'website' | 'text' | 'database';
@@ -145,6 +150,27 @@ function StatusPill({ status, error }: { status: string; error: string | null })
   );
 }
 
+/** One control in the settings row. The fixed control height is what
+ *  keeps the four columns aligned when their labels and hints wrap to
+ *  different numbers of lines. */
+function SettingBlock({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col rounded-xl bg-slate-50/70 p-3.5 ring-1 ring-slate-200/60">
+      <AiLabel className="mb-2">{label}</AiLabel>
+      {children}
+      <AiHint className="mt-2">{hint}</AiHint>
+    </div>
+  );
+}
+
 function formatDate(value: string | null): string {
   if (!value) return '—';
   return new Date(value).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
@@ -230,7 +256,7 @@ export function TrainingTab(props: TrainingTabProps) {
   }
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="space-y-5">
       <div className="min-w-0 space-y-5">
         {/* ── Sources ── */}
         <AiCard className="p-5 sm:p-6">
@@ -253,7 +279,7 @@ export function TrainingTab(props: TrainingTabProps) {
             </AiNotice>
           )}
 
-          <div className="mt-4 grid grid-cols-1 gap-2.5 xs:grid-cols-2 sm:grid-cols-3 sm:gap-3 xl:grid-cols-5">
+          <div className="mt-4 grid grid-cols-1 gap-2.5 xs:grid-cols-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
             {SOURCE_CARDS.map(({ kind, label, blurb, Icon, tint }) => (
               <button
                 key={kind}
@@ -467,77 +493,77 @@ export function TrainingTab(props: TrainingTabProps) {
         </AiCard>
       </div>
 
-      {/* ── Settings rail ── */}
-      <div className="space-y-5">
-        <AiCard className="p-5">
-          <AiCardHeader title="Training Settings" subtitle="Control how your data is used by the AI." />
+      {/* ── Training Settings — one full-width row ──
+          Four independent controls, so they sit side by side rather than
+          stacked in a column: the whole group is readable at a glance and
+          each one gets room for its explanation underneath. */}
+      <AiCard className="p-5 sm:p-6">
+        <AiCardHeader
+          title="Training Settings"
+          subtitle="Control how your data is used by the AI."
+          action={
+            <AiButton onClick={props.onSaveSettings} disabled={props.savingSettings} tone="outline">
+              {props.savingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Save settings
+            </AiButton>
+          }
+        />
 
-          <div className="mt-4 space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[13px] font-medium text-slate-700">Use knowledge base</p>
-                <p className="mt-0.5 text-[11.5px] text-slate-500">AI will search your data before answering.</p>
-              </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <SettingBlock
+            label="Use knowledge base"
+            hint="AI will search your data before answering."
+          >
+            <div className="flex h-9 items-center">
               <Switch checked={props.knowledgeBaseEnabled} onCheckedChange={props.onKnowledgeBaseEnabledChange} />
             </div>
+          </SettingBlock>
 
-            <div className="space-y-1.5">
-              <AiLabel>Retrieval mode</AiLabel>
-              <Select value={props.retrievalMode} onValueChange={(v) => v && props.onRetrievalModeChange(v)}>
-                <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto">Semantic Search (Recommended)</SelectItem>
-                  <SelectItem value="semantic">Semantic only</SelectItem>
-                  <SelectItem value="keyword">Keyword matching</SelectItem>
-                </SelectContent>
-              </Select>
-              <AiHint>
-                {props.semanticSearchAvailable
-                  ? 'Finds the most relevant information using meaning, not just shared words.'
-                  : 'Semantic search needs a Gemini key — keyword matching is used until one is saved.'}
-              </AiHint>
-            </div>
+          <SettingBlock
+            label="Retrieval mode"
+            hint={
+              props.semanticSearchAvailable
+                ? 'Finds information by meaning, not just shared words.'
+                : 'Semantic search needs a Gemini key — keyword matching is used until one is saved.'
+            }
+          >
+            <Select value={props.retrievalMode} onValueChange={(v) => v && props.onRetrievalModeChange(v)}>
+              <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Semantic Search (Recommended)</SelectItem>
+                <SelectItem value="semantic">Semantic only</SelectItem>
+                <SelectItem value="keyword">Keyword matching</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingBlock>
 
-            <div className="space-y-1.5">
-              <AiLabel>Max context results</AiLabel>
-              <Select
-                value={String(props.maxContextResults)}
-                onValueChange={(v) => v && props.onMaxContextResultsChange(Number(v))}
-              >
-                <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[3, 5, 8, 10, 15, 20].map((n) => (
-                    <SelectItem key={n} value={String(n)}>{n}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <AiHint>Number of relevant chunks to include in the prompt.</AiHint>
-            </div>
+          <SettingBlock label="Max context results" hint="Relevant chunks included in each prompt.">
+            <Select
+              value={String(props.maxContextResults)}
+              onValueChange={(v) => v && props.onMaxContextResultsChange(Number(v))}
+            >
+              <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[3, 5, 8, 10, 15, 20].map((n) => (
+                  <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingBlock>
 
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[13px] font-medium text-slate-700">Auto-sync website</p>
-                <p className="mt-0.5 text-[11.5px] text-slate-500">Re-fetch website entries daily.</p>
-              </div>
+          <SettingBlock label="Auto-sync website" hint="Re-fetch website entries daily.">
+            <div className="flex h-9 items-center">
               <Switch checked={props.autoSyncWebsite} onCheckedChange={props.onAutoSyncWebsiteChange} />
             </div>
+          </SettingBlock>
+        </div>
+      </AiCard>
 
-            <AiButton
-              onClick={props.onSaveSettings}
-              disabled={props.savingSettings}
-              tone="outline"
-              className="w-full"
-            >
-              {props.savingSettings ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Save training settings
-            </AiButton>
-          </div>
-        </AiCard>
-      </div>
+      {props.rail}
 
       {addKind && (
         <AddContentDialog
@@ -723,7 +749,7 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
           {kind === 'database' && (
             <div className="space-y-1.5">
               <AiLabel>Data Store table</AiLabel>
-              <Select value={tableId} onValueChange={(v) => v && setTableId(v)}>
+              <Select value={tableId || null} onValueChange={(v) => v && setTableId(v)}>
                 <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 text-[13px]">
                   <SelectValue placeholder={tables.length ? 'Choose a table' : 'No tables found'} />
                 </SelectTrigger>

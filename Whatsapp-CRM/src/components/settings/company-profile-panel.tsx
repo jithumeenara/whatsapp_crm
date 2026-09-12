@@ -172,7 +172,7 @@ export function CompanyProfilePanel() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Category">
-            <Select value={form.category || undefined} onValueChange={(v) => v && set('category', v)}>
+            <Select value={form.category || null} onValueChange={(v) => v && set('category', v)}>
               <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 text-[13px]">
                 <SelectValue placeholder="Choose an industry" />
               </SelectTrigger>
@@ -194,7 +194,7 @@ export function CompanyProfilePanel() {
 
           <Field label="Section">
             <Select
-              value={form.section || undefined}
+              value={form.section || null}
               onValueChange={(v) => v && set('section', v)}
               disabled={!form.category}
             >

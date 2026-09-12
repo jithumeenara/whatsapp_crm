@@ -1,8 +1,10 @@
 'use client';
 
-import type { ComponentProps, ReactNode } from 'react';
+import { useState, type ComponentProps, type ReactNode } from 'react';
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
+import { Select as SelectPrimitive } from '@base-ui/react/select';
+import { Check, ChevronDown, Maximize2, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -473,5 +475,245 @@ export function AiSegmented<T extends string>({
         );
       })}
     </div>
+  );
+}
+
+/* ─────────────────────────── Select ─────────────────────────── */
+
+/**
+ * The section's select, matching its menus and modals.
+ *
+ * The generic ui/select popup is the old look this rebuild is moving
+ * away from: a hairline border, a flat shadow, square-ish item rows and
+ * a checkmark bolted to the right edge. This one uses the same language
+ * as AiMenuContent — a large radius, layered tinted shadow, rounded item
+ * rows that highlight softly, and a scale-in — so opening a select and
+ * opening a menu feel like the same product.
+ */
+export function AiSelect<T extends string>({
+  value,
+  onValueChange,
+  placeholder,
+  disabled,
+  className,
+  children,
+}: {
+  value: T | null;
+  onValueChange: (value: T) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <SelectPrimitive.Root
+      value={value}
+      onValueChange={(v) => v != null && onValueChange(v as T)}
+      disabled={disabled}
+    >
+      <SelectPrimitive.Trigger
+        className={cn(
+          'flex h-10 w-full items-center justify-between gap-2 rounded-xl bg-white px-3.5 text-[13px] text-slate-800',
+          'ring-1 ring-slate-200/90 outline-none transition-[box-shadow,background] duration-150',
+          'hover:ring-slate-300',
+          'focus-visible:ring-2 focus-visible:ring-[#5B6CF9]/45 focus-visible:shadow-[0_0_0_4px_rgba(91,108,249,0.10)]',
+          'data-[popup-open]:ring-2 data-[popup-open]:ring-[#5B6CF9]/45',
+          'data-placeholder:text-slate-400',
+          'disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400',
+          className,
+        )}
+      >
+        <SelectPrimitive.Value placeholder={placeholder} className="min-w-0 truncate text-left" />
+        <SelectPrimitive.Icon
+          render={
+            <ChevronDown className="pointer-events-none size-4 shrink-0 text-slate-400 transition-transform duration-200 data-[popup-open]:rotate-180" />
+          }
+        />
+      </SelectPrimitive.Trigger>
+
+      <SelectPrimitive.Portal>
+        <SelectPrimitive.Positioner
+          className="isolate z-50 outline-none"
+          sideOffset={8}
+          // Anchoring to the trigger rather than to the selected item
+          // stops the popup jumping over the control when the current
+          // value sits far down a long list.
+          alignItemWithTrigger={false}
+        >
+          <SelectPrimitive.Popup
+            className={cn(
+              'max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto',
+              'rounded-2xl bg-white p-1.5',
+              'ring-1 ring-slate-200/80 shadow-[0_4px_12px_rgba(15,23,42,0.06),0_16px_40px_-12px_rgba(15,23,42,0.25)]',
+              'outline-none duration-150',
+              'data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-open:slide-in-from-top-1',
+              'data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+            )}
+          >
+            <SelectPrimitive.List>{children}</SelectPrimitive.List>
+          </SelectPrimitive.Popup>
+        </SelectPrimitive.Positioner>
+      </SelectPrimitive.Portal>
+    </SelectPrimitive.Root>
+  );
+}
+
+export function AiSelectItem({
+  value,
+  children,
+  className,
+}: {
+  value: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <SelectPrimitive.Item
+      value={value}
+      className={cn(
+        'flex cursor-default select-none items-center justify-between gap-2 rounded-xl px-2.5 py-2',
+        'text-[13px] text-slate-700 outline-none transition-colors duration-100',
+        'data-highlighted:bg-slate-100/90',
+        'data-selected:bg-[#5B6CF9]/[0.07] data-selected:font-medium data-selected:text-[#4A5AE8]',
+        'data-disabled:pointer-events-none data-disabled:opacity-50',
+        className,
+      )}
+    >
+      <SelectPrimitive.ItemText className="min-w-0 truncate">{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemIndicator
+        render={<span className="flex size-4 shrink-0 items-center justify-center text-[#5B6CF9]" />}
+      >
+        <Check className="size-3.5" />
+      </SelectPrimitive.ItemIndicator>
+    </SelectPrimitive.Item>
+  );
+}
+
+/* ─────────────────────────── Prompt editor ─────────────────────────── */
+
+/**
+ * A textarea that can be opened full-screen.
+ *
+ * System prompts get long — a real one runs to hundreds of lines of
+ * business rules — and editing that through a four-row window with its
+ * own scrollbar is genuinely painful: you lose your place, and you can't
+ * see the structure you're editing. The inline box stays for a glance
+ * and a small tweak; the expand control gives the whole screen for
+ * actual work.
+ *
+ * The dialog edits a draft copy and commits on Save, so an accidental
+ * Escape can't wipe a long prompt. Cancel restores what was there.
+ */
+export function AiPromptEditor({
+  id,
+  value,
+  onChange,
+  placeholder,
+  rows = 4,
+  title,
+  subtitle,
+  required = false,
+  invalid = false,
+}: {
+  id?: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  rows?: number;
+  title: string;
+  subtitle?: string;
+  required?: boolean;
+  invalid?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  function openEditor() {
+    setDraft(value);
+    setOpen(true);
+  }
+
+  function commit() {
+    onChange(draft);
+    setOpen(false);
+  }
+
+  const lineCount = value ? value.split('\n').length : 0;
+  const charCount = value.length;
+
+  return (
+    <>
+      <div className="relative">
+        <AiTextarea
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          rows={rows}
+          className={cn(
+            'pr-11',
+            invalid && 'ring-rose-400/70 focus:ring-rose-400/70 focus:shadow-[0_0_0_4px_rgba(244,63,94,0.10)]',
+          )}
+        />
+        <button
+          type="button"
+          onClick={openEditor}
+          aria-label={`Expand ${title} to full screen`}
+          title="Expand to full screen"
+          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg bg-white/90 text-slate-400 ring-1 ring-slate-200/80 backdrop-blur-sm transition-colors hover:bg-white hover:text-[#5B6CF9] hover:ring-[#5B6CF9]/35"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {charCount > 0 && (
+        <p className="mt-1 text-[10.5px] tabular-nums text-slate-400">
+          {lineCount.toLocaleString()} line{lineCount === 1 ? '' : 's'} · {charCount.toLocaleString()} characters
+        </p>
+      )}
+
+      <AiModal open={open} onOpenChange={setOpen} size="lg">
+        <div className="flex h-[85vh] flex-col">
+          <AiModalHeader
+            icon={
+              <AiIconTile tint="indigo" size="lg">
+                <Sparkles className="h-5 w-5" />
+              </AiIconTile>
+            }
+            title={title}
+            subtitle={subtitle}
+            onClose={() => setOpen(false)}
+          />
+
+          <div className="min-h-0 flex-1 border-t border-slate-100 px-5 py-4 sm:px-6">
+            <textarea
+              autoComplete="off"
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={placeholder}
+              spellCheck={false}
+              className="h-full w-full resize-none rounded-xl bg-white px-4 py-3 font-mono text-[13px] leading-relaxed text-slate-800 ring-1 ring-slate-200/90 outline-none transition-shadow focus:ring-2 focus:ring-[#5B6CF9]/45 focus:shadow-[0_0_0_4px_rgba(91,108,249,0.10)]"
+            />
+          </div>
+
+          <AiModalFooter>
+            <span className="text-[11.5px] tabular-nums text-slate-400">
+              {draft.split('\n').length.toLocaleString()} lines · {draft.length.toLocaleString()} characters
+              {required && !draft.trim() && (
+                <span className="ml-2 font-medium text-rose-600">Required — this cannot be empty.</span>
+              )}
+            </span>
+            <span className="flex items-center gap-2">
+              <AiButton tone="outline" onClick={() => setOpen(false)}>Cancel</AiButton>
+              <AiButton onClick={commit} disabled={required && !draft.trim()}>
+                <Check className="h-4 w-4" />
+                Done
+              </AiButton>
+            </span>
+          </AiModalFooter>
+        </div>
+      </AiModal>
+    </>
   );
 }

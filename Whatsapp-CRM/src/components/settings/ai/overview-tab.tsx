@@ -1,6 +1,9 @@
 'use client';
 
-import { CheckCircle2, Settings2, BookOpen, Send, BarChart3, Cpu, Thermometer, Layers, Globe, ShieldCheck, ArrowRight } from 'lucide-react';
+import {
+  CheckCircle2, Settings2, BookOpen, Send, BarChart3, Cpu, Thermometer, Layers, Globe, ShieldCheck,
+  ArrowRight, AlertTriangle,
+} from 'lucide-react';
 import { AiButton, AiCard, AiIconTile } from './ui-kit';
 
 /**
@@ -21,6 +24,11 @@ export interface OverviewTabProps {
   replyLanguage: string;
   safetyFilter: string;
   semanticSearchAvailable: boolean;
+  /** No customer prompt means the bot is answering as a generic
+   *  assistant. Surfaced here because Overview is where someone lands
+   *  after connecting, and a collapsed accordion on another tab is not
+   *  where a blocking gap should live. */
+  systemPromptMissing: boolean;
   onReconfigure: () => void;
   onGoToTab: (tab: 'training' | 'test' | 'usage') => void;
 }
@@ -50,6 +58,28 @@ export function OverviewTab(props: OverviewTabProps) {
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0 space-y-5">
+        {props.systemPromptMissing && (
+          <button
+            type="button"
+            onClick={() => props.onGoToTab('training')}
+            className="flex w-full items-start gap-3 rounded-2xl bg-amber-50 p-4 text-left ring-1 ring-amber-500/20 transition-colors hover:bg-amber-100/70"
+          >
+            <AiIconTile tint="amber" size="md">
+              <AlertTriangle className="h-4 w-4" />
+            </AiIconTile>
+            <span className="min-w-0">
+              <span className="block text-[13.5px] font-semibold text-amber-900">
+                No customer prompt set — replies are generic
+              </span>
+              <span className="mt-0.5 block text-[12px] leading-relaxed text-amber-800">
+                The AI is answering without instructions about your business or how it should behave. Open AI Training
+                → Advanced Features to write one, or start from the template.
+              </span>
+            </span>
+            <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          </button>
+        )}
+
         {/* ── Connected banner ── */}
         <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-50/40 p-5 ring-1 ring-emerald-500/15 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_12px_28px_-20px_rgba(16,185,129,0.55)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
