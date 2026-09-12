@@ -68,3 +68,16 @@ export interface AiProviderAdapter {
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
+
+/**
+ * None of the four provider calls used to set any request timeout at
+ * all — a slow or hung provider meant the customer (and the fallback
+ * provider this app already supports) just waited indefinitely, since
+ * Node's global fetch has no default timeout and neither did the Gemini
+ * SDK call. Found live (Sept 2026) while investigating "AI replies
+ * arrive late" reports. 20s is generous headroom over a normal Flash/
+ * Haiku-class reply (typically 1-3s) while still giving the existing
+ * fallback-to-secondary-provider logic (registry.ts) a real chance to
+ * kick in instead of the whole flow hanging on one slow request.
+ */
+export const AI_REQUEST_TIMEOUT_MS = 20_000

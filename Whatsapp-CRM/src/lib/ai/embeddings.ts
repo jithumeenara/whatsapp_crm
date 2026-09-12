@@ -56,9 +56,17 @@ export function chunkContentHash(chunk: { title: string; text: string }): string
   return hashText(chunkEmbeddingText(chunk))
 }
 
+// Shorter than the chat-reply timeout (providers/types.ts) — a slow
+// embedding call has an existing, fast graceful fallback (keyword search,
+// see knowledge.ts's selectBySemantic try/catch) that a slow chat-reply
+// call doesn't, so there's no reason to make the customer wait as long
+// before taking it. Previously had no timeout at all — a hung embedding
+// call could add its full hang time on top of the actual reply call.
+const EMBED_TIMEOUT_MS = 10_000
+
 async function embed(apiKey: string, text: string, taskType: TaskType): Promise<number[]> {
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL })
+  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL }, { timeout: EMBED_TIMEOUT_MS })
   const result = await model.embedContent({
     content: { role: 'user', parts: [{ text }] },
     taskType,

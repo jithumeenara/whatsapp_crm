@@ -1,5 +1,5 @@
 import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
-import { errorMessage } from './types'
+import { errorMessage, AI_REQUEST_TIMEOUT_MS } from './types'
 import { assertSafeAiBaseUrl } from './ssrf-guard'
 
 /**
@@ -40,6 +40,10 @@ export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateAr
       temperature: args.temperature,
       max_tokens: args.maxTokens,
     }),
+    // No timeout here before meant a hung/slow provider (OpenAI, DeepSeek,
+    // or a self-hosted "custom" endpoint) just hung the whole reply — see
+    // AI_REQUEST_TIMEOUT_MS's own comment.
+    signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
   })
 
   const data = (await res.json().catch(() => ({}))) as OpenAiChatResponse
@@ -64,6 +68,10 @@ function classifyOpenAiCompatibleError(err: unknown): ClassifiedAiError {
   }
   if (/rate_limit|429|overloaded|503|502|timeout/i.test(msg)) {
     return { message: `Rate limited or temporarily unavailable: ${msg}`, retryable: true }
+  }
+  // AbortSignal.timeout() firing throws a DOMException named 'TimeoutError'.
+  if (err instanceof DOMException && err.name === 'TimeoutError') {
+    return { message: 'The provider took too long to respond — try again shortly.', retryable: true }
   }
   return { message: msg, retryable: false }
 }

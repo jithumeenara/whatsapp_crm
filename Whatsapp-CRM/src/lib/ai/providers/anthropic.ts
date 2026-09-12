@@ -1,5 +1,5 @@
 import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
-import { errorMessage } from './types'
+import { errorMessage, AI_REQUEST_TIMEOUT_MS } from './types'
 
 const ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1'
 const ANTHROPIC_VERSION = '2023-06-01'
@@ -60,6 +60,9 @@ async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
       system: args.systemPrompt || undefined,
       messages: buildMessages(args),
     }),
+    // No timeout here before meant a hung/slow Anthropic response just
+    // hung the whole reply — see AI_REQUEST_TIMEOUT_MS's own comment.
+    signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
   })
 
   const data = (await res.json().catch(() => ({}))) as AnthropicResponse
@@ -84,6 +87,12 @@ function classifyError(err: unknown): ClassifiedAiError {
   }
   if (/overloaded_error|529|503/i.test(msg)) {
     return { message: 'Anthropic is temporarily overloaded — try again shortly.', retryable: true }
+  }
+  // AbortSignal.timeout() firing throws a DOMException named 'TimeoutError'
+  // — treated as retryable so a hung/slow Claude attempt still falls over
+  // to whatever fallback provider is configured.
+  if ((err instanceof DOMException && err.name === 'TimeoutError') || /timeout/i.test(msg)) {
+    return { message: 'Claude took too long to respond — try again shortly.', retryable: true }
   }
   return { message: `Claude error: ${msg}`, retryable: false }
 }

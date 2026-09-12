@@ -1,16 +1,22 @@
 import { GoogleGenerativeAI, FinishReason } from '@google/generative-ai'
 import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
+import { AI_REQUEST_TIMEOUT_MS } from './types'
 
 async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
-  const model = genAI.getGenerativeModel({
-    model: args.model,
-    generationConfig: {
-      temperature: args.temperature,
-      maxOutputTokens: args.maxTokens,
+  const model = genAI.getGenerativeModel(
+    {
+      model: args.model,
+      generationConfig: {
+        temperature: args.temperature,
+        maxOutputTokens: args.maxTokens,
+      },
+      systemInstruction: args.systemPrompt || 'You are a helpful assistant.',
     },
-    systemInstruction: args.systemPrompt || 'You are a helpful assistant.',
-  })
+    // Ground-truthed against the installed SDK's own .d.ts (RequestOptions.timeout,
+    // milliseconds) rather than assumed — see AI_REQUEST_TIMEOUT_MS's own comment.
+    { timeout: AI_REQUEST_TIMEOUT_MS },
+  )
 
   const history = args.conversationHistory.map((m) => ({
     role: m.role,
@@ -25,6 +31,7 @@ async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
 
 function classifyError(err: unknown): ClassifiedAiError {
   const msg = err instanceof Error ? err.message : String(err)
+  const name = err instanceof Error ? err.name : ''
   if (msg.includes('API_KEY_INVALID') || msg.includes('API key not valid')) {
     return { message: 'Invalid API key. Check it at aistudio.google.com.', retryable: false }
   }
@@ -33,6 +40,14 @@ function classifyError(err: unknown): ClassifiedAiError {
   }
   if (msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')) {
     return { message: 'Quota exceeded. Check your Gemini API usage limits.', retryable: true }
+  }
+  // GoogleGenerativeAIAbortError — thrown by the SDK when our own
+  // requestOptions.timeout (see generateReply above) fires. Treated as
+  // retryable so a hung/slow Gemini attempt still falls over to whatever
+  // fallback provider is configured, instead of the whole reply just
+  // failing after the full timeout with no second chance.
+  if (name === 'GoogleGenerativeAIAbortError' || /aborted|timeout/i.test(msg)) {
+    return { message: 'Gemini took too long to respond — try again shortly.', retryable: true }
   }
   return { message: `Gemini error: ${msg}`, retryable: false }
 }
