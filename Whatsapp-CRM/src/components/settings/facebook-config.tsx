@@ -208,7 +208,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input autoComplete="off"
+                <input autoComplete="new-password"
                   type={showToken ? "text" : "password"}
                   value={accessToken}
                   onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true) }}
@@ -239,7 +239,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input autoComplete="off"
+                <input autoComplete="new-password"
                   type={showSecret ? "text" : "password"}
                   value={appSecret}
                   onChange={(e) => { setAppSecret(e.target.value); setSecretEdited(true) }}

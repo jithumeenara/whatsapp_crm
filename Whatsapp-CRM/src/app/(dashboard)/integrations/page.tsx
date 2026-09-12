@@ -468,7 +468,7 @@ export default function IntegrationsPage() {
                       className="inp" />
                   </Field>
                   <Field label={form.auth_type === "api_key" ? "API Key" : form.auth_type === "basic" ? "Key Secret / Password" : "Bearer Token"}>
-                    <input autoComplete="off" type="password" value={form.auth_value} onChange={(e) => setF({ auth_value: e.target.value })}
+                    <input autoComplete="new-password" type="password" value={form.auth_value} onChange={(e) => setF({ auth_value: e.target.value })}
                       placeholder="••••••••" className="inp" />
                   </Field>
                 </div>
@@ -742,7 +742,7 @@ export default function IntegrationsPage() {
                               </div>
                               <div className="flex-1">
                                 <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">Key Secret</label>
-                                <input autoComplete="off"
+                                <input autoComplete="new-password"
                                   type="password"
                                   value={fixCreds.keySecret}
                                   onChange={(e) => setFixCreds((p) => ({ ...p, keySecret: e.target.value }))}

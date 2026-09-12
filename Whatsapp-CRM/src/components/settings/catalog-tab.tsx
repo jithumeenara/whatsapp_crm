@@ -303,6 +303,7 @@ export function CatalogTab() {
                 <div className="relative">
                   <Input
                     type={showToken ? 'text' : 'password'}
+                    autoComplete="new-password"
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
                     placeholder="System user token with catalog_management"

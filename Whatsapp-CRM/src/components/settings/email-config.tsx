@@ -226,6 +226,7 @@ export function EmailConfig() {
           <Input
             id="email-api-key"
             type="password"
+            autoComplete="new-password"
             value={apiKey}
             onChange={(e) => { setApiKey(e.target.value); setApiKeyEdited(true); }}
             onFocus={() => { if (apiKey === MASKED) { setApiKey(''); setApiKeyEdited(true); } }}

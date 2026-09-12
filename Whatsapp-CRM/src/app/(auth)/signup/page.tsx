@@ -109,7 +109,7 @@ function SignupContent() {
               <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input autoComplete="off" type={showPw ? "text" : "password"} placeholder="Min. 6 characters" required value={password} onChange={(e) => setPassword(e.target.value)}
+                <input autoComplete="new-password" type={showPw ? "text" : "password"} placeholder="Min. 6 characters" required value={password} onChange={(e) => setPassword(e.target.value)}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-11 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100" />
                 <button type="button" onClick={() => setShowPw(!showPw)} tabIndex={-1} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -121,7 +121,7 @@ function SignupContent() {
               <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">Confirm Password</label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input autoComplete="off" type={showPw ? "text" : "password"} placeholder="Repeat password" required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
+                <input autoComplete="new-password" type={showPw ? "text" : "password"} placeholder="Repeat password" required value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100" />
               </div>
             </div>

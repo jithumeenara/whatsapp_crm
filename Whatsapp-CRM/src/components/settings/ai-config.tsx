@@ -471,6 +471,19 @@ export function AiConfig() {
                 <Input
                   id="api-key"
                   type={showKey ? 'text' : 'password'}
+                  // Real bug, found live (Sept 2026): the browser was
+                  // filling the signed-in account's own saved login
+                  // password into this field — plain autoComplete="off"
+                  // (the shared Input default, see ui/input.tsx) is
+                  // documented to be ignored by browsers specifically for
+                  // type="password" fields. "new-password" is the token
+                  // that actually tells the browser this isn't the site's
+                  // login credential, not just an inert override.
+                  autoComplete="new-password"
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-bwignore="true"
+                  data-form-type="other"
                   placeholder={activeFields?.hasKey ? '••••••••••••••••' : `Paste your ${activeMeta.label} API key…`}
                   value={activeFields?.apiKey ?? ''}
                   onChange={(e) => handleApiKeyChange(e.target.value)}

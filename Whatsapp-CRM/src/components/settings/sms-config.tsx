@@ -306,6 +306,7 @@ export function SmsConfig() {
             <Input
               id="sms-auth-key"
               type="password"
+              autoComplete="new-password"
               value={authKey}
               onChange={(e) => { setAuthKey(e.target.value); setAuthKeyEdited(true); }}
               onFocus={() => { if (authKey === MASKED) { setAuthKey(''); setAuthKeyEdited(true); } }}
@@ -346,6 +347,7 @@ export function SmsConfig() {
             <Input
               id="sms-api-key"
               type="password"
+              autoComplete="new-password"
               value={authKey}
               onChange={(e) => { setAuthKey(e.target.value); setAuthKeyEdited(true); }}
               onFocus={() => { if (authKey === MASKED) { setAuthKey(''); setAuthKeyEdited(true); } }}

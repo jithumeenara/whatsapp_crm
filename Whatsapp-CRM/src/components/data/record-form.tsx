@@ -492,7 +492,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
         )}
 
         {field.field_type === 'password' && (
-          <Input type="password" value={strVal} placeholder={placeholder || '••••••••'} className={inputCls}
+          <Input type="password" autoComplete="new-password" value={strVal} placeholder={placeholder || '••••••••'} className={inputCls}
             onChange={(e) => set(field.field_key, e.target.value)} />
         )}
 

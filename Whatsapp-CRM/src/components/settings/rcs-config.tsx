@@ -239,6 +239,7 @@ export function RcsConfig() {
             <Input
               id="rcs-auth-token"
               type="password"
+              autoComplete="new-password"
               value={authToken}
               onChange={(e) => { setAuthToken(e.target.value); setAuthTokenEdited(true); }}
               onFocus={() => { if (authToken === MASKED) { setAuthToken(''); setAuthTokenEdited(true); } }}

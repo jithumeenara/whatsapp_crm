@@ -1472,6 +1472,12 @@ export function WhatsAppConfig(props: {
             <Input
               id="accessToken"
               type={showToken ? 'text' : 'password'}
+              // Not the account login — "new-password" is the token that
+              // actually stops Chrome from injecting the signed-in user's
+              // saved site password into an unrelated masked field on the
+              // same origin (plain autoComplete="off" is documented to be
+              // ignored by browsers specifically for type="password").
+              autoComplete="new-password"
               placeholder="Enter your access token"
               value={accessToken}
               onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true); }}

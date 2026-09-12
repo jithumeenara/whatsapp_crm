@@ -224,7 +224,7 @@ export function MfaSettings() {
           </p>
           <div className="space-y-1.5">
             <Label className="text-[13px] font-medium text-slate-700">Current password</Label>
-            <Input type="password" value={disablePassword} onChange={(e) => setDisablePassword(e.target.value)}
+            <Input type="password" autoComplete="current-password" value={disablePassword} onChange={(e) => setDisablePassword(e.target.value)}
               placeholder="••••••••" className="h-10 text-[13px] border-slate-200" autoFocus />
           </div>
           <div className="flex gap-2">

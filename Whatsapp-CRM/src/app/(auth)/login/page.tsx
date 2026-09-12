@@ -184,7 +184,7 @@ function LoginContent() {
                 </div>
                 <div className="relative">
                   <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input autoComplete="off"
+                  <input autoComplete="current-password"
                     id="password"
                     type={showPw ? "text" : "password"}
                     placeholder="••••••••"

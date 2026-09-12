@@ -410,6 +410,7 @@ function MetaAdsOverview() {
               <div className="relative">
                 <Input
                   type={showToken ? 'text' : 'password'}
+                  autoComplete="new-password"
                   value={accessToken}
                   onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true); }}
                   onFocus={() => { if (accessToken === MASKED_TOKEN) { setAccessToken(''); setTokenEdited(true); } }}

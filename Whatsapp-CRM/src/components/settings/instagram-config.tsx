@@ -229,7 +229,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input autoComplete="off"
+                <input autoComplete="new-password"
                   type={showToken ? "text" : "password"}
                   value={accessToken}
                   onChange={(e) => { setAccessToken(e.target.value); setTokenEdited(true) }}

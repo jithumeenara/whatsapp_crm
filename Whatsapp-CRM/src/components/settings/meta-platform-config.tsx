@@ -111,6 +111,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
                 <Label className="text-[13px] font-medium text-slate-700">App Secret</Label>
                 <Input
                   type="password"
+                  autoComplete="new-password"
                   value={appSecret}
                   onFocus={() => { if (!secretEdited) { setAppSecret(''); setSecretEdited(true); } }}
                   onChange={(e) => setAppSecret(e.target.value)}
