@@ -73,6 +73,10 @@ const SECURITY_HEADERS = [
       // Razorpay: wildcard covers checkout.razorpay.com, api.razorpay.com,
       // cdn.razorpay.com, lumberjack.razorpay.com and any other subdomains
       // the checkout modal needs.
+      // The live voice console opens ws(s)://<this host>/api/ai/live-voice.
+      // 'self' covers a same-origin WebSocket — CSP3 matches ws/wss
+      // against an http/https origin of the same host and port, and
+      // Chromium implements it — so no extra entry is needed here.
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com https://*.facebook.com",
       // Razorpay checkout modal renders as an iframe — wildcard covers all subdomains.
       // *.facebook.com: the Embedded Signup JS SDK opens its own login
