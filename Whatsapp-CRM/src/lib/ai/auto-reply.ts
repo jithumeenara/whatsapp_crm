@@ -69,7 +69,10 @@ export async function autoReplyToMessage(args: {
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: args.conversationId, account_id: args.accountId },
-    select: { assigned_to: true, status: true },
+    // assigned_agent_id, not assigned_to. Lead, Task and FollowUp all
+    // call this column assigned_to; Conversation does not, and using the
+    // familiar name threw at runtime on every inbound message.
+    select: { assigned_agent_id: true, status: true },
   })
   if (!conversation) return 'failed'
 
@@ -77,7 +80,7 @@ export async function autoReplyToMessage(args: {
   // assistant handed it over earlier, the answer is the same: stay out.
   if (
     aiConfig.ai_auto_reply_pause_on_agent &&
-    (conversation.assigned_to || conversation.status === 'pending')
+    (conversation.assigned_agent_id || conversation.status === 'pending')
   ) {
     return 'skipped_agent_active'
   }
@@ -265,7 +268,7 @@ async function handOver(args: {
       where: { id: args.conversationId },
       data: {
         status: 'pending',
-        ...(args.assignTo ? { assigned_to: args.assignTo } : {}),
+        ...(args.assignTo ? { assigned_agent_id: args.assignTo } : {}),
       },
     })
 
