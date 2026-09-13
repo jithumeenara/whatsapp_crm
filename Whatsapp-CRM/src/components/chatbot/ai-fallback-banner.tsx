@@ -74,8 +74,12 @@ export function AiFallbackBanner() {
       setConfig(next)
       setSaving(true)
       try {
+        // PUT, not POST: this route exports GET, PUT and DELETE only.
+        // A POST returned 405 with an empty body, and reading .json() on
+        // that threw "Unexpected end of JSON input" — which is what the
+        // user saw instead of anything about the method.
         const res = await fetch("/api/ai-config", {
-          method: "POST",
+          method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ai_auto_reply_enabled: next.enabled,
@@ -83,7 +87,13 @@ export function AiFallbackBanner() {
             ai_auto_reply_pause_on_agent: next.pauseOnAgent,
           }),
         })
-        if (!res.ok) throw new Error((await res.json()).error ?? "Could not save")
+        if (!res.ok) {
+          // Parsed defensively. An error response is not guaranteed to
+          // carry JSON — 405 and 502 both arrive empty — and letting the
+          // parse throw replaces a real status with a parser complaint.
+          const detail = await res.json().catch(() => null)
+          throw new Error(detail?.error ?? `Could not save (${res.status})`)
+        }
         if (patch.enabled !== undefined) {
           toast.success(
             patch.enabled
