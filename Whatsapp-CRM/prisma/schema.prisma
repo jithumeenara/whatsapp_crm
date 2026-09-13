@@ -1254,6 +1254,30 @@ model AiConfig {
   /// TTS's, so this cannot share cloud_voice.
   live_voice_name                String  @default("Kore")
 
+  /// Answer inbound messages that no chatbot or automation claimed.
+  ///
+  /// Without this, a message only gets a reply when its wording happens
+  /// to match a trigger somebody wrote down. A keyword list can only
+  /// cover the phrasings that were thought of, so for an account whose
+  /// customers ask ordinary questions in their own words, most messages
+  /// simply wait in the inbox.
+  ///
+  /// Off by default: this is the assistant talking to real customers
+  /// with no flow around it, which is a real behaviour change and should
+  /// not arrive switched on after a deploy.
+  ai_auto_reply_enabled          Boolean @default(false)
+  /// Channels the fallback covers. WhatsApp only to begin with — it is
+  /// the one with a real send path, formatting rules and testing behind
+  /// it.
+  ai_auto_reply_channels         Json    @default("[\"whatsapp\"]")
+  /// How many times the assistant may answer one conversation before it
+  /// stops and waits for a person. Two parties going back and forth with
+  /// a bot that cannot help is worse than silence.
+  ai_auto_reply_max_turns        Int     @default(8)
+  /// Stop once a human has joined the thread. Nothing damages trust
+  /// faster than an agent typing while a bot talks over them.
+  ai_auto_reply_pause_on_agent   Boolean @default(true)
+
   /// Check a reply against its own retrieved context before sending,
   /// and hand off rather than send an unsupported figure.
   /// See src/lib/ai/validator.ts.

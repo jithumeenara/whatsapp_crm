@@ -404,6 +404,189 @@ const TOOLS: Record<string, ToolImpl> = {
       }
     },
   },
+
+  list_chatbots: {
+    declaration: {
+      name: 'list_chatbots',
+      description:
+        "Every chatbot and flow in this account: what it is called, what it is for, whether it is live, what triggers it, how many steps it has and how often it has run. Use this for 'what chatbots do we have', 'which bot handles X', or before describing one in detail.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          only_active: {
+            type: SchemaType.BOOLEAN,
+            description: 'Optional. True to list only published/active ones. Omit for everything including drafts.',
+          },
+        },
+      },
+    },
+    async run(args, ctx) {
+      const flows = await prisma.flow.findMany({
+        where: {
+          account_id: ctx.accountId,
+          ...(args.only_active === true ? { status: { in: ['active', 'published'] } } : {}),
+        },
+        select: {
+          id: true, name: true, description: true, flow_type: true, channel: true,
+          status: true, trigger_type: true, trigger_config: true,
+          execution_count: true, last_executed_at: true, updated_at: true,
+          _count: { select: { nodes: true } },
+        },
+        orderBy: [{ status: 'asc' }, { execution_count: 'desc' }],
+        take: 60,
+      })
+
+      if (flows.length === 0) {
+        return { found: false, note: 'This account has no chatbots or flows yet.' }
+      }
+
+      return {
+        found: true,
+        total: flows.length,
+        chatbots: flows.map((f) => ({
+          id: f.id,
+          name: f.name,
+          purpose: f.description || 'No description was written for this one.',
+          kind: f.flow_type === 'chatbot' ? 'chatbot' : 'flow',
+          channel: f.channel,
+          status: f.status,
+          starts_when: describeTrigger(f.trigger_type, f.trigger_config),
+          steps: f._count.nodes,
+          times_run: f.execution_count,
+          last_run: f.last_executed_at ? f.last_executed_at.toISOString().slice(0, 10) : 'never',
+        })),
+      }
+    },
+  },
+
+  describe_chatbot: {
+    declaration: {
+      name: 'describe_chatbot',
+      description:
+        "Every step of one chatbot, in order, with what each step does and where it leads. Use this to explain how a bot works, to find why it does or does not do something, or to spot steps that lead nowhere. Get the id from list_chatbots first.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          chatbot_id: { type: SchemaType.STRING, description: 'The id from list_chatbots.' },
+        },
+        required: ['chatbot_id'],
+      },
+    },
+    async run(args, ctx) {
+      const id = typeof args.chatbot_id === 'string' ? args.chatbot_id : ''
+      if (!id) return { error: 'A chatbot_id is required. Call list_chatbots first.' }
+
+      const flow = await prisma.flow.findFirst({
+        // account_id in the filter, not just the id: an id from another
+        // account must not resolve even if one were guessed.
+        where: { id, account_id: ctx.accountId },
+        select: {
+          name: true, description: true, flow_type: true, channel: true, status: true,
+          trigger_type: true, trigger_config: true, entry_node_id: true, fallback_policy: true,
+          nodes: {
+            select: { node_key: true, node_type: true, config: true },
+            orderBy: { created_at: 'asc' },
+          },
+        },
+      })
+      if (!flow) return { error: 'No chatbot with that id in this account.' }
+
+      const steps = flow.nodes.map((n) => {
+        const config = (n.config ?? {}) as Record<string, unknown>
+        return {
+          step: n.node_key,
+          does: describeNode(n.node_type, config),
+          type: n.node_type,
+          leads_to: nextKeys(n.node_type, config),
+        }
+      })
+
+      // entry_node_id stores a node_key, not a node id — the engine uses
+      // it directly as current_node_key when it starts a run. Matching it
+      // against ids reported every working bot as having no entry point,
+      // which is alarming and wrong.
+      const entryKey = flow.nodes.some((n) => n.node_key === flow.entry_node_id)
+        ? flow.entry_node_id
+        : null
+
+      // A step nothing points at, and which is not the entry point, is
+      // unreachable — the most common real fault in a hand-built bot and
+      // invisible in a graph you have to scroll.
+      const referenced = new Set(steps.flatMap((s) => s.leads_to))
+      const unreachable = steps
+        .filter((s) => s.step !== entryKey && s.type !== 'start' && !referenced.has(s.step))
+        .map((s) => s.step)
+
+      // 'link_chatbot' and 'send_to_number' finish this bot on purpose —
+      // one hands over to another chatbot, the other messages elsewhere.
+      // Reporting them as dead ends buries the real ones.
+      const TERMINAL = ['end', 'handoff', 'link_chatbot']
+      const deadEnds = steps
+        .filter((s) => s.leads_to.length === 0 && !TERMINAL.includes(s.type))
+        .map((s) => s.step)
+
+      return {
+        name: flow.name,
+        purpose: flow.description || 'No description was written for this one.',
+        kind: flow.flow_type === 'chatbot' ? 'chatbot' : 'flow',
+        channel: flow.channel,
+        status: flow.status,
+        starts_when: describeTrigger(flow.trigger_type, flow.trigger_config),
+        // A missing entry point is not cosmetic: the runner refuses to
+        // start a flow without one, so this bot can never fire however
+        // good its steps are.
+        first_step: entryKey ?? 'NOT SET — the runner cannot start this bot at all until an entry step is chosen',
+        when_the_reply_is_not_understood: flow.fallback_policy,
+        steps,
+        problems: {
+          unreachable_steps: unreachable,
+          steps_that_lead_nowhere: deadEnds,
+        },
+      }
+    },
+  },
+
+  list_whatsapp_forms: {
+    declaration: {
+      name: 'list_whatsapp_forms',
+      description:
+        "The Meta WhatsApp Flows (the in-chat forms customers fill in) that this account's chatbots send, and which chatbot sends each one. Use this for questions about forms, in-chat applications or data collection screens.",
+      parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
+    async run(_args, ctx) {
+      // Read from the send_flow steps rather than from Meta: this answers
+      // "which forms do we actually use", and a form that exists in Meta
+      // but is wired into nothing is not what is being asked about.
+      const flows = await prisma.flow.findMany({
+        where: { account_id: ctx.accountId },
+        select: {
+          name: true, status: true,
+          nodes: { where: { node_type: 'send_flow' }, select: { node_key: true, config: true } },
+        },
+      })
+
+      const forms: { form_id: string; sent_by: string; chatbot_status: string; step: string; button: string }[] = []
+      for (const flow of flows) {
+        for (const node of flow.nodes) {
+          const config = (node.config ?? {}) as Record<string, unknown>
+          const formId = typeof config.flow_id === 'string' ? config.flow_id : null
+          if (!formId) continue
+          forms.push({
+            form_id: formId,
+            sent_by: flow.name,
+            chatbot_status: flow.status,
+            step: node.node_key,
+            button: typeof config.button_text === 'string' ? config.button_text : 'Open',
+          })
+        }
+      }
+
+      if (forms.length === 0) {
+        return { found: false, note: 'No chatbot in this account sends a WhatsApp Flow form.' }
+      }
+      return { found: true, total: forms.length, forms }
+    },
+  },
 }
 
 export const TOOL_DECLARATIONS: FunctionDeclaration[] = Object.values(TOOLS).map((t) => t.declaration)
@@ -422,4 +605,131 @@ export async function runTool(name: string, args: ToolArgs, ctx: ToolContext): P
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'That lookup failed.' }
   }
+}
+
+
+/** Turns a trigger row into the sentence somebody would say out loud. */
+function describeTrigger(triggerType: string, triggerConfig: unknown): string {
+  const config = (triggerConfig ?? {}) as Record<string, unknown>
+  const keywords = Array.isArray(config.keywords) ? (config.keywords as string[]) : []
+
+  switch (triggerType) {
+    case 'keyword':
+      return keywords.length
+        ? `a customer's message contains: ${keywords.join(', ')}`
+        : 'a keyword match, but no keywords have been set — so it never starts'
+    case 'welcome':
+    case 'first_message':
+      return 'a customer messages for the very first time'
+    case 'any_message':
+      return 'any inbound message'
+    case 'manual':
+      return 'an agent starts it by hand'
+    case 'ad_referral':
+      return 'a customer arrives from a click-to-WhatsApp advert'
+    default:
+      return keywords.length ? `${triggerType} (${keywords.join(', ')})` : triggerType
+  }
+}
+
+/**
+ * One plain sentence for one step.
+ *
+ * Written for somebody reading an explanation, not for a developer
+ * reading a schema — "asks a question and waits for the answer" rather
+ * than "collect_input". The model relays these almost verbatim, so the
+ * wording here is what an owner ends up reading.
+ */
+function describeNode(nodeType: string, config: Record<string, unknown>): string {
+  const text = (key: string, fallback = ''): string => {
+    const value = config[key]
+    return typeof value === 'string' && value.trim() ? value.trim() : fallback
+  }
+  const preview = (value: string) => (value.length > 90 ? `${value.slice(0, 89)}…` : value)
+
+  switch (nodeType) {
+    case 'send_message':
+    case 'send_text':
+      return `sends: "${preview(text('text', '(no message written)'))}"`
+    case 'send_media':
+      return `sends a ${text('kind', 'file')}${text('caption') ? ` with the caption "${preview(text('caption'))}"` : ''}`
+    case 'send_template':
+      return `sends the approved template "${text('template_name', '(none chosen)')}"`
+    case 'send_buttons':
+      return `asks "${preview(text('body_text', text('text', '(no question)')))}" with tappable buttons`
+    case 'send_list':
+      return `offers a list of options: "${preview(text('body_text', '(no text)'))}"`
+    case 'send_flow':
+      return `opens a WhatsApp form (Flow ${text('flow_id', 'not chosen')}) behind the button "${text('button_text', 'Open')}"`
+    case 'send_catalog':
+      return 'shows the product catalog'
+    case 'collect_input':
+      return `asks "${preview(text('prompt_text', '(no question)'))}" and waits, saving the answer as ${text('save_to', 'an unnamed variable')}`
+    case 'ai_reply':
+      return 'hands the question to the AI assistant, which answers from the knowledge base'
+    case 'condition':
+      return 'splits the path depending on what the customer said or what is stored about them'
+    case 'delay':
+      return `waits ${String(config.duration ?? config.minutes ?? '?')} before carrying on`
+    case 'set_tag':
+      return `tags the contact: ${text('tag', '(no tag set)')}`
+    case 'set_variable':
+      return `stores a value as ${text('key', '(unnamed)')}`
+    case 'crm_action':
+      return `does something in the CRM: ${text('action', 'unspecified action')}`
+    case 'save_to_table':
+      return 'saves the collected answers into a Data Store table'
+    case 'http_request':
+      return `calls an outside system at ${text('url', '(no address set)')}`
+    case 'handoff':
+      return 'stops and hands the conversation to a person'
+    case 'link_chatbot':
+      return 'jumps into another chatbot'
+    case 'send_to_number':
+      return 'sends a message to a different number'
+    case 'start':
+      return 'the entry point — where the conversation begins'
+    case 'end':
+      return 'ends the conversation'
+    default:
+      return nodeType.replace(/_/g, ' ')
+  }
+}
+
+/**
+ * Every step this one can lead to.
+ *
+ * Walks the config rather than listing the key names that hold an
+ * onward link, because that list was already wrong once: buttons keep
+ * theirs in an array, but a call-to-action button keeps it in a plain
+ * object under `cta_button`, and missing that reported a working branch
+ * as a dead end *and* its target as unreachable — two false alarms from
+ * one omission. Node configs differ per type and will keep growing, so
+ * the convention is the thing to rely on: any `next_node_key` or `next`
+ * string anywhere in the config is an edge.
+ *
+ * Depth-limited because a config is a shallow tree and an unbounded walk
+ * over model-adjacent data is a liability rather than a feature.
+ */
+function nextKeys(_nodeType: string, config: Record<string, unknown>): string[] {
+  const keys = new Set<string>()
+
+  const walk = (value: unknown, depth: number) => {
+    if (depth > 4 || value === null || typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      for (const entry of value) walk(entry, depth + 1)
+      return
+    }
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if ((key === 'next_node_key' || key === 'next' || key.endsWith('_node_key')) && typeof child === 'string') {
+        const trimmed = child.trim()
+        if (trimmed) keys.add(trimmed)
+        continue
+      }
+      walk(child, depth + 1)
+    }
+  }
+
+  walk(config, 0)
+  return [...keys]
 }

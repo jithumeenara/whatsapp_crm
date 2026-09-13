@@ -37,7 +37,15 @@ export interface DispatchInput {
   context?: AutomationContext
 }
 
-export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
+/**
+ * Returns how many automations actually matched and ran.
+ *
+ * The count exists so a caller can tell "nothing was interested in this
+ * message" from "something handled it". The AI fallback needs exactly
+ * that distinction: replying on top of an automation that already
+ * answered would send the customer two messages.
+ */
+export async function runAutomationsForTrigger(input: DispatchInput): Promise<{ matched: number }> {
   try {
     if (input.contactId) {
       const owned = await prisma.contact.findFirst({
@@ -46,7 +54,7 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
       })
       if (!owned) {
         console.warn('[automations] contact not in account, refusing dispatch', input.contactId)
-        return
+        return { matched: 0 }
       }
     }
 
@@ -58,18 +66,24 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
       },
     })
 
-    if (automations.length === 0) return
+    if (automations.length === 0) return { matched: 0 }
 
+    let matched = 0
     for (const automation of automations as unknown as Automation[]) {
       if (!triggerMatches(automation, input.context)) continue
+      matched++
       try {
         await executeAutomation(automation, input)
       } catch (err) {
+        // Counted as matched even when it threw: something was meant to
+        // handle this message, so the AI fallback must not also answer.
         console.error('[automations] execute failed:', automation.id, err)
       }
     }
+    return { matched }
   } catch (err) {
     console.error('[automations] dispatch failed:', err)
+    return { matched: 0 }
   }
 }
 

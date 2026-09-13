@@ -1228,56 +1228,160 @@ function ConditionForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   );
 }
 
+/**
+ * Settings this node inherits from Settings -> AI Config.
+ *
+ * Fetched rather than hardcoded, because the last version hardcoded them
+ * and was wrong about every one: it offered a 300-token cap against an
+ * account default of 2048, so editing the field quietly made replies
+ * five times shorter than the account intended.
+ */
+type AccountAiDefaults = {
+  max_tokens: number;
+  history_depth_default: number;
+  model: string | null;
+  has_system_prompt: boolean;
+  knowledge_base_enabled: boolean;
+};
+
+function useAccountAiDefaults(): AccountAiDefaults | null {
+  const [defaults, setDefaults] = useState<AccountAiDefaults | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/ai-config');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setDefaults({
+          max_tokens: data.max_tokens ?? 2048,
+          history_depth_default: data.history_depth_default ?? 6,
+          model: data.provider_keys?.gemini?.model ?? null,
+          has_system_prompt: Boolean(data.system_prompt?.trim()),
+          knowledge_base_enabled: data.knowledge_base_enabled !== false,
+        });
+      } catch {
+        /* the form still works; it just cannot name the numbers */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  return defaults;
+}
+
 function AiReplyForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const vars = getFlowVars(allNodes, nodeKey);
+  const defaults = useAccountAiDefaults();
+
+  const overridesTokens = cfg.max_tokens !== undefined && cfg.max_tokens !== null;
+  const overridesHistory = cfg.history_depth !== undefined && cfg.history_depth !== null;
+
   return (
     <div className="space-y-4">
+      {/* What this node does without any configuration at all. Stated
+          first because it is the answer to the question somebody opening
+          this panel is actually asking. */}
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+        <p className="text-xs font-semibold text-indigo-900">Uses your AI settings</p>
+        <p className="mt-0.5 text-[10.5px] leading-relaxed text-indigo-800/80">
+          This step answers with the assistant you set up in Settings &rarr; AI Config: the same persona,
+          knowledge base, guardrails and language handling a customer gets anywhere else. Nothing below is
+          required — it is all for changing this one step.
+        </p>
+        {defaults && (
+          <ul className="mt-2 space-y-0.5 text-[10.5px] text-indigo-900/80">
+            <li>Model: <span className="font-mono">{defaults.model ?? 'account default'}</span></li>
+            <li>Reply length: up to {defaults.max_tokens} tokens</li>
+            <li>History: last {defaults.history_depth_default} messages</li>
+            <li>
+              Knowledge base:{' '}
+              {defaults.knowledge_base_enabled ? 'on — answers are grounded in your entries' : 'off'}
+            </li>
+            {!defaults.has_system_prompt && (
+              <li className="font-semibold text-amber-800">
+                No customer prompt is set on the account — set one, or replies fall back to a generic assistant.
+              </li>
+            )}
+          </ul>
+        )}
+      </div>
+
       <Field
-        label="System prompt *"
-        hint="Instructions for the AI. Describe its role and behavior."
+        label="Extra instructions for this step"
+        hint="Optional. Added on top of your AI settings — it does not replace them."
       >
         <RichTextArea
           value={String(cfg.system_prompt ?? "")}
           onChange={(v) => onChange({ ...cfg, system_prompt: v })}
-          placeholder="You are a helpful customer support agent…"
+          placeholder="e.g. Only discuss admissions here. If they ask about fees, send them to the fees step."
           vars={vars}
-          minHeight={100}
+          minHeight={80}
         />
       </Field>
+
       <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
         <div>
           <p className="text-xs font-medium">Include conversation history</p>
-          <p className="text-[10px] text-slate-500">
-            Sends recent messages as context
-          </p>
+          <p className="text-[10px] text-slate-500">Sends recent messages as context</p>
         </div>
         <Switch
           checked={cfg.include_history !== false}
           onCheckedChange={(v) => onChange({ ...cfg, include_history: v })}
         />
       </div>
+
       {cfg.include_history !== false && (
-        <Field label="History depth" hint="Number of past messages (1–20)">
+        <OverrideField
+          label="History depth"
+          defaultLabel={defaults ? `${defaults.history_depth_default} messages` : 'account default'}
+          overriding={overridesHistory}
+          onUseDefault={() => {
+            // Deleted, never set to the account's number: copying the
+            // value here would freeze it, and changing the account
+            // setting later would silently skip this node.
+            const next = { ...cfg };
+            delete next.history_depth;
+            onChange(next);
+          }}
+          onOverride={() => onChange({ ...cfg, history_depth: defaults?.history_depth_default ?? 6 })}
+        >
           <Input
             type="number"
             className="h-8 text-xs"
             min={1}
             max={20}
-            value={Number(cfg.history_depth ?? 5)}
+            value={Number(cfg.history_depth ?? defaults?.history_depth_default ?? 6)}
             onChange={(e) => onChange({ ...cfg, history_depth: Number(e.target.value) })}
           />
-        </Field>
+        </OverrideField>
       )}
-      <Field label="Max tokens" hint="Response length limit (100–1000)">
+
+      <OverrideField
+        label="Reply length"
+        defaultLabel={defaults ? `${defaults.max_tokens} tokens` : 'account default'}
+        overriding={overridesTokens}
+        onUseDefault={() => {
+          const next = { ...cfg };
+          delete next.max_tokens;
+          onChange(next);
+        }}
+        onOverride={() => onChange({ ...cfg, max_tokens: defaults?.max_tokens ?? 2048 })}
+      >
         <Input
           type="number"
           className="h-8 text-xs"
           min={50}
-          max={1000}
-          value={Number(cfg.max_tokens ?? 300)}
+          // Matches the account's own ceiling. The old 1000 here capped
+          // replies below what the account allowed, with no sign that it
+          // had.
+          max={8192}
+          step={50}
+          value={Number(cfg.max_tokens ?? defaults?.max_tokens ?? 2048)}
           onChange={(e) => onChange({ ...cfg, max_tokens: Number(e.target.value) })}
         />
-      </Field>
+      </OverrideField>
+
       <Field
         label="Save response to variable (optional)"
         hint="Store AI reply in {{vars.key}}"
@@ -1289,6 +1393,7 @@ function AiReplyForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           placeholder="ai_reply"
         />
       </Field>
+
       <NodeSelect
         label="Next node"
         value={String(cfg.next_node_key ?? "")}
@@ -1296,6 +1401,57 @@ function AiReplyForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         currentKey={nodeKey}
         onChange={(v) => onChange({ ...cfg, next_node_key: v })}
       />
+    </div>
+  );
+}
+
+/**
+ * A setting that follows the account unless somebody decides otherwise.
+ *
+ * The distinction matters more than it looks: a field pre-filled with a
+ * copy of the account's value looks identical to one that is inheriting
+ * it, and the two behave completely differently when the account setting
+ * is later changed. Showing which state it is in is the whole point.
+ */
+function OverrideField({
+  label, defaultLabel, overriding, onUseDefault, onOverride, children,
+}: {
+  label: string;
+  defaultLabel: string;
+  overriding: boolean;
+  onUseDefault: () => void;
+  onOverride: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-medium text-slate-700">{label}</span>
+        {overriding ? (
+          <button
+            type="button"
+            onClick={onUseDefault}
+            className="text-[10px] font-medium text-indigo-600 hover:underline"
+          >
+            Use account default
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onOverride}
+            className="text-[10px] font-medium text-slate-500 hover:text-indigo-600 hover:underline"
+          >
+            Override for this step
+          </button>
+        )}
+      </div>
+      {overriding ? (
+        children
+      ) : (
+        <p className="rounded-lg border border-dashed border-slate-200 px-3 py-2 text-[11px] text-slate-500">
+          Following your AI settings &mdash; {defaultLabel}
+        </p>
+      )}
     </div>
   );
 }

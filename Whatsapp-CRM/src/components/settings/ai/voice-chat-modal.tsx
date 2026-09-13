@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Mic, X, Check, Loader2, AlertTriangle, Radio } from 'lucide-react';
+import { Mic, X, Check, Loader2, AlertTriangle, Radio, RotateCcw } from 'lucide-react';
 import { AiNotice } from './ui-kit';
 
 export type VoiceTurn = { who: 'you' | 'assistant'; text: string };
@@ -200,34 +200,50 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
           </span>
         </div>
 
-        {/* Status + orb */}
-        <div className="flex min-h-0 flex-1 flex-col items-center px-6">
-          <p className="mt-5 text-[13.5px] font-medium text-slate-500">{statusLine}</p>
+        {/* Status, then whichever of orb / error / transcript belongs
+            here. This column scrolls; the controls below never move. */}
+        <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-6">
+          <p className="mt-4 shrink-0 text-[13.5px] font-medium text-slate-500">{statusLine}</p>
 
-          <div className="relative mt-3 aspect-square w-full max-w-[240px] shrink-0">
-            <canvas ref={canvasRef} className="h-full w-full" />
-            {status === 'connecting' && (
-              <span className="absolute inset-0 grid place-items-center">
-                <Loader2 className="h-6 w-6 animate-spin text-[#5B6CF9]" />
-              </span>
-            )}
-          </div>
+          {props.error ? (
+            // An error takes the orb's place rather than queueing under
+            // it. When something is wrong, a decorative sphere is not
+            // what this space is for — and stacking both is what pushed
+            // the words under the microphone button.
+            <div className="mt-4 w-full shrink-0 pb-2">
+              <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>
+                <span className="block whitespace-pre-line text-[12.5px] leading-relaxed">{props.error}</span>
+              </AiNotice>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="mt-2.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-xl bg-white text-[12.5px] font-semibold text-slate-700 ring-1 ring-slate-900/10 transition-colors hover:bg-slate-50"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reload the page
+              </button>
+            </div>
+          ) : (
+            <div className="relative mt-2 aspect-square w-full max-w-[210px] shrink-0">
+              <canvas ref={canvasRef} className="h-full w-full" />
+              {status === 'connecting' && (
+                <span className="absolute inset-0 grid place-items-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-[#5B6CF9]" />
+                </span>
+              )}
+            </div>
+          )}
 
-          {props.turns.length === 0 && status !== 'error' ? (
-            <p className="mt-3 max-w-[300px] text-center text-[19px] font-semibold leading-snug text-slate-400">
+          {props.turns.length === 0 && !props.error ? (
+            <p className="mt-2 max-w-[300px] shrink-0 text-center text-[18px] font-semibold leading-snug text-slate-400">
               Speak naturally as your AI bot{' '}
               <span className="text-slate-800">listens and responds instantly</span>
             </p>
-          ) : (
+          ) : props.turns.length > 0 ? (
             <div
               ref={transcriptRef}
-              className="mt-3 min-h-0 w-full flex-1 space-y-2 overflow-y-auto rounded-2xl bg-white/70 p-3 ring-1 ring-white/80"
+              className="mt-3 w-full flex-1 space-y-2 overflow-y-auto rounded-2xl bg-white/70 p-3 ring-1 ring-white/80"
             >
-              {props.error && (
-                <AiNotice tone="error" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
-                  <span className="block whitespace-pre-line">{props.error}</span>
-                </AiNotice>
-              )}
               {props.turns.map((t, i) => (
                 <p key={`${t.who}-${i}`} className="text-[12.5px] leading-relaxed">
                   <span className={t.who === 'you' ? 'font-semibold text-slate-700' : 'font-semibold text-[#4A5AE8]'}>
@@ -237,15 +253,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
                 </p>
               ))}
             </div>
-          )}
-
-          {props.error && props.turns.length === 0 && (
-            <div className="mt-3 w-full">
-              <AiNotice tone="error" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
-                <span className="block whitespace-pre-line">{props.error}</span>
-              </AiNotice>
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* Level bars */}
@@ -264,9 +272,11 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
           ))}
         </div>
 
-        {/* Controls */}
-        <div className="shrink-0 px-6 pb-7 pt-2">
-          <div className="flex items-center justify-center">
+        {/* Controls. Opaque and above the scrolling column: the button
+            floats, and anything allowed to scroll under it ends up
+            printed through it. */}
+        <div className="relative z-10 shrink-0 bg-gradient-to-t from-[#EFF3FB] via-[#EFF3FB] to-transparent px-6 pb-6 pt-3">
+          <div className="relative flex items-center justify-center">
             <button
               type="button"
               onClick={() => (live || status === 'connecting' ? props.onStop() : props.onStart())}

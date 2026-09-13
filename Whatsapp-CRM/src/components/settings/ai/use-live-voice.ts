@@ -125,10 +125,17 @@ export async function diagnoseMicFailure(err: unknown): Promise<string> {
     }
 
     if (state === 'denied') {
+      // Two causes produce this, and the browser reports only the
+      // combined result. A site-level Allow still reads as denied while
+      // the operating system refuses underneath it — which is exactly
+      // what was reported: the site toggle green, the panel still
+      // saying blocked. The OS goes first because somebody reaching this
+      // message has usually already checked the padlock.
       return [
-        'This site is currently blocked from using the microphone.',
-        'Click the padlock (or the icon left of the address) → set Microphone to Allow.',
-        'If you have just turned it on, reload the page — the browser applies the change to a fresh load.',
+        'The browser is refusing the microphone. Two things can cause this:',
+        '1. Windows — Settings → Privacy & security → Microphone. Turn on "Microphone access" AND "Let desktop apps access your microphone". This is the usual cause when the site toggle already looks correct.',
+        '2. This site — the padlock (or the icon left of the address) → Microphone → Allow.',
+        'Either way, reload the page afterwards: the browser only applies the change to a fresh load.',
       ].join('\n');
     }
 

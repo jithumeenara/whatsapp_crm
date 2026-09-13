@@ -5,6 +5,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import { autoReplyToMessage } from '@/lib/ai/auto-reply'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import {
   handleTemplateWebhookChange,
@@ -871,19 +872,58 @@ async function processMessage(
     }
     if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
     if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
+
+    // Awaited now, where they used to be fire-and-forget, because the AI
+    // fallback below has to know whether anything matched. Replying on
+    // top of an automation that already answered would send the customer
+    // two messages.
+    let automationsMatched = 0
     for (const triggerType of automationTriggers) {
-      runAutomationsForTrigger({
-        accountId,
-        triggerType,
-        contactId: contactRecord.id,
-        context: {
-          // Automations keyed on message text need the transcript too —
-          // a keyword trigger that works when typed should also work
-          // when spoken.
-          message_text: overrideText ?? inboundText,
-          conversation_id: conversation.id,
-        },
-      }).catch((err) => console.error('[automations] dispatch failed:', err))
+      try {
+        const result = await runAutomationsForTrigger({
+          accountId,
+          triggerType,
+          contactId: contactRecord.id,
+          context: {
+            // Automations keyed on message text need the transcript too —
+            // a keyword trigger that works when typed should also work
+            // when spoken.
+            message_text: overrideText ?? inboundText,
+            conversation_id: conversation.id,
+          },
+        })
+        automationsMatched += result.matched
+      } catch (err) {
+        console.error('[automations] dispatch failed:', err)
+      }
+    }
+
+    // Nothing claimed this message.
+    //
+    // Until now that meant it simply waited in the inbox: a keyword list
+    // only covers the phrasings somebody thought of, and customers ask
+    // in their own words. The assistant answers instead — the same
+    // pipeline the ai_reply node runs, with the same guardrails — but
+    // only when no flow and no automation wanted it, and only for
+    // accounts that have switched it on.
+    //
+    // Detached deliberately. The webhook must ack fast, and a reply that
+    // involves retrieval and a model call is not fast. Failures are
+    // logged rather than surfaced: a customer who gets no auto-reply is
+    // exactly where they were before this existed.
+    if (!flowResult.consumed && automationsMatched === 0) {
+      const replyText = overrideText ?? contentText ?? message.text?.body ?? ''
+      if (replyText.trim()) {
+        void autoReplyToMessage({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId: conversation.id,
+          contactId: contactRecord.id,
+          message: replyText,
+          channel: 'whatsapp',
+          wasVoice,
+        }).catch((err) => console.error('[ai-auto-reply] failed:', err))
+      }
     }
   }
 
