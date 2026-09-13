@@ -389,7 +389,9 @@ export interface SendMediaMessageArgs {
   link?: string
   /** Meta media ID returned by uploadMediaToMeta. Use this OR link. */
   id?: string
-  /** Optional caption — Meta caps at 1024 chars. Images, videos, documents all accept it. */
+  /** Optional caption — Meta caps at 1024 chars. Images, videos and
+   *  documents accept it; audio does not, and one sent anyway is
+   *  rejected outright (see sendMediaMessage). */
   caption?: string
   /** Document-only. Shown in the recipient's chat as the file name. */
   filename?: string
@@ -444,7 +446,13 @@ export async function sendMediaMessage(
   } else {
     media.link = link
   }
-  if (caption) media.caption = caption
+  // Audio is the one kind Meta refuses a caption on — it answers
+  // `Unexpected key "caption" on param "audio"` (code 100) and sends
+  // nothing. Dropped here rather than at each call site: every caller
+  // passes the message text as the caption for all four kinds, so the
+  // fix belongs where the difference actually is. A voice note has
+  // nowhere to show a caption anyway.
+  if (caption && kind !== 'audio') media.caption = caption
   if (kind === 'document' && filename) media.filename = filename
 
   const body: Record<string, unknown> = {

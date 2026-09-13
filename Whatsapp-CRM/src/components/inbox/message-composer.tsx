@@ -393,7 +393,12 @@ export function MessageComposer({
       setUploadingFilename('Voice message');
       try {
         const url = await uploadFile(file);
-        onSendMedia(url, 'audio', file.name);
+        // 'Voice message', not the generated filename. For audio this
+        // argument is only ever stored as the message text, and the
+        // audio bubble does not render it — the one place it surfaces is
+        // the conversation list, where "voice-2026-09-13T15-14-54.mp3"
+        // is not what anyone wants to read.
+        onSendMedia(url, 'audio', 'Voice message');
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'The voice message could not be sent.');
       } finally {
