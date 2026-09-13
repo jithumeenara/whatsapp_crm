@@ -5,13 +5,15 @@ import {
   Send, Loader2, RotateCcw, AlertTriangle, Database, BookOpen, Bot, UserRound,
   CheckCircle2, ChevronRight, Volume2, VolumeX, Mic, Trash2, ThumbsUp, ThumbsDown,
   Copy, Check, Cpu, Clock, MessageSquare, Lightbulb, ShieldCheck, Zap,
+  Users, ChevronDown,
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AiCard, AiNotice } from './ui-kit';
+import { AiCard, AiNotice, AiModal, AiModalHeader, AiModalBody } from './ui-kit';
 import { WhatsAppText } from '@/components/inbox/message-bubble';
 import { MarkdownAnswer } from './markdown-answer';
 import { ContactSyncPanel } from './contact-sync-panel';
 import { LiveVoicePanel } from './live-voice-panel';
+import type { VoiceTurn } from './use-live-voice';
 
 /**
  * Screen 5 — two genuinely different tests behind one screen.
@@ -48,6 +50,9 @@ export interface TestMessage {
   latencyMs?: number;
   at: number;
   feedback?: 'up' | 'down';
+  /** Came from a spoken conversation rather than being typed. Marked so
+   *  a reply that was heard is not mistaken for one that was read. */
+  spoken?: boolean;
 }
 
 export interface TestTabProps {
@@ -86,13 +91,44 @@ const CUSTOMER_EXAMPLES = [
   'എന്താണ് ഫീസ്?',
 ];
 
+/**
+ * Auto is the default, and the honest one.
+ *
+ * A live conversation needs no hint at all — the model detects the
+ * language per utterance, the same way text replies have since the
+ * setting was removed from setup. The only two things here that
+ * genuinely cannot work without a hint are the browser's own dictation
+ * and its read-aloud; for those Auto reads the script of the text rather
+ * than asking somebody to choose in advance.
+ */
 const VOICE_LANGUAGES = [
+  { id: 'auto', label: 'Auto-detect (recommended)' },
   { id: 'en-IN', label: 'English (India)' },
   { id: 'ml-IN', label: 'മലയാളം — Malayalam' },
   { id: 'ta-IN', label: 'தமிழ் — Tamil' },
   { id: 'hi-IN', label: 'हिन्दी — Hindi' },
   { id: 'en-US', label: 'English (US)' },
 ];
+
+/** Script ranges, mirroring the server's own voice picker. Good enough to
+ *  choose a voice: a wrong guess sounds accented, it does not say the
+ *  wrong words. */
+const SPEECH_SCRIPTS: [RegExp, string][] = [
+  [/[ഀ-ൿ]/, 'ml-IN'],
+  [/[஀-௿]/, 'ta-IN'],
+  [/[ऀ-ॿ]/, 'hi-IN'],
+  [/[ఀ-౿]/, 'te-IN'],
+  [/[ಀ-೿]/, 'kn-IN'],
+];
+
+function resolveSpeechLang(setting: string, text: string): string {
+  if (setting !== 'auto') return setting;
+  const hit = SPEECH_SCRIPTS.find(([re]) => re.test(text));
+  // en-IN rather than the browser locale: the customer base is Indian,
+  // and romanized Malayalam read by an Indian-English voice lands far
+  // closer than an American one.
+  return hit ? hit[1] : 'en-IN';
+}
 
 interface SpeechRecognitionLike {
   lang: string;
@@ -116,7 +152,7 @@ export function TestTab(props: TestTabProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [voiceLang, setVoiceLang] = useState('en-IN');
+  const [voiceLang, setVoiceLang] = useState('auto');
   const [listening, setListening] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(false);
@@ -125,6 +161,8 @@ export function TestTab(props: TestTabProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [openSources, setOpenSources] = useState<number | null>(null);
   const [knowledgeCount, setKnowledgeCount] = useState<number | null>(null);
+  const [contactsOpen, setContactsOpen] = useState(false);
+  const [examplesOpen, setExamplesOpen] = useState(false);
   const [lastTrained, setLastTrained] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -190,7 +228,10 @@ export function TestTab(props: TestTabProps) {
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
     if (!Ctor) return;
     const recognition = new Ctor();
-    recognition.lang = voiceLang;
+    // Dictation is the one place a hint is unavoidable: there is no text
+    // to read a script from yet. Auto falls back to the browser's own
+    // locale, which is what it would have used regardless.
+    recognition.lang = voiceLang === 'auto' ? navigator.language || 'en-IN' : voiceLang;
     recognition.continuous = false;
     recognition.interimResults = false;
     recognition.onresult = (event) => {
@@ -223,7 +264,9 @@ export function TestTab(props: TestTabProps) {
       // what listening to a reply is for.
       const spoken = text.replace(/[*_~]/g, '').replace(/```[\s\S]*?```/g, '').trim();
       const utterance = new SpeechSynthesisUtterance(spoken);
-      utterance.lang = voiceLang;
+      // Read from the reply's own script, so a Malayalam answer is spoken
+      // by a Malayalam voice without anyone having chosen one.
+      utterance.lang = resolveSpeechLang(voiceLang, spoken);
       utterance.onend = () => setSpeakingIndex(null);
       utterance.onerror = () => setSpeakingIndex(null);
       setSpeakingIndex(index);
@@ -318,6 +361,27 @@ export function TestTab(props: TestTabProps) {
     }).catch(() => {});
   }
 
+  /** Folds a spoken conversation into the chat.
+   *
+   *  Without this the transcript disappears with the sheet, and a voice
+   *  test leaves no trace of what was asked or answered — which makes it
+   *  useless for the thing tests are for. Marked as spoken so a reply
+   *  that was heard is not mistaken for one that was typed. */
+  const keepVoiceTranscript = useCallback((turns: VoiceTurn[]) => {
+    if (turns.length === 0) return;
+    const now = Date.now();
+    setMessages((prev) => [
+      ...prev,
+      ...turns.map((t, i) => ({
+        role: t.who === 'you' ? ('user' as const) : ('ai' as const),
+        text: t.text,
+        mode,
+        spoken: true,
+        at: now + i,
+      })),
+    ]);
+  }, [mode]);
+
   const copyReply = useCallback((index: number, text: string) => {
     void navigator.clipboard?.writeText(text).then(() => {
       setCopiedIndex(index);
@@ -351,30 +415,14 @@ export function TestTab(props: TestTabProps) {
 
   return (
     <div className="space-y-4">
-      {/* ── Mode + chat style ───────────────────────────────────── */}
-      <AiCard className="p-3 sm:p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="grid flex-1 gap-2.5 sm:grid-cols-2">
-            <ModeCard
-              active={mode === 'admin'}
-              onClick={() => setMode('admin')}
-              Icon={Database}
-              title="Admin Test"
-              blurb="Access all data, reports and insights."
-            />
-            <ModeCard
-              active={mode === 'customer'}
-              onClick={() => setMode('customer')}
-              Icon={UserRound}
-              title="Customer Test"
-              blurb="See what a real customer would experience."
-            />
-          </div>
+      {/* ── Mode, chat style, contact sync ──────────────────────── */}
+      <AiCard className="p-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <ModeRadio value={mode} onChange={setMode} />
 
-          <div className="flex shrink-0 items-center gap-2 lg:pl-2">
-            <span className="whitespace-nowrap text-[12.5px] font-medium text-slate-500">Chat Mode:</span>
+          <div className="ml-auto flex items-center gap-2">
             <Select value={chatStyle} onValueChange={(v) => v && setChatStyle(v as 'whatsapp' | 'plain')}>
-              <SelectTrigger className="h-9 w-[168px] rounded-xl border-slate-200 text-[13px]">
+              <SelectTrigger className="h-8 w-[148px] rounded-lg border-slate-200 text-[12.5px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -382,12 +430,22 @@ export function TestTab(props: TestTabProps) {
                 <SelectItem value="plain">Plain text</SelectItem>
               </SelectContent>
             </Select>
+
+            <button
+              type="button"
+              onClick={() => setContactsOpen(true)}
+              aria-label="Contact save and sync"
+              title="Contact save & sync"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#F5F6FA] text-slate-500 ring-1 ring-slate-200/80 transition-colors hover:bg-[#EEF0FF] hover:text-[#4A5AE8]"
+            >
+              <Users className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </AiCard>
 
       {/* ── Conversation + working column ───────────────────────── */}
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_308px]">
         {/* Chat */}
         <AiCard className="flex min-h-[560px] flex-col overflow-hidden">
           <div
@@ -508,50 +566,73 @@ export function TestTab(props: TestTabProps) {
         </AiCard>
 
         {/* Working column */}
-        <div className="space-y-4">
+        <div className="space-y-3">
           <LiveVoicePanel
             enabled={!!props.liveVoiceEnabled}
             mode={mode === 'admin' ? 'admin' : 'customer'}
-            compact
             language={voiceLang}
             onLanguageChange={setVoiceLang}
             languages={VOICE_LANGUAGES}
             autoSpeak={autoSpeak}
             onAutoSpeakChange={setAutoSpeak}
             speechSupported={speechSupported}
+            onKeepTranscript={keepVoiceTranscript}
           />
 
-          <SidebarCard
-            icon={<Lightbulb className="h-4 w-4 text-amber-500" />}
-            title="Example Queries"
-          >
-            <ul className="-mx-1">
-              {examples.map((q) => (
-                <li key={q}>
-                  <button
-                    type="button"
-                    onClick={() => void send(q)}
-                    disabled={loading}
-                    className="group flex w-full items-center gap-2 rounded-lg px-1 py-[7px] text-left transition-colors hover:bg-[#F5F6FA] disabled:opacity-50"
-                  >
-                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-[#F5F6FA] text-slate-400 group-hover:text-[#5B6CF9]">
-                      <MessageSquare className="h-3 w-3" />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-600 group-hover:text-slate-900">{q}</span>
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-[#5B6CF9]" />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </SidebarCard>
+          <AiCard className="p-3.5">
+            <button
+              type="button"
+              onClick={() => setExamplesOpen((o) => !o)}
+              aria-expanded={examplesOpen}
+              className="flex w-full items-center gap-2.5 text-left"
+            >
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#FEF6E7]">
+                <Lightbulb className="h-4 w-4 text-amber-500" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-slate-900">Example Queries</span>
+                <span className="block text-[11px] text-slate-500">{examples.length} to try</span>
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${examplesOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
 
-          <SidebarCard
-            icon={<CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-            title="AI Status"
-            subtitle={knowledgeCount === 0 ? 'Nothing to answer from yet' : 'Ready to respond'}
-          >
+            {examplesOpen && (
+              <ul className="mt-2 -mx-1 border-t border-slate-100 pt-1">
+                {examples.map((q) => (
+                  <li key={q}>
+                    <button
+                      type="button"
+                      onClick={() => void send(q)}
+                      disabled={loading}
+                      className="group flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-[#F5F6FA] disabled:opacity-50"
+                    >
+                      <MessageSquare className="h-3 w-3 shrink-0 text-slate-300 group-hover:text-[#5B6CF9]" />
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-slate-600 group-hover:text-slate-900">{q}</span>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-[#5B6CF9]" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </AiCard>
+
+          <AiCard className="p-3.5">
+            <div className="mb-2.5 flex items-center gap-2.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-50">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] font-semibold text-slate-900">AI Status</span>
+                <span className="block truncate text-[11px] text-slate-500">
+                  {knowledgeCount === 0 ? 'Nothing to answer from yet' : 'Ready to respond'}
+                </span>
+              </span>
+            </div>
+
             {knowledgeCount === 0 && (
-              <div className="mb-3">
+              <div className="mb-2.5">
                 <AiNotice tone="warning" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
                   Your knowledge base is empty, so replies come from the prompt alone.
                 </AiNotice>
@@ -578,81 +659,107 @@ export function TestTab(props: TestTabProps) {
                 caption="active"
               />
             </div>
-          </SidebarCard>
 
-          <SidebarCard
-            icon={<Zap className="h-4 w-4 text-[#5B6CF9]" />}
-            title="This session"
-            action={
-              visible.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => { setMessages([]); setError(''); }}
-                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-slate-500 ring-1 ring-slate-200/80 transition-colors hover:bg-[#F5F6FA]"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                  Reset
-                </button>
-              ) : undefined
-            }
-          >
-            <div className="grid grid-cols-4 gap-1.5">
-              <SummaryTile value={String(summary.messages)} label="Messages" />
-              <SummaryTile value={summary.avg} label="Avg reply" />
-              <SummaryTile value={summary.grounded} label="Grounded" tone={summary.grounded === '—' ? 'plain' : 'good'} />
-              <SummaryTile value={String(summary.issues)} label="Issues" tone={summary.issues > 0 ? 'bad' : 'plain'} />
+            {/* Session figures share this card rather than opening a
+                second one: they are the same question — how is it doing
+                right now — and a divider says that better than a gap. */}
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <div className="mb-2 flex items-center gap-2">
+                <Zap className="h-3.5 w-3.5 shrink-0 text-[#5B6CF9]" />
+                <span className="flex-1 text-[12px] font-semibold text-slate-800">This session</span>
+                {visible.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setMessages([]); setError(''); }}
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-[#F5F6FA]"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Reset
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                <SummaryTile value={String(summary.messages)} label="Msgs" />
+                <SummaryTile value={summary.avg} label="Avg" />
+                <SummaryTile value={summary.grounded} label="Grounded" tone={summary.grounded === '—' ? 'plain' : 'good'} />
+                <SummaryTile value={String(summary.issues)} label="Issues" tone={summary.issues > 0 ? 'bad' : 'plain'} />
+              </div>
+              <p className="mt-2 text-[10.5px] leading-relaxed text-slate-400">
+                &ldquo;Grounded&rdquo; means the answer came from a knowledge entry or a data lookup — not that it
+                was correct. The Accuracy tab measures that.
+              </p>
             </div>
-            <p className="mt-2.5 text-[11px] leading-relaxed text-slate-400">
-              &ldquo;Grounded&rdquo; means the answer was built on a knowledge entry or a data lookup — not that it
-              was correct. Use the Accuracy tab for that.
-            </p>
-          </SidebarCard>
+          </AiCard>
         </div>
       </div>
 
-      {mode === 'customer' && <ContactSyncPanel />}
+      {/* Contact sync: a repair job you reach for occasionally, not
+          something to read every time you test a reply. It was the
+          tallest thing on the page. */}
+      <AiModal open={contactsOpen} onOpenChange={setContactsOpen} size="lg">
+        <AiModalHeader
+          icon={<Users className="h-4 w-4" />}
+          title="Contact save & sync"
+          subtitle="Check that inbox contacts are stored and reachable by the assistant."
+          onClose={() => setContactsOpen(false)}
+        />
+        <AiModalBody className="max-h-[70vh] overflow-y-auto">
+          <ContactSyncPanel />
+        </AiModalBody>
+      </AiModal>
     </div>
   );
 }
 
 /* ─────────────────────── pieces ─────────────────────── */
 
-function ModeCard({
-  active, onClick, Icon, title, blurb,
-}: {
-  active: boolean;
-  onClick: () => void;
-  Icon: React.ComponentType<{ className?: string }>;
-  title: string;
-  blurb: string;
-}) {
+/**
+ * Which assistant you are talking to.
+ *
+ * Two cards the width of the screen to carry one word each was a lot of
+ * room for a binary choice. A radio group says the same thing in a
+ * strip, and — unlike the cards — says out loud that the options are
+ * mutually exclusive, which is the one thing about this control a
+ * screen-reader user needs to know.
+ */
+function ModeRadio({ value, onChange }: { value: 'admin' | 'customer'; onChange: (v: 'admin' | 'customer') => void }) {
+  const options = [
+    { id: 'customer' as const, label: 'Customer', Icon: UserRound, hint: 'What a real customer sees' },
+    { id: 'admin' as const, label: 'Admin', Icon: Database, hint: 'Your own CRM data' },
+  ];
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={[
-        'flex items-center gap-3 rounded-2xl px-3.5 py-3 text-left transition-all duration-150',
-        active
-          ? 'bg-[#EEF0FF] ring-2 ring-[#5B6CF9]/45'
-          : 'bg-white ring-1 ring-slate-200/80 hover:ring-slate-300',
-      ].join(' ')}
-    >
-      <span
-        className={[
-          'grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors',
-          active ? 'bg-white text-[#4A5AE8]' : 'bg-[#F5F6FA] text-slate-400',
-        ].join(' ')}
-      >
-        <Icon className="h-4 w-4" />
-      </span>
-      <span className="min-w-0">
-        <span className={['block text-[13.5px] font-semibold', active ? 'text-[#4A5AE8]' : 'text-slate-800'].join(' ')}>
-          {title}
-        </span>
-        <span className="block truncate text-[11.5px] text-slate-500">{blurb}</span>
-      </span>
-    </button>
+    <div role="radiogroup" aria-label="Test mode" className="flex items-center gap-1 rounded-xl bg-[#F5F6FA] p-1">
+      {options.map(({ id, label, Icon, hint }) => {
+        const active = value === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            title={hint}
+            onClick={() => onChange(id)}
+            className={[
+              'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-all duration-150',
+              active
+                ? 'bg-white text-[#4A5AE8] shadow-[0_1px_2px_rgba(15,23,42,.08)]'
+                : 'text-slate-500 hover:text-slate-700',
+            ].join(' ')}
+          >
+            <span
+              className={[
+                'grid h-3.5 w-3.5 shrink-0 place-items-center rounded-full ring-1 transition-colors',
+                active ? 'ring-[#5B6CF9]' : 'ring-slate-300',
+              ].join(' ')}
+            >
+              {active && <span className="h-1.5 w-1.5 rounded-full bg-[#5B6CF9]" />}
+            </span>
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -692,6 +799,7 @@ function UserBubble({ message }: { message: TestMessage }) {
       <div className="max-w-[85%] rounded-2xl rounded-br-md bg-[#D9FDD3] px-3.5 py-2.5 ring-1 ring-emerald-600/10">
         <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-slate-800">{message.text}</p>
         <span className="mt-1 flex items-center justify-end gap-1 text-[10.5px] text-slate-500">
+          {message.spoken && <Mic className="h-2.5 w-2.5" aria-label="Spoken" />}
           {clockTime(message.at)}
           {/* Two ticks: this screen is a rehearsal of a WhatsApp thread,
               and the read marker is part of what it is imitating. */}
@@ -806,6 +914,12 @@ function BotBubble(props: {
         </div>
 
         <div className="mt-1 flex items-center gap-2 pl-1">
+          {m.spoken && (
+            <span className="inline-flex items-center gap-1 text-[10.5px] text-slate-400">
+              <Mic className="h-2.5 w-2.5" />
+              Spoken
+            </span>
+          )}
           <span className="text-[10.5px] text-slate-400">{clockTime(m.at)}</span>
           {typeof m.latencyMs === 'number' && (
             <span className="text-[10.5px] text-slate-400">{(m.latencyMs / 1000).toFixed(1)}s</span>
@@ -846,30 +960,6 @@ function IconAction({
     >
       {children}
     </button>
-  );
-}
-
-function SidebarCard({
-  icon, title, subtitle, action, children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <AiCard className="p-4">
-      <div className="mb-3 flex items-start gap-2.5">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[#F5F6FA]">{icon}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-[13.5px] font-semibold text-slate-900">{title}</span>
-          {subtitle && <span className="block text-[11.5px] text-slate-500">{subtitle}</span>}
-        </span>
-        {action}
-      </div>
-      {children}
-    </AiCard>
   );
 }
 
