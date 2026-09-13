@@ -29,10 +29,27 @@ import { getProviderKeys } from '../providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { recordAiUsage } from '../usage'
 
-/** Cheap and fast: grading is a yes/no judgement on two short pieces of
- *  text, not a reasoning task worth a flagship model. */
-const GRADER_MODEL = 'gemini-2.5-flash'
+/**
+ * The model that grades answers, resolved rather than hardcoded.
+ *
+ * The first version pinned 'gemini-2.5-flash' and it was retired
+ * underneath the suite — "no longer available to new users" — turning
+ * every graded case into "Could not grade". Grading is the worst place
+ * to hold a dated assumption: the failure presents as a broken test
+ * suite rather than as a dead dependency.
+ *
+ * The account's own chat model is tried first because it is provably
+ * working — it is generating the very replies being graded. The fallback
+ * is an alias that tracks the current release instead of naming a
+ * version that can expire.
+ */
+const GRADER_FALLBACK_MODEL = 'gemini-flash-latest'
 const GRADER_TIMEOUT_MS = 20_000
+
+function resolveGraderModel(aiConfig: { provider_keys: unknown }): string {
+  const configured = getProviderKeys(aiConfig).gemini?.model?.trim()
+  return configured || GRADER_FALLBACK_MODEL
+}
 
 /** Guards against one stuck case holding a run open indefinitely. */
 const MAX_CASES_PER_RUN = 200
@@ -84,6 +101,7 @@ export async function runEvalSuite(args: {
 
   const geminiEntry = getProviderKeys(aiConfig).gemini
   const graderKey = geminiEntry?.api_key ? decrypt(geminiEntry.api_key) : null
+  const graderModel = resolveGraderModel(aiConfig)
 
   let passed = 0
   let failed = 0
@@ -95,6 +113,7 @@ export async function runEvalSuite(args: {
         accountId: args.accountId,
         testCase,
         graderKey,
+        graderModel,
       })
 
       if (outcome.passed) passed++
@@ -151,6 +170,7 @@ async function runOneCase(args: {
   accountId: string
   testCase: { id: string; question: string; expected: string | null; expect_handoff: boolean }
   graderKey: string | null
+  graderModel: string
 }): Promise<CaseOutcome> {
   const startedAt = Date.now()
 
@@ -191,8 +211,8 @@ async function runOneCase(args: {
       handedOff,
       confidence: turn.effectiveConfidence,
       verdict: handedOff
-        ? `Correctly handed off (${turn.decision.action === 'handoff' ? turn.decision.reason : ''}).`
-        : 'Should have handed off, but answered instead.',
+        ? `Correctly handed off — ${describeHandoff(turn)}`
+        : 'Should have handed off, but answered instead. Add this topic to your escalation list if it is a business rule rather than a safety one.',
       latencyMs,
     }
   }
@@ -204,10 +224,7 @@ async function runOneCase(args: {
       reply: turn.reply,
       handedOff: true,
       confidence: turn.effectiveConfidence,
-      verdict:
-        turn.decision.action === 'handoff' && turn.decision.reason === 'unsupported_details'
-          ? `Answer was blocked: ${turn.validation?.summary ?? 'unsupported details'}`
-          : `Handed off instead of answering. ${turn.confidence.explain}`,
+      verdict: `Handed off instead of answering — ${describeHandoff(turn)}`,
       latencyMs,
     }
   }
@@ -240,6 +257,7 @@ async function runOneCase(args: {
 
   const graded = await gradeAnswer({
     apiKey: args.graderKey,
+    model: args.graderModel,
     question: args.testCase.question,
     expected: args.testCase.expected,
     actual: reply,
@@ -266,6 +284,7 @@ async function runOneCase(args: {
  */
 async function gradeAnswer(args: {
   apiKey: string
+  model: string
   question: string
   expected: string
   actual: string
@@ -274,7 +293,7 @@ async function gradeAnswer(args: {
   const genAI = new GoogleGenerativeAI(args.apiKey)
   const model = genAI.getGenerativeModel(
     {
-      model: GRADER_MODEL,
+      model: args.model,
       systemInstruction: [
         'You grade customer-service replies. You are strict about facts and relaxed about wording.',
         '',
@@ -306,7 +325,7 @@ async function gradeAnswer(args: {
     void recordAiUsage({
       accountId: args.accountId,
       provider: 'gemini',
-      model: GRADER_MODEL,
+      model: args.model,
       feature: 'eval_grading',
       tokens: {
         inputTokens: result.response.usageMetadata?.promptTokenCount ?? 0,
@@ -326,5 +345,34 @@ async function gradeAnswer(args: {
       correct: false,
       reason: `Could not grade: ${err instanceof Error ? err.message : String(err)}`,
     }
+  }
+}
+
+/**
+ * Says why the turn stopped, in terms of the thing that actually caused
+ * it.
+ *
+ * The first version reported retrieval confidence for every handoff,
+ * whatever the reason. "Can I pay the fee in instalments?" therefore
+ * read as "Retrieval confidence 0.57, no penalties applied" when the
+ * real cause was the account's own prompt instructing the model to fetch
+ * a human for payment changes — a diagnostic pointing at the wrong
+ * subsystem, which costs more time than no diagnostic at all.
+ */
+function describeHandoff(turn: Awaited<ReturnType<typeof runCustomerTurn>>): string {
+  if (turn.decision.action !== 'handoff') return 'it answered.'
+
+  switch (turn.decision.reason) {
+    case 'model_requested':
+      return 'your own prompt tells it to fetch a person for this (booking, registration or payment changes), and it did.'
+    case 'safety':
+      return `the built-in safety guard caught it: ${turn.decision.safety?.reason ?? 'a protected request'}`
+    case 'unsupported_details':
+      return `the answer contained something unverifiable. ${turn.validation?.summary ?? ''}`.trim()
+    case 'generation_failed':
+      return `the model refused to answer, so a person takes over. Provider said: ${(turn.decision.error ?? '').slice(0, 160)}`
+    case 'low_confidence':
+    default:
+      return turn.confidence.explain
   }
 }

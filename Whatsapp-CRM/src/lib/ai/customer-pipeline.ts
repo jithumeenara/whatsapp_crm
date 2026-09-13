@@ -189,9 +189,20 @@ export type TurnDecision =
   | { action: 'reply'; reply: string }
   | {
       action: 'handoff'
-      reason: 'low_confidence' | 'unsupported_details' | 'model_requested' | 'safety'
+      reason:
+        | 'low_confidence'
+        | 'unsupported_details'
+        | 'model_requested'
+        | 'safety'
+        /** The provider refused or errored. In production this fetches a
+         *  human rather than ending the run silently, so it is a handoff
+         *  here too — anything else would have the suite contradicting
+         *  the behaviour it exists to measure. */
+        | 'generation_failed'
       /** Set for 'safety': what to tell the customer, and why. */
       safety?: { reason: string; customerMessage: string }
+      /** Set for 'generation_failed': the provider's own message. */
+      error?: string
     }
 
 /** Order matters: an unverifiable figure is a stronger reason to stop
@@ -320,13 +331,40 @@ export async function runCustomerTurn(args: {
     toolsAvailable: Boolean(toolContext),
   })
 
-  const generated = await generateCustomerReply({
-    aiConfig: args.aiConfig,
-    systemPrompt: assembly.systemPrompt,
-    userMessage: args.customerMessage,
-    conversationHistory: history,
-    toolContext,
-  })
+  // A provider refusal is a handoff, not an exception for the caller to
+  // deal with. Gemini's safety filter blocks exactly the messages that
+  // most need a person — an angry complaint, a third-time-asking
+  // customer — and the flow engine already responds by fetching one.
+  // Catching it here means the evaluation suite measures that same
+  // behaviour instead of reporting a crash.
+  let generated: Awaited<ReturnType<typeof generateCustomerReply>>
+  try {
+    generated = await generateCustomerReply({
+      aiConfig: args.aiConfig,
+      systemPrompt: assembly.systemPrompt,
+      userMessage: args.customerMessage,
+      conversationHistory: history,
+      toolContext,
+    })
+  } catch (err) {
+    return {
+      decision: {
+        action: 'handoff',
+        reason: 'generation_failed',
+        error: err instanceof Error ? err.message : String(err),
+      },
+      reply: null,
+      confidence,
+      effectiveConfidence,
+      validation: null,
+      selected,
+      systemPrompt: assembly.systemPrompt,
+      toolsUsed: [],
+      knowledgeUsed,
+      truncated: false,
+      latencyMs: Date.now() - startedAt,
+    }
+  }
 
   // An account's prompt may instruct the model to append a directive
   // like [ACTION: TRIGGER_HUMAN_ADMIN]. Stripped from what the customer
