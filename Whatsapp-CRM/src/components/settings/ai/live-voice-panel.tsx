@@ -97,33 +97,81 @@ registerProcessor('capture-processor', CaptureProcessor);
 `;
 
 /**
- * Why the microphone could not be opened, in terms of what to do next.
+ * Works out why the microphone could not be opened, and says what to do
+ * about that specific cause.
  *
- * The insecure-context case is the reason this exists. A browser only
- * exposes the microphone over HTTPS or on localhost, so a CRM reached at
- * http://192.168.1.20:3000 can never be granted access — the site does
- * not even appear in the browser's permission list. Telling that person
- * to "allow it in your browser" sends them looking for a setting that
- * cannot exist.
+ * A browser raises NotAllowedError for at least three different
+ * situations, and only one of them is a site block:
+ *
+ *   1. The site is genuinely blocked in browser settings.
+ *   2. The permission prompt was dismissed — clicked away, or missed.
+ *      The browser records no block, so site settings look normal.
+ *   3. The operating system is denying the browser the microphone. On
+ *      Windows that is Privacy & security -> Microphone; browser
+ *      settings again look completely normal.
+ *
+ * Reporting all three as "your browser blocked it" sends someone to a
+ * menu that already says "Ask", which wastes their time and convinces
+ * them the app is broken. The Permissions API separates them: a real
+ * site block reports 'denied', while the other two leave it at 'prompt'.
+ *
+ * The insecure-context case is handled before this is ever reached — a
+ * browser only exposes the microphone over HTTPS or on localhost, and no
+ * permission can change that.
  */
-function describeMicFailure(err: unknown): string {
+async function diagnoseMicFailure(err: unknown): Promise<string> {
   const name = (err as { name?: string })?.name ?? '';
   const message = err instanceof Error ? err.message : String(err ?? '');
 
-  switch (name) {
-    case 'NotAllowedError':
-    case 'SecurityError':
-      return 'Your browser blocked the microphone. Click the padlock in the address bar, set Microphone to Allow, then reload this page.';
-    case 'NotFoundError':
-    case 'OverconstrainedError':
-      return 'No microphone was found. Plug one in, or check the input device in your system sound settings.';
-    case 'NotReadableError':
-      return 'Something else is already using the microphone — a call, a recorder, another tab. Close it and try again.';
-    case 'AbortError':
-      return 'The microphone stopped responding before the session could start. Try again.';
-    default:
-      return message || 'The microphone could not be opened.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    // Not supported for 'microphone' everywhere (Firefox and Safari have
+    // both lacked the descriptor), so an unknown answer has to remain a
+    // possible outcome rather than an assumption either way.
+    let state: string = 'unknown';
+    try {
+      const status = await navigator.permissions?.query({ name: 'microphone' as PermissionName });
+      state = status?.state ?? 'unknown';
+    } catch {
+      /* descriptor unsupported — fall through to the combined message */
+    }
+
+    if (state === 'denied') {
+      return 'This site is blocked from using the microphone. Click the padlock in the address bar, set Microphone to Allow, then reload the page.';
+    }
+
+    // 'prompt' (or unknown) means the browser has no block recorded, so
+    // the site-settings list is a dead end. Either the popup was
+    // dismissed or the operating system is refusing.
+    return [
+      'The browser has no block recorded for this site, so the request was either dismissed or refused by your computer.',
+      '1. Click "Start talking" again and choose Allow on the popup — it can appear behind the window.',
+      '2. If no popup appears: Windows Settings → Privacy & security → Microphone, and turn on both "Microphone access" and "Let desktop apps access your microphone".',
+    ].join('\n');
   }
+
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    // Distinguishes "nothing plugged in" from "the browser cannot see
+    // the device", which have completely different fixes.
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      if (!devices.some((d) => d.kind === 'audioinput')) {
+        return 'No microphone is attached to this computer. Plug one in, or connect a headset, and try again.';
+      }
+    } catch {
+      /* enumeration is itself permission-gated on some browsers */
+    }
+    return 'The microphone could not be opened. Check which input device is selected in your system sound settings.';
+  }
+
+  if (name === 'NotReadableError') {
+    return 'Another program is already using the microphone — a call, a recorder, or another browser tab. Close it and try again.';
+  }
+
+  if (name === 'AbortError') {
+    return 'The microphone stopped responding before the session could start. Try again.';
+  }
+
+  return message || 'The microphone could not be opened.';
 }
 
 type Status = 'idle' | 'connecting' | 'live' | 'error';
@@ -384,7 +432,7 @@ export function LiveVoicePanel(props: LiveVoicePanelProps) {
       };
       socket.onclose = () => setStatus((s) => (s === 'error' ? s : 'idle'));
     } catch (err) {
-      setError(describeMicFailure(err));
+      setError(await diagnoseMicFailure(err));
       setStatus('error');
       teardown();
     }
@@ -483,7 +531,9 @@ export function LiveVoicePanel(props: LiveVoicePanelProps) {
 
         {error && (
           <div className="mt-2.5">
-            <AiNotice tone="error" icon={<AlertTriangle className="h-3.5 w-3.5" />}>{error}</AiNotice>
+            <AiNotice tone="error" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
+              <span className="block whitespace-pre-line">{error}</span>
+            </AiNotice>
           </div>
         )}
 
@@ -580,7 +630,9 @@ export function LiveVoicePanel(props: LiveVoicePanelProps) {
 
         {error && (
           <div className="mt-4">
-            <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>{error}</AiNotice>
+            <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>
+              <span className="block whitespace-pre-line">{error}</span>
+            </AiNotice>
           </div>
         )}
 
