@@ -1278,6 +1278,26 @@ model AiConfig {
   /// faster than an agent typing while a bot talks over them.
   ai_auto_reply_pause_on_agent   Boolean @default(true)
 
+  /// Google Cloud service-account JSON for Text-to-Speech, encrypted
+  /// with the same helper that holds this account's WhatsApp token and
+  /// Gemini key.
+  ///
+  /// A service-account key is a wider grant than an API key, so the
+  /// trade is worth stating: the alternative was an environment
+  /// variable, which meant shell access to switch the feature on and one
+  /// shared Cloud project for every tenant. The material already in this
+  /// row can send messages as the business and spend its money.
+  ///
+  /// Never leaves the server. The API reports only the two fields below.
+  google_tts_credentials         String?
+  /// Shown in Settings so somebody can see which key is loaded without
+  /// it being readable. An email and a project id grant nothing.
+  google_tts_client_email        String?
+  google_tts_project_id          String?
+  /// When the key was last proven to work by an actual synthesis call.
+  /// A key that was never verified is not trusted at send time.
+  google_tts_verified_at         DateTime? @db.Timestamptz(6)
+
   /// Check a reply against its own retrieved context before sending,
   /// and hand off rather than send an unsupported figure.
   /// See src/lib/ai/validator.ts.

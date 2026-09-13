@@ -14,7 +14,8 @@
  * reported back for logging, not for the caller to branch on.
  */
 
-import { synthesizeWithCloudTts, cloudTtsAvailable, detectSpeechLanguage } from './cloud-tts'
+import { synthesizeWithCloudTts, detectSpeechLanguage } from './cloud-tts'
+import { resolveTtsCredentials } from './tts-credentials'
 import { synthesizeSpeech as synthesizeWithGemini } from './tts'
 
 export type SpeechEngine = 'cloud' | 'gemini'
@@ -32,6 +33,9 @@ export interface SpeechOutput {
 
 export async function speak(args: {
   text: string
+  /** Whose uploaded service account to prefer. Without it, only the
+   *  server's shared environment credential is considered. */
+  accountId?: string
   /** The account's own Gemini key, for the fallback engine. */
   geminiApiKey?: string | null
   /** Cloud TTS voice character. */
@@ -39,9 +43,17 @@ export async function speak(args: {
   /** Gemini prebuilt voice name, used only by the fallback. */
   geminiVoice?: string
 }): Promise<SpeechOutput> {
-  if (cloudTtsAvailable()) {
+  const credentials = args.accountId
+    ? await resolveTtsCredentials(args.accountId)
+    : { account: null, source: 'none' as const }
+
+  if (credentials.account) {
     try {
-      const result = await synthesizeWithCloudTts({ text: args.text, character: args.cloudVoice })
+      const result = await synthesizeWithCloudTts({
+        text: args.text,
+        character: args.cloudVoice,
+        account: credentials.account,
+      })
       return {
         buffer: result.buffer,
         mimeType: result.mimeType,
@@ -77,8 +89,10 @@ export async function speak(args: {
   }
 }
 
-/** Which engine a reply would use, for the Settings screen to report
- *  honestly instead of promising Cloud quality on a server without it. */
-export function activeSpeechEngine(): SpeechEngine {
-  return cloudTtsAvailable() ? 'cloud' : 'gemini'
+/** Which engine this account's replies would use — asked of the same
+ *  resolver the send path uses, so Settings cannot claim Cloud quality
+ *  the send path would not deliver. */
+export async function activeSpeechEngine(accountId: string): Promise<SpeechEngine> {
+  const { account } = await resolveTtsCredentials(accountId)
+  return account ? 'cloud' : 'gemini'
 }

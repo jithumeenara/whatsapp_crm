@@ -19,7 +19,7 @@
  * every deployment will have.
  */
 
-import { getAccessToken, hasCloudCredentials, clearTokenCache } from './google-auth'
+import { getAccessToken, hasCloudCredentials, clearTokenCache, type ServiceAccount } from './google-auth'
 import { CLOUD_VOICE_CHARACTERS } from './cloud-voices'
 
 const TTS_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
@@ -82,6 +82,8 @@ export function buildVoiceName(languageCode: string, character: string): string 
   return `${languageCode}-Chirp3-HD-${known ? character : 'Achernar'}`
 }
 
+/** True when this server has a shared service account. An account with
+ *  its own uploaded key does not need one — see speech.ts. */
 export function cloudTtsAvailable(): boolean {
   return hasCloudCredentials()
 }
@@ -101,9 +103,12 @@ export async function synthesizeWithCloudTts(args: {
   encoding?: CloudAudioEncoding
   /** 0.25–4.0. Slightly under 1 reads more clearly on a phone speaker. */
   speakingRate?: number
+  /** The account's own service account. Falls back to the environment's
+   *  shared one when absent. */
+  account?: ServiceAccount | null
 }): Promise<CloudSpeechResult> {
-  if (!hasCloudCredentials()) {
-    throw new Error('Google Cloud Text-to-Speech is not configured on this server.')
+  if (!args.account && !hasCloudCredentials()) {
+    throw new Error('Google Cloud Text-to-Speech is not set up for this account.')
   }
 
   const text = args.text.trim()
@@ -129,13 +134,16 @@ export async function synthesizeWithCloudTts(args: {
       signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
     })
 
-  let res = await call(await getAccessToken())
+  const scope = 'https://www.googleapis.com/auth/cloud-platform'
+  let res = await call(await getAccessToken(scope, args.account))
 
   // A cached token can outlive a rotated key. One retry with a fresh
   // token distinguishes "credentials revoked" from "cache went stale".
+  // Scoped to this identity so one account's 401 does not evict every
+  // other account's perfectly good token.
   if (res.status === 401) {
-    clearTokenCache()
-    res = await call(await getAccessToken())
+    clearTokenCache(args.account)
+    res = await call(await getAccessToken(scope, args.account))
   }
 
   if (!res.ok) {

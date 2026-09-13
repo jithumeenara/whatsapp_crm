@@ -12,6 +12,7 @@ import {
 } from './ui-kit';
 import { TTS_VOICES } from '@/lib/ai/tts-voices';
 import { CLOUD_VOICE_CHARACTERS } from '@/lib/ai/cloud-voices';
+import { TtsCredentialsCard } from './tts-credentials-card';
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
@@ -427,6 +428,8 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                 </div>
                 <Switch checked={props.voiceReplyEnabled} onCheckedChange={props.onVoiceReplyEnabledChange} />
               </div>
+
+              {props.voiceReplyEnabled && <TtsCredentialsCard />}
 
               {props.voiceReplyEnabled && (
                 <div className="grid gap-4 sm:grid-cols-2">

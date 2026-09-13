@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { TTS_VOICES } from '@/lib/ai/tts-voices'
 import { CLOUD_VOICE_CHARACTERS } from '@/lib/ai/cloud-voices'
-import { cloudTtsAvailable } from '@/lib/ai/cloud-tts'
+import { resolveTtsCredentials } from '@/lib/ai/tts-credentials'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
@@ -36,6 +36,10 @@ export async function GET() {
   const config = await prisma.aiConfig.findUnique({
     where: { account_id: guard.accountId },
   })
+
+  // Resolved once here rather than inside the response literal, so the
+  // await is visible and the two fields below cannot drift apart.
+  const { source: ttsSource } = await resolveTtsCredentials(guard.accountId)
 
   if (!config) {
     return NextResponse.json(null)
@@ -86,10 +90,11 @@ export async function GET() {
     ai_auto_reply_enabled: config.ai_auto_reply_enabled,
     ai_auto_reply_max_turns: config.ai_auto_reply_max_turns,
     ai_auto_reply_pause_on_agent: config.ai_auto_reply_pause_on_agent,
-    // A server fact, not a per-account setting: whether this deployment
-    // has Google Cloud credentials at all. The Settings screen uses it to
-    // say which voice engine is really in use.
-    cloud_tts_available: cloudTtsAvailable(),
+    // Asked of the same resolver the send path uses, so the screen
+    // cannot offer Cloud voices that replies would not actually use.
+    // True for an account's own uploaded key or the server's shared one.
+    cloud_tts_available: ttsSource !== 'none',
+    cloud_tts_source: ttsSource,
     // Lets the Settings UI show "embeddings ready" vs "not set up yet"
     // (e.g. to explain why the Regenerate button matters) without
     // exposing anything sensitive — has_key above already covers that.

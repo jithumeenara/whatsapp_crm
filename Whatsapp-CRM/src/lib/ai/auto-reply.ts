@@ -185,6 +185,7 @@ export async function autoReplyToMessage(args: {
       const geminiEntry = getProviderKeys(aiConfig).gemini
       const speech = await speak({
         text: reply,
+        accountId: args.accountId,
         geminiApiKey: geminiEntry?.api_key ? decrypt(geminiEntry.api_key) : null,
         cloudVoice: aiConfig.cloud_voice,
         geminiVoice: aiConfig.voice_name,

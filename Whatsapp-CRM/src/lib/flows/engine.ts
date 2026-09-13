@@ -1871,6 +1871,7 @@ async function advanceFromNodeKey(
             // account's own Gemini key automatically.
             const speech = await speak({
               text: reply,
+              accountId: run.account_id,
               geminiApiKey,
               cloudVoice: aiConfig.cloud_voice,
               geminiVoice: aiConfig.voice_name,
