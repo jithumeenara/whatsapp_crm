@@ -37,6 +37,7 @@ import { MessageComposer } from "./message-composer";
 import { TemplatePicker } from "./template-picker";
 import { CatalogPicker, type CatalogSendPayload } from "./catalog-picker";
 import { PaymentRequestDialog } from "./payment-request-dialog";
+import { SendOtpDialog } from "./send-otp-dialog";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 
@@ -225,6 +226,7 @@ export function MessageThread({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
@@ -673,31 +675,18 @@ export function MessageThread({
     [conversation, userId, onNewMessage, onUpdateMessage],
   );
 
-  const handleSendOtp = useCallback(async () => {
+  // Opens the confirmation rather than sending. A code lands on the
+  // customer's phone the instant it is sent and cannot be recalled, so
+  // it does not belong on a single click of an icon in a row of icons.
+  // The dialog owns the request and the code it comes back with.
+  const handleSendOtp = useCallback(() => {
     if (!conversation) return;
     const ch = (conversation as { channel?: string })?.channel
     if (ch && ch !== 'whatsapp') {
       toast.info('Send OTP is only supported on WhatsApp.')
       return
     }
-    try {
-      const res = await fetch('/api/whatsapp/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation_id: conversation.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        toast.error(data.error || 'Failed to send OTP');
-        return;
-      }
-      // The realtime 'message' INSERT event (emitted server-side) adds
-      // the bubble to this thread — shown here too so an agent reading
-      // it out over a call doesn't have to scroll to find it.
-      toast.success(`OTP sent — code ${data.code}`, { duration: 10000 });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to send OTP');
-    }
+    setOtpModalOpen(true);
   }, [conversation]);
 
   const handleRequestPayment = useCallback(() => {
@@ -1262,6 +1251,16 @@ export function MessageThread({
           open={paymentModalOpen}
           onOpenChange={setPaymentModalOpen}
           conversationId={conversation.id}
+        />
+      )}
+
+      {conversation && (
+        <SendOtpDialog
+          open={otpModalOpen}
+          onOpenChange={setOtpModalOpen}
+          conversationId={conversation.id}
+          contactName={contact?.name}
+          contactPhone={contact?.phone}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle, Maximize2, Minimize2 } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle, Maximize2, Minimize2, Mic, Square, Trash2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -10,6 +10,7 @@ import { ReplyQuote } from "./reply-quote";
 import { toast } from "sonner";
 import { FileManagerPicker } from "./file-manager-picker";
 import { EmojiPickerPopover } from "./emoji-picker-popover";
+import { useVoiceRecorder, formatElapsed } from "./use-voice-recorder";
 import { ScheduleMenuButton } from "./schedule-menu-button";
 
 interface ReplyDraft {
@@ -57,6 +58,11 @@ const TRANSLATE_TARGETS = [
 
 /** How much of a long reply stays visible before the box scrolls. */
 const MAX_VISIBLE_LINES = 10;
+
+/** A press shorter than this was a click, not someone starting to talk. */
+const TAP_MS = 350;
+/** How long a click waits to see whether a second one follows it. */
+const DOUBLE_CLICK_MS = 400;
 
 const ATTACH_OPTIONS = [
   {
@@ -312,6 +318,47 @@ export function MessageComposer({
     }
   }, []);
 
+  /** Uploads a file and resolves to its URL, reporting progress as it
+   *  goes. Shared by the attach menu and the voice recorder — a
+   *  recording is a file being sent like any other. */
+  const uploadFile = useCallback((file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload');
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          setUploadProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data.url);
+          } catch {
+            reject(new Error('Invalid server response'));
+          }
+        } else {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            reject(new Error(data.error || `Upload failed (${xhr.status})`));
+          } catch {
+            reject(new Error(`Upload failed (${xhr.status})`));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.onabort = () => reject(new Error('Upload cancelled'));
+
+      const form = new FormData();
+      form.append('file', file);
+      xhr.send(form);
+    });
+  }, []);
+
   const handleFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -322,42 +369,7 @@ export function MessageComposer({
     setUploadingFilename(file.name);
 
     try {
-      const fileUrl = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload');
-
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            setUploadProgress(Math.round((event.loaded / event.total) * 100));
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              resolve(data.url);
-            } catch {
-              reject(new Error('Invalid server response'));
-            }
-          } else {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              reject(new Error(data.error || `Upload failed (${xhr.status})`));
-            } catch {
-              reject(new Error(`Upload failed (${xhr.status})`));
-            }
-          }
-        };
-
-        xhr.onerror = () => reject(new Error('Network error during upload'));
-        xhr.onabort = () => reject(new Error('Upload cancelled'));
-
-        const form = new FormData();
-        form.append('file', file);
-        xhr.send(form);
-      });
-
+      const fileUrl = await uploadFile(file);
       let mediaType: 'image' | 'document' | 'audio' | 'video' =
         currentAttachType.current === 'audio' ? 'audio' :
         currentAttachType.current === 'image' ? 'image' :
@@ -371,7 +383,101 @@ export function MessageComposer({
       setUploadProgress(null);
       setUploadingFilename(null);
     }
-  }, [onSendMedia]);
+  }, [onSendMedia, uploadFile]);
+
+  /** Uploads the finished recording and sends it as a voice note. */
+  const handleRecordingComplete = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      setUploadProgress(0);
+      setUploadingFilename('Voice message');
+      try {
+        const url = await uploadFile(file);
+        onSendMedia(url, 'audio', file.name);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'The voice message could not be sent.');
+      } finally {
+        setUploading(false);
+        setUploadProgress(null);
+        setUploadingFilename(null);
+      }
+    },
+    [uploadFile, onSendMedia],
+  );
+
+  const handleRecorderError = useCallback((message: string) => {
+    // The microphone diagnosis runs to several lines, and the important
+    // one is usually not the first — a short toast would cut it off.
+    toast.error(message, { duration: message.length > 90 ? 12000 : 5000 });
+  }, []);
+
+  const recorder = useVoiceRecorder({
+    onComplete: handleRecordingComplete,
+    onError: handleRecorderError,
+  });
+
+  // Open while a click waits to see whether a second one follows it.
+  const clickWindowRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressStartRef = useRef(0);
+
+  useEffect(() => () => {
+    if (clickWindowRef.current) clearTimeout(clickWindowRef.current);
+  }, []);
+
+  /**
+   * Hold to record; double-click to lock.
+   *
+   * Both gestures start on the same press, so the decision can only be
+   * made on release: a press held past TAP_MS was someone talking, and a
+   * shorter one waits DOUBLE_CLICK_MS to see whether a second click
+   * arrives. A first click that stands alone is cancelled outright
+   * rather than sent — the alternative is mailing a customer half a
+   * second of room noise every time somebody brushes the icon.
+   */
+  const handleMicPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (recorder.status === 'encoding' || uploading) return;
+      // Keeps the release on this button even if the pointer slides off
+      // it, which it does constantly on a touchscreen.
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+
+      if (recorder.status === 'recording') {
+        // Locked: the button is a stop button now, and this press ends
+        // the recording and sends it.
+        if (recorder.locked) {
+          recorder.stop();
+          return;
+        }
+        // Not locked, and a click is still waiting to see whether a
+        // second one follows — this is that second one.
+        if (clickWindowRef.current) {
+          clearTimeout(clickWindowRef.current);
+          clickWindowRef.current = null;
+          recorder.lock();
+        }
+        return;
+      }
+      pressStartRef.current = Date.now();
+      void recorder.start();
+    },
+    [recorder, uploading],
+  );
+
+  const handleMicPointerUp = useCallback(() => {
+    if (recorder.status !== 'recording' || recorder.locked) return;
+    if (Date.now() - pressStartRef.current >= TAP_MS) {
+      recorder.stop();
+      return;
+    }
+    clickWindowRef.current = setTimeout(() => {
+      clickWindowRef.current = null;
+      recorder.cancel();
+      toast.info('Hold the mic to record — or double-click it to record hands-free.');
+    }, DOUBLE_CLICK_MS);
+  }, [recorder]);
+
+  const recording = recorder.status === 'recording';
+  const preparing = recorder.status === 'encoding';
 
   return (
     <div
@@ -436,6 +542,48 @@ export function MessageComposer({
           value in a large editor — a long reply written through three
           visible rows is edited blind. */}
       <div className="flex items-end gap-2">
+        {recording || preparing ? (
+          /* The message box gives way while recording. Nothing else on
+             screen can tell you whether the microphone is live, and a
+             small red dot beside an unchanged composer is not enough for
+             something that is listening to the room. */
+          <div className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-rose-50 px-3.5 ring-1 ring-rose-500/20">
+            {preparing ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-rose-500" />
+                <span className="text-[13px] font-medium text-rose-900">Preparing your message…</span>
+              </>
+            ) : (
+              <>
+                <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-500" />
+                </span>
+                <span className="shrink-0 text-[14px] font-semibold tabular-nums text-rose-900">
+                  {formatElapsed(recorder.elapsedMs)}
+                </span>
+                {recorder.locked ? (
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10.5px] font-semibold text-rose-700">
+                    <Lock className="h-3 w-3" />
+                    Hands-free
+                  </span>
+                ) : null}
+                <span className="min-w-0 truncate text-[11.5px] text-rose-700/80">
+                  {recorder.locked ? 'Recording — press stop when you are done' : 'Release to send · double-click to lock'}
+                </span>
+                <button
+                  type="button"
+                  onClick={recorder.cancel}
+                  aria-label="Discard this recording"
+                  title="Discard this recording"
+                  className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-lg text-rose-500 transition-colors hover:bg-rose-100 hover:text-rose-700"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
         <div className="relative min-w-0 flex-1">
         <textarea autoComplete="off"
           ref={textareaRef}
@@ -468,6 +616,30 @@ export function MessageComposer({
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
         </div>
+        )}
+
+        {/* Hold to record, double-click to lock. It sits beside Send
+            because it is the other way of answering, not a tool. While it
+            is live it becomes the stop button, so the control that
+            started the recording is the one that ends it. */}
+        <button
+          type="button"
+          onPointerDown={handleMicPointerDown}
+          onPointerUp={handleMicPointerUp}
+          onPointerCancel={handleMicPointerUp}
+          onContextMenu={(e) => e.preventDefault()}
+          disabled={readOnly || sessionExpired || uploading || preparing}
+          aria-label={recording ? 'Stop recording and send' : 'Record a voice message'}
+          title={recording ? 'Stop and send' : 'Hold to record · double-click to record hands-free'}
+          className={cn(
+            "grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-xl transition-colors disabled:opacity-40",
+            recording
+              ? "bg-rose-500 text-white hover:bg-rose-600"
+              : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+          )}
+        >
+          {recording ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-4 w-4" />}
+        </button>
 
         {/* Beside the message, not at the end of the tool row below: this
             is the one control that acts on what was typed. Bottom-aligned
@@ -476,7 +648,7 @@ export function MessageComposer({
           size="sm"
           canAct={!readOnly}
           gateReason="send messages"
-          disabled={!text.trim() || sessionExpired || sending}
+          disabled={!text.trim() || sessionExpired || sending || recording || preparing}
           onClick={handleSend}
           className="h-10 w-10 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
         >
