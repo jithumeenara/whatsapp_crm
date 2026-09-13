@@ -14,7 +14,6 @@ import { AdvancedFeatures } from './ai/advanced-features';
 import { TestTab } from './ai/test-tab';
 import { UsageTab } from './ai/usage-tab';
 import { EvalTab } from './ai/eval-tab';
-import { LiveVoicePanel } from './ai/live-voice-panel';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
@@ -563,11 +562,9 @@ export function AiConfig() {
         </TabsContent>
 
         {/* ── Test AI tab ── */}
-        <TabsContent value="test" className="mt-4 space-y-5">
-          {/* Above the text tester: someone opening this tab has come to
-              try the assistant out, and hearing it is the faster judgement. */}
-          <LiveVoicePanel enabled={liveVoiceEnabled} mode="customer" />
+        <TabsContent value="test" className="mt-4">
           <TestTab
+            liveVoiceEnabled={liveVoiceEnabled}
             model={activeFields?.model ?? ''}
             temperature={temperature}
             maxTokens={maxTokens}

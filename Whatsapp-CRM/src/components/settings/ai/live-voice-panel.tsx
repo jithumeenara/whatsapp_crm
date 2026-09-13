@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * Talk to the assistant and hear it answer.
+ * Talk to the assistant and hear it answer, with no turn-taking button.
  *
- * Three things here are not obvious:
+ * Four things here are not obvious:
  *
  * 1. **Two audio contexts.** The Live API takes 16 kHz in and sends
  *    24 kHz back. A browser's default context runs at 48 kHz, so rather
@@ -13,18 +13,28 @@
  * 2. **Playback is scheduled, not fired.** Audio arrives in chunks
  *    faster than real time. Playing each as it lands overlaps them into
  *    noise; playing them strictly in sequence leaves gaps. A cursor
- *    tracks when the previous chunk ends and each new one is scheduled
- *    to start exactly there.
+ *    tracks when the previous chunk ends and each new one starts exactly
+ *    there.
  *
- * 3. **An interruption has to cancel what is already scheduled.** When
- *    the person talks over the assistant, several seconds of its reply
- *    are usually queued in the browser. Without stopping those, the
- *    interrupted sentence keeps playing underneath the new answer.
+ * 3. **Barge-in is detected locally, not waited for.** The server also
+ *    reports an interruption, but that answer arrives a round trip late
+ *    — long enough that the assistant talks over the person for a
+ *    noticeable moment, which is the thing that makes a voice bot feel
+ *    like a machine. A voice-activity detector in the browser stops
+ *    playback the instant the microphone hears speech, and the server's
+ *    own signal then arrives as confirmation rather than as the trigger.
+ *
+ * 4. **An interruption must cancel what is already scheduled.** Several
+ *    seconds of reply are usually queued ahead of the clock. Without
+ *    stopping those, the abandoned sentence keeps playing underneath the
+ *    new answer.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Radio, Loader2, AlertTriangle, Send } from 'lucide-react';
-import { AiButton, AiCard, AiCardHeader, AiIconTile, AiInput, AiHint, AiBadge, AiNotice } from './ui-kit';
+import { Mic, MicOff, Radio, Loader2, AlertTriangle, Send, Volume2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { AiCard, AiInput, AiNotice } from './ui-kit';
 
 const INPUT_RATE = 16_000;
 const OUTPUT_RATE = 24_000;
@@ -34,7 +44,31 @@ const OUTPUT_RATE = 24_000;
 const SCHEDULE_LEAD_SEC = 0.06;
 
 /**
- * Captures mono float samples and posts them as 16-bit PCM.
+ * Voice-activity thresholds.
+ *
+ * A worklet block is 128 samples, which at 16 kHz is 8 ms. Requiring a
+ * run of blocks rather than a single one is what separates speech from a
+ * door closing: ~15 blocks is 120 ms, short enough to feel instant and
+ * long enough that a cough or a keyboard tap does not cut the assistant
+ * off mid-sentence.
+ *
+ * The floor is adaptive because a fixed one is wrong in both directions
+ * — it never triggers in a noisy office and triggers constantly on a
+ * sensitive headset. A rolling estimate of the room's own noise is kept,
+ * and speech has to stand clearly above it.
+ */
+const VAD_MIN_LEVEL = 0.012;
+const VAD_NOISE_MULTIPLIER = 2.8;
+const VAD_BLOCKS_TO_TRIGGER = 15;
+/** How fast the noise estimate follows the room. Slow on the way up so a
+ *  long sentence cannot raise the floor above itself. */
+const VAD_NOISE_ATTACK = 0.002;
+const VAD_NOISE_DECAY = 0.05;
+
+/**
+ * Captures mono samples, posts them as 16-bit PCM, and reports the
+ * loudness of each block so the main thread can run voice detection
+ * without a second analyser node reading the same stream.
  *
  * Delivered as a Blob URL rather than a file in /public: it is part of
  * this component's behaviour, and a stray .js in the public directory is
@@ -46,11 +80,16 @@ class CaptureProcessor extends AudioWorkletProcessor {
     const channel = inputs[0] && inputs[0][0];
     if (!channel) return true;
     const pcm = new Int16Array(channel.length);
+    let sumSquares = 0;
     for (let i = 0; i < channel.length; i++) {
       const clamped = Math.max(-1, Math.min(1, channel[i]));
+      sumSquares += clamped * clamped;
       pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
     }
-    this.port.postMessage(pcm.buffer, [pcm.buffer]);
+    this.port.postMessage(
+      { pcm: pcm.buffer, rms: Math.sqrt(sumSquares / channel.length) },
+      [pcm.buffer],
+    );
     return true;
   }
 }
@@ -74,12 +113,12 @@ function describeMicFailure(err: unknown): string {
   switch (name) {
     case 'NotAllowedError':
     case 'SecurityError':
-      return 'Your browser blocked the microphone. Click the padlock (or the camera icon) in the address bar, set Microphone to Allow, then reload this page.';
+      return 'Your browser blocked the microphone. Click the padlock in the address bar, set Microphone to Allow, then reload this page.';
     case 'NotFoundError':
     case 'OverconstrainedError':
-      return 'No microphone was found. Plug one in, or check that the right input device is selected in your system sound settings.';
+      return 'No microphone was found. Plug one in, or check the input device in your system sound settings.';
     case 'NotReadableError':
-      return 'Something else is already using the microphone — a call, a recorder, another browser tab. Close it and try again.';
+      return 'Something else is already using the microphone — a call, a recorder, another tab. Close it and try again.';
     case 'AbortError':
       return 'The microphone stopped responding before the session could start. Try again.';
     default:
@@ -90,15 +129,30 @@ function describeMicFailure(err: unknown): string {
 type Status = 'idle' | 'connecting' | 'live' | 'error';
 type Turn = { who: 'you' | 'assistant'; text: string };
 
-export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'customer' | 'admin' }) {
+export interface LiveVoicePanelProps {
+  enabled: boolean;
+  mode: 'customer' | 'admin';
+  /** Sidebar presentation. */
+  compact?: boolean;
+  /** Shared with the text chat's dictation and read-aloud. */
+  language?: string;
+  onLanguageChange?: (v: string) => void;
+  languages?: { id: string; label: string }[];
+  autoSpeak?: boolean;
+  onAutoSpeakChange?: (v: boolean) => void;
+  speechSupported?: boolean;
+}
+
+export function LiveVoicePanel(props: LiveVoicePanelProps) {
+  const { enabled, mode, compact } = props;
+
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState('');
   const [turns, setTurns] = useState<Turn[]>([]);
   const [speaking, setSpeaking] = useState(false);
+  const [youSpeaking, setYouSpeaking] = useState(false);
+  const [level, setLevel] = useState(0);
   const [typed, setTyped] = useState('');
-
-  /** Resolved after mount: window is not available during the server
-   *  render, and reading it directly would break hydration. */
   const [insecure, setInsecure] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
@@ -106,10 +160,14 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
   const playContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const workletUrlRef = useRef<string | null>(null);
-  /** When the audio already queued finishes, in playback-context time. */
   const playCursorRef = useRef(0);
-  /** Everything scheduled but not yet finished, so it can be cancelled. */
   const scheduledRef = useRef<AudioBufferSourceNode[]>([]);
+
+  /** VAD state, in refs because it updates every 8 ms and must not
+   *  re-render the component at that rate. */
+  const noiseFloorRef = useRef(VAD_MIN_LEVEL);
+  const voiceBlocksRef = useRef(0);
+  const assistantSpeakingRef = useRef(false);
 
   const appendTurn = useCallback((who: Turn['who'], text: string) => {
     if (!text.trim()) return;
@@ -117,9 +175,7 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
       const last = prev[prev.length - 1];
       // The API streams transcripts a few words at a time; appending to
       // the open turn keeps it one sentence instead of twenty fragments.
-      if (last && last.who === who) {
-        return [...prev.slice(0, -1), { who, text: last.text + text }];
-      }
+      if (last && last.who === who) return [...prev.slice(0, -1), { who, text: last.text + text }];
       return [...prev, { who, text }];
     });
   }, []);
@@ -134,6 +190,7 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
     }
     scheduledRef.current = [];
     playCursorRef.current = 0;
+    assistantSpeakingRef.current = false;
     setSpeaking(false);
   }, []);
 
@@ -151,6 +208,10 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
       URL.revokeObjectURL(workletUrlRef.current);
       workletUrlRef.current = null;
     }
+    voiceBlocksRef.current = 0;
+    noiseFloorRef.current = VAD_MIN_LEVEL;
+    setYouSpeaking(false);
+    setLevel(0);
   }, [stopPlayback]);
 
   useEffect(() => teardown, [teardown]);
@@ -181,10 +242,54 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
     scheduledRef.current.push(source);
     source.onended = () => {
       scheduledRef.current = scheduledRef.current.filter((n) => n !== source);
-      if (scheduledRef.current.length === 0) setSpeaking(false);
+      if (scheduledRef.current.length === 0) {
+        assistantSpeakingRef.current = false;
+        setSpeaking(false);
+      }
     };
+    assistantSpeakingRef.current = true;
     setSpeaking(true);
   }, []);
+
+  /**
+   * One block of microphone audio: update the noise estimate, decide
+   * whether this is speech, and cut the assistant off if it is.
+   */
+  const handleMicBlock = useCallback(
+    (rms: number, socket: WebSocket, pcm: ArrayBuffer) => {
+      // The assistant's own voice must not raise the room's noise floor,
+      // or the floor climbs while it talks and barge-in stops working.
+      if (!assistantSpeakingRef.current) {
+        const rate = rms > noiseFloorRef.current ? VAD_NOISE_ATTACK : VAD_NOISE_DECAY;
+        noiseFloorRef.current += (rms - noiseFloorRef.current) * rate;
+      }
+
+      const threshold = Math.max(VAD_MIN_LEVEL, noiseFloorRef.current * VAD_NOISE_MULTIPLIER);
+      const isVoice = rms > threshold;
+
+      voiceBlocksRef.current = isVoice ? voiceBlocksRef.current + 1 : 0;
+      const speechConfirmed = voiceBlocksRef.current >= VAD_BLOCKS_TO_TRIGGER;
+
+      if (speechConfirmed) {
+        setYouSpeaking(true);
+        // Barge-in. Stop locally and now, rather than waiting for the
+        // server's interruption event a round trip later.
+        if (assistantSpeakingRef.current) stopPlayback();
+      } else if (!isVoice) {
+        setYouSpeaking(false);
+      }
+
+      // A coarse meter — updated from a value that changes every 8 ms, so
+      // it is smoothed rather than rendered raw.
+      setLevel((prev) => prev + (Math.min(1, rms * 12) - prev) * 0.25);
+
+      // Audio is always forwarded, speech or not: the API runs its own
+      // endpointing and needs the silence to know a turn ended. Local VAD
+      // decides when to stop *playback*, never what to send.
+      if (socket.readyState === WebSocket.OPEN) socket.send(pcm);
+    },
+    [stopPlayback],
+  );
 
   const start = useCallback(async () => {
     setError('');
@@ -201,18 +306,23 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
       if (!ticketRes.ok) throw new Error(ticketData.error ?? 'Could not start the session.');
 
       // Checked before the prompt, because this is the one failure a
-      // permission cannot fix. Browsers expose the microphone only in a
-      // secure context; over plain HTTP the API is simply absent and the
-      // site never appears in the browser's permission list.
+      // permission cannot fix.
       if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
         throw new Error(
-          `This page is open over ${window.location.protocol.replace(':', '')}, and browsers only allow microphone access on https:// or localhost. ` +
-            'Open the CRM at its https:// address, or run it locally, and the microphone will work.',
+          `This page is open over ${window.location.protocol.replace(':', '')}, and browsers only allow microphone access on https:// or localhost.`,
         );
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: {
+          channelCount: 1,
+          // Echo cancellation is what stops the assistant's own voice
+          // coming back through the microphone and triggering barge-in
+          // against itself on a laptop speaker.
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
       });
       streamRef.current = stream;
 
@@ -235,13 +345,13 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
       socket.onopen = () => {
         const source = micContext.createMediaStreamSource(stream);
         const capture = new AudioWorkletNode(micContext, 'capture-processor');
-        capture.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-          if (socket.readyState === WebSocket.OPEN) socket.send(event.data);
+        capture.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; rms: number }>) => {
+          handleMicBlock(event.data.rms, socket, event.data.pcm);
         };
         source.connect(capture);
-        // Connected to the destination through a silent gain node: some
-        // browsers suspend a worklet whose output reaches nothing, which
-        // stops the microphone without any error.
+        // Through a silent gain node: some browsers suspend a worklet
+        // whose output reaches nothing, which stops the microphone with
+        // no error at all.
         const mute = micContext.createGain();
         mute.gain.value = 0;
         capture.connect(mute).connect(micContext.destination);
@@ -252,7 +362,9 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
           playChunk(event.data);
           return;
         }
-        const msg = JSON.parse(event.data as string) as { type: string; text?: string; message?: string; reason?: string };
+        const msg = JSON.parse(event.data as string) as {
+          type: string; text?: string; message?: string; reason?: string;
+        };
         if (msg.type === 'ready') setStatus('live');
         else if (msg.type === 'input_transcript') appendTurn('you', msg.text ?? '');
         else if (msg.type === 'output_transcript') appendTurn('assistant', msg.text ?? '');
@@ -270,15 +382,13 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
         setError('The connection dropped. Check your network and try again.');
         setStatus('error');
       };
-      socket.onclose = () => {
-        setStatus((s) => (s === 'error' ? s : 'idle'));
-      };
+      socket.onclose = () => setStatus((s) => (s === 'error' ? s : 'idle'));
     } catch (err) {
       setError(describeMicFailure(err));
       setStatus('error');
       teardown();
     }
-  }, [mode, appendTurn, playChunk, stopPlayback, teardown]);
+  }, [mode, appendTurn, playChunk, stopPlayback, teardown, handleMicBlock]);
 
   const stop = useCallback(() => {
     socketRef.current?.send(JSON.stringify({ type: 'close' }));
@@ -294,71 +404,176 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
     setTyped('');
   }, [typed, appendTurn]);
 
-  if (!enabled) {
+  const live = status === 'live';
+
+  /* ── Sidebar presentation ───────────────────────────────────── */
+  if (compact) {
     return (
-      <AiCard>
-        <div className="p-5">
-          <AiCardHeader title="Live voice" subtitle="Have a spoken conversation with your assistant." />
-          <div className="mt-4">
-            <AiNotice tone="info" icon={<Radio className="h-4 w-4" />}>
-              Switch on <strong>Live voice</strong> in Advanced Features to use this. It streams audio both ways
-              for as long as the call is open, which is billed differently from a text reply.
-            </AiNotice>
-          </div>
+      <AiCard className="p-4">
+        <div className="mb-3 flex items-start gap-2.5">
+          <span
+            className={[
+              'grid h-8 w-8 shrink-0 place-items-center rounded-xl transition-colors',
+              live ? 'bg-emerald-50 text-emerald-600' : 'bg-[#EEF0FF] text-[#5B6CF9]',
+            ].join(' ')}
+          >
+            {live ? <Radio className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px] font-semibold text-slate-900">Voice Test</span>
+            <span className="block text-[11.5px] text-slate-500">
+              {live
+                ? youSpeaking
+                  ? 'Listening to you…'
+                  : speaking
+                    ? 'Speaking — just talk to interrupt'
+                    : 'Go ahead, say something'
+                : 'Talk to the AI just like a real customer.'}
+            </span>
+          </span>
         </div>
+
+        {props.languages && props.onLanguageChange && (
+          <div className="mb-2.5">
+            <Select value={props.language ?? 'en-IN'} onValueChange={(v) => v && props.onLanguageChange?.(v)}>
+              <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {props.languages.map((l) => (
+                  <SelectItem key={l.id} value={l.id}>{l.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {!enabled ? (
+          <AiNotice tone="info" icon={<Radio className="h-3.5 w-3.5" />}>
+            Turn on <strong>Live voice</strong> in AI Training → Advanced Features to speak with the assistant in
+            real time.
+          </AiNotice>
+        ) : insecure ? (
+          <AiNotice tone="warning" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
+            Live voice needs an <code className="rounded bg-white/60 px-1">https://</code> address. Open the CRM
+            over HTTPS to use the microphone.
+          </AiNotice>
+        ) : (
+          <button
+            type="button"
+            onClick={() => (live || status === 'connecting' ? stop() : void start())}
+            className={[
+              'flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[13px] font-semibold transition-all',
+              live
+                ? 'bg-rose-500 text-white hover:bg-rose-600'
+                : 'bg-gradient-to-b from-[#6B7BFF] to-[#4A5AE8] text-white shadow-[0_2px_8px_-2px_rgba(74,90,232,.55)]',
+            ].join(' ')}
+          >
+            {status === 'connecting' ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Connecting…</>
+            ) : live ? (
+              <><MicOff className="h-4 w-4" /> End conversation</>
+            ) : (
+              <><Mic className="h-4 w-4" /> Start talking</>
+            )}
+          </button>
+        )}
+
+        {live && <LevelMeter level={level} youSpeaking={youSpeaking} speaking={speaking} />}
+
+        {error && (
+          <div className="mt-2.5">
+            <AiNotice tone="error" icon={<AlertTriangle className="h-3.5 w-3.5" />}>{error}</AiNotice>
+          </div>
+        )}
+
+        {live && turns.length > 0 && (
+          <div className="mt-3 max-h-44 space-y-1.5 overflow-y-auto rounded-xl bg-[#F7F8FC] p-2.5 ring-1 ring-slate-200/70">
+            {turns.map((t, i) => (
+              <p key={`${t.who}-${i}`} className="text-[12px] leading-relaxed">
+                <span className={t.who === 'you' ? 'font-semibold text-slate-700' : 'font-semibold text-[#4A5AE8]'}>
+                  {t.who === 'you' ? 'You: ' : 'AI: '}
+                </span>
+                <span className="text-slate-600">{t.text}</span>
+              </p>
+            ))}
+          </div>
+        )}
+
+        {props.speechSupported && props.onAutoSpeakChange && (
+          <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-[#F7F8FC] px-3 py-2.5 ring-1 ring-slate-200/70">
+            <span className="flex min-w-0 items-center gap-2">
+              <Volume2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <span className="min-w-0">
+                <span className="block text-[12.5px] font-medium text-slate-700">Read replies out loud</span>
+                <span className="block text-[10.5px] text-slate-400">For typed answers in the chat</span>
+              </span>
+            </span>
+            <Switch checked={!!props.autoSpeak} onCheckedChange={props.onAutoSpeakChange} />
+          </div>
+        )}
       </AiCard>
     );
   }
 
+  /* ── Full-width presentation ────────────────────────────────── */
   return (
     <AiCard>
       <div className="p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <AiIconTile tint={status === 'live' ? 'emerald' : 'violet'}>
-              {status === 'live' ? <Radio className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-            </AiIconTile>
+            <span
+              className={[
+                'grid h-11 w-11 place-items-center rounded-2xl',
+                live ? 'bg-emerald-50 text-emerald-600' : 'bg-[#EEF0FF] text-[#5B6CF9]',
+              ].join(' ')}
+            >
+              {live ? <Radio className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+            </span>
             <div>
               <p className="text-[15px] font-semibold text-slate-900">Live voice</p>
               <p className="text-[12.5px] text-slate-500">
-                {status === 'live'
-                  ? speaking
-                    ? 'Speaking — talk over it to interrupt'
-                    : 'Listening'
+                {live
+                  ? youSpeaking ? 'Listening to you…' : speaking ? 'Speaking — talk over it to interrupt' : 'Listening'
                   : `Speak to the ${mode === 'admin' ? 'internal' : 'customer'} assistant and hear it answer`}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {status === 'live' && <AiBadge tone="emerald">Connected</AiBadge>}
-            {insecure && <AiBadge tone="amber">Needs HTTPS</AiBadge>}
-            {status === 'idle' || status === 'error' ? (
-              <AiButton onClick={() => void start()}>
-                <Mic className="h-3.5 w-3.5" />
-                Start talking
-              </AiButton>
-            ) : status === 'connecting' ? (
-              <AiButton disabled>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Connecting…
-              </AiButton>
-            ) : (
-              <AiButton tone="danger" onClick={stop}>
-                <MicOff className="h-3.5 w-3.5" />
-                End
-              </AiButton>
-            )}
-          </div>
+          {enabled && !insecure && (
+            <button
+              type="button"
+              onClick={() => (live || status === 'connecting' ? stop() : void start())}
+              className={[
+                'inline-flex h-10 items-center gap-2 rounded-xl px-4 text-[13px] font-semibold transition-all',
+                live ? 'bg-rose-500 text-white' : 'bg-gradient-to-b from-[#6B7BFF] to-[#4A5AE8] text-white',
+              ].join(' ')}
+            >
+              {status === 'connecting' ? (
+                <><Loader2 className="h-4 w-4 animate-spin" /> Connecting…</>
+              ) : live ? (
+                <><MicOff className="h-4 w-4" /> End</>
+              ) : (
+                <><Mic className="h-4 w-4" /> Start talking</>
+              )}
+            </button>
+          )}
         </div>
 
-        {insecure && !error && (
+        {!enabled && (
+          <div className="mt-4">
+            <AiNotice tone="info" icon={<Radio className="h-4 w-4" />}>
+              Switch on <strong>Live voice</strong> in Advanced Features to use this.
+            </AiNotice>
+          </div>
+        )}
+
+        {insecure && enabled && (
           <div className="mt-4">
             <AiNotice tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
               This page is open over an insecure connection, and browsers only allow microphone access on
               <code className="mx-1 rounded bg-white/60 px-1 py-0.5 text-[11.5px]">https://</code>
-              or <code className="mx-1 rounded bg-white/60 px-1 py-0.5 text-[11.5px]">localhost</code>. Open the
-              CRM at its https address to talk to the assistant. You can still type to it below once connected.
+              or <code className="mx-1 rounded bg-white/60 px-1 py-0.5 text-[11.5px]">localhost</code>.
             </AiNotice>
           </div>
         )}
@@ -369,32 +584,26 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
           </div>
         )}
 
+        {live && <LevelMeter level={level} youSpeaking={youSpeaking} speaking={speaking} />}
+
         <div className="mt-4 max-h-80 space-y-2 overflow-y-auto rounded-2xl bg-[#F7F8FC] p-4 ring-1 ring-slate-200/70">
           {turns.length === 0 ? (
             <p className="text-[12.5px] text-slate-500">
-              {status === 'live'
-                ? 'Go ahead — ask it something.'
-                : 'What you say and what it says back appears here, so you can read the conversation as well as hear it.'}
+              {live ? 'Go ahead — ask it something.' : 'What you say and what it says back appears here.'}
             </p>
           ) : (
-            turns.map((turn, i) => (
-              <div key={`${turn.who}-${i}`} className="text-[13px] leading-relaxed">
-                <span
-                  className={
-                    turn.who === 'you'
-                      ? 'font-semibold text-slate-700'
-                      : 'font-semibold text-[#4A5AE8]'
-                  }
-                >
-                  {turn.who === 'you' ? 'You: ' : 'Assistant: '}
+            turns.map((t, i) => (
+              <div key={`${t.who}-${i}`} className="text-[13px] leading-relaxed">
+                <span className={t.who === 'you' ? 'font-semibold text-slate-700' : 'font-semibold text-[#4A5AE8]'}>
+                  {t.who === 'you' ? 'You: ' : 'Assistant: '}
                 </span>
-                <span className="text-slate-700">{turn.text}</span>
+                <span className="text-slate-700">{t.text}</span>
               </div>
             ))
           )}
         </div>
 
-        {status === 'live' && (
+        {live && (
           <div className="mt-3 flex gap-2">
             <AiInput
               placeholder="Or type instead of speaking…"
@@ -408,20 +617,40 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
               }}
               className="h-9"
             />
-            <AiButton onClick={sendTyped} disabled={!typed.trim()}>
+            <button
+              type="button"
+              onClick={sendTyped}
+              disabled={!typed.trim()}
+              aria-label="Send"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#4A5AE8] text-white disabled:opacity-40"
+            >
               <Send className="h-3.5 w-3.5" />
-            </AiButton>
+            </button>
           </div>
         )}
-
-        <div className="mt-3">
-          <AiHint>
-            This is a rehearsal, not a customer channel. WhatsApp has no live audio, so customers reach the
-            assistant by voice note — which it answers with one. Use this to judge whether it sounds right and
-            knows its facts before it does.
-          </AiHint>
-        </div>
       </div>
     </AiCard>
+  );
+}
+
+/** Shows who currently has the floor. The point is not decoration: when
+ *  barge-in fires, seeing the bar switch sides is how you know the
+ *  detector worked rather than the assistant simply finishing. */
+function LevelMeter({ level, youSpeaking, speaking }: { level: number; youSpeaking: boolean; speaking: boolean }) {
+  return (
+    <div className="mt-3">
+      <div className="h-1.5 overflow-hidden rounded-full bg-slate-200/70">
+        <div
+          className={[
+            'h-full rounded-full transition-[width,background-color] duration-100',
+            youSpeaking ? 'bg-emerald-500' : speaking ? 'bg-[#5B6CF9]' : 'bg-slate-300',
+          ].join(' ')}
+          style={{ width: `${Math.max(4, Math.round(level * 100))}%` }}
+        />
+      </div>
+      <p className="mt-1 text-[10.5px] text-slate-400">
+        {youSpeaking ? 'You are speaking' : speaking ? 'Assistant is speaking — start talking to cut in' : 'Silence'}
+      </p>
+    </div>
   );
 }

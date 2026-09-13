@@ -96,6 +96,10 @@ export async function POST(req: Request) {
   // preview that doesn't match what customers get isn't a preview.
   let knowledgeBlock = ''
   let retrievalConfidence: number | null = null
+  // Which knowledge entries the answer was actually built from. Shown on
+  // the reply so a wrong answer can be traced to the entry that caused
+  // it, instead of leaving "where did it get that?" unanswerable.
+  let sources: string[] = []
   if (!training_data) {
     const storedConfig = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
     if (storedConfig?.knowledge_base_enabled) {
@@ -117,6 +121,14 @@ export async function POST(req: Request) {
           })
           knowledgeBlock = formatKnowledgeBlock(selected)
           retrievalConfidence = selected.confidence
+          sources = [
+            ...selected.qaPairs.map((q) => q.question),
+            ...selected.documentChunks.map((d) => d.title),
+          ]
+            // The same document contributes several chunks; listing it
+            // once is what a reader wants.
+            .filter((title, index, all) => title && all.indexOf(title) === index)
+            .slice(0, 6)
         }
       } catch (err) {
         // Retrieval is an enhancement here, not the point of the test —
@@ -171,6 +183,7 @@ export async function POST(req: Request) {
       // this message — the same number the confidence-handoff guardrail
       // compares against in production.
       retrieval_confidence: retrievalConfidence,
+      sources,
     })
   } catch (err) {
     // Failures are recorded too — a run of errors in the Usage tab is
