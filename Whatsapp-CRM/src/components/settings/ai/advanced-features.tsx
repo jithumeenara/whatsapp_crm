@@ -429,7 +429,11 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                 <Switch checked={props.voiceReplyEnabled} onCheckedChange={props.onVoiceReplyEnabledChange} />
               </div>
 
-              {props.voiceReplyEnabled && <TtsCredentialsCard />}
+              {/* Not gated on the voice toggle above. Adding the key
+                  before switching voice on is the natural order, and
+                  hiding it behind a switch made it unfindable — reported
+                  as "the upload option is not there". */}
+              <TtsCredentialsCard />
 
               {props.voiceReplyEnabled && (
                 <div className="grid gap-4 sm:grid-cols-2">
