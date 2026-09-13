@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type CSSProperties, type ReactNode } from "react";
+import { useState, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction, TemplateButton } from "@/types";
 import {
@@ -920,32 +920,84 @@ function MessageContent({ message }: { message: Message }) {
  * same honesty-first pattern Zendesk's own translation feature uses:
  * never let an agent lose sight of what the customer actually wrote.
  */
+/** The same short list the composer offers, for the same reason: a menu
+ *  of two hundred languages is a search box in disguise, and nobody here
+ *  is reading Finnish. */
+const BUBBLE_TRANSLATE_TARGETS = ['English', 'Malayalam', 'Tamil', 'Hindi', 'Kannada', 'Telugu', 'Arabic'];
+
 function TranslateToggle({ message }: { message: Message }) {
   const { profile } = useAuth();
   const preferredLanguage = profile?.preferred_language;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [translated, setTranslated] = useState<{ text: string; detectedLanguage: string | null; alreadyTarget: boolean } | null>(
-    message.translated_text && message.translated_lang === preferredLanguage
-      ? { text: message.translated_text, detectedLanguage: message.detected_lang ?? null, alreadyTarget: false }
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [translated, setTranslated] = useState<{
+    text: string;
+    detectedLanguage: string | null;
+    alreadyTarget: boolean;
+    language: string;
+  } | null>(
+    message.translated_text && message.translated_lang === preferredLanguage && preferredLanguage
+      ? {
+          text: message.translated_text,
+          detectedLanguage: message.detected_lang ?? null,
+          alreadyTarget: false,
+          language: preferredLanguage,
+        }
       : null,
   );
   const [showingOriginal, setShowingOriginal] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  if (!preferredLanguage || message.content_type !== "text" || !message.content_text?.trim()) return null;
+  // Click-away and Escape, registered only while the menu is open — a
+  // busy thread renders a lot of these, and a document listener per
+  // message would be a real cost.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
 
-  async function handleTranslate() {
+  if (message.content_type !== "text" || !message.content_text?.trim()) return null;
+
+  // The agent's own language first when they have set one, then the
+  // rest without repeating it.
+  const targets = [
+    ...(preferredLanguage?.trim() ? [preferredLanguage.trim()] : []),
+    ...BUBBLE_TRANSLATE_TARGETS.filter(
+      (l) => l.toLowerCase() !== (preferredLanguage ?? "").trim().toLowerCase(),
+    ),
+  ];
+
+  async function handleTranslate(targetLanguage: string, romanized: boolean) {
+    setMenuOpen(false);
     setLoading(true);
     setError("");
     try {
       const res = await fetch("/api/messages/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message_id: message.id, target_language: preferredLanguage }),
+        body: JSON.stringify({ message_id: message.id, target_language: targetLanguage, romanized }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Translation failed");
-      setTranslated({ text: data.translated_text, detectedLanguage: data.detected_language, alreadyTarget: !!data.already_target_language });
+      setTranslated({
+        text: romanized ? data.romanized_text || data.translated_text : data.translated_text,
+        detectedLanguage: data.detected_language,
+        alreadyTarget: !!data.already_target_language && !romanized,
+        language: targetLanguage,
+      });
+      setShowingOriginal(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Translation failed");
     } finally {
@@ -953,15 +1005,72 @@ function TranslateToggle({ message }: { message: Message }) {
     }
   }
 
+  const trigger = (
+    <div className="relative inline-block" ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setMenuOpen((o) => !o)}
+        disabled={loading}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        title="Translate this message"
+        className="flex items-center gap-1 rounded-md px-1 py-0.5 text-[10.5px] font-medium text-indigo-500 transition-colors hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+      >
+        {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Languages className="h-3 w-3" />}
+        {loading ? "Translating…" : error || "Translate"}
+      </button>
+
+      {menuOpen && (
+        <div
+          role="menu"
+          className="absolute bottom-6 left-0 z-50 w-56 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.06),0_12px_32px_-8px_rgba(15,23,42,.22)]"
+        >
+          <p className="px-3 pt-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Translate into
+          </p>
+          <ul className="max-h-56 overflow-y-auto p-1.5">
+            {targets.map((language) => (
+              <li key={language}>
+                <div className="group flex items-center gap-1 rounded-lg px-1 hover:bg-slate-50">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void handleTranslate(language, false)}
+                    className="min-w-0 flex-1 truncate rounded-lg py-1.5 pl-2 text-left text-[12.5px] text-slate-700"
+                  >
+                    {language}
+                  </button>
+                  {/* "Aa" — the same affordance the composer uses for
+                      "in English letters". Reading is the case that needs
+                      it most: an agent who speaks Malayalam but reads only
+                      Latin script gets a translation they still cannot
+                      read without this. */}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => void handleTranslate(language, true)}
+                    title={`${language}, written in English letters`}
+                    className="shrink-0 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-400 opacity-0 transition-opacity hover:bg-indigo-50 hover:text-indigo-600 group-hover:opacity-100 focus:opacity-100"
+                  >
+                    Aa
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+
   if (translated) {
     if (translated.alreadyTarget) {
-      // Already in the agent's own language — nothing useful to toggle,
-      // just a quiet confirmation rather than a translation that would
-      // be identical to the original.
+      // Already in that language — a quiet confirmation rather than a
+      // "translation" identical to the original.
       return (
         <p className="mt-1 flex items-center gap-1 text-[10.5px] text-slate-400">
           <Languages className="h-3 w-3" />
-          Already in {preferredLanguage}
+          Already in {translated.language}
         </p>
       );
     }
@@ -972,31 +1081,26 @@ function TranslateToggle({ message }: { message: Message }) {
             {translated.text}
           </p>
         )}
-        <button
-          type="button"
-          onClick={() => setShowingOriginal((s) => !s)}
-          className="mt-0.5 flex items-center gap-1 text-[10.5px] font-medium text-indigo-500 hover:text-indigo-700"
-        >
-          <Languages className="h-3 w-3" />
-          {showingOriginal
-            ? `Show translation${translated.detectedLanguage ? ` (from ${translated.detectedLanguage})` : ""}`
-            : "Show original"}
-        </button>
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowingOriginal((s) => !s)}
+            className="flex items-center gap-1 text-[10.5px] font-medium text-indigo-500 hover:text-indigo-700"
+          >
+            <Languages className="h-3 w-3" />
+            {showingOriginal
+              ? `Show ${translated.language}${translated.detectedLanguage ? ` (from ${translated.detectedLanguage})` : ""}`
+              : "Show original"}
+          </button>
+          {/* Kept available after translating: the first choice is often
+              not the right one, and re-picking should not mean undoing. */}
+          {trigger}
+        </div>
       </div>
     );
   }
 
-  return (
-    <button
-      type="button"
-      onClick={handleTranslate}
-      disabled={loading}
-      className="mt-1 flex items-center gap-1 text-[10.5px] font-medium text-indigo-500 hover:text-indigo-700 disabled:opacity-50"
-    >
-      {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Languages className="h-3 w-3" />}
-      {loading ? "Translating…" : error || `Translate to ${preferredLanguage}`}
-    </button>
-  );
+  return <div className="mt-1">{trigger}</div>;
 }
 
 export function MessageBubble({

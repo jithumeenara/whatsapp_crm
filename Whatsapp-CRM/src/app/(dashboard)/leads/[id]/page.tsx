@@ -6,7 +6,7 @@ import { useSessionWindow } from "@/lib/hooks/use-session-window"
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Paperclip, Send, Loader2,
-  FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate,
+  FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate, Sparkles,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
@@ -133,6 +133,7 @@ export default function LeadDetailPage() {
   const [chatLoading, setChatLoading] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [composerText, setComposerText] = useState("")
+  const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
@@ -339,6 +340,35 @@ export default function LeadDetailPage() {
       toast.error("Failed to load contact")
     } finally {
       setContactEditLoading(false)
+    }
+  }
+
+  /**
+   * Drafts a reply from this lead's conversation.
+   *
+   * The same endpoint the inbox uses, so an agent gets the same answer
+   * wherever they happen to be working — nothing is sent, the draft
+   * lands in the box for them to approve or rewrite.
+   */
+  async function draftReply() {
+    if (!conversationId || drafting) return
+    setDrafting(true)
+    try {
+      const res = await fetch("/api/messages/ai-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Could not draft a reply")
+      setComposerText(data.draft)
+      // Warnings are surfaced rather than swallowed: a weak knowledge
+      // match is exactly what the agent should check before sending.
+      for (const warning of (data.warnings ?? []) as string[]) toast.warning(warning)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not draft a reply")
+    } finally {
+      setDrafting(false)
     }
   }
 
@@ -866,6 +896,11 @@ export default function LeadDetailPage() {
                 }
                 disabled={!conversationId || sending || sessionExpired}
                 className="flex-1 min-w-0 bg-transparent text-[13px] text-slate-800 outline-none disabled:opacity-50" />
+              <button onClick={draftReply} disabled={!conversationId || drafting || sessionExpired}
+                title="Draft a reply from this conversation — you approve it before it sends"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-40">
+                {drafting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              </button>
               <button onClick={sendMessage} disabled={!conversationId || !composerText.trim() || sending || sessionExpired}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40">
                 {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}

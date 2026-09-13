@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useRef, useCallback, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages } from "lucide-react";
+import { useState, useRef, useCallback, useEffect, KeyboardEvent } from "react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
-import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import { ReplyQuote } from "./reply-quote";
 import { toast } from "sonner";
@@ -36,6 +35,25 @@ interface MessageComposerProps {
    *  to translate the draft into. Undefined/null hides the button. */
   contactDetectedLanguage?: string | null;
 }
+
+/**
+ * Offered translation targets.
+ *
+ * Deliberately a short list of what this customer base actually writes
+ * in, rather than every language the model knows: a menu of two hundred
+ * is a search box in disguise, and nobody here is answering in Finnish.
+ * The customer's own detected language is added at the top at runtime,
+ * because that is the one wanted nine times out of ten.
+ */
+const TRANSLATE_TARGETS = [
+  'Malayalam',
+  'English',
+  'Tamil',
+  'Hindi',
+  'Kannada',
+  'Telugu',
+  'Arabic',
+] as const;
 
 const ATTACH_OPTIONS = [
   {
@@ -83,34 +101,101 @@ export function MessageComposer({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingFilename, setUploadingFilename] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
-  const { profile } = useAuth();
-  const preferredLanguage = profile?.preferred_language;
-  // Nothing to translate into/from, or already in the same language —
-  // hide the button entirely rather than show it disabled with no
-  // explanation.
-  const canTranslateDraft =
-    !!preferredLanguage &&
-    !!contactDetectedLanguage &&
-    contactDetectedLanguage.trim().toLowerCase() !== preferredLanguage.trim().toLowerCase();
+  const [translateOpen, setTranslateOpen] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
+  const translateRef = useRef<HTMLDivElement>(null);
+  // The agent's own preferred language is no longer consulted: it used
+  // to decide whether the translate button appeared at all, which hid it
+  // from anyone whose profile language happened to match the customer's
+  // — exactly the person who might still want to answer in a third one.
+  // The customer's own language first — the one wanted nine times out of
+  // ten — then the rest, without repeating it.
+  const translateTargets = [
+    ...(contactDetectedLanguage?.trim() ? [contactDetectedLanguage.trim()] : []),
+    ...TRANSLATE_TARGETS.filter(
+      (l) => l.toLowerCase() !== (contactDetectedLanguage ?? '').trim().toLowerCase(),
+    ),
+  ];
 
-  const handleTranslateDraft = useCallback(async () => {
-    if (!text.trim() || !contactDetectedLanguage || translating) return;
-    setTranslating(true);
+  /**
+   * Replaces the draft with its translation.
+   *
+   * `romanized` returns the same sentence in English letters. For an
+   * agent who speaks the language but does not read its script, a
+   * native-script translation is unreadable — and an agent who cannot
+   * read what they are about to send cannot approve it, which defeats
+   * the point of a draft.
+   */
+  const handleTranslateDraft = useCallback(
+    async (targetLanguage: string, romanized: boolean) => {
+      if (!text.trim() || translating) return;
+      setTranslateOpen(false);
+      setTranslating(true);
+      try {
+        const res = await fetch("/api/messages/translate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, target_language: targetLanguage, romanized }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Translation failed");
+        const next = romanized ? data.romanized_text || data.translated_text : data.translated_text;
+        setText(next);
+        toast.success(
+          romanized ? `Translated to ${targetLanguage}, in English letters` : `Translated to ${targetLanguage}`,
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Translation failed");
+      } finally {
+        setTranslating(false);
+      }
+    },
+    [text, translating],
+  );
+
+  /** Drafts a reply from the thread. Nothing is sent — it lands in the
+   *  box for the agent to approve, edit or throw away. */
+  const handleDraftReply = useCallback(async () => {
+    if (drafting || !conversationId) return;
+    setDrafting(true);
+    setDraftWarnings([]);
     try {
-      const res = await fetch("/api/messages/translate", {
+      const res = await fetch("/api/messages/ai-suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, target_language: contactDetectedLanguage }),
+        body: JSON.stringify({ conversation_id: conversationId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Translation failed");
-      setText(data.translated_text);
+      if (!res.ok) throw new Error(data.error || "Could not draft a reply");
+      setText(data.draft);
+      setDraftWarnings(Array.isArray(data.warnings) ? data.warnings : []);
+      textareaRef.current?.focus();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Translation failed");
+      toast.error(err instanceof Error ? err.message : "Could not draft a reply");
     } finally {
-      setTranslating(false);
+      setDrafting(false);
     }
-  }, [text, contactDetectedLanguage, translating]);
+  }, [conversationId, drafting]);
+
+  // Click-away for the language menu. Registered only while it is open,
+  // so the inbox is not carrying a document listener the whole time it
+  // is mounted.
+  useEffect(() => {
+    if (!translateOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!translateRef.current?.contains(e.target as Node)) setTranslateOpen(false);
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setTranslateOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [translateOpen]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentAttachType = useRef<typeof ATTACH_OPTIONS[number]['key']>('document');
@@ -426,17 +511,77 @@ export function MessageComposer({
           )}
         />
 
-        {canTranslateDraft && (
+        <button
+          type="button"
+          onClick={handleDraftReply}
+          disabled={drafting || readOnly || sessionExpired}
+          title="Draft a reply from this conversation — you approve it before it sends"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50/60 text-indigo-600 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+        </button>
+
+        <div className="relative shrink-0" ref={translateRef}>
           <button
             type="button"
-            onClick={handleTranslateDraft}
+            onClick={() => setTranslateOpen((o) => !o)}
             disabled={!text.trim() || translating || readOnly}
-            title={`Translate your reply into ${contactDetectedLanguage}`}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-haspopup="menu"
+            aria-expanded={translateOpen}
+            title="Translate your reply"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
           </button>
-        )}
+
+          {translateOpen && (
+            <div
+              role="menu"
+              className="absolute bottom-11 right-0 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.06),0_12px_32px_-8px_rgba(15,23,42,.22)]"
+            >
+              <p className="px-3 pt-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                Translate your reply into
+              </p>
+              <ul className="max-h-64 overflow-y-auto p-1.5">
+                {translateTargets.map((language, index) => (
+                  <li key={language}>
+                    <div className="group flex items-center gap-1 rounded-lg px-1 hover:bg-slate-50">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void handleTranslateDraft(language, false)}
+                        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 pl-2 text-left text-[13px] text-slate-700"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{language}</span>
+                        {index === 0 && contactDetectedLanguage && (
+                          <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700">
+                            Theirs
+                          </span>
+                        )}
+                      </button>
+                      {/* "Aa" rather than an icon: it is the clearest
+                          two characters for "in English letters", and an
+                          icon here would need a tooltip to mean anything. */}
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void handleTranslateDraft(language, true)}
+                        title={`${language}, written in English letters`}
+                        className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-400 opacity-0 transition-opacity hover:bg-indigo-50 hover:text-indigo-600 group-hover:opacity-100 focus:opacity-100"
+                      >
+                        Aa
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <p className="border-t border-slate-100 px-3 py-2 text-[10.5px] leading-relaxed text-slate-500">
+                <span className="font-semibold text-slate-600">Aa</span> gives the same sentence in English
+                letters, for a language you speak but do not read.
+              </p>
+            </div>
+          )}
+        </div>
 
         <GatedButton
           size="sm"
@@ -449,6 +594,25 @@ export function MessageComposer({
           <Send className="h-4 w-4" />
         </GatedButton>
       </div>
+
+      {draftWarnings.length > 0 && (
+        <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 ring-1 ring-amber-500/20">
+          <AlertTriangle className="mt-[1px] h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">
+            {draftWarnings.map((w) => (
+              <span key={w} className="block">{w}</span>
+            ))}
+          </span>
+          <button
+            type="button"
+            onClick={() => setDraftWarnings([])}
+            aria-label="Dismiss"
+            className="shrink-0 rounded p-0.5 hover:bg-amber-100"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       <p className="mt-1 pl-[46px] text-[10px] text-slate-600 hidden sm:block">
         Type &apos;/&apos; for quick replies · Shift+Enter for new line

@@ -29,10 +29,13 @@ export async function POST(req: Request) {
     const ctx = await requireRole('agent')
 
     const body = await req.json().catch(() => ({}))
-    const { message_id, text, target_language } = body as {
+    const { message_id, text, target_language, romanized } = body as {
       message_id?: string
       text?: string
       target_language?: string
+      /** Also return the translation in English letters, for an agent
+       *  who speaks the language but does not read its script. */
+      romanized?: boolean
     }
 
     if (!target_language || typeof target_language !== 'string' || !target_language.trim()) {
@@ -69,7 +72,10 @@ export async function POST(req: Request) {
       }
 
       // Cache hit — already translated into this exact target language.
-      if (message.translated_text && message.translated_lang === targetLanguage) {
+      // A cached row only ever holds the native-script translation, so a
+      // request that wants English letters has to go to the model even
+      // when a translation already exists.
+      if (message.translated_text && message.translated_lang === targetLanguage && romanized !== true) {
         return NextResponse.json({
           detected_language: message.detected_lang,
           translated_text: message.translated_text,
@@ -80,7 +86,7 @@ export async function POST(req: Request) {
 
       let result
       try {
-        result = await detectAndTranslate({ apiKey: geminiApiKey, text: message.content_text, targetLanguage })
+        result = await detectAndTranslate({ apiKey: geminiApiKey, text: message.content_text, targetLanguage, includeRomanized: romanized === true })
         void recordAiUsage({
           accountId: ctx.accountId,
           model: TRANSLATE_MODEL,
@@ -112,6 +118,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         detected_language: result.detectedLanguage,
         translated_text: result.translatedText,
+        romanized_text: result.romanized ?? null,
         already_target_language: isAlreadyTargetLanguage(result.detectedLanguage, targetLanguage),
         cached: false,
       })
@@ -120,7 +127,7 @@ export async function POST(req: Request) {
     if (text && text.trim()) {
       let result
       try {
-        result = await detectAndTranslate({ apiKey: geminiApiKey, text: text.trim(), targetLanguage })
+        result = await detectAndTranslate({ apiKey: geminiApiKey, text: text.trim(), targetLanguage, includeRomanized: romanized === true })
         void recordAiUsage({
           accountId: ctx.accountId,
           model: TRANSLATE_MODEL,
@@ -136,6 +143,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         detected_language: result.detectedLanguage,
         translated_text: result.translatedText,
+        romanized_text: result.romanized ?? null,
         already_target_language: isAlreadyTargetLanguage(result.detectedLanguage, targetLanguage),
         cached: false,
       })
