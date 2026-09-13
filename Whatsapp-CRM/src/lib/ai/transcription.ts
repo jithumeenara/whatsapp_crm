@@ -3,10 +3,10 @@
  * interface in src/lib/ai/providers/ (that interface is chat-completions
  * shaped, text-in/text-out). Only two of the five configured providers
  * offer transcription at all today (confirmed against official docs,
- * Sept 2026): Gemini (gemini-3.5-transcribe) and OpenAI (gpt-transcribe).
- * Anthropic has no public audio API and DeepSeek is vision-only.
+ * Sept 2026): Gemini and OpenAI (gpt-transcribe). Anthropic has no public
+ * audio API and DeepSeek is vision-only.
  */
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI, type EnhancedGenerateContentResponse } from '@google/generative-ai'
 import type { ProviderKeys, ProviderKeyEntry } from './providers/registry'
 
 export type TranscriptionProvider = 'gemini' | 'openai'
@@ -34,20 +34,77 @@ export async function transcribeAudio(args: {
   return args.provider === 'gemini' ? transcribeWithGemini(args) : transcribeWithOpenAI(args)
 }
 
-/** Gemini's transcribe model is invoked through the standard
- *  generateContent call (same SDK already used for chat replies), not a
- *  special endpoint — an inline base64 audio Part alongside a text
- *  instruction. */
+/**
+ * The transcription models to try, in order.
+ *
+ * The dedicated model first — it is purpose-built and cheap. The general
+ * model second, because a preview model can be withdrawn without notice
+ * and a voice note that cannot be read is a customer who gets no answer.
+ * Both confirmed working against the live API on real speech, in English
+ * and in Malayalam.
+ */
+const GEMINI_TRANSCRIPTION_MODELS = ['gemini-3.5-transcribe', 'gemini-3.5-flash']
+
+/**
+ * Pulls the transcript out of a response, whichever shape it arrives in.
+ *
+ * This is the whole reason voice notes were failing in production with
+ * "Gemini returned an empty transcript". The dedicated transcription
+ * model does not answer with an ordinary text part — it answers with
+ *
+ *     { "audioTranscription": { "text": "..." } }
+ *
+ * and `response.text()` only ever collects `part.text`, so a perfectly
+ * good transcript came back as an empty string. The call had succeeded:
+ * finishReason STOP, one part, no error anywhere. Confirmed by dumping
+ * the raw REST response — the SDK gives no hint of it.
+ *
+ * General models answer with a normal text part, so both are read here.
+ */
+function extractTranscript(response: EnhancedGenerateContentResponse): string {
+  const parts = (response.candidates?.[0]?.content?.parts ?? []) as TranscriptPart[]
+  return parts
+    .map((part) => part.audioTranscription?.text ?? part.text ?? '')
+    .join('')
+    .trim()
+}
+
+interface TranscriptPart {
+  text?: string
+  audioTranscription?: { text?: string }
+}
+
+/** Gemini transcription is invoked through the standard generateContent
+ *  call (same SDK already used for chat replies), not a special endpoint
+ *  — an inline base64 audio Part alongside a text instruction. The
+ *  `; codecs=opus` parameter WhatsApp puts on a voice note's MIME type is
+ *  passed through untouched; it was verified not to bother the API. */
 async function transcribeWithGemini(args: { apiKey: string; audioBuffer: Buffer; mimeType: string }): Promise<string> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
-  const model = genAI.getGenerativeModel({ model: 'gemini-3.5-transcribe' })
-  const result = await model.generateContent([
-    { inlineData: { mimeType: args.mimeType, data: args.audioBuffer.toString('base64') } },
-    { text: 'Transcribe this audio accurately. Output only the transcript, nothing else.' },
-  ])
-  const text = result.response.text().trim()
-  if (!text) throw new Error('Gemini returned an empty transcript.')
-  return text
+  const data = args.audioBuffer.toString('base64')
+  const failures: string[] = []
+
+  for (const modelName of GEMINI_TRANSCRIPTION_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName })
+      const result = await model.generateContent([
+        { inlineData: { mimeType: args.mimeType, data } },
+        { text: 'Transcribe this audio accurately. Output only the transcript, nothing else.' },
+      ])
+      const text = extractTranscript(result.response)
+      if (text) return text
+      // Silence, or a model that has stopped answering in a shape we can
+      // read. Either way the next model is worth a try.
+      failures.push(`${modelName}: no transcript in the response`)
+    } catch (err) {
+      failures.push(`${modelName}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  // Names the models that were tried and why each one gave nothing. The
+  // old message said only "empty transcript", which was true and told
+  // nobody anything.
+  throw new Error(`Gemini could not transcribe the audio — ${failures.join('; ')}`)
 }
 
 function filenameForMimeType(mimeType: string): string {

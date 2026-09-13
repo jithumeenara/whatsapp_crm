@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle, Maximize2, Minimize2 } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -54,6 +54,9 @@ const TRANSLATE_TARGETS = [
   'Telugu',
   'Arabic',
 ] as const;
+
+/** How much of a long reply stays visible before the box scrolls. */
+const MAX_VISIBLE_LINES = 10;
 
 const ATTACH_OPTIONS = [
   {
@@ -198,18 +201,46 @@ export function MessageComposer({
     };
   }, [translateOpen]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const expandedRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const currentAttachType = useRef<typeof ATTACH_OPTIONS[number]['key']>('document');
 
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
 
+  /**
+   * Grows the box with the message, up to ten lines.
+   *
+   * Measured from the element's own computed style rather than a pixel
+   * constant: the old cap was a hardcoded 96px, which is four lines at
+   * today's font size and silently becomes some other number of lines
+   * the moment the type scale changes.
+   *
+   * The scrollbar stays off until the cap is actually reached - left on,
+   * it appears on a two-line message and takes a slice of the text width
+   * with it.
+   */
   const adjustHeight = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
+
+    const styles = window.getComputedStyle(el);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 20;
+    const padding =
+      Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom);
+    const maxHeight = lineHeight * MAX_VISIBLE_LINES + padding;
+
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, []);
+
+  // Also runs when the text arrives from somewhere other than typing -
+  // an AI draft, a translation, the large editor, or a box cleared after
+  // sending - none of which go through the change handler.
+  useEffect(() => {
+    adjustHeight();
+  }, [text, adjustHeight]);
 
   const insertEmoji = useCallback((emoji: string) => {
     setText((prev) => prev + emoji);
@@ -218,6 +249,28 @@ export function MessageComposer({
       adjustHeight();
     });
   }, [adjustHeight]);
+
+  /**
+   * Emoji for the large editor, placed at the cursor rather than
+   * appended. In the small box the cursor is almost always at the end;
+   * in a long reply it is wherever the writer stopped, and appending
+   * would drop the emoji at the bottom of the message instead.
+   */
+  const insertEmojiExpanded = useCallback((emoji: string) => {
+    const el = expandedRef.current;
+    if (!el) {
+      setText((prev) => prev + emoji);
+      return;
+    }
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? start;
+    setText((prev) => prev.slice(0, start) + emoji + prev.slice(end));
+    requestAnimationFrame(() => {
+      el.focus();
+      const caret = start + emoji.length;
+      el.setSelectionRange(caret, caret);
+    });
+  }, []);
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
@@ -382,7 +435,8 @@ export function MessageComposer({
       {/* The message itself, full width. An expand control opens the same
           value in a large editor — a long reply written through three
           visible rows is edited blind. */}
-      <div className="relative">
+      <div className="flex items-end gap-2">
+        <div className="relative min-w-0 flex-1">
         <textarea autoComplete="off"
           ref={textareaRef}
           value={text}
@@ -413,13 +467,29 @@ export function MessageComposer({
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
+        </div>
+
+        {/* Beside the message, not at the end of the tool row below: this
+            is the one control that acts on what was typed. Bottom-aligned
+            so it stays level with the last line as the box grows. */}
+        <GatedButton
+          size="sm"
+          canAct={!readOnly}
+          gateReason="send messages"
+          disabled={!text.trim() || sessionExpired || sending}
+          onClick={handleSend}
+          className="h-10 w-10 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+        >
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </GatedButton>
       </div>
 
-      {/* Actions, grouped left to right: compose, send-something, AI.
-          Scrolls rather than wraps on a narrow screen so the row stays
-          one line and Send never moves. */}
-      <div className="mt-2 flex items-center gap-1">
-        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Actions, spread across the full width: compose, send-something,
+          AI. No scroll container here - an absolutely positioned menu
+          inside one is clipped by it, which is what was cutting off the
+          attach and translate popups. Spread, there is nothing to scroll
+          anyway. */}
+      <div className="mt-2 flex items-center justify-between gap-0.5">
           <EmojiPickerPopover onSelect={insertEmoji} disabled={readOnly} />
 
           <ScheduleMenuButton conversationId={conversationId} disabled={readOnly} />
@@ -483,8 +553,6 @@ export function MessageComposer({
 
           {channel !== 'instagram' && channel !== 'facebook' && (
             <>
-              <span className="mx-1 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />
-
               {/* Templates stay reachable while the session is expired —
                   they are the only way to reopen it. */}
               <ComposerAction
@@ -524,8 +592,6 @@ export function MessageComposer({
               </ComposerAction>
             </>
           )}
-
-          <span className="mx-1 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />
 
           <ComposerAction
             label="Draft a reply from this conversation — you approve it before it sends"
@@ -593,18 +659,6 @@ export function MessageComposer({
               </div>
             )}
           </div>
-        </div>
-
-        <GatedButton
-          size="sm"
-          canAct={!readOnly}
-          gateReason="send messages"
-          disabled={!text.trim() || sessionExpired || sending}
-          onClick={handleSend}
-          className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
-        >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </GatedButton>
       </div>
 
       {/* Large editor. Edits the same state directly rather than a draft
@@ -612,8 +666,8 @@ export function MessageComposer({
           should still be there in the small box. */}
       {expanded && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="flex h-full max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div className="flex h-full max-h-[80vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between rounded-t-2xl border-b border-slate-100 px-4 py-3">
               <p className="text-[14px] font-semibold text-slate-900">Write your reply</p>
               <button
                 type="button"
@@ -627,15 +681,21 @@ export function MessageComposer({
             <textarea
               autoComplete="off"
               autoFocus
+              ref={expandedRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Type a message..."
               className="min-h-0 flex-1 resize-none px-5 py-4 text-[14px] leading-relaxed text-slate-800 outline-none"
             />
-            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
-              <span className="text-[11.5px] text-slate-500">
-                {text.trim().length} characters · closing keeps what you have written
-              </span>
+            <div className="flex items-center justify-between gap-3 rounded-b-2xl border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+              <div className="flex min-w-0 items-center gap-2">
+                {/* The small box has emoji; the long message is written
+                    here, so this needs it more, not less. */}
+                <EmojiPickerPopover onSelect={insertEmojiExpanded} disabled={readOnly} />
+                <span className="min-w-0 truncate text-[11.5px] text-slate-500">
+                  {text.trim().length} characters · closing keeps what you have written
+                </span>
+              </div>
               <div className="flex gap-2">
                 <button
                   type="button"
