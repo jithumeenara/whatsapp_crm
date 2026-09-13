@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { getChatbotTemplate } from '@/lib/chatbot/templates'
+import { findFlowIssues, sortIssues } from '@/lib/flows/graph-health'
 
 async function requireUser() {
   const session = await auth()
@@ -42,7 +43,34 @@ export async function GET() {
       WHERE account_id = ${guard.accountId}::uuid AND flow_type = 'chatbot'
       ORDER BY created_at DESC
     `
-    return NextResponse.json({ chatbots })
+    // Health is computed here rather than in the browser so the list
+    // can warn about a broken bot without shipping every node's config
+    // to the client. One query for every bot's nodes, not one per bot.
+    const nodes = await prisma.flowNode.findMany({
+      where: { flow: { account_id: guard.accountId, flow_type: 'chatbot' } },
+      select: { id: true, flow_id: true, node_key: true, node_type: true, config: true },
+    })
+    const nodesByFlow = new Map<string, typeof nodes>()
+    for (const node of nodes) {
+      const bucket = nodesByFlow.get(node.flow_id)
+      if (bucket) bucket.push(node)
+      else nodesByFlow.set(node.flow_id, [node])
+    }
+
+    const withHealth = chatbots.map((bot) => {
+      const flowId = String(bot.id)
+      const own = nodesByFlow.get(flowId) ?? []
+      const issues = sortIssues(
+        findFlowIssues({
+          entryNodeId: bot.entry_node_id ? String(bot.entry_node_id) : null,
+          nodes: own,
+          nodeIdByKey: new Map(own.map((n) => [n.node_key, n.id])),
+        }),
+      )
+      return { ...bot, issues }
+    })
+
+    return NextResponse.json({ chatbots: withHealth })
   } catch (err) {
     console.error('[GET /api/chatbot]', err)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

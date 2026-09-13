@@ -185,6 +185,11 @@ export function AiFallbackBanner() {
             <div className="space-y-3 px-4 pb-3.5">
               <ul className="space-y-1 text-[11.5px] leading-relaxed text-slate-600">
                 <li>• A chatbot or automation that matches always wins — it only answers what nothing claimed.</li>
+                <li>
+                  • It stays out of any conversation assigned to a person, or marked{" "}
+                  <span className="font-medium text-slate-700">Pending</span> — set one back to{" "}
+                  <span className="font-medium text-slate-700">Open</span> to let it answer there again.
+                </li>
                 <li>• It hands over when the knowledge base has no confident answer.</li>
                 <li>• It hands over rather than send a price, date or number it cannot verify.</li>
                 <li>• Refunds, complaints, another customer&apos;s details and requests for a person go straight to your team.</li>
@@ -206,12 +211,20 @@ export function AiFallbackBanner() {
                   <span>replies in one chat</span>
                 </label>
 
-                <label className="flex items-center gap-2 text-[11.5px] text-slate-700">
+                {/* "once an agent joins" described half of it: the same
+                    switch also holds the assistant back on anything marked
+                    Pending, which is the state a handover leaves behind and
+                    the one people set by hand. A thread sitting silent for
+                    that reason gives no clue why. */}
+                <label
+                  className="flex items-center gap-2 text-[11.5px] text-slate-700"
+                  title="Also applies to any conversation marked Pending, including one the assistant handed over earlier."
+                >
                   <Switch
                     checked={config.pauseOnAgent}
                     onCheckedChange={(v) => void save({ pauseOnAgent: v })}
                   />
-                  <span>Stop once an agent joins</span>
+                  <span>Stop once a person takes over</span>
                 </label>
               </div>
             </div>

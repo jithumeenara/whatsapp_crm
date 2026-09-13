@@ -119,6 +119,11 @@ export function AiConfig() {
   const [responseValidationEnabled, setResponseValidationEnabled] = useState(true);
   const [compositeConfidenceEnabled, setCompositeConfidenceEnabled] = useState(true);
   const [voiceReplyEnabled, setVoiceReplyEnabled] = useState(true);
+  // Read-only here. The switch itself lives on the Chatbots page, where
+  // the question it answers is raised; this page only needs to know
+  // whether the assistant answers at all, because a voice reply setting
+  // means nothing if nothing is replying.
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(true);
   const [voiceName, setVoiceName] = useState('Kore');
   const [voiceMaxChars, setVoiceMaxChars] = useState(700);
   const [cloudVoice, setCloudVoice] = useState('Achernar');
@@ -191,6 +196,7 @@ export function AiConfig() {
         setResponseValidationEnabled(data.response_validation_enabled ?? true);
         setCompositeConfidenceEnabled(data.composite_confidence_enabled ?? true);
         setVoiceReplyEnabled(data.voice_reply_enabled ?? true);
+        setAutoReplyEnabled(!!data.ai_auto_reply_enabled);
         setVoiceName(data.voice_name ?? 'Kore');
         setVoiceMaxChars(data.voice_max_chars ?? 700);
         setCloudVoice(data.cloud_voice ?? 'Achernar');
@@ -543,6 +549,7 @@ export function AiConfig() {
               onResponseValidationEnabledChange={setResponseValidationEnabled}
               compositeConfidenceEnabled={compositeConfidenceEnabled}
               onCompositeConfidenceEnabledChange={setCompositeConfidenceEnabled}
+              assistantAnswersUnmatched={autoReplyEnabled}
               voiceReplyEnabled={voiceReplyEnabled}
               onVoiceReplyEnabledChange={setVoiceReplyEnabled}
               voiceName={voiceName}

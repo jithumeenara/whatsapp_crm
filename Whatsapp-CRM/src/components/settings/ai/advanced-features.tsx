@@ -60,6 +60,9 @@ export interface AdvancedFeaturesProps {
   compositeConfidenceEnabled: boolean;
   onCompositeConfidenceEnabledChange: (v: boolean) => void;
 
+  /** Whether the assistant answers messages no chatbot matched. Off, a
+   *  voice reply setting describes something that never happens. */
+  assistantAnswersUnmatched: boolean;
   voiceReplyEnabled: boolean;
   onVoiceReplyEnabledChange: (v: boolean) => void;
   voiceName: string;
@@ -455,6 +458,22 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                   </div>
                   <Switch checked={props.voiceReplyEnabled} onCheckedChange={props.onVoiceReplyEnabledChange} />
                 </div>
+
+                {/* Without this the card claims a spoken reply while
+                    nothing is replying — which is exactly what happened:
+                    voice notes arrived, were transcribed, and sat there,
+                    with this section reading On the whole time. */}
+                {!props.assistantAnswersUnmatched && (
+                  <div className="mt-2.5 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[11.5px] leading-relaxed text-amber-900 ring-1 ring-amber-500/20">
+                    <AlertTriangle className="mt-[1px] h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      This only applies where the assistant actually answers. Right now it answers inside
+                      chatbots that use an AI step, but not messages no chatbot matched — turn on{' '}
+                      <span className="font-semibold">Answer messages no chatbot matched</span> on the Chatbots
+                      page for that.
+                    </span>
+                  </div>
+                )}
 
                 <div className="mt-2.5 grid gap-1.5 sm:grid-cols-2">
                   <div

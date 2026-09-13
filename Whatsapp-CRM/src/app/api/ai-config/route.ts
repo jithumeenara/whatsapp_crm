@@ -220,6 +220,11 @@ export async function PUT(req: Request) {
 
   const data = {
     active_provider: resolvedActiveProvider,
+    // Legacy column. Nothing generates with it — every path resolves the
+    // model from provider_keys — but it is what a person reads first
+    // when asking which model is in use, and it had drifted to a model
+    // Google has since retired. Kept in step rather than left to rot.
+    model: mergedKeys[resolvedActiveProvider]?.model ?? existing?.model ?? 'gemini-2.5-flash',
     fallback_provider: fallback_provider === undefined ? existing?.fallback_provider ?? null : fallback_provider,
     provider_keys: mergedKeys as unknown as Prisma.InputJsonValue,
     temperature: temperature != null ? Number(temperature) : (existing?.temperature ?? 0.7),

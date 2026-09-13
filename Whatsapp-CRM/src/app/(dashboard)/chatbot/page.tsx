@@ -25,9 +25,22 @@ interface Chatbot {
   execution_count: number
   created_at: string
   channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
+  /** Dead ends and unreachable steps, worst first. Computed server-side
+   *  so the list can warn without loading every node's config. */
+  issues?: { level: 'breaks' | 'warns'; nodeKey: string | null; message: string }[]
 }
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
+
+/** Only the ones that actually stop a conversation get the red badge —
+ *  an unreachable step is worth mentioning but is not an outage. */
+function breakingCount(bot: Chatbot): number {
+  return (bot.issues ?? []).filter((i) => i.level === 'breaks').length
+}
+
+function issueSummary(bot: Chatbot): string {
+  return (bot.issues ?? []).map((i) => `• ${i.message}`).join('\n')
+}
 
 const TRIGGER_LABELS: Record<string, string> = {
   keyword:       "Keyword Trigger",
@@ -401,6 +414,15 @@ export default function ChatbotV2() {
                   <Bot className="h-3.5 w-3.5 text-white" />
                 </div>
                 <h3 className="mt-1.5 text-[12px] font-bold text-white truncate pr-12">{bot.name}</h3>
+                {breakingCount(bot) > 0 && (
+                  <p
+                    className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                    title={issueSummary(bot)}
+                  >
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                    {breakingCount(bot)} broken {breakingCount(bot) === 1 ? 'step' : 'steps'}
+                  </p>
+                )}
                 <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                   <p className="flex items-center gap-1 text-[10px] text-white/80">
                     {TRIGGER_ICONS[bot.trigger_type] ?? <Zap className="h-3 w-3" />}
@@ -452,6 +474,32 @@ export default function ChatbotV2() {
                   ))}
                 </div>
               </div>
+              {(bot.issues?.length ?? 0) > 0 && (
+                /* Spelled out rather than left as a badge: knowing a bot
+                   is broken is no use without knowing which button is
+                   broken, and this is the page people look at. */
+                <div className="border-b border-amber-100 bg-amber-50/70 px-2.5 py-1.5">
+                  <ul className="space-y-0.5">
+                    {bot.issues!.slice(0, 3).map((issue) => (
+                      <li
+                        key={`${issue.nodeKey ?? 'flow'}-${issue.message}`}
+                        className={cn(
+                          "flex items-start gap-1 text-[9.5px] leading-relaxed",
+                          issue.level === 'breaks' ? "text-rose-700" : "text-amber-800",
+                        )}
+                      >
+                        <span className="mt-[3px] h-1 w-1 shrink-0 rounded-full bg-current" />
+                        <span className="min-w-0">{issue.message}</span>
+                      </li>
+                    ))}
+                    {bot.issues!.length > 3 && (
+                      <li className="text-[9.5px] text-amber-700/80">
+                        +{bot.issues!.length - 3} more — open the flow to see them
+                      </li>
+                    )}
+                  </ul>
+                </div>
+              )}
               <div className="flex items-center gap-1 px-2.5 py-2">
                 <Link
                   href={`/chatbot/${bot.id}`}

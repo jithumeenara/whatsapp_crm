@@ -19,6 +19,19 @@ import { emitToAccount } from '@/lib/socket'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 import { processInboundOrder } from '@/lib/whatsapp/order-processing'
 
+/** Why nothing was sent, in words rather than a reason code. These are
+ *  read by whoever is looking at pm2 logs asking why a customer got no
+ *  answer, which is rarely the person who wrote the code. */
+const AUTO_REPLY_HINTS: Record<string, string> = {
+  skipped_disabled: ' — "Answer messages no chatbot matched" is off in the Chatbots page.',
+  skipped_channel: ' — this channel is not in the auto-reply channel list.',
+  skipped_agent_active:
+    ' — the conversation is assigned to someone, or its status is Pending. Set it back to Open to let the assistant answer again.',
+  skipped_turn_limit: ' — the per-conversation reply limit was reached; it handed over instead.',
+  skipped_no_message: ' — the message had no text to answer (an unreadable voice note, or media with no caption).',
+  failed: ' — the send or a database read failed; see the error above.',
+}
+
 interface WhatsAppMessage {
   id: string
   from: string
@@ -922,7 +935,25 @@ async function processMessage(
           message: replyText,
           channel: 'whatsapp',
           wasVoice,
-        }).catch((err) => console.error('[ai-auto-reply] failed:', err))
+        })
+          // Logged whatever the outcome, not only on a thrown error.
+          // Every "skipped_*" reason used to be discarded here, so a
+          // thread where nothing replied looked the same whether the
+          // feature was off, the conversation was marked Pending, the
+          // turn limit had run out, or the channel was not enabled —
+          // and the only way to tell them apart was reading the
+          // database. A customer waiting for an answer that is never
+          // coming is worth one log line.
+          .then((outcome) => {
+            if (outcome === 'replied' || outcome === 'handed_off') {
+              console.log(`[ai-auto-reply] ${outcome} on ${conversation.id}`)
+            } else {
+              console.warn(
+                `[ai-auto-reply] no reply sent on ${conversation.id}: ${outcome}${AUTO_REPLY_HINTS[outcome] ?? ''}`,
+              )
+            }
+          })
+          .catch((err) => console.error('[ai-auto-reply] failed:', err))
       }
     }
   }
