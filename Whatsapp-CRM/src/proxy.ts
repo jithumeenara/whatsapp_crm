@@ -138,6 +138,15 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  // Run on all routes except static assets
-  matcher: ['/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  // Run on all routes except static assets.
+  //
+  // `audio/` is excluded because the live voice console loads an
+  // AudioWorklet module from /public/audio. Anything under /public that
+  // is not an image was being matched and redirected to /login, and a
+  // worklet module handed a redirect fails as an AbortError — surfacing
+  // as "the microphone stopped responding", which points nowhere near an
+  // auth matcher. The file carries no data and needs no session.
+  matcher: [
+    '/((?!_next/static|_next/image|favicon\\.ico|audio/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 }

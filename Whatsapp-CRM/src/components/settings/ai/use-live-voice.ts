@@ -63,54 +63,16 @@ const VAD_NOISE_ATTACK = 0.002;
 const VAD_NOISE_DECAY = 0.05;
 
 /**
- * Captures mono samples, posts them as 16-bit PCM, and reports the
- * loudness of each block so voice detection needs no second analyser
- * reading the same stream.
+ * Path to the capture worklet.
  *
- * Delivered as a Blob URL rather than a file in /public: it is part of
- * this behaviour, and a stray .js in the public directory is the kind of
- * thing that gets deleted by someone tidying up.
+ * A real file, not a Blob URL. This app's CSP sets `script-src 'self'`
+ * with no `blob:`, so a blob-sourced worklet module is blocked — and
+ * AudioWorklet surfaces a module it could not load as an AbortError,
+ * which reads as "the microphone stopped responding" and points nowhere
+ * near a security header.
  */
-const CAPTURE_WORKLET = `
-class CaptureProcessor extends AudioWorkletProcessor {
-  process(inputs) {
-    const channel = inputs[0] && inputs[0][0];
-    if (!channel) return true;
-    const pcm = new Int16Array(channel.length);
-    let sumSquares = 0;
-    for (let i = 0; i < channel.length; i++) {
-      const clamped = Math.max(-1, Math.min(1, channel[i]));
-      sumSquares += clamped * clamped;
-      pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
-    }
-    this.port.postMessage(
-      { pcm: pcm.buffer, rms: Math.sqrt(sumSquares / channel.length) },
-      [pcm.buffer],
-    );
-    return true;
-  }
-}
-registerProcessor('capture-processor', CaptureProcessor);
-`;
+const CAPTURE_WORKLET_URL = '/audio/capture-worklet.js';
 
-/**
- * Works out why the microphone could not be opened, and says what to do
- * about that specific cause.
- *
- * A browser raises NotAllowedError for at least three situations and
- * only one is a site block:
- *
- *   1. The site is blocked in browser settings.
- *   2. The prompt was dismissed — clicked away, or missed. No block is
- *      recorded, so site settings look completely normal.
- *   3. The operating system is refusing the browser. On Windows that is
- *      Privacy & security -> Microphone; settings again look normal.
- *
- * Reported against a real case where site settings showed "Ask" with an
- * empty block list while the message insisted the browser had blocked
- * it. The Permissions API tells them apart: a genuine block reports
- * 'denied', the other two leave it at 'prompt'.
- */
 /**
  * True when the page's own Permissions-Policy header forbids the
  * microphone.
@@ -199,10 +161,22 @@ export async function diagnoseMicFailure(err: unknown): Promise<string> {
   }
 
   if (name === 'AbortError') {
-    return 'The microphone stopped responding before the session could start. Try again.';
+    // Deliberately no longer a bare "try again". AudioWorklet raises
+    // AbortError for a module it could not load, which has nothing to do
+    // with the microphone and is not fixed by retrying — three rounds of
+    // reports were spent on that phrasing sending people to check
+    // hardware.
+    return [
+      'The audio session could not start.',
+      message || 'The browser gave no further detail.',
+    ].join('\n');
   }
 
-  return message || 'The microphone could not be opened.';
+  // The browser's own words, for anything unrecognised. A friendly
+  // message that guesses wrong costs more than an unfriendly one that is
+  // accurate — every microphone report so far has turned on a detail
+  // that a tidy message had thrown away.
+  return message ? `${message}${name ? ` (${name})` : ''}` : 'The microphone could not be opened.';
 }
 
 export type LiveVoiceStatus = 'idle' | 'connecting' | 'live' | 'error';
@@ -226,7 +200,6 @@ export function useLiveVoice(mode: 'customer' | 'admin') {
   const micContextRef = useRef<AudioContext | null>(null);
   const playContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const workletUrlRef = useRef<string | null>(null);
   const playCursorRef = useRef(0);
   const scheduledRef = useRef<AudioBufferSourceNode[]>([]);
 
@@ -315,10 +288,6 @@ export function useLiveVoice(mode: 'customer' | 'admin') {
     micContextRef.current = null;
     void playContextRef.current?.close().catch(() => {});
     playContextRef.current = null;
-    if (workletUrlRef.current) {
-      URL.revokeObjectURL(workletUrlRef.current);
-      workletUrlRef.current = null;
-    }
     voiceBlocksRef.current = 0;
     noiseFloorRef.current = VAD_MIN_LEVEL;
     setYouSpeaking(false);
@@ -431,9 +400,19 @@ export function useLiveVoice(mode: 'customer' | 'admin') {
       const playContext = new AudioContext({ sampleRate: OUTPUT_RATE });
       playContextRef.current = playContext;
 
-      const workletUrl = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: 'application/javascript' }));
-      workletUrlRef.current = workletUrl;
-      await micContext.audioWorklet.addModule(workletUrl);
+      try {
+        await micContext.audioWorklet.addModule(CAPTURE_WORKLET_URL);
+      } catch (err) {
+        // Re-thrown with a cause somebody can act on. AudioWorklet
+        // reports every module failure the same way — an AbortError
+        // reading "the user aborted a request" — whether the file is
+        // missing, blocked by CSP, or served with the wrong type.
+        throw new Error(
+          `The audio capture module could not be loaded from ${CAPTURE_WORKLET_URL}. ` +
+            `Check the file exists in /public and that the Content-Security-Policy allows it. ` +
+            `(${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const socket = new WebSocket(
