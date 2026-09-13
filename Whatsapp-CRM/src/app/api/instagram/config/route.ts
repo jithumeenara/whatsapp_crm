@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
@@ -140,8 +141,9 @@ export async function PATCH(req: NextRequest) {
     const tokenToSave = keepToken ? (existing[0]?.access_token ?? null) : (access_token || null)
 
     await prisma.$executeRaw`
-      INSERT INTO instagram_config (account_id, access_token, verify_token, instagram_account_id, page_id, updated_at)
+      INSERT INTO instagram_config (id, account_id, access_token, verify_token, instagram_account_id, page_id, updated_at)
       VALUES (
+        ${randomUUID()}::uuid,
         ${ctx.accountId}::uuid,
         ${tokenToSave},
         ${verify_token || null},

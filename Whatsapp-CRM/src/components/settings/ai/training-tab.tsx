@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   FileText, MessageSquare, Link2, StickyNote, Database, Plus, Search, Filter,
   Loader2, RefreshCw, Trash2, MoreHorizontal, CheckCircle2, AlertTriangle, Clock,
@@ -189,6 +189,11 @@ export function TrainingTab(props: TrainingTabProps) {
   const [addKind, setAddKind] = useState<AddKind | null>(null);
   const [training, setTraining] = useState(false);
   const [trainResult, setTrainResult] = useState('');
+  // Account-wide, from the API. The warning below used to count the
+  // rows on the current page, so it under-reported the moment the
+  // knowledge base outgrew one page — and read "0 untrained" while a
+  // later page was full of them.
+  const [statusCounts, setStatusCounts] = useState<Record<string, number>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -203,6 +208,7 @@ export function TrainingTab(props: TrainingTabProps) {
       if (!res.ok) throw new Error(data.error ?? 'Could not load the knowledge base.');
       setItems(data.items ?? []);
       setTotal(data.total ?? 0);
+      setStatusCounts(data.status_counts ?? {});
     } catch (err) {
       setListError(err instanceof Error ? err.message : 'Could not load the knowledge base.');
     } finally {
@@ -218,7 +224,8 @@ export function TrainingTab(props: TrainingTabProps) {
   }, [load]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const untrained = useMemo(() => items.filter((i) => i.status === 'pending' || i.status === 'failed').length, [items]);
+  const untrained = (statusCounts.pending ?? 0) + (statusCounts.failed ?? 0);
+  const trained = statusCounts.trained ?? 0;
 
   async function runTraining() {
     setTraining(true);
@@ -227,10 +234,29 @@ export function TrainingTab(props: TrainingTabProps) {
       const res = await fetch('/api/ai-knowledge/sync', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Training failed.');
-      const bits = [`${data.embedded} embedded`];
-      if (data.deleted) bits.push(`${data.deleted} removed`);
-      if (data.failed) bits.push(`${data.failed} failed`);
-      setTrainResult(bits.join(' · '));
+      // "0 embedded" was the message for the most common outcome of
+      // all — everything already done — and it reads like a failure.
+      if (!data.embedded && !data.failed && !data.deleted) {
+        setTrainResult(
+          trained > 0
+            ? `Already up to date — all ${trained} ${trained === 1 ? 'entry is' : 'entries are'} searchable by meaning.`
+            : 'Already up to date — nothing new to train on.',
+        );
+      } else {
+        const bits: string[] = [];
+        if (data.embedded) bits.push(`${data.embedded} newly embedded`);
+        if (data.deleted) bits.push(`${data.deleted} removed`);
+        if (data.failed) {
+          // The reason, not just the number. Quota and timeout read very
+          // differently to somebody deciding whether to press it again.
+          bits.push(
+            data.firstError
+              ? `${data.failed} failed — ${data.firstError}`
+              : `${data.failed} failed`,
+          );
+        }
+        setTrainResult(bits.join(' · '));
+      }
       await load();
     } catch (err) {
       setTrainResult(err instanceof Error ? err.message : 'Training failed.');
@@ -271,7 +297,11 @@ export function TrainingTab(props: TrainingTabProps) {
             }
           />
 
-          {trainResult && <AiNotice tone="info" className="mt-3">{trainResult}</AiNotice>}
+          {trainResult && (
+            <AiNotice tone={trainResult.includes('failed') ? 'warning' : 'info'} className="mt-3">
+              {trainResult}
+            </AiNotice>
+          )}
           {untrained > 0 && !training && (
             <AiNotice tone="warning" icon={<Clock className="h-3.5 w-3.5" />} className="mt-3">
               {untrained} {untrained === 1 ? 'entry is' : 'entries are'} saved but not embedded yet — they&apos;re still

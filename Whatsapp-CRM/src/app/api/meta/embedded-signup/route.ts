@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { randomInt } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
@@ -171,8 +172,8 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
 
     await ensureFacebookConfigTable()
     await prisma.$executeRaw`
-      INSERT INTO facebook_config (account_id, access_token, page_id, page_name, status, test_error, last_tested_at, updated_at)
-      VALUES (${accountId}::uuid, ${page.access_token}, ${page.id}, ${page.name}, 'connected', null, now(), now())
+      INSERT INTO facebook_config (id, account_id, access_token, page_id, page_name, status, test_error, last_tested_at, updated_at)
+      VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${page.access_token}, ${page.id}, ${page.name}, 'connected', null, now(), now())
       ON CONFLICT (account_id) DO UPDATE SET
         access_token = EXCLUDED.access_token,
         page_id      = EXCLUDED.page_id,
@@ -196,8 +197,8 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
     if (ig?.id) {
       await ensureInstagramConfigTable()
       await prisma.$executeRaw`
-        INSERT INTO instagram_config (account_id, access_token, instagram_account_id, page_id, ig_username, ig_name, status, test_error, last_tested_at, updated_at)
-        VALUES (${accountId}::uuid, ${page.access_token}, ${ig.id}, ${page.id}, ${ig.username ?? null}, ${ig.name ?? null}, 'connected', null, now(), now())
+        INSERT INTO instagram_config (id, account_id, access_token, instagram_account_id, page_id, ig_username, ig_name, status, test_error, last_tested_at, updated_at)
+        VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${page.access_token}, ${ig.id}, ${page.id}, ${ig.username ?? null}, ${ig.name ?? null}, 'connected', null, now(), now())
         ON CONFLICT (account_id) DO UPDATE SET
           access_token         = EXCLUDED.access_token,
           instagram_account_id = EXCLUDED.instagram_account_id,

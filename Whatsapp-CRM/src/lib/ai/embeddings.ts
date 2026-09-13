@@ -18,7 +18,7 @@
  */
 
 import { GoogleGenerativeAI, TaskType } from '@google/generative-ai'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { recordAiUsage, estimateTokensFromText } from './usage'
@@ -190,7 +190,7 @@ export async function syncKnowledgeEmbeddings(args: {
    *  consumer of an account's Gemini quota, so a Usage tab that ignored
    *  it would understate the bill it is there to explain. */
   accountId?: string
-}): Promise<{ embedded: number; deleted: number; failed: number }> {
+}): Promise<{ embedded: number; deleted: number; failed: number; firstError?: string }> {
   const { aiConfigId, apiKey, items, accountId } = args
   const startedAt = Date.now()
   let estimatedTokens = 0
@@ -220,19 +220,25 @@ export async function syncKnowledgeEmbeddings(args: {
   const missing = items.filter((i) => !existingHashes.has(i.contentHash))
   let embedded = 0
   let failed = 0
+  // Kept so the screen can say why. A count on its own tells somebody
+  // that training failed and nothing they can act on; the reason was
+  // going only to console.error, where the person who needs it is not
+  // looking.
+  let firstError: string | undefined
   for (const item of missing) {
     try {
       const vector = await embedDocument(apiKey, item.text)
       estimatedTokens += estimateTokensFromText(item.text)
       embedded += await prisma.$executeRaw(
         Prisma.sql`
-          INSERT INTO ai_knowledge_embeddings (ai_config_id, content_hash, kind, embedding_model, embedding)
-          VALUES (${aiConfigId}::uuid, ${item.contentHash}, ${item.kind}, ${EMBEDDING_MODEL}, ${vectorLiteral(vector)}::vector)
+          INSERT INTO ai_knowledge_embeddings (id, ai_config_id, content_hash, kind, embedding_model, embedding)
+          VALUES (${randomUUID()}::uuid, ${aiConfigId}::uuid, ${item.contentHash}, ${item.kind}, ${EMBEDDING_MODEL}, ${vectorLiteral(vector)}::vector)
           ON CONFLICT (ai_config_id, content_hash, embedding_model) DO NOTHING
         `,
       )
     } catch (err) {
       failed++
+      firstError ??= err instanceof Error ? err.message : String(err)
       console.error(
         '[embeddings] failed to embed knowledge item:',
         item.kind,
@@ -256,7 +262,7 @@ export async function syncKnowledgeEmbeddings(args: {
     })
   }
 
-  return { embedded, deleted, failed }
+  return { embedded, deleted, failed, firstError }
 }
 
 // Re-exported so callers building a KnowledgeDocument-derived item list

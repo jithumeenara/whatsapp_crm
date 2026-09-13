@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
@@ -121,8 +122,8 @@ export async function PATCH(req: NextRequest) {
     const secretToSave = (!app_secret || app_secret === MASKED) ? (existing[0]?.app_secret ?? null) : (app_secret || null)
 
     await prisma.$executeRaw`
-      INSERT INTO facebook_config (account_id, access_token, verify_token, page_id, app_secret, updated_at)
-      VALUES (${ctx.accountId}::uuid, ${tokenToSave}, ${verify_token || null}, ${page_id || null}, ${secretToSave}, now())
+      INSERT INTO facebook_config (id, account_id, access_token, verify_token, page_id, app_secret, updated_at)
+      VALUES (${randomUUID()}::uuid, ${ctx.accountId}::uuid, ${tokenToSave}, ${verify_token || null}, ${page_id || null}, ${secretToSave}, now())
       ON CONFLICT (account_id) DO UPDATE SET
         access_token = EXCLUDED.access_token,
         verify_token = EXCLUDED.verify_token,
