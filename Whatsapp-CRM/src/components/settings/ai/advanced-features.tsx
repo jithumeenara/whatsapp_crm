@@ -2,7 +2,7 @@
 
 import {
   Sliders, ShieldQuestion, UserCheck, X, Plus, MessageSquare, Database, AlertTriangle, Sparkles,
-  BadgeCheck,
+  BadgeCheck, Mic,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -377,7 +377,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                 <BadgeCheck className="h-4 w-4" />
               </AiIconTile>
               <span className="min-w-0 text-left">
-                <span className="block font-medium text-slate-800">Accuracy &amp; Voice</span>
+                <span className="block font-medium text-slate-800">Accuracy checks</span>
                 <span className="block text-[11.5px] font-normal text-slate-500">
                   Checks before a reply is sent, and answering voice notes by voice.
                 </span>
@@ -417,16 +417,73 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                 />
               </div>
 
-              <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
-                <div className="min-w-0">
-                  <p className="text-[13px] font-medium text-slate-800">Reply to voice notes with voice</p>
-                  <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
-                    Someone who records a voice message usually does so because typing is awkward — in their
-                    language, or at that moment. They get a spoken reply back. Typed questions still get typed
-                    answers.
-                  </p>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* ── Voice replies ── */}
+        <AccordionItem value="voice">
+          <AccordionTrigger className="text-[13.5px]">
+            <span className="flex min-w-0 items-center gap-2.5">
+              <AiIconTile tint="emerald" size="sm">
+                <Mic className="h-4 w-4" />
+              </AiIconTile>
+              <span className="min-w-0 text-left">
+                <span className="block font-medium text-slate-800">Voice replies</span>
+                <span className="block text-[11.5px] font-normal text-slate-500">
+                  How the assistant answers a customer&apos;s voice note, and which voice it uses.
+                </span>
+              </span>
+            </span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <div className="space-y-4 pb-4">
+              {/* States both outcomes. "Reply to voice notes with voice"
+                  leaves the off case to be inferred, and the off case is
+                  exactly what somebody choosing between them wants to
+                  know. */}
+              <div className="rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-slate-800">
+                      When a customer sends a voice note
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                      Someone who records a voice message usually does so because typing is awkward — in their
+                      language, or at that moment. A typed question always gets a typed answer either way.
+                    </p>
+                  </div>
+                  <Switch checked={props.voiceReplyEnabled} onCheckedChange={props.onVoiceReplyEnabledChange} />
                 </div>
-                <Switch checked={props.voiceReplyEnabled} onCheckedChange={props.onVoiceReplyEnabledChange} />
+
+                <div className="mt-2.5 grid gap-1.5 sm:grid-cols-2">
+                  <div
+                    className={[
+                      'rounded-xl px-3 py-2 text-[11.5px] leading-relaxed ring-1 transition-colors',
+                      props.voiceReplyEnabled
+                        ? 'bg-emerald-50 text-emerald-900 ring-emerald-500/20'
+                        : 'bg-white text-slate-400 ring-slate-200/70',
+                    ].join(' ')}
+                  >
+                    <span className="block font-semibold">
+                      {props.voiceReplyEnabled ? 'On — they hear a spoken reply' : 'On'}
+                    </span>
+                    <span className="block">Answered in the language they spoke, as a voice note.</span>
+                  </div>
+                  <div
+                    className={[
+                      'rounded-xl px-3 py-2 text-[11.5px] leading-relaxed ring-1 transition-colors',
+                      props.voiceReplyEnabled
+                        ? 'bg-white text-slate-400 ring-slate-200/70'
+                        : 'bg-slate-100 text-slate-700 ring-slate-300/60',
+                    ].join(' ')}
+                  >
+                    <span className="block font-semibold">
+                      {props.voiceReplyEnabled ? 'Off' : 'Off — they read a written reply'}
+                    </span>
+                    <span className="block">Their voice note is transcribed and answered in text.</span>
+                  </div>
+                </div>
               </div>
 
               {/* Not gated on the voice toggle above. Adding the key

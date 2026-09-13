@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from "react";
-import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle } from "lucide-react";
+import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, X, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
 import { useCan } from "@/hooks/use-can";
@@ -103,6 +103,7 @@ export function MessageComposer({
   const [translating, setTranslating] = useState(false);
   const [translateOpen, setTranslateOpen] = useState(false);
   const [drafting, setDrafting] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
   const translateRef = useRef<HTMLDivElement>(null);
   // The agent's own preferred language is no longer consulted: it used
@@ -378,118 +379,10 @@ export function MessageComposer({
         </div>
       )}
 
-      <div className="flex items-end gap-1.5 sm:gap-2">
-        {/* Emoji picker — full set, categories + search (emoji-picker-react) */}
-        <EmojiPickerPopover onSelect={insertEmoji} disabled={readOnly} />
-
-        {/* Scheduled messages — one icon, menu with New Schedule / View Schedule */}
-        <ScheduleMenuButton conversationId={conversationId} disabled={readOnly} />
-
-        {/* Attachment button + popover — hosts file uploads and (WhatsApp only) message templates */}
-        <div className="relative shrink-0">
-          <GatedButton
-            variant="ghost"
-            size="sm"
-            canAct={!readOnly}
-            gateReason="send messages"
-            title="Attach"
-            className="h-9 w-9 p-0 text-slate-500 hover:text-slate-800"
-            onClick={() => setAttachOpen((o) => !o)}
-            disabled={uploading}
-          >
-            {uploading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Paperclip className="h-4 w-4" />
-            )}
-          </GatedButton>
-
-          {attachOpen && (
-            <>
-              {/* Backdrop */}
-              <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
-              {/* Menu */}
-              <div className="absolute bottom-11 left-0 z-20 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                {/* Message template — always available, WhatsApp only. This is the
-                    one way to message a contact once the 24h session has expired,
-                    so it must stay reachable even while everything below is gated. */}
-                {channel !== 'instagram' && channel !== 'facebook' && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => { setAttachOpen(false); onOpenTemplates(); }}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
-                    >
-                      <LayoutTemplate className="h-4 w-4 shrink-0 text-amber-500" />
-                      Message Template
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setAttachOpen(false); onSendOtp(); }}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
-                    >
-                      <KeyRound className="h-4 w-4 shrink-0 text-fuchsia-500" />
-                      Send OTP
-                    </button>
-                    <button
-                      type="button"
-                      disabled={sessionExpired}
-                      onClick={() => { setAttachOpen(false); onOpenCatalog(); }}
-                      title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
-                    >
-                      <ShoppingBag className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : "text-sky-500")} />
-                      Send Catalog
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setAttachOpen(false); onRequestPayment(); }}
-                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors"
-                    >
-                      <IndianRupee className="h-4 w-4 shrink-0 text-amber-500" />
-                      Request Payment
-                    </button>
-                    <div className="mx-3 my-1 border-t border-slate-100" />
-                  </>
-                )}
-                {/* Device / File Manager options — need an open 24h session, same
-                    restriction as free text, so these are disabled once it expires. */}
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  From Device
-                </div>
-                {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
-                  <button
-                    key={key}
-                    type="button"
-                    disabled={sessionExpired}
-                    onClick={() => openFilePicker(key, accept)}
-                    title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
-                  >
-                    <Icon className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : color)} />
-                    {label}
-                  </button>
-                ))}
-                {/* File Manager option */}
-                <div className="mx-3 my-1 border-t border-slate-100" />
-                <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                  From File Manager
-                </div>
-                <button
-                  type="button"
-                  disabled={sessionExpired}
-                  onClick={() => { setAttachOpen(false); setFilePickerOpen(true); }}
-                  title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
-                  className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 hover:bg-slate-100 transition-colors disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
-                >
-                  <FolderOpen className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : "text-indigo-500")} />
-                  Browse Files
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-
+      {/* The message itself, full width. An expand control opens the same
+          value in a large editor — a long reply written through three
+          visible rows is edited blind. */}
+      <div className="relative">
         <textarea autoComplete="off"
           ref={textareaRef}
           value={text}
@@ -506,81 +399,200 @@ export function MessageComposer({
           rows={1}
           title={readOnly ? "Read-only — your role can't send messages" : undefined}
           className={cn(
-            "flex-1 resize-none rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm text-slate-800 placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
+            "w-full resize-none rounded-xl border border-slate-200 bg-slate-100 py-2.5 pl-4 pr-11 text-sm text-slate-800 placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
             (sessionExpired || readOnly) && "cursor-not-allowed opacity-50",
           )}
         />
-
         <button
           type="button"
-          onClick={handleDraftReply}
-          disabled={drafting || readOnly || sessionExpired}
-          title="Draft a reply from this conversation — you approve it before it sends"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-indigo-200 bg-indigo-50/60 text-indigo-600 transition-colors hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={() => setExpanded(true)}
+          disabled={readOnly}
+          aria-label="Open a larger editor"
+          title="Open a larger editor"
+          className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-200/70 hover:text-slate-700 disabled:opacity-40"
         >
-          {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          <Maximize2 className="h-3.5 w-3.5" />
         </button>
+      </div>
 
-        <div className="relative shrink-0" ref={translateRef}>
-          <button
-            type="button"
-            onClick={() => setTranslateOpen((o) => !o)}
-            disabled={!text.trim() || translating || readOnly}
-            aria-haspopup="menu"
-            aria-expanded={translateOpen}
-            title="Translate your reply"
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
-          </button>
+      {/* Actions, grouped left to right: compose, send-something, AI.
+          Scrolls rather than wraps on a narrow screen so the row stays
+          one line and Send never moves. */}
+      <div className="mt-2 flex items-center gap-1">
+        <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <EmojiPickerPopover onSelect={insertEmoji} disabled={readOnly} />
 
-          {translateOpen && (
-            <div
-              role="menu"
-              className="absolute bottom-11 right-0 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.06),0_12px_32px_-8px_rgba(15,23,42,.22)]"
+          <ScheduleMenuButton conversationId={conversationId} disabled={readOnly} />
+
+          {/* Attach keeps only what it is for: device files and the file
+              manager. The four WhatsApp actions that used to live in here
+              are their own icons now — they are things you send, not
+              things you attach. */}
+          <div className="relative shrink-0">
+            <GatedButton
+              variant="ghost"
+              size="sm"
+              canAct={!readOnly}
+              gateReason="send messages"
+              title="Attach a file"
+              className="h-9 w-9 p-0 text-slate-500 hover:text-slate-800"
+              onClick={() => setAttachOpen((o) => !o)}
+              disabled={uploading}
             >
-              <p className="px-3 pt-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                Translate your reply into
-              </p>
-              <ul className="max-h-64 overflow-y-auto p-1.5">
-                {translateTargets.map((language, index) => (
-                  <li key={language}>
-                    <div className="group flex items-center gap-1 rounded-lg px-1 hover:bg-slate-50">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => void handleTranslateDraft(language, false)}
-                        className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 pl-2 text-left text-[13px] text-slate-700"
-                      >
-                        <span className="min-w-0 flex-1 truncate">{language}</span>
-                        {index === 0 && contactDetectedLanguage && (
-                          <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700">
-                            Theirs
-                          </span>
-                        )}
-                      </button>
-                      {/* "Aa" rather than an icon: it is the clearest
-                          two characters for "in English letters", and an
-                          icon here would need a tooltip to mean anything. */}
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => void handleTranslateDraft(language, true)}
-                        title={`${language}, written in English letters`}
-                        className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-400 opacity-0 transition-opacity hover:bg-indigo-50 hover:text-indigo-600 group-hover:opacity-100 focus:opacity-100"
-                      >
-                        Aa
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <p className="border-t border-slate-100 px-3 py-2 text-[10.5px] leading-relaxed text-slate-500">
-                <span className="font-semibold text-slate-600">Aa</span> gives the same sentence in English
-                letters, for a language you speak but do not read.
-              </p>
-            </div>
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+            </GatedButton>
+
+            {attachOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
+                <div className="absolute bottom-11 left-0 z-20 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    From Device
+                  </div>
+                  {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      disabled={sessionExpired}
+                      onClick={() => openFilePicker(key, accept)}
+                      title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                    >
+                      <Icon className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : color)} />
+                      {label}
+                    </button>
+                  ))}
+                  <div className="mx-3 my-1 border-t border-slate-100" />
+                  <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    From File Manager
+                  </div>
+                  <button
+                    type="button"
+                    disabled={sessionExpired}
+                    onClick={() => { setAttachOpen(false); setFilePickerOpen(true); }}
+                    title={sessionExpired ? "Session expired — send a template to re-engage first" : undefined}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-slate-800 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300 disabled:hover:bg-transparent"
+                  >
+                    <FolderOpen className={cn("h-4 w-4 shrink-0", sessionExpired ? "text-slate-300" : "text-indigo-500")} />
+                    Browse Files
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {channel !== 'instagram' && channel !== 'facebook' && (
+            <>
+              <span className="mx-1 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />
+
+              {/* Templates stay reachable while the session is expired —
+                  they are the only way to reopen it. */}
+              <ComposerAction
+                label="Message template"
+                onClick={onOpenTemplates}
+                disabled={readOnly}
+                tint="text-amber-500"
+              >
+                <LayoutTemplate className="h-4 w-4" />
+              </ComposerAction>
+
+              <ComposerAction
+                label="Send OTP"
+                onClick={onSendOtp}
+                disabled={readOnly}
+                tint="text-fuchsia-500"
+              >
+                <KeyRound className="h-4 w-4" />
+              </ComposerAction>
+
+              <ComposerAction
+                label={sessionExpired ? "Send catalog — session expired, send a template first" : "Send catalog"}
+                onClick={onOpenCatalog}
+                disabled={readOnly || sessionExpired}
+                tint="text-sky-500"
+              >
+                <ShoppingBag className="h-4 w-4" />
+              </ComposerAction>
+
+              <ComposerAction
+                label="Request payment"
+                onClick={onRequestPayment}
+                disabled={readOnly}
+                tint="text-emerald-600"
+              >
+                <IndianRupee className="h-4 w-4" />
+              </ComposerAction>
+            </>
           )}
+
+          <span className="mx-1 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />
+
+          <ComposerAction
+            label="Draft a reply from this conversation — you approve it before it sends"
+            onClick={() => void handleDraftReply()}
+            disabled={drafting || readOnly || sessionExpired}
+            tint="text-indigo-600"
+            active
+          >
+            {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          </ComposerAction>
+
+          <div className="relative shrink-0" ref={translateRef}>
+            <ComposerAction
+              label="Translate your reply"
+              onClick={() => setTranslateOpen((o) => !o)}
+              disabled={!text.trim() || translating || readOnly}
+              tint="text-slate-500"
+              expanded={translateOpen}
+            >
+              {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
+            </ComposerAction>
+
+            {translateOpen && (
+              <div
+                role="menu"
+                className="absolute bottom-11 right-0 z-50 w-60 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.06),0_12px_32px_-8px_rgba(15,23,42,.22)]"
+              >
+                <p className="px-3 pt-2.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Translate your reply into
+                </p>
+                <ul className="max-h-64 overflow-y-auto p-1.5">
+                  {translateTargets.map((language, index) => (
+                    <li key={language}>
+                      <div className="group flex items-center gap-1 rounded-lg px-1 hover:bg-slate-50">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void handleTranslateDraft(language, false)}
+                          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-2 pl-2 text-left text-[13px] text-slate-700"
+                        >
+                          <span className="min-w-0 flex-1 truncate">{language}</span>
+                          {index === 0 && contactDetectedLanguage && (
+                            <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700">
+                              Theirs
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void handleTranslateDraft(language, true)}
+                          title={`${language}, written in English letters`}
+                          className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-400 opacity-0 transition-opacity hover:bg-indigo-50 hover:text-indigo-600 focus:opacity-100 group-hover:opacity-100"
+                        >
+                          Aa
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p className="border-t border-slate-100 px-3 py-2 text-[10.5px] leading-relaxed text-slate-500">
+                  <span className="font-semibold text-slate-600">Aa</span> gives the same sentence in English
+                  letters, for a language you speak but do not read.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         <GatedButton
@@ -591,9 +603,63 @@ export function MessageComposer({
           onClick={handleSend}
           className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
         >
-          <Send className="h-4 w-4" />
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </GatedButton>
       </div>
+
+      {/* Large editor. Edits the same state directly rather than a draft
+          copy — closing it is not a cancel, and a reply half-written here
+          should still be there in the small box. */}
+      {expanded && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="flex h-full max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <p className="text-[14px] font-semibold text-slate-900">Write your reply</p>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                aria-label="Close the larger editor"
+                className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              >
+                <Minimize2 className="h-4 w-4" />
+              </button>
+            </div>
+            <textarea
+              autoComplete="off"
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Type a message..."
+              className="min-h-0 flex-1 resize-none px-5 py-4 text-[14px] leading-relaxed text-slate-800 outline-none"
+            />
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-3">
+              <span className="text-[11.5px] text-slate-500">
+                {text.trim().length} characters · closing keeps what you have written
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(false)}
+                  className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-white"
+                >
+                  Done
+                </button>
+                <GatedButton
+                  size="sm"
+                  canAct={!readOnly}
+                  gateReason="send messages"
+                  disabled={!text.trim() || sessionExpired || sending}
+                  onClick={() => { setExpanded(false); handleSend(); }}
+                  className="h-8 bg-primary px-3 text-[13px] hover:bg-primary/90 disabled:opacity-40"
+                >
+                  <Send className="mr-1.5 h-3.5 w-3.5" />
+                  Send
+                </GatedButton>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {draftWarnings.length > 0 && (
         <div className="mt-1.5 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800 ring-1 ring-amber-500/20">
@@ -630,5 +696,47 @@ export function MessageComposer({
         }}
       />
     </div>
+  );
+}
+
+/**
+ * One composer action.
+ *
+ * A shared component rather than nine copies of the same class string:
+ * these sit in a row and have to match each other exactly — same size,
+ * same hover, same disabled treatment — or the row reads as a jumble.
+ * The tint is the only thing that varies, which is what makes each one
+ * findable at a glance.
+ */
+function ComposerAction({
+  children, label, onClick, disabled, tint, active, expanded,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  tint: string;
+  /** Draws attention to it — used for the AI draft. */
+  active?: boolean;
+  expanded?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      aria-expanded={expanded}
+      className={cn(
+        "grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        active
+          ? "bg-indigo-50/70 ring-1 ring-indigo-200 hover:bg-indigo-100"
+          : "hover:bg-slate-100",
+        disabled ? "text-slate-300" : tint,
+      )}
+    >
+      {children}
+    </button>
   );
 }
