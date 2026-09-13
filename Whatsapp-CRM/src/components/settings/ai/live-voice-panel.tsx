@@ -115,6 +115,20 @@ export function LiveVoicePanel(props: LiveVoicePanelProps) {
               microphone on HTTPS or localhost.
             </AiNotice>
           </div>
+        ) : voice.policyBlocked ? (
+          // Named separately because it is the only cause the person
+          // reading this cannot fix, and the only one that makes every
+          // browser and Windows setting a dead end.
+          <div className="mt-2.5">
+            <AiNotice tone="error" icon={<AlertTriangle className="h-3.5 w-3.5" />}>
+              <span className="block">This page&apos;s security policy blocks the microphone.</span>
+              <span className="block">
+                No browser setting can allow it — <code className="rounded bg-white/60 px-1">Permissions-Policy</code>{' '}
+                in <code className="rounded bg-white/60 px-1">next.config.ts</code> must say{' '}
+                <code className="rounded bg-white/60 px-1">microphone=(self)</code>, then restart the app.
+              </span>
+            </AiNotice>
+          </div>
         ) : voice.micPermission === 'denied' ? (
           // Shown before anything is attempted, rather than after a
           // failure: the state is known, so making someone press a

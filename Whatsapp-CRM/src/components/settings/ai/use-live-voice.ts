@@ -111,9 +111,45 @@ registerProcessor('capture-processor', CaptureProcessor);
  * it. The Permissions API tells them apart: a genuine block reports
  * 'denied', the other two leave it at 'prompt'.
  */
+/**
+ * True when the page's own Permissions-Policy header forbids the
+ * microphone.
+ *
+ * Checked first, and separately, because this is the one cause that has
+ * nothing to do with the person using the browser — and it disguises
+ * itself perfectly as one that does. A document denied the microphone by
+ * policy reports exactly what a user-denied one reports: getUserMedia
+ * throws NotAllowedError and navigator.permissions says "denied", while
+ * the browser's site panel cheerfully shows the microphone allowed and
+ * the operating system is not involved at all.
+ *
+ * It cost a long round of checking browser settings, Windows settings
+ * and reloads to find a header this app was sending itself. Nothing
+ * about the browser's own reporting points at it, so the app has to.
+ */
+export function microphoneBlockedByPolicy(): boolean {
+  const policy = (document as unknown as {
+    featurePolicy?: { allowsFeature: (feature: string) => boolean }
+  }).featurePolicy;
+  if (!policy?.allowsFeature) return false;
+  try {
+    return policy.allowsFeature('microphone') === false;
+  } catch {
+    return false;
+  }
+}
+
 export async function diagnoseMicFailure(err: unknown): Promise<string> {
   const name = (err as { name?: string })?.name ?? '';
   const message = err instanceof Error ? err.message : String(err ?? '');
+
+  if (microphoneBlockedByPolicy()) {
+    return [
+      "This page's own security policy is blocking the microphone, so no browser or Windows setting can allow it.",
+      'Fix it on the server: in next.config.ts, the Permissions-Policy header must read microphone=(self), not microphone=().',
+      'Restart the app after changing it — headers are only applied to a fresh response.',
+    ].join('\n');
+  }
 
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     let state = 'unknown';
@@ -182,6 +218,9 @@ export function useLiveVoice(mode: 'customer' | 'admin') {
   const [insecure, setInsecure] = useState(false);
   /** 'granted' | 'denied' | 'prompt', or null where unsupported. */
   const [micPermission, setMicPermission] = useState<string | null>(null);
+  /** The page's own Permissions-Policy forbids the microphone. Nothing
+   *  the person does in their browser can change this one. */
+  const [policyBlocked, setPolicyBlocked] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const micContextRef = useRef<AudioContext | null>(null);
@@ -199,6 +238,7 @@ export function useLiveVoice(mode: 'customer' | 'admin') {
 
   useEffect(() => {
     setInsecure(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia);
+    setPolicyBlocked(microphoneBlockedByPolicy());
   }, []);
 
   /**
@@ -470,7 +510,7 @@ export function useLiveVoice(mode: 'customer' | 'admin') {
 
   return {
     status, error, turns, level, youSpeaking, assistantSpeaking, insecure,
-    micPermission,
+    micPermission, policyBlocked,
     start, stop, sendText,
     reset: () => { setTurns([]); setError(''); },
   };

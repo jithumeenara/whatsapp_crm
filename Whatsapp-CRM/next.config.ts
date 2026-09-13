@@ -13,9 +13,12 @@ const isDev = process.env.NODE_ENV === "development";
  *   - HSTS: only meaningful on HTTPS (no-op on http://localhost).
  *   - X-Content-Type-Options / X-Frame-Options / Referrer-Policy:
  *     baseline OWASP hardening, no behavioural cost.
- *   - Permissions-Policy: we don't use camera / microphone / etc, so
- *     deny them. A supply-chain compromise or a forgotten plugin
- *     can't silently opt back in.
+ *   - Permissions-Policy: everything we don't use is denied outright,
+ *     so a supply-chain compromise or a forgotten plugin can't silently
+ *     opt back in. `microphone=(self)` is the one exception — the AI
+ *     voice console needs it, and `()` denies the feature to *every*
+ *     origin including this one, which is a document-level block no
+ *     browser or operating system permission can override.
  */
 const SECURITY_HEADERS = [
   {
@@ -27,7 +30,20 @@ const SECURITY_HEADERS = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   {
     key: "Permissions-Policy",
-    value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    // microphone=(self): needed by the live voice console in Settings →
+    // AI Config, and by dictation in the inbox composer.
+    //
+    // This was "microphone=()" — deny to all origins — which is a
+    // document-level refusal that sits above every other permission.
+    // The symptom was thoroughly misleading: the browser's own site
+    // panel showed the microphone allowed, Windows was allowing it, and
+    // getUserMedia still threw NotAllowedError while
+    // navigator.permissions reported "denied". Every one of those is
+    // correct behaviour for a policy-denied document, and none of them
+    // points at the header.
+    //
+    // (self) and not (*): only this origin, never an embedded frame.
+    value: "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
   },
   {
     key: "Content-Security-Policy",
