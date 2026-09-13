@@ -1,6 +1,17 @@
 import type { NextConfig } from "next";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const isDev = process.env.NODE_ENV === "development";
+
+/**
+ * This directory, resolved from the config file's own location.
+ *
+ * import.meta.url rather than __dirname: this file is ESM, where
+ * __dirname does not exist, and process.cwd() is wherever the build was
+ * launched from rather than where the app actually lives.
+ */
+const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * Baseline security headers applied to every response.
@@ -90,6 +101,23 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  /**
+   * Pin the workspace root rather than letting Turbopack infer it.
+   *
+   * Inference walks upwards looking for a lockfile and takes the
+   * highest one it finds. On a server with a stray package-lock.json in
+   * the parent directory it therefore chose the parent, and resolved
+   * PostCSS plugins against a node_modules that does not contain them —
+   * failing with "Cannot find module '@tailwindcss/postcss'" while the
+   * package sat correctly installed one directory down.
+   *
+   * The error names a missing module, so it reads as a dependency
+   * problem rather than a path one, and reinstalling does not fix it.
+   * Pinning the root makes the build independent of whatever else
+   * happens to sit above the app on a given machine.
+   */
+  turbopack: { root: APP_ROOT },
+
   serverExternalPackages: ["exceljs"],
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns", "sonner"],
