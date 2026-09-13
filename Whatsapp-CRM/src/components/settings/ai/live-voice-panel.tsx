@@ -57,6 +57,36 @@ class CaptureProcessor extends AudioWorkletProcessor {
 registerProcessor('capture-processor', CaptureProcessor);
 `;
 
+/**
+ * Why the microphone could not be opened, in terms of what to do next.
+ *
+ * The insecure-context case is the reason this exists. A browser only
+ * exposes the microphone over HTTPS or on localhost, so a CRM reached at
+ * http://192.168.1.20:3000 can never be granted access — the site does
+ * not even appear in the browser's permission list. Telling that person
+ * to "allow it in your browser" sends them looking for a setting that
+ * cannot exist.
+ */
+function describeMicFailure(err: unknown): string {
+  const name = (err as { name?: string })?.name ?? '';
+  const message = err instanceof Error ? err.message : String(err ?? '');
+
+  switch (name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Your browser blocked the microphone. Click the padlock (or the camera icon) in the address bar, set Microphone to Allow, then reload this page.';
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return 'No microphone was found. Plug one in, or check that the right input device is selected in your system sound settings.';
+    case 'NotReadableError':
+      return 'Something else is already using the microphone — a call, a recorder, another browser tab. Close it and try again.';
+    case 'AbortError':
+      return 'The microphone stopped responding before the session could start. Try again.';
+    default:
+      return message || 'The microphone could not be opened.';
+  }
+}
+
 type Status = 'idle' | 'connecting' | 'live' | 'error';
 type Turn = { who: 'you' | 'assistant'; text: string };
 
@@ -66,6 +96,10 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
   const [turns, setTurns] = useState<Turn[]>([]);
   const [speaking, setSpeaking] = useState(false);
   const [typed, setTyped] = useState('');
+
+  /** Resolved after mount: window is not available during the server
+   *  render, and reading it directly would break hydration. */
+  const [insecure, setInsecure] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const micContextRef = useRef<AudioContext | null>(null);
@@ -121,6 +155,10 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
 
   useEffect(() => teardown, [teardown]);
 
+  useEffect(() => {
+    setInsecure(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia);
+  }, []);
+
   const playChunk = useCallback((pcm: ArrayBuffer) => {
     const ctx = playContextRef.current;
     if (!ctx) return;
@@ -161,6 +199,17 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
       });
       const ticketData = await ticketRes.json();
       if (!ticketRes.ok) throw new Error(ticketData.error ?? 'Could not start the session.');
+
+      // Checked before the prompt, because this is the one failure a
+      // permission cannot fix. Browsers expose the microphone only in a
+      // secure context; over plain HTTP the API is simply absent and the
+      // site never appears in the browser's permission list.
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error(
+          `This page is open over ${window.location.protocol.replace(':', '')}, and browsers only allow microphone access on https:// or localhost. ` +
+            'Open the CRM at its https:// address, or run it locally, and the microphone will work.',
+        );
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -225,12 +274,7 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
         setStatus((s) => (s === 'error' ? s : 'idle'));
       };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not start the session.';
-      setError(
-        message.includes('Permission') || message.includes('denied')
-          ? 'Microphone access was blocked. Allow it in your browser and try again.'
-          : message,
-      );
+      setError(describeMicFailure(err));
       setStatus('error');
       teardown();
     }
@@ -288,6 +332,7 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
 
           <div className="flex items-center gap-2">
             {status === 'live' && <AiBadge tone="emerald">Connected</AiBadge>}
+            {insecure && <AiBadge tone="amber">Needs HTTPS</AiBadge>}
             {status === 'idle' || status === 'error' ? (
               <AiButton onClick={() => void start()}>
                 <Mic className="h-3.5 w-3.5" />
@@ -306,6 +351,17 @@ export function LiveVoicePanel({ enabled, mode }: { enabled: boolean; mode: 'cus
             )}
           </div>
         </div>
+
+        {insecure && !error && (
+          <div className="mt-4">
+            <AiNotice tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
+              This page is open over an insecure connection, and browsers only allow microphone access on
+              <code className="mx-1 rounded bg-white/60 px-1 py-0.5 text-[11.5px]">https://</code>
+              or <code className="mx-1 rounded bg-white/60 px-1 py-0.5 text-[11.5px]">localhost</code>. Open the
+              CRM at its https address to talk to the assistant. You can still type to it below once connected.
+            </AiNotice>
+          </div>
+        )}
 
         {error && (
           <div className="mt-4">
