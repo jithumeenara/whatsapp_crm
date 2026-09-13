@@ -83,6 +83,9 @@ export async function GET() {
     cloud_voice: config.cloud_voice,
     live_voice_enabled: config.live_voice_enabled,
     live_voice_name: config.live_voice_name,
+    ai_auto_reply_enabled: config.ai_auto_reply_enabled,
+    ai_auto_reply_max_turns: config.ai_auto_reply_max_turns,
+    ai_auto_reply_pause_on_agent: config.ai_auto_reply_pause_on_agent,
     // A server fact, not a per-account setting: whether this deployment
     // has Google Cloud credentials at all. The Settings screen uses it to
     // say which voice engine is really in use.
@@ -141,6 +144,9 @@ export async function PUT(req: Request) {
     cloud_voice,
     live_voice_enabled,
     live_voice_name,
+    ai_auto_reply_enabled,
+    ai_auto_reply_max_turns,
+    ai_auto_reply_pause_on_agent,
   } = body as {
     active_provider?: string
     fallback_provider?: string | null
@@ -173,6 +179,9 @@ export async function PUT(req: Request) {
     cloud_voice?: string
     live_voice_enabled?: boolean
     live_voice_name?: string
+    ai_auto_reply_enabled?: boolean
+    ai_auto_reply_max_turns?: number
+    ai_auto_reply_pause_on_agent?: boolean
   }
 
   const existing = await prisma.aiConfig.findUnique({
@@ -296,6 +305,22 @@ export async function PUT(req: Request) {
       live_voice_name && TTS_VOICES.some((v) => v.id === live_voice_name)
         ? live_voice_name
         : (existing?.live_voice_name ?? 'Kore'),
+    ai_auto_reply_enabled:
+      ai_auto_reply_enabled !== undefined
+        ? ai_auto_reply_enabled
+        : (existing?.ai_auto_reply_enabled ?? false),
+    // Clamped rather than trusted: this is the only thing standing
+    // between a stuck conversation and an unbounded exchange with a bot
+    // that cannot help, so a zero or a thousand from a bad request must
+    // not become the limit.
+    ai_auto_reply_max_turns:
+      ai_auto_reply_max_turns !== undefined
+        ? Math.min(50, Math.max(1, Number(ai_auto_reply_max_turns)))
+        : (existing?.ai_auto_reply_max_turns ?? 8),
+    ai_auto_reply_pause_on_agent:
+      ai_auto_reply_pause_on_agent !== undefined
+        ? ai_auto_reply_pause_on_agent
+        : (existing?.ai_auto_reply_pause_on_agent ?? true),
   }
 
   const config = await prisma.aiConfig.upsert({

@@ -13,6 +13,7 @@ import {
 import { formatDistanceToNow, format } from "date-fns"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Switch } from "@/components/ui/switch"
+import { AiFallbackBanner } from "@/components/chatbot/ai-fallback-banner"
 
 interface Chatbot {
   id: string
@@ -752,6 +753,7 @@ export default function ChatbotV2() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-5">
+        <AiFallbackBanner />
         {content}
       </div>
 
