@@ -36,6 +36,38 @@ import { getProviderKeys } from './providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { engineSendText, engineSendVoiceNote } from '@/lib/flows/meta-send'
 
+/** How long one exchange lasts without a human touching it. WhatsApp's
+ *  own session window: past it, a returning customer is starting a new
+ *  conversation, and the assistant's allowance should start again. */
+const EXCHANGE_WINDOW_MS = 24 * 60 * 60 * 1000
+
+/** Written to Message.bot_source so the limit can count the assistant's
+ *  own replies without counting chatbot steps as well. */
+const AI_AUTO_REPLY_SOURCE = 'ai_auto_reply'
+
+/**
+ * Tags a just-sent message as the assistant's own.
+ *
+ * A follow-up write on the provider's message id, rather than threading
+ * a parameter through engineSendText, which every channel and every
+ * other caller would have had to carry for this one purpose.
+ *
+ * Best effort on purpose: the customer already has the reply. Failing
+ * here would at worst let the assistant answer once more than its limit,
+ * which is a far smaller problem than throwing after a successful send.
+ */
+async function markAsAssistantReply(providerMessageId: string | undefined): Promise<void> {
+  if (!providerMessageId) return
+  await prisma.message
+    .updateMany({
+      where: { message_id: providerMessageId },
+      data: { bot_source: AI_AUTO_REPLY_SOURCE },
+    })
+    .catch((err) =>
+      console.error('[auto-reply] could not tag the reply:', err instanceof Error ? err.message : err),
+    )
+}
+
 export type AutoReplyOutcome =
   | 'replied'
   | 'handed_off'
@@ -94,16 +126,45 @@ export async function autoReplyToMessage(args: {
     return 'skipped_agent_active'
   }
 
-  // Counted per conversation rather than per day: the thing worth
-  // limiting is the length of one unresolved exchange, not the volume.
+  // The window this limit actually applies to.
+  //
+  // It read "one unresolved exchange" and counted every bot message the
+  // conversation had ever held, for its whole life — so nothing ever
+  // reset it, and once a thread had accumulated enough it was mute for
+  // good. A human replying ends the exchange: a person has now touched
+  // whatever the assistant was failing to resolve, and the count starts
+  // again from there. Failing that, 24 hours — WhatsApp's own session
+  // window, past which a returning customer is starting afresh.
+  const sessionStart = new Date(Date.now() - EXCHANGE_WINDOW_MS)
+  const lastHumanReply = await prisma.message.findFirst({
+    where: {
+      conversation_id: args.conversationId,
+      sender_type: 'agent',
+      created_at: { gt: sessionStart },
+    },
+    orderBy: { created_at: 'desc' },
+    select: { created_at: true },
+  })
+  const countFrom = lastHumanReply?.created_at ?? sessionStart
+
+  // Only the assistant's own replies. sender_type 'bot' also covers
+  // chatbot steps and automation actions, and counting those against the
+  // assistant let a menu — welcome, list, a few buttons, a timeout
+  // message — exhaust the whole allowance before it had answered
+  // anything at all.
   const botReplies = await prisma.message.count({
-    where: { conversation_id: args.conversationId, sender_type: 'bot' },
+    where: {
+      conversation_id: args.conversationId,
+      sender_type: 'bot',
+      bot_source: AI_AUTO_REPLY_SOURCE,
+      created_at: { gt: countFrom },
+    },
   })
   if (botReplies >= aiConfig.ai_auto_reply_max_turns) {
     await handOver({
       accountId: args.accountId,
       conversationId: args.conversationId,
-      note: `The assistant has already answered ${botReplies} times in this conversation without it being resolved, so it stopped and left this for a person.\n\nThey last asked: "${text.slice(0, 200)}"`,
+      note: `The assistant has answered ${botReplies} times ${lastHumanReply ? 'since a colleague last replied' : 'in the last 24 hours'} without this being resolved, so it stopped and left it for a person.\n\nThey last asked: "${text.slice(0, 200)}"`,
       assignTo: aiConfig.low_confidence_assign_to,
     })
     return 'skipped_turn_limit'
@@ -202,7 +263,7 @@ export async function autoReplyToMessage(args: {
         cloudVoice: aiConfig.cloud_voice,
         geminiVoice: aiConfig.voice_name,
       })
-      await engineSendVoiceNote({
+      const sent = await engineSendVoiceNote({
         accountId: args.accountId,
         userId: args.userId,
         conversationId: args.conversationId,
@@ -211,6 +272,7 @@ export async function autoReplyToMessage(args: {
         mimeType: speech.mimeType,
         transcript: reply,
       })
+      await markAsAssistantReply(sent.whatsapp_message_id)
       return 'replied'
     } catch (err) {
       console.error('[auto-reply] voice failed, sending text:', err instanceof Error ? err.message : err)
@@ -218,13 +280,14 @@ export async function autoReplyToMessage(args: {
   }
 
   try {
-    await engineSendText({
+    const sent = await engineSendText({
       accountId: args.accountId,
       userId: args.userId,
       conversationId: args.conversationId,
       contactId: args.contactId,
       text: reply,
     })
+    await markAsAssistantReply(sent.whatsapp_message_id)
     return 'replied'
   } catch (err) {
     console.error('[auto-reply] send failed:', err instanceof Error ? err.message : err)

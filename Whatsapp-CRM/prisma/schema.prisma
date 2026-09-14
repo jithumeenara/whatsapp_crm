@@ -596,6 +596,12 @@ model Message {
   // reply-context card above the message instead of just plain text.
   story_media_url     String?
   story_media_id      String?
+  /// Which bot sent this, for the automated messages only — currently
+  /// 'ai_auto_reply'. sender_type says a bot sent it; this says which,
+  /// because chatbot steps, automation actions and the assistant were
+  /// otherwise indistinguishable once written, and the assistant's reply
+  /// limit was counting all three against itself.
+  bot_source          String?
   template_name       String?
   message_id          String?
   status              String   @default("sent")
