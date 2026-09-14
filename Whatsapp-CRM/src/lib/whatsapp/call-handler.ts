@@ -33,10 +33,9 @@ interface HandleArgs {
  * dropping the header makes every forwarded call fail — as
  * "unauthorised", which looks nothing like the formatting problem it is.
  *
- * Fire-and-forget with a short timeout. The voice agent is a separate
- * process that can be down, restarting, or on somebody's laptop behind
- * ngrok; none of that may delay this webhook, because Meta retries
- * anything slow and a retry means the call is processed twice.
+ * Fire-and-forget, and nothing here waits on the result: the agent
+ * answers Meta directly, so this app is only the postman. Handing the
+ * envelope over is the whole job.
  */
 export async function forwardCallWebhook(args: {
   accountId: string
@@ -68,7 +67,9 @@ export async function forwardCallWebhook(args: {
       body: args.rawBody,
       signal: controller.signal,
     })
-    if (!res.ok) {
+    if (res.ok) {
+      console.log('[calls] the voice agent took the call')
+    } else {
       console.warn(`[calls] the voice agent answered ${res.status} — it did not take the call`)
     }
   } catch (err) {
@@ -82,9 +83,23 @@ export async function forwardCallWebhook(args: {
   }
 }
 
-/** Short on purpose: Meta retries a slow webhook, and a retry means the
- *  same call is handled twice. */
-const FORWARD_TIMEOUT_MS = 4000
+/**
+ * How long to let the agent answer before giving up on it.
+ *
+ * Generous on purpose. Taking a call means starting a WebRTC session,
+ * negotiating SDP and opening a live session with the model — four
+ * seconds, the first value here, was less than that takes and meant the
+ * agent was never used at all.
+ *
+ * Thirty is roughly how long Meta rings before abandoning the call, so
+ * waiting past it would only be waiting for somebody who has already
+ * hung up. The limit still exists for what it was really for: an agent
+ * that is down must not hold a socket open indefinitely.
+ *
+ * Nothing waits on this — the webhook has already returned 200 to Meta
+ * by the time it matters.
+ */
+const FORWARD_TIMEOUT_MS = 30_000
 
 export async function handleCallEvent(args: HandleArgs): Promise<void> {
   try {
