@@ -85,6 +85,9 @@ model User {
   contact_merges_performed     ContactMerge[]
 
   @@map("users")
+  calls                Call[]
+  call_transfer_default   CallConfig[] @relation("CallTransferAgent")
+  call_transfer_fallback  CallConfig[] @relation("CallTransferFallback")
 }
 
 /// One row per login -- real per-device session tracking (Settings >
@@ -237,6 +240,8 @@ model Account {
 
   @@unique([owner_user_id])
   @@map("accounts")
+  calls        Call[]
+  call_config  CallConfig?
 }
 
 model AccountInvitation {
@@ -369,6 +374,7 @@ model Contact {
   @@unique([account_id, instagram_id], name: "contacts_account_instagram_id")
   @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
   @@map("contacts")
+  calls Call[]
 }
 
 // Audit trail for IG·04 "Merge contacts across channels" — who merged what
@@ -557,6 +563,7 @@ model Conversation {
   // plain index here would just be dead weight.
   @@unique([account_id, contact_id, channel, whatsapp_config_id])
   @@map("conversations")
+  calls Call[]
 }
 
 model Message {
@@ -2527,4 +2534,119 @@ model AiEvalResult {
 
   @@index([run_id])
   @@map("ai_eval_results")
+}
+
+/// A voice call, inbound or outbound, however it was carried.
+///
+/// WhatsApp calling is the route being built; `channel` is text rather
+/// than an enum because SIP is modelled now and implemented later, and
+/// the set will grow again after that.
+model Call {
+  id         String @id @default(uuid()) @db.Uuid
+  account_id String @db.Uuid
+
+  /// Both nullable: a call can arrive from a number that has never
+  /// messaged, so there may be nothing to attach it to yet.
+  conversation_id String? @db.Uuid
+  contact_id      String? @db.Uuid
+
+  /// 'whatsapp' | 'sip'
+  channel   String @default("whatsapp")
+  /// 'inbound' | 'outbound'
+  direction String
+  /// 'ringing' | 'in_progress' | 'completed' | 'missed' | 'rejected' |
+  /// 'failed'. 'missed' is the one the call list exists to surface.
+  status    String @default("ringing")
+
+  /// Kept even when contact_id is null, so a call from an unknown number
+  /// is still identifiable.
+  from_number String?
+  to_number   String?
+
+  /// 'ai' | 'agent' | null when nobody picked up.
+  handled_by String?
+  agent_id   String? @db.Uuid
+
+  /// Set when the assistant passed the call to a person. The reason is
+  /// stored so history shows why, not only that it happened.
+  transferred_at  DateTime? @db.Timestamptz(6)
+  transfer_reason String?
+
+  started_at  DateTime  @default(now()) @db.Timestamptz(6)
+  /// Null on a missed call; the gap from started_at is how long they
+  /// waited before giving up.
+  answered_at DateTime? @db.Timestamptz(6)
+  ended_at    DateTime? @db.Timestamptz(6)
+  /// Talk time, not ring time. Stored rather than derived so the list can
+  /// sort and total without recomputing, and so a call whose end event
+  /// never arrived reads as null instead of silently zero.
+  duration_seconds Int?
+
+  transcript    String?
+  recording_url String?
+  end_reason    String?
+
+  /// The provider's own call id. Unique, because Meta replays webhooks
+  /// and a replay must update this row rather than insert another.
+  provider_call_id String? @unique
+  raw_payload      Json?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account      Account       @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
+  contact      Contact?      @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  agent        User?         @relation(fields: [agent_id], references: [id], onDelete: SetNull)
+
+  @@index([account_id, started_at])
+  @@index([account_id, status, started_at])
+  @@index([contact_id, started_at])
+  @@map("calls")
+}
+
+/// Per-account call settings: whether the assistant answers, who a call
+/// is transferred to, and the SIP credentials that are modelled now and
+/// used later.
+model CallConfig {
+  id         String @id @default(uuid()) @db.Uuid
+  account_id String @unique @db.Uuid
+
+  /// Off by default. An assistant answering the phone is a decision
+  /// somebody makes deliberately, not something a deploy switches on.
+  ai_answer_enabled Boolean @default(false)
+  /// Spoken first; null falls back to the account's assistant persona.
+  ai_greeting       String?
+  /// Past this the assistant stops and offers a person.
+  ai_max_minutes    Int     @default(10)
+
+  /// Same vocabulary as the chatbot handoff step, deliberately — see
+  /// src/lib/flows/agent-routing.ts.
+  transfer_strategy    String  @default("least_busy")
+  transfer_only_online Boolean @default(true)
+  transfer_to          String? @db.Uuid
+  transfer_fallback_to String? @db.Uuid
+  /// How long an agent's screen rings before the call counts as missed.
+  ring_seconds         Int     @default(30)
+
+  /// A consent question rather than a feature toggle, so it stays off
+  /// until somebody turns it on knowing that.
+  record_calls Boolean @default(false)
+
+  /// SIP, for later. Nothing reads these yet.
+  sip_enabled     Boolean @default(false)
+  sip_host        String?
+  sip_username    String?
+  /// Encrypted at rest by the app, like every other stored credential.
+  sip_password    String?
+  sip_from_number String?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account           Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  transfer_agent    User?   @relation("CallTransferAgent", fields: [transfer_to], references: [id], onDelete: SetNull)
+  transfer_fallback User?   @relation("CallTransferFallback", fields: [transfer_fallback_to], references: [id], onDelete: SetNull)
+
+  @@map("call_configs")
 }

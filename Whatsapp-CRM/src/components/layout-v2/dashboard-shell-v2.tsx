@@ -1,5 +1,6 @@
 "use client";
 
+import { IncomingCallPopup } from "@/components/calls/incoming-call-popup";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
@@ -165,6 +166,10 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           )}
 
           <main className="flex-1 overflow-y-auto scroll-styled">{children}</main>
+
+          {/* Mounted in the shell rather than on a page: a call must not
+              stop ringing because the agent happened to navigate. */}
+          <IncomingCallPopup />
         </div>
       </div>
     </MobileBarCtx.Provider>

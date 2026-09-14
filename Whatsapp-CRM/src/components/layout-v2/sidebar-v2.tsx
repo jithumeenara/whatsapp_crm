@@ -17,6 +17,7 @@ import {
   LayoutGrid,
   LogOut,
   MessageSquare,
+  Phone,
   Radio,
   Settings,
   Shield,
@@ -68,6 +69,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Messaging",
     items: [
       { href: "/inbox",      label: "Inbox",      icon: MessageSquare, agentAllowed: true },
+      { href: "/calls",      label: "Calls",      icon: Phone,         agentAllowed: true },
       { href: "/broadcasts", label: "Broadcasts", icon: Radio,         agentAllowed: false },
       { href: "/templates",  label: "Templates",  icon: FileText,      agentAllowed: false },
     ],

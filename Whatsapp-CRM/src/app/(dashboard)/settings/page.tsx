@@ -7,6 +7,7 @@ import {
   User, Contact, MessageSquare,
   Users, Bot, Database, Bell, Key, Webhook, Settings,
   Search, ShieldCheck, X, ChevronLeft, ChevronRight, Megaphone, ShoppingBag, IndianRupee,
+  Phone,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -23,6 +24,7 @@ import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
 import { AdsTab } from "@/components/settings/ads-tab"
 import { CatalogTab } from "@/components/settings/catalog-tab"
 import { PaymentsTab } from "@/components/settings/payments-tab"
+import { CallsTab } from "@/components/settings/calls-tab"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -56,6 +58,7 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       { key: "ads",       label: "Ads",             icon: Megaphone,     ownerOnly: true, aliases: ["Meta Ads", "Google Ads", "Facebook Ads", "Advertising", "Pixel", "Conversions API", "Lead Ads"] },
       { key: "catalog",   label: "Catalog",         icon: ShoppingBag,   ownerOnly: true, aliases: ["Products", "Commerce", "Meta Catalog", "WhatsApp Shop", "Orders"] },
       { key: "payments",  label: "Payments",        icon: IndianRupee,   ownerOnly: true, aliases: ["UPI", "Razorpay", "In-chat Payments", "India"] },
+      { key: "calls",     label: "Calls",           icon: Phone,         ownerOnly: false, aliases: ["Voice", "Call", "SIP", "Ring", "Missed calls"] },
       // Capture/Tags/Custom Fields/Leads used to be four separate
       // sidebar entries (then a standalone "Configuration" group of one)
       // — collapsed into a single "Contact" entry with an inner tab bar
@@ -89,6 +92,7 @@ const TAB_TITLES: Record<string, string> = {
   ads: "Ads",
   catalog: "Catalog",
   payments: "Payments",
+  calls: "Calls",
   platform: "Embedded Signup",
   contact: "Contact",
   members: "Members",
@@ -105,6 +109,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   ads: "Connect your ad platforms to track leads and ROI without leaving this CRM",
   catalog: "Connect a Meta product catalog to sell through WhatsApp — products, carts, and orders",
   payments: "Collect UPI payments in-chat — requires Meta's explicit per-number approval",
+  calls: "Who answers a call, how long it rings, and what the assistant does with it",
   platform: "One Meta App for the whole platform — set up once, every tenant gets one-click Facebook Connect",
   contact: "How contacts get captured, tagged, enriched with custom fields, and converted into leads",
   members: "People with access to this account — roles control what each teammate can do",
@@ -196,6 +201,7 @@ function SettingsContent() {
       case "ads":              return isOwner ? <AdsTab /> : null
       case "catalog":          return isOwner ? <CatalogTab /> : null
       case "payments":         return isOwner ? <PaymentsTab /> : null
+      case "calls":            return <CallsTab />
       case "platform":         return isOwner ? <PlatformMetaTab /> : null
       case "contact":          return <ContactSettingsTab />
       case "members":          return isAdmin ? <MembersTab /> : null

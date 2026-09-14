@@ -16,12 +16,34 @@ interface ChatbotRunEvent {
   execution_count: number;
 }
 
+/**
+ * A call that is ringing, or has stopped.
+ *
+ * Deliberately not the RealtimeEvent<T> shape the rows use: a call is not
+ * a row being inserted or updated, it is something happening right now,
+ * and forcing it into INSERT/UPDATE would only obscure that.
+ */
+export interface CallRealtimeEvent {
+  type?: "ringing" | "ended" | "cancelled";
+  callId: string;
+  /** Null rings every agent, which is deliberate — better two answer
+   *  than nobody. A transfer names the one person it is for. */
+  agentId: string | null;
+  callerName: string | null;
+  callerNumber: string | null;
+  conversationId: string | null;
+  transferredFromAi?: boolean;
+  transferReason?: string | null;
+  ringSeconds?: number;
+}
+
 interface UseRealtimeOptions {
   channelName: string;
   onMessageEvent?: (event: RealtimeEvent<Message>) => void;
   onConversationEvent?: (event: RealtimeEvent<Conversation>) => void;
   onLeadEvent?: (event: RealtimeEvent<Lead>) => void;
   onChatbotEvent?: (event: ChatbotRunEvent) => void;
+  onCallEvent?: (event: CallRealtimeEvent) => void;
   enabled?: boolean;
 }
 
@@ -39,6 +61,7 @@ export function useRealtime({
   onConversationEvent,
   onLeadEvent,
   onChatbotEvent,
+  onCallEvent,
   enabled = true,
 }: UseRealtimeOptions) {
   const { accountId } = useAuth();
@@ -48,11 +71,13 @@ export function useRealtime({
   const onConversationRef = useRef(onConversationEvent);
   const onLeadRef = useRef(onLeadEvent);
   const onChatbotRef = useRef(onChatbotEvent);
+  const onCallRef = useRef(onCallEvent);
   useEffect(() => {
     onMessageRef.current = onMessageEvent;
     onConversationRef.current = onConversationEvent;
     onLeadRef.current = onLeadEvent;
     onChatbotRef.current = onChatbotEvent;
+    onCallRef.current = onCallEvent;
   });
 
   useEffect(() => {
@@ -83,6 +108,10 @@ export function useRealtime({
       onChatbotRef.current?.(event);
     };
 
+    const handleCall = (event: CallRealtimeEvent) => {
+      onCallRef.current?.(event);
+    };
+
     if (socket.connected) {
       handleConnect();
     }
@@ -93,6 +122,7 @@ export function useRealtime({
     socket.on("conversation", handleConversation);
     socket.on("lead", handleLead);
     socket.on("chatbot", handleChatbot);
+    socket.on("call", handleCall);
 
     return () => {
       socket.off("connect", handleConnect);
@@ -101,6 +131,7 @@ export function useRealtime({
       socket.off("conversation", handleConversation);
       socket.off("lead", handleLead);
       socket.off("chatbot", handleChatbot);
+      socket.off("call", handleCall);
       socket.emit("leave_account", accountId);
       setIsConnected(false);
     };

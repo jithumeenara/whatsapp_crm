@@ -18,6 +18,8 @@ import {
 import { emitToAccount } from '@/lib/socket'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 import { processInboundOrder } from '@/lib/whatsapp/order-processing'
+import { isCallWebhookField, parseCallWebhook } from '@/lib/whatsapp/calling-api'
+import { handleCallEvent, resolveCallCredentials } from '@/lib/whatsapp/call-handler'
 
 /** Why nothing was sent, in words rather than a reason code. These are
  *  read by whoever is looking at pm2 logs asking why a customer got no
@@ -276,6 +278,34 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           { field: change.field, value: change.value as unknown },
           entry.id,
         )
+        continue
+      }
+
+      // Voice calls. Their own field, their own value shape, and they
+      // carry neither messages nor statuses — so without this branch
+      // they fall through every check below and are dropped, which is
+      // exactly what happened to template events before they got theirs.
+      if (isCallWebhookField(change.field)) {
+        const events = parseCallWebhook(change.value)
+        const phoneNumberId = (change.value as { metadata?: { phone_number_id?: string } })?.metadata
+          ?.phone_number_id
+        if (!phoneNumberId || events.length === 0) {
+          console.warn('[calls] webhook arrived with no phone_number_id or no call in it')
+          continue
+        }
+        const creds = await resolveCallCredentials(phoneNumberId)
+        if (!creds) {
+          console.warn(`[calls] no WhatsApp config for phone_number_id ${phoneNumberId}`)
+          continue
+        }
+        for (const event of events) {
+          await handleCallEvent({
+            accountId: creds.accountId,
+            phoneNumberId,
+            accessToken: creds.accessToken,
+            event,
+          })
+        }
         continue
       }
 
