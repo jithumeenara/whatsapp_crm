@@ -55,6 +55,7 @@ import { loadKnowledge } from "@/lib/ai/knowledge-store";
 import { recordAiUsage } from "@/lib/ai/usage";
 import { loadCompanyProfile, formatCompanyBlock } from "@/lib/ai/company-profile";
 import { buildCustomerContext } from "@/lib/ai/customer-context";
+import { pickAgent, type AgentPickStrategy } from "@/lib/flows/agent-routing";
 import {
   engineSendCtaUrlButton,
   engineSendFlow,
@@ -718,7 +719,28 @@ async function sendListAndSuspend(
   return { outcome: "advanced", node_key: node.node_key };
 }
 
-type HandoffConfigShape = { assign_to?: string; note?: string; notify_message?: string; timeout_hours?: number };
+type HandoffConfigShape = {
+  assign_to?: string;
+  note?: string;
+  notify_message?: string;
+  timeout_hours?: number;
+
+  /** How the person is chosen. Absent means 'specific', which is what
+   *  every chatbot built before this existed did, so their behaviour is
+   *  unchanged until somebody edits the step. */
+  routing_strategy?: AgentPickStrategy;
+  /** Skip anyone not signed in. Ignored by 'specific' unless the step
+   *  asks for it, because naming somebody is a decision. */
+  only_online?: boolean;
+  online_window_minutes?: number;
+  /** Which roles may receive this conversation. */
+  roles?: string[];
+  /** Taken when the strategy finds nobody — usually a supervisor. */
+  fallback_assign_to?: string;
+  /** Both default on; the WhatsApp one additionally needs a message. */
+  notify_push?: boolean;
+  notify_whatsapp?: boolean;
+};
 
 /** Takes the handoff config directly (not a full FlowNodeRow) so both
  *  the real `handoff` node and ai_reply's low-confidence handoff branch
@@ -731,17 +753,35 @@ async function executeHandoff(
   nodeKey: string | null,
   endReason: string = "handoff_node",
 ): Promise<void> {
+  // Declared out here so the run log below can record what was decided
+  // even when nothing was — a handoff that found nobody is exactly the
+  // case somebody later needs explained.
+  let assignmentSummary: { userId: string | null; reason: string } = {
+    userId: null,
+    reason: "this run has no conversation attached",
+  };
+
   if (run.conversation_id) {
-    // Verify the agent still exists before assigning — the user may have been
-    // deleted since the chatbot was configured, which would violate the FK.
-    let resolvedAgentId: string | undefined = undefined;
-    if (cfg.assign_to) {
-      const agentExists = await prisma.user.findUnique({
-        where: { id: cfg.assign_to },
-        select: { id: true },
-      });
-      resolvedAgentId = agentExists?.id;
-    }
+    // Who is actually going to answer this.
+    //
+    // pickAgent also covers what this used to do on its own — confirming
+    // the named agent still exists, since a user deleted since the
+    // chatbot was built would otherwise violate the foreign key — because
+    // it only ever returns somebody it just read from this account.
+    const pick = await pickAgent({
+      accountId: run.account_id,
+      strategy: cfg.routing_strategy ?? 'specific',
+      specificUserId: cfg.assign_to ?? null,
+      onlyOnline: cfg.only_online,
+      onlineWindowMinutes: cfg.online_window_minutes,
+      roles: cfg.roles,
+      fallbackUserId: cfg.fallback_assign_to ?? null,
+    }).catch((err) => {
+      console.error('[handoff] agent selection failed:', err instanceof Error ? err.message : err);
+      return { agent: null, reason: 'agent selection failed' };
+    });
+    const resolvedAgentId: string | undefined = pick.agent?.userId;
+    assignmentSummary = { userId: resolvedAgentId ?? null, reason: pick.reason };
 
     const updatedConv = await prisma.conversation.update({
       where: { id: run.conversation_id },
@@ -755,7 +795,8 @@ async function executeHandoff(
     const { emitToAccount } = await import("@/lib/socket");
     emitToAccount(run.account_id, "conversation", { eventType: "UPDATE", new: updatedConv, old: {} });
 
-    if (resolvedAgentId) {
+    if (resolvedAgentId && pick.agent) {
+      const agent = pick.agent;
       const contact = run.contact_id
         ? await prisma.contact.findUnique({
             where: { id: run.contact_id },
@@ -764,29 +805,38 @@ async function executeHandoff(
         : null;
 
       // Push notification to the assigned agent
-      try {
-        const { sendPushToUser } = await import("@/lib/push");
-        const contactName = contact?.name ?? contact?.phone ?? "a contact";
-        void sendPushToUser(resolvedAgentId, {
-          title: "Conversation Handed Off to You",
-          body: `Chatbot handed off ${contactName}'s conversation`,
-          tag: `handoff-${run.conversation_id}`,
-          data: { type: "assignment", conversationId: run.conversation_id },
-        });
-      } catch { /* ignore push errors */ }
-
-      // WhatsApp notification to the agent's personal WhatsApp number
-      if (cfg.notify_message) {
+      if (cfg.notify_push !== false) {
         try {
-          const agentUser = await prisma.user.findUnique({
-            where: { id: resolvedAgentId },
-            select: { email: true },
+          const { sendPushToUser } = await import("@/lib/push");
+          const contactName = contact?.name ?? contact?.phone ?? "a contact";
+          void sendPushToUser(resolvedAgentId, {
+            title: "Conversation Handed Off to You",
+            body: `Chatbot handed off ${contactName}'s conversation`,
+            tag: `handoff-${run.conversation_id}`,
+            data: { type: "assignment", conversationId: run.conversation_id },
           });
-          const agentEmail = agentUser?.email ?? "";
-          if (agentEmail.endsWith("@agent.local")) {
-            const agentPhone = agentEmail.replace("@agent.local", "");
+        } catch { /* ignore push errors */ }
+      }
+
+      // WhatsApp notification to the agent's own number.
+      //
+      // The number comes from their profile now. This used to be read
+      // out of the email address, which only ever worked for legacy
+      // phone-login accounts — an ordinary agent with a real email and a
+      // filled-in phone was silently never told.
+      if (cfg.notify_message && cfg.notify_whatsapp !== false) {
+        try {
+          const agentPhone = agent.phone;
+          if (!agentPhone) {
+            // Said out loud. A notification that cannot be delivered is
+            // worth one line, because the symptom otherwise is an agent
+            // insisting they were never told.
+            console.warn(
+              `[handoff] ${agent.fullName} has no phone number on their profile, so no WhatsApp notification was sent.`,
+            );
+          } else {
             const waConfig = await resolveWhatsAppConfig({ accountId: run.account_id, conversationId: run.conversation_id }).catch(() => null);
-            if (waConfig && agentPhone) {
+            if (waConfig) {
               const lastMsg = await prisma.message.findFirst({
                 // "customer" — not "contact" (this was querying a value
                 // no message ever actually gets written with; every real
@@ -826,7 +876,11 @@ async function executeHandoff(
   }
   await logEvent(run.id, "handoff", nodeKey, {
     note: cfg.note ?? null,
-    assigned_to: cfg.assign_to ?? null,
+    // What was actually decided, not what the step asked for. The two
+    // differ exactly when something went wrong — nobody signed in, a
+    // named agent gone — which is when the run log is read.
+    assigned_to: assignmentSummary.userId,
+    assignment_reason: assignmentSummary.reason,
   });
   await endRun(run.id, "handed_off", endReason);
 }
@@ -1478,6 +1532,13 @@ async function advanceFromNodeKey(
         include_history?: boolean;
         history_depth?: number;
         max_tokens?: number;
+        /**
+         * Whether this step reads the customer's own record — their lead
+         * and its status, recent activities, follow-ups due, and earlier
+         * conversations. Undefined follows the account-wide setting,
+         * which is what every chatbot built before this did.
+         */
+        use_customer_context?: boolean;
       };
       // Hoisted above the try so the catch block can still say what the
       // customer asked when generation fails.
@@ -1686,7 +1747,10 @@ async function advanceFromNodeKey(
         // reply, so the two round trips overlap rather than stack.
         const [companyProfile, customerContext] = await Promise.all([
           loadCompanyProfile(run.account_id).catch(() => null),
-          aiConfig.customer_context_enabled && run.contact_id
+          // The step wins when it has an opinion; otherwise the account
+          // setting stands. Either way there has to be a contact to look
+          // the record up by.
+          (cfg.use_customer_context ?? aiConfig.customer_context_enabled) && run.contact_id
             ? buildCustomerContext({
                 accountId: run.account_id,
                 contactId: run.contact_id,

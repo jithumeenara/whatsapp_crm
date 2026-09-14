@@ -1242,6 +1242,9 @@ type AccountAiDefaults = {
   model: string | null;
   has_system_prompt: boolean;
   knowledge_base_enabled: boolean;
+  /** So a step left unset can say which way the account currently
+   *  decides, instead of showing a switch whose position means nothing. */
+  customer_context_enabled: boolean;
 };
 
 function useAccountAiDefaults(): AccountAiDefaults | null {
@@ -1260,6 +1263,7 @@ function useAccountAiDefaults(): AccountAiDefaults | null {
           model: data.provider_keys?.gemini?.model ?? null,
           has_system_prompt: Boolean(data.system_prompt?.trim()),
           knowledge_base_enabled: data.knowledge_base_enabled !== false,
+          customer_context_enabled: data.customer_context_enabled !== false,
         });
       } catch {
         /* the form still works; it just cannot name the numbers */
@@ -1328,6 +1332,30 @@ function AiReplyForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         <Switch
           checked={cfg.include_history !== false}
           onCheckedChange={(v) => onChange({ ...cfg, include_history: v })}
+        />
+      </div>
+
+      {/* Left unset on purpose until somebody touches it, so the account
+          setting keeps deciding for every chatbot built before this
+          existed. Only a deliberate change pins it to this step. */}
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 p-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium">Look the customer up first</p>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+            Reads their record before answering — their lead and its stage, what was discussed before, and any
+            follow-up due. Worth it where the answer depends on who is asking; unnecessary for a step that just
+            states opening hours.
+            {cfg.use_customer_context === undefined && defaults && (
+              <span className="mt-0.5 block text-slate-400">
+                Following your AI settings: currently{' '}
+                {defaults.customer_context_enabled ? 'on' : 'off'} for every step.
+              </span>
+            )}
+          </p>
+        </div>
+        <Switch
+          checked={(cfg.use_customer_context as boolean | undefined) ?? defaults?.customer_context_enabled ?? true}
+          onCheckedChange={(v) => onChange({ ...cfg, use_customer_context: v })}
         />
       </div>
 
@@ -1737,35 +1765,112 @@ function UpdateContactForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   );
 }
 
+/** Roles that can actually reply. A viewer cannot send a message, so
+ *  offering one here would only ever route a customer into silence.
+ *  This used to list role 'agent' alone, which left out the owners and
+ *  supervisors who usually cover. */
+const TRANSFERABLE_ROLES = ['owner', 'supervisor', 'admin', 'agent'];
+
 function HandoffForm({ cfg, onChange }: FormProps) {
-  const [agents, setAgents] = useState<{ user_id: string; full_name: string }[]>([]);
+  const [agents, setAgents] = useState<{ user_id: string; full_name: string; role: string }[]>([]);
 
   useEffect(() => {
     fetch('/api/account/members')
       .then((r) => r.ok ? r.json() : { members: [] })
       .then((d) => {
         const members = (d.members ?? []) as { user_id: string; full_name: string; role: string }[];
-        setAgents(members.filter((m) => m.role === 'agent'));
+        setAgents(members.filter((m) => TRANSFERABLE_ROLES.includes(m.role)));
       })
       .catch(() => {});
   }, []);
 
+  const strategy = String(cfg.routing_strategy ?? 'specific');
+
+  // The default differs by strategy, and the switch has to show the
+  // default it will actually get. Naming one person is a decision, so
+  // that route honours them whether or not they are signed in unless
+  // asked otherwise; "whoever is free" means nothing if it can pick
+  // somebody who went home, so there it is on unless turned off.
+  const onlyOnline =
+    strategy === 'specific' ? cfg.only_online === true : cfg.only_online !== false;
+
   return (
     <div className="space-y-4">
-      {/* Agent assignment */}
+      {/* Who takes it */}
       <Field
-        label="Assign to agent"
-        hint="The conversation will be assigned to this agent when handoff occurs."
+        label="Who takes the conversation"
+        hint="Choose one person, or let it go to whoever is working at the time."
       >
         <Select
-          value={String(cfg.assign_to ?? "")}
-          onValueChange={(v) => onChange({ ...cfg, assign_to: v || undefined })}
+          value={strategy}
+          onValueChange={(v) => onChange({ ...cfg, routing_strategy: v })}
         >
           <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="Select an agent (optional)" />
+            <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Unassigned</SelectItem>
+            <SelectItem value="specific">A specific person</SelectItem>
+            <SelectItem value="least_busy">Whoever has the fewest open chats</SelectItem>
+            <SelectItem value="round_robin">Take it in turns</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {strategy === 'specific' && (
+        <Field
+          label="Assign to"
+          hint="The conversation will be assigned to this person when handoff occurs."
+        >
+          <Select
+            value={String(cfg.assign_to ?? "")}
+            onValueChange={(v) => onChange({ ...cfg, assign_to: v || undefined })}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Select someone (optional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">Unassigned</SelectItem>
+              {agents.map((a) => (
+                <SelectItem key={a.user_id} value={a.user_id}>
+                  {a.full_name || a.user_id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      )}
+
+      {/* Presence. Worth stating the window: somebody who reads "signed
+          in" as "this second" and finds transfers going to people who
+          stepped away has been told something untrue. */}
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-slate-700">Only transfer to people who are signed in</p>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+            {strategy === 'specific'
+              ? 'If they are not signed in, the fallback below is used instead.'
+              : 'Counts anyone active in the last 15 minutes.'}
+          </p>
+        </div>
+        <Switch
+          checked={onlyOnline}
+          onCheckedChange={(v) => onChange({ ...cfg, only_online: v })}
+        />
+      </div>
+
+      <Field
+        label="If nobody is available"
+        hint="Used when the choice above finds no one. Left unassigned in the inbox otherwise, where everybody can see it."
+      >
+        <Select
+          value={String(cfg.fallback_assign_to ?? "")}
+          onValueChange={(v) => onChange({ ...cfg, fallback_assign_to: v || undefined })}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="Leave unassigned" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">Leave unassigned</SelectItem>
             {agents.map((a) => (
               <SelectItem key={a.user_id} value={a.user_id}>
                 {a.full_name || a.user_id}
@@ -1775,10 +1880,23 @@ function HandoffForm({ cfg, onChange }: FormProps) {
         </Select>
       </Field>
 
+      <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-slate-700">Send them an app notification</p>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-slate-500">
+            A push notification, if they have allowed them in their browser.
+          </p>
+        </div>
+        <Switch
+          checked={cfg.notify_push !== false}
+          onCheckedChange={(v) => onChange({ ...cfg, notify_push: v })}
+        />
+      </div>
+
       {/* Notification message to agent's WhatsApp */}
       <Field
-        label="Notify agent on WhatsApp"
-        hint="Send this message to the agent's registered WhatsApp number when transferring."
+        label="Notify them on WhatsApp"
+        hint="Sent to the number on their own profile. Someone with no number saved gets nothing — leave this empty to skip it."
       >
         <RichTextArea
           value={String(cfg.notify_message ?? "")}
