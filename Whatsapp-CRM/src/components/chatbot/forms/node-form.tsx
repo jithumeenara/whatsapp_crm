@@ -1893,6 +1893,35 @@ function HandoffForm({ cfg, onChange }: FormProps) {
         />
       </div>
 
+      {/* What the customer is told. Placed before the agent-facing
+          settings because it is the half they actually experience. */}
+      <Field
+        label="What the customer is told"
+        hint="Sent as soon as the conversation reaches a person. Leave empty to say nothing."
+      >
+        <RichTextArea
+          value={String(cfg.customer_message ?? "")}
+          onChange={(v) => onChange({ ...cfg, customer_message: v })}
+          placeholder={"Thanks {{name}} — I'm passing you to one of our team now. They'll reply here shortly."}
+          minHeight={64}
+        />
+      </Field>
+
+      <Field
+        label="What they are told if nobody is available"
+        hint="Everyone signed out, or all busy. Kept separate because “someone is with you now” is a promise you cannot keep at eleven at night."
+      >
+        <RichTextArea
+          value={String(cfg.unavailable_message ?? "")}
+          onChange={(v) => onChange({ ...cfg, unavailable_message: v })}
+          placeholder={"Thanks {{name}} — our team is away from their desks at the moment. Your message is saved and someone will reply here as soon as they are back."}
+          minHeight={64}
+        />
+        <p className="mt-1 text-[10px] text-slate-500">
+          Left empty, the message above is used for both.
+        </p>
+      </Field>
+
       {/* Notification message to agent's WhatsApp */}
       <Field
         label="Notify them on WhatsApp"

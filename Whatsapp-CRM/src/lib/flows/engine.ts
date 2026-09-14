@@ -740,6 +740,14 @@ type HandoffConfigShape = {
   /** Both default on; the WhatsApp one additionally needs a message. */
   notify_push?: boolean;
   notify_whatsapp?: boolean;
+
+  /** Sent to the customer when somebody has taken the conversation. */
+  customer_message?: string;
+  /** Sent to the customer when nobody could take it — everyone signed
+   *  out, or the named agent gone. Kept separate from the one above
+   *  because "someone is with you now" is a promise that cannot be kept
+   *  at eleven at night. */
+  unavailable_message?: string;
 };
 
 /** Takes the handoff config directly (not a full FlowNodeRow) so both
@@ -874,6 +882,38 @@ async function executeHandoff(
       }
     }
   }
+  // Told last, once the outcome is actually known — which of the two
+  // messages is true depends on whether anybody was found.
+  if (run.conversation_id && run.contact_id) {
+    const customerText = assignmentSummary.userId
+      ? cfg.customer_message
+      : cfg.unavailable_message ?? cfg.customer_message;
+    if (customerText?.trim()) {
+      try {
+        await engineSendText({
+          accountId: run.account_id,
+          userId: run.user_id,
+          conversationId: run.conversation_id,
+          contactId: run.contact_id,
+          text: interpolateWithContact(
+            customerText,
+            run.vars,
+            await createContactGetter(run.contact_id).get(),
+          ),
+        });
+      } catch (err) {
+        // Never fails the handoff. The conversation has already moved to
+        // a person; a customer who did not get the acknowledgement is in
+        // a worse position than one who did, but a far better one than
+        // if the transfer itself were rolled back over it.
+        console.error(
+          "[handoff] could not send the customer acknowledgement:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
   await logEvent(run.id, "handoff", nodeKey, {
     note: cfg.note ?? null,
     // What was actually decided, not what the step asked for. The two
