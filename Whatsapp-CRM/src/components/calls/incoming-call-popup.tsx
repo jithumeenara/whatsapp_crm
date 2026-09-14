@@ -82,7 +82,14 @@ export function IncomingCallPopup() {
       }
       // A transfer names its agent. An unassigned call rings everyone,
       // which is deliberate: better two people answer than nobody.
-      if (event.agentId && event.agentId !== userId) return;
+      //
+      // `userId` is only trusted once it is known. useAuth resolves
+      // asynchronously and a socket event can arrive first, and while it
+      // is null every call reads as "not for me" — which silently threw
+      // away a ringing phone and looked precisely like the feature being
+      // broken. Ringing when unsure is the same trade this component
+      // already makes everywhere else, and the server settles the claim.
+      if (userId && event.agentId && event.agentId !== userId) return;
       setCall(event);
       // Set alongside the call rather than from an effect reacting to
       // it: the countdown is a property of this call arriving, and

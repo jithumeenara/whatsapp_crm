@@ -144,8 +144,12 @@ async function handleIncoming(
     ringSeconds: config?.ring_seconds ?? 30,
   })
 
+  // Says who it went to, because "the popup did not appear" and "the
+  // popup appeared for somebody else" look identical from one screen and
+  // need completely different fixes.
   console.log(
     `[calls] ringing ${event.callId} from ${contact?.name ?? event.from} — ${pick.reason}` +
+      (pick.agent ? ` [to ${pick.agent.fullName}]` : ' [to everyone]') +
       (aiWouldAnswer ? ' (assistant is standing by)' : ''),
   )
 
@@ -184,25 +188,56 @@ async function handleTerminate(
 ): Promise<void> {
   const call = await prisma.call.findUnique({
     where: { provider_call_id: event.callId },
-    select: { id: true, status: true, answered_at: true, started_at: true },
+    select: { id: true, status: true, answered_at: true, started_at: true, handled_by: true },
   })
   if (!call) return
 
   const endedAt = event.timestamp
-  // Talk time, not ring time. A call that was never answered has no
-  // duration at all, which is why this is null rather than zero — zero
+
+  // Was this call actually answered?
+  //
+  // Pressing Answer in the app is one way to know, and until the media
+  // path exists it is the rarer one — a call answered on somebody's
+  // handset never touches this app at all. Meta knows, and says so two
+  // ways: a status, and a talk duration. A duration above zero means two
+  // people were connected, whatever the status string happens to read.
+  //
+  // Deciding this on answered_at alone filed every real conversation
+  // held on a phone as a call nobody took.
+  const metaStatus = (event.status ?? '').toLowerCase()
+  const connected =
+    Boolean(call.answered_at) ||
+    (event.durationSeconds ?? 0) > 0 ||
+    metaStatus === 'completed' ||
+    metaStatus === 'answered'
+
+  // Talk time, not ring time. Null when it was never answered — zero
   // would read as "answered, said nothing".
   const duration =
     event.durationSeconds ??
-    (call.answered_at ? Math.max(0, Math.round((endedAt.getTime() - call.answered_at.getTime()) / 1000)) : null)
+    (call.answered_at
+      ? Math.max(0, Math.round((endedAt.getTime() - call.answered_at.getTime()) / 1000))
+      : null)
+
+  // Reconstructed when the call was answered somewhere this app could
+  // not see. Without it the history shows talk time but claims the call
+  // was never picked up, which is the contradiction that started this.
+  const answeredAt =
+    call.answered_at ??
+    (connected && duration && duration > 0 ? new Date(endedAt.getTime() - duration * 1000) : null)
 
   await prisma.call.update({
     where: { id: call.id },
     data: {
-      status: call.answered_at ? 'completed' : 'missed',
+      status: connected ? 'completed' : 'missed',
+      answered_at: answeredAt,
+      // A person took it, even though this app cannot say which — the
+      // assistant cannot answer calls yet, so there is no other
+      // possibility.
+      handled_by: call.handled_by ?? (connected ? 'agent' : null),
       ended_at: endedAt,
       duration_seconds: duration,
-      end_reason: event.status ?? (call.answered_at ? null : 'no answer'),
+      end_reason: event.status ?? (connected ? null : 'no answer'),
     },
   })
 
