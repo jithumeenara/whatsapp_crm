@@ -19,7 +19,11 @@ import { emitToAccount } from '@/lib/socket'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 import { processInboundOrder } from '@/lib/whatsapp/order-processing'
 import { isCallWebhookField, parseCallWebhook } from '@/lib/whatsapp/calling-api'
-import { handleCallEvent, resolveCallCredentials } from '@/lib/whatsapp/call-handler'
+import {
+  handleCallEvent,
+  resolveCallCredentials,
+  forwardCallWebhook,
+} from '@/lib/whatsapp/call-handler'
 import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
 
 /** Why nothing was sent, in words rather than a reason code. These are
@@ -246,14 +250,22 @@ export async function POST(request: Request) {
   }
 
   // Process asynchronously so we can ack Meta within their timeout.
-  processWebhook(body).catch((error) => {
+  // The raw bytes travel with the parsed body: forwarding a call has to
+  // hand on exactly what Meta signed, and re-encoding it would break the
+  // receiver's signature check.
+  processWebhook(body, { rawBody, signature }).catch((error) => {
     console.error('Error processing webhook:', error)
   })
 
   return NextResponse.json({ status: 'received' }, { status: 200 })
 }
 
-async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
+async function processWebhook(
+  body: { entry?: WhatsAppWebhookEntry[] },
+  /** Optional so nothing else that calls this has to care; without it
+   *  no call is forwarded, which is how this behaved before. */
+  original?: { rawBody: string; signature: string | null },
+) {
   if (!body.entry) return
 
   for (const entry of body.entry) {
@@ -299,6 +311,17 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           console.warn(`[calls] no WhatsApp config for phone_number_id ${phoneNumberId}`)
           continue
         }
+        // Started before this app's own work. Meta allows roughly
+        // thirty seconds to answer a call, and whatever actually picks
+        // it up should not spend any of that waiting on bookkeeping.
+        if (original) {
+          void forwardCallWebhook({
+            accountId: creds.accountId,
+            rawBody: original.rawBody,
+            signature: original.signature,
+          })
+        }
+
         for (const event of events) {
           await handleCallEvent({
             accountId: creds.accountId,

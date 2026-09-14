@@ -2646,6 +2646,13 @@ model CallConfig {
   /// until somebody turns it on knowing that.
   record_calls Boolean @default(false)
 
+  /// Where call webhooks are passed on to — the voice agent that
+  /// actually answers. Meta posts to one URL per app and this app's is
+  /// the CRM, which must stay that way because messages are production;
+  /// so the CRM stays the front door and forwards. Null forwards
+  /// nowhere, which is the behaviour before this existed.
+  call_forward_url String?
+
   /// SIP, for later. Nothing reads these yet.
   sip_enabled     Boolean @default(false)
   sip_host        String?

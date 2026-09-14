@@ -25,6 +25,67 @@ interface HandleArgs {
   event: CallWebhookEvent
 }
 
+/**
+ * Hands the untouched webhook to whatever actually answers calls.
+ *
+ * Byte-for-byte, with Meta's signature header intact: the receiver checks
+ * that signature against the same app secret, so re-encoding the JSON or
+ * dropping the header makes every forwarded call fail — as
+ * "unauthorised", which looks nothing like the formatting problem it is.
+ *
+ * Fire-and-forget with a short timeout. The voice agent is a separate
+ * process that can be down, restarting, or on somebody's laptop behind
+ * ngrok; none of that may delay this webhook, because Meta retries
+ * anything slow and a retry means the call is processed twice.
+ */
+export async function forwardCallWebhook(args: {
+  accountId: string
+  rawBody: string
+  signature: string | null
+}): Promise<void> {
+  const config = await prisma.callConfig
+    .findUnique({
+      where: { account_id: args.accountId },
+      select: { call_forward_url: true },
+    })
+    .catch(() => null)
+
+  const url = config?.call_forward_url?.trim()
+  if (!url) return
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FORWARD_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Passed through unchanged. This is the whole reason the raw body
+        // is threaded down here rather than the parsed object.
+        ...(args.signature ? { 'x-hub-signature-256': args.signature } : {}),
+      },
+      body: args.rawBody,
+      signal: controller.signal,
+    })
+    if (!res.ok) {
+      console.warn(`[calls] the voice agent answered ${res.status} — it did not take the call`)
+    }
+  } catch (err) {
+    const aborted = (err as { name?: string })?.name === 'AbortError'
+    console.warn(
+      `[calls] could not reach the voice agent at ${url}: ` +
+        (aborted ? `no answer within ${FORWARD_TIMEOUT_MS}ms` : String(err)),
+    )
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+/** Short on purpose: Meta retries a slow webhook, and a retry means the
+ *  same call is handled twice. */
+const FORWARD_TIMEOUT_MS = 4000
+
 export async function handleCallEvent(args: HandleArgs): Promise<void> {
   try {
     if (args.event.kind === 'connect') return await handleIncoming(args, args.event)
@@ -126,6 +187,20 @@ async function handleIncoming(
     })
     console.warn(`[calls] declined ${event.callId}: ${pick.reason}, and the assistant is not answering calls`)
     emitToAccount(args.accountId, 'call', { type: 'ended', callId: call.id, agentId: null })
+    return
+  }
+
+  // Not rung when the assistant is taking it.
+  //
+  // Two things reaching for one call is worse than either alone: an
+  // agent's screen rings for a conversation the assistant is already
+  // holding, and whoever picks up joins a call that moved on without
+  // them. Agents are rung when the assistant hands over, which is the
+  // moment a person is actually wanted.
+  if (aiWouldAnswer) {
+    console.log(
+      `[calls] ${event.callId} from ${contact?.name ?? event.from} — the assistant is taking it`,
+    )
     return
   }
 

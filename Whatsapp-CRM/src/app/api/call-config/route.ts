@@ -25,6 +25,7 @@ const DEFAULTS = {
   transfer_fallback_to: null as string | null,
   ring_seconds: 30,
   record_calls: false,
+  call_forward_url: null as string | null,
   sip_enabled: false,
   sip_host: null as string | null,
   sip_username: null as string | null,
@@ -95,6 +96,8 @@ export async function PUT(request: Request) {
       pick<string | null>('transfer_fallback_to', existing?.transfer_fallback_to ?? null) || null,
     ring_seconds: clamp(body.ring_seconds, 5, 120, existing?.ring_seconds ?? DEFAULTS.ring_seconds),
     record_calls: pick('record_calls', existing?.record_calls ?? false),
+    call_forward_url:
+      pick<string | null>('call_forward_url', existing?.call_forward_url ?? null)?.trim() || null,
     sip_enabled: pick('sip_enabled', existing?.sip_enabled ?? false),
     sip_host: pick<string | null>('sip_host', existing?.sip_host ?? null) || null,
     sip_username: pick<string | null>('sip_username', existing?.sip_username ?? null) || null,

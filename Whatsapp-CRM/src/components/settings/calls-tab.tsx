@@ -36,6 +36,7 @@ type Config = {
   transfer_fallback_to: string | null;
   ring_seconds: number;
   record_calls: boolean;
+  call_forward_url: string | null;
   sip_enabled: boolean;
   sip_host: string | null;
   sip_username: string | null;
@@ -328,6 +329,31 @@ export function CallsTab() {
         >
           <Switch checked={config.record_calls} onCheckedChange={(v) => set("record_calls", v)} />
         </Row>
+      </Section>
+
+      <Section
+        icon={<Bot className="h-4 w-4" />}
+        title="Voice agent"
+        subtitle="Where calls are passed to be answered. Empty means nothing is passed on."
+      >
+        <div className="rounded-xl bg-slate-50/70 p-3">
+          <p className="text-[13px] font-medium text-slate-800">Forward calls to</p>
+          <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+            Meta sends every webhook to one address, and this app is it — which must stay true, because
+            messages are live. Calls are passed on from here instead. During testing this is your ngrok
+            address; later it is wherever the voice agent runs.
+          </p>
+          <Input
+            value={config.call_forward_url ?? ""}
+            onChange={(e) => set("call_forward_url", e.target.value)}
+            placeholder="https://your-tunnel.ngrok.dev/whatsapp"
+            className="mt-2 h-9 text-sm"
+          />
+          <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">
+            The webhook is passed on exactly as Meta sent it, signature and all, so the agent&apos;s own
+            security check still passes. Messages never go here — only calls.
+          </p>
+        </div>
       </Section>
 
       <Section
