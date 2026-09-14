@@ -47,6 +47,11 @@ export async function speak(args: {
     ? await resolveTtsCredentials(args.accountId)
     : { account: null, source: 'none' as const }
 
+  // Measured across both engines so the log line is comparable: the
+  // whole point of reading it is telling a one-second reply from a
+  // six-second one.
+  const startedAt = Date.now()
+
   if (credentials.account) {
     try {
       const result = await synthesizeWithCloudTts({
@@ -54,6 +59,9 @@ export async function speak(args: {
         character: args.cloudVoice,
         account: credentials.account,
       })
+      console.log(
+        `[speech] cloud · ${result.languageCode ?? '?'} · ${result.voiceUsed ?? 'default voice'} · ${Date.now() - startedAt}ms`,
+      )
       return {
         buffer: result.buffer,
         mimeType: result.mimeType,
@@ -80,6 +88,13 @@ export async function speak(args: {
     text: args.text,
     voiceName: args.geminiVoice,
   })
+  const elapsed = Date.now() - startedAt
+  // Flagged rather than merely reported. This engine is fine for a voice
+  // note, where nobody is waiting, and far too slow for a live call.
+  console.log(
+    `[speech] gemini · ${detectSpeechLanguage(args.text)} · ${elapsed}ms` +
+      (elapsed > 2000 ? ' — too slow for a call; a Google Cloud key would make this ~1s' : ''),
+  )
   return {
     buffer: result.buffer,
     mimeType: result.mimeType,
