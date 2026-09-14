@@ -20,6 +20,7 @@ import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 import { processInboundOrder } from '@/lib/whatsapp/order-processing'
 import { isCallWebhookField, parseCallWebhook } from '@/lib/whatsapp/calling-api'
 import { handleCallEvent, resolveCallCredentials } from '@/lib/whatsapp/call-handler'
+import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
 
 /** Why nothing was sent, in words rather than a reason code. These are
  *  read by whoever is looking at pm2 logs asking why a customer got no
@@ -873,6 +874,32 @@ async function processMessage(
   // where the text comes from.
   // ============================================================
   const dispatchAndRunAutomations = async (overrideText?: string, wasVoice = false) => {
+    // Nothing acts on a blocked contact.
+    //
+    // The message itself is already stored and still shows in the
+    // thread, deliberately — a block that hides the evidence is one
+    // nobody can review. What stops here is everything that responds:
+    // the chatbot, automations, the assistant, notifications.
+    const block = await isContactBlocked(contactRecord.id).catch(() => ({ blocked: false as const }))
+    if (block.blocked) {
+      console.log(
+        `[spam] ignored a message from a blocked contact ${contactRecord.id}` +
+          (block.reason ? ` (${block.source ?? 'blocked'}: ${block.reason})` : ''),
+      )
+      return
+    }
+
+    // Counted after storing, so the message that trips the rule is part
+    // of the evidence an agent sees. Blocking here stops this message
+    // too, which is the point — a flood is still arriving.
+    if (
+      await checkForFlood({ contactId: contactRecord.id, conversationId: conversation.id }).catch(
+        () => false,
+      )
+    ) {
+      return
+    }
+
     const text = overrideText ?? contentText ?? message.text?.body ?? ''
     const flowResult = await dispatchInboundToFlows({
       accountId,

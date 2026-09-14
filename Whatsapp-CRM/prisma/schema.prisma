@@ -375,6 +375,19 @@ model Contact {
   @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
   @@map("contacts")
   calls Call[]
+  /// When this contact was blocked. Null means not blocked — "when"
+  /// answers "whether" as well, so there is no separate boolean to keep
+  /// in step with it.
+  blocked_at     DateTime? @db.Timestamptz(6)
+  block_reason   String?
+  /// 'manual' | 'flood'. An automatic block is a guess and should be
+  /// easy to overturn; a manual one is a decision and must not be
+  /// quietly undone by the rule that would have guessed differently.
+  blocked_source String?
+  /// Who pressed it. Null for an automatic block, which is how the two
+  /// are told apart without reading the reason text.
+  blocked_by     String?   @db.Uuid
+
 }
 
 // Audit trail for IG·04 "Merge contacts across channels" — who merged what

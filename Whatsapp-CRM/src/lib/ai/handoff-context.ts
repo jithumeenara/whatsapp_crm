@@ -37,6 +37,10 @@ const REASON_HEADLINES: Record<HandoffReason, string> = {
 /** Long fields get cut rather than wrapped: this lands in a note field
  *  and an inbox preview, and an agent scrolling a wall of text will skip
  *  it entirely, which defeats the point. */
+/** How much of the exchange travels with a handover. Enough to see what
+ *  was tried, short enough that the reason stays at the top. */
+const TRANSCRIPT_TURNS = 8
+
 function clip(text: string | null | undefined, max: number): string | null {
   if (!text) return null
   const clean = text.replace(/\s+/g, ' ').trim()
@@ -60,6 +64,15 @@ export function buildHandoffNote(args: {
   department?: string | null
   /** Which topic matched, for escalation_topic handoffs. */
   matchedTopic?: string | null
+  /**
+   * The exchange so far, oldest first.
+   *
+   * Without it the agent joins a conversation at its sixth turn knowing
+   * only the last question, cannot see what the assistant already tried,
+   * and asks the customer to explain from the beginning — the single
+   * thing people dislike most about being passed to someone else.
+   */
+  transcript?: { role: 'customer' | 'assistant'; text: string }[]
 }): string {
   const lines: string[] = []
 
@@ -98,6 +111,24 @@ export function buildHandoffNote(args: {
 
   const tools = (args.toolsUsed ?? []).filter(Boolean)
   if (tools.length > 0) lines.push(`Records it checked: ${[...new Set(tools)].join(', ')}`)
+
+  // Last, and only the recent part of it. The whole history would push
+  // the reason and the draft off the top of the note, and an agent who
+  // has to scroll to find why a conversation reached them will not.
+  const transcript = (args.transcript ?? []).filter((t) => t.text?.trim())
+  if (transcript.length > 0) {
+    const recent = transcript.slice(-TRANSCRIPT_TURNS)
+    const rendered = recent
+      .map((turn) => {
+        const speaker = turn.role === 'customer' ? 'Them' : 'Assistant'
+        return `  ${speaker}: ${clip(turn.text, 200)}`
+      })
+      .join('\n')
+    const elided = transcript.length - recent.length
+    lines.push(
+      `\nThe conversation so far${elided > 0 ? ` (last ${recent.length} of ${transcript.length})` : ''}:\n${rendered}`,
+    )
+  }
 
   if (args.department) lines.push(`\nSuggested team: ${args.department}`)
 

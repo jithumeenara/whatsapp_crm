@@ -242,6 +242,16 @@ export async function autoReplyToMessage(args: {
         knowledgeUsed: turn.knowledgeUsed,
         toolsUsed: turn.toolsUsed,
         matchedTopic: reason === 'safety' ? turn.decision.safety?.reason : null,
+        // The history already loaded for the model, reused rather than
+        // re-queried, plus the message that triggered the handover —
+        // which is not in it, having arrived after it was read.
+        transcript: [
+          ...history.map((h) => ({
+            role: h.role === 'user' ? ('customer' as const) : ('assistant' as const),
+            text: h.text,
+          })),
+          { role: 'customer' as const, text },
+        ],
       }),
       assignTo: aiConfig.low_confidence_assign_to,
     })
