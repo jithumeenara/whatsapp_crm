@@ -23,6 +23,83 @@ import { getAccessToken, hasCloudCredentials, clearTokenCache, type ServiceAccou
 import { CLOUD_VOICE_CHARACTERS } from './cloud-voices'
 
 const TTS_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
+
+/**
+ * Longest sentence sent in one request.
+ *
+ * Deliberately conservative. Google does not publish the exact ceiling
+ * and the error does not name it, so this is set well below where it was
+ * observed to fail — the cost of a chunk more is a join, the cost of one
+ * too few is the whole reply falling back to the slow voice.
+ */
+const MAX_SENTENCE_CHARS = 180
+
+/**
+ * Breaks text into pieces Chirp will accept.
+ *
+ * Sentence boundaries first, since those are where a pause belongs
+ * anyway. A sentence still over the limit is split at its commas, and a
+ * clause still over it at word boundaries — each step less natural than
+ * the last, which is why they are tried in that order.
+ */
+export function splitForSynthesis(text: string, maxChars = MAX_SENTENCE_CHARS): string[] {
+  // Nothing to do for the common case. Splitting a short reply into its
+  // sentences would cost an extra request and force MP3, losing the real
+  // voice-note rendering for no reason at all — the limit is per
+  // sentence, and every sentence in a short reply is already under it.
+  if (text.length <= maxChars) return [text]
+
+  // Malayalam and Hindi end sentences with । as well as . — and the
+  // assistant writes in whichever language the customer used.
+  const sentences = text
+    .split(/(?<=[.!?।॥])\s+|\n+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+
+  const pieces: string[] = []
+  for (const sentence of sentences) {
+    if (sentence.length <= maxChars) {
+      pieces.push(sentence)
+      continue
+    }
+    for (const clause of splitLongRun(sentence, maxChars)) pieces.push(clause)
+  }
+  return pieces.length > 0 ? pieces : [text]
+}
+
+function splitLongRun(sentence: string, maxChars: number): string[] {
+  const out: string[] = []
+  let current = ''
+
+  const flush = () => {
+    if (current.trim()) out.push(current.trim())
+    current = ''
+  }
+
+  // Commas first — a listener hears a pause there without noticing one
+  // was inserted.
+  for (const clause of sentence.split(/(?<=[,;:،])/)) {
+    if ((current + clause).length > maxChars && current) flush()
+    if (clause.length > maxChars) {
+      // No punctuation left to use. Words are the last boundary that
+      // does not cut a word in half.
+      flush()
+      let line = ''
+      for (const word of clause.split(/\s+/)) {
+        if ((line + ' ' + word).trim().length > maxChars && line) {
+          out.push(line.trim())
+          line = ''
+        }
+        line = line ? `${line} ${word}` : word
+      }
+      if (line.trim()) current = line
+      continue
+    }
+    current += clause
+  }
+  flush()
+  return out
+}
 const TTS_TIMEOUT_MS = 15_000
 
 /** WhatsApp renders OGG/Opus as a voice note with a waveform and plays
@@ -116,46 +193,69 @@ export async function synthesizeWithCloudTts(args: {
 
   const languageCode = args.languageCode ?? detectSpeechLanguage(text)
   const voiceName = buildVoiceName(languageCode, args.character ?? 'Achernar')
-  const encoding: CloudAudioEncoding = args.encoding ?? 'OGG_OPUS'
+  const pieces = splitForSynthesis(text)
 
-  const call = async (token: string) =>
+  // One piece keeps OGG/Opus, which WhatsApp renders as a real voice
+  // note. Several go out as MP3: MP3 frames concatenate cleanly, while
+  // two Ogg streams joined end to end form a chained stream that not
+  // every player follows past the first. A voice note that plays as
+  // plain audio beats one that looks right and stops halfway.
+  const encoding: CloudAudioEncoding =
+    args.encoding ?? (pieces.length > 1 ? 'MP3' : 'OGG_OPUS')
+
+  const call = async (token: string, body: string) =>
     fetch(TTS_ENDPOINT, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({
-        input: { text },
+      body,
+      signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
+    })
+
+  const requestFor = (piece: string) =>
+    JSON.stringify({
+        input: { text: piece },
         voice: { languageCode, name: voiceName },
         audioConfig: {
           audioEncoding: encoding,
           speakingRate: args.speakingRate ?? 1.0,
           // Chirp3-HD voices reject pitch adjustment, so it is not sent.
         },
-      }),
-      signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
     })
 
   const scope = 'https://www.googleapis.com/auth/cloud-platform'
-  let res = await call(await getAccessToken(scope, args.account))
+  let token = await getAccessToken(scope, args.account)
 
-  // A cached token can outlive a rotated key. One retry with a fresh
-  // token distinguishes "credentials revoked" from "cache went stale".
-  // Scoped to this identity so one account's 401 does not evict every
-  // other account's perfectly good token.
-  if (res.status === 401) {
-    clearTokenCache(args.account)
-    res = await call(await getAccessToken(scope, args.account))
+  const speakPiece = async (piece: string): Promise<Buffer> => {
+    let res = await call(token, requestFor(piece))
+
+    // A cached token can outlive a rotated key. One retry with a fresh
+    // token distinguishes "credentials revoked" from "cache went stale".
+    // Scoped to this identity so one account's 401 does not evict every
+    // other account's perfectly good token.
+    if (res.status === 401) {
+      clearTokenCache(args.account)
+      token = await getAccessToken(scope, args.account)
+      res = await call(token, requestFor(piece))
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      throw new Error(`Cloud TTS returned ${res.status}: ${body.slice(0, 200)}`)
+    }
+
+    const json = (await res.json()) as { audioContent?: string }
+    if (!json.audioContent) throw new Error('Cloud TTS returned no audio.')
+    return Buffer.from(json.audioContent, 'base64')
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '')
-    throw new Error(`Cloud TTS returned ${res.status}: ${body.slice(0, 200)}`)
-  }
-
-  const json = (await res.json()) as { audioContent?: string }
-  if (!json.audioContent) throw new Error('Cloud TTS returned no audio.')
+  // Sequential, not parallel. Several requests at once risk a rate limit
+  // on an account that has never hit one, and a reply is a handful of
+  // pieces at most — the round trips are not what makes this slow.
+  const buffers: Buffer[] = []
+  for (const piece of pieces) buffers.push(await speakPiece(piece))
 
   return {
-    buffer: Buffer.from(json.audioContent, 'base64'),
+    buffer: buffers.length === 1 ? buffers[0] : Buffer.concat(buffers),
     mimeType: encoding === 'OGG_OPUS' ? 'audio/ogg' : 'audio/mpeg',
     voiceUsed: voiceName,
     languageCode,
