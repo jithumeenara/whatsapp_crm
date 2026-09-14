@@ -76,12 +76,21 @@ export async function autoReplyToMessage(args: {
   })
   if (!conversation) return 'failed'
 
-  // A human is on this thread. Whether they took it deliberately or the
-  // assistant handed it over earlier, the answer is the same: stay out.
-  if (
-    aiConfig.ai_auto_reply_pause_on_agent &&
-    (conversation.assigned_agent_id || conversation.status === 'pending')
-  ) {
+  // Somebody owns this thread, so the assistant stays out of it.
+  //
+  // Assignment only. This used to treat status 'pending' the same way,
+  // which was wrong in the one case that matters: Pending is where a
+  // handover leaves a conversation and where people park one, and
+  // neither means a person has actually picked it up. Nothing moves a
+  // conversation back to Open on its own, so an unowned thread went
+  // silent permanently — every later message from that customer
+  // dropped, no reply, no trace outside the server log.
+  //
+  // What still holds a runaway back: the turn limit below caps one
+  // exchange, and the safety guard runs per message, so a conversation
+  // handed over for a reason that recurs is handed over again rather
+  // than answered.
+  if (aiConfig.ai_auto_reply_pause_on_agent && conversation.assigned_agent_id) {
     return 'skipped_agent_active'
   }
 

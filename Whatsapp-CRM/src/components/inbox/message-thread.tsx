@@ -38,6 +38,7 @@ import { TemplatePicker } from "./template-picker";
 import { CatalogPicker, type CatalogSendPayload } from "./catalog-picker";
 import { PaymentRequestDialog } from "./payment-request-dialog";
 import { SendOtpDialog } from "./send-otp-dialog";
+import { AssistantPausedNotice } from "./assistant-paused-notice";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
 
@@ -1216,6 +1217,15 @@ export function MessageThread({
       <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto scroll-styled px-3 py-3 sm:px-4 sm:py-4">
         {messagesContent}
       </div>
+
+      {/* Sits directly above the reply box, next to the status it is
+          about. The pause itself was only ever visible as a line in the
+          server log. */}
+      <AssistantPausedNotice
+        assignedAgentId={assignedAgentId}
+        assignedAgentName={currentAssignee?.full_name ?? currentAssignee?.email ?? null}
+        channel={(conversation as { channel?: string })?.channel}
+      />
 
       {/* Composer */}
       <MessageComposer

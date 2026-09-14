@@ -26,7 +26,7 @@ const AUTO_REPLY_HINTS: Record<string, string> = {
   skipped_disabled: ' — "Answer messages no chatbot matched" is off in the Chatbots page.',
   skipped_channel: ' — this channel is not in the auto-reply channel list.',
   skipped_agent_active:
-    ' — the conversation is assigned to someone, or its status is Pending. Set it back to Open to let the assistant answer again.',
+    ' — the conversation is assigned to an agent, who is expected to answer it. Unassign it to let the assistant take over again.',
   skipped_turn_limit: ' — the per-conversation reply limit was reached; it handed over instead.',
   skipped_no_message: ' — the message had no text to answer (an unreadable voice note, or media with no caption).',
   failed: ' — the send or a database read failed; see the error above.',

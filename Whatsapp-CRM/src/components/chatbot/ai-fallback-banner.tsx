@@ -186,9 +186,8 @@ export function AiFallbackBanner() {
               <ul className="space-y-1 text-[11.5px] leading-relaxed text-slate-600">
                 <li>• A chatbot or automation that matches always wins — it only answers what nothing claimed.</li>
                 <li>
-                  • It stays out of any conversation assigned to a person, or marked{" "}
-                  <span className="font-medium text-slate-700">Pending</span> — set one back to{" "}
-                  <span className="font-medium text-slate-700">Open</span> to let it answer there again.
+                  • It stays out of any conversation assigned to a person — unassign it to let the assistant
+                  answer there again.
                 </li>
                 <li>• It hands over when the knowledge base has no confident answer.</li>
                 <li>• It hands over rather than send a price, date or number it cannot verify.</li>
@@ -211,14 +210,9 @@ export function AiFallbackBanner() {
                   <span>replies in one chat</span>
                 </label>
 
-                {/* "once an agent joins" described half of it: the same
-                    switch also holds the assistant back on anything marked
-                    Pending, which is the state a handover leaves behind and
-                    the one people set by hand. A thread sitting silent for
-                    that reason gives no clue why. */}
                 <label
                   className="flex items-center gap-2 text-[11.5px] text-slate-700"
-                  title="Also applies to any conversation marked Pending, including one the assistant handed over earlier."
+                  title="Assignment is what counts. A conversation marked Pending that nobody has picked up still gets answered."
                 >
                   <Switch
                     checked={config.pauseOnAgent}
