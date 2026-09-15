@@ -56,19 +56,66 @@ export async function loadLiveVoiceContext(args: {
   const geminiEntry = getProviderKeys(aiConfig).gemini
   if (!geminiEntry?.api_key) return null
 
+  return {
+    apiKey: decrypt(geminiEntry.api_key),
+    model: aiConfig.live_voice_model,
+    voiceName: aiConfig.live_voice_name,
+    systemInstruction: await composeInstruction(args.accountId, aiConfig, args.mode),
+  }
+}
+
+/**
+ * The same instruction, for a WhatsApp call.
+ *
+ * A call is answered by Pipecat on a separate machine, holding its own
+ * Gemini key, and is gated on `CallConfig.ai_answer_enabled` rather than
+ * on the browser console's own toggle — so it wants the prompt and
+ * nothing else. No key to relay, and no reason for the assistant on the
+ * phone to fall back to a stub because nobody had switched on a browser
+ * feature they never use.
+ *
+ * What it does get is assembled by the same function as the console's,
+ * which is the entire point: chat and phone must not answer the same
+ * question differently.
+ */
+export async function loadCallVoiceContext(args: {
+  accountId: string
+  mode: 'customer' | 'admin'
+}): Promise<{
+  model: string
+  voiceName: string
+  systemInstruction: string
+} | null> {
+  const aiConfig = await prisma.aiConfig.findUnique({ where: { account_id: args.accountId } })
+  if (!aiConfig) return null
+
+  return {
+    model: aiConfig.live_voice_model,
+    voiceName: aiConfig.live_voice_name,
+    systemInstruction: await composeInstruction(args.accountId, aiConfig, args.mode),
+  }
+}
+
+type AiConfigRow = NonNullable<Awaited<ReturnType<typeof prisma.aiConfig.findUnique>>>
+
+async function composeInstruction(
+  accountId: string,
+  aiConfig: AiConfigRow,
+  mode: 'customer' | 'admin',
+): Promise<string> {
   const [profile, knowledge] = await Promise.all([
-    loadCompanyProfile(args.accountId).catch(() => null),
+    loadCompanyProfile(accountId).catch(() => null),
     // Same audience boundary as the text path: an internal entry must
     // not be speakable to a customer any more than it is quotable.
-    loadKnowledge(aiConfig.id, args.mode === 'admin' ? 'all' : 'customer').catch(() => null),
+    loadKnowledge(aiConfig.id, mode === 'admin' ? 'all' : 'customer').catch(() => null),
   ])
 
   const parts: string[] = []
 
-  const companyBlock = formatCompanyBlock(profile, args.mode === 'admin' ? 'admin' : 'customer')
+  const companyBlock = formatCompanyBlock(profile, mode === 'admin' ? 'admin' : 'customer')
   if (companyBlock) parts.push(companyBlock)
 
-  if (args.mode === 'admin') {
+  if (mode === 'admin') {
     parts.push(
       aiConfig.admin_system_prompt?.trim() ||
         'You are the internal assistant for this business, speaking with a member of staff.',
@@ -100,7 +147,7 @@ export async function loadLiveVoiceContext(args: {
     )
   }
 
-  if (args.mode === 'customer') parts.push(CUSTOMER_TOOL_INSTRUCTION)
+  if (mode === 'customer') parts.push(CUSTOMER_TOOL_INSTRUCTION)
 
   // Language last but one, style last: the final instruction is the one
   // the model weights most, and speaking style is what a live session
@@ -108,12 +155,7 @@ export async function loadLiveVoiceContext(args: {
   parts.push(LANGUAGE_INSTRUCTION)
   parts.push(SPOKEN_STYLE)
 
-  return {
-    apiKey: decrypt(geminiEntry.api_key),
-    model: aiConfig.live_voice_model,
-    voiceName: aiConfig.live_voice_name,
-    systemInstruction: parts.join('\n\n'),
-  }
+  return parts.join('\n\n')
 }
 
 function formatKnowledgeForSpeech(knowledge: {

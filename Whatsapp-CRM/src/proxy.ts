@@ -46,6 +46,11 @@ const PUBLIC_PREFIXES = [
   '/api/flows/cron',
   '/api/automations/cron',
   '/api/scheduled-messages/cron',
+  // The voice agent asking what prompt to use for the call it has just
+  // answered. Pipecat runs on its own machine and holds no session; the
+  // timing-safe VOICE_AGENT_SECRET check inside the route is what secures
+  // it, same as the crons above.
+  '/api/voice/',
   '/_next/',
   '/favicon',
   '/icon',   // Next.js App Router favicon generator
