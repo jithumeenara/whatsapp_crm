@@ -21,7 +21,6 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from './providers/registry'
 import { loadKnowledge } from './knowledge-store'
 import { loadCompanyProfile, formatCompanyBlock } from './company-profile'
-import { LANGUAGE_INSTRUCTION } from './language'
 import { CUSTOMER_TOOL_INSTRUCTION } from './customer-tools'
 
 /** A live session's instruction is sent once at setup and cannot be
@@ -39,6 +38,25 @@ const SPOKEN_STYLE = [
   '- Never read out a URL. Say you will send the link in a message.',
   "- If you are interrupted, stop and listen. Don't finish the sentence you were on.",
   '- If you do not know something, say so plainly and offer to have a colleague follow up.',
+].join('\n')
+
+/** The reply-language rules, rewritten for a voice that is heard rather
+ *  than read.
+ *
+ *  LANGUAGE_INSTRUCTION is the text path's, and two of its lines are
+ *  nonsense out loud: "reply in Malayalam in English letters" cannot be
+ *  spoken at all, and falling back to English is the wrong default for a
+ *  phone line in Kerala. Google's own guidance for native-audio models is
+ *  that the spoken language is steered by the system instruction and
+ *  nothing else — there is no language code to set on them — and that the
+ *  instruction has to be emphatic to hold. Hence the shouting. */
+const SPOKEN_LANGUAGE = [
+  'LANGUAGE:',
+  '- Speak the language the caller speaks, and YOU MUST SPEAK IT UNMISTAKABLY — the accent, rhythm and word choice of someone who grew up speaking it, not an English speaker reading foreign words off a page.',
+  '- If they switch language mid-call, switch with them. What they just said decides, not how the call opened.',
+  '- If one sentence mixes two languages, answer in the one carrying most of the meaning, and keep the borrowed words they used.',
+  '- Say names, course titles and place names the way a local says them. Never spell a word out letter by letter unless you are asked to.',
+  '- If you truly cannot tell what language they are speaking, ask them, in the language you last heard.',
 ].join('\n')
 
 export async function loadLiveVoiceContext(args: {
@@ -152,10 +170,14 @@ async function composeInstruction(
   // Language last but one, style last: the final instruction is the one
   // the model weights most, and speaking style is what a live session
   // most often gets wrong.
-  parts.push(LANGUAGE_INSTRUCTION)
+  parts.push(SPOKEN_LANGUAGE)
   parts.push(SPOKEN_STYLE)
 
-  return parts.join('\n\n')
+  // Citation markers survive being pasted into a system prompt out of a
+  // document, and a reader's eye skips straight over them. A voice does
+  // not: the assistant says "established in 1992, cite two" out loud,
+  // which is gibberish to the person holding the phone.
+  return parts.join('\n\n').replace(/\s*\[cite:[^\]]*\]/gi, '')
 }
 
 function formatKnowledgeForSpeech(knowledge: {
