@@ -526,7 +526,7 @@ describe("validateFlowForActivation — nodes", () => {
     ).toBe(true);
   });
 
-  it("doesn't crash on unknown node_type — flags it", () => {
+  it("doesn't crash on unknown node_type — warns without blocking", () => {
     const nodes = [
       { node_key: "s", node_type: "wibble", config: {} },
     ];
@@ -534,8 +534,15 @@ describe("validateFlowForActivation — nodes", () => {
       { ...validFlow, entry_node_id: "s" },
       nodes,
     );
+    // A warning, deliberately, not an error: a node type the builder
+    // gains later must not make every existing flow unsavable.
     expect(
-      issues.some((i) => i.message.includes("Unknown node type")),
+      issues.some(
+        (i) =>
+          i.node_key === "s" &&
+          i.severity === "warning" &&
+          i.message.includes("Unrecognised node type"),
+      ),
     ).toBe(true);
   });
 });

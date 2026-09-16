@@ -23,7 +23,7 @@ export interface StatusDisplay {
 export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
   draft: {
     label: "Draft",
-    classes: "bg-gray-100 text-gray-500 border-gray-300",
+    classes: "bg-gray-500/10 text-gray-500 border-gray-500/20",
   },
   scheduled: {
     label: "Scheduled",
@@ -49,14 +49,14 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
   },
   cancelled: {
     label: "Cancelled",
-    classes: "bg-gray-100 text-gray-500 border-gray-300",
+    classes: "bg-gray-500/10 text-gray-500 border-gray-500/20",
   },
 };
 
 export const recipientStatusConfig: Record<RecipientStatus, StatusDisplay> = {
   pending: {
     label: "Pending",
-    classes: "bg-gray-100 text-gray-500 border-gray-300",
+    classes: "bg-gray-500/10 text-gray-500 border-gray-500/20",
   },
   sent: {
     label: "Sent",

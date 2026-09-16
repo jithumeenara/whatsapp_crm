@@ -109,15 +109,21 @@ describe("validateStepsForActivation", () => {
     ]);
   });
 
-  it("flags create_deal when required fields are missing", () => {
+  it("flags a step type the engine has no case for", () => {
+    // This used to assert per-field errors for a `create_deal` step. No
+    // such step type exists anywhere in the app — not in the engine, the
+    // validator, the builder or the types — so the test was describing a
+    // feature that was never built, and failing because the validator
+    // correctly treated it as unknown. What the validator actually
+    // guarantees, and what is worth holding it to, is that an
+    // unrecognised step type blocks activation instead of failing later
+    // at runtime with a cryptic log line.
     const issues = validateStepsForActivation([
       { step_type: "create_deal", step_config: {} },
     ]);
-    expect(issues.map((i) => i.path).sort()).toEqual([
-      "steps[0].pipeline_id",
-      "steps[0].stage_id",
-      "steps[0].title",
-    ]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].path).toBe("steps[0]");
+    expect(issues[0].message).toContain("unknown step type");
   });
 
   it("flags update_contact_field when field or value is missing", () => {
