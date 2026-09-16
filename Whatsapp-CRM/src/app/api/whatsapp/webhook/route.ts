@@ -7,6 +7,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { autoReplyToMessage } from '@/lib/ai/auto-reply'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
+import { isCsatReply, recordFeedback } from '@/lib/ai/csat'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -924,6 +925,26 @@ async function processMessage(
     }
 
     const text = overrideText ?? contentText ?? message.text?.body ?? ''
+
+    // A tapped survey button is claimed here, before anything else looks
+    // at it. To the chatbot it would be a reply matching none of the
+    // current node's options, and it would answer a rating by re-sending
+    // a menu — which is both useless and the exact behaviour that teaches
+    // people to ignore surveys.
+    if (interactiveReplyId && isCsatReply(interactiveReplyId)) {
+      const recorded = await recordFeedback({
+        accountId,
+        conversationId: conversation.id,
+        replyId: interactiveReplyId,
+      }).catch(() => false)
+      if (recorded) {
+        console.log(`[csat] rating recorded on conversation ${conversation.id}`)
+        return
+      }
+      // Falls through when it could not be stored, so the message still
+      // reaches the inbox rather than vanishing.
+    }
+
     const flowResult = await dispatchInboundToFlows({
       accountId,
       userId: configOwnerUserId,

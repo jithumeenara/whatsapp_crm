@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import {
+  Gauge,
   BarChart2,
   Bot,
   CalendarCheck,
@@ -102,6 +103,7 @@ const NAV_ITEMS: (NavItem | null)[] = [
   null,
   { href: "/automations", label: "Automations", icon: Zap,             agentAllowed: false },
   { href: "/chatbot",    label: "Chatbot",      icon: Bot,             agentAllowed: false },
+  { href: "/ai-quality", label: "AI Quality", icon: Gauge, agentAllowed: true },
   { href: "/flows",      label: "Flows",        icon: Workflow,        agentAllowed: false },
   null,
   { href: "/data",       label: "Data Store",   icon: LayoutGrid,      agentAllowed: false },

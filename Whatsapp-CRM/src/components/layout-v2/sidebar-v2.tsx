@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import {
+  Gauge,
   BarChart2,
   Bot,
   ChevronLeft,
@@ -79,6 +80,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/automations", label: "Automations", icon: Zap,      agentAllowed: false },
       { href: "/chatbot",     label: "Chatbot",     icon: Bot,      agentAllowed: false },
+      { href: "/ai-quality", label: "AI Quality", icon: Gauge, agentAllowed: true },
       { href: "/flows",       label: "Flows",       icon: Workflow, agentAllowed: false },
     ],
   },

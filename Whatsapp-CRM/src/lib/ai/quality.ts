@@ -18,7 +18,7 @@
  *  - Containment is measured as "no human replied", which is the
  *    industry's own definition and an operational fact, not a quality
  *    one. A bot that answered badly and was never escalated counts as
- *    contained. That is what CSAT is for, and CSAT is the next piece.
+ *    contained. That is what the CSAT figures below it are for.
  *  - A conversation is counted in the window it received a customer
  *    message in. One spanning midnight is counted once, on the first day.
  */
@@ -51,6 +51,13 @@ export interface QualitySummary {
   /** Chatbot runs that finished normally. */
   flows_completed: number
   flows_started: number
+  /** How many customers were asked how it went. */
+  csat_asked: number
+  /** How many of them answered. */
+  csat_answered: number
+  /** Mean of the answers, on a 1-5 scale. Null until somebody answers —
+   *  a zero here would read as "everybody hated it". */
+  csat_average: number | null
 }
 
 export interface UnansweredQuestion {
@@ -67,7 +74,7 @@ export interface UnansweredQuestion {
  * unpicking a hundred-line query.
  */
 export async function loadQualitySummary(w: QualityWindow): Promise<QualitySummary> {
-  const [conversationRows, aiReplies, runRows] = await Promise.all([
+  const [conversationRows, aiReplies, runRows, feedback] = await Promise.all([
     // One row per conversation that heard from a customer in the window,
     // carrying whether a human ever answered in it.
     prisma.$queryRaw<Array<{ conversation_id: string; had_agent: boolean }>>`
@@ -98,7 +105,23 @@ export async function loadQualitySummary(w: QualityWindow): Promise<QualitySumma
         AND started_at <  ${w.to}
       GROUP BY status, end_reason
     `,
+
+    prisma.conversationFeedback.aggregate({
+      where: { account_id: w.accountId, asked_at: { gte: w.from, lt: w.to } },
+      _count: { _all: true },
+      _avg: { rating: true },
+    }),
   ])
+
+  // _avg ignores nulls, so the count of answers has to be asked for
+  // separately rather than inferred from the aggregate above.
+  const answered = await prisma.conversationFeedback.count({
+    where: {
+      account_id: w.accountId,
+      asked_at: { gte: w.from, lt: w.to },
+      rating: { not: null },
+    },
+  })
 
   const conversations = conversationRows.length
   const escalated = conversationRows.filter((r) => r.had_agent).length
@@ -126,6 +149,9 @@ export async function loadQualitySummary(w: QualityWindow): Promise<QualitySumma
     escapes,
     flows_completed: flowsCompleted,
     flows_started: flowsStarted,
+    csat_asked: feedback._count._all,
+    csat_answered: answered,
+    csat_average: feedback._avg.rating ?? null,
   }
 }
 

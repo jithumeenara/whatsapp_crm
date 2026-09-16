@@ -1,6 +1,7 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { NextRequest, NextResponse } from "next/server"
 import { sendPushToUser } from "@/lib/push"
+import { requestFeedback } from "@/lib/ai/csat"
 
 /**
  * GET /api/conversations/[id]
@@ -70,6 +71,29 @@ export async function PATCH(
       where: { id },
       data,
     })
+
+    // Closing a conversation is the one moment the customer has an
+    // opinion worth asking for, and the one moment asking is not an
+    // interruption.
+    //
+    // Deliberately not awaited: the agent pressed Close and should see it
+    // close. Sending a WhatsApp message takes a network round trip, and a
+    // survey is never worth making somebody wait for. requestFeedback
+    // swallows its own failures and declines on its own if this
+    // conversation was asked recently.
+    if (
+      body.status === "closed" &&
+      conversation.status !== "closed"
+    ) {
+      void requestFeedback({ accountId: ctx.accountId, conversationId: id }).catch(
+        (err: unknown) => {
+          console.warn(
+            "[csat] could not ask for feedback on close:",
+            err instanceof Error ? err.message : err,
+          )
+        },
+      )
+    }
 
     // Push notification when a new agent is assigned
     if (

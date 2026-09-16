@@ -200,6 +200,7 @@ model Account {
   ai_usage_events              AiUsageEvent[]
   ai_eval_cases                AiEvalCase[]
   ai_eval_runs                 AiEvalRun[]
+  conversation_feedback        ConversationFeedback[]
   company_profile              CompanyProfile?
   sms_config                   SmsConfig?
   email_config                 EmailConfig?
@@ -375,6 +376,7 @@ model Contact {
   @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
   @@map("contacts")
   calls Call[]
+  feedback ConversationFeedback[]
   /// When this contact was blocked. Null means not blocked — "when"
   /// answers "whether" as well, so there is no separate boolean to keep
   /// in step with it.
@@ -515,6 +517,7 @@ model Conversation {
   deals            Deal[]
   flow_runs        FlowRun[]
   scheduled_messages ScheduledMessage[]
+  feedback         ConversationFeedback[]
 
   // Channel that originated this conversation
   channel         String   @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
@@ -2669,4 +2672,35 @@ model CallConfig {
   transfer_fallback User?   @relation("CallTransferFallback", fields: [transfer_fallback_to], references: [id], onDelete: SetNull)
 
   @@map("call_configs")
+}
+
+/// Whether the person on the other end was actually satisfied.
+///
+/// Containment — the share of conversations that never reached a human —
+/// is what the app could measure before this, and on its own it rewards a
+/// bot for being hard to escape. This is the other half.
+///
+/// One row per ask, written when the question goes out and updated when
+/// an answer arrives. A row with no rating is a real result, not a
+/// failure: it says somebody was asked and chose not to reply, and how
+/// often that happens is worth as much as the average score.
+model ConversationFeedback {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  conversation_id String    @db.Uuid
+  contact_id      String?   @db.Uuid
+  /// 5 good, 3 all right, 1 poor — a 1-5 CSAT scale folded into the three
+  /// buttons WhatsApp allows, so the figure stays comparable with how
+  /// every other platform reports it.
+  rating          Int?
+  asked_at        DateTime  @default(now()) @db.Timestamptz(6)
+  answered_at     DateTime? @db.Timestamptz(6)
+
+  account      Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+
+  @@index([account_id, asked_at])
+  @@index([conversation_id, asked_at])
+  @@map("conversation_feedback")
 }
