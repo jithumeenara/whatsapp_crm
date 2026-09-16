@@ -51,6 +51,11 @@ const PUBLIC_PREFIXES = [
   // timing-safe VOICE_AGENT_SECRET check inside the route is what secures
   // it, same as the crons above.
   '/api/voice/',
+  // The MCP endpoint. No session, by design — every request carries an
+  // API key this app issued, verified in the route itself. Listing it
+  // here is what lets that check be the only one, rather than a second
+  // gate that a non-browser client can never pass.
+  '/api/mcp',
   '/_next/',
   '/favicon',
   '/icon',   // Next.js App Router favicon generator
