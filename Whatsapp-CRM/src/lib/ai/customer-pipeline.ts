@@ -90,7 +90,7 @@ export async function buildCustomerSystemPrompt(args: {
   // Neither depends on the other, and this sits directly between a
   // customer's message and their reply, so the two round trips overlap
   // rather than stack.
-  const [companyProfile, customerContext] = await Promise.all([
+  const [companyProfile, customerContext, toolInstruction] = await Promise.all([
     loadCompanyProfile(args.accountId).catch(() => null),
     aiConfig.customer_context_enabled && args.contactId
       ? buildCustomerContext({
@@ -98,6 +98,12 @@ export async function buildCustomerSystemPrompt(args: {
           contactId: args.contactId,
           currentChannel: args.currentChannel ?? 'whatsapp',
         }).catch(() => '')
+      : Promise.resolve(''),
+    // Third round trip, previously awaited on its own after everything
+    // else had finished. It depends on nothing above it, so stacking it
+    // was pure added latency in the one place a customer is watching.
+    args.toolsAvailable
+      ? buildCustomerToolInstruction(args.accountId)
       : Promise.resolve(''),
   ])
 
@@ -137,7 +143,7 @@ export async function buildCustomerSystemPrompt(args: {
   // this instruction only applies to a business that has actually
   // opened a form, and telling every other assistant how to take a
   // registration is how one gets offered where none exists.
-  if (args.toolsAvailable) parts.push(await buildCustomerToolInstruction(args.accountId))
+  if (toolInstruction) parts.push(toolInstruction)
 
   parts.push(WHATSAPP_REPLY_STYLE)
 

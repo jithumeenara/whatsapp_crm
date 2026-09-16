@@ -72,8 +72,30 @@ function toField(f: {
   }
 }
 
+/**
+ * How long a form definition is reused before being re-read.
+ *
+ * Matches the flow engine's policy cache. Two queries per inbound
+ * message is not much on its own, but it sits directly between a
+ * customer's message and their reply, and a form definition changes when
+ * somebody edits a table — minutes apart at most, never mid-conversation.
+ * A minute of staleness costs nothing; the round trip is paid on every
+ * single message.
+ */
+const FORM_CACHE_MS = 60_000
+const formCache = new Map<string, { at: number; forms: RegistrationForm[] }>()
+
+/** Drops an account's cached forms, so a table edit shows up at once
+ *  rather than up to a minute later. */
+export function invalidateRegistrationForms(accountId: string): void {
+  formCache.delete(accountId)
+}
+
 /** Every table this account has opened to the assistant. */
 export async function listRegistrationForms(accountId: string): Promise<RegistrationForm[]> {
+  const cached = formCache.get(accountId)
+  if (cached && Date.now() - cached.at < FORM_CACHE_MS) return cached.forms
+
   const tables = await prisma.dataTable.findMany({
     where: { account_id: accountId, ai_can_register: true },
     orderBy: { sort_order: 'asc' },
@@ -95,7 +117,7 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
     },
   })
 
-  return tables.map((t) => {
+  const forms = tables.map((t) => {
     const fillable = t.fields.filter((f) => AI_FILLABLE_FIELD_TYPES.has(f.field_type)).map(toField)
     return {
       table_id: t.id,
@@ -106,6 +128,9 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
       optional_fields: fillable.filter((f) => !f.required),
     }
   })
+
+  formCache.set(accountId, { at: Date.now(), forms })
+  return forms
 }
 
 export type ValidationResult =

@@ -53,6 +53,21 @@ export interface AdvancedFeaturesProps {
   lowConfidenceMessage: string;
   onLowConfidenceMessageChange: (v: string) => void;
   agents: Array<{ user_id: string; full_name: string }>;
+
+  /** Telling a person on WhatsApp when the assistant gives up — the note
+   *  on the thread only reaches whoever opens the thread. */
+  handoffAlertEnabled: boolean;
+  onHandoffAlertEnabledChange: (v: boolean) => void;
+  handoffAlertNumbers: string[];
+  handoffAlertNumberInput: string;
+  onHandoffAlertNumberInputChange: (v: string) => void;
+  onAddHandoffAlertNumber: () => void;
+  onRemoveHandoffAlertNumber: (n: string) => void;
+  handoffAlertTemplate: string;
+  onHandoffAlertTemplateChange: (v: string) => void;
+  /** Approved Utility templates, so the picker offers only what will
+   *  actually send. Empty is a real state and the UI says what to do. */
+  utilityTemplates: Array<{ name: string; language: string | null }>;
   semanticSearchAvailable: boolean;
 
   responseValidationEnabled: boolean;
@@ -365,9 +380,129 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                       onChange={(e) => props.onLowConfidenceMessageChange(e.target.value)}
                       className="h-9"
                     />
+                    <AiHint>
+                      Sent once. If the customer keeps writing, they are not told the same thing
+                      over and over.
+                    </AiHint>
                   </div>
                 </>
               )}
+
+              {/* Alerting a person, on the channel they actually watch. */}
+              <div className="rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-slate-800">
+                      Alert staff on WhatsApp
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                      When the assistant hands a conversation over, message these numbers with who
+                      wrote in, their number, what they asked, and why it stopped. The note on the
+                      thread only reaches whoever opens the thread.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={props.handoffAlertEnabled}
+                    onCheckedChange={props.onHandoffAlertEnabledChange}
+                  />
+                </div>
+
+                {props.handoffAlertEnabled && (
+                  <div className="mt-3.5 space-y-3 border-t border-slate-200/70 pt-3.5">
+                    <div className="space-y-1.5">
+                      <AiLabel>Numbers to alert</AiLabel>
+                      <div className="flex gap-2">
+                        <AiInput
+                          value={props.handoffAlertNumberInput}
+                          onChange={(e) => props.onHandoffAlertNumberInputChange(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              props.onAddHandoffAlertNumber();
+                            }
+                          }}
+                          placeholder="919876543210"
+                          inputMode="numeric"
+                          className="h-9"
+                        />
+                        <AiButton
+                          tone="outline"
+                          size="sm"
+                          onClick={props.onAddHandoffAlertNumber}
+                          className="h-9 shrink-0"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add
+                        </AiButton>
+                      </div>
+                      <AiHint>Country code first, no plus sign and no spaces.</AiHint>
+                      {props.handoffAlertNumbers.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {props.handoffAlertNumbers.map((n) => (
+                            <span
+                              key={n}
+                              className="inline-flex items-center gap-1 rounded-lg bg-white py-1 pl-2.5 pr-1.5 font-mono text-[12px] text-slate-700 ring-1 ring-slate-200/60"
+                            >
+                              {n}
+                              <button
+                                type="button"
+                                onClick={() => props.onRemoveHandoffAlertNumber(n)}
+                                className="text-slate-400 transition-colors hover:text-rose-500"
+                                aria-label={`Remove ${n}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <AiLabel>Send it as</AiLabel>
+                      <Select
+                        value={props.handoffAlertTemplate || '__plain__'}
+                        onValueChange={(v) =>
+                          props.onHandoffAlertTemplateChange(!v || v === '__plain__' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger className="h-9 w-full rounded-xl border-slate-200 text-[13px]">
+                          <SelectValue placeholder="Plain text" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__plain__">
+                            Plain text &mdash; only within 24 hours
+                          </SelectItem>
+                          {props.utilityTemplates.map((t) => (
+                            <SelectItem key={t.name} value={t.name}>
+                              {t.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Said plainly, because getting this wrong produces an
+                        alert that silently never arrives, which is the worst
+                        possible failure for an alert. */}
+                    {props.handoffAlertTemplate ? (
+                      <AiHint>
+                        The template needs four variables, in this order: who wrote in, their
+                        number, what they said, and why the assistant stopped.
+                      </AiHint>
+                    ) : (
+                      <AiNotice tone="warning">
+                        Plain text only reaches a staff member who messaged this business number in
+                        the last 24 hours. That is Meta&rsquo;s rule, not a setting: a number that
+                        never writes in gets nothing, with no error anywhere. Pick an approved
+                        Utility template to make alerts arrive every time.
+                        {props.utilityTemplates.length === 0 &&
+                          ' No approved Utility templates on this account yet \u2014 create one in Meta, then Sync from Meta on the Templates page.'}
+                      </AiNotice>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </AccordionContent>
         </AccordionItem>

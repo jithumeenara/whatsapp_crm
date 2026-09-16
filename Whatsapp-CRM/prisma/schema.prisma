@@ -1344,6 +1344,25 @@ model AiConfig {
   /// a one-click setting.
   safety_filter                  String  @default("balanced")
 
+  /// Tell a person, on WhatsApp, when the assistant gives up.
+  ///
+  /// A handover already leaves a note on the thread, which is perfect for
+  /// whoever opens the thread and useless to everyone who doesn't. These
+  /// numbers get the customer's name, their number, what they asked and
+  /// why the assistant stopped — so somebody knows a lead is waiting
+  /// without watching the inbox. See src/lib/ai/handoff-alert.ts.
+  handoff_alert_enabled          Boolean @default(false)
+  /// E.164 numbers, as a JSON array of strings.
+  handoff_alert_numbers          Json    @default("[]")
+  /// Name of an approved Utility template. Without one, an alert only
+  /// arrives if that staff number messaged the business in the last 24
+  /// hours — Meta blocks free-form business-initiated messages outside
+  /// that window, and no amount of code changes that.
+  handoff_alert_template         String?
+  /// Which handoff reasons are worth interrupting somebody for. Empty
+  /// means all of them. JSON array of reason keys.
+  handoff_alert_reasons          Json    @default("[]")
+
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   updated_at    DateTime @updatedAt @db.Timestamptz(6)
 

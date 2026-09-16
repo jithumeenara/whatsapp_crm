@@ -33,6 +33,7 @@ import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
 import { speak } from './speech'
 import { getProviderKeys } from './providers/registry'
+import { sendHandoffAlert } from './handoff-alert'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { engineSendText, engineSendVoiceNote } from '@/lib/flows/meta-send'
 
@@ -87,6 +88,10 @@ export async function autoReplyToMessage(args: {
   channel: string
   /** True when the text is a voice note's transcript. */
   wasVoice?: boolean
+  /** The inbound message's wamid, used to mark it read and show the
+   *  typing bubble while the model works. Optional: every other channel
+   *  has no such thing, and a missing one costs only the indicator. */
+  providerMessageId?: string
 }): Promise<AutoReplyOutcome> {
   const text = args.message?.trim()
   if (!text) return 'skipped_no_message'
@@ -174,6 +179,23 @@ export async function autoReplyToMessage(args: {
   // asking especially — can see more than the current message.
   const history = await loadHistory(args.conversationId, aiConfig.history_depth_default)
 
+  // Blue ticks and a typing bubble, before the slow part rather than
+  // after it.
+  //
+  // Retrieval, tool calls and generation take a few seconds, and until
+  // now the customer spent those seconds looking at a message that had
+  // not even been marked read — which reads as nobody being there. The
+  // reply is no faster for this; it just stops feeling abandoned, which
+  // is most of what "too slow" actually means. Fired without awaiting:
+  // the indicator must never delay the thing it is covering for.
+  if (args.providerMessageId && args.channel === 'whatsapp') {
+    void showTyping({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      providerMessageId: args.providerMessageId,
+    })
+  }
+
   const startedAt = Date.now()
   let turn: Awaited<ReturnType<typeof runCustomerTurn>>
   try {
@@ -220,7 +242,34 @@ export async function autoReplyToMessage(args: {
         : aiConfig.low_confidence_message?.trim() ||
           'Let me connect you with a team member who can help with that.'
 
-    if (customerLine) {
+    // Say it once, not once per message.
+    //
+    // A handover leaves the conversation Pending, and Pending does not
+    // stop the assistant — deliberately, because nothing moves a thread
+    // back to Open and treating Pending as "a person has this" left
+    // unowned conversations silent forever. But the consequence was that
+    // every further message handed off again and sent the *same sentence
+    // again*. A customer who replies "Ok" to "let me connect you with a
+    // team member" is told to wait for a team member. Then they say "Ok,
+    // I understand", and are told a third time.
+    //
+    // The handover still repeats — that part is right, since a reason
+    // that recurs deserves a fresh note for whoever picks the thread up.
+    // Only the line to the customer is suppressed, and only while the
+    // identical one is still the last thing the assistant said to them.
+    const alreadySaid = customerLine
+      ? await prisma.message.findFirst({
+          where: {
+            conversation_id: args.conversationId,
+            sender_type: { not: 'contact' },
+            content_text: customerLine,
+            created_at: { gte: new Date(Date.now() - EXCHANGE_WINDOW_MS) },
+          },
+          select: { id: true },
+        })
+      : null
+
+    if (customerLine && !alreadySaid) {
       await engineSendText({
         accountId: args.accountId,
         userId: args.userId,
@@ -255,6 +304,27 @@ export async function autoReplyToMessage(args: {
       }),
       assignTo: aiConfig.low_confidence_assign_to,
     })
+
+    // And tell a person on the channel they actually watch.
+    //
+    // Deliberately after the handover and deliberately not awaited into
+    // the outcome: the conversation is already flagged and the note is
+    // already written, which is the part that must not fail. An alert
+    // that cannot be delivered is logged with the number it failed for
+    // rather than swallowed, but it never costs the handover itself.
+    void sendHandoffAlert({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      reason,
+      customerMessage: text,
+      contact: await prisma.contact
+        .findUnique({
+          where: { id: args.contactId },
+          select: { name: true, phone: true },
+        })
+        .catch(() => null),
+    })
+
     return 'handed_off'
   }
 
@@ -375,5 +445,35 @@ async function handOver(args: {
     })
   } catch (err) {
     console.error('[auto-reply] handoff failed:', err instanceof Error ? err.message : err)
+  }
+}
+
+/**
+ * Marks the inbound message read and shows "typing…".
+ *
+ * Entirely best effort. Every failure path here — no number resolvable,
+ * a token Meta has rotated, a wamid too old to mark read — costs a
+ * cosmetic indicator and nothing else, so none of them are allowed to
+ * reach the caller or appear as an error the user has to think about.
+ */
+async function showTyping(args: {
+  accountId: string
+  conversationId: string
+  providerMessageId: string
+}): Promise<void> {
+  try {
+    const { resolveWhatsAppConfig } = await import('@/lib/whatsapp/resolve-config')
+    const { sendTypingIndicator } = await import('@/lib/whatsapp/meta-api')
+    const config = await resolveWhatsAppConfig({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+    })
+    await sendTypingIndicator({
+      phoneNumberId: config.phone_number_id,
+      accessToken: decrypt(config.access_token),
+      messageId: args.providerMessageId,
+    })
+  } catch (err) {
+    console.warn('[auto-reply] typing indicator skipped:', err instanceof Error ? err.message : err)
   }
 }

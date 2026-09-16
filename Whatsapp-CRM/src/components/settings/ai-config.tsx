@@ -113,6 +113,15 @@ export function AiConfig() {
   const [escalationTopics, setEscalationTopics] = useState<string[]>([]);
   const [topicInput, setTopicInput] = useState('');
 
+  // Alerting a person on WhatsApp when the assistant hands over.
+  const [handoffAlertEnabled, setHandoffAlertEnabled] = useState(false);
+  const [handoffAlertNumbers, setHandoffAlertNumbers] = useState<string[]>([]);
+  const [handoffAlertNumberInput, setHandoffAlertNumberInput] = useState('');
+  const [handoffAlertTemplate, setHandoffAlertTemplate] = useState('');
+  const [utilityTemplates, setUtilityTemplates] = useState<
+    Array<{ name: string; language: string | null }>
+  >([]);
+
   // Accuracy checks and voice replies. Both default on: a reply carrying
   // an invented price is worse than a slow one, and someone who sends a
   // voice note is telling you something about how they want answering.
@@ -192,6 +201,31 @@ export function AiConfig() {
         setLowConfidenceHandoffEnabled(!!data.low_confidence_handoff_enabled);
         setLowConfidenceAssignTo(data.low_confidence_assign_to ?? '');
         setLowConfidenceMessage(data.low_confidence_message ?? '');
+        setHandoffAlertEnabled(!!data.handoff_alert_enabled);
+        setHandoffAlertNumbers(
+          Array.isArray(data.handoff_alert_numbers)
+            ? (data.handoff_alert_numbers as string[]).filter((n) => typeof n === 'string')
+            : [],
+        );
+        setHandoffAlertTemplate(data.handoff_alert_template ?? '');
+
+        // The templates the alert could actually be sent with.
+        //
+        // Utility only, and approved only: a Marketing template will not
+        // deliver an operational alert, and an unapproved one is refused
+        // by Meta at send time. Offering anything else would mean the
+        // picker lists options that silently never arrive. Failing this
+        // fetch leaves the list empty, which the panel already explains.
+        fetch('/api/whatsapp/templates')
+          .then((r) => (r.ok ? r.json() : { templates: [] }))
+          .then((t: { templates?: Array<{ name: string; category?: string; status?: string; language?: string | null }> }) =>
+            setUtilityTemplates(
+              (t.templates ?? [])
+                .filter((x) => x.status === 'APPROVED' && x.category === 'Utility')
+                .map((x) => ({ name: x.name, language: x.language ?? null })),
+            ),
+          )
+          .catch(() => setUtilityTemplates([]));
         setSemanticSearchAvailable(!!data.semantic_search_available);
         setResponseValidationEnabled(data.response_validation_enabled ?? true);
         setCompositeConfidenceEnabled(data.composite_confidence_enabled ?? true);
@@ -332,6 +366,9 @@ export function AiConfig() {
           system_prompt: systemPrompt || null,
           fallback_answer: fallbackAnswer || null,
           escalation_topics: escalationTopics,
+          handoff_alert_enabled: handoffAlertEnabled,
+          handoff_alert_numbers: handoffAlertNumbers,
+          handoff_alert_template: handoffAlertTemplate || null,
           confidence_threshold: confidenceThreshold,
           low_confidence_handoff_enabled: lowConfidenceHandoffEnabled,
           low_confidence_assign_to: lowConfidenceAssignTo || null,
@@ -382,6 +419,17 @@ export function AiConfig() {
     setTopicInput('');
   }
   const removeTopic = (t: string) => setEscalationTopics((prev) => prev.filter((x) => x !== t));
+
+  function addHandoffAlertNumber() {
+    // Digits only. A number pasted as "+91 98765 43210" is the same
+    // number, and rejecting it over punctuation would be pedantry.
+    const n = handoffAlertNumberInput.replace(/[^\d]/g, '');
+    if (n.length < 8 || handoffAlertNumbers.includes(n)) return;
+    setHandoffAlertNumbers((prev) => [...prev, n]);
+    setHandoffAlertNumberInput('');
+  }
+  const removeHandoffAlertNumber = (n: string) =>
+    setHandoffAlertNumbers((prev) => prev.filter((x) => x !== n));
 
   if (loading) {
     return (
@@ -544,6 +592,16 @@ export function AiConfig() {
               lowConfidenceMessage={lowConfidenceMessage}
               onLowConfidenceMessageChange={setLowConfidenceMessage}
               agents={agents}
+              handoffAlertEnabled={handoffAlertEnabled}
+              onHandoffAlertEnabledChange={setHandoffAlertEnabled}
+              handoffAlertNumbers={handoffAlertNumbers}
+              handoffAlertNumberInput={handoffAlertNumberInput}
+              onHandoffAlertNumberInputChange={setHandoffAlertNumberInput}
+              onAddHandoffAlertNumber={addHandoffAlertNumber}
+              onRemoveHandoffAlertNumber={removeHandoffAlertNumber}
+              handoffAlertTemplate={handoffAlertTemplate}
+              onHandoffAlertTemplateChange={setHandoffAlertTemplate}
+              utilityTemplates={utilityTemplates}
               semanticSearchAvailable={semanticSearchAvailable}
               responseValidationEnabled={responseValidationEnabled}
               onResponseValidationEnabledChange={setResponseValidationEnabled}

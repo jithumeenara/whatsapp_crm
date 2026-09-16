@@ -71,6 +71,9 @@ export async function GET() {
     low_confidence_handoff_enabled: config.low_confidence_handoff_enabled,
     low_confidence_assign_to: config.low_confidence_assign_to,
     low_confidence_message: config.low_confidence_message,
+    handoff_alert_enabled: config.handoff_alert_enabled,
+    handoff_alert_numbers: config.handoff_alert_numbers,
+    handoff_alert_template: config.handoff_alert_template,
     reply_language: config.reply_language,
     safety_filter: config.safety_filter,
     knowledge_base_enabled: config.knowledge_base_enabled,
@@ -133,6 +136,9 @@ export async function PUT(req: Request) {
     low_confidence_handoff_enabled,
     low_confidence_assign_to,
     low_confidence_message,
+    handoff_alert_enabled,
+    handoff_alert_numbers,
+    handoff_alert_template,
     reply_language,
     safety_filter,
     knowledge_base_enabled,
@@ -168,6 +174,9 @@ export async function PUT(req: Request) {
     low_confidence_handoff_enabled?: boolean
     low_confidence_assign_to?: string | null
     low_confidence_message?: string | null
+    handoff_alert_enabled?: boolean
+    handoff_alert_numbers?: unknown
+    handoff_alert_template?: string | null
     reply_language?: string | null
     safety_filter?: string
     knowledge_base_enabled?: boolean
@@ -253,6 +262,27 @@ export async function PUT(req: Request) {
       low_confidence_assign_to !== undefined ? low_confidence_assign_to : (existing?.low_confidence_assign_to ?? null),
     low_confidence_message:
       low_confidence_message !== undefined ? low_confidence_message : (existing?.low_confidence_message ?? null),
+    handoff_alert_enabled:
+      handoff_alert_enabled !== undefined
+        ? handoff_alert_enabled === true
+        : (existing?.handoff_alert_enabled ?? false),
+    // Digits only, and deduplicated. These become WhatsApp recipients;
+    // anything else in the array is a send that fails at Meta with an
+    // error nobody will be looking for.
+    handoff_alert_numbers: (handoff_alert_numbers !== undefined
+      ? Array.from(
+          new Set(
+            (Array.isArray(handoff_alert_numbers) ? handoff_alert_numbers : [])
+              .filter((n): n is string => typeof n === 'string')
+              .map((n) => n.replace(/[^\d]/g, ''))
+              .filter((n) => n.length >= 8 && n.length <= 15),
+          ),
+        )
+      : (existing?.handoff_alert_numbers ?? [])) as Prisma.InputJsonValue,
+    handoff_alert_template:
+      handoff_alert_template !== undefined
+        ? (handoff_alert_template?.trim() || null)
+        : (existing?.handoff_alert_template ?? null),
     reply_language: reply_language !== undefined ? reply_language : (existing?.reply_language ?? null),
     // Only the three known values are accepted — an unrecognized string
     // would silently fall back to 'balanced' in the adapter anyway, so

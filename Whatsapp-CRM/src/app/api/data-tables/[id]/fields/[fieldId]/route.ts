@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { invalidateRegistrationForms } from '@/lib/ai/registration'
 
 async function requireField(tableId: string, fieldId: string) {
   const session = await auth()
@@ -39,6 +40,9 @@ export async function PUT(
         ...(body.sort_order !== undefined ? { sort_order: body.sort_order } : {}),
       },
     })
+    // A field becoming Required changes what the assistant asks for,
+    // so the cached form definition has to go with it.
+    invalidateRegistrationForms(guard.field.account_id)
     return NextResponse.json({ field })
   } catch (err) {
     console.error('[PUT /api/data-tables/[id]/fields/[fieldId]]', err)
@@ -56,6 +60,9 @@ export async function DELETE(
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     await prisma.dataField.delete({ where: { id: fieldId } })
+    // A field becoming Required changes what the assistant asks for,
+    // so the cached form definition has to go with it.
+    invalidateRegistrationForms(guard.field.account_id)
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/data-tables/[id]/fields/[fieldId]]', err)

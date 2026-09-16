@@ -1634,3 +1634,47 @@ export async function downloadMedia(
   const buffer = Buffer.from(await response.arrayBuffer())
   return { buffer, contentType }
 }
+
+export interface TypingIndicatorArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** The inbound message's wamid. Meta ties the indicator to a specific
+   *  received message; there is no way to start typing out of nowhere. */
+  messageId: string
+}
+
+/**
+ * Blue ticks plus the "typing…" bubble, in one call.
+ *
+ * Why it matters more than it looks: the assistant takes a few seconds to
+ * retrieve, call tools and generate, and for those seconds the customer
+ * sees a message that has not even been marked read. That reads as
+ * nobody being there. The same wait behind a typing bubble reads as
+ * somebody writing — the reply is not faster, but it stops feeling
+ * abandoned, which is most of what "too slow" actually means.
+ *
+ * Meta clears the indicator when a message is sent or after about 25
+ * seconds, whichever comes first, so there is nothing to turn off. The
+ * indicator cannot be sent on its own either — it rides on marking a
+ * specific inbound message as read, which is why this takes a wamid.
+ */
+export async function sendTypingIndicator(
+  args: TypingIndicatorArgs,
+): Promise<void> {
+  const response = await fetch(`${META_API_BASE}/${args.phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${args.accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: args.messageId,
+      typing_indicator: { type: 'text' },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Typing indicator failed: ${response.status}`)
+  }
+}

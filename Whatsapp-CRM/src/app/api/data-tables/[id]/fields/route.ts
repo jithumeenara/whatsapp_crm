@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { invalidateRegistrationForms } from '@/lib/ai/registration'
 import { slugify } from '@/lib/data-store/slugify'
 
 async function requireTable(tableId: string) {
@@ -57,6 +58,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         sort_order: (maxOrder._max.sort_order ?? -1) + 1,
       },
     })
+    // A field becoming Required changes what the assistant asks for,
+    // so the cached form definition has to go with it.
+    invalidateRegistrationForms(guard.accountId)
     return NextResponse.json({ field }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/data-tables/[id]/fields]', err)

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { invalidateRegistrationForms } from '@/lib/ai/registration'
 
 async function requireOwner(tableId: string) {
   const session = await auth()
@@ -65,6 +66,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
           : {}),
       },
     })
+    // The assistant caches which tables it may write into for a minute.
+    // Without this, turning the switch on and immediately testing on
+    // WhatsApp looks broken for up to sixty seconds — which is exactly
+    // when somebody is watching.
+    invalidateRegistrationForms(guard.accountId)
     return NextResponse.json({ table })
   } catch (err) {
     console.error('[PUT /api/data-tables/[id]]', err)

@@ -317,5 +317,27 @@ export const CUSTOMER_TOOL_INSTRUCTION = [
 export async function buildCustomerToolInstruction(accountId: string): Promise<string> {
   const forms = await listRegistrationForms(accountId).catch(() => [])
   if (forms.length === 0) return CUSTOMER_TOOL_INSTRUCTION
-  return `${CUSTOMER_TOOL_INSTRUCTION}\n\n${REGISTRATION_INSTRUCTION}`
+
+  // Named, and said last.
+  //
+  // Escalation topics are written into the prompt above this, and they
+  // say "don't try to answer it yourself". An account that listed
+  // "registration" back when the assistant genuinely could not take one
+  // has an instruction that now actively blocks the thing it was just
+  // given the ability to do — the customer says "I want to register for
+  // this" and gets handed to a colleague who is not there. Naming the
+  // forms and placing this last is what settles the conflict: the model
+  // weights its final instruction most, and a concrete "you can do X
+  // yourself" beats an abstract "hand X over".
+  const names = forms.map((f) => f.name).join(', ')
+  return [
+    CUSTOMER_TOOL_INSTRUCTION,
+    REGISTRATION_INSTRUCTION,
+    [
+      'THIS OVERRIDES ANY EARLIER INSTRUCTION TO HAND REGISTRATIONS OVER:',
+      `- You can register this customer yourself, right now, for: ${names}.`,
+      '- If an earlier instruction told you a colleague handles registration, it was written before you could do it and no longer applies. Take the registration.',
+      '- Do not ask for a human, and do not emit a handoff action, for anything these tools can do. Hand over only if they ask for a person, or if a save keeps failing after you have tried.',
+    ].join('\n'),
+  ].join('\n\n')
 }

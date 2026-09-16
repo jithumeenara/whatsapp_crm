@@ -1036,6 +1036,10 @@ async function processMessage(
           message: replyText,
           channel: 'whatsapp',
           wasVoice,
+          // Lets the assistant mark this message read and show a typing
+          // bubble while it works, instead of leaving the customer
+          // looking at an unread message for several seconds.
+          providerMessageId: message.id,
         })
           // Logged whatever the outcome, not only on a thrown error.
           // Every "skipped_*" reason used to be discarded here, so a
