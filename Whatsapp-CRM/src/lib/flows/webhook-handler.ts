@@ -736,10 +736,48 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       })
     }
 
+    // Which components' data this response has to carry.
+    //
+    // Not just the first screen's own — also every screen it navigates
+    // straight to. Meta requires each key in a target screen's data model
+    // to appear in the navigate payload, so the upload builder declares
+    // the target's dropdown variables on *this* screen and forwards them
+    // as ${data.x}; its own comment says this works "because the INIT
+    // response already delivered them to the first screen". It did not.
+    // INIT only ever walked the first screen, so a flow whose opening
+    // screen is a welcome panel — no dropdowns on it at all — forwarded
+    // ${data.month_options} that nothing had ever set, and the second
+    // screen rendered every dropdown unbound: "missing required property
+    // data-source", on a flow whose configuration was entirely correct.
+    //
+    // One hop is the right depth, and matches what the builder declares.
+    // A screen carrying a filter trigger has its footer rewritten to
+    // data_exchange, so everything past it is served by the load branch
+    // below rather than chained through a payload.
+    const navigatedTo: typeof screens = []
+    for (const comp of flatComps(firstScreen.components ?? [])) {
+      const action = comp['on-click-action'] as { name?: string; next?: { name?: string } } | undefined
+      if (action?.name !== 'navigate') continue
+      const target = screens.find((s) => s.id === action.next?.name)
+      if (target && target !== firstScreen && !navigatedTo.includes(target)) navigatedTo.push(target)
+    }
+
+    const ownSources = flatComps(firstScreen.components ?? []).flatMap((c) =>
+      flattenComponentSources(c),
+    )
+    // Dropdowns only from the screen ahead. A label's variable is declared
+    // on the screen that shows it and nowhere else — the builder forwards
+    // those as a literal '' rather than a ${data.x} reference — so putting
+    // one in this response would be a key the first screen's data model
+    // never declared, which Meta rejects outright.
+    const forwardedSources = navigatedTo
+      .flatMap((s) => flatComps(s.components ?? []))
+      .flatMap((c) => flattenComponentSources(c))
+      .filter((s) => !s.isLabel && !s.multi)
+
     const initData: Record<string, unknown> = {}
     await Promise.all(
-      flatComps(firstScreen.components ?? [])
-        .flatMap((c) => flattenComponentSources(c))
+      [...ownSources, ...forwardedSources]
         .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
           // Nobody has answered anything yet. A field that depends on an
           // earlier answer therefore shows empty rather than an arbitrary
