@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
 import { runCustomerTurn, type CustomerAiConfig } from '@/lib/ai/customer-pipeline'
 import { recordAiUsage } from '@/lib/ai/usage'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
 
 /**
@@ -35,11 +36,21 @@ const HISTORY_DEPTH = 10
 
 export async function POST(req: Request) {
   let accountId: string
+  let userId: string
   try {
-    accountId = (await getCurrentAccount()).accountId
+    const ctx = await getCurrentAccount()
+    accountId = ctx.accountId
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  // Per agent. Every press is a model call the account pays for, and the
+  // button sits next to Send — easy to lean on while thinking, and easy
+  // to hold down out of frustration when a draft comes back wrong. The
+  // ceiling is high enough that nobody working normally will meet it.
+  const limit = checkRateLimit(`ai-suggest:${userId}`, RATE_LIMITS.send)
+  if (!limit.success) return rateLimitResponse(limit)
 
   const body = (await req.json().catch(() => null)) as {
     conversation_id?: string
