@@ -2493,6 +2493,8 @@ The assistant could not generate a reply: ${detail}`,
         header_text?: string;
         footer_text?: string;
         next_node_key?: string;
+        /** Meta calls this "Request data on first screen". */
+        request_data?: boolean;
       };
       if (cfg.flow_id && run.conversation_id) {
         try {
@@ -2508,6 +2510,7 @@ The assistant could not generate a reply: ${detail}`,
             headerText: cfg.header_text,
             footerText: cfg.footer_text,
             flowToken,
+            requestData: cfg.request_data,
           });
           await prisma.flowRun.update({
             where: { id: run.id },

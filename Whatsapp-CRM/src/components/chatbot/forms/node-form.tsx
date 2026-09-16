@@ -2506,6 +2506,26 @@ function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           </button>
         </div>
       </Field>
+      <Field
+        label="Request data on first screen"
+        hint="Turn this on when the form's dropdowns or details are filled from a table. Off, WhatsApp opens the form from the message alone and never asks this server for anything — so those fields arrive empty on a real phone, while looking perfectly fine in Meta's preview."
+      >
+        <label className="flex cursor-pointer items-start gap-2 rounded-md border border-slate-200 px-2.5 py-2 hover:bg-slate-50 transition-colors">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-3.5 w-3.5 accent-teal-600"
+            checked={cfg.request_data === true}
+            onChange={(e) => onChange({ ...cfg, request_data: e.target.checked })}
+          />
+          <span className="text-[11px] leading-relaxed text-slate-700">
+            Ask the endpoint for the first screen&apos;s data
+            <span className="block text-[10px] text-slate-500">
+              The same choice Meta offers under &ldquo;Request data on first
+              screen&rdquo; when you send a flow by hand.
+            </span>
+          </span>
+        </label>
+      </Field>
       <Field label="Button text *" hint="Text on the button the user taps to open the flow.">
         <Input
           className="h-8 text-xs"

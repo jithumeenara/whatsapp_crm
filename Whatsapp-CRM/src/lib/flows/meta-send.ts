@@ -717,6 +717,15 @@ interface SendFlowEngineArgs {
   headerText?: string
   footerText?: string
   flowToken?: string
+  /**
+   * Meta's own "Request data on first screen", set on the Send Flow node.
+   *
+   * Left undefined we guess, by looking for table-backed fields in the
+   * stored screens. The guess is a convenience for Flows built here; a
+   * Flow authored in Meta's Flow Builder carries no marker we can read,
+   * so the setting is what actually decides it.
+   */
+  requestData?: boolean
 }
 
 /**
@@ -755,10 +764,21 @@ export async function engineSendFlow(
 ): Promise<{ whatsapp_message_id: string }> {
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
-  const flowAction = (await flowNeedsEndpoint(args.accountId, args.flowId))
-    ? ('data_exchange' as const)
-    : ('navigate' as const)
-  console.log('[engineSendFlow] flow:', args.flowId, '| action:', flowAction)
+  // An explicit answer beats a guess. A Flow authored in Meta's own Flow
+  // Builder carries none of the markers flowNeedsEndpoint looks for, so
+  // inference alone would keep sending it the wrong way forever — which
+  // is exactly what happened: the same Flow worked when sent by hand from
+  // Meta with "Request data" ticked, and arrived empty from here.
+  const needsEndpoint =
+    typeof args.requestData === 'boolean'
+      ? args.requestData
+      : await flowNeedsEndpoint(args.accountId, args.flowId)
+  const flowAction = needsEndpoint ? ('data_exchange' as const) : ('navigate' as const)
+  console.log(
+    '[engineSendFlow] flow:', args.flowId,
+    '| action:', flowAction,
+    '| from:', typeof args.requestData === 'boolean' ? 'node setting' : 'auto-detect',
+  )
 
   const { waMessageId } = await retryWithVariants(sanitized, contact.id, (phone) =>
     sendFlowMessage({
