@@ -74,6 +74,17 @@ export async function POST(req: Request) {
   // unrecognized lands on 'customer'.
   const audience = ['customer', 'internal', 'both'].includes(requested ?? '') ? requested! : 'customer'
 
+  // Same dates the JSON path takes. An uploaded fee list has a closing
+  // date as often as a typed one does.
+  const parseDate = (value: FormDataEntryValue | null): Date | null => {
+    const raw = typeof value === 'string' ? value.trim() : ''
+    if (!raw) return null
+    const parsed = new Date(raw)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+  const effectiveFrom = parseDate(form?.get('effective_from') ?? null)
+  const effectiveUntil = parseDate(form?.get('effective_until') ?? null)
+
   const item = await prisma.aiKnowledgeItem.create({
     data: {
       ai_config_id: config.id,
@@ -84,6 +95,8 @@ export async function POST(req: Request) {
       content: text,
       description: (form?.get('description') as string | null)?.trim()?.slice(0, 2000) || null,
       audience,
+      effective_from: effectiveFrom,
+      effective_until: effectiveUntil,
       status: 'pending',
     },
   })

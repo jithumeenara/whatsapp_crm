@@ -37,6 +37,8 @@ export interface KnowledgeItem {
   status: string;
   last_error: string | null;
   last_synced_at: string | null;
+  effective_from: string | null;
+  effective_until: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +91,53 @@ const AUDIENCES = [
   { value: 'internal', label: 'Staff only', hint: 'Never sent to a customer. Admin Test can still find it.' },
   { value: 'both', label: 'Both', hint: 'Used in customer replies and internal answers.' },
 ] as const;
+
+/**
+ * Says out loud when an entry is being skipped for a date.
+ *
+ * Its status still reads "trained", because it is — it is embedded and
+ * correct, it simply isn't true yet or isn't true any more. Without this
+ * the table shows a healthy row while the assistant refuses to mention
+ * it, and the obvious conclusion is that the assistant is broken.
+ */
+function ValidityPill({
+  from,
+  until,
+  now,
+}: {
+  from: string | null;
+  until: string | null;
+  /** Taken once when the list loaded. Reading the clock during render
+   *  makes the same row disagree with itself between paints. */
+  now: number;
+}) {
+  if (!from && !until) return null;
+  const startsAt = from ? new Date(from).getTime() : null;
+  const endsAt = until ? new Date(until).getTime() : null;
+
+  if (endsAt !== null && endsAt < now) {
+    return (
+      <span className="rounded-lg bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+        Lapsed {formatDate(until)}
+      </span>
+    );
+  }
+  if (startsAt !== null && startsAt > now) {
+    return (
+      <span className="rounded-lg bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+        From {formatDate(from)}
+      </span>
+    );
+  }
+  if (endsAt !== null) {
+    return (
+      <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+        Until {formatDate(until)}
+      </span>
+    );
+  }
+  return null;
+}
 
 function AudiencePill({ audience }: { audience: string }) {
   if (audience === 'internal') {
@@ -178,6 +227,9 @@ function formatDate(value: string | null): string {
 
 export function TrainingTab(props: TrainingTabProps) {
   const [items, setItems] = useState<KnowledgeItem[]>([]);
+  // Stamped when a page of results arrives, so "lapsed" is decided once
+  // per load rather than freshly on every re-render.
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState('');
@@ -207,6 +259,7 @@ export function TrainingTab(props: TrainingTabProps) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Could not load the knowledge base.');
       setItems(data.items ?? []);
+      setLoadedAt(Date.now());
       setTotal(data.total ?? 0);
       setStatusCounts(data.status_counts ?? {});
     } catch (err) {
@@ -444,7 +497,12 @@ export function TrainingTab(props: TrainingTabProps) {
                     </td>
                     <td className="px-6 py-3"><AudiencePill audience={item.audience} /></td>
                     <td className="px-6 py-3 text-[12.5px] text-slate-500">{formatDate(item.last_synced_at ?? item.updated_at)}</td>
-                    <td className="px-6 py-3"><StatusPill status={item.status} error={item.last_error} /></td>
+                    <td className="px-6 py-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <StatusPill status={item.status} error={item.last_error} />
+                        <ValidityPill from={item.effective_from} until={item.effective_until} now={loadedAt} />
+                      </div>
+                    </td>
                     <td className="px-6 py-3 text-right">
                       <AiMenu>
                         <AiMenuTrigger
@@ -617,6 +675,8 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
   const [tableId, setTableId] = useState('');
   const [description, setDescription] = useState('');
   const [audience, setAudience] = useState('customer');
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [effectiveUntil, setEffectiveUntil] = useState('');
   const [tables, setTables] = useState<Array<{ id: string; name: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -642,6 +702,8 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
         if (name.trim()) form.append('name', name.trim());
         if (description.trim()) form.append('description', description.trim());
         form.append('audience', audience);
+        if (effectiveFrom) form.append('effective_from', effectiveFrom);
+        if (effectiveUntil) form.append('effective_until', effectiveUntil);
         const res = await fetch('/api/ai-knowledge/upload', { method: 'POST', body: form });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? 'Upload failed.');
@@ -659,6 +721,8 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
             source_ref: tableId || undefined,
             description: description.trim() || undefined,
             audience,
+            effective_from: effectiveFrom || null,
+            effective_until: effectiveUntil || null,
           }),
         });
         const data = await res.json();
@@ -837,6 +901,35 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <AiLabel>When is this true? <span className="font-normal text-slate-400">(optional)</span></AiLabel>
+            <div className="grid gap-2 xs:grid-cols-2">
+              <div className="space-y-1">
+                <span className="block text-[10.5px] font-medium text-slate-500">Start using it</span>
+                <AiInput
+                  type="date"
+                  value={effectiveFrom}
+                  onChange={(e) => setEffectiveFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <span className="block text-[10.5px] font-medium text-slate-500">Stop using it</span>
+                <AiInput
+                  type="date"
+                  value={effectiveUntil}
+                  onChange={(e) => setEffectiveUntil(e.target.value)}
+                />
+              </div>
+            </div>
+            <AiHint>
+              Outside these dates the assistant never sees this entry at all — it is
+              filtered out before anything is sent to the model, so it cannot be quoted
+              by accident. Use it for anything with a closing date: a programme that
+              stops taking registrations, an offer that ends, a fee list for one term.
+              Leave either side blank for no limit.
+            </AiHint>
           </div>
 
           {error && (

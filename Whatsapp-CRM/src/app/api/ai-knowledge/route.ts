@@ -111,6 +111,24 @@ interface CreateBody {
   audience?: string
   /** What the entry is for, prepended to its text in the prompt. */
   description?: string
+  /**
+   * When this entry starts and stops being true. Either may be null.
+   *
+   * Retrieval already honours these — knowledge-store filters on them
+   * before anything is embedded into a prompt, so a lapsed entry is not
+   * merely discouraged, it never reaches the model. They were only ever
+   * settable by editing an entry afterwards, which meant the one moment
+   * somebody knows a closing date — while typing the entry — was the one
+   * moment they could not record it.
+   */
+  effective_from?: string | null
+  effective_until?: string | null
+}
+
+function parseDateOrNull(value: string | null | undefined): Date | null {
+  if (!value) return null
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
 export async function POST(req: Request) {
@@ -153,6 +171,8 @@ export async function POST(req: Request) {
       ? (body!.audience as string)
       : 'customer'
     const resolvedDescription = body?.description?.trim()?.slice(0, 2000) || null
+    const effectiveFrom = parseDateOrNull(body?.effective_from)
+    const effectiveUntil = parseDateOrNull(body?.effective_until)
 
     if (kind === 'qa') {
       const question = body?.question?.trim()
@@ -171,6 +191,8 @@ export async function POST(req: Request) {
           answer,
           audience: resolvedAudience,
           description: resolvedDescription,
+          effective_from: effectiveFrom,
+          effective_until: effectiveUntil,
           status: 'pending',
         },
       })
@@ -216,6 +238,8 @@ export async function POST(req: Request) {
         last_synced_at: lastSyncedAt,
         audience: resolvedAudience,
         description: resolvedDescription,
+        effective_from: effectiveFrom,
+        effective_until: effectiveUntil,
         status: 'pending',
       },
     })
