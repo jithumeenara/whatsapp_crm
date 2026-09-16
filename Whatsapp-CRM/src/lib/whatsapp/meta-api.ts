@@ -495,6 +495,19 @@ export interface SendFlowMessageArgs {
   footerText?: string
   /** Unique token per send — stored so you can correlate flow submissions back to this message. Auto-generated if omitted. */
   flowToken?: string
+  /**
+   * What WhatsApp does the moment the Flow opens.
+   *
+   * `navigate` shows the first screen straight from the message and never
+   * contacts the endpoint — correct for a Flow that is only collecting
+   * answers. `data_exchange` sends the endpoint an INIT request and
+   * renders whatever screen and data come back, which is the only way a
+   * dropdown filled from a table can have anything in it.
+   *
+   * Defaults to `navigate`, which is what every Flow used to send
+   * unconditionally — and why the ones backed by a table opened blank.
+   */
+  flowAction?: 'navigate' | 'data_exchange'
 }
 
 /**
@@ -515,6 +528,7 @@ export async function sendFlowMessage(
     headerText,
     footerText,
     flowToken,
+    flowAction = 'navigate',
   } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
@@ -528,7 +542,12 @@ export async function sendFlowMessage(
         flow_token: flowToken ?? crypto.randomUUID(),
         flow_id: flowId,
         flow_cta: flowCta,
-        flow_action: 'navigate',
+        // Meta rejects a data_exchange send that also carries a
+        // flow_action_payload, and requires one when the action is
+        // navigate. We send none either way: a navigate Flow opens on its
+        // own first screen, and a data_exchange Flow is told which screen
+        // to open by the endpoint's INIT reply.
+        flow_action: flowAction,
       },
     },
   }

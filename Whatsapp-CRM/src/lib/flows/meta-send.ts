@@ -719,11 +719,46 @@ interface SendFlowEngineArgs {
   flowToken?: string
 }
 
+/**
+ * Does this Flow have fields that come out of a table?
+ *
+ * Such a Flow has to ask our endpoint for them, and WhatsApp only asks
+ * when the message opens with `data_exchange`. Sent with `navigate` — as
+ * every Flow used to be — the dropdown renders with nothing in it, which
+ * is exactly what customers saw while Meta's own Flow Builder preview
+ * looked perfect, because that preview supplies its own mock data.
+ *
+ * The check is a substring scan of the stored screens. `_source_table_id`
+ * is a private key this app writes into the Flow JSON and nothing else
+ * uses it, so a plain search is both sufficient and cheaper than walking
+ * a tree of unknown depth.
+ */
+async function flowNeedsEndpoint(accountId: string, metaFlowId: string): Promise<boolean> {
+  const row = await prisma.flow
+    .findFirst({
+      where: {
+        account_id: accountId,
+        flow_type: 'whatsapp_flow',
+        trigger_config: { path: ['meta_flow_id'], equals: metaFlowId },
+      },
+      select: { trigger_config: true },
+    })
+    .catch(() => null)
+  if (!row) return false
+  const cfg = row.trigger_config as Record<string, unknown> | null
+  if (!cfg?.screens) return false
+  return JSON.stringify(cfg.screens).includes('_source_table_id')
+}
+
 export async function engineSendFlow(
   args: SendFlowEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
+  const flowAction = (await flowNeedsEndpoint(args.accountId, args.flowId))
+    ? ('data_exchange' as const)
+    : ('navigate' as const)
+  console.log('[engineSendFlow] flow:', args.flowId, '| action:', flowAction)
 
   const { waMessageId } = await retryWithVariants(sanitized, contact.id, (phone) =>
     sendFlowMessage({
@@ -736,6 +771,7 @@ export async function engineSendFlow(
       headerText: args.headerText,
       footerText: args.footerText,
       flowToken: args.flowToken,
+      flowAction,
     }).then((r) => r.messageId)
   )
 

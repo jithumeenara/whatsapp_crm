@@ -684,6 +684,65 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     return out
   }
 
+  // INIT — the Flow has just been opened with flow_action "data_exchange",
+  // and WhatsApp is asking which screen to show and what to fill it with.
+  //
+  // This never used to arrive, because every Flow was sent with
+  // flow_action "navigate", which opens a screen from the payload in the
+  // message and asks the endpoint nothing at all. A Flow whose dropdown
+  // comes from a table therefore opened empty on a real phone while
+  // looking perfect in Meta's Flow Builder, where the preview supplies
+  // its own mock data. Without this branch the request fell through to
+  // the bottom of the handler and the customer got a blank screen with no
+  // error anywhere to explain it.
+  if (action === 'INIT') {
+    const firstScreen = screens[0]
+    if (!firstScreen) {
+      return sendEncrypted({
+        version: '3.0',
+        screen: 'SUCCESS',
+        data: {
+          extension_message_response: {
+            params: { flow_token: (payload.flow_token as string | undefined) ?? 'unused' },
+          },
+        },
+      })
+    }
+
+    const initData: Record<string, unknown> = {}
+    await Promise.all(
+      flatComps(firstScreen.components ?? [])
+        .flatMap((c) => flattenComponentSources(c))
+        .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
+          // Nobody has answered anything yet. A field that depends on an
+          // earlier answer therefore shows empty rather than an arbitrary
+          // row's value, which is the same rule the data_exchange path
+          // follows when a parent has not been chosen.
+          if (multi) {
+            initData[varName] = ''
+            return
+          }
+          if (filterByField && filterFormName) {
+            initData[varName] = isLabel ? '' : EMPTY_FILTERED_OPTIONS
+            return
+          }
+          initData[varName] = isLabel
+            ? await fetchLabelValue(tableId!, fieldKey!)
+            : await fetchOptions(tableId!, fieldKey!)
+        }),
+    )
+
+    console.log(
+      '[INIT] → screen:', sanitizeId(firstScreen.id),
+      '| data keys:', Object.keys(initData).join(',') || '(none)',
+    )
+    return sendEncrypted({
+      version: '3.0',
+      screen: sanitizeId(firstScreen.id),
+      data: initData,
+    })
+  }
+
   if (action === 'data_exchange') {
     const currentScreenId = payload.screen as string | undefined
     const flowToken = payload.flow_token as string | undefined
