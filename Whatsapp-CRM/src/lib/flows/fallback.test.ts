@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   decideFallback,
+  isEscapeRequest,
   resolveFallbackPolicy,
 } from "./fallback";
 import { DEFAULT_FALLBACK_POLICY, type FlowFallbackPolicy } from "./types";
@@ -63,6 +64,8 @@ const POLICY_REPROMPT_2_HANDOFF: FlowFallbackPolicy = {
   max_reprompts: 2,
   on_timeout_hours: 24,
   on_exhaust: "handoff",
+  escape_keywords: DEFAULT_FALLBACK_POLICY.escape_keywords,
+  restart_cooldown_seconds: DEFAULT_FALLBACK_POLICY.restart_cooldown_seconds,
 };
 
 describe("decideFallback", () => {
@@ -120,5 +123,39 @@ describe("decideFallback", () => {
     expect(decideFallback({ policy, reprompt_count: 1 })).toEqual({
       type: "handoff",
     });
+  });
+});
+
+describe("isEscapeRequest", () => {
+  const words = DEFAULT_FALLBACK_POLICY.escape_keywords;
+
+  it("catches the plain ask, however it is typed", () => {
+    expect(isEscapeRequest("agent", words)).toBe(true);
+    expect(isEscapeRequest("  Agent  ", words)).toBe(true);
+    expect(isEscapeRequest("talk to agent please", words)).toBe(true);
+    expect(isEscapeRequest("ആള്", words)).toBe(true);
+    expect(isEscapeRequest("എനിക്ക് ഒരു ആൾ വേണം", words)).toBe(true);
+  });
+
+  it("ignores the word inside a longer message", () => {
+    // Somebody happily filling in a form and asking a real question about
+    // agents must not be yanked out of it.
+    expect(
+      isEscapeRequest(
+        "I want to know whether your agent commission is paid monthly or yearly",
+        words,
+      ),
+    ).toBe(false);
+  });
+
+  it("does not fire on a word that merely contains one", () => {
+    expect(isEscapeRequest("agenda", words)).toBe(false);
+    expect(isEscapeRequest("management", words)).toBe(false);
+  });
+
+  it("is quiet when there is nothing to match", () => {
+    expect(isEscapeRequest("", words)).toBe(false);
+    expect(isEscapeRequest(null, words)).toBe(false);
+    expect(isEscapeRequest("agent", [])).toBe(false);
   });
 });

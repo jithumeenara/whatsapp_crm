@@ -67,7 +67,7 @@ import {
   engineSendToNumber,
   engineSendCatalog,
 } from "./meta-send";
-import { decideFallback, resolveFallbackPolicy } from "./fallback";
+import { decideFallback, isEscapeRequest, resolveFallbackPolicy } from "./fallback";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -86,6 +86,7 @@ import {
   type SetTagNodeConfig,
   type StartNodeConfig,
   type KeywordTriggerConfig,
+  type FlowFallbackPolicy,
 } from "./types";
 
 // ============================================================
@@ -405,6 +406,38 @@ async function loadAllNodes(
     console.error("[flows] loadAllNodes error:", err instanceof Error ? err.message : err);
     return new Map();
   }
+}
+
+/**
+ * A flow's fallback policy, held in memory for a minute.
+ *
+ * The escape check below runs on every inbound message of every live
+ * conversation. A database round trip there would be a standing tax on
+ * the hot path, paid on every message, for a setting somebody edits
+ * perhaps twice a year. A minute of staleness after an edit is the
+ * cheaper side of that trade — and a deploy restarts the process anyway.
+ *
+ * The map is never swept. One small object per flow, and an account has
+ * tens of flows, not thousands.
+ */
+const POLICY_CACHE_TTL_MS = 60_000;
+const policyCache = new Map<string, { policy: FlowFallbackPolicy; expires: number }>();
+
+async function getFallbackPolicy(flowId: string): Promise<FlowFallbackPolicy> {
+  const cached = policyCache.get(flowId);
+  if (cached && cached.expires > Date.now()) return cached.policy;
+
+  const row = await prisma.flow
+    .findUnique({ where: { id: flowId }, select: { fallback_policy: true } })
+    .catch(() => null);
+  const policy = resolveFallbackPolicy(row?.fallback_policy ?? null);
+  policyCache.set(flowId, { policy, expires: Date.now() + POLICY_CACHE_TTL_MS });
+  return policy;
+}
+
+/** The text a customer actually typed, or null if they tapped something. */
+function plainTextOf(message: ParsedInbound): string | null {
+  return message.kind === "text" ? (message.text ?? null) : null;
 }
 
 async function logEvent(
@@ -2655,6 +2688,40 @@ export async function dispatchInboundToFlows(
           outcome: "duplicate_inbound_ignored",
         };
       }
+      // The way out, checked before anything else.
+      //
+      // Somebody halfway through a form who types "agent" is not making a
+      // mistake, and treating it as one — re-sending the menu they were
+      // already looking at — is how a customer learns the bot cannot be
+      // escaped. This runs ahead of node matching precisely so that it
+      // works from anywhere, including a node whose buttons are the only
+      // thing it will normally accept.
+      const typed = plainTextOf(input.message);
+      if (typed) {
+        const policy = await getFallbackPolicy(activeRun.flow_id);
+        if (isEscapeRequest(typed, policy.escape_keywords)) {
+          await executeHandoff(
+            activeRun,
+            {
+              // Nobody planned this handoff, so there is nobody named to
+              // receive it. Least-busy finds whoever is free, and online
+              // is not required — an escape that finds no one because the
+              // team happens to be signed out is the same as no escape.
+              routing_strategy: "least_busy",
+              only_online: false,
+              note: `Customer asked for a person: "${typed}"`,
+            },
+            activeRun.current_node_key,
+            "customer_asked_for_a_person",
+          );
+          return {
+            consumed: true,
+            flow_run_id: activeRun.id,
+            outcome: "escaped_to_agent",
+          };
+        }
+      }
+
       // One SELECT for the whole flow's nodes — advance loop is now
       // in-memory. See loadAllNodes.
       const nodes = await loadAllNodes(activeRun.flow_id);
@@ -2671,6 +2738,43 @@ export async function dispatchInboundToFlows(
     if (!flow || !flow.entry_node_id) {
       return { consumed: false, outcome: "no_match" };
     }
+
+    // Did this very flow just end for this very contact?
+    //
+    // A flow that finishes on its first screen — a dead-end node, a
+    // button whose target was deleted — matches its own trigger again on
+    // the customer's next message and sends the same greeting. And again.
+    // Every run looks healthy in the logs; the customer sees a bot stuck
+    // on repeat.
+    //
+    // Declining here rather than starting is deliberate: `consumed:false`
+    // hands the message on to automations and the AI auto-reply, so
+    // instead of the menu for the fourth time the customer gets an actual
+    // answer.
+    if (input.contactId) {
+      const { restart_cooldown_seconds: cooldown } = await getFallbackPolicy(flow.id);
+      if (cooldown > 0) {
+        const justEnded = await prisma.flowRun.findFirst({
+          where: {
+            flow_id: flow.id,
+            contact_id: input.contactId,
+            ended_at: { gte: new Date(Date.now() - cooldown * 1000) },
+          },
+          select: { id: true, end_reason: true },
+          orderBy: { ended_at: "desc" },
+        });
+        if (justEnded) {
+          console.warn(
+            `[flows] not restarting "${flow.name}" for this contact — the previous run ` +
+              `(${justEnded.id}) ended ${justEnded.end_reason ?? "for an unrecorded reason"} ` +
+              `less than ${cooldown}s ago. A flow that ends this quickly usually has a ` +
+              `dead end or a button pointing at a node that no longer exists.`,
+          );
+          return { consumed: false, outcome: "restart_suppressed" };
+        }
+      }
+    }
+
     const nodes = await loadAllNodes(flow.id);
     return startNewRun(flow, input, nodes);
   } catch (err) {

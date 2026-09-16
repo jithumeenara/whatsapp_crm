@@ -56,7 +56,47 @@ export function resolveFallbackPolicy(
       r.on_exhaust === "handoff" || r.on_exhaust === "end"
         ? r.on_exhaust
         : DEFAULT_FALLBACK_POLICY.on_exhaust,
+    // An empty array is a real answer — it means "no escape words" —
+    // so only a missing or malformed value falls back to the defaults.
+    escape_keywords: Array.isArray(r.escape_keywords)
+      ? r.escape_keywords.filter((k): k is string => typeof k === "string" && k.trim().length > 0)
+      : DEFAULT_FALLBACK_POLICY.escape_keywords,
+    restart_cooldown_seconds:
+      typeof r.restart_cooldown_seconds === "number" && r.restart_cooldown_seconds >= 0
+        ? Math.floor(r.restart_cooldown_seconds)
+        : DEFAULT_FALLBACK_POLICY.restart_cooldown_seconds,
   };
+}
+
+/**
+ * Is the customer asking for a person?
+ *
+ * Matched on whole words, and only in a short message. "agent" inside a
+ * long sentence is far more likely to be part of a question about
+ * insurance agents or booking agents than a plea to escape the bot, and
+ * pulling somebody out of a form they were happily filling in is a worse
+ * failure than missing one escape.
+ */
+const MAX_ESCAPE_MESSAGE_CHARS = 40;
+
+export function isEscapeRequest(text: string | null | undefined, keywords: string[]): boolean {
+  if (!text || keywords.length === 0) return false;
+  const normalized = text.trim().toLowerCase();
+  if (!normalized || normalized.length > MAX_ESCAPE_MESSAGE_CHARS) return false;
+  return keywords.some((raw) => {
+    const keyword = raw.trim().toLowerCase();
+    if (!keyword) return false;
+    if (normalized === keyword) return true;
+    // Whole-word containment. Malayalam has no ASCII word boundaries, so
+    // the check is done on the characters either side rather than with
+    // \b, which would never match a Malayalam keyword at all.
+    const at = normalized.indexOf(keyword);
+    if (at === -1) return false;
+    const before = at === 0 ? " " : normalized[at - 1];
+    const after =
+      at + keyword.length >= normalized.length ? " " : normalized[at + keyword.length];
+    return !/[\p{L}\p{N}]/u.test(before) && !/[\p{L}\p{N}]/u.test(after);
+  });
 }
 
 /**

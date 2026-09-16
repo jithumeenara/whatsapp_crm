@@ -371,13 +371,61 @@ export interface FlowFallbackPolicy {
   on_timeout_hours: number;
   /** What to do once max_reprompts has been hit. */
   on_exhaust: "handoff" | "end";
+  /**
+   * Words that take a customer straight to a person, from any node.
+   *
+   * Every serious conversation platform has one of these, and it is the
+   * single most-missed pattern in chatbot design. Without it, somebody
+   * mid-form who types "agent" is treated as having tapped the wrong
+   * button: the bot re-sends the menu it was already showing, which is
+   * how a customer learns the bot cannot be escaped.
+   */
+  escape_keywords: string[];
+  /**
+   * Refuse to restart the same flow for the same contact within this
+   * many seconds of it ending.
+   *
+   * A flow that finishes on its first screen — a dead-end node, a button
+   * whose target was deleted — re-triggers on the customer's very next
+   * message and sends the same greeting again. And again. The customer
+   * sees a bot stuck in a loop; the logs see a series of perfectly
+   * normal, successful runs. Set to 0 to allow immediate restarts.
+   */
+  restart_cooldown_seconds: number;
 }
+
+/**
+ * What somebody types when they have given up on the bot.
+ *
+ * English, romanised Malayalam and Malayalam script, because a customer
+ * in Kerala reaches for whichever comes first. Deliberately short and
+ * unambiguous — "help" is not here, since half of all customers open
+ * with it and they mean the bot, not a person.
+ */
+const DEFAULT_ESCAPE_KEYWORDS = [
+  "agent",
+  "human",
+  "person",
+  "representative",
+  "customer care",
+  "talk to someone",
+  "aal",
+  "manushyan",
+  "ആൾ",
+  "ആള്",
+  "മനുഷ്യൻ",
+  "ഏജന്റ്",
+  "ഏജന്റിനെ",
+  "സ്റ്റാഫ്",
+];
 
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
   on_unknown_reply: "reprompt",
   max_reprompts: 2,
   on_timeout_hours: 24,
   on_exhaust: "handoff",
+  escape_keywords: DEFAULT_ESCAPE_KEYWORDS,
+  restart_cooldown_seconds: 60,
 };
 
 // ============================================================
@@ -456,6 +504,10 @@ export interface DispatchInboundResult {
     | "handed_off"
     | "fallback_fired"
     | "duplicate_inbound_ignored"
+    /** The customer asked for a person, from wherever they were. */
+    | "escaped_to_agent"
+    /** A flow that had only just ended was stopped from restarting. */
+    | "restart_suppressed"
     | "no_match";
 }
 

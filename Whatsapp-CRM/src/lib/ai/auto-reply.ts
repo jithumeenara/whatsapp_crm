@@ -43,7 +43,7 @@ const EXCHANGE_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /** Written to Message.bot_source so the limit can count the assistant's
  *  own replies without counting chatbot steps as well. */
-const AI_AUTO_REPLY_SOURCE = 'ai_auto_reply'
+export const AI_AUTO_REPLY_SOURCE = 'ai_auto_reply'
 
 /**
  * Tags a just-sent message as the assistant's own.
