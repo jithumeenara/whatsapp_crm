@@ -124,6 +124,39 @@ export async function handleCallEvent(args: HandleArgs): Promise<void> {
   }
 }
 
+/**
+ * Longest a call is believed to still be running without being told it
+ * ended.
+ *
+ * Meta's terminate webhook is the normal way a call row is closed, and a
+ * webhook that never arrives would otherwise leave a row looking live
+ * forever — and every future caller hearing "busy" from a call that
+ * finished last Tuesday. An hour is longer than any real call this
+ * business takes, and short enough that one lost webhook costs an hour
+ * rather than the feature.
+ */
+const STALE_CALL_MINUTES = 60
+
+/** Another call on this account that is ringing or connected right now. */
+async function findCallInProgress(
+  accountId: string,
+  exceptCallId: string,
+): Promise<{ id: string; provider_call_id: string | null } | null> {
+  return prisma.call
+    .findFirst({
+      where: {
+        account_id: accountId,
+        id: { not: exceptCallId },
+        status: { in: ['ringing', 'in_progress'] },
+        ended_at: null,
+        started_at: { gte: new Date(Date.now() - STALE_CALL_MINUTES * 60_000) },
+      },
+      select: { id: true, provider_call_id: true },
+      orderBy: { started_at: 'desc' },
+    })
+    .catch(() => null)
+}
+
 async function handleIncoming(
   args: HandleArgs,
   event: Extract<CallWebhookEvent, { kind: 'connect' }>,
@@ -143,7 +176,9 @@ async function handleIncoming(
     ? await prisma.conversation.findFirst({
         where: { account_id: args.accountId, contact_id: contact.id, channel: 'whatsapp' },
         orderBy: { last_message_at: 'desc' },
-        select: { id: true },
+        // user_id comes along for the busy notice below — sending needs
+        // an owner, and this row already knows one.
+        select: { id: true, user_id: true },
       })
     : null
 
@@ -171,6 +206,68 @@ async function handleIncoming(
   // A replay of a call already dealt with. Ringing it again would put a
   // popup back on screen for a conversation that has moved on.
   if (call.status !== 'ringing') return
+
+  // One call at a time.
+  //
+  // The voice agent is a single process on a single core, holding a
+  // WebRTC session, a speech model and a turn detector for whoever it is
+  // talking to. A second caller does not get a second helping of that —
+  // both calls get a worse one, with the audio breaking up for the person
+  // already mid-sentence.
+  //
+  // So the second caller is declined outright. Hearing "busy" and calling
+  // back is a normal thing that happens with telephones; being connected
+  // to something that stutters and drops words is not, and it costs the
+  // first caller their conversation as well.
+  const busy = await findCallInProgress(args.accountId, call.id)
+  if (busy) {
+    await rejectCall({
+      phoneNumberId: args.phoneNumberId,
+      accessToken: args.accessToken,
+      callId: event.callId,
+    }).catch(() => {})
+    await prisma.call.update({
+      where: { id: call.id },
+      data: { status: 'rejected', ended_at: new Date(), end_reason: 'line_busy' },
+    })
+    console.warn(
+      `[calls] declined ${event.callId}: already on ${busy.provider_call_id ?? busy.id}`,
+    )
+
+    // Tell them why, if we can reach them.
+    //
+    // A call that simply ends reads as a fault — the number is broken,
+    // the business is ignoring them. One line turns it into the ordinary
+    // experience of ringing somewhere and being asked to try again.
+    //
+    // Only for a caller we already have a conversation with: a stranger's
+    // first contact opens no window to send into, and this is not worth a
+    // paid template. Never awaited, never fatal — the call is already
+    // declined and nothing here can change that.
+    if (conversation && contact) {
+      void import('@/lib/flows/meta-send')
+        .then(({ engineSendText }) =>
+          engineSendText({
+            accountId: args.accountId,
+            userId: conversation.user_id,
+            conversationId: conversation.id,
+            contactId: contact.id,
+            text:
+              'Sorry — we are on another call right now. ' +
+              'Please try again in a few minutes, or send your question here and we will reply.',
+          }),
+        )
+        .catch((err: unknown) => {
+          console.warn(
+            '[calls] could not tell the caller we were busy:',
+            err instanceof Error ? err.message : err,
+          )
+        })
+    }
+
+    emitToAccount(args.accountId, 'call', { type: 'ended', callId: call.id, agentId: null })
+    return
+  }
 
   const pick = await pickAgent({
     accountId: args.accountId,
