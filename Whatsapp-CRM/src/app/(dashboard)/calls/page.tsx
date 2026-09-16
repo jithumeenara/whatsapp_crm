@@ -26,6 +26,8 @@ import {
   MessageSquare,
   ArrowRightLeft,
   Phone,
+  FileText,
+  ChevronDown,
 } from "lucide-react";
 
 type CallRow = {
@@ -44,6 +46,8 @@ type CallRow = {
   duration_seconds: number | null;
   end_reason: string | null;
   conversation_id: string | null;
+  /** Whether there is one to fetch — never the text itself. */
+  has_transcript?: boolean;
   contact: { id: string; name: string | null; phone: string | null } | null;
   agent: { id: string; profile: { full_name: string } | null } | null;
 };
@@ -101,6 +105,41 @@ export default function CallsPage() {
   const [query, setQuery] = useState("");
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Transcripts are fetched one at a time, when opened, and kept for the
+  // life of the page. Opening the same call twice should not cost a
+  // second round trip, and nothing here is large enough to be worth
+  // evicting.
+  const [openCallId, setOpenCallId] = useState<string | null>(null);
+  const [transcripts, setTranscripts] = useState<Record<string, string>>({});
+  const [loadingTranscript, setLoadingTranscript] = useState<string | null>(null);
+
+  const toggleTranscript = useCallback(
+    async (callId: string) => {
+      if (openCallId === callId) {
+        setOpenCallId(null);
+        return;
+      }
+      setOpenCallId(callId);
+      if (transcripts[callId] !== undefined) return;
+      setLoadingTranscript(callId);
+      try {
+        const res = await fetch(`/api/calls/${callId}`);
+        const body = await res.json();
+        setTranscripts((prev) => ({
+          ...prev,
+          [callId]: res.ok
+            ? (body.transcript ?? "")
+            : "Could not load this transcript.",
+        }));
+      } catch {
+        setTranscripts((prev) => ({ ...prev, [callId]: "Could not load this transcript." }));
+      } finally {
+        setLoadingTranscript(null);
+      }
+    },
+    [openCallId, transcripts],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -237,7 +276,8 @@ export default function CallsPage() {
               const waited = waitedFor(call);
 
               return (
-                <li key={call.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/70">
+                <li key={call.id}>
+                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/70">
                   <span
                     className={cn(
                       "grid h-9 w-9 shrink-0 place-items-center rounded-xl",
@@ -298,6 +338,27 @@ export default function CallsPage() {
                     </p>
                   </div>
 
+                  {call.has_transcript && (
+                    <button
+                      type="button"
+                      onClick={() => void toggleTranscript(call.id)}
+                      title="What was said on this call"
+                      aria-expanded={openCallId === call.id}
+                      className={cn(
+                        "grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors",
+                        openCallId === call.id
+                          ? "bg-indigo-50 text-indigo-600"
+                          : "text-slate-400 hover:bg-slate-100 hover:text-slate-700",
+                      )}
+                    >
+                      {loadingTranscript === call.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <FileText className="h-4 w-4" />
+                      )}
+                    </button>
+                  )}
+
                   {call.conversation_id && (
                     <Link
                       href={`/inbox?conversation=${call.conversation_id}`}
@@ -306,6 +367,29 @@ export default function CallsPage() {
                     >
                       <MessageSquare className="h-4 w-4" />
                     </Link>
+                  )}
+                  </div>
+
+                  {openCallId === call.id && (
+                    <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3">
+                      <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                        <ChevronDown className="h-3 w-3" />
+                        What was said
+                      </p>
+                      {transcripts[call.id] === undefined ? (
+                        <p className="flex items-center gap-2 text-[12.5px] text-slate-500">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+                        </p>
+                      ) : transcripts[call.id] === "" ? (
+                        <p className="text-[12.5px] text-slate-500">
+                          Nothing was recorded for this call.
+                        </p>
+                      ) : (
+                        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-[12.5px] leading-relaxed text-slate-700">
+                          {transcripts[call.id]}
+                        </pre>
+                      )}
+                    </div>
                   )}
                 </li>
               );

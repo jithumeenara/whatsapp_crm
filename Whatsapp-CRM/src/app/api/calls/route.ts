@@ -109,8 +109,19 @@ export async function GET(request: Request) {
       }),
     ])
 
+    // Which of these rows has a transcript, without loading any of them.
+    // The list shows an indicator; the text is fetched only when somebody
+    // opens a call, because a transcript runs to thousands of words and
+    // twenty of them would be most of the page weight for something
+    // nobody has asked to read yet.
+    const transcribed = await prisma.call.findMany({
+      where: { id: { in: calls.map((c) => c.id) }, transcript: { not: null } },
+      select: { id: true },
+    })
+    const transcribedIds = new Set(transcribed.map((c) => c.id))
+
     return NextResponse.json({
-      calls,
+      calls: calls.map((c) => ({ ...c, has_transcript: transcribedIds.has(c.id) })),
       total,
       page,
       limit,

@@ -1,9 +1,9 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { loadCallVoiceContext } from '@/lib/ai/live-voice-context'
 import { buildCustomerContext } from '@/lib/ai/customer-context'
 import { findExistingContact } from '@/lib/contacts/dedupe'
+import { checkVoiceAgentAuth, VOICE_AUTH_RESPONSES } from '@/lib/voice/agent-auth'
 
 /**
  * What the assistant on a phone call should know, and who it is talking to.
@@ -27,20 +27,11 @@ import { findExistingContact } from '@/lib/contacts/dedupe'
 
 export const dynamic = 'force-dynamic'
 
-function authorised(request: Request, expected: string): boolean {
-  const supplied = request.headers.get('x-voice-secret') ?? ''
-  const a = Buffer.from(supplied)
-  const b = Buffer.from(expected)
-  return a.length === b.length && timingSafeEqual(a, b)
-}
-
 export async function POST(request: Request) {
-  const expected = process.env.VOICE_AGENT_SECRET
-  if (!expected) {
-    return NextResponse.json({ error: 'voice agent not configured' }, { status: 503 })
-  }
-  if (!authorised(request, expected)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const auth = checkVoiceAgentAuth(request)
+  if (!auth.ok) {
+    const { body, status } = VOICE_AUTH_RESPONSES[auth.reason]
+    return NextResponse.json(body, { status })
   }
 
   const body = (await request.json().catch(() => null)) as {
