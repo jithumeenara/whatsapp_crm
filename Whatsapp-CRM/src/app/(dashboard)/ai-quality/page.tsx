@@ -14,10 +14,11 @@
  * can give about what to build next.
  */
 
+import Link from "next/link"
 import { useCallback, useEffect, useState } from "react"
 import {
-  ShieldCheck, Smile, UserRoundSearch, Sparkles,
-  MessageCircleQuestion, Loader2, AlertTriangle,
+  ShieldCheck, Smile, UserRoundSearch,
+  MessageCircleQuestion, Loader2, AlertTriangle, Unplug,
 } from "lucide-react"
 
 function cn(...c: (string | boolean | undefined | null)[]) {
@@ -54,15 +55,46 @@ interface Payload {
 const RANGES = [7, 30, 90] as const
 
 /**
+ * Below this, a percentage is noise dressed as a finding.
+ *
+ * At six conversations, one more person calling moves "containment" by
+ * seventeen points. Putting a verdict on that — and colouring it red —
+ * tells somebody their assistant is failing when the truth is that
+ * nothing has happened yet.
+ */
+const MIN_SAMPLE_FOR_A_VERDICT = 20
+
+/**
  * The industry's own bands, so a number here means the same thing it
  * means in any vendor's report. Colour never travels alone — it always
  * carries this label.
  */
-function containmentBand(rate: number): { label: string; tone: string } {
+function containmentBand(rate: number, sample: number): { label: string; tone: string } {
+  if (sample < MIN_SAMPLE_FOR_A_VERDICT) {
+    return { label: "Too few to judge", tone: "text-slate-600 bg-slate-100" }
+  }
   if (rate >= 0.6) return { label: "Strong", tone: "text-emerald-700 bg-emerald-50" }
   if (rate >= 0.4) return { label: "Typical", tone: "text-sky-700 bg-sky-50" }
   if (rate >= 0.2) return { label: "Low", tone: "text-amber-700 bg-amber-50" }
   return { label: "Very low", tone: "text-rose-700 bg-rose-50" }
+}
+
+/**
+ * A chatbot run that neither finished nor reached a person.
+ *
+ * It started, sent something, and then stopped mattering — the customer
+ * walked away, or the flow had nowhere to go. A handful is ordinary.
+ * A majority is a broken flow: a dead-end node, or a button pointing at
+ * a node that no longer exists, which is exactly what makes a chatbot
+ * repeat itself.
+ */
+function abandonedBand(rate: number, sample: number): { label: string; tone: string } {
+  if (sample < MIN_SAMPLE_FOR_A_VERDICT) {
+    return { label: "Too few to judge", tone: "text-slate-600 bg-slate-100" }
+  }
+  if (rate >= 0.5) return { label: "Check your flows", tone: "text-rose-700 bg-rose-50" }
+  if (rate >= 0.3) return { label: "High", tone: "text-amber-700 bg-amber-50" }
+  return { label: "Normal", tone: "text-emerald-700 bg-emerald-50" }
 }
 
 function Tile({
@@ -125,9 +157,16 @@ export default function AiQualityPage() {
   }, [days, load])
 
   const s = data?.summary
-  const band = s ? containmentBand(s.containment_rate) : null
+  const band = s ? containmentBand(s.containment_rate, s.conversations) : null
   const csatResponseRate =
     s && s.csat_asked > 0 ? Math.round((s.csat_answered / s.csat_asked) * 100) : null
+
+  // Runs that reached neither an ending nor a person. Clamped at zero:
+  // a run started just before the window and handed over inside it can
+  // otherwise make the arithmetic go negative.
+  const abandoned = s ? Math.max(0, s.flows_started - s.flows_completed - s.handoffs) : 0
+  const abandonedRate = s && s.flows_started > 0 ? abandoned / s.flows_started : 0
+  const abandonedTone = s ? abandonedBand(abandonedRate, s.flows_started) : null
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
@@ -199,13 +238,36 @@ export default function AiQualityPage() {
               sub={`${s.handoffs} handed over in total`}
             />
             <Tile
-              icon={<Sparkles className="h-5 w-5 text-violet-600" />}
+              icon={<Unplug className="h-5 w-5 text-violet-600" />}
               accent="bg-violet-50"
-              label="Answered by AI, not a flow"
-              value={String(s.ai_replies)}
-              sub={`${s.flows_completed} of ${s.flows_started} chatbot runs finished`}
+              label="Chatbot runs abandoned"
+              value={String(abandoned)}
+              sub={
+                s.flows_started === 0
+                  ? "No chatbot runs in this period"
+                  : `of ${s.flows_started} started · ${s.flows_completed} finished · ${s.ai_replies} answered by AI instead`
+              }
+              badge={abandonedTone ?? undefined}
             />
           </div>
+
+          {abandonedRate >= 0.3 && s.flows_started >= MIN_SAMPLE_FOR_A_VERDICT && (
+            <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div className="text-[13px] leading-relaxed text-amber-900">
+                <strong className="font-semibold">
+                  {Math.round(abandonedRate * 100)}% of chatbot runs go nowhere.
+                </strong>{" "}
+                A run that neither finishes nor reaches a person usually means the
+                flow had nowhere to go — a step with no next step, or a button
+                pointing at one that was deleted. Open{" "}
+                <Link href="/chatbot" className="font-semibold underline underline-offset-2">
+                  Chatbot
+                </Link>{" "}
+                and check the ends of each path.
+              </div>
+            </div>
+          )}
 
           <section className="mt-8">
             <div className="mb-3 flex items-baseline justify-between gap-3">
