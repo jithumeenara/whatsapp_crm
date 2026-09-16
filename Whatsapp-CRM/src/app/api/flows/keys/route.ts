@@ -4,26 +4,40 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
+import { derivePublicInfo } from '@/lib/flows/key-material'
 
 /**
  * The RSA key pair Meta uses to encrypt Flow requests to this CRM.
  *
  * ── Why this file is written so defensively ─────────────────────────
  *
- * Both handlers used to wrap their database work in a bare `catch {}`.
- * That made the one failure that matters invisible: when the private key
- * could not be stored, generation still reported success and still
- * uploaded the new public key to Meta. From then on Meta encrypted every
- * Flow request with a public key whose private half existed nowhere, so
- * Flows opened blank on the phone — and the only thing this dialog would
- * say was "No key configured. Generate one below.", which is the exact
- * action that had just broken it. An owner can regenerate for a week and
- * learn nothing.
+ * It used to hold a one-line bug that took weeks to find, and the reason
+ * it took weeks is worth keeping written down.
  *
- * So: nothing here swallows an error, the save is read back and decrypted
- * before it is called a save, and the public key is never uploaded to
- * Meta unless the private key is provably retrievable. A key pair Meta
- * knows about and this server does not is strictly worse than none.
+ * GET derived the public half of the stored key by calling
+ * `privateKeyObject.export({ type: 'spki' })`. `spki` is a public-key
+ * encoding and Node refuses it on a private key, so that call threw on
+ * every request. The throw landed in a bare `catch {}`, the handler fell
+ * through to the environment variable, found none, and answered "No key
+ * configured. Generate one below." — so the owner generated. That
+ * uploaded a fresh public key to Meta, left the private half exactly as
+ * unreadable as before, and broke every published Flow. Repeat weekly.
+ * Nothing in the UI, the logs or the database ever said what was wrong.
+ *
+ * Three rules came out of it, and each one is load-bearing:
+ *
+ *   1. Nothing is swallowed. Every failure says what failed and why.
+ *   2. Failures that need opposite advice are reported separately — a
+ *      key that is absent, one that will not decrypt, and one that
+ *      decrypts but is not a key are three different states, and
+ *      "Generate" is the correct answer to exactly one of them.
+ *   3. Meta is told nothing until the private half has been written,
+ *      read back and compared. A key pair Meta knows about and this
+ *      server does not is strictly worse than no key pair at all.
+ *
+ * The key parsing itself now lives in `@/lib/flows/key-material`, with
+ * tests, because the failure above was a single missing call that no
+ * amount of care in this file would have caught.
  */
 
 const META_API_VERSION = 'v21.0'
@@ -39,19 +53,6 @@ async function getAccountAndConfig(userId: string) {
   // resolves to the account's default number.
   const config = await resolveWhatsAppConfig({ accountId: profile.account_id }).catch(() => null)
   return { accountId: profile.account_id, config }
-}
-
-/** Derives publicKey + fingerprint from a PEM private key. */
-function derivePublicInfo(privateKeyPem: string): { publicKey: string; fingerprint: string } {
-  const keyObj = crypto.createPrivateKey(privateKeyPem)
-  const publicKey = keyObj.export({ type: 'spki', format: 'pem' }) as string
-  const fingerprint = crypto
-    .createHash('sha256')
-    .update(keyObj.export({ type: 'pkcs1', format: 'der' }) as Buffer)
-    .digest('hex')
-    .match(/.{2}/g)!
-    .join(':')
-  return { publicKey, fingerprint }
 }
 
 /** Uploads a public key PEM to Meta's WhatsApp Business Encryption endpoint. */
@@ -121,14 +122,16 @@ export async function GET() {
   }
 
   if (storedCipher) {
+    // Decryption and key parsing fail for completely different reasons
+    // and are diagnosed separately. Wrapping both in one handler is how
+    // the previous version came to blame ENCRYPTION_KEY for what was
+    // actually a bad export call in this file — and an owner acting on
+    // that message would have gone hunting through their environment for
+    // a value that was never wrong.
+    let pem: string
     try {
-      const { publicKey, fingerprint } = derivePublicInfo(decrypt(storedCipher))
-      return NextResponse.json({ hasKey: true, publicKey, fingerprint, source: 'db' })
+      pem = decrypt(storedCipher)
     } catch (err) {
-      // Stored but unreadable — almost always ENCRYPTION_KEY having
-      // changed since it was written. Says so, because the fix is to
-      // restore that value; regenerating here would silently invalidate
-      // every Flow already published.
       return NextResponse.json(
         {
           hasKey: true,
@@ -136,16 +139,37 @@ export async function GET() {
           source: 'db',
           error:
             `A key is stored but this server cannot decrypt it: ${reason(err)}. ` +
-            'That usually means ENCRYPTION_KEY is no longer the value it had when the key was ' +
-            'saved. Restore it if you can — generating a new pair will invalidate every Flow ' +
-            'already published.',
+            'That means ENCRYPTION_KEY is no longer the value it had when the key was saved. ' +
+            'Restore it if you can — generating a new pair will invalidate every Flow already ' +
+            'published.',
+        },
+        { status: 500 },
+      )
+    }
+
+    try {
+      const { publicKey, fingerprint } = derivePublicInfo(pem)
+      return NextResponse.json({ hasKey: true, publicKey, fingerprint, source: 'db' })
+    } catch (err) {
+      return NextResponse.json(
+        {
+          hasKey: true,
+          broken: true,
+          source: 'db',
+          error:
+            `The stored key decrypts, but is not a usable RSA private key: ${reason(err)}. ` +
+            'Generating a new pair is the repair here, and it is safe — nothing readable is ' +
+            'being replaced.',
         },
         { status: 500 },
       )
     }
   }
 
-  const rawPem = process.env.FLOWS_PRIVATE_KEY?.replace(/\\n/g, '\n')
+  // No unescaping here — derivePublicInfo normalizes every shape a key
+  // arrives in, including the single-line `\n`-escaped form an env var
+  // holds.
+  const rawPem = process.env.FLOWS_PRIVATE_KEY
   if (!rawPem) {
     return NextResponse.json(
       { hasKey: false, error: 'No key found. Generate one below.' },
