@@ -32,8 +32,13 @@ CREATE INDEX IF NOT EXISTS idx_conversation_feedback_account_asked
 CREATE INDEX IF NOT EXISTS idx_conversation_feedback_conversation
   ON conversation_feedback (conversation_id, asked_at DESC);
 
-ALTER TABLE conversation_feedback ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS conversation_feedback_select ON conversation_feedback;
-CREATE POLICY conversation_feedback_select ON conversation_feedback FOR SELECT
-  USING (is_account_member(account_id));
+-- No row-level security here on purpose.
+--
+-- The earlier migrations in this repo carry policies built on an
+-- is_account_member() helper that does not exist in this database, so
+-- those policies were never applied and copying the pattern only made
+-- this migration fail. What actually separates one account from another
+-- is the account_id filter every query carries, in code, on every route.
+-- Adding RLS would mean adding the helper and auditing every existing
+-- table for it — a real piece of work, and not one to smuggle in
+-- alongside a feedback table.
