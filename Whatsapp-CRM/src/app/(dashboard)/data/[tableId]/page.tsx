@@ -9,12 +9,13 @@ import {
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock,
   CalendarClock, ToggleLeft, ChevronDown, ListChecks, CircleDot, Globe,
   MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon, PenLine, EyeOff,
-  Heading, Code2,
+  Heading, Code2, Bot,
 } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
 import { RecordDetailModal } from "@/components/data/record-detail-modal"
+import { AiRegistrationToggle } from "@/components/data/ai-registration-toggle"
 import type { DataTable, DataField, DataRecord, FieldType } from "@/lib/data-store/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) {
@@ -406,6 +407,18 @@ export default function DataTablePage() {
                             className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400 cursor-pointer"
                             aria-label={`Select row ${(currentPage - 1) * PAGE_SIZE + idx + 1}`}
                           />
+                          {/* Rows the assistant took on WhatsApp. Marked in
+                              the checkbox gutter rather than given a column,
+                              so the grid is unchanged for the tables — most
+                              of them — that never see one. */}
+                          {rec.contact && (
+                            <span
+                              className="mt-1 flex justify-center"
+                              title={`Registered on WhatsApp by ${rec.contact.name || rec.contact.phone}`}
+                            >
+                              <Bot className="h-3 w-3 text-indigo-400" aria-label="Registered through WhatsApp" />
+                            </span>
+                          )}
                         </td>
                         {visibleFields.map((f) => {
                           const raw = data[f.field_key]
@@ -574,6 +587,14 @@ export default function DataTablePage() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
+              {table && (
+                <AiRegistrationToggle
+                  tableId={tableId}
+                  table={table}
+                  fields={fields}
+                  onChange={(patch) => setTable((t) => (t ? { ...t, ...patch } : t))}
+                />
+              )}
               <FieldEditor
                 tableId={tableId}
                 fields={fields}

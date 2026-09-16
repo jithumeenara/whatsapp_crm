@@ -40,7 +40,7 @@ import { decrypt } from "@/lib/whatsapp/encryption";
 import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
 import { getProviderKeys } from "@/lib/ai/providers/registry";
 import { generateCustomerReply } from "@/lib/ai/customer-agent";
-import { CUSTOMER_TOOL_INSTRUCTION } from "@/lib/ai/customer-tools";
+import { buildCustomerToolInstruction } from "@/lib/ai/customer-tools";
 import { buildLanguageBlock } from "@/lib/ai/language";
 import { assessConfidence } from "@/lib/ai/confidence";
 import { validateReply } from "@/lib/ai/validator";
@@ -1958,7 +1958,9 @@ async function advanceFromNodeKey(
         const customerToolContext = run.contact_id
           ? { accountId: run.account_id, contactId: run.contact_id }
           : null;
-        if (customerToolContext) promptParts.push(CUSTOMER_TOOL_INSTRUCTION);
+        if (customerToolContext) {
+          promptParts.push(await buildCustomerToolInstruction(run.account_id));
+        }
         // Appended last so it is the most recent instruction the model
         // reads, and applies regardless of what the account wrote above.
         promptParts.push(WHATSAPP_REPLY_STYLE);

@@ -21,7 +21,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from './providers/registry'
 import { loadKnowledge } from './knowledge-store'
 import { loadCompanyProfile, formatCompanyBlock } from './company-profile'
-import { CUSTOMER_TOOL_INSTRUCTION } from './customer-tools'
+import { buildCustomerToolInstruction } from './customer-tools'
 
 /** A live session's instruction is sent once at setup and cannot be
  *  re-sent per turn, so it has to fit alongside the audio budget. */
@@ -165,7 +165,7 @@ async function composeInstruction(
     )
   }
 
-  if (mode === 'customer') parts.push(CUSTOMER_TOOL_INSTRUCTION)
+  if (mode === 'customer') parts.push(await buildCustomerToolInstruction(accountId))
 
   // Language last but one, style last: the final instruction is the one
   // the model weights most, and speaking style is what a live session

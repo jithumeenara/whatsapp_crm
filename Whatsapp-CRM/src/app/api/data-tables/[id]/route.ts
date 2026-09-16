@@ -47,6 +47,22 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         ...(body.name ? { name: body.name.trim() } : {}),
         ...(body.icon !== undefined ? { icon: body.icon } : {}),
         ...(body.description !== undefined ? { description: body.description } : {}),
+        // Whether the assistant may create rows here on a customer's
+        // behalf, and what it says once one lands. Coerced rather than
+        // passed through: this flag decides whether a language model can
+        // write to this table, and it is not somewhere to accept a
+        // truthy string.
+        ...(body.ai_can_register !== undefined
+          ? { ai_can_register: body.ai_can_register === true }
+          : {}),
+        ...(body.ai_success_message !== undefined
+          ? {
+              ai_success_message:
+                typeof body.ai_success_message === 'string'
+                  ? body.ai_success_message.trim().slice(0, 500) || null
+                  : null,
+            }
+          : {}),
       },
     })
     return NextResponse.json({ table })

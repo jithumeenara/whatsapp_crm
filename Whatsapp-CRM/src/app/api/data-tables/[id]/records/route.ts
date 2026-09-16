@@ -62,6 +62,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         orderBy: { created_at: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        // Who registered, when the assistant took it on WhatsApp. Null
+        // for the overwhelming majority of rows — imported lists, stock,
+        // anything typed in here by staff — and the grid shows nothing
+        // for those rather than an empty column.
+        include: { contact: { select: { id: true, name: true, phone: true } } },
       }),
       prisma.dataRecord.count({ where }),
     ])

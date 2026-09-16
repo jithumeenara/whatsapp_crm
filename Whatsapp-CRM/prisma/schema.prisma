@@ -377,6 +377,7 @@ model Contact {
   @@map("contacts")
   calls Call[]
   feedback ConversationFeedback[]
+  data_records DataRecord[]
   /// When this contact was blocked. Null means not blocked — "when"
   /// answers "whether" as well, so there is no separate boolean to keep
   /// in step with it.
@@ -2094,6 +2095,16 @@ model DataTable {
   icon        String   @default("database")
   description String?
   sort_order  Int      @default(0)
+
+  /// Whether the assistant may create rows in this table on a customer's
+  /// behalf. Off everywhere until somebody turns it on: an assistant that
+  /// can write is a different proposition from one that answers, and
+  /// nobody should find they had enabled it by accident.
+  ai_can_register Boolean @default(false)
+  /// What the assistant says once a row lands. Per table, because "we'll
+  /// email your joining instructions" is right for a training institute
+  /// and wrong for a garage. Null gives a plain confirmation.
+  ai_success_message String?
   created_at  DateTime @default(now()) @db.Timestamptz(6)
   updated_at  DateTime @updatedAt @db.Timestamptz(6)
 
@@ -2133,10 +2144,15 @@ model DataRecord {
   table_id   String   @db.Uuid
   account_id String   @db.Uuid
   data       Json     @default("{}")
+  /// The customer this row is about, when one created it through the
+  /// assistant. Null for everything else — price lists, catalogues,
+  /// imported stock — which is most of the Data Store.
+  contact_id String?  @db.Uuid
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
-  table DataTable @relation(fields: [table_id], references: [id], onDelete: Cascade)
+  table   DataTable @relation(fields: [table_id], references: [id], onDelete: Cascade)
+  contact Contact?  @relation(fields: [contact_id], references: [id], onDelete: SetNull)
 
   @@map("data_records")
 }

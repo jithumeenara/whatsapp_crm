@@ -91,6 +91,10 @@ export interface DataTable {
   icon: string
   description: string | null
   sort_order: number
+  /** Whether the AI assistant may create rows here for a customer. */
+  ai_can_register: boolean
+  /** What the assistant says once a registration lands. Null = a plain confirmation. */
+  ai_success_message: string | null
   created_at: string
   updated_at: string
   fields?: DataField[]
@@ -101,6 +105,10 @@ export interface DataRecord {
   id: string
   table_id: string
   data: Record<string, unknown>
+  /** The customer who registered themselves through the assistant.
+   *  Null for every row staff or an import created, which is most. */
+  contact_id?: string | null
+  contact?: { id: string; name: string | null; phone: string } | null
   created_at: string
   updated_at: string
 }
@@ -171,3 +179,24 @@ export const DATA_FIELD_TYPES = new Set<FieldType>([
 
 /** Field types that use select_items options */
 export const CHOICE_FIELD_TYPES = new Set<FieldType>(['select', 'multiselect', 'radio'])
+
+/**
+ * The field types the AI assistant is able to fill on a registration.
+ *
+ * Lives here rather than beside the registration code because both sides
+ * need it: the server decides what to ask the customer for, and the
+ * table's settings panel counts what will be asked. Two lists would
+ * drift, and the panel would promise a question the assistant never asks.
+ *
+ * `relation` is deliberately absent — it points at another row by id, and
+ * a model asked for one invents a plausible uuid. Layout types
+ * (section_header, html_block) hold no answer, and file/signature/image
+ * cannot be given over a chat message.
+ */
+export const AI_FILLABLE_FIELD_TYPES: ReadonlySet<string> = new Set([
+  'text', 'number', 'date', 'email', 'phone', 'url', 'select',
+])
+
+export function isAiFillable(field: Pick<DataField, 'field_type'>): boolean {
+  return AI_FILLABLE_FIELD_TYPES.has(field.field_type)
+}

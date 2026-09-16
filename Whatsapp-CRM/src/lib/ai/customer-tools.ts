@@ -70,6 +70,9 @@ function leadStatusLabel(status: string): string {
   return LEAD_STATUS_LABELS[status] ?? status.replace(/_/g, ' ')
 }
 
+import { REGISTRATION_TOOLS, REGISTRATION_INSTRUCTION } from './registration-tools'
+import { listRegistrationForms } from './registration'
+
 const TOOLS: Record<string, CustomerToolImpl> = {
   my_enquiries: {
     declaration: {
@@ -250,9 +253,21 @@ const TOOLS: Record<string, CustomerToolImpl> = {
 }
 
 /** Handed to the model as its callable surface. */
-export const CUSTOMER_TOOL_DECLARATIONS: FunctionDeclaration[] = Object.values(TOOLS).map((t) => t.declaration)
+/**
+ * Every tool, read-only and write alike.
+ *
+ * Merged here rather than kept behind a second runner, so
+ * runCustomerTool stays the single place a tool call is dispatched.
+ * Two dispatchers would eventually disagree about error handling, and
+ * the one that writes is the wrong one to get that wrong.
+ */
+const ALL_TOOLS: Record<string, CustomerToolImpl> = { ...TOOLS, ...REGISTRATION_TOOLS }
 
-export const CUSTOMER_TOOL_NAMES = Object.keys(TOOLS)
+export const CUSTOMER_TOOL_DECLARATIONS: FunctionDeclaration[] = Object.values(ALL_TOOLS).map(
+  (t) => t.declaration,
+)
+
+export const CUSTOMER_TOOL_NAMES = Object.keys(ALL_TOOLS)
 
 /**
  * Runs one tool by name.
@@ -267,7 +282,7 @@ export async function runCustomerTool(
   args: ToolArgs,
   ctx: CustomerToolContext,
 ): Promise<unknown> {
-  const tool = TOOLS[name]
+  const tool = ALL_TOOLS[name]
   if (!tool) return { error: `No such tool: ${name}. Available: ${CUSTOMER_TOOL_NAMES.join(', ')}` }
   try {
     return await tool.run(args, ctx)
@@ -290,3 +305,17 @@ export const CUSTOMER_TOOL_INSTRUCTION = [
   '- Never state a price, date or reference number that did not come from a lookup or from the knowledge you were given.',
   '- You can only see this one customer. If they ask about someone else, explain you can only discuss their own records.',
 ].join('\n')
+
+/**
+ * The tool instruction for one account, built when it is asked for.
+ *
+ * The registration half is appended only when that account has
+ * actually opened a form. A business that takes no registrations
+ * should not have its assistant carrying instructions on how to take
+ * one — that is an invitation to offer something which does not exist.
+ */
+export async function buildCustomerToolInstruction(accountId: string): Promise<string> {
+  const forms = await listRegistrationForms(accountId).catch(() => [])
+  if (forms.length === 0) return CUSTOMER_TOOL_INSTRUCTION
+  return `${CUSTOMER_TOOL_INSTRUCTION}\n\n${REGISTRATION_INSTRUCTION}`
+}

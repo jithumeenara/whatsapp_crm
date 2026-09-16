@@ -22,7 +22,7 @@ import { buildLanguageBlock } from './language'
 import { assessConfidence, type ConfidenceAssessment } from './confidence'
 import { validateReply, type ValidationResult } from './validator'
 import { generateCustomerReply } from './customer-agent'
-import { CUSTOMER_TOOL_INSTRUCTION } from './customer-tools'
+import { buildCustomerToolInstruction } from './customer-tools'
 import { scanActionTokens } from './action-tokens'
 import { checkSafetyGuard } from './safety-guard'
 import { WHATSAPP_REPLY_STYLE } from '@/lib/whatsapp/markdown-to-whatsapp'
@@ -133,7 +133,11 @@ export async function buildCustomerSystemPrompt(args: {
     parts.push(buildLanguageBlock(args.customerMessage))
   }
 
-  if (args.toolsAvailable) parts.push(CUSTOMER_TOOL_INSTRUCTION)
+  // Built per account rather than pinned: the registration half of
+  // this instruction only applies to a business that has actually
+  // opened a form, and telling every other assistant how to take a
+  // registration is how one gets offered where none exists.
+  if (args.toolsAvailable) parts.push(await buildCustomerToolInstruction(args.accountId))
 
   parts.push(WHATSAPP_REPLY_STYLE)
 
