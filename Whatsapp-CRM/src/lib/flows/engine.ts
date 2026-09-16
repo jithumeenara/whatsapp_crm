@@ -440,6 +440,79 @@ function plainTextOf(message: ParsedInbound): string | null {
   return message.kind === "text" ? (message.text ?? null) : null;
 }
 
+type DigressionResult = "answered" | "handed_off" | "not_attempted";
+
+/**
+ * Let a customer ask something else mid-flow, then put them back.
+ *
+ * A question typed inside a form is indistinguishable, to a matcher, from
+ * a wrong button — so the bot re-sends the menu and the question goes
+ * unanswered. The customer's remaining options are to abandon the form or
+ * ask again and watch the same menu reappear, which is how a form loses
+ * somebody halfway through.
+ *
+ * The answer comes from the same assistant that handles messages no flow
+ * claimed, so it arrives with the safety guard, the confidence gate and
+ * the grounding check already applied — nothing here is a second, weaker
+ * copy of those. The run does not move: the caller re-sends the prompt
+ * afterwards, and the attempt is not counted as a failed reply.
+ *
+ * Only offered when the policy is 'reprompt'. An account that set
+ * 'handoff' or 'ignore' for unmatched replies has said what it wants to
+ * happen, and answering instead would be overruling it.
+ */
+async function tryDigression(
+  run: FlowRunRow,
+  message: ParsedInbound,
+  policy: FlowFallbackPolicy,
+): Promise<DigressionResult> {
+  if (!policy.allow_digression) return "not_attempted";
+  if (policy.on_unknown_reply !== "reprompt") return "not_attempted";
+  if (!run.conversation_id || !run.contact_id) return "not_attempted";
+
+  const asked = plainTextOf(message)?.trim();
+  if (!asked) return "not_attempted";
+
+  const { autoReplyToMessage } = await import("@/lib/ai/auto-reply");
+  const outcome = await autoReplyToMessage({
+    accountId: run.account_id,
+    userId: run.user_id,
+    conversationId: run.conversation_id,
+    contactId: run.contact_id,
+    message: asked,
+    channel: "whatsapp",
+  }).catch((err: unknown) => {
+    console.warn(
+      "[flows] digression failed, falling back to the prompt:",
+      err instanceof Error ? err.message : err,
+    );
+    return "failed" as const;
+  });
+
+  if (outcome === "replied") {
+    await logEvent(run.id, "fallback_fired", run.current_node_key, {
+      action: "digression",
+      asked,
+    });
+    return "answered";
+  }
+
+  // The assistant decided this needed a person — low confidence, a safety
+  // guard, or its own escalation topics. That decision outranks the form:
+  // the run ends rather than sending the customer back to a menu they
+  // have just been told somebody will call them about.
+  if (outcome === "handed_off") {
+    await logEvent(run.id, "handoff", run.current_node_key, {
+      reason: "digression_handed_off",
+      asked,
+    });
+    await endRun(run.id, "handed_off", "digression_handed_off");
+    return "handed_off";
+  }
+
+  return "not_attempted";
+}
+
 async function logEvent(
   flowRunId: string,
   event_type:
@@ -2985,11 +3058,26 @@ async function handleReplyForActiveRun(
   const policy = resolveFallbackPolicy(
     (await loadFlow(run.flow_id))?.fallback_policy,
   );
-  const newReprompts = run.reprompt_count + 1;
-  await prisma.flowRun.update({
-    where: { id: run.id },
-    data: { reprompt_count: newReprompts },
-  });
+  // Before treating this as a wrong answer, see whether it was a
+  // question — and if so, answer it. The prompt is re-sent below either
+  // way, so the customer ends up back where they were.
+  const digression = await tryDigression(run, message, policy);
+  if (digression === "handed_off") {
+    return { consumed: true, flow_run_id: run.id, outcome: "handed_off" };
+  }
+
+  // A question that got an answer is not a failed attempt, so it does not
+  // spend one of the customer's reprompts. Without this, three honest
+  // questions would exhaust the allowance and hand a perfectly
+  // well-behaved customer to a person.
+  const newReprompts =
+    digression === "answered" ? run.reprompt_count : run.reprompt_count + 1;
+  if (newReprompts !== run.reprompt_count) {
+    await prisma.flowRun.update({
+      where: { id: run.id },
+      data: { reprompt_count: newReprompts },
+    });
+  }
 
   const action = decideFallback({ policy, reprompt_count: newReprompts });
   await logEvent(run.id, "fallback_fired", run.current_node_key, {

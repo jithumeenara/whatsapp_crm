@@ -382,6 +382,22 @@ export interface FlowFallbackPolicy {
    */
   escape_keywords: string[];
   /**
+   * Let a customer ask something else mid-flow, get an answer, and be
+   * put back where they were.
+   *
+   * Without it a question asked inside a form is indistinguishable from
+   * a wrong button: the bot re-sends the menu and the question goes
+   * unanswered. The customer's options are then to abandon the form or
+   * to ask again and watch the same menu appear — which is how a form
+   * loses the person halfway through.
+   *
+   * The answer comes from the same assistant that handles unclaimed
+   * messages, so it carries the same safety guard, confidence gate and
+   * grounding check. The flow never moves: the prompt is simply sent
+   * again afterwards, and the attempt does not count as a failed reply.
+   */
+  allow_digression: boolean;
+  /**
    * Refuse to restart the same flow for the same contact within this
    * many seconds of it ending.
    *
@@ -425,6 +441,7 @@ export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
   on_timeout_hours: 24,
   on_exhaust: "handoff",
   escape_keywords: DEFAULT_ESCAPE_KEYWORDS,
+  allow_digression: true,
   restart_cooldown_seconds: 60,
 };
 

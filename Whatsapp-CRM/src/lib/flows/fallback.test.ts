@@ -65,6 +65,7 @@ const POLICY_REPROMPT_2_HANDOFF: FlowFallbackPolicy = {
   on_timeout_hours: 24,
   on_exhaust: "handoff",
   escape_keywords: DEFAULT_FALLBACK_POLICY.escape_keywords,
+  allow_digression: DEFAULT_FALLBACK_POLICY.allow_digression,
   restart_cooldown_seconds: DEFAULT_FALLBACK_POLICY.restart_cooldown_seconds,
 };
 

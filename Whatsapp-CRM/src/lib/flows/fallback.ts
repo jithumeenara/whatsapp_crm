@@ -61,6 +61,10 @@ export function resolveFallbackPolicy(
     escape_keywords: Array.isArray(r.escape_keywords)
       ? r.escape_keywords.filter((k): k is string => typeof k === "string" && k.trim().length > 0)
       : DEFAULT_FALLBACK_POLICY.escape_keywords,
+    allow_digression:
+      typeof r.allow_digression === "boolean"
+        ? r.allow_digression
+        : DEFAULT_FALLBACK_POLICY.allow_digression,
     restart_cooldown_seconds:
       typeof r.restart_cooldown_seconds === "number" && r.restart_cooldown_seconds >= 0
         ? Math.floor(r.restart_cooldown_seconds)
