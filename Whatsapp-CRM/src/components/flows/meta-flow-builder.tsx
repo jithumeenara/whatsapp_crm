@@ -48,6 +48,7 @@ import {
   ArrowRight,
   Flag,
 } from "lucide-react";
+import { EndpointStatus } from "@/components/flows/endpoint-status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -303,6 +304,11 @@ export function MetaFlowBuilder({
           </div>
 
           <div className="flex-1" />
+
+          {/* Where Meta sends this Flow's data requests. Sits before the
+              Save/Publish buttons because a Flow pointing at a dead
+              address is broken in a way none of them can fix. */}
+          <EndpointStatus flowId={flowId} metaFlowId={metaFlowId} />
 
           {/* Upload / Publish / Save buttons */}
           {onSave && (
