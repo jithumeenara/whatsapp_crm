@@ -179,6 +179,33 @@ function resolveStaticOptionValue(comp: Record<string, unknown>, submittedValue:
   return Array.isArray(submittedValue) ? submittedValue.map(titleFor) : titleFor(submittedValue)
 }
 
+/**
+ * The component that collects a save-mapped field, looked for across the
+ * whole flow rather than only on the screen being submitted.
+ *
+ * Resolving an option id to its title used to happen at exactly one
+ * moment — as the value was carried off the screen that collected it —
+ * and if it failed there the raw id travelled through every later screen
+ * and into the saved record. A district came out as
+ * "opt_1783943937441" that way.
+ *
+ * Only static option lists are returned. A table-backed dropdown's
+ * data-source is a "${data.x}" template string at this point, and its
+ * submitted id is already the real value, so there is nothing to resolve
+ * and nothing to get wrong.
+ */
+function findStaticCollector(
+  screens: Array<{ components?: Array<Record<string, unknown>> }>,
+  fieldKey: string,
+): Record<string, unknown> | undefined {
+  for (const s of screens) {
+    for (const c of flatCompsShallow(s.components ?? [])) {
+      if (c._save_field_key === fieldKey && Array.isArray(c['data-source'])) return c
+    }
+  }
+  return undefined
+}
+
 // Non-recursive Form-unwrap — same shape as the in-scope flatComps() used
 // elsewhere in this file, duplicated here because collectAllSaveFields is
 // called before flatComps is defined in some call sites' scope.
@@ -927,7 +954,14 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           const raw = formData[found.varKey]
           freshData[sf.carryVar] = found.collector ? resolveStaticOptionValue(found.collector, raw) : raw
         } else {
-          freshData[sf.carryVar] = formData[sf.carryVar] ?? ''
+          // Carried in from a screen further back. Resolve here too, so a
+          // later screen that displays this value shows the district
+          // rather than the option id it was submitted as.
+          const carried = formData[sf.carryVar] ?? ''
+          const collector = findStaticCollector(screens, sf.fieldKey)
+          freshData[sf.carryVar] = collector
+            ? resolveStaticOptionValue(collector, carried)
+            : carried
         }
       }
       // Same carry-forward, but for EVERY named field (not just save-mapped
@@ -974,10 +1008,20 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           record[sf.fieldKey] = found.collector ? resolveStaticOptionValue(found.collector, raw) : raw
           continue
         }
-        // Collected on an EARLIER screen: the "load" branch already
-        // resolved any static option id to its title before carrying it
-        // forward, so this is used as-is.
-        if (sf.carryVar in formData) record[sf.fieldKey] = formData[sf.carryVar]
+        // Collected on an EARLIER screen. The "load" branch should have
+        // resolved any static option id to its title as it carried the
+        // value forward — but this is the last moment before it is
+        // written down, so it is checked again rather than trusted.
+        // resolveStaticOptionValue leaves anything that isn't one of the
+        // component's option ids alone, so a value already resolved
+        // passes through untouched.
+        if (sf.carryVar in formData) {
+          const carried = formData[sf.carryVar]
+          const collector = findStaticCollector(screens, sf.fieldKey)
+          record[sf.fieldKey] = collector
+            ? resolveStaticOptionValue(collector, carried)
+            : carried
+        }
       }
 
       console.log('[data_exchange:save] record:', JSON.stringify(record))
