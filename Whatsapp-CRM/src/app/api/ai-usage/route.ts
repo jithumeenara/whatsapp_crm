@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { usdToInr, usdToInrRate, rateNote } from '@/lib/ai/currency'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
@@ -25,11 +26,12 @@ interface Totals {
   output_tokens: number
   total_tokens: number
   cost_usd: number
+  cost_inr: number
   errors: number
 }
 
 function emptyTotals(): Totals {
-  return { requests: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0, errors: 0 }
+  return { requests: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, cost_usd: 0, cost_inr: 0, errors: 0 }
 }
 
 export async function GET(req: Request) {
@@ -86,7 +88,10 @@ export async function GET(req: Request) {
     prisma.aiUsageEvent.findMany({
       where: { account_id: accountId },
       orderBy: { created_at: 'desc' },
-      take: 10,
+      // Ten was enough to prove the tab worked and not enough to answer
+      // "what did we spend this on". The window above already bounds
+      // this; the list should cover it.
+      take: 200,
       select: {
         id: true, created_at: true, feature: true, model: true, input_tokens: true,
         output_tokens: true, cost_usd: true, status: true, error: true, latency_ms: true,
@@ -110,6 +115,7 @@ export async function GET(req: Request) {
     output_tokens: agg._sum.output_tokens ?? 0,
     total_tokens: agg._sum.total_tokens ?? 0,
     cost_usd: Number(agg._sum.cost_usd ?? 0),
+    cost_inr: usdToInr(Number(agg._sum.cost_usd ?? 0)),
     errors,
   })
 
@@ -123,6 +129,7 @@ export async function GET(req: Request) {
         requests: f._count._all,
         total_tokens: f._sum.total_tokens ?? 0,
         cost_usd: Number(f._sum.cost_usd ?? 0),
+        cost_inr: usdToInr(Number(f._sum.cost_usd ?? 0)),
       }))
       .sort((a, b) => b.requests - a.requests),
     // bigint from COUNT/SUM doesn't survive JSON.stringify — converted
@@ -133,11 +140,18 @@ export async function GET(req: Request) {
       input_tokens: Number(d.input_tokens),
       output_tokens: Number(d.output_tokens),
       cost_usd: Number(d.cost_usd),
+      cost_inr: usdToInr(Number(d.cost_usd)),
     })),
     recent: recent.map((r) => ({
       ...r,
       cost_usd: Number(r.cost_usd),
+      cost_inr: usdToInr(Number(r.cost_usd)),
       created_at: r.created_at.toISOString(),
     })),
+    // The rate is sent with the figures, not baked into them, so the tab
+    // can say what it converted at instead of presenting a rupee number
+    // as though Google had billed it.
+    inr_rate: usdToInrRate(),
+    inr_note: rateNote(),
   })
 }

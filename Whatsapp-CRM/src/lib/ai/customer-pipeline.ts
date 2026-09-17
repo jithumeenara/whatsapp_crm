@@ -241,6 +241,12 @@ export interface CustomerTurnResult {
   knowledgeUsed: string[]
   truncated: boolean
   latencyMs: number
+  /** What the provider counted for this turn. Null on the paths that
+   *  hand off before the model is called at all — a real zero, not a
+   *  missing number. The generator has always returned these; nothing
+   *  carried them out to the caller, so every customer reply was
+   *  recorded as costing nothing. */
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number } | null
 }
 
 /**
@@ -288,6 +294,7 @@ export async function runCustomerTurn(args: {
       knowledgeUsed: [],
       truncated: false,
       latencyMs: Date.now() - startedAt,
+      usage: null,
     }
   }
 
@@ -324,6 +331,7 @@ export async function runCustomerTurn(args: {
       knowledgeUsed,
       truncated: false,
       latencyMs: Date.now() - startedAt,
+      usage: null,
     }
   }
 
@@ -373,6 +381,7 @@ export async function runCustomerTurn(args: {
       knowledgeUsed,
       truncated: false,
       latencyMs: Date.now() - startedAt,
+      usage: null,
     }
   }
 
@@ -408,5 +417,6 @@ export async function runCustomerTurn(args: {
     knowledgeUsed,
     truncated: generated.truncated,
     latencyMs: Date.now() - startedAt,
+    usage: generated.usage ?? null,
   }
 }

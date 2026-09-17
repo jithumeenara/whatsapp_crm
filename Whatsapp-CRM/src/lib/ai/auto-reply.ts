@@ -227,6 +227,10 @@ export async function autoReplyToMessage(args: {
     provider: aiConfig.active_provider,
     model: getProviderKeys(aiConfig)[aiConfig.active_provider]?.model ?? 'unknown',
     feature: 'chat_customer',
+    // Previously omitted, so the single most-used feature in the app
+    // recorded zero tokens and zero cost on every reply. The Usage tab
+    // was not under-reporting the chat; it was reporting none of it.
+    tokens: turn.usage ?? undefined,
     latencyMs: Date.now() - startedAt,
   })
 

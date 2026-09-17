@@ -17,6 +17,7 @@
 import { synthesizeWithCloudTts, detectSpeechLanguage } from './cloud-tts'
 import { resolveTtsCredentials } from './tts-credentials'
 import { synthesizeSpeech as synthesizeWithGemini } from './tts'
+import { recordAiUsage } from './usage'
 
 export type SpeechEngine = 'cloud' | 'gemini'
 
@@ -88,6 +89,25 @@ export async function speak(args: {
     text: args.text,
     voiceName: args.geminiVoice,
   })
+
+  // Voice replies are billed in audio output tokens, which are far from
+  // free, and none of it was being recorded — the Usage tab showed a
+  // chat bill while the real one had a TTS line beside it. Fired without
+  // awaiting: the customer's audio is already made.
+  if (args.accountId && result.usage) {
+    void recordAiUsage({
+      accountId: args.accountId,
+      model: result.usage.model,
+      feature: 'tts',
+      tokens: {
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        totalTokens: result.usage.totalTokens,
+      },
+      latencyMs: Date.now() - startedAt,
+    })
+  }
+
   const elapsed = Date.now() - startedAt
   // Flagged rather than merely reported. This engine is fine for a voice
   // note, where nobody is waiting, and far too slow for a live call.

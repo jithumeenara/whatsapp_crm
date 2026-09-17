@@ -1,5 +1,6 @@
 "use client"
 
+import { BuildBadge } from "@/components/settings/build-badge"
 import { Suspense, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "motion/react"
@@ -313,6 +314,13 @@ function SettingsContent() {
             </div>
           ))}
         </nav>
+
+        {/* Pinned to the foot of the sidebar: which build is actually
+            serving this page. Silent when the build matches the code,
+            loud when it does not. */}
+        <div className="border-t border-slate-100 px-3 py-2">
+          <BuildBadge />
+        </div>
       </aside>
 
       {/* ── Mobile: index list ──────────────────────────────────────

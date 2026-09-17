@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   BarChart3, Loader2, MessageSquare, Database, Send, BookOpen, Languages,
   ShieldCheck, TrendingUp, TrendingDown, Minus, AlertTriangle, Download, Info,
+  Volume2, Mic,
 } from 'lucide-react';
 import { AiButton, AiCard, AiCardHeader, AiBadge, AiSegmented, AiNotice, AiHint, AiIconTile } from './ui-kit';
 import { RequestsChart, TokensChart, FeatureBars, type DailyPoint } from './usage-chart';
@@ -27,6 +28,7 @@ interface Totals {
   output_tokens: number;
   total_tokens: number;
   cost_usd: number;
+  cost_inr: number;
   errors: number;
 }
 
@@ -35,6 +37,7 @@ interface FeatureRow {
   requests: number;
   total_tokens: number;
   cost_usd: number;
+  cost_inr: number;
 }
 
 interface RecentRow {
@@ -45,6 +48,7 @@ interface RecentRow {
   input_tokens: number;
   output_tokens: number;
   cost_usd: number;
+  cost_inr: number;
   status: string;
   error: string | null;
   latency_ms: number | null;
@@ -57,6 +61,8 @@ interface UsageResponse {
   by_feature: FeatureRow[];
   daily: DailyPoint[];
   recent: RecentRow[];
+  inr_rate: number;
+  inr_note: string;
 }
 
 const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }> = {
@@ -66,6 +72,9 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   embedding: { label: 'Training', Icon: BookOpen },
   translation: { label: 'Translation', Icon: Languages },
   validation: { label: 'Key check', Icon: ShieldCheck },
+  eval_grading: { label: 'Evaluation', Icon: ShieldCheck },
+  tts: { label: 'Voice replies', Icon: Volume2 },
+  transcription: { label: 'Voice notes in', Icon: Mic },
 };
 
 const RANGES = [
@@ -82,8 +91,14 @@ function formatUsd(value: number): string {
   if (value === 0) return '$0.00';
   // Sub-cent totals are real at this volume — showing "$0.00" for a day
   // that genuinely cost something reads as "not tracked".
-  if (value < 0.01) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(2)}`;
+  // Rupees, because that is the currency the bill arrives in. A single
+  // reply costs a few paise and a month costs a few hundred rupees, so
+  // one number of decimals cannot serve both: two would round a real
+  // per-call cost to zero, four would make the monthly total unreadable.
+  if (value === 0) return '\u20B90';
+  if (value < 1) return `\u20B9${value.toFixed(3)}`;
+  if (value < 100) return `\u20B9${value.toFixed(2)}`;
+  return `\u20B9${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatNumber(n: number): string {
@@ -186,9 +201,10 @@ export function UsageTab() {
 
   function exportCsv() {
     if (!data) return;
-    const header = 'date,requests,input_tokens,output_tokens,estimated_cost_usd';
+    const header = 'date,requests,input_tokens,output_tokens,estimated_cost_usd,estimated_cost_inr';
     const rows = data.daily.map(
-      (d) => `${d.day},${d.requests},${d.input_tokens},${d.output_tokens},${d.cost_usd.toFixed(6)}`,
+      (d) =>
+        `${d.day},${d.requests},${d.input_tokens},${d.output_tokens},${d.cost_usd.toFixed(6)},${d.cost_inr.toFixed(4)}`,
     );
     const blob = new Blob([[header, ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -270,8 +286,8 @@ export function UsageTab() {
             />
             <StatTile
               label="Estimated Cost"
-              value={formatUsd(totals.cost_usd)}
-              sub={<DeltaChip value={delta(totals.cost_usd, previous.cost_usd)} invert />}
+              value={formatUsd(totals.cost_inr)}
+              sub={<DeltaChip value={delta(totals.cost_inr, previous.cost_inr)} invert />}
               Icon={TrendingUp}
               tint="amber"
             />
@@ -335,7 +351,7 @@ export function UsageTab() {
                             {r.input_tokens.toLocaleString()} / {r.output_tokens.toLocaleString()}
                           </td>
                           <td className="px-5 py-2.5 text-[12.5px] tabular-nums text-slate-700">
-                            {formatUsd(r.cost_usd)}
+                            {formatUsd(r.cost_inr)}
                           </td>
                           <td className="px-5 py-2.5">
                             {r.status === 'success' ? (
@@ -377,13 +393,13 @@ export function UsageTab() {
                         <span className="truncate">{featureLabel(f.feature)}</span>
                       </dt>
                       <dd className="shrink-0 text-[12.5px] font-medium tabular-nums text-slate-800">
-                        {formatUsd(f.cost_usd)}
+                        {formatUsd(f.cost_inr)}
                       </dd>
                     </div>
                   ))}
                   <div className="flex items-center justify-between gap-3 pt-2.5">
                     <dt className="text-[12.5px] font-semibold text-slate-700">Total</dt>
-                    <dd className="text-[13px] font-bold tabular-nums text-slate-900">{formatUsd(totals.cost_usd)}</dd>
+                    <dd className="text-[13px] font-bold tabular-nums text-slate-900">{formatUsd(totals.cost_inr)}</dd>
                   </div>
                 </dl>
               </AiCard>
@@ -392,12 +408,25 @@ export function UsageTab() {
                 <div className="flex items-start gap-2.5">
                   <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                   <div>
-                    <p className="text-[12.5px] font-semibold text-slate-700">How these numbers are produced</p>
+                    <p className="text-[12.5px] font-semibold text-slate-700">
+                      How these numbers are produced, and where they differ from your Google bill
+                    </p>
                     <AiHint className="mt-1">
-                      Token counts are the ones Gemini reports for each call, so they match what you were billed for.
-                      Cost is calculated here from published per-model rates and will drift if Google changes pricing —
-                      treat it as an estimate, not an invoice. Training tokens are approximated from text length,
-                      because the embedding API returns no token count at all.
+                      Token counts are the ones Gemini reports for each call, so they match what you were
+                      billed for. Cost is calculated here from published per-model rates and will drift if
+                      Google changes pricing &mdash; treat it as an estimate, not an invoice. Training tokens
+                      are approximated from text length, because the embedding API returns no token count at
+                      all. {data.inr_note}
+                    </AiHint>
+                    {/* Said plainly. Someone comparing this tab to the Cloud
+                        Console will find a gap, and guessing at the reason is
+                        worse than being told it. */}
+                    <AiHint className="mt-2">
+                      <strong className="font-semibold text-slate-600">What this tab cannot see:</strong>{' '}
+                      calls the voice agent makes on its own server, and live voice sessions your browser
+                      opens directly with Google. Both use your Gemini key and both appear on Google&rsquo;s
+                      bill, but neither passes through this app, so neither can be counted here. If your
+                      bill is larger than this figure, that is usually the difference.
                     </AiHint>
                   </div>
                 </div>

@@ -309,11 +309,21 @@ export function TestTab(props: TestTabProps) {
           },
         ]);
       } else {
+        // The same recent turns the Admin test already sent. Without
+        // these every message started from nothing, so answering "yes"
+        // to the assistant's own question got a fresh greeting back —
+        // which read as the assistant being stupid rather than as this
+        // screen forgetting to tell it what had just been said.
+        const history = messages
+          .filter((m) => m.mode === 'customer')
+          .slice(-8)
+          .map((m) => ({ role: m.role === 'user' ? ('user' as const) : ('model' as const), text: m.text }));
         const res = await fetch('/api/ai-config/test', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: msg,
+            history,
             provider: 'gemini',
             api_key: props.unsavedApiKey || undefined,
             model: props.model,

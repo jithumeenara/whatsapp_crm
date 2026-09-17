@@ -26,6 +26,11 @@ export type UsageFeature =
   /// 'test' so a suite run's cost is visible as its own line rather
   /// than blurred into the Test AI screen's usage.
   | 'eval_grading'
+  /// Text-to-speech for a voice reply. Billed in audio output
+  /// tokens, which dominate a voice note's cost.
+  | 'tts'
+  /// Turning a customer's voice note into text.
+  | 'transcription'
 
 export interface TokenCounts {
   inputTokens: number
@@ -48,6 +53,11 @@ const PRICES: Array<{ prefix: string; input: number; output: number }> = [
   { prefix: 'gemini-3.5-flash-lite', input: 0.05, output: 0.20 },
   { prefix: 'gemini-3.5-flash', input: 0.15, output: 0.60 },
   { prefix: 'gemini-embedding', input: 0.02, output: 0 },
+  // Audio output is priced well above text, which is exactly why a
+  // voice reply costing nothing on this tab was so misleading.
+  { prefix: 'gemini-3.1-flash-tts', input: 0.50, output: 10.00 },
+  { prefix: 'gemini-2.5-flash-preview-tts', input: 0.50, output: 10.00 },
+  { prefix: 'gemini-3.5-flash-transcribe', input: 0.10, output: 0.40 },
   // Family fallbacks, so an unrecognized point release still prices.
   { prefix: 'gemini-3', input: 0.15, output: 0.60 },
   { prefix: 'gemini', input: 0.15, output: 0.60 },

@@ -27,6 +27,9 @@ export interface DailyPoint {
   input_tokens: number;
   output_tokens: number;
   cost_usd: number;
+  /** The same figure in rupees, converted server-side at a stated rate
+   *  so every surface shows one currency. */
+  cost_inr: number;
 }
 
 const SERIES_INPUT = '#5B6CF9';

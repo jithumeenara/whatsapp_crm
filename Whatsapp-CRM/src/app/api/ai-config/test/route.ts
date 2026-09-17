@@ -1,20 +1,51 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { decrypt } from '@/lib/whatsapp/encryption'
-import { PROVIDERS, generateAiReply, getProviderKeys } from '@/lib/ai/providers/registry'
+import { encrypt } from '@/lib/whatsapp/encryption'
+import { PROVIDERS, getProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { markdownToWhatsApp, WHATSAPP_REPLY_STYLE } from '@/lib/whatsapp/markdown-to-whatsapp'
-import { loadKnowledge } from '@/lib/ai/knowledge-store'
-import { loadCompanyProfile, formatCompanyBlock } from '@/lib/ai/company-profile'
 import { recordAiUsage } from '@/lib/ai/usage'
-import { selectRelevantContext, formatKnowledgeBlock } from '@/lib/ai/knowledge'
+import { runCustomerTurn, type CustomerAiConfig } from '@/lib/ai/customer-pipeline'
+
+/**
+ * Test AI (Customer) — the assistant a customer would actually get.
+ *
+ * ── Why this was rewritten ──────────────────────────────────────────
+ *
+ * This route used to be a second, simpler implementation of the customer
+ * reply path: retrieval, a prompt, one model call. It shared no code
+ * with what answers a real WhatsApp message, and the gap showed up in
+ * testing as behaviour nobody could explain.
+ *
+ * A real transcript from this screen: the customer asked to register,
+ * and the reply ended with the literal text
+ * "[ACTION: TRIGGER_HUMAN_ADMIN]" — a directive the live path strips and
+ * turns into a handover, which this route knew nothing about. Then they
+ * answered "yes" to a question the assistant had just asked, and got
+ * "Great! How can I assist you today?", because no conversation history
+ * was sent and every message started from nothing. And no tool was ever
+ * offered, so the assistant could not take the registration it was being
+ * asked for even once that feature existed.
+ *
+ * None of those were bugs in the assistant. They were bugs in the copy
+ * of it that this screen ran — the worst possible place for them, since
+ * this is the screen people use to decide whether the assistant works.
+ *
+ * So the preview now calls `runCustomerTurn`, the same function the
+ * WhatsApp path calls. Everything follows from that: history, action
+ * tokens, tools, the safety guard, the validator, confidence handoff.
+ * When a handoff would happen, this screen says so instead of silently
+ * showing a reply that production would never have sent.
+ *
+ * What it still allows, because it is the point of a test screen, is
+ * overriding the unsaved settings — a prompt, model, temperature or key
+ * being tried before it is saved. Those are layered over the stored
+ * config and handed to the same pipeline.
+ */
 
 export async function POST(req: Request) {
   // Same role floor as PUT /api/ai-config — this route can be made to
-  // send a live request (with this account's real or a caller-supplied
-  // API key) to any base_url the caller names, so it needs the same
-  // 'owner' gate the config-save route has, not just "any authenticated
-  // account member."
+  // send a live request with a caller-supplied API key, so it needs the
+  // same 'owner' gate the config-save route has.
   let accountId: string
   try {
     accountId = (await requireRole('owner')).accountId
@@ -25,26 +56,30 @@ export async function POST(req: Request) {
   const body = await req.json()
   const {
     message,
+    history,
+    contact_id,
     provider,
     api_key: rawKey,
     model,
-    base_url,
     temperature,
     max_tokens,
     system_prompt,
-    training_data,
     safety_filter,
     reply_language,
   } = body as {
     message?: string
+    history?: Array<{ role: 'user' | 'model'; text: string }>
+    /** Optional: preview as a specific contact, which is what makes the
+     *  customer-scoped tools (their enquiries, their registrations)
+     *  answer with anything. Without it those tools are not offered at
+     *  all — the same as a conversation with no contact behind it. */
+    contact_id?: string
     provider?: string
     api_key?: string
     model?: string
-    base_url?: string
     temperature?: number
     max_tokens?: number
     system_prompt?: string
-    training_data?: Array<{ question: string; answer: string }>
     safety_filter?: string
     reply_language?: string | null
   }
@@ -59,138 +94,123 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Unknown AI provider: ${providerId}` }, { status: 400 })
   }
 
-  // Resolve API key/model: prefer what was sent in the request body
-  // (unsaved — this is what makes "test before you save" possible), fall
-  // back to this provider's already-saved, decrypted key.
-  let apiKey: string
-  let resolvedModel: string
+  const stored = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
+  if (!stored) {
+    return NextResponse.json({ error: 'Connect an AI provider first.' }, { status: 400 })
+  }
+
+  // An unsaved key is folded into a copy of the stored provider_keys, so
+  // the pipeline resolves it by exactly the same route as a saved one
+  // rather than needing a separate "test mode" path through the adapter.
+  let providerKeys = stored.provider_keys
   if (rawKey?.trim()) {
-    apiKey = rawKey.trim()
-    resolvedModel = model || adapter.defaultModels[0]?.id || ''
+    const keys = { ...(getProviderKeys(stored) as Record<string, unknown>) }
+    keys[providerId] = {
+      ...((keys[providerId] as Record<string, unknown>) ?? {}),
+      // Re-encrypted because the pipeline decrypts whatever it finds
+      // here; handing it plaintext would decrypt to nonsense.
+      api_key: encrypt(rawKey.trim()),
+      model: model || adapter.defaultModels[0]?.id || '',
+    }
+    providerKeys = keys as typeof stored.provider_keys
   } else {
-    const stored = await prisma.aiConfig.findUnique({
-      where: { account_id: accountId },
-    })
-    const entry = stored ? getProviderKeys(stored)[providerId] : undefined
+    const entry = getProviderKeys(stored)[providerId]
     if (!entry?.api_key) {
       return NextResponse.json(
         { error: `No API key configured for ${adapter.label}. Save one first or enter one to test.` },
         { status: 400 },
       )
     }
-    apiKey = decrypt(entry.api_key)
-    resolvedModel = model || entry.model
-  }
-
-  if (!resolvedModel) {
-    return NextResponse.json({ error: 'A model is required for this provider.' }, { status: 400 })
-  }
-
-  // Knowledge: when the caller doesn't pass its own training_data, this
-  // runs the SAME retrieval the real ai_reply node runs — load the
-  // account's knowledge items, rank them against this message, and fold
-  // only the relevant ones into the prompt. Previously the test screen
-  // flattened a client-supplied copy of the Q&A pairs and ignored
-  // documents entirely, so it could answer better or worse than
-  // production for reasons that had nothing to do with the model. A
-  // preview that doesn't match what customers get isn't a preview.
-  let knowledgeBlock = ''
-  let retrievalConfidence: number | null = null
-  // Which knowledge entries the answer was actually built from. Shown on
-  // the reply so a wrong answer can be traced to the entry that caused
-  // it, instead of leaving "where did it get that?" unanswerable.
-  let sources: string[] = []
-  if (!training_data) {
-    const storedConfig = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
-    if (storedConfig?.knowledge_base_enabled) {
-      try {
-        // Customer Test mirrors the real customer path exactly,
-        // including the audience boundary — a preview that could see
-        // staff-only entries would not be a preview.
-        const { qaPairs, documents, version } = await loadKnowledge(storedConfig.id, 'customer')
-        if (qaPairs.length > 0 || documents.length > 0) {
-          const geminiEntry = getProviderKeys(storedConfig).gemini
-          const geminiApiKey = geminiEntry?.api_key ? decrypt(geminiEntry.api_key) : null
-          const useSemantic = storedConfig.retrieval_mode !== 'keyword' && !!geminiApiKey
-          const limit = Math.max(1, storedConfig.max_context_results)
-          const selected = await selectRelevantContext(message.trim(), qaPairs, documents, {
-            cacheKey: `${storedConfig.id}:${version}`,
-            maxQaPairs: limit,
-            maxDocChunks: limit,
-            ...(useSemantic ? { semantic: { aiConfigId: storedConfig.id, geminiApiKey: geminiApiKey! } } : {}),
-          })
-          knowledgeBlock = formatKnowledgeBlock(selected)
-          retrievalConfidence = selected.confidence
-          sources = [
-            ...selected.qaPairs.map((q) => q.question),
-            ...selected.documentChunks.map((d) => d.title),
-          ]
-            // The same document contributes several chunks; listing it
-            // once is what a reader wants.
-            .filter((title, index, all) => title && all.indexOf(title) === index)
-            .slice(0, 6)
-        }
-      } catch (err) {
-        // Retrieval is an enhancement here, not the point of the test —
-        // a failure still gets a reply, just without grounding.
-        console.error('[ai-config/test] knowledge retrieval failed:', err instanceof Error ? err.message : err)
-      }
+    if (model && model !== entry.model) {
+      const keys = { ...(getProviderKeys(stored) as Record<string, unknown>) }
+      keys[providerId] = { ...(keys[providerId] as Record<string, unknown>), model }
+      providerKeys = keys as typeof stored.provider_keys
     }
   }
 
-  // Same company block the live reply path prepends, so the preview is
-  // grounded in the same identity a customer would get.
-  const companyProfile = await loadCompanyProfile(accountId).catch(() => null)
-  const systemPrompt = buildTestSystemPrompt(
-    system_prompt,
-    training_data,
-    reply_language,
-    knowledgeBlock,
-    formatCompanyBlock(companyProfile, 'customer'),
-  )
+  const aiConfig: CustomerAiConfig = {
+    ...(stored as unknown as CustomerAiConfig),
+    active_provider: providerId,
+    provider_keys: providerKeys,
+    temperature: temperature ?? stored.temperature,
+    max_tokens: max_tokens ?? stored.max_tokens,
+    safety_filter: safety_filter ?? stored.safety_filter,
+    system_prompt: system_prompt !== undefined ? system_prompt : stored.system_prompt,
+    reply_language: reply_language !== undefined ? reply_language : stored.reply_language,
+  }
+
+  // Only a contact of this account, so the preview cannot be pointed at
+  // somebody else's customer to read their records.
+  let contactId: string | null = null
+  if (contact_id) {
+    const owned = await prisma.contact.findFirst({
+      where: { id: contact_id, account_id: accountId },
+      select: { id: true },
+    })
+    contactId = owned?.id ?? null
+  }
 
   const startedAt = Date.now()
   try {
-    const result = await generateAiReply(
-      providerId,
-      {
-        apiKey,
-        model: resolvedModel,
-        baseUrl: base_url || (providerId === 'deepseek' ? 'https://api.deepseek.com' : undefined),
-        temperature: temperature ?? 0.7,
-        maxTokens: max_tokens ?? 2048,
-        systemPrompt,
-        safetyFilter: safety_filter,
-      },
-      message.trim(),
-    )
+    const turn = await runCustomerTurn({
+      aiConfig,
+      accountId,
+      contactId,
+      customerMessage: message.trim(),
+      conversationHistory: Array.isArray(history)
+        ? history
+            .filter((h) => h && typeof h.text === 'string')
+            .slice(-8)
+            .map((h) => ({ role: h.role === 'user' ? ('user' as const) : ('model' as const), text: h.text }))
+        : [],
+      currentChannel: 'whatsapp',
+    })
+
     void recordAiUsage({
       accountId,
-      model: resolvedModel,
+      model: getProviderKeys(aiConfig)[providerId]?.model ?? 'unknown',
       feature: 'test',
-      tokens: result.usage,
+      tokens: turn.usage ?? undefined,
       latencyMs: Date.now() - startedAt,
     })
-    // Converted the same way a real send is (engine.ts's ai_reply node) —
-    // this screen is meant to preview what a customer actually receives,
-    // so it needs to show the same WhatsApp-formatted text, not raw
-    // Markdown that only looks fine here and breaks on a real send.
+
+    // A handoff is reported as a handoff. Showing the draft reply here
+    // as though it were sent would preview an assistant that does not
+    // exist — production would have sent the holding line instead and
+    // put the conversation in front of a person.
+    if (turn.decision.action === 'handoff') {
+      return NextResponse.json({
+        reply:
+          turn.decision.reason === 'safety'
+            ? turn.decision.safety?.customerMessage
+            : stored.low_confidence_message?.trim() ||
+              'Let me connect you with a team member who can help with that.',
+        handoff: true,
+        handoff_reason: turn.decision.reason,
+        // The reply production suppressed, so the reason for the handoff
+        // can be judged rather than guessed at.
+        withheld_reply: turn.reply,
+        retrieval_confidence: turn.effectiveConfidence,
+        sources: turn.knowledgeUsed.slice(0, 6),
+        tools_used: turn.toolsUsed,
+      })
+    }
+
     return NextResponse.json({
-      reply: markdownToWhatsApp(result.text),
-      truncated: result.truncated,
+      reply: turn.decision.reply,
+      truncated: turn.truncated,
       provider: providerId,
-      // Lets the Test AI screen show what the bot actually retrieved for
-      // this message — the same number the confidence-handoff guardrail
-      // compares against in production.
-      retrieval_confidence: retrievalConfidence,
-      sources,
+      handoff: false,
+      retrieval_confidence: turn.effectiveConfidence,
+      sources: turn.knowledgeUsed
+        .filter((title, i, all) => title && all.indexOf(title) === i)
+        .slice(0, 6),
+      tools_used: turn.toolsUsed,
     })
   } catch (err) {
-    // Failures are recorded too — a run of errors in the Usage tab is
-    // exactly what someone debugging a key or quota needs to see.
     void recordAiUsage({
       accountId,
-      model: resolvedModel,
+      model: model ?? 'unknown',
       feature: 'test',
       status: 'error',
       error: err instanceof Error ? err.message : String(err),
@@ -199,33 +219,4 @@ export async function POST(req: Request) {
     const classified = adapter.classifyError(err)
     return NextResponse.json({ error: classified.message }, { status: classified.retryable ? 429 : 400 })
   }
-}
-
-function buildTestSystemPrompt(
-  systemPrompt: string | undefined,
-  trainingData: Array<{ question: string; answer: string }> | undefined,
-  replyLanguage?: string | null,
-  knowledgeBlock?: string,
-  companyBlock?: string,
-): string {
-  const parts: string[] = []
-  if (companyBlock) parts.push(companyBlock)
-  if (systemPrompt) parts.push(systemPrompt)
-  if (knowledgeBlock) parts.push(knowledgeBlock)
-  // Same style rule the live reply path appends, so the preview shows
-  // the shape a customer actually receives.
-  parts.push(WHATSAPP_REPLY_STYLE)
-  // Same instruction the real ai_reply node adds (engine.ts) — this
-  // screen is a preview of production behavior, so it has to apply the
-  // same language rule rather than diverging from it.
-  if (replyLanguage) {
-    parts.push(`Always reply in ${replyLanguage}, regardless of which language the customer writes in.`)
-  }
-  if (trainingData && trainingData.length > 0) {
-    parts.push('Knowledge base (use these to answer questions accurately):')
-    for (const item of trainingData) {
-      if (item.question && item.answer) parts.push(`Q: ${item.question}\nA: ${item.answer}`)
-    }
-  }
-  return parts.join('\n\n') || 'You are a helpful assistant.'
 }

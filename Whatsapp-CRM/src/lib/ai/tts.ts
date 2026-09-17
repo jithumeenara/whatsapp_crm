@@ -72,6 +72,15 @@ function loadMp3Encoder(): Promise<Mp3EncoderCtor> {
  *  notice and a missing model must not take voice replies down. */
 const TTS_MODELS = ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts']
 
+/** What one synthesis actually consumed, so the caller can record it.
+ *  Audio output tokens are the bulk of a voice reply's cost. */
+export interface TtsUsage {
+  model: string
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
 // Gemini's prebuilt voices live in their own module so the Settings
 // screen can list them without importing this file's encoder.
 export { TTS_VOICES } from './tts-voices'
@@ -87,7 +96,14 @@ const MP3_BITRATE_KBPS = 48
 /** One MPEG-1 Layer III frame. The encoder expects whole frames. */
 const SAMPLES_PER_FRAME = 1152
 
-export type SpeechResult = { buffer: Buffer; mimeType: 'audio/mpeg'; durationSec: number }
+export type SpeechResult = {
+  buffer: Buffer
+  mimeType: 'audio/mpeg'
+  durationSec: number
+  /** Present when the provider reported it, so the caller can
+   *  record what the synthesis cost. */
+  usage?: TtsUsage
+}
 
 /**
  * Speaks `text`, returning MP3 bytes ready to upload to WhatsApp.
@@ -108,9 +124,9 @@ export async function synthesizeSpeech(args: {
   let lastError: Error | null = null
   for (const model of TTS_MODELS) {
     try {
-      const { pcm, sampleRate } = await requestPcm({ apiKey: args.apiKey, model, text: spoken, voiceName })
+      const { pcm, sampleRate, usage } = await requestPcm({ apiKey: args.apiKey, model, text: spoken, voiceName })
       const buffer = await pcmToMp3(pcm, sampleRate)
-      return { buffer, mimeType: 'audio/mpeg', durationSec: pcm.length / sampleRate }
+      return { buffer, mimeType: 'audio/mpeg', durationSec: pcm.length / sampleRate, usage }
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err))
       // Try the next model only for "this model is gone" style failures.
@@ -136,7 +152,7 @@ async function requestPcm(args: {
   model: string
   text: string
   voiceName: string
-}): Promise<{ pcm: Int16Array; sampleRate: number }> {
+}): Promise<{ pcm: Int16Array; sampleRate: number; usage?: TtsUsage }> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${args.model}:generateContent`,
     {
@@ -160,6 +176,14 @@ async function requestPcm(args: {
 
   const json = (await res.json()) as {
     candidates?: { content?: { parts?: { inlineData?: { data?: string; mimeType?: string } }[] } }[]
+    // Audio output is billed per token like everything else, and Gemini
+    // reports it here. It was being parsed away, which is why voice
+    // replies cost real money and showed as nothing on the Usage tab.
+    usageMetadata?: {
+      promptTokenCount?: number
+      candidatesTokenCount?: number
+      totalTokenCount?: number
+    }
   }
   const inline = json.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)?.inlineData
   if (!inline?.data) throw new Error(`TTS ${args.model} returned no audio.`)
@@ -167,6 +191,12 @@ async function requestPcm(args: {
   return {
     pcm: bytesToInt16(Buffer.from(inline.data, 'base64')),
     sampleRate: parseSampleRate(inline.mimeType),
+    usage: {
+      model: args.model,
+      inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
+      outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
+      totalTokens: json.usageMetadata?.totalTokenCount ?? 0,
+    },
   }
 }
 
