@@ -384,17 +384,17 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                     <li className="flex gap-2">
                       <ArrowRight className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
                       <span>
-                        <strong className="text-slate-700">Then re-publish the Flow.</strong> A
-                        Flow published against an older key keeps failing until it is published
-                        again.
+                        <strong className="text-slate-700">Then test the Flow.</strong> The key
+                        belongs to the WhatsApp number, not to each Flow, so a resync usually
+                        fixes every Flow at once without republishing.
                       </span>
                     </li>
                     <li className="flex gap-2">
                       <ArrowRight className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
                       <span>
                         <strong className="text-slate-700">Generate only as a last resort.</strong>{' '}
-                        It replaces the key Meta holds, and every published Flow stops until the
-                        new one is live and re-published.
+                        It replaces the key Meta holds. Every Flow stops working until the new key
+                        is live, and any Flow that still fails afterwards needs republishing.
                       </span>
                     </li>
                   </ol>
@@ -506,8 +506,8 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
 
                 <StepCard
                   n={3}
-                  title="Re-publish every Flow"
-                  note="A Flow published against the old key keeps failing until it is published again."
+                  title="Test a Flow"
+                  note="The key belongs to the number rather than to each Flow, so this is usually all that was needed. Republish only a Flow that still fails."
                 />
               </>
             )}

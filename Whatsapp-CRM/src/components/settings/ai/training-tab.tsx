@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  FileText, MessageSquare, Link2, StickyNote, Database, Plus, Search, Filter,
+  FileText, MessageSquare, Link2, StickyNote, Database, Sheet, Plus, Search, Filter,
   Loader2, RefreshCw, Trash2, MoreHorizontal, CheckCircle2, AlertTriangle, Clock,
   EyeOff, ChevronLeft, ChevronRight, Upload, X, Sparkles, Lock, Users, ShieldCheck,
 } from 'lucide-react';
@@ -25,7 +25,7 @@ import {
 
 export interface KnowledgeItem {
   id: string;
-  kind: 'qa' | 'document' | 'website' | 'text' | 'database';
+  kind: 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet';
   name: string;
   source: string;
   audience: string;
@@ -63,7 +63,7 @@ export interface TrainingTabProps {
   rail?: ReactNode;
 }
 
-type AddKind = 'qa' | 'document' | 'website' | 'text' | 'database';
+type AddKind = 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet';
 
 const SOURCE_CARDS: Array<{ kind: AddKind; label: string; blurb: string; Icon: typeof FileText; tint: string }> = [
   { kind: 'document', label: 'Documents', blurb: 'Upload files, PDFs, policies, etc.', Icon: FileText, tint: 'bg-[#EEF0FF] text-[#5B6CF9]' },
@@ -71,6 +71,7 @@ const SOURCE_CARDS: Array<{ kind: AddKind; label: string; blurb: string; Icon: t
   { kind: 'website', label: 'Website', blurb: 'Sync from your website URLs.', Icon: Link2, tint: 'bg-violet-50 text-violet-600' },
   { kind: 'text', label: 'Text / Notes', blurb: 'Add custom instructions and context.', Icon: StickyNote, tint: 'bg-amber-50 text-amber-600' },
   { kind: 'database', label: 'Database', blurb: 'Connect to your data (optional).', Icon: Database, tint: 'bg-rose-50 text-rose-600' },
+  { kind: 'sheet', label: 'Google Sheet', blurb: 'Keep the sheet; the bot re-reads it.', Icon: Sheet, tint: 'bg-sky-50 text-sky-600' },
 ];
 
 const KIND_LABEL: Record<string, string> = {
@@ -79,6 +80,7 @@ const KIND_LABEL: Record<string, string> = {
   website: 'Website',
   text: 'Text',
   database: 'Database',
+  sheet: 'Google Sheet',
 };
 
 const PAGE_SIZE = 8;
@@ -512,7 +514,7 @@ export function TrainingTab(props: TrainingTabProps) {
                           <MoreHorizontal className="h-4 w-4" />
                         </AiMenuTrigger>
                         <AiMenuContent className="min-w-[200px]">
-                          {(item.kind === 'website' || item.kind === 'database') && (
+                          {(item.kind === 'website' || item.kind === 'database' || item.kind === 'sheet') && (
                             <AiMenuItem
                               onClick={() => updateItem(item.id, { resync: true })}
                               icon={<RefreshCw className="h-4 w-4" />}
@@ -756,6 +758,7 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
             kind === 'document' ? 'Upload a PDF or text file — its text is extracted and stored.'
             : kind === 'qa' ? 'A question a customer might ask, and the answer the bot should give.'
             : kind === 'website' ? 'The page is fetched once now, and can be re-synced any time.'
+            : kind === 'sheet' ? 'Keep maintaining the sheet where it is. Re-sync to pull the current rows.'
             : kind === 'text' ? 'Paste notes, policies or instructions in your own words.'
             : 'Pick a Data Store table — its records become searchable knowledge.'
           }
@@ -807,6 +810,26 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
                 />
               </div>
             </>
+          )}
+
+          {kind === 'sheet' && (
+            <div className="space-y-1.5">
+              <AiLabel>Google Sheets link</AiLabel>
+              <AiInput
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                className="font-mono"
+              />
+              {/* Said before they hit Save, because an unshared sheet is
+                  the failure everyone hits first and Google returns its
+                  sign-in page rather than an error. */}
+              <AiHint>
+                The sheet must be shared: Share &rarr; General access &rarr; &ldquo;Anyone with the
+                link&rdquo; &rarr; Viewer. The first row is read as column names, and each row
+                becomes one labelled line the bot can quote.
+              </AiHint>
+            </div>
           )}
 
           {kind === 'website' && (

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
+import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
 
 /**
@@ -18,7 +19,7 @@ import { serializeDataTable } from '@/lib/ai/data-store-source'
 const WRITE_ROLE = 'admin' as const
 const READ_ROLE = 'viewer' as const
 
-const KINDS = ['qa', 'document', 'website', 'text', 'database'] as const
+const KINDS = ['qa', 'document', 'website', 'text', 'database', 'sheet'] as const
 type Kind = (typeof KINDS)[number]
 
 /** Who an entry may be said to — see AiKnowledgeItem.audience. */
@@ -199,7 +200,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ item }, { status: 201 })
     }
 
-    if (kind === 'website') {
+    if (kind === 'sheet') {
+      const rawUrl = body?.source_url?.trim()
+      if (!rawUrl) return NextResponse.json({ error: 'A sheet entry needs a Google Sheets link.' }, { status: 400 })
+      const sheet = await fetchSheet(rawUrl)
+      content = serializeSheet(sheet, resolvedDescription)
+      name = name || sheet.title || 'Google Sheet'
+      source = 'google_sheet'
+      sourceUrl = rawUrl
+      lastSyncedAt = new Date()
+    } else if (kind === 'website') {
       const rawUrl = body?.source_url?.trim()
       if (!rawUrl) return NextResponse.json({ error: 'A website entry needs a URL.' }, { status: 400 })
       const page = await fetchPageText(rawUrl)

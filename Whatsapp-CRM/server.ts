@@ -90,9 +90,11 @@ app.prepare().then(() => {
     });
   }, 60_000);
 
-  // Website knowledge re-sync -- hourly rather than per-minute: the sweep
-  // itself only touches entries older than 24h, so checking more often
-  // just costs DB round-trips for accounts that have this off anyway.
+  // Live knowledge re-sync -- websites (when the account asked for it)
+  // and connected Google Sheets (always, since pointing at a sheet is
+  // the request for it to stay current). Hourly: websites are only
+  // touched after 24h, and a sheet edited now reaches the bot within
+  // the hour, which is the granularity that was actually wanted.
   setInterval(() => {
     sweepWebsiteKnowledge().catch((err) => {
       console.error("[ai-knowledge] website sweep failed:", err);
