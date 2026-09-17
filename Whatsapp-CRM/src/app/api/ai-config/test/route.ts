@@ -198,6 +198,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       reply: turn.decision.reply,
+      // The model answered and also asked for a person. Production sends
+      // the answer and flags the thread; the preview says both happened
+      // rather than showing only half of it.
+      notified_human: turn.decision.notifyHuman === true,
       truncated: turn.truncated,
       provider: providerId,
       handoff: false,

@@ -334,6 +334,46 @@ export async function autoReplyToMessage(args: {
 
   const reply = turn.decision.reply
 
+  // The model answered, and also asked for a person.
+  //
+  // Both happen: the customer keeps their answer and the thread is put
+  // in front of somebody. No holding line — there is nothing to hold
+  // for, the answer is already on its way — and the conversation is
+  // flagged rather than reassigned, so the assistant can carry on if the
+  // customer writes again before anyone picks it up.
+  if (turn.decision.notifyHuman) {
+    void handOver({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      note: buildHandoffNote({
+        reason: 'customer_requested',
+        customerMessage: text,
+        draftReply: reply,
+        confidence: turn.confidence,
+        validation: turn.validation,
+        knowledgeUsed: turn.knowledgeUsed,
+        toolsUsed: turn.toolsUsed,
+        transcript: [
+          ...history.map((h) => ({
+            role: h.role === 'user' ? ('customer' as const) : ('assistant' as const),
+            text: h.text,
+          })),
+          { role: 'customer' as const, text },
+        ],
+      }),
+      assignTo: aiConfig.low_confidence_assign_to,
+    })
+    void sendHandoffAlert({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      reason: 'model_requested',
+      customerMessage: text,
+      contact: await prisma.contact
+        .findUnique({ where: { id: args.contactId }, select: { name: true, phone: true } })
+        .catch(() => null),
+    })
+  }
+
   // Answer a voice note with a voice note, exactly as the flow node
   // does. Best effort: a synthesis failure costs the nicer format, never
   // the reply.

@@ -196,7 +196,13 @@ export async function retrieveForMessage(args: {
 }
 
 export type TurnDecision =
-  | { action: 'reply'; reply: string }
+  | {
+      action: 'reply'
+      reply: string
+      /** The model asked for a person *and* answered properly. Send the
+       *  answer, and put the conversation in front of somebody too. */
+      notifyHuman?: boolean
+    }
   | {
       action: 'handoff'
       reason:
@@ -215,16 +221,48 @@ export type TurnDecision =
       error?: string
     }
 
-/** Order matters: an unverifiable figure is a stronger reason to stop
- *  than the model politely asking for help, and the handoff note should
- *  say the more serious thing. */
-function decideTurn(args: {
+/**
+ * What to do with the turn the model just produced.
+ *
+ * Order matters: an unverifiable figure is a stronger reason to stop
+ * than the model politely asking for help, and the handoff note should
+ * say the more serious thing.
+ *
+ * ── Why asking for a human no longer silences the answer ────────────
+ *
+ * The other handoff reasons all mean the same thing: *this reply cannot
+ * be trusted*. Low confidence, a figure the retrieved context does not
+ * support, the safety filter, a provider error — in every one of those
+ * the right move is to throw the draft away and fetch a person.
+ *
+ * "The model asked for a human" is not that. The reply is usually fine;
+ * the model has simply been told to flag something. This account's own
+ * prompt says it outright: "append [ACTION: TRIGGER_HUMAN_ADMIN] to your
+ * response **so the backend can flag the ticket**" — a request to raise
+ * a ticket, not to stop helping. Treating it as a full handoff meant a
+ * customer who said "I want to register" got their answer deleted and
+ * replaced with "let me connect you with a team member", from an
+ * assistant that was by then perfectly able to register them.
+ *
+ * So a flagged reply is now sent *and* escalated. The account gets its
+ * ticket, the customer gets their answer, and neither has to be traded
+ * for the other.
+ *
+ * A token on its own, with no real reply behind it, still hands over —
+ * there is nothing to send, and silence would be worse.
+ */
+export function decideTurn(args: {
   validation: ValidationResult | null
   modelAskedForHuman: boolean
   reply: string
 }): TurnDecision {
   if (args.validation && !args.validation.ok) return { action: 'handoff', reason: 'unsupported_details' }
-  if (args.modelAskedForHuman) return { action: 'handoff', reason: 'model_requested' }
+  if (args.modelAskedForHuman) {
+    // Short enough to be a bare acknowledgement rather than an answer:
+    // nothing worth sending, so this is a real handoff.
+    if (args.reply.trim().length < 15) return { action: 'handoff', reason: 'model_requested' }
+    return { action: 'reply', reply: args.reply, notifyHuman: true }
+  }
   return { action: 'reply', reply: args.reply }
 }
 
