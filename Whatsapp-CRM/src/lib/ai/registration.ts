@@ -31,7 +31,13 @@ import { prisma } from '@/lib/db'
 // Shared with the table's settings panel, which counts what the assistant
 // will ask for. Kept in one place so the count shown to the account and
 // the questions actually asked can never disagree.
-import { AI_FILLABLE_FIELD_TYPES } from '@/lib/data-store/types'
+import {
+  AI_FILLABLE_FIELD_TYPES,
+  getFieldConfig,
+  getSelectItems,
+  type FieldConfig,
+  type SelectOption,
+} from '@/lib/data-store/types'
 
 export interface RegistrationField {
   key: string
@@ -59,25 +65,92 @@ export interface RegistrationForm {
   capacity_limit: number | null
 }
 
+/** A field, plus where its options come from if they are not written
+ *  out by hand. The source is resolved by the caller, which can batch
+ *  the reads instead of doing one per field. */
+type FieldWithSource = RegistrationField & {
+  _source?: { tableId: string; fieldKey: string }
+}
+
+/**
+ * One field, with the values it will actually accept.
+ *
+ * ── Why the options matter more than they look ──────────────────────
+ *
+ * This read only the legacy array shape, so a `select` field saved any
+ * time in the last year — which stores a FieldConfig object — came back
+ * with no options at all. `validateValues` then had nothing to check
+ * against, and the assistant could write whatever it liked into a
+ * dropdown.
+ *
+ * What that costs showed up in a live test. The Training table holds one
+ * scheduled programme; the knowledge documents list every *type* of
+ * programme the institute runs. Asked to register, the assistant offered
+ * a Ministerial Staff batch that exists in a brochure and not in the
+ * schedule, and started collecting details for it. The office would have
+ * received a registration for a batch that was never running.
+ *
+ * A field whose options come from another table fixes that at the root,
+ * and does it for any business: a clinic's Doctor field reads the
+ * Doctors table, a shop's Product field reads the catalogue, this
+ * institute's Programme field reads the programmes actually scheduled.
+ * What the assistant may write is then whatever is really there,
+ * enforced in code rather than hoped for in a prompt.
+ */
 function toField(f: {
   field_key: string
   label: string
   field_type: string
   required: boolean
   options: unknown
-}): RegistrationField {
-  const options = Array.isArray(f.options)
-    ? (f.options as unknown[]).map((o) =>
-        typeof o === 'string' ? o : String((o as { label?: string; value?: string })?.label ?? (o as { value?: string })?.value ?? ''),
-      ).filter(Boolean)
-    : undefined
-  return {
+}): FieldWithSource {
+  const stored = f.options as FieldConfig | SelectOption[] | null
+
+  // Hand-written options, in either the legacy array shape or the
+  // current FieldConfig one. getSelectItems handles both.
+  const options = getSelectItems(stored)
+    .map((o) => (typeof o === 'string' ? o : String(o?.label ?? o?.value ?? '')))
+    .filter(Boolean)
+
+  const base: RegistrationField = {
     key: f.field_key,
     label: f.label,
     type: f.field_type,
     required: f.required,
-    ...(options && options.length ? { options } : {}),
+    ...(options.length ? { options } : {}),
   }
+
+  if (options.length) return base
+
+  const config = getFieldConfig(stored)
+  if (config.source_table_id && config.source_field_key) {
+    return {
+      ...base,
+      _source: { tableId: config.source_table_id, fieldKey: config.source_field_key },
+    }
+  }
+
+  return base
+}
+
+/** The distinct values a column actually holds right now. */
+async function readColumnValues(
+  accountId: string,
+  tableId: string,
+  fieldKey: string,
+): Promise<string[]> {
+  const rows = await prisma.dataRecord.findMany({
+    where: { table_id: tableId, account_id: accountId },
+    select: { data: true },
+    take: 500,
+  })
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const value = (row.data as Record<string, unknown>)?.[fieldKey]
+    const text = value === undefined || value === null ? '' : String(value).trim()
+    if (text) seen.add(text)
+  }
+  return [...seen]
 }
 
 /**
@@ -128,8 +201,37 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
     },
   })
 
+  // Every distinct table/column a field draws its options from, read
+  // once each rather than once per field.
+  const sourced = new Map<string, string[]>()
+  for (const t of tables) {
+    for (const f of t.fields) {
+      if (!AI_FILLABLE_FIELD_TYPES.has(f.field_type)) continue
+      const source = toField(f)._source
+      if (!source) continue
+      const key = `${source.tableId}:${source.fieldKey}`
+      if (!sourced.has(key)) {
+        sourced.set(
+          key,
+          await readColumnValues(accountId, source.tableId, source.fieldKey).catch(() => []),
+        )
+      }
+    }
+  }
+
   const forms = tables.map((t) => {
-    const fillable = t.fields.filter((f) => AI_FILLABLE_FIELD_TYPES.has(f.field_type)).map(toField)
+    const fillable = t.fields
+      .filter((f) => AI_FILLABLE_FIELD_TYPES.has(f.field_type))
+      .map((f): RegistrationField => {
+        const { _source, ...field } = toField(f)
+        if (!_source) return field
+        const live = sourced.get(`${_source.tableId}:${_source.fieldKey}`) ?? []
+        // An empty source leaves the field without options rather than
+        // with an empty list: an empty list refuses every answer, and a
+        // table nobody has filled in yet is a configuration problem, not
+        // a reason to make registration impossible.
+        return live.length ? { ...field, options: live } : field
+      })
     return {
       table_id: t.id,
       name: t.name,

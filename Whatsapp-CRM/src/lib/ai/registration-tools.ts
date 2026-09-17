@@ -425,6 +425,7 @@ export const REGISTRATION_INSTRUCTION = [
   'TAKING A REGISTRATION:',
   '- Call registration_forms before asking for anything. The fields are different for every business; never assume them.',
   '- Ask for the REQUIRED fields only, a few at a time, in the language the customer is using.',
+  '- When a field comes with a list of options, show that list and let them pick. Those are the only answers that will be accepted, and they are what the business actually has on offer right now. Never offer something outside the list, however sure you are that it exists.',
   '- As soon as you have all of them, call submit_registration. Do not collect optional details first — saving early means a customer who stops replying is still registered.',
   '- After it saves, confirm it, then offer the optional details by name and let them answer yes or no. If they say no, thank them and stop asking.',
   '- If a save comes back with problems, they are the exact things to ask again. Read them out in your own words; never show field keys or error text to the customer.',
