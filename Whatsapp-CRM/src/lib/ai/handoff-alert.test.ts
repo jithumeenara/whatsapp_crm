@@ -29,6 +29,10 @@ vi.mock("@/lib/db", () => ({
 
 vi.mock("@/lib/whatsapp/encryption", () => ({ decrypt: (v: string) => v }));
 
+vi.mock("@/lib/whatsapp/template-row-guard", () => ({
+  isMessageTemplate: (row: unknown) => Boolean(row),
+}));
+
 vi.mock("@/lib/whatsapp/resolve-config", () => ({
   resolveWhatsAppConfig: () =>
     Promise.resolve({ phone_number_id: "pn1", access_token: "tok" }),

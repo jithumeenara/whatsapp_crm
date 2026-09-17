@@ -6,6 +6,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { autoReplyToMessage } from '@/lib/ai/auto-reply'
+import { sendNewContactAlert } from '@/lib/contacts/new-contact-alert'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { isCsatReply, recordFeedback } from '@/lib/ai/csat'
 import {
@@ -984,7 +985,21 @@ async function processMessage(
     if (!flowResult.consumed) {
       automationTriggers.push('new_message_received', 'keyword_match')
     }
-    if (contactOutcome.wasCreated) automationTriggers.unshift('new_contact_created')
+    if (contactOutcome.wasCreated) {
+      automationTriggers.unshift('new_contact_created')
+      // Somebody nobody has seen before just started a conversation.
+      //
+      // Fire-and-forget on purpose: the contact exists and the message
+      // is stored, which is the part that matters. An alert that cannot
+      // be delivered is a log line, never a reason to fail the webhook —
+      // Meta retries a non-200 and would deliver the same message again.
+      void sendNewContactAlert({
+        accountId,
+        contact: { name: contactRecord.name, phone: contactRecord.phone },
+        firstMessage: contentText ?? message.text?.body ?? '',
+        channel: 'whatsapp',
+      })
+    }
     if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')
 
     // Awaited now, where they used to be fire-and-forget, because the AI

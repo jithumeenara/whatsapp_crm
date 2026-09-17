@@ -1070,13 +1070,43 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           select: { account_id: true },
         })
         if (table) {
+          // Who filled this in.
+          //
+          // The row was being written with no contact at all, which left
+          // a Flow submission invisible to everything that works by
+          // customer: the assistant answered "you have no registration"
+          // to somebody who had just completed the form, the repeat
+          // check could not see it so the same person could register
+          // again through chat, and the Data Store showed a row nobody
+          // could trace back to a person.
+          //
+          // The engine mints a flow_token per send and stores it on the
+          // run, which knows the contact. A Flow sent outside a run has
+          // a token matching nothing — that stays null rather than being
+          // guessed at, which is the honest answer and the old
+          // behaviour.
+          const run = flowToken
+            ? await prisma.flowRun
+                .findFirst({
+                  where: { pending_flow_token: flowToken, account_id: table.account_id },
+                  select: { contact_id: true },
+                })
+                .catch(() => null)
+            : null
+
           await prisma.dataRecord.create({
             data: {
               table_id: saveTableId,
               account_id: table.account_id,
+              contact_id: run?.contact_id ?? null,
               data: record as Prisma.InputJsonValue,
             },
           })
+          if (!run?.contact_id) {
+            console.warn(
+              '[data_exchange:save] saved without a contact — this row will not appear in the customer\u2019s own registrations',
+            )
+          }
           console.log('[data_exchange:save] ✓ saved to table', saveTableId)
           savedOk = true
         } else {

@@ -2410,6 +2410,17 @@ model ContactCaptureConfig {
   enabled          Boolean  @default(false)
   confirm_message  String   @default("Hi {{name}}! Is that your real name? Please reply *Yes* to confirm or *No* to enter a different name.")
   ask_name_message String   @default("No problem! Please type your correct full name and I'll save it for you.")
+
+  /// Tell staff on WhatsApp when a number nobody has seen before starts
+  /// a conversation. Off by default: an account taking hundreds of new
+  /// contacts a day should not be woken by all of them unasked.
+  new_contact_alert_enabled  Boolean @default(false)
+  /// E.164 numbers, as a JSON array of strings.
+  new_contact_alert_numbers  Json    @default("[]")
+  /// Name of an approved Utility template. Without one the alert only
+  /// reaches staff who messaged this business number in the last 24
+  /// hours — Meta's rule, not a setting.
+  new_contact_alert_template String?
   created_at       DateTime @default(now()) @db.Timestamptz(6)
   updated_at       DateTime @updatedAt @db.Timestamptz(6)
 
