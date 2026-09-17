@@ -77,6 +77,9 @@ export function assessConfidence(args: {
   usedTools?: boolean
   /** True when nothing at all was retrieved. */
   knowledgeEmpty?: boolean
+  /** True when the assistant had just asked this customer something.
+   *  A one-word reply to a question is an answer, not a vague enquiry. */
+  isAnsweringOurQuestion?: boolean
 }): ConfidenceAssessment {
   const retrievalScore = clamp01(args.retrievalConfidence)
   const signals: ConfidenceSignal[] = []
@@ -108,11 +111,20 @@ export function assessConfidence(args: {
   const lower = message.toLowerCase()
   const isSpecificShortForm = SPECIFIC_SHORT_FORMS.some((f) => lower.includes(f))
   const longEnoughToBeSpecific = message.length >= VAGUE_CHAR_COUNT
+  //
+  // And a reply to a question we just asked is never vague, whatever its
+  // length. "upcoming" means nothing on its own and everything after
+  // "which programme would you like to register for?" — but it scored as
+  // a vague enquiry, dropped under the handoff threshold, and the
+  // customer was passed to a colleague halfway through answering. Taking
+  // a registration is nine short answers in a row; every one of them
+  // would have tripped this.
   if (
     words.length > 0 &&
     words.length <= VAGUE_WORD_COUNT &&
     !isSpecificShortForm &&
-    !longEnoughToBeSpecific
+    !longEnoughToBeSpecific &&
+    !args.isAnsweringOurQuestion
   ) {
     signals.push({
       label: 'Very short question',

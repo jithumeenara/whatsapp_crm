@@ -169,9 +169,16 @@ export async function buildCustomerSystemPrompt(args: {
 /** Retrieves knowledge for one message, using the account's configured
  *  mode. Split out so the eval runner retrieves exactly as the live path
  *  does rather than approximating it. */
+/** A message this short is almost certainly a reply rather than a
+ *  question, and has too little in it to retrieve against alone. */
+const SHORT_REPLY_CHARS = 25
+
 export async function retrieveForMessage(args: {
   aiConfig: CustomerAiConfig
   customerMessage: string
+  /** What was said just before, newest last. Used only to give a short
+   *  reply something to retrieve against. */
+  conversationHistory?: { role: 'user' | 'model'; text: string }[]
 }): Promise<SelectedContext> {
   const { aiConfig } = args
   if (!aiConfig.knowledge_base_enabled) {
@@ -182,12 +189,27 @@ export async function retrieveForMessage(args: {
   // staff-only entries must not even enter the prompt.
   const { qaPairs, documents, version } = await loadKnowledge(aiConfig.id, 'customer')
 
+  // What to search for.
+  //
+  // Usually the message itself. But "upcoming", "yes", "the second one"
+  // carry their meaning in what came before them, and searching the
+  // knowledge base for the word "upcoming" finds nothing useful — which
+  // then reads as low confidence and hands a customer over in the middle
+  // of answering a question the assistant asked them. For a short reply,
+  // the previous turns are folded into the query so it inherits the
+  // subject; the customer's own message still leads, so it dominates the
+  // match.
+  const trimmed = args.customerMessage.trim()
+  const recent = (args.conversationHistory ?? []).slice(-2).map((h) => h.text).join(' ')
+  const query =
+    trimmed.length <= SHORT_REPLY_CHARS && recent ? `${trimmed} ${recent}`.slice(0, 500) : trimmed
+
   const geminiEntry = getProviderKeys(aiConfig).gemini
   const geminiApiKey = geminiEntry?.api_key ? decrypt(geminiEntry.api_key) : null
   const useSemantic = aiConfig.retrieval_mode !== 'keyword' && Boolean(geminiApiKey)
   const contextLimit = Math.max(1, aiConfig.max_context_results)
 
-  return selectRelevantContext(args.customerMessage, qaPairs, documents, {
+  return selectRelevantContext(query, qaPairs, documents, {
     cacheKey: `${aiConfig.id}:${version}`,
     maxQaPairs: contextLimit,
     maxDocChunks: contextLimit,
@@ -336,7 +358,11 @@ export async function runCustomerTurn(args: {
     }
   }
 
-  const selected = await retrieveForMessage({ aiConfig: args.aiConfig, customerMessage: args.customerMessage })
+  const selected = await retrieveForMessage({
+    aiConfig: args.aiConfig,
+    customerMessage: args.customerMessage,
+    conversationHistory: history,
+  })
 
   const knowledgeUsed = [
     ...selected.qaPairs.map((q) => q.question),
@@ -348,6 +374,9 @@ export async function runCustomerTurn(args: {
     customerMessage: args.customerMessage,
     recentCustomerMessages: history.filter((m) => m.role === 'user').map((m) => m.text),
     knowledgeEmpty: selected.qaPairs.length === 0 && selected.documentChunks.length === 0,
+    // The assistant spoke last, so this message is a reply to it. Short
+    // does not mean unclear when it answers a question we just asked.
+    isAnsweringOurQuestion: history.length > 0 && history[history.length - 1]?.role === 'model',
   })
   const effectiveConfidence = args.aiConfig.composite_confidence_enabled
     ? confidence.score
