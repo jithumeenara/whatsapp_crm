@@ -119,12 +119,23 @@ export function assessConfidence(args: {
   // customer was passed to a colleague halfway through answering. Taking
   // a registration is nine short answers in a row; every one of them
   // would have tripped this.
+  //
+  // And the penalty says of itself that the message is "too short to
+  // retrieve against reliably". When retrieval came back with usable
+  // context, that premise is simply false, and charging for it anyway
+  // double-counts: the retrieval score already reflects how good the
+  // match was. On a live number "Upcoming training" was handed to a
+  // colleague and "Upcoming training programme" answered in full, with
+  // the same knowledge behind both — the only difference being that one
+  // crossed a character count.
+  const retrievedSomething = args.knowledgeEmpty === false
   if (
     words.length > 0 &&
     words.length <= VAGUE_WORD_COUNT &&
     !isSpecificShortForm &&
     !longEnoughToBeSpecific &&
-    !args.isAnsweringOurQuestion
+    !args.isAnsweringOurQuestion &&
+    !retrievedSomething
   ) {
     signals.push({
       label: 'Very short question',

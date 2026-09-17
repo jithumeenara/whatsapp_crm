@@ -80,6 +80,67 @@ function corpusHasNumber(corpus: string, raw: string): boolean {
   return corpus.includes(spaced)
 }
 
+/**
+ * Month name to number, for comparing a written date against a stored one.
+ *
+ * The case this exists for, from a live thread: the assistant wrote
+ * "01 October 2026" and was refused, because the knowledge behind it was
+ * a Data Store table holding that date as "2026-10-01". The word
+ * "october" appears nowhere in a numeric date, so a check that looks for
+ * the month by name declares a perfectly well-supported date invented.
+ *
+ * Worse, it fails silently in one direction only. The same reply's
+ * "29 September 2026" passed — not because the check worked, but because
+ * that table happens to carry a separate Month column reading
+ * "september". One date in a sentence was accepted and the other
+ * rejected, from the same row.
+ */
+const MONTH_NUMBERS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+}
+
+/**
+ * Whether the corpus contains this date written any of the usual ways.
+ *
+ * Deliberately generous about format and strict about the year. Both
+ * orderings are accepted because a business writes 1/10/2026 and its
+ * database stores 2026-10-01, and neither is wrong; but a day and month
+ * with no year would match "1/10" appearing as a fraction or a ratio, so
+ * when the reply states a year, the year has to be there too.
+ */
+function corpusHasNumericDate(
+  corpus: string,
+  day: string | undefined,
+  monthAbbr: string | undefined,
+  year: string | undefined,
+): boolean {
+  if (!monthAbbr || !day) return false
+  const month = MONTH_NUMBERS[monthAbbr]
+  if (!month) return false
+
+  const dayForms = [String(Number(day)), String(Number(day)).padStart(2, '0')]
+  const monthForms = [String(month), String(month).padStart(2, '0')]
+  const candidates: string[] = []
+
+  for (const d of dayForms) {
+    for (const m of monthForms) {
+      for (const sep of ['-', '/', '.']) {
+        if (year) {
+          candidates.push(`${d}${sep}${m}${sep}${year}`)
+          candidates.push(`${m}${sep}${d}${sep}${year}`)
+          candidates.push(`${year}${sep}${m}${sep}${d}`)
+        } else {
+          candidates.push(`${d}${sep}${m}`)
+          candidates.push(`${m}${sep}${d}`)
+        }
+      }
+    }
+  }
+
+  return candidates.some((c) => corpus.includes(c))
+}
+
 const MONTHS =
   '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)'
 
@@ -155,8 +216,12 @@ export function validateReply(args: {
     // "5 January" satisfies a context that wrote "5th January 2026".
     const day = /\d{1,2}/.exec(text)?.[0]
     const month = new RegExp(MONTHS, 'i').exec(text)?.[0]?.slice(0, 3).toLowerCase()
+    const year = /\b(\d{4})\b/.exec(text)?.[1]
     const supported = month
-      ? corpus.includes(month) && (!day || corpus.includes(day))
+      ? // The month by name, as before — or the same date written in
+        // numbers, which is how a database stores it.
+        (corpus.includes(month) && (!day || corpus.includes(day))) ||
+        corpusHasNumericDate(corpus, day, month, year)
       : corpusHasNumber(corpus, text.replace(/\D/g, ''))
     if (!supported) {
       flag('date', text, 'This date does not appear in the knowledge or lookups used for this reply.')

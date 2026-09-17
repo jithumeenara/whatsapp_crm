@@ -29,14 +29,33 @@ describe("assessConfidence — short replies mid-conversation", () => {
     expect(answering.signals.some((s) => s.label === "Very short question")).toBe(false);
   });
 
-  it("still calls a one-word opening message vague", () => {
-    // Nothing preceded it, so there is genuinely nothing to read it
-    // against — the penalty is doing real work here.
+  it("still calls a one-word opening message vague when nothing was retrieved", () => {
+    // Nothing preceded it and nothing matched it, so there is genuinely
+    // nothing to read it against — the penalty is doing real work here.
     const opening = assessConfidence({
-      retrievalConfidence: HIGH_RETRIEVAL,
+      retrievalConfidence: 0,
       customerMessage: "upcoming",
+      knowledgeEmpty: true,
     });
     expect(opening.signals.some((s) => s.label === "Very short question")).toBe(true);
+  });
+
+  it("does not charge for shortness when retrieval actually found something", () => {
+    // From a live WhatsApp thread: "Upcoming training" was handed to a
+    // colleague and "Upcoming training programme" answered in full, off
+    // the same knowledge. The only difference was a character count.
+    const short = assessConfidence({
+      retrievalConfidence: HIGH_RETRIEVAL,
+      customerMessage: "Upcoming training",
+      knowledgeEmpty: false,
+    });
+    const longer = assessConfidence({
+      retrievalConfidence: HIGH_RETRIEVAL,
+      customerMessage: "Upcoming training programme",
+      knowledgeEmpty: false,
+    });
+    expect(short.signals.some((s) => s.label === "Very short question")).toBe(false);
+    expect(short.score).toBe(longer.score);
   });
 
   it("scores an answer higher than the same words asked cold", () => {
