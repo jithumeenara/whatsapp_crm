@@ -1,0 +1,154 @@
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+/**
+ * Refusing a second registration for the same thing.
+ *
+ * Built from a real pair of rows in this account's table: Manjula, the
+ * same phone number, the same programme, registered twice. The assistant
+ * had no reason not to — nothing checked.
+ *
+ * The part worth testing is the comparison. Those two rows recorded the
+ * same programme as "Statutory Training Programme" and
+ * "statutory_training_programme", and the same month as "September 2026"
+ * and "september", because the fields are free text and the assistant
+ * writes them differently on different days. A duplicate check that
+ * compares those strictly agrees with itself and catches nothing.
+ */
+
+const h = vi.hoisted(() => ({
+  state: {
+    tables: [] as Record<string, unknown>[],
+    records: [] as Record<string, unknown>[],
+    created: [] as Record<string, unknown>[],
+  },
+}));
+
+vi.mock("@/lib/db", () => ({
+  prisma: {
+    dataTable: {
+      findMany: () => Promise.resolve(h.state.tables),
+      findUnique: () => Promise.resolve({ ai_success_message: null }),
+    },
+    dataRecord: {
+      findMany: () => Promise.resolve(h.state.records),
+      create: (args: { data: Record<string, unknown> }) => {
+        h.state.created.push(args.data);
+        return Promise.resolve({ id: "new-record" });
+      },
+    },
+  },
+}));
+
+import { REGISTRATION_TOOLS } from "./registration-tools";
+import { invalidateRegistrationForms } from "./registration";
+
+const CTX = { accountId: "acct-1", contactId: "contact-1" };
+
+function table(uniqueBy: string[]) {
+  return {
+    id: "t1",
+    name: "Training Registration",
+    slug: "training-registration",
+    description: null,
+    ai_unique_by: uniqueBy,
+    fields: [
+      { field_key: "participant", label: "Name of Participant", field_type: "text", required: true, options: null },
+      { field_key: "programme", label: "Training Programme", field_type: "text", required: true, options: null },
+      { field_key: "month", label: "Month", field_type: "text", required: false, options: null },
+    ],
+  };
+}
+
+const submit = (values: Record<string, unknown>) =>
+  REGISTRATION_TOOLS.submit_registration.run({ table_id: "t1", values }, CTX) as Promise<
+    Record<string, unknown>
+  >;
+
+beforeEach(() => {
+  // Form definitions are cached for a minute in production, which would
+  // otherwise make these tests order-dependent: the first one to run
+  // decides what every later one sees.
+  invalidateRegistrationForms(CTX.accountId);
+  h.state.tables = [table(["programme"])];
+  h.state.records = [];
+  h.state.created = [];
+});
+
+describe("submit_registration — repeat registrations", () => {
+  it("saves the first one", async () => {
+    const result = await submit({ participant: "Manjula", programme: "Statutory Training Programme" });
+    expect(result.saved).toBe(true);
+    expect(h.state.created).toHaveLength(1);
+  });
+
+  it("refuses the same person for the same programme", async () => {
+    h.state.records = [
+      {
+        id: "existing",
+        data: { participant: "Manjula", programme: "Statutory Training Programme" },
+        created_at: new Date("2026-09-17"),
+      },
+    ];
+    const result = await submit({ participant: "Manjula", programme: "Statutory Training Programme" });
+    expect(result.saved).toBe(false);
+    expect(result.already_registered).toBe(true);
+    expect(result.registration_id).toBe("existing");
+    expect(h.state.created).toHaveLength(0);
+  });
+
+  it("sees through the assistant's own inconsistent spelling", async () => {
+    // The actual pair of rows this was built from.
+    h.state.records = [
+      {
+        id: "existing",
+        data: { participant: "Manjula", programme: "Statutory Training Programme" },
+        created_at: new Date("2026-09-17"),
+      },
+    ];
+    const result = await submit({
+      participant: "Manjula",
+      programme: "statutory_training_programme",
+    });
+    expect(result.already_registered).toBe(true);
+  });
+
+  it("allows the same person on a different programme", async () => {
+    h.state.records = [
+      {
+        id: "existing",
+        data: { participant: "Manjula", programme: "Statutory Training Programme" },
+        created_at: new Date("2026-09-17"),
+      },
+    ];
+    const result = await submit({ participant: "Manjula", programme: "Business Development Plan" });
+    expect(result.saved).toBe(true);
+  });
+
+  it("checks nothing when the account has set no rule", async () => {
+    // The default, and deliberately so: turning this on for everybody
+    // would start refusing registrations that are legitimate today.
+    h.state.tables = [table([])];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      {
+        id: "existing",
+        data: { participant: "Manjula", programme: "Statutory Training Programme" },
+        created_at: new Date("2026-09-17"),
+      },
+    ];
+    const result = await submit({ participant: "Manjula", programme: "Statutory Training Programme" });
+    expect(result.saved).toBe(true);
+  });
+
+  it("ignores a rule naming a field that no longer exists", async () => {
+    // Otherwise every row matches on "undefined equals undefined" and
+    // the table refuses every registration, with no way to see why.
+    h.state.tables = [table(["a_deleted_field"])];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      { id: "existing", data: { participant: "Someone else" }, created_at: new Date("2026-09-17") },
+    ];
+    const result = await submit({ participant: "Manjula", programme: "STP" });
+    expect(result.saved).toBe(true);
+  });
+});

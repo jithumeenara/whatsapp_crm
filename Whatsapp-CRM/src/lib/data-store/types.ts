@@ -95,6 +95,10 @@ export interface DataTable {
   ai_can_register: boolean
   /** What the assistant says once a registration lands. Null = a plain confirmation. */
   ai_success_message: string | null
+  /** Field keys that, together with the customer, make a second
+   *  registration a duplicate. Empty = the same person may register
+   *  as often as they like. */
+  ai_unique_by?: string[]
   created_at: string
   updated_at: string
   fields?: DataField[]

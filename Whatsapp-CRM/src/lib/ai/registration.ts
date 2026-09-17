@@ -49,6 +49,9 @@ export interface RegistrationForm {
   description: string | null
   required_fields: RegistrationField[]
   optional_fields: RegistrationField[]
+  /** Field keys that, with the customer, identify a duplicate. Empty
+   *  means the same person may register as often as they like. */
+  unique_by: string[]
 }
 
 function toField(f: {
@@ -104,6 +107,7 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
       name: true,
       slug: true,
       description: true,
+      ai_unique_by: true,
       fields: {
         orderBy: { sort_order: 'asc' },
         select: {
@@ -126,6 +130,12 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
       description: t.description,
       required_fields: fillable.filter((f) => f.required),
       optional_fields: fillable.filter((f) => !f.required),
+      // Only keys that still exist as fillable fields. A rule naming a
+      // field somebody has since deleted would otherwise match every
+      // row on "undefined equals undefined" and refuse everything.
+      unique_by: (Array.isArray(t.ai_unique_by) ? (t.ai_unique_by as unknown[]) : [])
+        .filter((k): k is string => typeof k === 'string')
+        .filter((k) => fillable.some((f) => f.key === k)),
     }
   })
 

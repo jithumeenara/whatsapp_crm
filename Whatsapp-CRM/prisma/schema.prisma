@@ -2124,6 +2124,12 @@ model DataTable {
   /// email your joining instructions" is right for a training institute
   /// and wrong for a garage. Null gives a plain confirmation.
   ai_success_message String?
+  /// Field keys that, together with the customer, make a registration a
+  /// duplicate. ["programme"] means one per person per programme; an
+  /// empty list means no check at all, which is the default because
+  /// switching it on for everyone would start refusing registrations
+  /// that are legitimate today.
+  ai_unique_by       Json    @default("[]")
   created_at  DateTime @default(now()) @db.Timestamptz(6)
   updated_at  DateTime @updatedAt @db.Timestamptz(6)
 

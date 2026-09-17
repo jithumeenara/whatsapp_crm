@@ -30,6 +30,7 @@ interface Props {
 export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props) {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState(table.ai_success_message ?? "")
+  const [uniqueBy, setUniqueBy] = useState<string[]>(table.ai_unique_by ?? [])
 
   const enabled = table.ai_can_register
 
@@ -42,7 +43,11 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
   const optionalCount = fillable.length - requiredCount
 
   async function save(patch: Partial<DataTable>) {
-    const before = { ai_can_register: table.ai_can_register, ai_success_message: table.ai_success_message }
+    const before = {
+      ai_can_register: table.ai_can_register,
+      ai_success_message: table.ai_success_message,
+      ai_unique_by: table.ai_unique_by,
+    }
     onChange(patch)
     setSaving(true)
     try {
@@ -108,6 +113,44 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
           <p className="text-[10.5px] leading-relaxed text-slate-400">
             Left blank, it just confirms the registration. Worth filling in when there is a next
             step — a payment to make, a document to bring, a date to expect.
+          </p>
+        </div>
+      )}
+
+      {enabled && (
+        <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+          <p className="text-[11.5px] font-medium text-slate-600">
+            Treat it as a repeat registration when these match
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {fillable.map((f) => {
+              const on = uniqueBy.includes(f.field_key)
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    const next = on
+                      ? uniqueBy.filter((k) => k !== f.field_key)
+                      : [...uniqueBy, f.field_key]
+                    setUniqueBy(next)
+                    void save({ ai_unique_by: next })
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-[11.5px] transition-colors ${
+                    on
+                      ? "bg-indigo-600 text-white"
+                      : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[10.5px] leading-relaxed text-slate-400">
+            {uniqueBy.length === 0
+              ? "Nothing selected: the same person can register as many times as they like. Pick the field that identifies what they are registering for \u2014 the assistant will then refuse a second one and offer to change the first instead."
+              : "The assistant will refuse a second registration from the same person with the same answers here, and tell them when the first one was made."}
           </p>
         </div>
       )}

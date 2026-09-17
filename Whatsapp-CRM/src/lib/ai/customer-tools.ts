@@ -314,6 +314,29 @@ export const CUSTOMER_TOOL_INSTRUCTION = [
  * should not have its assistant carrying instructions on how to take
  * one — that is an invitation to offer something which does not exist.
  */
+/**
+ * What to say on a channel that has no tools at all.
+ *
+ * A live voice session — the browser console and a WhatsApp call alike —
+ * is a system prompt handed to Gemini and nothing else. No function
+ * declarations are sent, so no lookup can happen and no registration can
+ * be saved. It was being given the text-channel instruction anyway:
+ * "look it up", "never answer from memory", and lately "you can register
+ * this customer yourself, right now". On a phone call none of that is
+ * true, and a model told to look something up it cannot reach either
+ * invents the answer or stalls waiting for a result that never comes.
+ *
+ * So the spoken channels are told the truth about themselves.
+ */
+export const VOICE_NO_TOOLS_INSTRUCTION = [
+  'WHAT YOU CANNOT DO ON THIS CALL:',
+  '- You cannot look up their records, check an application, or take a registration while you are speaking. You have no access to those here.',
+  '- So do not say you are checking, looking it up, or one moment. Nothing is being checked.',
+  '- If they ask about their own registration, application or order, say plainly that you cannot see it on a call, and offer to have a colleague check and message them on WhatsApp.',
+  '- If they want to register, tell them you will send the form on WhatsApp, or that a colleague will call them back. Do not collect their details by voice as though you were saving them, because you are not.',
+  '- Everything you were told about this business above is still yours to answer from. This is about records and actions, not knowledge.',
+].join('\n')
+
 export async function buildCustomerToolInstruction(accountId: string): Promise<string> {
   const forms = await listRegistrationForms(accountId).catch(() => [])
   if (forms.length === 0) return CUSTOMER_TOOL_INSTRUCTION

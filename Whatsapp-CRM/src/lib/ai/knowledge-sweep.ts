@@ -19,27 +19,38 @@
  * the account's own metered API key, is not something to start without
  * being asked.
  *
- * ── Why sheets and websites are treated differently ─────────────────
+ * ── Why the three kinds are treated differently ─────────────────────
  *
  * A website entry is a page someone grabbed once; keeping it current is
  * a nice-to-have, and it is gated behind the account's own "Auto-sync
- * website" switch. A Google Sheet is not that. Connecting a sheet *is*
- * the request for it to stay current — that is the entire reason to
- * point at a sheet instead of pasting its contents in — so sheets sync
- * without a separate switch, and on a shorter clock, because the fee
- * table changing and the bot not knowing is the exact failure this was
- * built to prevent.
+ * website" switch.
+ *
+ * A Google Sheet and a connected Data Store table are not that.
+ * Connecting one *is* the request for it to stay current — that is the
+ * entire reason to point at it instead of pasting its contents in — so
+ * both sync without a separate switch, and on a shorter clock.
+ *
+ * The table case was missing entirely until a live transcript exposed
+ * it: the account's Training table held one programme, the assistant
+ * described several, and the knowledge entry behind it was a snapshot
+ * taken on the day it was connected and never read again. Someone
+ * editing the table in the CRM had no way to know the assistant was
+ * still quoting the old version.
  */
 
 import { prisma } from '@/lib/db'
 import { fetchPageText } from './web-extract'
 import { fetchSheet, serializeSheet } from './google-sheet'
+import { serializeDataTable } from './data-store-source'
 
 const WEBSITE_RESYNC_AFTER_MS = 24 * 60 * 60 * 1000
 /** Sheets are cheap to read and are edited far more often than a
  *  website. The sweep itself only runs hourly, so this effectively means
  *  "every pass". */
 const SHEET_RESYNC_AFTER_MS = 55 * 60 * 1000
+/** A connected Data Store table, same clock as a sheet: it is a live
+ *  source in the same way, and re-reading it costs one local query. */
+const TABLE_RESYNC_AFTER_MS = 55 * 60 * 1000
 const MAX_PER_PASS = 20
 
 export interface KnowledgeSweepResult {
@@ -55,7 +66,6 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
   const due = await prisma.aiKnowledgeItem.findMany({
     where: {
       status: { not: 'disabled' },
-      source_url: { not: null },
       OR: [
         {
           kind: 'website',
@@ -72,22 +82,51 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
             { last_synced_at: { lt: new Date(Date.now() - SHEET_RESYNC_AFTER_MS) } },
           ],
         },
+        {
+          // A Data Store table connected as knowledge. These were being
+          // re-read only when somebody clicked Re-sync, so a table
+          // edited in the CRM kept answering from whatever it held on
+          // the day it was connected. The account sees the new row in
+          // the Data Store and the assistant quotes the old one, with
+          // nothing anywhere explaining the difference.
+          kind: 'database',
+          OR: [
+            { last_synced_at: null },
+            { last_synced_at: { lt: new Date(Date.now() - TABLE_RESYNC_AFTER_MS) } },
+          ],
+        },
       ],
     },
     orderBy: { last_synced_at: { sort: 'asc', nulls: 'first' } },
     take: MAX_PER_PASS,
-    select: { id: true, kind: true, source_url: true, content: true, description: true },
+    select: {
+      id: true,
+      kind: true,
+      source_url: true,
+      source_ref: true,
+      account_id: true,
+      content: true,
+      description: true,
+    },
   })
 
   result.checked = due.length
 
   for (const item of due) {
-    if (!item.source_url) continue
     try {
-      const fresh =
-        item.kind === 'sheet'
-          ? serializeSheet(await fetchSheet(item.source_url), item.description)
-          : (await fetchPageText(item.source_url)).text
+      let fresh: string
+      if (item.kind === 'database') {
+        if (!item.source_ref) continue
+        // Re-serialised with whatever purpose the entry carries now, so
+        // editing the purpose and waiting is the same as re-syncing.
+        fresh = (await serializeDataTable(item.account_id, item.source_ref, item.description)).text
+      } else if (item.kind === 'sheet') {
+        if (!item.source_url) continue
+        fresh = serializeSheet(await fetchSheet(item.source_url), item.description)
+      } else {
+        if (!item.source_url) continue
+        fresh = (await fetchPageText(item.source_url)).text
+      }
 
       if (fresh === item.content) {
         // Nothing changed — record that it was checked and leave the

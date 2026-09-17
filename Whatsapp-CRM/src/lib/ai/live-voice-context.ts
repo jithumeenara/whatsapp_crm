@@ -21,7 +21,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from './providers/registry'
 import { loadKnowledge } from './knowledge-store'
 import { loadCompanyProfile, formatCompanyBlock } from './company-profile'
-import { buildCustomerToolInstruction } from './customer-tools'
+import { VOICE_NO_TOOLS_INSTRUCTION } from './customer-tools'
 
 /** A live session's instruction is sent once at setup and cannot be
  *  re-sent per turn, so it has to fit alongside the audio budget. */
@@ -165,7 +165,11 @@ async function composeInstruction(
     )
   }
 
-  if (mode === 'customer') parts.push(await buildCustomerToolInstruction(accountId))
+  // Not the text channel's tool instruction. Nothing here can call a
+  // tool: this function returns a system prompt and the session is
+  // driven by Gemini directly, with no function declarations attached.
+  // Telling it to look things up would be telling it to pretend.
+  if (mode === 'customer') parts.push(VOICE_NO_TOOLS_INSTRUCTION)
 
   // Language last but one, style last: the final instruction is the one
   // the model weights most, and speaking style is what a live session

@@ -1764,7 +1764,17 @@ async function advanceFromNodeKey(
         const geminiApiKey = geminiKeyEntry?.api_key ? decrypt(geminiKeyEntry.api_key) : null;
         const useSemantic = aiConfig.retrieval_mode !== "keyword" && !!geminiApiKey;
         const contextLimit = Math.max(1, aiConfig.max_context_results);
-        const selected = await selectRelevantContext(lastUserMessage, qaPairs, documents, {
+        // Short replies are searched together with what came just before
+        // them, exactly as the auto-reply path does. "upcoming" retrieves
+        // nothing on its own; after "which programme?" it retrieves the
+        // programme list. Kept identical to customer-pipeline.ts on
+        // purpose — a chatbot node and an unmatched message must not
+        // answer the same customer differently.
+        const retrievalQuery =
+          lastUserMessage.trim().length <= 25 && conversationHistory.length > 0
+            ? `${lastUserMessage.trim()} ${conversationHistory.slice(-2).map((h) => h.text).join(' ')}`.slice(0, 500)
+            : lastUserMessage
+        const selected = await selectRelevantContext(retrievalQuery, qaPairs, documents, {
           cacheKey: knowledgeCacheKey,
           // One account-level budget, split between the two kinds rather
           // than two independent caps the user can't see or reason about.
@@ -1858,6 +1868,11 @@ async function advanceFromNodeKey(
           customerMessage: lastUserMessage,
           recentCustomerMessages,
           knowledgeEmpty: selected.qaPairs.length === 0 && selected.documentChunks.length === 0,
+          // A one-word answer to a question this node just asked is an
+          // answer, not a vague enquiry.
+          isAnsweringOurQuestion:
+            conversationHistory.length > 0 &&
+            conversationHistory[conversationHistory.length - 1]?.role === "model",
         });
         const effectiveConfidence = aiConfig.composite_confidence_enabled
           ? confidence.score

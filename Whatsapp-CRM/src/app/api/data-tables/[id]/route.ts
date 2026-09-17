@@ -56,6 +56,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
         ...(body.ai_can_register !== undefined
           ? { ai_can_register: body.ai_can_register === true }
           : {}),
+        // Field keys only, and only ones this table actually has —
+        // a rule naming a deleted field would match every row and
+        // refuse every registration.
+        ...(body.ai_unique_by !== undefined
+          ? {
+              ai_unique_by: (Array.isArray(body.ai_unique_by) ? body.ai_unique_by : [])
+                .filter((k: unknown): k is string => typeof k === 'string')
+                .filter((k: string) => guard.table.fields.some((f) => f.field_key === k)),
+            }
+          : {}),
         ...(body.ai_success_message !== undefined
           ? {
               ai_success_message:

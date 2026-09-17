@@ -45,6 +45,26 @@ function humanDate(d: Date | null | undefined): string | null {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
 }
 
+/** One value, reduced to what a person would call "the same answer".
+ *  Case and surrounding space are not a meaningful difference between
+ *  two registrations. */
+function normalizeForMatch(value: unknown): string {
+  if (value === undefined || value === null) return ''
+  return (
+    String(value)
+      .toLowerCase()
+      // Underscores and hyphens become spaces before collapsing. These
+      // fields are free text, and the assistant writes the same
+      // programme as "Statutory Training Programme" one day and
+      // "statutory_training_programme" the next — a real pair of rows in
+      // this account's table. A duplicate check that treats those as two
+      // different programmes catches nothing.
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+}
+
 function blanksIn(
   data: Record<string, unknown>,
   fields: { key: string; label: string }[],
@@ -120,6 +140,58 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
       // Handed straight back to the model, which turns each line into the
       // next question it asks the customer.
       if (!check.ok) return { saved: false, problems: check.problems }
+
+      // Already registered?
+      //
+      // Enforced here rather than left to the prompt. A model asked not
+      // to double-register will mostly comply and will sometimes not,
+      // and "sometimes" is two confirmation messages, two seats held and
+      // an awkward phone call. What counts as a duplicate is the
+      // account's own rule -- one per person per programme, per doctor
+      // per date, or nothing at all -- so an account that has set no
+      // rule keeps today's behaviour exactly.
+      if (form.unique_by.length > 0) {
+        const mine = await prisma.dataRecord.findMany({
+          where: {
+            table_id: form.table_id,
+            account_id: ctx.accountId,
+            contact_id: ctx.contactId,
+          },
+          select: { id: true, data: true, created_at: true },
+        })
+        const clash = mine.find((row) => {
+          const existing = (row.data as Record<string, unknown>) ?? {}
+          // Compared case- and space-insensitively: "STP" and "stp " are
+          // the same programme to a person, and a duplicate check only a
+          // machine agrees with is worse than none.
+          return form.unique_by.every(
+            (key) => normalizeForMatch(existing[key]) === normalizeForMatch(check.values[key]),
+          )
+        })
+        if (clash) {
+          const clashData = (clash.data as Record<string, unknown>) ?? {}
+          const allFields = [...form.required_fields, ...form.optional_fields]
+          const shown = form.unique_by
+            .map((k) => {
+              const field = allFields.find((f) => f.key === k)
+              return field ? `${field.label}: ${String(clashData[k] ?? '')}` : null
+            })
+            .filter((v): v is string => v !== null)
+            .join(', ')
+          return {
+            saved: false,
+            already_registered: true,
+            registration_id: clash.id,
+            registered_on: humanDate(clash.created_at),
+            // Written as a sentence, because it goes back to the model
+            // and comes out as what the customer hears.
+            say:
+              `They are already registered for this (${shown}), on ${humanDate(clash.created_at)}. ` +
+              'Tell them so in your own words, do not register them again, and offer to change or ' +
+              'cancel the existing one if that is what they want.',
+          }
+        }
+      }
 
       const record = await prisma.dataRecord.create({
         data: {
@@ -271,4 +343,5 @@ export const REGISTRATION_INSTRUCTION = [
   '- After it saves, confirm it, then offer the optional details by name and let them answer yes or no. If they say no, thank them and stop asking.',
   '- If a save comes back with problems, they are the exact things to ask again. Read them out in your own words; never show field keys or error text to the customer.',
   '- You can only see and change this customer’s own registrations.',
+  '- If a save comes back saying they are already registered, say so in your own words and do not try again. Offer to change or cancel the existing one instead.',
 ].join('\n')
