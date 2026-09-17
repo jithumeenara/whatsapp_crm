@@ -193,6 +193,50 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
         }
       }
 
+      // Is there room left?
+      //
+      // Deliberately after the duplicate check, because "you are already
+      // registered for this" is a more useful thing to hear than "it is
+      // full" when both are true of the same person.
+      //
+      // Counted across every customer, not just this one: a seat taken
+      // by somebody else is still taken. That is the whole difference
+      // between this check and the one above, and it is the one that
+      // actually stops an over-booking.
+      if (form.capacity_by.length > 0 && form.capacity_limit !== null) {
+        const sameTable = await prisma.dataRecord.findMany({
+          where: { table_id: form.table_id, account_id: ctx.accountId },
+          select: { data: true },
+        })
+        const taken = sameTable.filter((row) => {
+          const existing = (row.data as Record<string, unknown>) ?? {}
+          return form.capacity_by.every(
+            (key) => normalizeForMatch(existing[key]) === normalizeForMatch(check.values[key]),
+          )
+        }).length
+
+        if (taken >= form.capacity_limit) {
+          const allFields = [...form.required_fields, ...form.optional_fields]
+          const shown = form.capacity_by
+            .map((k) => {
+              const field = allFields.find((f) => f.key === k)
+              return field ? `${field.label}: ${String(check.values[k] ?? '')}` : null
+            })
+            .filter((v): v is string => v !== null)
+            .join(', ')
+          return {
+            saved: false,
+            full: true,
+            places_taken: taken,
+            places_total: form.capacity_limit,
+            say:
+              `This is full (${shown}) — all ${form.capacity_limit} places are taken. ` +
+              'Tell them so plainly, do not register them, and offer to put them down for a ' +
+              'later one or have a colleague call them if something frees up.',
+          }
+        }
+      }
+
       const record = await prisma.dataRecord.create({
         data: {
           table_id: form.table_id,
@@ -343,5 +387,6 @@ export const REGISTRATION_INSTRUCTION = [
   '- After it saves, confirm it, then offer the optional details by name and let them answer yes or no. If they say no, thank them and stop asking.',
   '- If a save comes back with problems, they are the exact things to ask again. Read them out in your own words; never show field keys or error text to the customer.',
   '- You can only see and change this customer’s own registrations.',
+  '- If a save comes back saying it is full, say so and do not try again. Offer a later date or a callback.',
   '- If a save comes back saying they are already registered, say so in your own words and do not try again. Offer to change or cancel the existing one instead.',
 ].join('\n')

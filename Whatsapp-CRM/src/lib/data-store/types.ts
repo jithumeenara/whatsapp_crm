@@ -99,6 +99,10 @@ export interface DataTable {
    *  registration a duplicate. Empty = the same person may register
    *  as often as they like. */
   ai_unique_by?: string[]
+  /** Fields "full" is counted over, and the ceiling. Null limit = no
+   *  ceiling. Counted across every customer. */
+  ai_capacity_by?: string[]
+  ai_capacity_limit?: number | null
   created_at: string
   updated_at: string
   fields?: DataField[]

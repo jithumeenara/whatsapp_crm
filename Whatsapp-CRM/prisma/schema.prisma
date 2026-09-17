@@ -2130,6 +2130,13 @@ model DataTable {
   /// switching it on for everyone would start refusing registrations
   /// that are legitimate today.
   ai_unique_by       Json    @default("[]")
+  /// Fields that "full" is counted over, with the ceiling. A clinic
+  /// counts doctor+date+time to a limit of 1; an institute counts the
+  /// programme to a limit of 40. Null limit means no ceiling, which is
+  /// the default: an account that has not thought about capacity should
+  /// not start turning people away.
+  ai_capacity_by     Json    @default("[]")
+  ai_capacity_limit  Int?
   created_at  DateTime @default(now()) @db.Timestamptz(6)
   updated_at  DateTime @updatedAt @db.Timestamptz(6)
 

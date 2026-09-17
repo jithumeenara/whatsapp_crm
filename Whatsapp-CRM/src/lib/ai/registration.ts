@@ -52,6 +52,11 @@ export interface RegistrationForm {
   /** Field keys that, with the customer, identify a duplicate. Empty
    *  means the same person may register as often as they like. */
   unique_by: string[]
+  /** Fields that "full" is counted over, and the ceiling. Counted
+   *  across every customer, unlike unique_by: a seat taken by somebody
+   *  else is still taken. Null limit means no ceiling. */
+  capacity_by: string[]
+  capacity_limit: number | null
 }
 
 function toField(f: {
@@ -108,6 +113,8 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
       slug: true,
       description: true,
       ai_unique_by: true,
+      ai_capacity_by: true,
+      ai_capacity_limit: true,
       fields: {
         orderBy: { sort_order: 'asc' },
         select: {
@@ -133,14 +140,31 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
       // Only keys that still exist as fillable fields. A rule naming a
       // field somebody has since deleted would otherwise match every
       // row on "undefined equals undefined" and refuse everything.
-      unique_by: (Array.isArray(t.ai_unique_by) ? (t.ai_unique_by as unknown[]) : [])
-        .filter((k): k is string => typeof k === 'string')
-        .filter((k) => fillable.some((f) => f.key === k)),
+      unique_by: keysThatExist(t.ai_unique_by, fillable),
+      capacity_by: keysThatExist(t.ai_capacity_by, fillable),
+      capacity_limit:
+        typeof t.ai_capacity_limit === 'number' && t.ai_capacity_limit > 0
+          ? t.ai_capacity_limit
+          : null,
     }
   })
 
   formCache.set(accountId, { at: Date.now(), forms })
   return forms
+}
+
+/**
+ * Keeps only the field keys the table still has.
+ *
+ * A rule naming a field somebody has since deleted would otherwise match
+ * every row on "undefined equals undefined" — refusing every
+ * registration, or declaring the table full, with nothing on screen
+ * explaining why.
+ */
+function keysThatExist(raw: unknown, fillable: RegistrationField[]): string[] {
+  return (Array.isArray(raw) ? (raw as unknown[]) : [])
+    .filter((k): k is string => typeof k === 'string')
+    .filter((k) => fillable.some((f) => f.key === k))
 }
 
 export type ValidationResult =

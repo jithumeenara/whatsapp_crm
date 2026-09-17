@@ -31,6 +31,10 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState(table.ai_success_message ?? "")
   const [uniqueBy, setUniqueBy] = useState<string[]>(table.ai_unique_by ?? [])
+  const [capacityBy, setCapacityBy] = useState<string[]>(table.ai_capacity_by ?? [])
+  const [capacityLimit, setCapacityLimit] = useState<string>(
+    table.ai_capacity_limit ? String(table.ai_capacity_limit) : "",
+  )
 
   const enabled = table.ai_can_register
 
@@ -47,6 +51,8 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
       ai_can_register: table.ai_can_register,
       ai_success_message: table.ai_success_message,
       ai_unique_by: table.ai_unique_by,
+      ai_capacity_by: table.ai_capacity_by,
+      ai_capacity_limit: table.ai_capacity_limit,
     }
     onChange(patch)
     setSaving(true)
@@ -151,6 +157,64 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
             {uniqueBy.length === 0
               ? "Nothing selected: the same person can register as many times as they like. Pick the field that identifies what they are registering for \u2014 the assistant will then refuse a second one and offer to change the first instead."
               : "The assistant will refuse a second registration from the same person with the same answers here, and tell them when the first one was made."}
+          </p>
+        </div>
+      )}
+
+      {enabled && (
+        <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+          <p className="text-[11.5px] font-medium text-slate-600">Limit how many can book</p>
+          <div className="flex flex-wrap gap-1.5">
+            {fillable.map((f) => {
+              const on = capacityBy.includes(f.field_key)
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    const next = on
+                      ? capacityBy.filter((k) => k !== f.field_key)
+                      : [...capacityBy, f.field_key]
+                    setCapacityBy(next)
+                    void save({ ai_capacity_by: next })
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-[11.5px] transition-colors ${
+                    on
+                      ? "bg-amber-500 text-white"
+                      : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              )
+            })}
+          </div>
+          {capacityBy.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="ai-capacity-limit" className="text-[11.5px] text-slate-600">
+                Places for each
+              </label>
+              <input
+                id="ai-capacity-limit"
+                type="number"
+                min={1}
+                value={capacityLimit}
+                onChange={(e) => setCapacityLimit(e.target.value)}
+                onBlur={() => {
+                  const n = Number(capacityLimit)
+                  void save({ ai_capacity_limit: Number.isFinite(n) && n > 0 ? Math.floor(n) : null })
+                }}
+                placeholder="40"
+                className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[12px] tabular-nums outline-none focus:border-amber-400"
+              />
+            </div>
+          )}
+          <p className="text-[10.5px] leading-relaxed text-slate-400">
+            {capacityBy.length === 0
+              ? "Nothing selected: there is no ceiling, and the assistant will keep taking bookings however many come in."
+              : capacityLimit
+                ? "Once that many bookings share these answers, the assistant says it is full and offers a later one instead. Counted across everybody, not per person."
+                : "Set the number of places, or this has no effect."}
           </p>
         </div>
       )}

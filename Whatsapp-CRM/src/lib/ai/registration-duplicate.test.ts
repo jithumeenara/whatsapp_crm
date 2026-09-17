@@ -44,13 +44,15 @@ import { invalidateRegistrationForms } from "./registration";
 
 const CTX = { accountId: "acct-1", contactId: "contact-1" };
 
-function table(uniqueBy: string[]) {
+function table(uniqueBy: string[], capacity?: { by: string[]; limit: number | null }) {
   return {
     id: "t1",
     name: "Training Registration",
     slug: "training-registration",
     description: null,
     ai_unique_by: uniqueBy,
+    ai_capacity_by: capacity?.by ?? [],
+    ai_capacity_limit: capacity?.limit ?? null,
     fields: [
       { field_key: "participant", label: "Name of Participant", field_type: "text", required: true, options: null },
       { field_key: "programme", label: "Training Programme", field_type: "text", required: true, options: null },
@@ -150,5 +152,66 @@ describe("submit_registration — repeat registrations", () => {
     ];
     const result = await submit({ participant: "Manjula", programme: "STP" });
     expect(result.saved).toBe(true);
+  });
+
+  it("refuses once every place is taken", async () => {
+    // Counted across everybody, unlike the duplicate check: a seat taken
+    // by somebody else is still a seat taken, and that is the whole
+    // reason this check exists separately.
+    h.state.tables = [table([], { by: ["programme"], limit: 2 })];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      { id: "a", data: { participant: "One", programme: "STP" }, created_at: new Date() },
+      { id: "b", data: { participant: "Two", programme: "STP" }, created_at: new Date() },
+    ];
+    const result = await submit({ participant: "Three", programme: "STP" });
+    expect(result.saved).toBe(false);
+    expect(result.full).toBe(true);
+    expect(result.places_taken).toBe(2);
+    expect(h.state.created).toHaveLength(0);
+  });
+
+  it("lets the last place go", async () => {
+    h.state.tables = [table([], { by: ["programme"], limit: 2 })];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      { id: "a", data: { participant: "One", programme: "STP" }, created_at: new Date() },
+    ];
+    expect((await submit({ participant: "Two", programme: "STP" })).saved).toBe(true);
+  });
+
+  it("counts each programme separately", async () => {
+    h.state.tables = [table([], { by: ["programme"], limit: 1 })];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      { id: "a", data: { participant: "One", programme: "STP" }, created_at: new Date() },
+    ];
+    expect((await submit({ participant: "Two", programme: "Business Development Plan" })).saved).toBe(
+      true,
+    );
+  });
+
+  it("says they are already registered before it says it is full", async () => {
+    // Both are true of this person; the first is the more useful thing
+    // for them to hear.
+    h.state.tables = [table(["programme"], { by: ["programme"], limit: 1 })];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      { id: "a", data: { participant: "Manjula", programme: "STP" }, created_at: new Date() },
+    ];
+    const result = await submit({ participant: "Manjula", programme: "STP" });
+    expect(result.already_registered).toBe(true);
+    expect(result.full).toBeUndefined();
+  });
+
+  it("has no ceiling when no limit is set", async () => {
+    h.state.tables = [table([], { by: ["programme"], limit: null })];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = Array.from({ length: 50 }, (_, i) => ({
+      id: String(i),
+      data: { participant: `P${i}`, programme: "STP" },
+      created_at: new Date(),
+    }));
+    expect((await submit({ participant: "One more", programme: "STP" })).saved).toBe(true);
   });
 });

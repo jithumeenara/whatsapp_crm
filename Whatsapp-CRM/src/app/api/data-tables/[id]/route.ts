@@ -66,6 +66,24 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
                 .filter((k: string) => guard.table.fields.some((f) => f.field_key === k)),
             }
           : {}),
+        ...(body.ai_capacity_by !== undefined
+          ? {
+              ai_capacity_by: (Array.isArray(body.ai_capacity_by) ? body.ai_capacity_by : [])
+                .filter((k: unknown): k is string => typeof k === 'string')
+                .filter((k: string) => guard.table.fields.some((f) => f.field_key === k)),
+            }
+          : {}),
+        // A limit of zero would mean "closed", which is a thing an
+        // account might want but not a thing to arrive at by typing in
+        // an empty box. Anything below one clears the ceiling instead.
+        ...(body.ai_capacity_limit !== undefined
+          ? {
+              ai_capacity_limit:
+                typeof body.ai_capacity_limit === 'number' && body.ai_capacity_limit > 0
+                  ? Math.floor(body.ai_capacity_limit)
+                  : null,
+            }
+          : {}),
         ...(body.ai_success_message !== undefined
           ? {
               ai_success_message:
