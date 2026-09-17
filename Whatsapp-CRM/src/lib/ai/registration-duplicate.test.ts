@@ -57,6 +57,7 @@ function table(uniqueBy: string[], capacity?: { by: string[]; limit: number | nu
       { field_key: "participant", label: "Name of Participant", field_type: "text", required: true, options: null },
       { field_key: "programme", label: "Training Programme", field_type: "text", required: true, options: null },
       { field_key: "month", label: "Month", field_type: "text", required: false, options: null },
+      { field_key: "from_date", label: "From Date", field_type: "text", required: false, options: null },
     ],
   };
 }
@@ -112,6 +113,46 @@ describe("submit_registration — repeat registrations", () => {
       programme: "statutory_training_programme",
     });
     expect(result.already_registered).toBe(true);
+  });
+
+  it("sees one date written two ways as one date", async () => {
+    // The exact pair in this account's table: the assistant wrote the
+    // same start date as 29/09/2026 on one row and 2026-09-29 on the
+    // next. Somebody who picks "From Date" to catch repeats would
+    // otherwise catch nothing.
+    h.state.tables = [table(["programme", "from_date"])];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      {
+        id: "existing",
+        data: { participant: "Manjula", programme: "STP", from_date: "29/09/2026" },
+        created_at: new Date("2026-09-17"),
+      },
+    ];
+    const result = await submit({
+      participant: "Manjula",
+      programme: "STP",
+      from_date: "2026-09-29",
+    });
+    expect(result.already_registered).toBe(true);
+  });
+
+  it("still tells two different dates apart", async () => {
+    h.state.tables = [table(["programme", "from_date"])];
+    invalidateRegistrationForms(CTX.accountId);
+    h.state.records = [
+      {
+        id: "existing",
+        data: { participant: "Manjula", programme: "STP", from_date: "29/09/2026" },
+        created_at: new Date("2026-09-17"),
+      },
+    ];
+    const result = await submit({
+      participant: "Manjula",
+      programme: "STP",
+      from_date: "2026-12-01",
+    });
+    expect(result.saved).toBe(true);
   });
 
   it("allows the same person on a different programme", async () => {

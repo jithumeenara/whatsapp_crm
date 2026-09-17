@@ -126,7 +126,16 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
       {enabled && (
         <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
           <p className="text-[11.5px] font-medium text-slate-600">
-            Treat it as a repeat registration when these match
+            One booking per person, per&hellip;
+          </p>
+          {/* The check is already scoped to the one customer. Saying so
+              matters: an account that also ticks the name and phone
+              fields gets "one registration per person ever", which is
+              almost never what they meant and looks like a bug the first
+              time somebody returns next term. */}
+          <p className="text-[10.5px] leading-relaxed text-slate-400">
+            Pick what they are booking, not who they are &mdash; this
+            already only looks at their own bookings.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {fillable.map((f) => {
@@ -155,15 +164,22 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
           </div>
           <p className="text-[10.5px] leading-relaxed text-slate-400">
             {uniqueBy.length === 0
-              ? "Nothing selected: the same person can register as many times as they like. Pick the field that identifies what they are registering for \u2014 the assistant will then refuse a second one and offer to change the first instead."
-              : "The assistant will refuse a second registration from the same person with the same answers here, and tell them when the first one was made."}
+              ? "Nothing selected: the same person can book as many times as they like."
+              : `The assistant will refuse a second booking from the same person with the same ${uniqueBy
+                  .map((k) => fillable.find((f) => f.field_key === k)?.label)
+                  .filter(Boolean)
+                  .join(" and ")}, and tell them when the first one was made.`}
           </p>
         </div>
       )}
 
       {enabled && (
         <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
-          <p className="text-[11.5px] font-medium text-slate-600">Limit how many can book</p>
+          <p className="text-[11.5px] font-medium text-slate-600">Places available for each&hellip;</p>
+          <p className="text-[10.5px] leading-relaxed text-slate-400">
+            What is being booked &mdash; the programme, the date, the doctor. Never the
+            participant&rsquo;s name or number.
+          </p>
           <div className="flex flex-wrap gap-1.5">
             {fillable.map((f) => {
               const on = capacityBy.includes(f.field_key)
@@ -209,12 +225,27 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
               />
             </div>
           )}
+          {/* The one mistake that makes this silently do nothing: a
+              field that differs per person means no two bookings ever
+              match, so the count never reaches the limit and nothing
+              ever fills up. Worth an actual warning rather than a hint,
+              because there is no symptom to notice. */}
+          {capacityBy.some((k) => uniqueBy.includes(k)) && (
+            <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] leading-relaxed text-amber-800">
+              Those fields are also used above to identify one person&rsquo;s own repeat bookings.
+              If any of them differ from person to person, no two bookings will ever match and
+              nothing will ever count as full.
+            </p>
+          )}
           <p className="text-[10.5px] leading-relaxed text-slate-400">
             {capacityBy.length === 0
-              ? "Nothing selected: there is no ceiling, and the assistant will keep taking bookings however many come in."
-              : capacityLimit
-                ? "Once that many bookings share these answers, the assistant says it is full and offers a later one instead. Counted across everybody, not per person."
-                : "Set the number of places, or this has no effect."}
+              ? "Nothing selected: no ceiling. The assistant keeps taking bookings however many come in."
+              : !capacityLimit
+                ? "Type the number of places, or this has no effect."
+                : `Once ${capacityLimit} bookings share the same ${capacityBy
+                    .map((k) => fillable.find((f) => f.field_key === k)?.label)
+                    .filter(Boolean)
+                    .join(" and ")}, the assistant says it is full and offers a later one. Counted across everybody, not per person.`}
           </p>
         </div>
       )}

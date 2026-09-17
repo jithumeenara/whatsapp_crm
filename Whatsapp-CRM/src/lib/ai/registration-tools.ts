@@ -50,19 +50,61 @@ function humanDate(d: Date | null | undefined): string | null {
  *  two registrations. */
 function normalizeForMatch(value: unknown): string {
   if (value === undefined || value === null) return ''
+  const raw = String(value).trim()
+
+  // A date first, because two spellings of one date are the commonest
+  // way a comparison like this quietly fails. This account's table holds
+  // the same start date as "29/09/2026" on one row and "2026-09-29" on
+  // the next — both written by the assistant, days apart. Compared as
+  // text those are two different programmes and the duplicate slips
+  // through, which is precisely the case somebody would pick "From Date"
+  // to catch.
+  const asDate = canonicalDate(raw)
+  if (asDate) return asDate
+
   return (
-    String(value)
+    raw
       .toLowerCase()
-      // Underscores and hyphens become spaces before collapsing. These
-      // fields are free text, and the assistant writes the same
-      // programme as "Statutory Training Programme" one day and
-      // "statutory_training_programme" the next — a real pair of rows in
-      // this account's table. A duplicate check that treats those as two
-      // different programmes catches nothing.
+      // Underscores and hyphens become spaces before collapsing: the
+      // same table holds "Statutory Training Programme" and
+      // "statutory_training_programme" as two rows of one programme.
       .replace(/[_-]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
   )
+}
+
+/**
+ * A date in any of the usual spellings, reduced to yyyy-mm-dd.
+ *
+ * Returns null for anything that is not clearly a date, so ordinary text
+ * falls through to the text comparison untouched.
+ *
+ * Day-first is assumed when the order is ambiguous. That is the local
+ * convention and what the Data Store itself displays — and in any case
+ * the rule only has to be *consistent*, since both sides of every
+ * comparison pass through here.
+ */
+function canonicalDate(raw: string): string | null {
+  const iso = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(raw)
+  if (iso) return pad(iso[1], iso[2], iso[3])
+
+  const dmy = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(raw)
+  if (dmy) {
+    const [, a, b, year] = dmy
+    // Only one reading is possible when a value is above twelve.
+    const dayFirst = Number(a) > 12 ? true : Number(b) > 12 ? false : true
+    return dayFirst ? pad(year, b, a) : pad(year, a, b)
+  }
+
+  return null
+}
+
+function pad(year: string, month: string, day: string): string | null {
+  const m = Number(month)
+  const d = Number(day)
+  if (!(m >= 1 && m <= 12) || !(d >= 1 && d <= 31)) return null
+  return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
 function blanksIn(
