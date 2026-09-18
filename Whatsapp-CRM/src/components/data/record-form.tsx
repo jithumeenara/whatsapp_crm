@@ -1,5 +1,6 @@
 'use client';
 
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Loader2, Paperclip, X, ImageIcon, PenLine, Eraser, FilePlus2, AlertTriangle,
@@ -648,32 +649,43 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={() => !saving && onClose()} />
-      <div className="relative z-10 flex w-full max-w-lg max-h-[90vh] flex-col rounded-2xl bg-white shadow-2xl border border-slate-100">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 shrink-0">
+    // The app's own dialog rather than a hand-rolled `fixed inset-0`.
+    // The difference is not decoration: this brings the enter and exit
+    // animation, a focus trap, Escape to close, and a portal so it
+    // stacks correctly over the table behind it. Tab used to walk out of
+    // the open form and into the page underneath.
+    //
+    // Dismissal stays blocked while a save is in flight — closing the
+    // form mid-write would leave somebody unsure whether their record
+    // was created.
+    <Dialog open onOpenChange={(v) => { if (!v && !saving) onClose() }}>
+      <DialogContent
+        showCloseButton={false}
+        className="grid max-h-[88dvh] w-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-lg"
+      >
+        <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b border-slate-100 px-5 py-4 text-left">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
             <FilePlus2 className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold text-slate-900 leading-snug">
+            <DialogTitle className="text-[15px] leading-snug">
               {record ? 'Edit Record' : 'Add Record'}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            </DialogTitle>
+            <p className="mt-0.5 text-[11px] text-slate-400">
               {dataFields.length} field{dataFields.length !== 1 ? 's' : ''}
             </p>
           </div>
           <button
             onClick={() => !saving && onClose()}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
-        </div>
+        </DialogHeader>
 
         {/* Fields */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
           {fields.map((field) => {
             const cfg = getFieldConfig(field.options);
             const isDisplay = field.field_type === 'section_header' || field.field_type === 'html_block';
@@ -721,7 +733,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-4">
           <button
             onClick={onClose}
             disabled={saving}
@@ -738,7 +750,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
             {record ? 'Save Changes' : 'Add Record'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -121,42 +121,64 @@ export interface DataRecord {
   updated_at: string
 }
 
+/**
+ * The field types a column can have.
+ *
+ * Ordered by how often they are actually picked, not by any internal
+ * tidiness — "Text" and "Dropdown" account for most columns anyone
+ * creates, and a list that buries them under Password and HTML Block
+ * makes the common case the slowest.
+ *
+ * The last group is the one worth explaining. A section header and an
+ * HTML block store nothing: they exist to lay out the *form* view of a
+ * table, and as columns they are permanently empty. They stay available
+ * because tables already use them, and they are grouped and labelled so
+ * nobody reaches for one expecting somewhere to put a value.
+ */
 export const FIELD_TYPES: { value: FieldType; label: string; group: string }[] = [
-  // Text
-  { value: 'text',          label: 'Text',           group: 'Basic' },
-  { value: 'textarea',      label: 'Long Text',      group: 'Basic' },
-  { value: 'number',        label: 'Number',         group: 'Basic' },
-  { value: 'email',         label: 'Email',          group: 'Basic' },
-  { value: 'password',      label: 'Password',       group: 'Basic' },
-  { value: 'phone',         label: 'Phone',          group: 'Basic' },
-  { value: 'url',           label: 'URL',            group: 'Basic' },
-  // Date & Time
-  { value: 'date',          label: 'Date Picker',    group: 'Date & Time' },
-  { value: 'time',          label: 'Time Picker',    group: 'Date & Time' },
-  { value: 'datetime',      label: 'Date & Time',    group: 'Date & Time' },
-  // Choice
-  { value: 'boolean',       label: 'Yes / No',       group: 'Choice' },
-  { value: 'select',        label: 'Dropdown',       group: 'Choice' },
-  { value: 'multiselect',   label: 'Multi Select',   group: 'Choice' },
-  { value: 'radio',         label: 'Radio Buttons',  group: 'Choice' },
-  // Location
-  { value: 'country',       label: 'Country',        group: 'Location' },
-  { value: 'state',         label: 'State / Region', group: 'Location' },
+  // The everyday ones.
+  { value: 'text',          label: 'Text',           group: 'Common' },
+  { value: 'select',        label: 'Dropdown',       group: 'Common' },
+  { value: 'number',        label: 'Number',         group: 'Common' },
+  { value: 'date',          label: 'Date',           group: 'Common' },
+  { value: 'phone',         label: 'Phone',          group: 'Common' },
+  { value: 'email',         label: 'Email',          group: 'Common' },
+  { value: 'textarea',      label: 'Long text',      group: 'Common' },
+  { value: 'boolean',       label: 'Yes / No',       group: 'Common' },
+
+  { value: 'multiselect',   label: 'Pick several',   group: 'Choice' },
+  { value: 'radio',         label: 'Radio buttons',  group: 'Choice' },
+
+  { value: 'time',          label: 'Time',           group: 'Date & time' },
+  { value: 'datetime',      label: 'Date and time',  group: 'Date & time' },
+
   { value: 'district',      label: 'District',       group: 'Location' },
+  { value: 'state',         label: 'State / region', group: 'Location' },
+  { value: 'country',       label: 'Country',        group: 'Location' },
   { value: 'address',       label: 'Address',        group: 'Location' },
-  // Files
-  { value: 'image',         label: 'Image Upload',   group: 'Files' },
-  { value: 'file',          label: 'File Upload',    group: 'Files' },
+
+  { value: 'file',          label: 'File',           group: 'Files' },
+  { value: 'image',         label: 'Image',          group: 'Files' },
   { value: 'signature',     label: 'Signature',      group: 'Files' },
-  // Advanced
-  { value: 'relation',      label: 'Link to Table',  group: 'Advanced' },
-  { value: 'hidden',        label: 'Hidden Field',   group: 'Advanced' },
-  // Display
-  { value: 'section_header', label: 'Section Header', group: 'Display' },
-  { value: 'html_block',    label: 'HTML Block',     group: 'Display' },
+
+  { value: 'relation',      label: 'Link to another table', group: 'Advanced' },
+  { value: 'url',           label: 'Web address',    group: 'Advanced' },
+  { value: 'password',      label: 'Password',       group: 'Advanced' },
+  { value: 'hidden',        label: 'Hidden value',   group: 'Advanced' },
+
+  { value: 'section_header', label: 'Section heading', group: 'Layout only — stores nothing' },
+  { value: 'html_block',    label: 'HTML block',      group: 'Layout only — stores nothing' },
 ]
 
-export const FIELD_GROUPS = ['Basic', 'Date & Time', 'Choice', 'Location', 'Files', 'Advanced', 'Display']
+export const FIELD_GROUPS = [
+  'Common',
+  'Choice',
+  'Date & time',
+  'Location',
+  'Files',
+  'Advanced',
+  'Layout only — stores nothing',
+]
 
 export const TABLE_ICONS = [
   { value: 'database', emoji: '🗄️' },

@@ -1,5 +1,6 @@
 'use client';
 
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
   X, Edit2, Trash2, UserRound, Type, AlignLeft, Hash, Mail, KeyRound, Phone,
   Link2, Calendar, Clock, CalendarClock, ToggleLeft, ChevronDown, ListChecks,
@@ -152,31 +153,38 @@ export function RecordDetailModal({
   const visibleFields = fields.filter((f) => !NON_DATA_TYPES.has(f.field_type))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative z-10 flex w-full max-w-lg max-h-[90vh] flex-col rounded-2xl bg-white shadow-2xl border border-slate-100">
-        {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 shrink-0">
+    // The app's own dialog, rather than a hand-rolled `fixed inset-0`.
+    // What that was missing is not decoration: no enter/exit animation,
+    // no focus trap, no Escape, and no portal — so it stacked wrongly
+    // against anything else on the page. Tab used to walk straight out
+    // of the open modal into the table behind it.
+    <Dialog open onOpenChange={(v) => { if (!v) onClose() }}>
+      <DialogContent
+        showCloseButton={false}
+        className="grid max-h-[88dvh] w-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-lg"
+      >
+        <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b border-slate-100 px-5 py-4 text-left">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
             <UserRound className="h-4 w-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[15px] font-semibold text-slate-900 leading-snug">Record Details</p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <DialogTitle className="text-[15px] leading-snug">Record Details</DialogTitle>
+            <p className="mt-0.5 text-[11px] text-slate-400">
               {visibleFields.length} field{visibleFields.length !== 1 ? 's' : ''} · Updated{' '}
               {new Date(record.updated_at).toLocaleString()}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
-        </div>
+        </DialogHeader>
 
         {/* Fields */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
           {visibleFields.length === 0 ? (
             <p className="text-[13px] text-slate-400 text-center py-6">No fields to show.</p>
           ) : (
@@ -196,7 +204,7 @@ export function RecordDetailModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-slate-100 shrink-0">
+        <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-5 py-4">
           <button
             onClick={onDelete}
             className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[13px] font-medium text-rose-600 hover:bg-rose-50 transition-colors"
@@ -220,7 +228,7 @@ export function RecordDetailModal({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

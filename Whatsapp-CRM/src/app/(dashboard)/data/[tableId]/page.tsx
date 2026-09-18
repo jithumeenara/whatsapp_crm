@@ -16,6 +16,7 @@ import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
 import { RecordDetailModal } from "@/components/data/record-detail-modal"
 import { AiRegistrationToggle } from "@/components/data/ai-registration-toggle"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import type { DataTable, DataField, DataRecord, FieldType } from "@/lib/data-store/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) {
@@ -41,40 +42,6 @@ function formatValue(field: DataField, value: unknown): string {
   if (field.field_type === "boolean") return value ? "Yes" : "No"
   if (Array.isArray(value)) return (value as string[]).join(", ")
   return str.length > 56 ? str.slice(0, 56) + "…" : str
-}
-
-// ── Confirm Dialog ──────────────────────────────────────────────
-function ConfirmDialog({ open, title, message, confirmLabel = "Delete", onConfirm, onCancel }: {
-  open: boolean; title: string; message: string; confirmLabel?: string
-  onConfirm: () => void; onCancel: () => void
-}) {
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={onCancel} />
-      <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white shadow-2xl border border-slate-100 p-6">
-        <div className="flex items-start gap-3 mb-4">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-rose-50">
-            <AlertTriangle className="h-4 w-4 text-rose-500" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[15px] font-semibold text-slate-900 leading-snug">{title}</p>
-            <p className="mt-1 text-[13px] text-slate-500 leading-relaxed">{message}</p>
-          </div>
-        </div>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel}
-            className="h-8 px-3 rounded-lg border border-slate-200 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors">
-            Cancel
-          </button>
-          <button onClick={onConfirm}
-            className="h-8 px-3 rounded-lg bg-rose-500 text-[13px] font-medium text-white hover:bg-rose-600 transition-colors">
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 export default function DataTablePage() {
@@ -610,7 +577,7 @@ export default function DataTablePage() {
       <ConfirmDialog
         open={!!confirmRecordId}
         title="Delete record?"
-        message="This record will be permanently deleted and cannot be recovered."
+        description="This record will be permanently deleted and cannot be recovered."
         confirmLabel="Delete"
         onConfirm={confirmDelete}
         onCancel={() => setConfirmRecordId(null)}
@@ -620,7 +587,7 @@ export default function DataTablePage() {
       <ConfirmDialog
         open={confirmBulkDelete}
         title={`Delete ${selectedIds.size} record${selectedIds.size !== 1 ? "s" : ""}?`}
-        message="These records will be permanently deleted and cannot be recovered."
+        description="These records will be permanently deleted and cannot be recovered."
         confirmLabel="Delete"
         onConfirm={confirmBulkDeleteRecords}
         onCancel={() => setConfirmBulkDelete(false)}
