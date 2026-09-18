@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   ArrowLeft, Send, Loader2, Users, Save, FileText, Tag, CheckCheck, Table2, Upload,
-  Rocket, ShieldAlert, Zap, CalendarClock, Repeat,
+  Rocket, ShieldAlert, Zap, CalendarClock, Repeat, Inbox,
 } from 'lucide-react';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
@@ -246,6 +246,32 @@ export function Step4ScheduleSend({
             )}
           </div>
         )}
+      </div>
+
+      {/* What this does to the Inbox.
+          Placed here, next to scheduling, because both are decisions
+          about *how* the campaign lands rather than what it says. */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={schedule.showInInbox === true}
+            onChange={(e) => onScheduleChange({ ...schedule, showInInbox: e.target.checked })}
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+          />
+          <span>
+            <span className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-800">
+              <Inbox className="h-3.5 w-3.5 text-slate-400" />
+              Show these in the Inbox
+            </span>
+            <span className="mt-1 block text-[11.5px] leading-relaxed text-slate-500">
+              Off by default. A broadcast to hundreds of people would otherwise open a thread for every one of
+              them and lift them all to the top, burying the few customers actually waiting on an answer. The
+              messages are still saved, and anyone who <strong>replies</strong> appears in the Inbox as normal.
+              Every send is listed on this campaign&apos;s own page either way.
+            </span>
+          </span>
+        </label>
       </div>
 
       {/* Sending progress */}

@@ -56,6 +56,9 @@ export async function POST(request: NextRequest) {
       interval_value?: number;
       interval_unit?: "minutes" | "hours" | "days";
       max_sends?: number;
+      /** Whether this campaign's sends may reorder the Inbox. Defaults
+       *  to false — see src/lib/broadcasts/run-broadcast.ts. */
+      show_in_inbox?: boolean;
     };
 
     // ── Resolve audience ──────────────────────────────────────
@@ -111,6 +114,7 @@ export async function POST(request: NextRequest) {
           excludeTagIds: body.audience.excludeTagIds,
         } as Prisma.InputJsonValue,
         schedule_type: scheduleType,
+        show_in_inbox: body.show_in_inbox === true,
         scheduled_at: scheduledAt,
         next_send_at: scheduledAt,
         interval_value: intervalValue ?? null,

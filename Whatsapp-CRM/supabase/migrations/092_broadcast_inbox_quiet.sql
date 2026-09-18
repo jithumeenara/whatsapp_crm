@@ -1,0 +1,22 @@
+-- A broadcast stops taking the Inbox apart.
+--
+-- Sending to five hundred people opened five hundred conversations and
+-- lifted every one of them to the top of the list by last_message_at.
+-- The three customers who had actually asked something were then
+-- somewhere below four hundred and ninety-seven people who had received
+-- an offer and said nothing back. The Inbox is a list of things to do,
+-- and one campaign could empty it of meaning.
+--
+-- So a broadcast now writes its message into a thread that already
+-- exists and does no more: no new thread for somebody who has never
+-- written in, no reordering, no live list event. Their *reply* is what
+-- puts them in the Inbox, which is what the word inbox means.
+--
+-- Nothing is lost. Every send is on the campaign's own page, recipient
+-- by recipient with its delivery state.
+--
+-- Default false, because the Inbox behaviour people asked for is the
+-- quiet one. A campaign that genuinely wants the old behaviour — a
+-- personal note to twenty people, say — turns this on.
+ALTER TABLE broadcasts
+  ADD COLUMN IF NOT EXISTS show_in_inbox boolean NOT NULL DEFAULT false;

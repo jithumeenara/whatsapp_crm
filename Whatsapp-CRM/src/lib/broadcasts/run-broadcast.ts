@@ -28,11 +28,16 @@ function sleep(ms: number) {
  *  exists (the normal case — most broadcast recipients have messaged in
  *  before), otherwise creates one. Mirrors the SMS webhook's
  *  findOrCreateSmsConversation, channel:'whatsapp' instead of 'sms'. */
-async function findOrCreateWhatsAppConversation(accountId: string, ownerUserId: string, contactId: string, whatsappConfigId: string) {
+async function findOrCreateWhatsAppConversation(accountId: string, ownerUserId: string, contactId: string, whatsappConfigId: string, createIfMissing: boolean) {
   const existing = await prisma.conversation.findFirst({
     where: { account_id: accountId, contact_id: contactId, channel: "whatsapp", whatsapp_config_id: whatsappConfigId },
   });
   if (existing) return existing;
+  // The quiet path stops here. A recipient who has never written in has
+  // no thread, and a broadcast is not a reason to open one — the reply
+  // is, and the webhook opens it then. Until that happens the send is
+  // recorded where it belongs, on the campaign.
+  if (!createIfMissing) return null;
   try {
     return await prisma.conversation.create({
       data: { account_id: accountId, user_id: ownerUserId, contact_id: contactId, channel: "whatsapp", whatsapp_config_id: whatsappConfigId },
@@ -44,15 +49,35 @@ async function findOrCreateWhatsAppConversation(accountId: string, ownerUserId: 
 }
 
 /**
- * Writes the actual Message row for a sent broadcast recipient, so it
- * shows up in that contact's Inbox thread (previously it only ever landed
- * in broadcast_recipients — invisible in the conversation itself, with no
- * way to tell "did we ever message this customer" from the Inbox alone).
- * broadcast_id tags it so the bubble can render a "Broadcast" badge.
- * Best-effort: a failure here doesn't undo the real send that already
- * happened, so it's logged and swallowed rather than thrown.
+ * Writes the Message row for a sent broadcast recipient, so it shows up
+ * in that contact's thread. broadcast_id tags it so the bubble can
+ * render a "Broadcast" badge. Best-effort: a failure here doesn't undo
+ * the real send that already happened, so it's logged and swallowed
+ * rather than thrown.
+ *
+ * ── Why it does not touch the Inbox list ────────────────────────────
+ *
+ * Because a bulk send is not a conversation. Sending to five hundred
+ * people opened five hundred threads and lifted every one of them to
+ * the top by last_message_at — so the three customers who had actually
+ * asked something were somewhere below four hundred and ninety-seven
+ * people who had received an offer and said nothing. The Inbox is a
+ * list of things to do, and one campaign could empty it of meaning.
+ *
+ * So by default a broadcast writes its message into a thread that
+ * already exists, and does no more: no new thread for a stranger, no
+ * reordering, no unread count, no live event. The customer's reply is
+ * what puts them in the Inbox — and the webhook already handles that,
+ * including reopening a closed thread.
+ *
+ * Nothing is lost. The send is on the campaign's own page, recipient by
+ * recipient with its delivery state, which is where somebody looks to
+ * ask "did this reach them".
+ *
+ * An account that wants the old behaviour turns on "Show in Inbox" for
+ * that campaign.
  */
-async function recordBroadcastMessage(args: {
+export async function recordBroadcastMessage(args: {
   accountId: string
   ownerUserId: string
   broadcastId: string
@@ -61,9 +86,17 @@ async function recordBroadcastMessage(args: {
   renderedBody: string
   whatsappMessageId: string
   whatsappConfigId: string
+  /** The campaign's own choice. False keeps the Inbox as it was. */
+  showInInbox: boolean
 }) {
   try {
-    const conversation = await findOrCreateWhatsAppConversation(args.accountId, args.ownerUserId, args.contactId, args.whatsappConfigId);
+    const conversation = await findOrCreateWhatsAppConversation(
+      args.accountId,
+      args.ownerUserId,
+      args.contactId,
+      args.whatsappConfigId,
+      args.showInInbox,
+    );
     if (!conversation) return;
 
     const savedMsg = await prisma.message.create({
@@ -79,7 +112,12 @@ async function recordBroadcastMessage(args: {
         broadcast_id: args.broadcastId,
       },
     });
+    // Emitted either way: somebody with this one thread open should see
+    // the message land in it. What is withheld below is the *list*
+    // event, which is what reorders the Inbox.
     emitToAccount(args.accountId, "message", { eventType: "INSERT", new: savedMsg, old: {} });
+
+    if (!args.showInInbox) return;
 
     const updatedConv = await prisma.conversation.update({
       where: { id: conversation.id },
@@ -345,6 +383,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         renderedBody,
         whatsappMessageId: sentMessageId,
         whatsappConfigId: config.id,
+        showInInbox: broadcast.show_in_inbox,
       });
     } else {
       await prisma.broadcastRecipient.update({

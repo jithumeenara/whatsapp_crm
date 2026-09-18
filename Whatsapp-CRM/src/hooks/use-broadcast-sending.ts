@@ -33,6 +33,10 @@ export interface BroadcastSchedule {
   intervalValue?: number;
   intervalUnit?: 'minutes' | 'hours' | 'days';
   maxSends?: number;
+  /** Let this campaign's sends appear in the Inbox and lift those
+   *  threads to the top. Off by default: a bulk send is not a
+   *  conversation, and five hundred of them buries the few that are. */
+  showInInbox?: boolean;
 }
 
 interface BroadcastPayload {
@@ -100,6 +104,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           header_media_url: payload.headerMediaUrl,
           whatsapp_config_id: payload.whatsappConfigId,
           schedule_type: schedule?.type ?? 'now',
+          show_in_inbox: schedule?.showInInbox === true,
           scheduled_at: schedule?.scheduledAt,
           interval_value: schedule?.intervalValue,
           interval_unit: schedule?.intervalUnit,
