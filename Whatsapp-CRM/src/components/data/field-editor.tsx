@@ -254,7 +254,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
   const isRelationType = form.field_type === 'relation';
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium">Fields ({fields.length})</p>
         <Button size="sm" variant="outline" onClick={openNew} className="gap-1.5 h-8 text-xs">
@@ -269,7 +269,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
         </div>
       )}
 
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         {fields.map((field, idx) => {
           const cfg = getFieldConfig(field.options);
           return (
@@ -312,11 +312,21 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
 
       {/* Field dialog */}
       <Dialog open={editing !== null} onOpenChange={(v) => !v && cancel()}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        {/* Header, scrolling body, footer — three rows, rather than one
+            padded box that scrolls.
+
+            The padding used to sit on the scrolling element itself, so
+            the scrollbar lived inside it and ate the right-hand gutter;
+            on Windows that is fifteen pixels of the twenty-four, and the
+            form ends up pressed against the edge. Now only the middle
+            row scrolls, and the side padding is the same whether it does
+            or not. */}
+        <DialogContent className="grid max-h-[88dvh] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="px-6 pt-6 pb-4 text-left">
             <DialogTitle>{editing === 'new' ? 'Add Field' : 'Edit Field'}</DialogTitle>
           </DialogHeader>
 
+          <div className="min-h-0 overflow-y-auto px-6 pb-2">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)}>
             <TabsList className="h-8 text-xs">
               <TabsTrigger value="basic" className="text-xs px-3">Basic</TabsTrigger>
@@ -325,8 +335,8 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
             </TabsList>
 
             {/* ── BASIC TAB ─────────────────────────────── */}
-            <TabsContent value="basic" className="space-y-4 pt-3">
-              <div className="space-y-1.5">
+            <TabsContent value="basic" className="space-y-5 pt-4">
+              <div className="space-y-2">
                 <Label>Field Label *</Label>
                 <Input
                   placeholder="e.g. Full Name, Date of Birth"
@@ -336,7 +346,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>Field Type</Label>
                 <Select
                   value={form.field_type}
@@ -362,7 +372,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
 
               {/* Choice options (select / multiselect / radio) */}
               {isChoiceType && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <Label>Options Source</Label>
                   {/* Toggle: manual vs from table */}
                   <div className="flex gap-1 bg-slate-100 rounded-lg p-0.5">
@@ -409,7 +419,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
 
                   {form.choice_source === 'table' && (
                     <div className="space-y-2">
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <Label className="text-xs text-slate-500">Source Table</Label>
                         <Select
                           value={form.source_table_id}
@@ -424,7 +434,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                         </Select>
                       </div>
                       {form.source_table_id && (
-                        <div className="space-y-1.5">
+                        <div className="space-y-2">
                           <Label className="text-xs text-slate-500">Use Field Values As Options</Label>
                           {loadingSource ? (
                             <div className="flex items-center gap-1.5 text-xs text-slate-500 py-1">
@@ -459,8 +469,8 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
 
               {/* Relation config */}
               {isRelationType && (
-                <div className="space-y-3">
-                  <div className="space-y-1.5">
+                <div className="space-y-4">
+                  <div className="space-y-2">
                     <Label>Link to Table</Label>
                     <Select
                       value={form.relation_table_id}
@@ -475,7 +485,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                     </Select>
                   </div>
                   {relationFields.length > 0 && (
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       <Label>Display Field</Label>
                       <Select
                         value={form.relation_label_field}
@@ -495,7 +505,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
 
               {/* Hidden field value */}
               {isHiddenType && (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <Label>Hidden Value</Label>
                   <Input
                     placeholder="Value saved silently with each record"
@@ -507,7 +517,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
 
               {/* Section header / HTML block content */}
               {isDisplayType && (
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <Label>{form.field_type === 'html_block' ? 'HTML Content' : 'Description (optional)'}</Label>
                   <Textarea
                     placeholder={form.field_type === 'html_block'
@@ -536,10 +546,10 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
             </TabsContent>
 
             {/* ── DISPLAY TAB ───────────────────────────── */}
-            <TabsContent value="display" className="space-y-4 pt-3">
+            <TabsContent value="display" className="space-y-5 pt-4">
               {!isDisplayType && !isHiddenType && (
                 <>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Placeholder</Label>
                     <Input
                       placeholder="Hint text shown inside the field…"
@@ -548,7 +558,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                     />
                   </div>
 
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Default Value</Label>
                     <Input
                       placeholder="Pre-filled value for new records"
@@ -559,7 +569,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                 </>
               )}
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>Help Text</Label>
                 <Textarea
                   placeholder="Instruction shown below the field to guide users"
@@ -570,7 +580,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>Field Width</Label>
                 <Select
                   value={form.field_width}
@@ -589,15 +599,15 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
             </TabsContent>
 
             {/* ── VALIDATION TAB ────────────────────────── */}
-            <TabsContent value="validation" className="space-y-4 pt-3">
+            <TabsContent value="validation" className="space-y-5 pt-4">
               {(form.field_type === 'number') && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Min Value</Label>
                     <Input type="number" value={form.validation.min ?? ''} placeholder="0"
                       onChange={(e) => setVal('min', e.target.value ? Number(e.target.value) : undefined)} />
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Max Value</Label>
                     <Input type="number" value={form.validation.max ?? ''} placeholder="100"
                       onChange={(e) => setVal('max', e.target.value ? Number(e.target.value) : undefined)} />
@@ -607,12 +617,12 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
 
               {(form.field_type === 'text' || form.field_type === 'textarea' || form.field_type === 'password' || form.field_type === 'url') && (
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Min Length</Label>
                     <Input type="number" value={form.validation.minLength ?? ''} placeholder="0"
                       onChange={(e) => setVal('minLength', e.target.value ? Number(e.target.value) : undefined)} />
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     <Label>Max Length</Label>
                     <Input type="number" value={form.validation.maxLength ?? ''} placeholder="255"
                       onChange={(e) => setVal('maxLength', e.target.value ? Number(e.target.value) : undefined)} />
@@ -620,7 +630,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                 </div>
               )}
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>Pattern (regex)</Label>
                 <Input
                   placeholder="e.g. ^[A-Z]{2}[0-9]{6}$"
@@ -630,7 +640,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                 />
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label>Custom Validation Message</Label>
                 <Input
                   placeholder="Shown when validation fails"
@@ -651,13 +661,15 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
               )}
               {isDisplayType && (
                 <p className="text-xs text-slate-500">
-                  Display fields don't support validation.
+                  Display fields don&apos;t support validation.
                 </p>
               )}
             </TabsContent>
           </Tabs>
 
-          <DialogFooter className="pt-2">
+          </div>
+
+          <DialogFooter className="mx-0 mb-0 mt-0 px-6 py-4">
             <Button variant="outline" onClick={cancel} disabled={saving}>Cancel</Button>
             <Button onClick={save} disabled={saving || !form.label.trim()} className="gap-2">
               {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
