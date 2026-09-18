@@ -195,20 +195,41 @@ export function AiFallbackBanner() {
               </ul>
 
               <div className="flex flex-wrap items-center gap-4 border-t border-slate-200/70 pt-3">
-                <label className="flex items-center gap-2 text-[11.5px] text-slate-700" htmlFor="ai-max-turns">
-                  <span>Stop after</span>
-                  <input
-                    id="ai-max-turns"
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={config.maxTurns}
-                    onChange={(e) => setConfig({ ...config, maxTurns: Number(e.target.value) })}
-                    onBlur={() => void save({ maxTurns: config.maxTurns })}
-                    className="h-7 w-14 rounded-lg border border-slate-200 bg-white px-2 text-center text-[12px] tabular-nums outline-none focus:border-indigo-400"
+                {/* The cap, and the switch that removes it.
+                    Two controls rather than a box you type 0 into,
+                    because "stop after 0 replies" reads as the opposite
+                    of what it does. */}
+                <div className="flex items-center gap-2 text-[11.5px] text-slate-700">
+                  <Switch
+                    checked={config.maxTurns > 0}
+                    onCheckedChange={(v) => void save({ maxTurns: v ? 8 : 0 })}
                   />
-                  <span>replies in one chat</span>
-                </label>
+                  {config.maxTurns > 0 ? (
+                    <label className="flex items-center gap-2" htmlFor="ai-max-turns">
+                      <span>Stop after</span>
+                      <input
+                        id="ai-max-turns"
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={config.maxTurns}
+                        onChange={(e) => setConfig({ ...config, maxTurns: Number(e.target.value) })}
+                        onBlur={() =>
+                          void save({ maxTurns: Math.min(50, Math.max(1, config.maxTurns || 8)) })
+                        }
+                        className="h-7 w-14 rounded-lg border border-slate-200 bg-white px-2 text-center text-[12px] tabular-nums outline-none focus:border-indigo-400"
+                      />
+                      <span>replies in one chat</span>
+                    </label>
+                  ) : (
+                    <span>
+                      No reply limit —{" "}
+                      <span className="text-amber-700">
+                        it keeps answering until someone here replies
+                      </span>
+                    </span>
+                  )}
+                </div>
 
                 <label
                   className="flex items-center gap-2 text-[11.5px] text-slate-700"

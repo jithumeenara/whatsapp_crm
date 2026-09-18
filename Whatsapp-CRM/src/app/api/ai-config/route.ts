@@ -367,9 +367,13 @@ export async function PUT(req: Request) {
     // between a stuck conversation and an unbounded exchange with a bot
     // that cannot help, so a zero or a thousand from a bad request must
     // not become the limit.
+    // 0 is the one meaningful value outside the range: it means the
+    // account has switched the cap off on purpose. Everything else is
+    // still clamped, because a thousand from a bad request must not
+    // quietly become the limit.
     ai_auto_reply_max_turns:
       ai_auto_reply_max_turns !== undefined
-        ? Math.min(50, Math.max(1, Number(ai_auto_reply_max_turns)))
+        ? Math.min(50, Math.max(0, Math.floor(Number(ai_auto_reply_max_turns)) || 0))
         : (existing?.ai_auto_reply_max_turns ?? 8),
     ai_auto_reply_pause_on_agent:
       ai_auto_reply_pause_on_agent !== undefined

@@ -155,6 +155,19 @@ describe("the turn limit", () => {
     expect(h.state.conversationUpdates).toBe(1);
   });
 
+  it("has no limit at all when the cap is switched off", async () => {
+    // 0 is what the Chatbot page's switch writes. The model must be
+    // reached, which the mock proves by throwing — so this asserts that
+    // the guard was not what stopped the turn.
+    h.state.config = { ...h.state.config, ai_auto_reply_max_turns: 0 };
+    h.state.botReplies = Array.from({ length: 40 }, () => ({ created_at: new Date() }));
+
+    expect(await autoReplyToMessage(INPUT)).toBe("handed_off");
+    expect(h.state.notes[0]).toContain("could not generate a reply");
+    // And nothing was skipped quietly: no turn-limit note was written.
+    expect(h.state.notes.some((n) => n.includes("stopped answering"))).toBe(false);
+  });
+
   it("stays out of a thread a person has taken, without saying anything", async () => {
     // A colleague is already in this conversation. The assistant
     // announcing that it is fetching one would be absurd.

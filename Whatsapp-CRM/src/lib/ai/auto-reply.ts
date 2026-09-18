@@ -237,9 +237,15 @@ export async function autoReplyToMessage(args: {
   // whatever the assistant was failing to resolve, and the count starts
   // again from there. Failing that, 24 hours — WhatsApp's own session
   // window, past which a returning customer is starting afresh.
+  //
+  // Zero means no limit at all. An account can switch the cap off on the
+  // Chatbot page, and this is where that decision lands — deliberately a
+  // number rather than a second boolean, so there is one thing to read
+  // when somebody asks why the assistant stopped.
   const countFrom = lastHumanReply?.created_at ?? sessionStart
   const botReplies = botRepliesInWindow.filter((m) => m.created_at > countFrom).length
-  if (botReplies >= aiConfig.ai_auto_reply_max_turns) {
+  const turnLimit = aiConfig.ai_auto_reply_max_turns
+  if (turnLimit > 0 && botReplies >= turnLimit) {
     // Out of turns is not a reason to stop speaking to the customer.
     //
     // Found in a live log: two conversations had reached the limit, and
