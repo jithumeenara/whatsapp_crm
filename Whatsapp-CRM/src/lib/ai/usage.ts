@@ -31,6 +31,11 @@ export type UsageFeature =
   | 'tts'
   /// Turning a customer's voice note into text.
   | 'transcription'
+  /// Reading a scanned PDF into the knowledge base. Its own line
+  /// because it is one of the larger single charges an account can
+  /// incur here — a 60-page scan is 60 images of input — and one it
+  /// pays once per document rather than per message.
+  | 'pdf_ocr'
 
 export interface TokenCounts {
   inputTokens: number

@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
+import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
@@ -133,6 +134,18 @@ function parseDateOrNull(value: string | null | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+/** The account's Gemini credentials, for the PDF path inside
+ *  fetchPageText. Read here rather than threaded through every caller
+ *  because only the PDF branch ever uses it. */
+async function geminiFor(accountId: string) {
+  const row = await prisma.aiConfig.findUnique({
+    where: { account_id: accountId },
+    select: { provider_keys: true },
+  })
+  const gemini = row ? geminiCredentials(row) : { apiKey: null, model: null }
+  return { geminiApiKey: gemini.apiKey, model: gemini.model, accountId }
+}
+
 export async function POST(req: Request) {
   let ctx: { accountId: string; userId: string }
   try {
@@ -214,7 +227,10 @@ export async function POST(req: Request) {
     } else if (kind === 'website') {
       const rawUrl = body?.source_url?.trim()
       if (!rawUrl) return NextResponse.json({ error: 'A website entry needs a URL.' }, { status: 400 })
-      const page = await fetchPageText(rawUrl)
+      // A URL may point at a PDF rather than a page, and a PDF may be a
+      // scan — both are handled inside fetchPageText, which needs the
+      // account's Gemini key to read one.
+      const page = await fetchPageText(rawUrl, await geminiFor(ctx.accountId))
       content = page.text
       name = name || page.title || new URL(rawUrl).hostname
       source = 'web_sync'

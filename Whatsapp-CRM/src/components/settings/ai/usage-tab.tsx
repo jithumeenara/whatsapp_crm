@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   BarChart3, Loader2, MessageSquare, Database, Send, BookOpen, Languages,
   ShieldCheck, TrendingUp, TrendingDown, Minus, AlertTriangle, Download, Info,
-  Volume2, Mic,
+  Volume2, Mic, FileScan,
 } from 'lucide-react';
 import { AiButton, AiCard, AiCardHeader, AiBadge, AiSegmented, AiNotice, AiHint, AiIconTile } from './ui-kit';
 import { RequestsChart, TokensChart, FeatureBars, type DailyPoint } from './usage-chart';
@@ -75,6 +75,7 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   eval_grading: { label: 'Evaluation', Icon: ShieldCheck },
   tts: { label: 'Voice replies', Icon: Volume2 },
   transcription: { label: 'Voice notes in', Icon: Mic },
+  pdf_ocr: { label: 'Scanned PDFs', Icon: FileScan },
 };
 
 const RANGES = [

@@ -33,6 +33,31 @@ export function getProviderKeys(aiConfig: { provider_keys: unknown }): ProviderK
   return (aiConfig.provider_keys as ProviderKeys | null) ?? {}
 }
 
+/**
+ * The account's Gemini key, decrypted, and the model it uses.
+ *
+ * For the jobs that are Gemini-specific whatever the account's chosen
+ * chat provider is — embeddings, and reading a scanned PDF. Returns
+ * nulls rather than throwing: every caller has a reasonable answer for
+ * "no key saved", and it is usually a sentence telling the account they
+ * could save one.
+ */
+export function geminiCredentials(aiConfig: { provider_keys: unknown }): {
+  apiKey: string | null
+  model: string | null
+} {
+  const entry = getProviderKeys(aiConfig).gemini
+  if (!entry?.api_key) return { apiKey: null, model: null }
+  try {
+    return { apiKey: decrypt(entry.api_key), model: entry.model ?? null }
+  } catch {
+    // A key encrypted under a different secret — a restored backup, a
+    // rotated ENCRYPTION_KEY. Unusable, and not worth taking a request
+    // down over.
+    return { apiKey: null, model: null }
+  }
+}
+
 /** Single dispatcher — looks up the adapter and calls it. Both real
  *  consumers (the flows engine's ai_reply node and the Settings > AI
  *  Config test endpoint) should generally prefer

@@ -16,6 +16,7 @@
  */
 
 import { assertSafeAiBaseUrl } from './providers/ssrf-guard'
+import { looksLikePdf, type PdfReadOptions } from './pdf-extract'
 
 /** Pages beyond this are truncated rather than refused — a long page is
  *  usually long because of boilerplate, and the leading content is what
@@ -98,13 +99,31 @@ export function htmlTitle(html: string): string | null {
   return title ? title.slice(0, 120) : null
 }
 
+/** A PDF has no <title>, so its filename is the only name in it —
+ *  "KCS-ACT_1969.pdf" becomes "KCS ACT 1969", which is what somebody
+ *  would have typed anyway. */
+function filenameTitle(rawUrl: string): string | null {
+  let path: string
+  try {
+    path = new URL(rawUrl).pathname
+  } catch {
+    path = rawUrl.split('?')[0]
+  }
+  const file = decodeURIComponent(path.split('/').filter(Boolean).pop() ?? '')
+  const bare = file.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim()
+  return bare ? bare.slice(0, 120) : null
+}
+
 export interface FetchedPage {
   url: string
   title: string | null
   text: string
 }
 
-export async function fetchPageText(rawUrl: string): Promise<FetchedPage> {
+export async function fetchPageText(
+  rawUrl: string,
+  opts: PdfReadOptions = {},
+): Promise<FetchedPage> {
   // Same guard as the custom AI provider's base_url: this server makes
   // the request, so an unguarded URL is an SSRF hole into whatever the
   // VPS can reach.
@@ -117,7 +136,7 @@ export async function fetchPageText(rawUrl: string): Promise<FetchedPage> {
       // Some sites serve a JS-only shell or a 403 to an unidentified
       // client; a plain, honest UA gets the real HTML more often.
       'User-Agent': 'Mozilla/5.0 (compatible; WhatsAppCRM-KnowledgeSync/1.0)',
-      Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+      Accept: 'text/html,application/xhtml+xml,application/pdf,text/plain;q=0.9,*/*;q=0.8',
     },
   })
 
@@ -126,6 +145,21 @@ export async function fetchPageText(rawUrl: string): Promise<FetchedPage> {
   }
 
   const contentType = res.headers.get('content-type') ?? ''
+
+  // A PDF is not a web page, and reading one as text is not merely
+  // useless — it is harmful. `res.text()` on a PDF returns the binary
+  // container decoded as characters: a few thousand bytes of "%PDF-1.4",
+  // stream markers and mojibake. It is not empty, so nothing below would
+  // have rejected it, and the whole lot went into the knowledge base as
+  // though it were the document. Found while adding a link to a
+  // government Act, which is exactly the kind of URL somebody pastes.
+  if (looksLikePdf(rawUrl, contentType)) {
+    const { readPdf } = await import('./pdf-extract')
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const { text: pdfText } = await readPdf(bytes, { ...opts, label: rawUrl })
+    return { url: rawUrl, title: filenameTitle(rawUrl), text: pdfText }
+  }
+
   const body = await res.text()
 
   // A plain-text or markdown URL needs no stripping at all.

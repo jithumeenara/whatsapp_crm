@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
+import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
@@ -85,7 +86,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         data.status = 'pending'
         data.last_error = null
       } else if (existing.kind === 'website' && existing.source_url) {
-        const page = await fetchPageText(existing.source_url)
+        const aiRow = await prisma.aiConfig.findUnique({
+          where: { id: existing.ai_config_id },
+          select: { provider_keys: true },
+        })
+        const gemini = aiRow ? geminiCredentials(aiRow) : { apiKey: null, model: null }
+        const page = await fetchPageText(existing.source_url, {
+          geminiApiKey: gemini.apiKey,
+          model: gemini.model,
+          accountId,
+        })
         data.content = page.text
         data.last_synced_at = new Date()
         // Content changed, so whatever was embedded for it is stale —

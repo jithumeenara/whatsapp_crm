@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { extractFileText, SUPPORTED_UPLOAD_HINT } from '@/lib/ai/file-extract'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
+import { geminiCredentials } from '@/lib/ai/providers/registry'
 
 /**
  * Upload a document straight into the knowledge base: the file's text is
@@ -28,7 +29,9 @@ export async function POST(req: Request) {
 
   const config = await prisma.aiConfig.findUnique({
     where: { account_id: ctx.accountId },
-    select: { id: true },
+    // provider_keys, because a scanned PDF has no text to extract and is
+    // read by Gemini instead — see src/lib/ai/pdf-extract.ts.
+    select: { id: true, provider_keys: true },
   })
   if (!config) {
     return NextResponse.json({ error: 'Connect an AI provider first.' }, { status: 400 })
@@ -49,9 +52,15 @@ export async function POST(req: Request) {
     )
   }
 
+  const gemini = geminiCredentials(config)
+
   let text: string
   try {
-    text = await extractFileText(file)
+    text = await extractFileText(file, {
+      geminiApiKey: gemini.apiKey,
+      model: gemini.model,
+      accountId: ctx.accountId,
+    })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : `Could not read that file. ${SUPPORTED_UPLOAD_HINT}` },
@@ -60,11 +69,11 @@ export async function POST(req: Request) {
   }
 
   if (!text.trim()) {
+    // readPdf throws a specific message for a scan it could not read, so
+    // reaching here means a file of some other kind turned out to hold
+    // nothing at all.
     return NextResponse.json(
-      {
-        error:
-          'No text could be read from that file. If it is a scanned PDF, the pages are images — the text has to be typed or pasted in instead.',
-      },
+      { error: 'No text could be read from that file — it appears to be empty.' },
       { status: 400 },
     )
   }

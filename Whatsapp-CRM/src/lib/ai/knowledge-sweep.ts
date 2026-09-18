@@ -43,6 +43,7 @@ import { fetchPageText } from './web-extract'
 import { fetchSheet, serializeSheet } from './google-sheet'
 import { serializeDataTable } from './data-store-source'
 import { invalidateKnowledge } from './knowledge-store'
+import { geminiCredentials } from './providers/registry'
 
 const WEBSITE_RESYNC_AFTER_MS = 24 * 60 * 60 * 1000
 /** Sheets are cheap to read and are edited far more often than a
@@ -71,6 +72,17 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
         {
           kind: 'website',
           ai_config: { auto_sync_website: true },
+          // A linked PDF is excluded from the scheduled re-sync, and
+          // only from the scheduled one — Re-sync now still works on it.
+          //
+          // Two reasons, both about a scan. Reading one costs a real
+          // Gemini call over every page, and doing that nightly to a
+          // government Act that was last amended in 1969 is money spent
+          // on nothing. And OCR is a reading rather than a copy, so two
+          // runs can differ in a character or two — which would mark the
+          // entry changed, send it back to Not trained and re-embed the
+          // whole thing, every single night.
+          NOT: { source_url: { endsWith: '.pdf', mode: 'insensitive' } },
           OR: [
             { last_synced_at: null },
             { last_synced_at: { lt: new Date(Date.now() - WEBSITE_RESYNC_AFTER_MS) } },
@@ -127,7 +139,18 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
         fresh = serializeSheet(await fetchSheet(item.source_url), item.description)
       } else {
         if (!item.source_url) continue
-        fresh = (await fetchPageText(item.source_url)).text
+        const aiRow = await prisma.aiConfig.findUnique({
+          where: { id: item.ai_config_id },
+          select: { provider_keys: true },
+        })
+        const gemini = aiRow ? geminiCredentials(aiRow) : { apiKey: null, model: null }
+        fresh = (
+          await fetchPageText(item.source_url, {
+            geminiApiKey: gemini.apiKey,
+            model: gemini.model,
+            accountId: item.account_id,
+          })
+        ).text
       }
 
       if (fresh === item.content) {
