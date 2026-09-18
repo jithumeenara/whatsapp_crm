@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { extractFileText, SUPPORTED_UPLOAD_HINT } from '@/lib/ai/file-extract'
+import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 
 /**
  * Upload a document straight into the knowledge base: the file's text is
@@ -85,6 +86,7 @@ export async function POST(req: Request) {
   const effectiveFrom = parseDate(form?.get('effective_from') ?? null)
   const effectiveUntil = parseDate(form?.get('effective_until') ?? null)
 
+  invalidateKnowledge(config.id)
   const item = await prisma.aiKnowledgeItem.create({
     data: {
       ai_config_id: config.id,

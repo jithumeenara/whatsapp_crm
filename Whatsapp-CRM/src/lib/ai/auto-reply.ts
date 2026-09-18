@@ -28,7 +28,7 @@
  */
 
 import { prisma } from '@/lib/db'
-import { runCustomerTurn, type CustomerAiConfig } from './customer-pipeline'
+import { runCustomerTurn, formatTurnTimings, type CustomerAiConfig } from './customer-pipeline'
 import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
 import { speak } from './speech'
@@ -104,13 +104,79 @@ export async function autoReplyToMessage(args: {
     : ['whatsapp']
   if (!channels.includes(args.channel)) return 'skipped_channel'
 
-  const conversation = await prisma.conversation.findFirst({
-    where: { id: args.conversationId, account_id: args.accountId },
-    // assigned_agent_id, not assigned_to. Lead, Task and FollowUp all
-    // call this column assigned_to; Conversation does not, and using the
-    // familiar name threw at runtime on every inbound message.
-    select: { assigned_agent_id: true, status: true },
-  })
+  // Blue ticks and a typing bubble, before anything slow rather than
+  // after it.
+  //
+  // Retrieval, tool calls and generation take seconds, and the customer
+  // used to spend those seconds looking at a message that had not even
+  // been marked read — which reads as nobody being there. The reply is
+  // no faster for this; it just stops feeling abandoned, which is most
+  // of what "too slow" actually means.
+  //
+  // Fired here rather than after the guard queries, and fired without
+  // being awaited: the indicator must never delay the thing it is
+  // covering for. Being early costs one case — a thread that turns out
+  // to be owned by an agent gets its message marked read by a bot that
+  // will not answer it — and that was already true, since the bot has
+  // in fact read it.
+  if (args.providerMessageId && args.channel === 'whatsapp') {
+    void showTyping({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      providerMessageId: args.providerMessageId,
+    })
+  }
+
+  // Every guard's data, fetched at once.
+  //
+  // These four reads have nothing to say to each other — who owns the
+  // thread, when a colleague last replied, what the assistant has
+  // already said, and the recent transcript — and they used to run one
+  // after another, in the gap between a customer's message and the first
+  // sign that anybody had seen it. Four round trips became one wait.
+  //
+  // The turn count is the only one that needed rearranging: it depended
+  // on the timestamp of the human reply, so it could not be a `count`
+  // running alongside the query that finds that timestamp. Both now read
+  // the same 24-hour window and the count is finished in memory, over a
+  // handful of rows.
+  const sessionStart = new Date(Date.now() - EXCHANGE_WINDOW_MS)
+  const [conversation, lastHumanReply, botRepliesInWindow, history] = await Promise.all([
+    prisma.conversation.findFirst({
+      where: { id: args.conversationId, account_id: args.accountId },
+      // assigned_agent_id, not assigned_to. Lead, Task and FollowUp all
+      // call this column assigned_to; Conversation does not, and using the
+      // familiar name threw at runtime on every inbound message.
+      select: { assigned_agent_id: true, status: true },
+    }),
+    prisma.message.findFirst({
+      where: {
+        conversation_id: args.conversationId,
+        sender_type: 'agent',
+        created_at: { gt: sessionStart },
+      },
+      orderBy: { created_at: 'desc' },
+      select: { created_at: true },
+    }),
+    // Only the assistant's own replies. sender_type 'bot' also covers
+    // chatbot steps and automation actions, and counting those against
+    // the assistant let a menu — welcome, list, a few buttons, a timeout
+    // message — exhaust the whole allowance before it had answered
+    // anything at all.
+    prisma.message.findMany({
+      where: {
+        conversation_id: args.conversationId,
+        sender_type: 'bot',
+        bot_source: AI_AUTO_REPLY_SOURCE,
+        created_at: { gt: sessionStart },
+      },
+      select: { created_at: true },
+    }),
+    // The recent thread, so the composite confidence signals — repeated
+    // asking especially — can see more than the current message.
+    loadHistory(args.conversationId, aiConfig.history_depth_default),
+  ])
+
   if (!conversation) return 'failed'
 
   // Somebody owns this thread, so the assistant stays out of it.
@@ -140,31 +206,8 @@ export async function autoReplyToMessage(args: {
   // whatever the assistant was failing to resolve, and the count starts
   // again from there. Failing that, 24 hours — WhatsApp's own session
   // window, past which a returning customer is starting afresh.
-  const sessionStart = new Date(Date.now() - EXCHANGE_WINDOW_MS)
-  const lastHumanReply = await prisma.message.findFirst({
-    where: {
-      conversation_id: args.conversationId,
-      sender_type: 'agent',
-      created_at: { gt: sessionStart },
-    },
-    orderBy: { created_at: 'desc' },
-    select: { created_at: true },
-  })
   const countFrom = lastHumanReply?.created_at ?? sessionStart
-
-  // Only the assistant's own replies. sender_type 'bot' also covers
-  // chatbot steps and automation actions, and counting those against the
-  // assistant let a menu — welcome, list, a few buttons, a timeout
-  // message — exhaust the whole allowance before it had answered
-  // anything at all.
-  const botReplies = await prisma.message.count({
-    where: {
-      conversation_id: args.conversationId,
-      sender_type: 'bot',
-      bot_source: AI_AUTO_REPLY_SOURCE,
-      created_at: { gt: countFrom },
-    },
-  })
+  const botReplies = botRepliesInWindow.filter((m) => m.created_at > countFrom).length
   if (botReplies >= aiConfig.ai_auto_reply_max_turns) {
     await handOver({
       accountId: args.accountId,
@@ -173,27 +216,6 @@ export async function autoReplyToMessage(args: {
       assignTo: aiConfig.low_confidence_assign_to,
     })
     return 'skipped_turn_limit'
-  }
-
-  // The recent thread, so the composite confidence signals — repeated
-  // asking especially — can see more than the current message.
-  const history = await loadHistory(args.conversationId, aiConfig.history_depth_default)
-
-  // Blue ticks and a typing bubble, before the slow part rather than
-  // after it.
-  //
-  // Retrieval, tool calls and generation take a few seconds, and until
-  // now the customer spent those seconds looking at a message that had
-  // not even been marked read — which reads as nobody being there. The
-  // reply is no faster for this; it just stops feeling abandoned, which
-  // is most of what "too slow" actually means. Fired without awaiting:
-  // the indicator must never delay the thing it is covering for.
-  if (args.providerMessageId && args.channel === 'whatsapp') {
-    void showTyping({
-      accountId: args.accountId,
-      conversationId: args.conversationId,
-      providerMessageId: args.providerMessageId,
-    })
   }
 
   const startedAt = Date.now()
@@ -222,10 +244,12 @@ export async function autoReplyToMessage(args: {
     return 'handed_off'
   }
 
+  const model = getProviderKeys(aiConfig)[aiConfig.active_provider]?.model ?? 'unknown'
+
   void recordAiUsage({
     accountId: args.accountId,
     provider: aiConfig.active_provider,
-    model: getProviderKeys(aiConfig)[aiConfig.active_provider]?.model ?? 'unknown',
+    model,
     feature: 'chat_customer',
     // Previously omitted, so the single most-used feature in the app
     // recorded zero tokens and zero cost on every reply. The Usage tab
@@ -233,6 +257,29 @@ export async function autoReplyToMessage(args: {
     tokens: turn.usage ?? undefined,
     latencyMs: Date.now() - startedAt,
   })
+
+  // One line per reply, saying where the time went.
+  //
+  // "The AI is slow" is always reported after the fact, about a message
+  // nobody kept, and it never reproduces on the Test screen — where the
+  // knowledge base is already cached and no WhatsApp round trip is
+  // involved. Without this the only available answer is a guess, and the
+  // guesses have been wrong before: the obvious suspect was retrieval,
+  // and the real cost turned out to be the model deliberating before it
+  // spoke.
+  //
+  // Written at log level 'info' rather than behind a debug flag, because
+  // a number that only exists while somebody is watching is a number
+  // nobody ever has. `pm2 logs whatsapp-crm | grep ai-latency`.
+  console.log(
+    `[ai-latency] ${formatTurnTimings(turn.timings, {
+      model,
+      effort: aiConfig.reasoning_effort ?? 'low',
+      tools: turn.toolsUsed.length > 0 ? turn.toolsUsed.join('+') : 'none',
+      knowledge: turn.knowledgeUsed.length,
+      conv: args.conversationId.slice(0, 8),
+    })}`,
+  )
 
   if (turn.decision.action === 'handoff') {
     const reason = turn.decision.reason

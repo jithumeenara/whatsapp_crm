@@ -7,6 +7,11 @@ import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys, type ProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import {
+  REASONING_EFFORTS,
+  DEFAULT_REASONING_EFFORT,
+  type ReasoningEffort,
+} from '@/lib/ai/reasoning'
 
 // PUT/DELETE can rewrite this account's AI provider keys/base_url (a
 // custom base_url is a live SSRF vector — see ssrf-guard.ts) or exfiltrate
@@ -76,6 +81,7 @@ export async function GET() {
     handoff_alert_template: config.handoff_alert_template,
     reply_language: config.reply_language,
     safety_filter: config.safety_filter,
+    reasoning_effort: config.reasoning_effort,
     knowledge_base_enabled: config.knowledge_base_enabled,
     retrieval_mode: config.retrieval_mode,
     max_context_results: config.max_context_results,
@@ -141,6 +147,7 @@ export async function PUT(req: Request) {
     handoff_alert_template,
     reply_language,
     safety_filter,
+    reasoning_effort,
     knowledge_base_enabled,
     retrieval_mode,
     max_context_results,
@@ -179,6 +186,7 @@ export async function PUT(req: Request) {
     handoff_alert_template?: string | null
     reply_language?: string | null
     safety_filter?: string
+    reasoning_effort?: string
     knowledge_base_enabled?: boolean
     retrieval_mode?: string
     max_context_results?: number
@@ -291,6 +299,12 @@ export async function PUT(req: Request) {
       safety_filter && ['strict', 'balanced', 'relaxed'].includes(safety_filter)
         ? safety_filter
         : (existing?.safety_filter ?? 'balanced'),
+    // Validated here as well as by the column's own CHECK constraint —
+    // a rejected write should be a sentence about the setting, not a
+    // database error surfacing in the Settings screen.
+    reasoning_effort: REASONING_EFFORTS.includes(reasoning_effort as ReasoningEffort)
+      ? (reasoning_effort as ReasoningEffort)
+      : (existing?.reasoning_effort ?? DEFAULT_REASONING_EFFORT),
     knowledge_base_enabled:
       knowledge_base_enabled !== undefined
         ? knowledge_base_enabled

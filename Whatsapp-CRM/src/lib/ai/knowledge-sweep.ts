@@ -42,6 +42,7 @@ import { prisma } from '@/lib/db'
 import { fetchPageText } from './web-extract'
 import { fetchSheet, serializeSheet } from './google-sheet'
 import { serializeDataTable } from './data-store-source'
+import { invalidateKnowledge } from './knowledge-store'
 
 const WEBSITE_RESYNC_AFTER_MS = 24 * 60 * 60 * 1000
 /** Sheets are cheap to read and are edited far more often than a
@@ -105,6 +106,7 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
       source_url: true,
       source_ref: true,
       account_id: true,
+      ai_config_id: true,
       content: true,
       description: true,
     },
@@ -144,6 +146,9 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
         where: { id: item.id },
         data: { content: fresh, last_synced_at: new Date(), status: 'pending', last_error: null },
       })
+      // Content actually changed, so the copy the reply path is holding
+      // is now wrong rather than merely old.
+      invalidateKnowledge(item.ai_config_id)
       result.resynced++
     } catch (err) {
       // The previous content stays. A sheet that was un-shared, or a

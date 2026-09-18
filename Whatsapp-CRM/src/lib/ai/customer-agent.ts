@@ -33,6 +33,7 @@ import {
   runCustomerTool,
   type CustomerToolContext,
 } from './customer-tools'
+import { thinkingConfigFor, isThinkingRejection } from './reasoning'
 
 /** Enough rounds for "look up their enquiry, then check the catalog",
  *  which is the deepest real chain seen. Past this the model is looping
@@ -62,6 +63,7 @@ export async function generateCustomerReply(args: {
     temperature: number
     max_tokens: number
     safety_filter?: string
+    reasoning_effort?: string
   }
   systemPrompt: string
   userMessage: string
@@ -96,6 +98,7 @@ export async function generateCustomerReply(args: {
       userMessage: args.userMessage,
       conversationHistory: args.conversationHistory,
       toolContext: args.toolContext!,
+      reasoningEffort: args.aiConfig.reasoning_effort,
     })
   } catch (err) {
     // A failure in the tool path must not cost the customer their
@@ -122,20 +125,47 @@ async function runToolLoop(args: {
   userMessage: string
   conversationHistory: { role: 'user' | 'model'; text: string }[]
   toolContext: CustomerToolContext
+  reasoningEffort?: string
 }): Promise<CustomerReplyResult> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
-  const model = genAI.getGenerativeModel(
-    {
-      model: args.model,
-      systemInstruction: args.systemPrompt,
-      tools: [{ functionDeclarations: CUSTOMER_TOOL_DECLARATIONS }],
-      generationConfig: {
-        temperature: args.temperature,
-        maxOutputTokens: args.maxTokens,
+
+  // Thinking costs the customer seconds on every round of this loop, not
+  // just the first — a registration that needs two tool calls pays it
+  // three times. See src/lib/ai/reasoning.ts for why the default is
+  // lower than Gemini's own.
+  const thinking = thinkingConfigFor(args.model, args.reasoningEffort)
+  const buildModel = (withThinking: object | undefined) =>
+    genAI.getGenerativeModel(
+      {
+        model: args.model,
+        systemInstruction: args.systemPrompt,
+        tools: [{ functionDeclarations: CUSTOMER_TOOL_DECLARATIONS }],
+        generationConfig: {
+          temperature: args.temperature,
+          maxOutputTokens: args.maxTokens,
+          ...(withThinking ?? {}),
+        },
       },
-    },
-    { timeout: AI_REQUEST_TIMEOUT_MS },
-  )
+      { timeout: AI_REQUEST_TIMEOUT_MS },
+    )
+
+  let model = buildModel(thinking)
+  let thinkingDropped = false
+
+  /** One generation, retrying without the thinking parameter the first
+   *  time a model turns out not to accept it. Every round goes through
+   *  here, so the retry cannot be needed twice. */
+  const generate = async (contents: Content[]) => {
+    try {
+      return await model.generateContent({ contents })
+    } catch (err) {
+      if (thinkingDropped || !thinking || !isThinkingRejection(err)) throw err
+      console.warn('[customer-agent] model rejected the thinking level, retrying without it:', args.model)
+      thinkingDropped = true
+      model = buildModel(undefined)
+      return model.generateContent({ contents })
+    }
+  }
 
   const contents: Content[] = [
     ...args.conversationHistory.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
@@ -152,7 +182,7 @@ async function runToolLoop(args: {
     outputTokens += usage?.candidatesTokenCount ?? 0
   }
 
-  let result = await model.generateContent({ contents })
+  let result = await generate(contents)
   addUsage(result.response.usageMetadata)
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -165,16 +195,30 @@ async function runToolLoop(args: {
     if (!modelTurn) break
     contents.push(modelTurn)
 
-    const responseParts = []
-    for (const call of calls) {
+    // Concurrently, because the model asked for them concurrently.
+    //
+    // When Gemini returns two function calls in one turn it has decided
+    // it needs both before it can answer; running them one after the
+    // other made the customer wait for the sum of two database round
+    // trips to satisfy a model that was going to wait for both anyway.
+    // Order is preserved — Promise.all resolves positionally — so the
+    // responses still line up with the calls that asked for them, which
+    // the protocol requires.
+    const outputs = await Promise.all(
+      calls.map((call) =>
+        runCustomerTool(
+          call.name,
+          (call.args ?? {}) as Record<string, unknown>,
+          args.toolContext,
+        ),
+      ),
+    )
+
+    const responseParts = calls.map((call, i) => {
       toolsUsed.push(call.name)
-      const output = await runCustomerTool(
-        call.name,
-        (call.args ?? {}) as Record<string, unknown>,
-        args.toolContext,
-      )
+      const output = outputs[i]
       toolOutputs.push(JSON.stringify(output))
-      responseParts.push({
+      return {
         functionResponse: {
           name: call.name,
           // The SDK requires an object; primitives and arrays are
@@ -183,12 +227,12 @@ async function runToolLoop(args: {
             ? output
             : { result: output }) as object,
         },
-      })
-    }
+      }
+    })
 
     // 'user', not 'function' — see this file's header.
     contents.push({ role: 'user', parts: responseParts })
-    result = await model.generateContent({ contents })
+    result = await generate(contents)
     addUsage(result.response.usageMetadata)
   }
 

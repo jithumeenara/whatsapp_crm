@@ -40,6 +40,9 @@ export interface CustomerAiConfig {
   temperature: number
   max_tokens: number
   safety_filter?: string
+  /** How long the model may deliberate. See src/lib/ai/reasoning.ts —
+   *  this is the largest single lever on how long a customer waits. */
+  reasoning_effort?: string
   system_prompt: string | null
   fallback_answer: string | null
   escalation_topics: unknown
@@ -63,6 +66,58 @@ export interface PromptAssembly {
   contextParts: string[]
 }
 
+/** Everything the prompt needs that is *not* the retrieved knowledge —
+ *  who the business is, who this customer is, and what the assistant is
+ *  allowed to do. Loaded separately so it can be started before
+ *  retrieval finishes; see `loadPromptSources`. */
+export interface PromptSources {
+  companyBlock: string
+  customerContext: string
+  toolInstruction: string
+}
+
+/**
+ * The three lookups the prompt needs, started together.
+ *
+ * Split out of `buildCustomerSystemPrompt` so the caller can start them
+ * *before* awaiting retrieval. None of them depend on what retrieval
+ * finds — the business's own profile, this customer's history and the
+ * list of registration forms are the same whatever the customer asked —
+ * so waiting for the embedding round trip before even beginning them was
+ * pure stacked latency in the one place a customer is watching a typing
+ * bubble.
+ *
+ * Every branch is caught: a prompt is better off missing a block than a
+ * customer is waiting for a reply that never comes.
+ */
+export async function loadPromptSources(args: {
+  aiConfig: Pick<CustomerAiConfig, 'customer_context_enabled'>
+  accountId: string
+  contactId: string | null
+  currentChannel?: string
+  toolsAvailable: boolean
+}): Promise<PromptSources> {
+  const [companyProfile, customerContext, toolInstruction] = await Promise.all([
+    loadCompanyProfile(args.accountId).catch(() => null),
+    args.aiConfig.customer_context_enabled && args.contactId
+      ? buildCustomerContext({
+          accountId: args.accountId,
+          contactId: args.contactId,
+          currentChannel: args.currentChannel ?? 'whatsapp',
+        }).catch(() => '')
+      : Promise.resolve(''),
+    args.toolsAvailable
+      ? buildCustomerToolInstruction(args.accountId).catch(() => '')
+      : Promise.resolve(''),
+  ])
+
+  return {
+    companyBlock: formatCompanyBlock(companyProfile, 'customer') || '',
+    customerContext,
+    toolInstruction,
+  }
+}
+
 /**
  * Builds the system prompt for one customer message.
  *
@@ -83,31 +138,22 @@ export async function buildCustomerSystemPrompt(args: {
   stepInstruction?: string | null
   /** False when there is no contact to scope lookups to. */
   toolsAvailable: boolean
+  /** Already in flight, or already resolved, from `loadPromptSources`.
+   *  Omit and this loads them itself, which is what every caller that
+   *  isn't racing a customer's patience should do. */
+  sources?: PromptSources | Promise<PromptSources>
 }): Promise<PromptAssembly> {
   const { aiConfig } = args
   const knowledgeBlock = formatKnowledgeBlock(args.selected)
 
-  // Neither depends on the other, and this sits directly between a
-  // customer's message and their reply, so the two round trips overlap
-  // rather than stack.
-  const [companyProfile, customerContext, toolInstruction] = await Promise.all([
-    loadCompanyProfile(args.accountId).catch(() => null),
-    aiConfig.customer_context_enabled && args.contactId
-      ? buildCustomerContext({
-          accountId: args.accountId,
-          contactId: args.contactId,
-          currentChannel: args.currentChannel ?? 'whatsapp',
-        }).catch(() => '')
-      : Promise.resolve(''),
-    // Third round trip, previously awaited on its own after everything
-    // else had finished. It depends on nothing above it, so stacking it
-    // was pure added latency in the one place a customer is watching.
-    args.toolsAvailable
-      ? buildCustomerToolInstruction(args.accountId)
-      : Promise.resolve(''),
-  ])
-
-  const companyBlock = formatCompanyBlock(companyProfile, 'customer') || ''
+  const { companyBlock, customerContext, toolInstruction } = await (args.sources ??
+    loadPromptSources({
+      aiConfig,
+      accountId: args.accountId,
+      contactId: args.contactId,
+      currentChannel: args.currentChannel,
+      toolsAvailable: args.toolsAvailable,
+    }))
 
   const parts: string[] = [companyBlock, customerContext, aiConfig.system_prompt ?? '', knowledgeBlock]
     .filter((p) => Boolean(p && p.trim()))
@@ -288,6 +334,46 @@ export function decideTurn(args: {
   return { action: 'reply', reply: args.reply }
 }
 
+/**
+ * The phases of one turn, so a slow reply can be explained rather than
+ * guessed at.
+ *
+ * Every field is wall-clock milliseconds. `retrieval` and `promptSources`
+ * overlap deliberately (see `runCustomerTurn`), so they do not sum to
+ * the total and are not meant to.
+ */
+export interface TurnTimings {
+  /** Loading the knowledge base and finding what matches this message. */
+  retrieval: number
+  /** Embedding the customer's message — a provider round trip inside
+   *  `retrieval`, called out because it is usually the larger half. */
+  embedding: number
+  /** The business profile, this customer's history, the tool list. */
+  promptSources: number
+  /** The model itself, including every tool round. Nearly always the
+   *  biggest number here, which is why reasoning effort is a setting. */
+  generation: number
+  /** The validator and the confidence rules. Pure CPU; should be small,
+   *  and worth noticing on the day it isn't. */
+  checks: number
+  total: number
+}
+
+/** One line for a log, ordered biggest-cost-last so the eye lands on the
+ *  model. Kept here rather than at the call site so the evaluation suite
+ *  and the live path describe a slow turn the same way. */
+export function formatTurnTimings(t: TurnTimings, extra?: Record<string, string | number>): string {
+  const parts = [
+    `total=${t.total}ms`,
+    `retrieval=${t.retrieval}ms(embed=${t.embedding}ms)`,
+    `prompt=${t.promptSources}ms`,
+    `checks=${t.checks}ms`,
+    `model=${t.generation}ms`,
+  ]
+  for (const [k, v] of Object.entries(extra ?? {})) parts.push(`${k}=${v}`)
+  return parts.join(' ')
+}
+
 export interface CustomerTurnResult {
   decision: TurnDecision
   /** Present unless the turn handed off before generating. */
@@ -301,6 +387,12 @@ export interface CustomerTurnResult {
   knowledgeUsed: string[]
   truncated: boolean
   latencyMs: number
+  /** Where the time actually went, in milliseconds. Recorded on every
+   *  turn rather than behind a debug flag, because "the reply is slow"
+   *  is reported after the fact and never reproduces on demand — a
+   *  number that only exists while somebody is watching is a number
+   *  nobody ever has. See `formatTurnTimings`. */
+  timings: TurnTimings
   /** What the provider counted for this turn. Null on the paths that
    *  hand off before the model is called at all — a real zero, not a
    *  missing number. The generator has always returned these; nothing
@@ -328,6 +420,18 @@ export async function runCustomerTurn(args: {
 }): Promise<CustomerTurnResult> {
   const startedAt = Date.now()
   const history = args.conversationHistory ?? []
+  const timings: TurnTimings = {
+    retrieval: 0,
+    embedding: 0,
+    promptSources: 0,
+    generation: 0,
+    checks: 0,
+    total: 0,
+  }
+  const finish = () => {
+    timings.total = Date.now() - startedAt
+    return timings
+  }
 
   // Checked before anything else, including retrieval.
   //
@@ -354,21 +458,55 @@ export async function runCustomerTurn(args: {
       knowledgeUsed: [],
       truncated: false,
       latencyMs: Date.now() - startedAt,
+      timings: finish(),
       usage: null,
     }
   }
 
+  const toolContext = args.contactId
+    ? { accountId: args.accountId, contactId: args.contactId }
+    : null
+
+  // Started here, not after retrieval, and this is the point.
+  //
+  // The business's own profile, this customer's history and the list of
+  // registration forms are the same whatever the customer just asked, so
+  // none of them has any reason to wait for an embedding round trip and
+  // a vector search to finish first. Stacked, those two phases were the
+  // whole gap between "message received" and "model called"; overlapped,
+  // the shorter one is free.
+  //
+  // The handoff path below returns before using this. That costs a few
+  // database reads nobody looks at, on the minority of turns that hand
+  // over — a fair trade for taking it off the majority that don't. Every
+  // branch inside is caught, so an unused promise cannot reject.
+  const sourcesStartedAt = Date.now()
+  const sourcesPromise = loadPromptSources({
+    aiConfig: args.aiConfig,
+    accountId: args.accountId,
+    contactId: args.contactId,
+    currentChannel: args.currentChannel,
+    toolsAvailable: Boolean(toolContext),
+  }).then((sources) => {
+    timings.promptSources = Date.now() - sourcesStartedAt
+    return sources
+  })
+
+  const retrievalStartedAt = Date.now()
   const selected = await retrieveForMessage({
     aiConfig: args.aiConfig,
     customerMessage: args.customerMessage,
     conversationHistory: history,
   })
+  timings.retrieval = Date.now() - retrievalStartedAt
+  timings.embedding = selected.embeddingMs ?? 0
 
   const knowledgeUsed = [
     ...selected.qaPairs.map((q) => q.question),
     ...selected.documentChunks.map((d) => d.title),
   ]
 
+  const checksStartedAt = Date.now()
   const confidence = assessConfidence({
     retrievalConfidence: selected.confidence,
     customerMessage: args.customerMessage,
@@ -381,6 +519,7 @@ export async function runCustomerTurn(args: {
   const effectiveConfidence = args.aiConfig.composite_confidence_enabled
     ? confidence.score
     : selected.confidence
+  timings.checks += Date.now() - checksStartedAt
 
   if (
     args.aiConfig.low_confidence_handoff_enabled &&
@@ -398,13 +537,10 @@ export async function runCustomerTurn(args: {
       knowledgeUsed,
       truncated: false,
       latencyMs: Date.now() - startedAt,
+      timings: finish(),
       usage: null,
     }
   }
-
-  const toolContext = args.contactId
-    ? { accountId: args.accountId, contactId: args.contactId }
-    : null
 
   const assembly = await buildCustomerSystemPrompt({
     aiConfig: args.aiConfig,
@@ -414,6 +550,7 @@ export async function runCustomerTurn(args: {
     selected,
     currentChannel: args.currentChannel,
     toolsAvailable: Boolean(toolContext),
+    sources: sourcesPromise,
   })
 
   // A provider refusal is a handoff, not an exception for the caller to
@@ -423,6 +560,7 @@ export async function runCustomerTurn(args: {
   // Catching it here means the evaluation suite measures that same
   // behaviour instead of reporting a crash.
   let generated: Awaited<ReturnType<typeof generateCustomerReply>>
+  const generationStartedAt = Date.now()
   try {
     generated = await generateCustomerReply({
       aiConfig: args.aiConfig,
@@ -431,7 +569,9 @@ export async function runCustomerTurn(args: {
       conversationHistory: history,
       toolContext,
     })
+    timings.generation = Date.now() - generationStartedAt
   } catch (err) {
+    timings.generation = Date.now() - generationStartedAt
     return {
       decision: {
         action: 'handoff',
@@ -448,6 +588,7 @@ export async function runCustomerTurn(args: {
       knowledgeUsed,
       truncated: false,
       latencyMs: Date.now() - startedAt,
+      timings: finish(),
       usage: null,
     }
   }
@@ -459,6 +600,7 @@ export async function runCustomerTurn(args: {
   const reply = markdownToWhatsApp(scanned.cleanedText)
   const modelAskedForHuman = scanned.actions.includes('handoff')
 
+  const validationStartedAt = Date.now()
   let validation: ValidationResult | null = null
   if (args.aiConfig.response_validation_enabled) {
     validation = validateReply({
@@ -471,6 +613,7 @@ export async function runCustomerTurn(args: {
       ],
     })
   }
+  timings.checks += Date.now() - validationStartedAt
 
   return {
     decision: decideTurn({ validation, modelAskedForHuman, reply }),
@@ -484,6 +627,7 @@ export async function runCustomerTurn(args: {
     knowledgeUsed,
     truncated: generated.truncated,
     latencyMs: Date.now() - startedAt,
+    timings: finish(),
     usage: generated.usage ?? null,
   }
 }

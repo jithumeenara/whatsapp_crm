@@ -5,7 +5,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
 import { syncKnowledgeEmbeddings, toKnowledgeItems } from '@/lib/ai/embeddings'
 import { chunkDocument } from '@/lib/ai/knowledge'
-import { loadKnowledge } from '@/lib/ai/knowledge-store'
+import { loadKnowledge, invalidateKnowledge } from '@/lib/ai/knowledge-store'
 
 /**
  * "Train" — brings the account's embeddings in line with its current
@@ -78,6 +78,8 @@ export async function POST() {
     })
     trained = updated.count
   }
+
+  invalidateKnowledge(config.id)
 
   return NextResponse.json({ ...result, trained })
 }

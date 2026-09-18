@@ -9,13 +9,15 @@ import {
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock,
   CalendarClock, ToggleLeft, ChevronDown, ListChecks, CircleDot, Globe,
   MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon, PenLine, EyeOff,
-  Heading, Code2, Bot,
+  Heading, Code2, Bot, SlidersHorizontal,
 } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
 import { RecordDetailModal } from "@/components/data/record-detail-modal"
 import { AiRegistrationToggle } from "@/components/data/ai-registration-toggle"
+import { RecordFilters } from "@/components/data/record-filters"
+import { applyFilters, activeFilterCount, filterableFields, type FilterMap } from "@/lib/data-store/filters"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import type { DataTable, DataField, DataRecord, FieldType } from "@/lib/data-store/types"
 
@@ -53,6 +55,8 @@ export default function DataTablePage() {
   const [records, setRecords] = useState<DataRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [filters, setFilters] = useState<FilterMap>({})
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<DataRecord | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -157,20 +161,28 @@ export default function DataTablePage() {
     finally { setBulkDeleting(false) }
   }
 
-  const filtered = records.filter((r) => {
+  // The search box reads every column; the filter bar narrows by one
+  // column at a time. They compose rather than competing — search
+  // within a filtered set is the common way somebody actually looks
+  // something up.
+  const searched = records.filter((r) => {
     if (!search) return true
     return Object.values(r.data as Record<string, unknown>).some((v) =>
       String(v ?? "").toLowerCase().includes(search.toLowerCase())
     )
   })
+  const filtered = applyFilters(searched, fields, filters)
+  const activeFilters = activeFilterCount(filters)
+  const canFilter = filterableFields(fields).length > 0
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, pageCount)
   const pageRecords = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
-  // Reset to page 1 whenever the search narrows/widens the result set —
-  // otherwise a stale page number could point past the new last page.
-  useEffect(() => { setPage(1) }, [search])
+  // Reset to page 1 whenever the search or a filter narrows/widens the
+  // result set — otherwise a stale page number could point past the new
+  // last page.
+  useEffect(() => { setPage(1) }, [search, filters])
 
   // "Select all" scopes to the current page, matching the visible rows.
   const allPageSelected = pageRecords.length > 0 && pageRecords.every((r) => selectedIds.has(r.id))
@@ -249,6 +261,26 @@ export default function DataTablePage() {
               />
             </div>
 
+            {canFilter && (
+              <button
+                onClick={() => setFiltersOpen((v) => !v)}
+                className={cn(
+                  "flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-[12px] font-medium transition-colors",
+                  activeFilters > 0 || filtersOpen
+                    ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                    : "border-slate-200 text-slate-600 hover:bg-slate-50",
+                )}
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Filter
+                {activeFilters > 0 && (
+                  <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
+                    {activeFilters}
+                  </span>
+                )}
+              </button>
+            )}
+
             <div className="h-5 w-px bg-slate-200" />
 
             <button onClick={load} title="Refresh"
@@ -284,6 +316,17 @@ export default function DataTablePage() {
             </button>
           </div>
         </div>
+
+        {filtersOpen && canFilter && (
+          <RecordFilters
+            fields={fields}
+            records={searched}
+            filters={filters}
+            onChange={setFilters}
+            matchCount={filtered.length}
+            totalCount={searched.length}
+          />
+        )}
 
         {/* Selection bar — its own row, never squeezed into the main
             toolbar, so it can never force that fixed-height row to wrap
@@ -322,8 +365,14 @@ export default function DataTablePage() {
           <div className="flex flex-col items-center justify-center py-20">
             <Search className="h-8 w-8 mb-3 text-slate-300" />
             <p className="text-[14px] font-medium text-slate-500">No records match</p>
-            <button onClick={() => setSearch("")} className="mt-1.5 text-[12px] text-indigo-600 hover:underline">
-              Clear search
+            {/* Named separately, because being told to "clear search"
+                when the search box is empty and a filter is the thing
+                hiding everything is a dead end. */}
+            <button
+              onClick={() => { setSearch(""); setFilters({}) }}
+              className="mt-1.5 text-[12px] text-indigo-600 hover:underline"
+            >
+              {activeFilters > 0 && search ? "Clear search and filters" : activeFilters > 0 ? "Clear filters" : "Clear search"}
             </button>
           </div>
         ) : (

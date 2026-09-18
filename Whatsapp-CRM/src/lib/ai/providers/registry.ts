@@ -49,6 +49,9 @@ export async function generateAiReply(
     maxTokens: number
     systemPrompt?: string
     safetyFilter?: string
+    /** See src/lib/ai/reasoning.ts. Gemini 3 only; everything else
+     *  ignores it. */
+    reasoningEffort?: string
   },
   userMessage: string,
   conversationHistory: AiGenerateArgs['conversationHistory'] = [],
@@ -94,6 +97,7 @@ export async function generateAiReplyWithFallback(
     temperature: number
     max_tokens: number
     safety_filter?: string
+    reasoning_effort?: string
   },
   systemPrompt: string,
   userMessage: string,
@@ -115,6 +119,7 @@ export async function generateAiReplyWithFallback(
         maxTokens: aiConfig.max_tokens,
         systemPrompt,
         safetyFilter: aiConfig.safety_filter,
+        reasoningEffort: aiConfig.reasoning_effort,
       },
       userMessage,
       conversationHistory,

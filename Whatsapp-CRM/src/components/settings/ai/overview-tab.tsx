@@ -23,6 +23,7 @@ export interface OverviewTabProps {
   maxTokens: number;
   replyLanguage: string;
   safetyFilter: string;
+  reasoningEffort: string;
   semanticSearchAvailable: boolean;
   /** No customer prompt means the bot is answering as a generic
    *  assistant. Surfaced here because Overview is where someone lands
@@ -32,6 +33,13 @@ export interface OverviewTabProps {
   onReconfigure: () => void;
   onGoToTab: (tab: 'training' | 'test' | 'usage') => void;
 }
+
+const SPEED_LABEL: Record<string, string> = {
+  minimal: 'Fastest',
+  low: 'Fast',
+  balanced: 'Balanced',
+  thorough: 'Most careful',
+};
 
 const SAFETY_LABEL: Record<string, string> = {
   strict: 'Strict',
@@ -161,6 +169,7 @@ export function OverviewTab(props: OverviewTabProps) {
               ['Max Response Tokens', String(props.maxTokens)],
               ['Language', languageLabel],
               ['Safety Filter', SAFETY_LABEL[props.safetyFilter] ?? props.safetyFilter],
+              ['Reply Speed', SPEED_LABEL[props.reasoningEffort] ?? props.reasoningEffort],
             ].map(([k, v]) => (
               <div key={k} className="flex items-center justify-between gap-3 py-2.5">
                 <dt className="text-[12.5px] text-slate-500">{k}</dt>

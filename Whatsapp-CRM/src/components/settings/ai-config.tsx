@@ -95,6 +95,7 @@ export function AiConfig() {
 
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(2048);
+  const [reasoningEffort, setReasoningEffort] = useState('low');
   // '' = auto-detect (reply in the customer's own language) — see the
   // schema comment on AiConfig.reply_language for why that's the default.
   const [replyLanguage, setReplyLanguage] = useState('');
@@ -185,6 +186,7 @@ export function AiConfig() {
           return next;
         });
         setTemperature(data.temperature ?? 0.7);
+        setReasoningEffort(data.reasoning_effort ?? 'low');
         setMaxTokens(data.max_tokens ?? 2048);
         setReplyLanguage(data.reply_language ?? '');
         setSafetyFilter(data.safety_filter ?? 'balanced');
@@ -362,6 +364,7 @@ export function AiConfig() {
           fallback_provider: null,
           provider_keys: providerKeys,
           temperature,
+          reasoning_effort: reasoningEffort,
           max_tokens: overrides?.maxTokens ?? maxTokens,
           system_prompt: systemPrompt || null,
           fallback_answer: fallbackAnswer || null,
@@ -461,6 +464,8 @@ export function AiConfig() {
       onReplyLanguageChange={setReplyLanguage}
       safetyFilter={safetyFilter}
       onSafetyFilterChange={setSafetyFilter}
+      reasoningEffort={reasoningEffort}
+      onReasoningEffortChange={setReasoningEffort}
       saving={saving}
       saveError={saveError}
       onSave={save}
@@ -535,6 +540,7 @@ export function AiConfig() {
             maxTokens={maxTokens}
             replyLanguage={replyLanguage}
             safetyFilter={safetyFilter}
+            reasoningEffort={reasoningEffort}
             semanticSearchAvailable={semanticSearchAvailable}
             systemPromptMissing={!systemPrompt.trim()}
             onReconfigure={() => setWizardOpen(true)}

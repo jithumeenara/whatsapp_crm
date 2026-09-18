@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
 import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
+import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 
 /** One knowledge entry: read its full content, edit it, re-sync it from
  *  its source, or delete it. */
@@ -116,6 +117,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         where: { id },
         data: { status: 'failed', last_error: message, last_synced_at: new Date() },
       })
+      invalidateKnowledge(existing.ai_config_id)
       return NextResponse.json({ error: message }, { status: 400 })
     }
   }
@@ -160,6 +162,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const item = await prisma.aiKnowledgeItem.update({ where: { id }, data })
+  // The reply path holds this account's knowledge in memory for a few
+  // seconds at a time; an edit somebody made on purpose should not have
+  // to wait for that to lapse.
+  invalidateKnowledge(item.ai_config_id)
   return NextResponse.json({ item })
 }
 
@@ -175,6 +181,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   await prisma.aiKnowledgeItem.delete({ where: { id } })
+  invalidateKnowledge(existing.ai_config_id)
   // The orphaned embedding row is cleaned up by the next sync run, which
   // deletes every hash no longer present in the knowledge base — no need
   // to compute this one entry's hashes here just to delete them.

@@ -127,14 +127,45 @@ export function toKnowledgeItems(qaPairs: QaPair[], documentChunks: Array<{ titl
  *  knowledge.ts, which must NOT be treated the same way (the second
  *  case is a legitimate low-confidence signal, not a reason to fall
  *  back to a less accurate search method). */
+/**
+ * Answered from memory for a few minutes at a time.
+ *
+ * This question sits directly between a customer's message and their
+ * reply, it is asked on every single message, and the honest answer
+ * changes roughly never — an account that has synced embeddings has them
+ * on the next message too. A database round trip to re-establish that
+ * bought nothing and cost every reply.
+ *
+ * The cache is deliberately one-directional in the risk it takes: a
+ * false→true flip (somebody just trained the knowledge base for the
+ * first time) is pushed straight through by `syncKnowledgeEmbeddings`
+ * below, so the improvement is never delayed. Only a true→false flip —
+ * which means somebody deleted every embedding they had — waits out the
+ * TTL, and for those few minutes retrieval simply finds nothing and
+ * falls back to keyword search, which is what it would do anyway.
+ */
+const HAS_EMBEDDINGS_TTL_MS = 5 * 60_000
+const hasEmbeddingsCache = new Map<string, { value: boolean; at: number }>()
+
+/** Called whenever this app's own code changes what is stored, so a
+ *  freshly-trained account does not wait out the TTL. */
+export function invalidateHasEmbeddings(aiConfigId: string): void {
+  hasEmbeddingsCache.delete(aiConfigId)
+}
+
 export async function hasEmbeddings(aiConfigId: string): Promise<boolean> {
+  const cached = hasEmbeddingsCache.get(aiConfigId)
+  if (cached && Date.now() - cached.at < HAS_EMBEDDINGS_TTL_MS) return cached.value
+
   const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>(
     Prisma.sql`SELECT EXISTS(
       SELECT 1 FROM ai_knowledge_embeddings
       WHERE ai_config_id = ${aiConfigId}::uuid AND embedding_model = ${EMBEDDING_MODEL}
     ) AS exists`,
   )
-  return rows[0]?.exists ?? false
+  const value = rows[0]?.exists ?? false
+  hasEmbeddingsCache.set(aiConfigId, { value, at: Date.now() })
+  return value
 }
 
 export interface EmbeddingMatch {
@@ -261,6 +292,11 @@ export async function syncKnowledgeEmbeddings(args: {
       latencyMs: Date.now() - startedAt,
     })
   }
+
+  // Whatever just happened, the cached answer to "does this account have
+  // embeddings" may no longer be true. Cheaper to drop it than to reason
+  // about which of the four counts above could have changed it.
+  invalidateHasEmbeddings(aiConfigId)
 
   return { embedded, deleted, failed, firstError }
 }

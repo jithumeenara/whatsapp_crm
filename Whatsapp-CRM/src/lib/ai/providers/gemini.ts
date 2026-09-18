@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, FinishReason, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
 import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
 import { AI_REQUEST_TIMEOUT_MS } from './types'
+import { thinkingConfigFor, isThinkingRejection } from '../reasoning'
 
 /**
  * AiConfig.safety_filter -> Gemini's own HarmBlockThreshold, applied to
@@ -33,28 +34,51 @@ function buildSafetySettings(filter: string | undefined) {
 
 async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
-  const model = genAI.getGenerativeModel(
-    {
-      model: args.model,
-      generationConfig: {
-        temperature: args.temperature,
-        maxOutputTokens: args.maxTokens,
-      },
-      safetySettings: buildSafetySettings(args.safetyFilter),
-      systemInstruction: args.systemPrompt || 'You are a helpful assistant.',
-    },
-    // Ground-truthed against the installed SDK's own .d.ts (RequestOptions.timeout,
-    // milliseconds) rather than assumed — see AI_REQUEST_TIMEOUT_MS's own comment.
-    { timeout: AI_REQUEST_TIMEOUT_MS },
-  )
 
   const history = args.conversationHistory.map((m) => ({
     role: m.role,
     parts: [{ text: m.text }],
   }))
 
-  const chat = model.startChat({ history })
-  const result = await chat.sendMessage(args.userMessage)
+  // `thinking` is typed nowhere in the installed SDK (0.24.1 predates
+  // Gemini 3) but the SDK does not whitelist generationConfig — it
+  // JSON.stringifies the request body as given — so an extra field
+  // reaches the v1beta endpoint untouched. Checked in the SDK's own
+  // dist, not assumed.
+  const send = async (thinking: object | undefined) => {
+    const model = genAI.getGenerativeModel(
+      {
+        model: args.model,
+        generationConfig: {
+          temperature: args.temperature,
+          maxOutputTokens: args.maxTokens,
+          ...(thinking ?? {}),
+        },
+        safetySettings: buildSafetySettings(args.safetyFilter),
+        systemInstruction: args.systemPrompt || 'You are a helpful assistant.',
+      },
+      // Ground-truthed against the installed SDK's own .d.ts (RequestOptions.timeout,
+      // milliseconds) rather than assumed — see AI_REQUEST_TIMEOUT_MS's own comment.
+      { timeout: AI_REQUEST_TIMEOUT_MS },
+    )
+    const chat = model.startChat({ history })
+    return chat.sendMessage(args.userMessage)
+  }
+
+  const thinking = thinkingConfigFor(args.model, args.reasoningEffort)
+  let result
+  try {
+    result = await send(thinking)
+  } catch (err) {
+    // One slow reply is a better outcome than none. If this model turns
+    // out not to accept the thinking parameter after all, drop it and
+    // ask again rather than failing the customer's message over a
+    // latency setting.
+    if (!thinking || !isThinkingRejection(err)) throw err
+    console.warn('[gemini] model rejected the thinking level, retrying without it:', args.model)
+    result = await send(undefined)
+  }
+
   const finishReason = result.response.candidates?.[0]?.finishReason
   const usage = result.response.usageMetadata
   return {

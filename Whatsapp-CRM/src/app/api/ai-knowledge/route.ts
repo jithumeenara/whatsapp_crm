@@ -5,6 +5,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
 import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
+import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 
 /**
  * The account's knowledge base, as real rows (ai_knowledge_items).
@@ -197,6 +198,7 @@ export async function POST(req: Request) {
           status: 'pending',
         },
       })
+      invalidateKnowledge(configId)
       return NextResponse.json({ item }, { status: 201 })
     }
 
@@ -235,6 +237,7 @@ export async function POST(req: Request) {
       source = kind === 'document' ? 'upload' : 'manual'
     }
 
+    invalidateKnowledge(configId)
     const item = await prisma.aiKnowledgeItem.create({
       data: {
         ai_config_id: configId,

@@ -32,6 +32,12 @@ export interface AiGenerateArgs {
    *  per-request safety thresholds. Other adapters ignore it rather than
    *  pretending to honor a setting they can't actually apply. */
   safetyFilter?: string
+  /** AiConfig.reasoning_effort. Acted on only by Gemini 3, which is the
+   *  one model family here that reasons before answering and charges the
+   *  customer the wait for it. Every other adapter ignores it rather
+   *  than pretending to honour a setting it cannot apply — the same rule
+   *  safetyFilter above follows. See src/lib/ai/reasoning.ts. */
+  reasoningEffort?: string
 }
 
 export interface AiGenerateResult {

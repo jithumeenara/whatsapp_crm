@@ -48,10 +48,48 @@ export type KnowledgeAudience = 'customer' | 'all'
 
 const CUSTOMER_VISIBLE = ['customer', 'both']
 
+/**
+ * The same read, answered from memory for a few seconds at a time.
+ *
+ * This query pulls every usable knowledge row for the account — titles,
+ * descriptions and the *full text* of every document — and it runs on
+ * every single customer message, in the gap between what they asked and
+ * what they hear back. The rows are identical from one message to the
+ * next; a knowledge base changes when somebody edits it, which is to say
+ * hardly ever, and never twice inside a conversation.
+ *
+ * Ten seconds, not ten minutes, and that choice is deliberate. It is
+ * long enough to cover what it is meant to cover — a burst of messages,
+ * a customer sending three lines in a row, several conversations at
+ * once — and short enough that somebody who has just edited an entry and
+ * gone to test it does not have to be told about a cache. Combined with
+ * `invalidateKnowledge` on every write path, an edit is visible
+ * immediately in practice and within ten seconds in the worst case.
+ *
+ * Process-local on purpose, exactly like knowledge.ts's chunk cache: the
+ * cost of a cold cache is one ordinary query.
+ */
+const KNOWLEDGE_TTL_MS = 10_000
+const KNOWLEDGE_CACHE_MAX = 200
+const loadCache = new Map<string, { at: number; value: LoadedKnowledge }>()
+
+/** Drops the cached copy for one AI config, both audiences. Called by
+ *  every route that writes a knowledge item, so an edit is visible on
+ *  the next message rather than after the TTL. */
+export function invalidateKnowledge(aiConfigId: string): void {
+  for (const key of loadCache.keys()) {
+    if (key.startsWith(`${aiConfigId}:`)) loadCache.delete(key)
+  }
+}
+
 export async function loadKnowledge(
   aiConfigId: string,
   audience: KnowledgeAudience = 'customer',
 ): Promise<LoadedKnowledge> {
+  const cacheKey = `${aiConfigId}:${audience}`
+  const cached = loadCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < KNOWLEDGE_TTL_MS) return cached.value
+
   // Entries are filtered by their validity window at load time, not
   // ranked down afterwards.
   //
@@ -136,5 +174,17 @@ export async function loadKnowledge(
   // rebuild per hour on an unchanged knowledge base; windows are set to
   // a date in practice, never to a minute.
   const hourBucket = Math.floor(Date.now() / 3_600_000)
-  return { qaPairs, documents, version: `${audience}:${items.length}:${newest}:${hourBucket}` }
+  const loaded: LoadedKnowledge = {
+    qaPairs,
+    documents,
+    version: `${audience}:${items.length}:${newest}:${hourBucket}`,
+  }
+
+  if (loadCache.size >= KNOWLEDGE_CACHE_MAX) {
+    const oldest = loadCache.keys().next().value
+    if (oldest !== undefined) loadCache.delete(oldest)
+  }
+  loadCache.set(cacheKey, { at: Date.now(), value: loaded })
+
+  return loaded
 }

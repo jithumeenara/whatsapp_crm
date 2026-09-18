@@ -46,6 +46,8 @@ export interface ConfigureWizardProps {
   onReplyLanguageChange: (v: string) => void;
   safetyFilter: string;
   onSafetyFilterChange: (v: string) => void;
+  reasoningEffort: string;
+  onReasoningEffortChange: (v: string) => void;
 
   saving: boolean;
   saveError: string;
@@ -62,6 +64,23 @@ const SAFETY_OPTIONS = [
   { id: 'strict', label: 'Strict — block anything borderline' },
   { id: 'balanced', label: 'Balanced (recommended)' },
   { id: 'relaxed', label: 'Relaxed — block only clearly harmful' },
+];
+
+/**
+ * How long the model may think before it answers.
+ *
+ * Written in seconds and outcomes rather than in the vendor's word for
+ * it ("thinking level"), because the person choosing is deciding how
+ * long their customer waits, not tuning a model. Fast is the default:
+ * for a question whose answer was already retrieved and handed over,
+ * the extra deliberation costs the wait and changes the reply very
+ * little.
+ */
+const SPEED_OPTIONS = [
+  { id: 'minimal', label: 'Fastest — barely pauses' },
+  { id: 'low', label: 'Fast (recommended)' },
+  { id: 'balanced', label: 'Balanced — thinks a little longer' },
+  { id: 'thorough', label: 'Most careful — slowest to reply' },
 ];
 
 export function ConfigureWizard(props: ConfigureWizardProps) {
@@ -278,6 +297,27 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                     <AiHint>Gemini&apos;s own content filtering threshold.</AiHint>
                   </div>
                   <div className="space-y-1.5">
+                    <AiLabel>Reply speed</AiLabel>
+                    <Select
+                      value={props.reasoningEffort}
+                      onValueChange={(v) => v && props.onReasoningEffortChange(v)}
+                    >
+                      <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 text-[13px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SPEED_OPTIONS.map((o) => (
+                          <SelectItem key={o.id} value={o.id}>{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <AiHint>
+                      Newer Gemini models reason before they answer, and that reasoning is most of how long a
+                      customer waits. Keep it fast unless replies are actually coming out wrong — the knowledge
+                      base has already done the finding by the time the model is asked.
+                    </AiHint>
+                  </div>
+                  <div className="space-y-1.5">
                     <AiLabel>Reply language</AiLabel>
                     <div className="flex h-10 items-center gap-2 rounded-xl bg-[#F4F5FA] px-3 ring-1 ring-slate-200/80">
                       <Languages className="h-3.5 w-3.5 shrink-0 text-[#5B6CF9]" />
@@ -308,6 +348,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                     ['Max response tokens', String(props.maxTokens)],
                     ['Reply language', 'Matched to each customer'],
                     ['Safety filter', SAFETY_OPTIONS.find((o) => o.id === props.safetyFilter)?.label ?? props.safetyFilter],
+                    ['Reply speed', SPEED_OPTIONS.find((o) => o.id === props.reasoningEffort)?.label ?? props.reasoningEffort],
                   ].map(([k, v]) => (
                     <div key={k} className="flex items-center justify-between gap-4 bg-white px-4 py-2.5">
                       <dt className="text-[12.5px] text-slate-500">{k}</dt>

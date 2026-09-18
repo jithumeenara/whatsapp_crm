@@ -1344,6 +1344,21 @@ model AiConfig {
   /// a one-click setting.
   safety_filter                  String  @default("balanced")
 
+  /// How much the model is allowed to deliberate before it answers.
+  ///
+  /// Gemini 3 thinks by default — Flash sits at "medium"/"high" unless
+  /// told otherwise — and that deliberation is where a WhatsApp reply's
+  /// seconds actually go. For a CRM answering "what are the fees" out of
+  /// a knowledge base it buys nothing a customer can perceive, and costs
+  /// them the wait. So this defaults to 'low' rather than to the
+  /// provider's own default.
+  ///
+  /// 'minimal' | 'low' | 'balanced' | 'thorough'. Mapped to the
+  /// provider's own vocabulary in src/lib/ai/reasoning.ts, and sent only
+  /// to models documented to accept it — an older model is left alone
+  /// rather than sent a parameter it would reject.
+  reasoning_effort               String  @default("low")
+
   /// Tell a person, on WhatsApp, when the assistant gives up.
   ///
   /// A handover already leaves a note on the thread, which is perfect for

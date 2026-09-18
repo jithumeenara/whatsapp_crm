@@ -53,6 +53,11 @@ export interface SelectedContext {
    *  methods, but both serve the same purpose for the caller: "how much
    *  of what was asked did we actually find?" 0 when nothing matched. */
   confidence: number
+  /** How long the query embedding took, in milliseconds — a provider
+   *  round trip that happens between the customer's message and their
+   *  reply, and the one part of retrieval that is not this app's own
+   *  database. Absent on the keyword path, which makes no such call. */
+  embeddingMs?: number
 }
 
 interface SelectOptions {
@@ -235,7 +240,9 @@ async function selectBySemantic(
   if (!synced) return null
 
   try {
+    const embedStartedAt = Date.now()
     const queryVector = await embedQuery(semantic.geminiApiKey, userMessage)
+    const embeddingMs = Date.now() - embedStartedAt
     // Over-fetch, because a match can be dropped after ranking.
     //
     // The vector search covers every embedding for this AI config, but
@@ -290,7 +297,7 @@ async function selectBySemantic(
     // low-confidence handoff stayed quiet and the model answered with
     // nothing to answer from. Empty context is now honestly 0.
     const confidence = Math.max(0, usableTopScore)
-    return { qaPairs, documentChunks, confidence }
+    return { qaPairs, documentChunks, confidence, embeddingMs }
   } catch (err) {
     console.error('[knowledge] semantic retrieval failed, falling back to keyword search:', err instanceof Error ? err.message : err)
     return null
