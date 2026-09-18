@@ -6,7 +6,55 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+/**
+ * Select, with the selected item showing its label rather than its value.
+ *
+ * Base UI differs from Radix here in a way that is easy to miss and ugly
+ * when it lands: `Select.Value` renders the raw value unless the root is
+ * given an `items` map. Every picker in this app that shows a name and
+ * stores an id was therefore displaying the id — a table picker reading
+ * "a1c1263e-3a4e-40cf-90a4-e9e3c2dc61a1" where it meant "Training", an
+ * agent picker showing a user id, a voice picker showing a slug. Each
+ * looked like a separate bug and each would have been fixed separately
+ * and forgotten again on the next Select somebody wrote.
+ *
+ * So the map is built here, from the items actually rendered. Callers
+ * write the ordinary `<SelectItem value={id}>{name}</SelectItem>` they
+ * already write, and the trigger shows the name. An explicit `items`
+ * prop still wins, for a caller who wants to say it themselves.
+ */
+function collectItems(node: React.ReactNode, into: Record<string, React.ReactNode>): void {
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement(child)) return
+    const props = child.props as { value?: unknown; children?: React.ReactNode }
+    if (child.type === SelectItem && props.value !== undefined && props.value !== null) {
+      into[String(props.value)] = props.children
+      return
+    }
+    if (props.children) collectItems(props.children, into)
+  })
+}
+
+function Select<Value, Multiple extends boolean | undefined = false>({
+  children,
+  items,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  const derived = React.useMemo(() => {
+    if (items) return items
+    const map: Record<string, React.ReactNode> = {}
+    collectItems(children, map)
+    // Nothing to map means nothing to gain — handing Base UI an empty
+    // record would make it treat every value as unknown.
+    return Object.keys(map).length > 0 ? map : undefined
+  }, [children, items])
+
+  return (
+    <SelectPrimitive.Root items={derived} {...(props as SelectPrimitive.Root.Props<Value, Multiple>)}>
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
@@ -61,9 +109,16 @@ function SelectContent({
   children,
   side = "bottom",
   sideOffset = 4,
-  align = "center",
+  // Left edge to left edge, the way every dropdown on the web opens.
+  align = "start",
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  // Base UI defaults this on, which positions the popup so the *selected
+  // item* lands on top of the trigger — the old desktop behaviour. It
+  // covers the field you just clicked, so you cannot read the label you
+  // are choosing for, and on a long list it drifts halfway up the page.
+  // Dropping below the trigger is what this app's other menus do and
+  // what anyone expects.
+  alignItemWithTrigger = false,
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
