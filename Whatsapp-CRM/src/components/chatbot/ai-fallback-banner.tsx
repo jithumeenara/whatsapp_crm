@@ -25,11 +25,29 @@ type Config = {
   enabled: boolean
   maxTurns: number
   pauseOnAgent: boolean
+  /** Close a chat the customer has walked away from. */
+  idleClose: boolean
+  /** How long the silence must last, in minutes. */
+  idleAfter: number
   /** No assistant configured at all — the toggle would do nothing. */
   configured: boolean
   hasPrompt: boolean
   knowledgeCount: number | null
 }
+
+/** Written the way somebody thinks about it, not in minutes. The range
+ *  spans a shop wanting half an hour and an institute taking admissions
+ *  wanting a couple of days. */
+const IDLE_CHOICES = [
+  { minutes: 30, label: "30 minutes" },
+  { minutes: 60, label: "1 hour" },
+  { minutes: 180, label: "3 hours" },
+  { minutes: 360, label: "6 hours" },
+  { minutes: 720, label: "12 hours" },
+  { minutes: 1440, label: "1 day" },
+  { minutes: 2880, label: "2 days" },
+  { minutes: 10080, label: "1 week" },
+]
 
 export function AiFallbackBanner() {
   const [config, setConfig] = useState<Config | null>(null)
@@ -56,6 +74,8 @@ export function AiFallbackBanner() {
           enabled: !!data.ai_auto_reply_enabled,
           maxTurns: data.ai_auto_reply_max_turns ?? 8,
           pauseOnAgent: data.ai_auto_reply_pause_on_agent !== false,
+          idleClose: !!data.idle_close_enabled,
+          idleAfter: data.idle_close_after_minutes ?? 1440,
           configured: Boolean(data.active_provider && data.provider_keys?.gemini?.has_key),
           hasPrompt: Boolean(data.system_prompt?.trim()),
           knowledgeCount,
@@ -68,7 +88,9 @@ export function AiFallbackBanner() {
   }, [])
 
   const save = useCallback(
-    async (patch: Partial<Pick<Config, "enabled" | "maxTurns" | "pauseOnAgent">>) => {
+    async (
+      patch: Partial<Pick<Config, "enabled" | "maxTurns" | "pauseOnAgent" | "idleClose" | "idleAfter">>,
+    ) => {
       if (!config || saving) return
       const next = { ...config, ...patch }
       setConfig(next)
@@ -85,6 +107,8 @@ export function AiFallbackBanner() {
             ai_auto_reply_enabled: next.enabled,
             ai_auto_reply_max_turns: next.maxTurns,
             ai_auto_reply_pause_on_agent: next.pauseOnAgent,
+            idle_close_enabled: next.idleClose,
+            idle_close_after_minutes: next.idleAfter,
           }),
         })
         if (!res.ok) {
@@ -241,6 +265,44 @@ export function AiFallbackBanner() {
                   />
                   <span>Stop once a person takes over</span>
                 </label>
+
+                {/* Tidying the Inbox, not answering anybody — so it gets
+                    its own row and its own sentence about what it will
+                    not touch. The exclusions are the part somebody
+                    switching this on actually needs to trust. */}
+                <div className="flex w-full flex-col gap-1 border-t border-slate-200/70 pt-3">
+                  <div className="flex items-center gap-2 text-[11.5px] text-slate-700">
+                    <Switch
+                      checked={config.idleClose}
+                      onCheckedChange={(v) => void save({ idleClose: v })}
+                    />
+                    {config.idleClose ? (
+                      <label className="flex items-center gap-2" htmlFor="ai-idle-after">
+                        <span>Close the chat after</span>
+                        <select
+                          id="ai-idle-after"
+                          value={config.idleAfter}
+                          onChange={(e) => void save({ idleAfter: Number(e.target.value) })}
+                          className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-[12px] outline-none focus:border-indigo-400"
+                        >
+                          {IDLE_CHOICES.map((c) => (
+                            <option key={c.minutes} value={c.minutes}>{c.label}</option>
+                          ))}
+                        </select>
+                        <span>with no reply</span>
+                      </label>
+                    ) : (
+                      <span>Never close a chat on its own</span>
+                    )}
+                  </div>
+                  {config.idleClose && (
+                    <p className="pl-[46px] text-[11px] leading-relaxed text-slate-500">
+                      Only chats nobody is handling, where we sent the last message. A chat waiting
+                      on your team, or assigned to someone, is never closed — and it reopens on its
+                      own if the customer writes again.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}

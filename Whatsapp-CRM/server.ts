@@ -8,6 +8,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { sweepScheduledMessages } from "./src/lib/scheduled-messages/sweep";
 import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
+import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 
@@ -100,6 +101,17 @@ app.prepare().then(() => {
       console.error("[ai-knowledge] website sweep failed:", err);
     });
   }, 60 * 60_000);
+
+  // Conversations the customer walked away from. Every five minutes,
+  // which is fine granularity against a threshold measured in hours —
+  // the setting's own minimum is five minutes, so this can never lag it
+  // by more than one tick. A no-op for every account that has not asked
+  // for it: the first query filters on the flag.
+  setInterval(() => {
+    sweepIdleConversations().catch((err) => {
+      console.error("[idle-close] sweep interval failed:", err);
+    });
+  }, 5 * 60_000);
 });
 
 /** Emit a real-time event to all sockets in an account's room. */

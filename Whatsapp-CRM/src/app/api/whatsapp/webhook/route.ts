@@ -817,6 +817,15 @@ async function processMessage(
         last_message_text: contentText || `[${message.type}]`,
         last_message_at: new Date(),
         unread_count: (conversation.unread_count || 0) + 1,
+        // A customer writing again reopens a closed thread.
+        //
+        // Only 'closed' — never 'pending'. Pending means somebody here
+        // still owes them an answer, and flipping it back to Open would
+        // quietly take it off whatever list that person is working
+        // from. This exists because the idle-close sweep can file a
+        // conversation the customer then returns to, and an Inbox
+        // showing Closed above a live exchange is simply wrong.
+        ...(conversation.status === 'closed' ? { status: 'open' } : {}),
       },
     })
     emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })

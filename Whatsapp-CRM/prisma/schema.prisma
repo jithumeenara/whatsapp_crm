@@ -1308,6 +1308,22 @@ model AiConfig {
   /// faster than an agent typing while a bot talks over them.
   ai_auto_reply_pause_on_agent   Boolean @default(true)
 
+  /// Close a conversation the customer has walked away from.
+  ///
+  /// Off by default, and narrow when on: only a conversation that is
+  /// Open, unassigned, and whose last message came from our side. A
+  /// Pending thread is never touched — that is where a handover leaves
+  /// one, and it means a person here still owes an answer.
+  /// See src/lib/ai/idle-close.ts.
+  idle_close_enabled             Boolean @default(false)
+  /// How long the silence must last. Minutes, because the useful range
+  /// spans a shop's half hour and an institute's two days.
+  idle_close_after_minutes       Int     @default(1440)
+  /// An optional last word before closing. Null closes quietly, which
+  /// is right for a conversation that simply finished. Only ever sent
+  /// while Meta's 24-hour service window is still open.
+  idle_close_message             String?
+
   /// Google Cloud service-account JSON for Text-to-Speech, encrypted
   /// with the same helper that holds this account's WhatsApp token and
   /// Gemini key.

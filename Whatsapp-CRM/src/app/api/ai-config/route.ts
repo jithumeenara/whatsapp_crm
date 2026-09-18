@@ -99,6 +99,9 @@ export async function GET() {
     ai_auto_reply_enabled: config.ai_auto_reply_enabled,
     ai_auto_reply_max_turns: config.ai_auto_reply_max_turns,
     ai_auto_reply_pause_on_agent: config.ai_auto_reply_pause_on_agent,
+    idle_close_enabled: config.idle_close_enabled,
+    idle_close_after_minutes: config.idle_close_after_minutes,
+    idle_close_message: config.idle_close_message,
     // Asked of the same resolver the send path uses, so the screen
     // cannot offer Cloud voices that replies would not actually use.
     // True for an account's own uploaded key or the server's shared one.
@@ -165,6 +168,9 @@ export async function PUT(req: Request) {
     ai_auto_reply_enabled,
     ai_auto_reply_max_turns,
     ai_auto_reply_pause_on_agent,
+    idle_close_enabled,
+    idle_close_after_minutes,
+    idle_close_message,
   } = body as {
     active_provider?: string
     fallback_provider?: string | null
@@ -204,6 +210,9 @@ export async function PUT(req: Request) {
     ai_auto_reply_enabled?: boolean
     ai_auto_reply_max_turns?: number
     ai_auto_reply_pause_on_agent?: boolean
+    idle_close_enabled?: boolean
+    idle_close_after_minutes?: number
+    idle_close_message?: string | null
   }
 
   const existing = await prisma.aiConfig.findUnique({
@@ -379,6 +388,21 @@ export async function PUT(req: Request) {
       ai_auto_reply_pause_on_agent !== undefined
         ? ai_auto_reply_pause_on_agent
         : (existing?.ai_auto_reply_pause_on_agent ?? true),
+    idle_close_enabled:
+      idle_close_enabled !== undefined
+        ? idle_close_enabled
+        : (existing?.idle_close_enabled ?? false),
+    // Clamped to the same range the column's own CHECK allows, so a bad
+    // request is a corrected setting rather than a database error
+    // surfacing in the Settings screen.
+    idle_close_after_minutes:
+      idle_close_after_minutes !== undefined
+        ? Math.min(43200, Math.max(5, Math.floor(Number(idle_close_after_minutes)) || 1440))
+        : (existing?.idle_close_after_minutes ?? 1440),
+    idle_close_message:
+      idle_close_message !== undefined
+        ? (idle_close_message?.trim() || null)
+        : (existing?.idle_close_message ?? null),
   }
 
   const config = await prisma.aiConfig.upsert({
