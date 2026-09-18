@@ -136,7 +136,17 @@ async function closeForAccount(config: {
   })
   if (candidates.length === 0) return { closed: 0, messaged: 0 }
 
-  const ids = candidates.map((c) => c.id)
+  // Every id cast, one by one.
+  //
+  // Joining them as bare parameters sends text, and
+  // messages.conversation_id is uuid — Postgres has no uuid = text
+  // operator, so the whole query failed with 42883 on every tick and
+  // the sweep silently did nothing, saying so only in the error log.
+  // Found live, five minutes at a time.
+  //
+  // Casting the column instead would also work, and would give up the
+  // index — the wrong trade on a messages table.
+  const ids = Prisma.join(candidates.map((c) => Prisma.sql`${c.id}::uuid`))
 
   // Who spoke last, and when the customer last did — two facts, two
   // queries, rather than one query per conversation. DISTINCT ON is
@@ -146,7 +156,7 @@ async function closeForAccount(config: {
     Prisma.sql`
       SELECT DISTINCT ON (conversation_id) conversation_id, sender_type
       FROM messages
-      WHERE conversation_id IN (${Prisma.join(ids)})
+      WHERE conversation_id IN (${ids})
       ORDER BY conversation_id, created_at DESC
     `,
   )
@@ -156,7 +166,7 @@ async function closeForAccount(config: {
     Prisma.sql`
       SELECT conversation_id, MAX(created_at) AS at
       FROM messages
-      WHERE conversation_id IN (${Prisma.join(ids)}) AND sender_type = 'customer'
+      WHERE conversation_id IN (${ids}) AND sender_type = 'customer'
       GROUP BY conversation_id
     `,
   )

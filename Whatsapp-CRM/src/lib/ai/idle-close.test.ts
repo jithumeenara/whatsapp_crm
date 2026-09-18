@@ -23,6 +23,8 @@ const h = vi.hoisted(() => ({
     notes: [] as string[],
     sent: [] as Array<{ conversationId: string; text: string }>,
     sendThrows: false,
+    /** Every SQL string the sweep built, so a test can look at it. */
+    sql: [] as string[],
   },
 }));
 
@@ -49,8 +51,9 @@ vi.mock("@/lib/db", () => ({
     // the customer last did.
     $queryRaw: (() => {
       let call = 0;
-      return () => {
+      return (query: { text?: string }) => {
         call += 1;
+        if (query?.text) h.state.sql.push(query.text);
         const which = call % 2 === 1 ? h.state.lastSpeakers : h.state.lastCustomer;
         return Promise.resolve(which);
       };
@@ -58,8 +61,33 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
+/**
+ * A real tagged template, not a stub returning {}.
+ *
+ * The stub is what let a live bug through: the sweep built
+ * `conversation_id IN (...)` with text parameters against a uuid
+ * column, Postgres refused it on every tick for days, and every test
+ * still passed because the mock never looked at the SQL. It now records
+ * it, so the shape of the query is something a test can assert about.
+ */
+function fragmentOf(value: unknown): string {
+  if (value && typeof value === "object" && "text" in value) {
+    return String((value as { text: unknown }).text);
+  }
+  return "?";
+}
+
 vi.mock("@prisma/client", () => ({
-  Prisma: { sql: () => ({}), join: () => ({}) },
+  Prisma: {
+    sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+      text: strings.raw.reduce(
+        (acc: string, part: string, i: number) =>
+          acc + part + (i < values.length ? fragmentOf(values[i]) : ""),
+        "",
+      ),
+    }),
+    join: (parts: unknown[]) => ({ text: parts.map(fragmentOf).join(", ") }),
+  },
 }));
 
 vi.mock("@/lib/socket", () => ({ emitToAccount: () => {} }));
@@ -91,6 +119,7 @@ beforeEach(() => {
   h.state.notes = [];
   h.state.sent = [];
   h.state.sendThrows = false;
+  h.state.sql = [];
 });
 
 describe("what the sweep asks the database for", () => {
@@ -110,6 +139,21 @@ describe("what the sweep asks the database for", () => {
     const result = await sweepIdleConversations();
     expect(result).toEqual({ accountsChecked: 0, closed: 0, messaged: 0 });
     expect(h.state.closedIds).toEqual([]);
+  });
+});
+
+describe("the SQL it builds", () => {
+  it("casts every conversation id to uuid", async () => {
+    // messages.conversation_id is uuid. Passing the ids as plain text
+    // parameters made Postgres refuse the query outright — no rows, no
+    // closes, and an error log nobody was reading. The cast is the fix,
+    // and this is the assertion that would have caught it.
+    await sweepIdleConversations();
+    expect(h.state.sql).toHaveLength(2);
+    for (const text of h.state.sql) {
+      expect(text).toContain("::uuid");
+      expect(text).toContain("conversation_id IN");
+    }
   });
 });
 
