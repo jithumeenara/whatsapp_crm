@@ -4,7 +4,7 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 
 import { cn } from "@/lib/utils"
-import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
+import { ChevronDownIcon, CheckIcon, ChevronUpIcon, SearchIcon, XIcon } from "lucide-react"
 
 /**
  * Select, with the selected item showing its label rather than its value.
@@ -119,12 +119,37 @@ function SelectContent({
   // Dropping below the trigger is what this app's other menus do and
   // what anyone expects.
   alignItemWithTrigger = false,
+  searchable,
+  searchPlaceholder = "Search\u2026",
   ...props
 }: SelectPrimitive.Popup.Props &
   Pick<
     SelectPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
-  >) {
+  > & {
+    /** Force the search box on or off. Left unset it appears once the
+     *  list is long enough to be worth filtering. */
+    searchable?: boolean
+    searchPlaceholder?: string
+  }) {
+  const [query, setQuery] = React.useState("")
+
+  // Whether to offer search at all.
+  //
+  // A field type list runs to twenty-five entries and a district list to
+  // fourteen; scrolling those to find one word is the slowest part of
+  // building a table. Below the threshold a search box is noise — three
+  // options are read faster than they are typed.
+  const total = React.useMemo(() => countItems(children), [children])
+  const showSearch = searchable ?? total > 8
+
+  // Cleared on close so reopening never shows yesterday's filter.
+  const filtered = React.useMemo(
+    () => (showSearch && query.trim() ? filterItems(children, query.trim().toLowerCase()) : children),
+    [children, query, showSearch],
+  )
+  const nothingMatched = showSearch && query.trim() !== "" && countItems(filtered) === 0
+
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -138,11 +163,59 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}
-          className={cn("relative isolate z-50 max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-2xl bg-popover p-1.5 text-popover-foreground shadow-[0_4px_12px_rgba(15,23,42,0.06),0_16px_40px_-12px_rgba(15,23,42,0.25)] ring-1 ring-foreground/10 duration-150 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-1 data-[side=inline-end]:slide-in-from-left-1 data-[side=inline-start]:slide-in-from-right-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 dark:shadow-[0_4px_12px_rgba(0,0,0,0.3),0_16px_40px_-12px_rgba(0,0,0,0.6)]", className )}
+          className={cn("relative isolate z-50 max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl bg-popover p-1.5 text-popover-foreground shadow-[0_4px_12px_rgba(15,23,42,0.06),0_16px_40px_-12px_rgba(15,23,42,0.25)] ring-1 ring-foreground/10 duration-150 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-1 data-[side=inline-end]:slide-in-from-left-1 data-[side=inline-start]:slide-in-from-right-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 dark:shadow-[0_4px_12px_rgba(0,0,0,0.3),0_16px_40px_-12px_rgba(0,0,0,0.6)]", className )}
           {...props}
         >
+          {showSearch && (
+            // Deliberately not a real <input> inside the list: Base UI's
+            // Select owns keyboard navigation, and an input that steals
+            // arrow keys would break selecting with the keyboard. This
+            // only takes printable characters and backspace, and lets
+            // everything else through to the list underneath.
+            <div className="sticky top-0 z-10 -mx-1.5 -mt-1.5 mb-1 border-b border-border/60 bg-popover px-3 py-2">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <SearchIcon className="size-3.5 shrink-0" />
+                <span className="flex-1 truncate text-sm text-foreground">
+                  {query || <span className="text-muted-foreground">{searchPlaceholder}</span>}
+                </span>
+                {query && (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      setQuery("")
+                    }}
+                    className="rounded-md p-0.5 transition-colors hover:text-foreground"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           <SelectScrollUpButton />
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
+          <SelectPrimitive.List
+            onKeyDown={(e) => {
+              if (!showSearch) return
+              if (e.key === "Backspace") {
+                setQuery((q) => q.slice(0, -1))
+                return
+              }
+              // One printable character, and no modifier — so Ctrl+A and
+              // the arrow keys still belong to the list.
+              if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                setQuery((q) => q + e.key)
+              }
+            }}
+          >
+            {filtered}
+          </SelectPrimitive.List>
+          {nothingMatched && (
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+              Nothing matches &ldquo;{query}&rdquo;
+            </p>
+          )}
           <SelectScrollDownButton />
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
@@ -163,6 +236,50 @@ function SelectLabel({
   )
 }
 
+/** How many selectable items a subtree holds. */
+function countItems(node: React.ReactNode): number {
+  let n = 0
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement(child)) return
+    if (child.type === SelectItem) {
+      n += 1
+      return
+    }
+    const props = child.props as { children?: React.ReactNode }
+    if (props.children) n += countItems(props.children)
+  })
+  return n
+}
+
+/** The plain text of a node, for matching against what was typed. */
+function textOf(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === "boolean") return ""
+  if (typeof node === "string" || typeof node === "number") return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join(" ")
+  if (React.isValidElement(node)) return textOf((node.props as { children?: React.ReactNode }).children)
+  return ""
+}
+
+/**
+ * The same tree with non-matching items removed.
+ *
+ * Group wrappers survive only if something inside them did, so filtering
+ * never leaves a heading standing over an empty space.
+ */
+function filterItems(node: React.ReactNode, query: string): React.ReactNode {
+  return React.Children.map(node, (child) => {
+    if (!React.isValidElement(child)) return child
+    if (child.type === SelectItem) {
+      const props = child.props as { children?: React.ReactNode }
+      return textOf(props.children).toLowerCase().includes(query) ? child : null
+    }
+    const props = child.props as { children?: React.ReactNode }
+    if (!props.children) return child
+    const inner = filterItems(props.children, query)
+    return countItems(inner) > 0 ? React.cloneElement(child, {}, inner) : null
+  })
+}
+
 function SelectItem({
   className,
   children,
@@ -172,7 +289,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-1.5 rounded-xl py-2 pr-8 pl-2.5 text-sm outline-hidden transition-colors duration-100 select-none focus:bg-accent focus:text-accent-foreground data-selected:font-medium not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        "relative flex w-full cursor-default items-center gap-1.5 rounded-md py-2 pr-8 pl-2.5 text-sm outline-hidden transition-colors duration-100 select-none focus:bg-accent focus:text-accent-foreground data-selected:font-medium not-data-[variant=destructive]:focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className
       )}
       {...props}
