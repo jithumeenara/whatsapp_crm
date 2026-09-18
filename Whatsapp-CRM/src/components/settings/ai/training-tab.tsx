@@ -5,6 +5,7 @@ import {
   FileText, MessageSquare, Link2, StickyNote, Database, Sheet, Plus, Search, Filter,
   Loader2, RefreshCw, Trash2, MoreHorizontal, CheckCircle2, AlertTriangle, Clock,
   EyeOff, ChevronLeft, ChevronRight, Upload, X, Sparkles, Lock, Users, ShieldCheck,
+  Pencil,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -241,6 +242,7 @@ export function TrainingTab(props: TrainingTabProps) {
   const [listError, setListError] = useState('');
 
   const [addKind, setAddKind] = useState<AddKind | null>(null);
+  const [editing, setEditing] = useState<KnowledgeItem | null>(null);
   const [training, setTraining] = useState(false);
   const [trainResult, setTrainResult] = useState('');
   // Account-wide, from the API. The warning below used to count the
@@ -514,6 +516,23 @@ export function TrainingTab(props: TrainingTabProps) {
                           <MoreHorizontal className="h-4 w-4" />
                         </AiMenuTrigger>
                         <AiMenuContent className="min-w-[200px]">
+                          {/* First, because it is the one somebody looks
+                              for. Until now a Q&A pair could be deleted
+                              and re-typed but never corrected — a typo in
+                              an answer meant losing the entry. */}
+                          <AiMenuItem
+                            onClick={() => setEditing(item)}
+                            icon={<Pencil className="h-4 w-4" />}
+                            title="Edit"
+                            description={
+                              item.kind === 'qa'
+                                ? 'Change the question or answer'
+                                : item.kind === 'website' || item.kind === 'database' || item.kind === 'sheet'
+                                  ? 'Rename it, or change what it is for'
+                                  : 'Change the text, name or purpose'
+                            }
+                          />
+                          <AiMenuSeparator />
                           {(item.kind === 'website' || item.kind === 'database' || item.kind === 'sheet') && (
                             <AiMenuItem
                               onClick={() => updateItem(item.id, { resync: true })}
@@ -662,8 +681,202 @@ export function TrainingTab(props: TrainingTabProps) {
           onAdded={() => { setAddKind(null); setPage(1); load(); }}
         />
       )}
+
+      {editing && (
+        <EditContentDialog
+          item={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * Correcting an entry that is already there.
+ *
+ * The gap this fills: every other action on a knowledge entry existed —
+ * re-sync it, move it between audiences, disable it, delete it — and the
+ * obvious one did not. A Q&A pair with a typo in the answer could only
+ * be thrown away and typed again, which also threw away the embedding
+ * it had already paid for.
+ *
+ * What can be changed depends on where the entry came from, and the
+ * dialog says so rather than offering a box that will be overwritten.
+ * A website or sheet entry's *content* belongs to the source; editing it
+ * here would be undone by the next re-sync, so only its name, purpose,
+ * audience and validity are editable. Everything else — a typed Q&A, an
+ * uploaded document, a pasted note — is this app's own copy and fully
+ * editable.
+ *
+ * Saving a change to indexed text sends the entry back to "Not trained",
+ * which the API does on its own: the old embedding described the old
+ * words, and leaving it in place would mean the assistant kept finding
+ * the entry by a sentence nobody can read any more.
+ */
+function EditContentDialog({
+  item,
+  onClose,
+  onSaved,
+}: {
+  item: KnowledgeItem;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(item.name ?? '');
+  const [question, setQuestion] = useState(item.question ?? '');
+  const [answer, setAnswer] = useState(item.answer ?? '');
+  const [description, setDescription] = useState(item.description ?? '');
+  const [audience, setAudience] = useState(item.audience ?? 'customer');
+  const [effectiveFrom, setEffectiveFrom] = useState(toDateInput(item.effective_from));
+  const [effectiveUntil, setEffectiveUntil] = useState(toDateInput(item.effective_until));
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  /** Content is owned by the source for these, and would be overwritten
+   *  by the next re-sync. */
+  const contentIsRemote = item.kind === 'website' || item.kind === 'database' || item.kind === 'sheet';
+
+  async function save() {
+    if (item.kind === 'qa' && (!question.trim() || !answer.trim())) {
+      setError('A Q&A entry needs both a question and an answer.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/ai-knowledge/${item.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim() || undefined,
+          ...(item.kind === 'qa' ? { question: question.trim(), answer: answer.trim() } : {}),
+          description: description.trim(),
+          audience,
+          effective_from: effectiveFrom || null,
+          effective_until: effectiveUntil || null,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error ?? `Could not save (${res.status}).`);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AiModal open onOpenChange={(v) => !v && onClose()} size="sm">
+      <div>
+        <AiModalHeader
+          icon={
+            <AiIconTile tint="indigo" size="lg">
+              <Pencil className="h-5 w-5" />
+            </AiIconTile>
+          }
+          title="Edit entry"
+          subtitle={
+            contentIsRemote
+              ? 'The content comes from its source and is replaced on every re-sync, so it is not edited here.'
+              : 'Changing the text sends this back to Not trained, so the next Train now re-reads it.'
+          }
+          onClose={onClose}
+        />
+        <AiModalBody className="space-y-4">
+          <div className="space-y-2">
+            <AiLabel>Name</AiLabel>
+            <AiInput value={name} onChange={(e) => setName(e.target.value)} placeholder="What to call this entry" />
+          </div>
+
+          {item.kind === 'qa' && (
+            <>
+              <div className="space-y-2">
+                <AiLabel>Question</AiLabel>
+                <AiTextarea
+                  rows={2}
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder="What a customer might ask"
+                />
+              </div>
+              <div className="space-y-2">
+                <AiLabel>Answer</AiLabel>
+                <AiTextarea
+                  rows={5}
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  placeholder="What the assistant should say"
+                />
+              </div>
+            </>
+          )}
+
+          <div className="space-y-2">
+            <AiLabel>What this is for</AiLabel>
+            <AiInput
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="e.g. our 2026 fee structure"
+            />
+            <AiHint>
+              Searched along with the content, so &ldquo;fees&rdquo; can find a table of bare numbers.
+            </AiHint>
+          </div>
+
+          <div className="space-y-2">
+            <AiLabel>Who may be told this</AiLabel>
+            <Select value={audience} onValueChange={(v) => v && setAudience(v)}>
+              <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 text-[13px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {AUDIENCES.map((a) => (
+                  <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <AiLabel>Valid from</AiLabel>
+              <AiInput type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <AiLabel>Valid until</AiLabel>
+              <AiInput type="date" value={effectiveUntil} onChange={(e) => setEffectiveUntil(e.target.value)} />
+            </div>
+          </div>
+          <AiHint>
+            Leave both empty for an entry that never expires. Outside these dates it is not used in a reply at
+            all — which is what keeps last term&apos;s fees from being quoted as this term&apos;s.
+          </AiHint>
+
+          {error && <AiNotice tone="error" icon={<AlertTriangle className="h-4 w-4" />}>{error}</AiNotice>}
+        </AiModalBody>
+        <AiModalFooter>
+          <AiButton tone="ghost" onClick={onClose} disabled={busy}>Cancel</AiButton>
+          <AiButton onClick={save} disabled={busy}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save changes
+          </AiButton>
+        </AiModalFooter>
+      </div>
+    </AiModal>
+  );
+}
+
+/** A stored timestamp as the YYYY-MM-DD a date input expects. Anything
+ *  unparseable becomes an empty box rather than "Invalid Date". */
+function toDateInput(value: string | null): string {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /** One dialog, five shapes — each source needs different inputs but the
