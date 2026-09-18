@@ -47,6 +47,37 @@ const EXCHANGE_WINDOW_MS = 24 * 60 * 60 * 1000
 export const AI_AUTO_REPLY_SOURCE = 'ai_auto_reply'
 
 /**
+ * The first line of the note left when the assistant runs out of turns.
+ *
+ * A constant because it is also the thing looked for: the note is
+ * written once per exchange, and "has one been written already" is
+ * answered by searching for this opening rather than by a marker
+ * nobody reading the Inbox would want to see.
+ */
+const TURN_LIMIT_NOTE_OPENING = 'The assistant stopped answering this conversation.'
+
+/**
+ * Whether this exact sentence has already gone out recently.
+ *
+ * Both places that send a holding line need this, and for the same
+ * reason: a customer who replies "Ok" to "let me connect you with a
+ * colleague" must not be told to wait for a colleague again, and then a
+ * third time when they say "ok thanks".
+ */
+async function saidRecently(conversationId: string, text: string): Promise<boolean> {
+  const found = await prisma.message.findFirst({
+    where: {
+      conversation_id: conversationId,
+      sender_type: { not: 'contact' },
+      content_text: text,
+      created_at: { gte: new Date(Date.now() - EXCHANGE_WINDOW_MS) },
+    },
+    select: { id: true },
+  })
+  return Boolean(found)
+}
+
+/**
  * Tags a just-sent message as the assistant's own.
  *
  * A follow-up write on the provider's message id, rather than threading
@@ -209,12 +240,61 @@ export async function autoReplyToMessage(args: {
   const countFrom = lastHumanReply?.created_at ?? sessionStart
   const botReplies = botRepliesInWindow.filter((m) => m.created_at > countFrom).length
   if (botReplies >= aiConfig.ai_auto_reply_max_turns) {
-    await handOver({
-      accountId: args.accountId,
-      conversationId: args.conversationId,
-      note: `The assistant has answered ${botReplies} times ${lastHumanReply ? 'since a colleague last replied' : 'in the last 24 hours'} without this being resolved, so it stopped and left it for a person.\n\nThey last asked: "${text.slice(0, 200)}"`,
-      assignTo: aiConfig.low_confidence_assign_to,
+    // Out of turns is not a reason to stop speaking to the customer.
+    //
+    // Found in a live log: two conversations had reached the limit, and
+    // every message after it produced a server line, a fresh note on the
+    // thread, and *nothing at all* to the person who wrote. One of them
+    // had written seven times into total silence. That is worse than any
+    // bad answer the limit exists to prevent — the customer cannot tell
+    // "a person is coming" from "this number is dead", and the only
+    // difference visible to them is that the assistant stopped
+    // mid-conversation.
+    //
+    // So they are told, once, in the same words the low-confidence
+    // handover uses, and the note is written once per exchange rather
+    // than once per message. Both guards look back over the same window
+    // the count itself uses, so a new exchange — a colleague replying,
+    // or a fresh day — gets a fresh note and a fresh line.
+    const alreadyNoted = await prisma.message.findFirst({
+      where: {
+        conversation_id: args.conversationId,
+        sender_type: 'system',
+        content_text: { startsWith: TURN_LIMIT_NOTE_OPENING },
+        created_at: { gt: countFrom },
+      },
+      select: { id: true },
     })
+
+    if (!alreadyNoted) {
+      const customerLine =
+        aiConfig.low_confidence_message?.trim() ||
+        'Let me connect you with a team member who can help with that.'
+
+      if (!(await saidRecently(args.conversationId, customerLine))) {
+        await engineSendText({
+          accountId: args.accountId,
+          userId: args.userId,
+          conversationId: args.conversationId,
+          contactId: args.contactId,
+          text: customerLine,
+        }).catch((err) => console.error('[auto-reply] holding message failed:', err))
+      }
+
+      await handOver({
+        accountId: args.accountId,
+        conversationId: args.conversationId,
+        note: [
+          TURN_LIMIT_NOTE_OPENING,
+          '',
+          `It answered ${botReplies} times ${lastHumanReply ? 'since a colleague last replied' : 'in the last 24 hours'} without this being resolved, so it left the rest for a person. It will start answering again once somebody here replies.`,
+          '',
+          `They last asked: "${text.slice(0, 200)}"`,
+        ].join('\n'),
+        assignTo: aiConfig.low_confidence_assign_to,
+      })
+    }
+
     return 'skipped_turn_limit'
   }
 
@@ -308,17 +388,7 @@ export async function autoReplyToMessage(args: {
     // that recurs deserves a fresh note for whoever picks the thread up.
     // Only the line to the customer is suppressed, and only while the
     // identical one is still the last thing the assistant said to them.
-    const alreadySaid = customerLine
-      ? await prisma.message.findFirst({
-          where: {
-            conversation_id: args.conversationId,
-            sender_type: { not: 'contact' },
-            content_text: customerLine,
-            created_at: { gte: new Date(Date.now() - EXCHANGE_WINDOW_MS) },
-          },
-          select: { id: true },
-        })
-      : null
+    const alreadySaid = customerLine ? await saidRecently(args.conversationId, customerLine) : false
 
     if (customerLine && !alreadySaid) {
       await engineSendText({
