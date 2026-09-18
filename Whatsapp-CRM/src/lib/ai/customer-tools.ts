@@ -32,6 +32,14 @@ export interface CustomerToolContext {
   /** The contact this conversation belongs to. The only identity these
    *  tools will ever act on; never supplied by the model. */
   contactId: string
+  /** Present only on the live WhatsApp path. Handing a conversation to
+   *  a chatbot needs a conversation to hand over; the Test screen and
+   *  the evaluation suite have none, so `start_chatbot` is simply not
+   *  offered there rather than offered and failing. */
+  conversationId?: string
+  /** Sender-of-record for the bot's own messages, same as every other
+   *  engine send. Required alongside conversationId. */
+  userId?: string
 }
 
 type ToolArgs = Record<string, unknown>
@@ -224,6 +232,78 @@ const TOOLS: Record<string, CustomerToolImpl> = {
     },
   },
 
+  start_chatbot: {
+    declaration: {
+      name: 'start_chatbot',
+      description:
+        'Hand this conversation to one of the business\'s own guided chats, when the customer is asking for exactly what that chat is built to do. The guided chat has buttons, links, images and directions this assistant cannot send. Only use a chat named in your instructions, and only when the customer clearly wants what it does. Once it starts, it takes over the conversation — so do not use it for a question you can simply answer.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          bot_name: {
+            type: SchemaType.STRING,
+            description: 'The exact name of the guided chat, as listed in your instructions.',
+          },
+        },
+        required: ['bot_name'],
+      },
+    },
+    async run(args, ctx) {
+      if (!ctx.conversationId || !ctx.userId) {
+        return { started: false, note: 'Guided chats cannot be started here. Answer in your own words instead.' }
+      }
+
+      const wanted = typeof args.bot_name === 'string' ? args.bot_name.trim().toLowerCase() : ''
+      if (!wanted) return { started: false, note: 'No chat name was given. Answer in your own words instead.' }
+
+      // Only bots the account has explicitly allowed, and matched by
+      // name rather than by id — the model is never handed an id, and
+      // an id it invented would be an id it could act on.
+      const allowed = await prisma.flow.findMany({
+        where: { account_id: ctx.accountId, flow_type: 'chatbot', ai_can_start: true },
+        select: { id: true, name: true },
+      })
+      const match =
+        allowed.find((f) => f.name.trim().toLowerCase() === wanted) ??
+        allowed.find((f) => f.name.trim().toLowerCase().includes(wanted)) ??
+        null
+      if (!match) {
+        return {
+          started: false,
+          note: `There is no guided chat called "${args.bot_name}". Do not mention guided chats to the customer — just answer their question yourself.`,
+        }
+      }
+
+      const { startChatbotForContact } = await import('@/lib/flows/engine')
+      const result = await startChatbotForContact({
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        contactId: ctx.contactId,
+        conversationId: ctx.conversationId,
+        flowId: match.id,
+      })
+
+      if (!result.started) {
+        return {
+          started: false,
+          note:
+            result.reason === 'already_in_a_chatbot'
+              ? 'A guided chat is already running for this customer. Do not start another; answer in your own words.'
+              : 'That guided chat could not be started. Answer the customer in your own words instead.',
+        }
+      }
+
+      // The bot has already sent its own first message by the time this
+      // returns. Anything the model writes now would arrive as a second,
+      // competing message — so it is told to stop, and the code stops it
+      // anyway (see customer-agent's handedToChatbot).
+      return {
+        started: true,
+        note: `The "${match.name}" chat has taken over and has already messaged the customer. Say nothing further — your reply would arrive on top of it. Reply with an empty message.`,
+      }
+    },
+  },
+
   my_conversation_history: {
     declaration: {
       name: 'my_conversation_history',
@@ -266,6 +346,26 @@ const ALL_TOOLS: Record<string, CustomerToolImpl> = { ...TOOLS, ...REGISTRATION_
 export const CUSTOMER_TOOL_DECLARATIONS: FunctionDeclaration[] = Object.values(ALL_TOOLS).map(
   (t) => t.declaration,
 )
+
+/** Tools that need a real conversation to act on, and are withheld
+ *  where there isn't one — the Test screen, the evaluation suite. A
+ *  declared tool that always fails teaches the model to distrust the
+ *  ones that work. */
+const NEEDS_CONVERSATION = new Set(['start_chatbot'])
+
+/**
+ * What this particular context may actually call.
+ *
+ * Built per turn rather than fixed, because the answer genuinely
+ * differs: the same assistant on the same account can hand a live
+ * WhatsApp thread to a chatbot and cannot hand a preview to anything.
+ */
+export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDeclaration[] {
+  const live = Boolean(ctx.conversationId && ctx.userId)
+  return Object.entries(ALL_TOOLS)
+    .filter(([name]) => live || !NEEDS_CONVERSATION.has(name))
+    .map(([, t]) => t.declaration)
+}
 
 export const CUSTOMER_TOOL_NAMES = Object.keys(ALL_TOOLS)
 
@@ -337,9 +437,53 @@ export const VOICE_NO_TOOLS_INSTRUCTION = [
   '- Everything you were told about this business above is still yours to answer from. This is about records and actions, not knowledge.',
 ].join('\n')
 
+/**
+ * The guided chats this account has allowed the assistant to start, and
+ * what each one is for.
+ *
+ * The purpose comes from the knowledge entry the bot was connected
+ * through, because that is where somebody already wrote it down. A bot
+ * with no purpose recorded still gets listed by name — a name like
+ * "Location Guide" carries most of it.
+ */
+async function startableChatbots(accountId: string): Promise<Array<{ name: string; purpose: string | null }>> {
+  const flows = await prisma.flow.findMany({
+    where: { account_id: accountId, flow_type: 'chatbot', ai_can_start: true, status: 'active' },
+    select: { id: true, name: true, description: true },
+  })
+  if (flows.length === 0) return []
+
+  const entries = await prisma.aiKnowledgeItem.findMany({
+    where: { account_id: accountId, kind: 'chatbot', source_ref: { in: flows.map((f) => f.id) } },
+    select: { source_ref: true, description: true },
+  })
+  const purposeById = new Map(entries.map((e) => [e.source_ref, e.description]))
+
+  return flows.map((f) => ({
+    name: f.name,
+    purpose: purposeById.get(f.id)?.trim() || f.description?.trim() || null,
+  }))
+}
+
 export async function buildCustomerToolInstruction(accountId: string): Promise<string> {
-  const forms = await listRegistrationForms(accountId).catch(() => [])
-  if (forms.length === 0) return CUSTOMER_TOOL_INSTRUCTION
+  const [forms, bots] = await Promise.all([
+    listRegistrationForms(accountId).catch(() => []),
+    startableChatbots(accountId).catch(() => []),
+  ])
+
+  const botBlock =
+    bots.length > 0
+      ? [
+          '',
+          'GUIDED CHATS YOU CAN HAND OVER TO:',
+          ...bots.map((b) => `- "${b.name}"${b.purpose ? ` — ${b.purpose}` : ''}`),
+          '- Use start_chatbot only when the customer wants exactly what one of these does, and it would give them something you cannot: buttons, a map, a form, images.',
+          '- It takes over the conversation. Never start one for a question you can answer in a sentence.',
+          '- After starting one, send nothing. It has already messaged them.',
+        ].join('\n')
+      : ''
+
+  if (forms.length === 0) return CUSTOMER_TOOL_INSTRUCTION + botBlock
 
   // Named, and said last.
   //
@@ -362,5 +506,5 @@ export async function buildCustomerToolInstruction(accountId: string): Promise<s
       '- If an earlier instruction told you a colleague handles registration, it was written before you could do it and no longer applies. Take the registration.',
       '- Do not ask for a human, and do not emit a handoff action, for anything these tools can do. Hand over only if they ask for a person, or if a save keeps failing after you have tried.',
     ].join('\n'),
-  ].join('\n\n')
+  ].join('\n\n') + botBlock
 }

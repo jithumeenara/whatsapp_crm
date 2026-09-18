@@ -6,6 +6,7 @@ import { fetchPageText } from '@/lib/ai/web-extract'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
+import { serializeChatbot } from '@/lib/ai/chatbot-source'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 
 /**
@@ -21,7 +22,7 @@ import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 const WRITE_ROLE = 'admin' as const
 const READ_ROLE = 'viewer' as const
 
-const KINDS = ['qa', 'document', 'website', 'text', 'database', 'sheet'] as const
+const KINDS = ['qa', 'document', 'website', 'text', 'database', 'sheet', 'chatbot'] as const
 type Kind = (typeof KINDS)[number]
 
 /** Who an entry may be said to — see AiKnowledgeItem.audience. */
@@ -102,6 +103,8 @@ export async function GET(req: Request) {
 }
 
 interface CreateBody {
+  /** Chatbot entries only: also let the assistant start this bot. */
+  ai_can_start?: boolean
   kind?: Kind
   name?: string
   question?: string
@@ -165,6 +168,7 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => null)) as CreateBody | null
   const kind = body?.kind
+  const ai_can_start = body?.ai_can_start
   if (!kind || !(KINDS as readonly string[]).includes(kind)) {
     return NextResponse.json({ error: `kind must be one of: ${KINDS.join(', ')}` }, { status: 400 })
   }
@@ -236,6 +240,28 @@ export async function POST(req: Request) {
       source = 'web_sync'
       sourceUrl = rawUrl
       lastSyncedAt = new Date()
+    } else if (kind === 'chatbot') {
+      const flowId = body?.source_ref?.trim()
+      if (!flowId) return NextResponse.json({ error: 'Pick a chatbot to connect.' }, { status: 400 })
+      const serialized = await serializeChatbot(ctx.accountId, flowId, resolvedDescription)
+      content = serialized.text
+      name = name || serialized.flowName
+      source = 'chatbot'
+      sourceRef = flowId
+      lastSyncedAt = new Date()
+
+      // Two separate things, granted separately. Connecting a bot lets
+      // the assistant *answer from* what it says; this lets the
+      // assistant *start* it, which takes the conversation over. The
+      // second is off unless asked for.
+      //
+      // updateMany rather than update, with the account in the filter:
+      // the flow id came from a request body, and a bare update by id
+      // would happily edit another account's flow.
+      await prisma.flow.updateMany({
+        where: { id: flowId, account_id: ctx.accountId, flow_type: 'chatbot' },
+        data: { ai_can_start: ai_can_start === true },
+      })
     } else if (kind === 'database') {
       const tableId = body?.source_ref?.trim()
       if (!tableId) return NextResponse.json({ error: 'Pick a table to connect.' }, { status: 400 })

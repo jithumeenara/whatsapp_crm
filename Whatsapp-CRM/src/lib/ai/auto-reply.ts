@@ -314,6 +314,8 @@ export async function autoReplyToMessage(args: {
       customerMessage: text,
       conversationHistory: history,
       currentChannel: args.channel,
+      conversationId: args.conversationId,
+      userId: args.userId,
     })
   } catch (err) {
     // A provider refusal reaches a person rather than ending in silence.
@@ -456,6 +458,19 @@ export async function autoReplyToMessage(args: {
   }
 
   const reply = turn.decision.reply
+
+  // The assistant handed this conversation to one of the business's own
+  // chatbots, and that bot has already sent its first message. Sending
+  // the assistant's text now would put two voices in the thread at once,
+  // the second of them talking about a menu the customer is looking at.
+  //
+  // Enforced here rather than left to the model. It is told to say
+  // nothing, and usually does; "usually" is not good enough for
+  // something the customer sees.
+  if (turn.handedToChatbot) {
+    console.log(`[auto-reply] handed ${args.conversationId} to a chatbot; staying quiet`)
+    return 'replied'
+  }
 
   // The model answered, and also asked for a person.
   //

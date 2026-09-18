@@ -5,6 +5,7 @@ import { fetchPageText } from '@/lib/ai/web-extract'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
+import { serializeChatbot } from '@/lib/ai/chatbot-source'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 
 /** One knowledge entry: read its full content, edit it, re-sync it from
@@ -82,6 +83,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
           sheet,
           typeof body.description === 'string' ? body.description : existing.description,
         )
+        data.last_synced_at = new Date()
+        data.status = 'pending'
+        data.last_error = null
+      } else if (existing.kind === 'chatbot' && existing.source_ref) {
+        data.content = (
+          await serializeChatbot(
+            accountId,
+            existing.source_ref,
+            typeof body.description === 'string' ? body.description : existing.description,
+          )
+        ).text
         data.last_synced_at = new Date()
         data.status = 'pending'
         data.last_error = null

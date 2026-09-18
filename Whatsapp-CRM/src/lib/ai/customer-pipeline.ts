@@ -386,6 +386,9 @@ export interface CustomerTurnResult {
   toolsUsed: string[]
   knowledgeUsed: string[]
   truncated: boolean
+  /** A chatbot took the conversation over. The caller must not send
+   *  `reply` — the bot has already spoken. */
+  handedToChatbot: boolean
   latencyMs: number
   /** Where the time actually went, in milliseconds. Recorded on every
    *  turn rather than behind a debug flag, because "the reply is slow"
@@ -417,6 +420,11 @@ export async function runCustomerTurn(args: {
   customerMessage: string
   conversationHistory?: { role: 'user' | 'model'; text: string }[]
   currentChannel?: string
+  /** Both, or neither. Present only on a live thread, and what makes
+   *  handing the conversation to a chatbot possible at all — see
+   *  customer-tools' start_chatbot. */
+  conversationId?: string
+  userId?: string
 }): Promise<CustomerTurnResult> {
   const startedAt = Date.now()
   const history = args.conversationHistory ?? []
@@ -457,6 +465,7 @@ export async function runCustomerTurn(args: {
       toolsUsed: [],
       knowledgeUsed: [],
       truncated: false,
+      handedToChatbot: false,
       latencyMs: Date.now() - startedAt,
       timings: finish(),
       usage: null,
@@ -464,7 +473,13 @@ export async function runCustomerTurn(args: {
   }
 
   const toolContext = args.contactId
-    ? { accountId: args.accountId, contactId: args.contactId }
+    ? {
+        accountId: args.accountId,
+        contactId: args.contactId,
+        ...(args.conversationId && args.userId
+          ? { conversationId: args.conversationId, userId: args.userId }
+          : {}),
+      }
     : null
 
   // Started here, not after retrieval, and this is the point.
@@ -536,6 +551,7 @@ export async function runCustomerTurn(args: {
       toolsUsed: [],
       knowledgeUsed,
       truncated: false,
+      handedToChatbot: false,
       latencyMs: Date.now() - startedAt,
       timings: finish(),
       usage: null,
@@ -587,6 +603,7 @@ export async function runCustomerTurn(args: {
       toolsUsed: [],
       knowledgeUsed,
       truncated: false,
+      handedToChatbot: false,
       latencyMs: Date.now() - startedAt,
       timings: finish(),
       usage: null,
@@ -626,6 +643,7 @@ export async function runCustomerTurn(args: {
     toolsUsed: generated.toolsUsed,
     knowledgeUsed,
     truncated: generated.truncated,
+    handedToChatbot: generated.handedToChatbot,
     latencyMs: Date.now() - startedAt,
     timings: finish(),
     usage: generated.usage ?? null,

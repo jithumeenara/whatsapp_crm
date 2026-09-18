@@ -42,6 +42,7 @@ import { prisma } from '@/lib/db'
 import { fetchPageText } from './web-extract'
 import { fetchSheet, serializeSheet } from './google-sheet'
 import { serializeDataTable } from './data-store-source'
+import { serializeChatbot } from './chatbot-source'
 import { invalidateKnowledge } from './knowledge-store'
 import { geminiCredentials } from './providers/registry'
 
@@ -96,6 +97,18 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
           ],
         },
         {
+          // A connected chatbot, on the same cadence as a Data Store
+          // table and for the same reason: somebody edits the location
+          // bot in the builder and expects the assistant to start
+          // saying the new address, not the one from the day it was
+          // connected. Cheap — it reads rows this app already owns.
+          kind: 'chatbot',
+          OR: [
+            { last_synced_at: null },
+            { last_synced_at: { lt: new Date(Date.now() - TABLE_RESYNC_AFTER_MS) } },
+          ],
+        },
+        {
           // A Data Store table connected as knowledge. These were being
           // re-read only when somebody clicked Re-sync, so a table
           // edited in the CRM kept answering from whatever it held on
@@ -134,6 +147,9 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
         // Re-serialised with whatever purpose the entry carries now, so
         // editing the purpose and waiting is the same as re-syncing.
         fresh = (await serializeDataTable(item.account_id, item.source_ref, item.description)).text
+      } else if (item.kind === 'chatbot') {
+        if (!item.source_ref) continue
+        fresh = (await serializeChatbot(item.account_id, item.source_ref, item.description)).text
       } else if (item.kind === 'sheet') {
         if (!item.source_url) continue
         fresh = serializeSheet(await fetchSheet(item.source_url), item.description)

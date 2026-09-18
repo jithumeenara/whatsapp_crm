@@ -29,7 +29,7 @@ import {
 } from './providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
-  CUSTOMER_TOOL_DECLARATIONS,
+  customerToolDeclarations,
   runCustomerTool,
   type CustomerToolContext,
 } from './customer-tools'
@@ -53,6 +53,13 @@ export type CustomerReplyResult = AiReplyResult & {
    *  as legitimate source material — a price that came from the catalog
    *  is supported even though it appears in no knowledge document. */
   toolOutputs: string[]
+  /** A chatbot was started and has already messaged the customer.
+   *
+   *  The model is told to say nothing further, and mostly does. This is
+   *  the part that does not depend on it obeying: the caller must not
+   *  send whatever text came back, or the customer gets the assistant
+   *  talking over the bot it just handed them to. */
+  handedToChatbot: boolean
 }
 
 export async function generateCustomerReply(args: {
@@ -85,7 +92,7 @@ export async function generateCustomerReply(args: {
       args.userMessage,
       args.conversationHistory,
     )
-    return { ...plain, toolsUsed: [], toolOutputs: [] }
+    return { ...plain, toolsUsed: [], toolOutputs: [], handedToChatbot: false }
   }
 
   try {
@@ -112,7 +119,7 @@ export async function generateCustomerReply(args: {
       args.userMessage,
       args.conversationHistory,
     )
-    return { ...plain, toolsUsed: [], toolOutputs: [] }
+    return { ...plain, toolsUsed: [], toolOutputs: [], handedToChatbot: false }
   }
 }
 
@@ -139,7 +146,7 @@ async function runToolLoop(args: {
       {
         model: args.model,
         systemInstruction: args.systemPrompt,
-        tools: [{ functionDeclarations: CUSTOMER_TOOL_DECLARATIONS }],
+        tools: [{ functionDeclarations: customerToolDeclarations(args.toolContext) }],
         generationConfig: {
           temperature: args.temperature,
           maxOutputTokens: args.maxTokens,
@@ -174,6 +181,7 @@ async function runToolLoop(args: {
 
   const toolsUsed: string[] = []
   const toolOutputs: string[] = []
+  let handedToChatbot = false
   let inputTokens = 0
   let outputTokens = 0
 
@@ -218,6 +226,14 @@ async function runToolLoop(args: {
       toolsUsed.push(call.name)
       const output = outputs[i]
       toolOutputs.push(JSON.stringify(output))
+      if (
+        call.name === 'start_chatbot' &&
+        output &&
+        typeof output === 'object' &&
+        (output as { started?: unknown }).started === true
+      ) {
+        handedToChatbot = true
+      }
       return {
         functionResponse: {
           name: call.name,
@@ -247,5 +263,6 @@ async function runToolLoop(args: {
     truncated: finishReason === 'MAX_TOKENS',
     toolsUsed,
     toolOutputs,
+    handedToChatbot,
   }
 }

@@ -3150,6 +3150,70 @@ async function handleReplyForActiveRun(
   return { consumed: true, flow_run_id: run.id, outcome: "completed" };
 }
 
+/**
+ * Starts one chatbot for one contact, without an inbound message having
+ * triggered it.
+ *
+ * This is how the assistant hands a conversation to a bot the business
+ * already built. A customer asks where the campus is, the assistant
+ * recognises that the Location Guide bot answers exactly that, and the
+ * customer gets the real thing — the buttons, the map link, the photo —
+ * rather than a paraphrase of it.
+ *
+ * Deliberately narrow. Everything the inbound path does to decide
+ * *whether* a flow should run — trigger matching, keyword lists, the
+ * restart cooldown — is skipped, because the decision has already been
+ * made by something that read the customer's actual sentence. What is
+ * not skipped is the one rule that keeps a conversation coherent: a
+ * contact may have only one active run. If a bot is already running,
+ * this refuses rather than queueing, because two bots talking to one
+ * person is worse than either of them alone.
+ */
+export async function startChatbotForContact(input: {
+  accountId: string;
+  userId: string;
+  contactId: string;
+  conversationId: string;
+  flowId: string;
+}): Promise<{ started: boolean; reason?: string; flow_run_id?: string }> {
+  const flow = await loadFlow(input.flowId);
+  if (!flow || flow.account_id !== input.accountId) {
+    return { started: false, reason: "no_such_flow" };
+  }
+  if (!flow.entry_node_id) {
+    return { started: false, reason: "no_entry_step" };
+  }
+
+  // One run per contact. The database enforces this too (the partial
+  // unique index), but failing here means a sentence the caller can act
+  // on instead of a P2002 to interpret.
+  const active = await loadActiveRunForContact(input.accountId, input.contactId);
+  if (active) return { started: false, reason: "already_in_a_chatbot" };
+
+  const nodes = await loadAllNodes(input.flowId);
+  if (nodes.size === 0) return { started: false, reason: "no_steps" };
+
+  // startNewRun expects the message that triggered it; there isn't one.
+  // A synthetic text input is honest about that — it is used only for
+  // idempotency logging and for node matching that a freshly started
+  // run does not reach, since the entry step has nothing to match yet.
+  const result = await startNewRun(
+    flow,
+    {
+      accountId: input.accountId,
+      userId: input.userId,
+      contactId: input.contactId,
+      conversationId: input.conversationId,
+      message: { kind: "text", text: "", meta_message_id: `assistant:${Date.now()}` },
+    },
+    nodes,
+  );
+
+  return result.consumed
+    ? { started: true, flow_run_id: result.flow_run_id }
+    : { started: false, reason: result.outcome ?? "did_not_start" };
+}
+
 async function startNewRun(
   flow: FlowRow,
   input: DispatchInboundInput,

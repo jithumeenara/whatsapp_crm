@@ -5,7 +5,7 @@ import {
   FileText, MessageSquare, Link2, StickyNote, Database, Sheet, Plus, Search, Filter,
   Loader2, RefreshCw, Trash2, MoreHorizontal, CheckCircle2, AlertTriangle, Clock,
   EyeOff, ChevronLeft, ChevronRight, Upload, X, Sparkles, Lock, Users, ShieldCheck,
-  Pencil,
+  Pencil, Bot,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -64,7 +64,7 @@ export interface TrainingTabProps {
   rail?: ReactNode;
 }
 
-type AddKind = 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet';
+type AddKind = 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet' | 'chatbot';
 
 const SOURCE_CARDS: Array<{ kind: AddKind; label: string; blurb: string; Icon: typeof FileText; tint: string }> = [
   { kind: 'document', label: 'Documents', blurb: 'Upload files, PDFs, policies, etc.', Icon: FileText, tint: 'bg-[#EEF0FF] text-[#5B6CF9]' },
@@ -73,6 +73,7 @@ const SOURCE_CARDS: Array<{ kind: AddKind; label: string; blurb: string; Icon: t
   { kind: 'text', label: 'Text / Notes', blurb: 'Add custom instructions and context.', Icon: StickyNote, tint: 'bg-amber-50 text-amber-600' },
   { kind: 'database', label: 'Database', blurb: 'Connect to your data (optional).', Icon: Database, tint: 'bg-rose-50 text-rose-600' },
   { kind: 'sheet', label: 'Google Sheet', blurb: 'Keep the sheet; the bot re-reads it.', Icon: Sheet, tint: 'bg-sky-50 text-sky-600' },
+  { kind: 'chatbot', label: 'Chatbot', blurb: 'Let the assistant answer from a bot you built.', Icon: Bot, tint: 'bg-teal-50 text-teal-600' },
 ];
 
 const KIND_LABEL: Record<string, string> = {
@@ -82,6 +83,7 @@ const KIND_LABEL: Record<string, string> = {
   text: 'Text',
   database: 'Database',
   sheet: 'Google Sheet',
+  chatbot: 'Chatbot',
 };
 
 const PAGE_SIZE = 8;
@@ -893,16 +895,26 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveUntil, setEffectiveUntil] = useState('');
   const [tables, setTables] = useState<Array<{ id: string; name: string }>>([]);
+  const [bots, setBots] = useState<Array<{ id: string; name: string; status?: string }>>([]);
+  const [canStart, setCanStart] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (kind !== 'database') return;
-    fetch('/api/data-tables')
-      .then((r) => (r.ok ? r.json() : { tables: [] }))
-      .then((d) => setTables(d.tables ?? d ?? []))
-      .catch(() => {});
+    if (kind === 'database') {
+      fetch('/api/data-tables')
+        .then((r) => (r.ok ? r.json() : { tables: [] }))
+        .then((d) => setTables(d.tables ?? d ?? []))
+        .catch(() => {});
+      return;
+    }
+    if (kind === 'chatbot') {
+      fetch('/api/chatbot')
+        .then((r) => (r.ok ? r.json() : { chatbots: [] }))
+        .then((d) => setBots(d.chatbots ?? []))
+        .catch(() => {});
+    }
   }, [kind]);
 
   async function submit() {
@@ -934,6 +946,7 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
             content: content.trim() || undefined,
             source_url: url.trim() || undefined,
             source_ref: tableId || undefined,
+            ai_can_start: kind === 'chatbot' ? canStart : undefined,
             description: description.trim() || undefined,
             audience,
             effective_from: effectiveFrom || null,
@@ -970,6 +983,7 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
           subtitle={
             kind === 'document' ? 'Upload a PDF or text file — its text is extracted and stored.'
             : kind === 'qa' ? 'A question a customer might ask, and the answer the bot should give.'
+            : kind === 'chatbot' ? 'What the bot says becomes something the assistant can answer from too.'
             : kind === 'website' ? 'The page is fetched once now, and can be re-synced any time.'
             : kind === 'sheet' ? 'Keep maintaining the sheet where it is. Re-sync to pull the current rows.'
             : kind === 'text' ? 'Paste notes, policies or instructions in your own words.'
@@ -1076,6 +1090,40 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
             </>
           )}
 
+          {kind === 'chatbot' && (
+            <div className="space-y-1.5">
+              <AiLabel>Chatbot</AiLabel>
+              <Select value={tableId || null} onValueChange={(v) => v && setTableId(v)}>
+                <SelectTrigger className="h-10 w-full rounded-xl border-slate-200 text-[13px]">
+                  <SelectValue placeholder={bots.length ? 'Choose a chatbot' : 'No chatbots found'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {bots.map((b) => (
+                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <AiHint>
+                Everything the bot <em>says</em> — its messages, button and list labels, the questions it asks —
+                becomes knowledge the assistant can answer from, so a customer who never types the trigger word
+                still gets the answer. Its conditions, tags and saves are ignored. Re-read automatically when you
+                edit the bot.
+              </AiHint>
+
+              <label className="mt-2 flex items-start gap-2.5 rounded-xl bg-slate-50/70 p-3 ring-1 ring-slate-200/60">
+                <Switch checked={canStart} onCheckedChange={setCanStart} />
+                <span className="text-[12px] leading-relaxed text-slate-700">
+                  Also let the assistant <strong>run</strong> this bot
+                  <span className="mt-0.5 block text-[11.5px] text-slate-500">
+                    When a customer asks for exactly what this bot does, they get the real thing — its buttons,
+                    map links and images — instead of a written answer. The bot then takes over the conversation
+                    until it finishes. Leave this off for a bot that collects payments or personal details.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
+
           {kind === 'database' && (
             <div className="space-y-1.5">
               <AiLabel>Data Store table</AiLabel>
@@ -1104,7 +1152,9 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
               placeholder={
                 kind === 'database'
                   ? 'e.g. Course fees per programme — use for any pricing question'
-                  : 'e.g. Our 2026 fee structure for all courses'
+                  : kind === 'chatbot'
+                    ? 'e.g. How to reach our campus — use for any question about location or directions'
+                    : 'e.g. Our 2026 fee structure for all courses'
               }
             />
             <AiHint>

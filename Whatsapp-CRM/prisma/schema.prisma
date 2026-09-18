@@ -2060,6 +2060,12 @@ model Flow {
   fallback_policy  Json      @default("{\"on_unknown_reply\":\"reprompt\",\"max_reprompts\":2,\"on_timeout_hours\":24,\"on_exhaust\":\"handoff\"}")
   execution_count  Int       @default(0)
   last_executed_at DateTime? @db.Timestamptz(6)
+  /// Whether the AI assistant may start this chatbot itself when a
+  /// customer asks for what it does. Off by default: starting a bot
+  /// takes over the conversation, which is not something to grant
+  /// silently. Set when the bot is connected as knowledge — see
+  /// src/lib/ai/chatbot-source.ts and customer-tools' start_chatbot.
+  ai_can_start     Boolean   @default(false)
   created_at       DateTime  @default(now()) @db.Timestamptz(6)
   updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 
