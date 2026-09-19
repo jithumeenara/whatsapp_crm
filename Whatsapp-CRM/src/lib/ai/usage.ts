@@ -68,9 +68,32 @@ const PRICES: Array<{ prefix: string; input: number; output: number }> = [
   { prefix: 'gemini', input: 0.15, output: 0.60 },
 ]
 
+/**
+ * Longest first, so the lookup below can stop at the first match and
+ * still be the most specific one.
+ *
+ * The table is written in a sensible order by hand, and one row had
+ * already drifted: "gemini-3.5-flash-transcribe" sat after
+ * "gemini-3.5-flash", so every transcription was priced as chat. Sorting
+ * makes the comment true instead of relying on whoever edits the list
+ * next to notice.
+ */
+const PRICES_BY_SPECIFICITY = [...PRICES].sort((a, b) => b.prefix.length - a.prefix.length)
+
+/** Google Cloud TTS is billed per character, not per token, and the
+ *  voices this app uses are Chirp3-HD. Verified against
+ *  cloud.google.com/text-to-speech pricing, September 2026: Standard and
+ *  WaveNet $4, Neural2 $16, Chirp 3 HD $30, Studio $160 per million
+ *  characters. */
+const CLOUD_TTS_USD_PER_MILLION_CHARS = 30
+
+export function estimateCloudTtsCostUsd(characters: number): number {
+  return Number(((Math.max(0, characters) / 1_000_000) * CLOUD_TTS_USD_PER_MILLION_CHARS).toFixed(6))
+}
+
 export function estimateCostUsd(model: string, tokens: TokenCounts): number {
   const id = model.toLowerCase()
-  const price = PRICES.find((p) => id.startsWith(p.prefix))
+  const price = PRICES_BY_SPECIFICITY.find((p) => id.startsWith(p.prefix))
   if (!price) return 0
   const cost = (tokens.inputTokens / 1_000_000) * price.input + (tokens.outputTokens / 1_000_000) * price.output
   // 6dp matches the column; below that a single cheap call rounds away
@@ -87,6 +110,10 @@ export interface RecordUsageArgs {
   status?: 'success' | 'error'
   error?: string
   latencyMs?: number
+  /** Overrides the token-based estimate. For work that is genuinely not
+   *  billed in tokens — Google Cloud TTS charges per character — where
+   *  deriving a cost from a token count would be inventing one. */
+  costUsd?: number
 }
 
 export async function recordAiUsage(args: RecordUsageArgs): Promise<void> {
@@ -107,7 +134,7 @@ export async function recordAiUsage(args: RecordUsageArgs): Promise<void> {
         input_tokens: tokens.inputTokens,
         output_tokens: tokens.outputTokens,
         total_tokens: tokens.totalTokens,
-        cost_usd: estimateCostUsd(args.model, tokens),
+        cost_usd: args.costUsd ?? estimateCostUsd(args.model, tokens),
         status: args.status ?? 'success',
         // Truncated: an error string is for recognizing a pattern in the
         // Usage tab, not for storing a full stack trace per call.

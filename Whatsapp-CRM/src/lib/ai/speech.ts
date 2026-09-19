@@ -17,7 +17,7 @@
 import { synthesizeWithCloudTts, detectSpeechLanguage } from './cloud-tts'
 import { resolveTtsCredentials } from './tts-credentials'
 import { synthesizeSpeech as synthesizeWithGemini, stripForSpeech } from './tts'
-import { recordAiUsage } from './usage'
+import { recordAiUsage, estimateCloudTtsCostUsd } from './usage'
 
 export type SpeechEngine = 'cloud' | 'gemini'
 
@@ -73,6 +73,31 @@ export async function speak(args: {
       console.log(
         `[speech] cloud · ${result.languageCode ?? '?'} · ${result.voiceUsed ?? 'default voice'} · ${Date.now() - startedAt}ms`,
       )
+
+      // Recorded, which it never was.
+      //
+      // The Usage tab showed voice cost only for the fallback engine, so
+      // an account that had done the right thing and connected Google
+      // Cloud TTS saw no voice line at all — the better the setup, the
+      // more of the bill was invisible. Chirp3-HD is the most expensive
+      // thing this app does per unit of output, which is precisely why
+      // it should not be the one thing missing from the page that exists
+      // to explain the bill.
+      //
+      // Billed per character, so there are no tokens to report and none
+      // are invented. The cost is real; the token columns are honestly
+      // zero.
+      if (args.accountId) {
+        void recordAiUsage({
+          accountId: args.accountId,
+          provider: 'google-cloud',
+          model: result.voiceUsed ?? 'cloud-tts',
+          feature: 'tts',
+          costUsd: estimateCloudTtsCostUsd(spoken.length),
+          latencyMs: Date.now() - startedAt,
+        })
+      }
+
       return {
         buffer: result.buffer,
         mimeType: result.mimeType,

@@ -78,6 +78,11 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   pdf_ocr: { label: 'Scanned PDFs', Icon: FileScan },
 };
 
+/** The window above already bounds how much is here; 200 rows in one
+ *  unbroken table is still more than anybody reads at once. Fifty is a
+ *  screenful at a time, with the real total stated above it. */
+const RECENT_PAGE_SIZE = 50
+
 const RANGES = [
   { value: '7', label: '7 days' },
   { value: '30', label: '30 days' },
@@ -180,6 +185,7 @@ export function UsageTab() {
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [recentPage, setRecentPage] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -230,7 +236,12 @@ export function UsageTab() {
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <AiSegmented
                 value={days}
-                onChange={(v) => setDays(v)}
+                onChange={(v) => {
+                  setDays(v);
+                  // A page number from the old window points at rows the
+                  // new one may not have.
+                  setRecentPage(1);
+                }}
                 options={RANGES.map((r) => ({ value: r.value, label: r.label }))}
               />
               <AiButton tone="outline" size="sm" onClick={exportCsv} disabled={!hasData}>
@@ -322,7 +333,14 @@ export function UsageTab() {
 
               <AiCard>
                 <div className="p-5 pb-3">
-                  <AiCardHeader title="Recent API calls" subtitle="The ten most recent, newest first." />
+                  <AiCardHeader
+                    title="Recent API calls"
+                    subtitle={
+                      data.recent.length > RECENT_PAGE_SIZE
+                        ? `${data.recent.length} calls, newest first — ${RECENT_PAGE_SIZE} per page.`
+                        : `The ${data.recent.length} most recent, newest first.`
+                    }
+                  />
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[620px] border-collapse">
@@ -336,7 +354,9 @@ export function UsageTab() {
                       </tr>
                     </thead>
                     <tbody>
-                      {data.recent.map((r) => (
+                      {data.recent
+                        .slice((recentPage - 1) * RECENT_PAGE_SIZE, recentPage * RECENT_PAGE_SIZE)
+                        .map((r) => (
                         <tr key={r.id} className="border-b border-slate-50 last:border-0">
                           <td className="whitespace-nowrap px-5 py-2.5 text-[12.5px] text-slate-600">
                             {new Date(r.created_at).toLocaleString(undefined, {
@@ -368,6 +388,37 @@ export function UsageTab() {
                     </tbody>
                   </table>
                 </div>
+
+                {data.recent.length > RECENT_PAGE_SIZE && (
+                  <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
+                    <p className="text-[12px] text-slate-500">
+                      {(recentPage - 1) * RECENT_PAGE_SIZE + 1}–
+                      {Math.min(recentPage * RECENT_PAGE_SIZE, data.recent.length)} of {data.recent.length}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <AiButton
+                        tone="outline"
+                        size="sm"
+                        onClick={() => setRecentPage((p) => Math.max(1, p - 1))}
+                        disabled={recentPage === 1}
+                      >
+                        Previous
+                      </AiButton>
+                      <AiButton
+                        tone="outline"
+                        size="sm"
+                        onClick={() =>
+                          setRecentPage((p) =>
+                            Math.min(Math.ceil(data.recent.length / RECENT_PAGE_SIZE), p + 1),
+                          )
+                        }
+                        disabled={recentPage >= Math.ceil(data.recent.length / RECENT_PAGE_SIZE)}
+                      >
+                        Next
+                      </AiButton>
+                    </div>
+                  </div>
+                )}
               </AiCard>
             </div>
 
