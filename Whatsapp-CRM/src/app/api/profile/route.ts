@@ -1,5 +1,6 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { sanitizeQuickLinks } from "@/lib/navigation/sections"
 import { isValidE164 } from "@/lib/whatsapp/phone-utils"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -19,6 +20,8 @@ export async function PATCH(req: NextRequest) {
       avatar_url?: string | null
       phone?: string | null
       preferred_language?: string | null
+      /** Ordered hrefs; validated against the app's own navigation. */
+      quick_links?: unknown
     }
 
     const data: Record<string, unknown> = {}
@@ -47,6 +50,12 @@ export async function PATCH(req: NextRequest) {
       const lang = typeof body.preferred_language === "string" ? body.preferred_language.trim() : ""
       data.preferred_language = lang || null
     }
+    if ("quick_links" in body) {
+      // Sanitised rather than trusted: an href for a page that no longer
+      // exists would render as a row that goes nowhere, and this comes
+      // from a request body.
+      data.quick_links = sanitizeQuickLinks(body.quick_links)
+    }
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
@@ -65,6 +74,7 @@ export async function PATCH(req: NextRequest) {
         account_id: true,
         account_role: true,
         preferred_language: true,
+        quick_links: true,
       },
     })
 

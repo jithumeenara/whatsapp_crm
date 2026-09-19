@@ -31,6 +31,7 @@ import {
 } from "lucide-react"
 import { WhatsAppQrButton } from "@/components/shared/whatsapp-qr-button"
 import { VerificationBanner } from "@/components/shared/verification-banner"
+import { QuickLinks } from "@/components/dashboard/quick-links"
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -530,6 +531,10 @@ export default function DashboardV2() {
           </div>
         </div>
       </div>
+
+      {/* Somebody's own shortcuts. Rendered last so it floats above
+          everything; it positions itself. */}
+      <QuickLinks links={profile?.quick_links} isAgent={accountRole === "agent"} />
     </div>
   )
 }

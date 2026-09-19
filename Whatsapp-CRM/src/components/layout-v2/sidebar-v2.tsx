@@ -6,94 +6,27 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import {
-  Gauge,
-  BarChart2,
-  Bot,
   ChevronLeft,
   ChevronRight,
   Crown,
-  FileText,
-  HardDrive,
-  LayoutDashboard,
-  LayoutGrid,
   LogOut,
   MessageSquare,
-  Phone,
-  Radio,
   Settings,
   Shield,
-  TrendingUp,
   User,
   UserCheck,
   UserCog,
   Users,
-  Workflow,
-  Zap,
-  Globe,
-  Plug,
-  Kanban,
-  Megaphone,
-  ShoppingBag,
 } from "lucide-react";
 import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
-
-// ---- types ----
-
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string; strokeWidth?: number }>;
-  agentAllowed?: boolean;
-}
-
-interface NavSection {
-  label: string;
-  items: NavItem[];
-}
+import { NAV_SECTIONS } from '@/lib/navigation/sections';
 
 // ---- navigation ----
-
-const NAV_SECTIONS: NavSection[] = [
-  {
-    label: "CRM",
-    items: [
-      { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, agentAllowed: true },
-      { href: "/leads",     label: "Leads",     icon: TrendingUp,      agentAllowed: true },
-      { href: "/pipelines", label: "Pipelines", icon: Kanban,          agentAllowed: false },
-      { href: "/contacts",  label: "Contacts",  icon: Users,           agentAllowed: true },
-      { href: "/reports",   label: "Reports",   icon: BarChart2,       agentAllowed: false },
-      { href: "/ads",       label: "Ads",       icon: Megaphone,       agentAllowed: false },
-      { href: "/catalog",   label: "Catalog",   icon: ShoppingBag,     agentAllowed: true },
-    ],
-  },
-  {
-    label: "Messaging",
-    items: [
-      { href: "/inbox",      label: "Inbox",      icon: MessageSquare, agentAllowed: true },
-      { href: "/calls",      label: "Calls",      icon: Phone,         agentAllowed: true },
-      { href: "/broadcasts", label: "Broadcasts", icon: Radio,         agentAllowed: false },
-      { href: "/templates",  label: "Templates",  icon: FileText,      agentAllowed: false },
-    ],
-  },
-  {
-    label: "Automation",
-    items: [
-      { href: "/automations", label: "Automations", icon: Zap,      agentAllowed: false },
-      { href: "/chatbot",     label: "Chatbot",     icon: Bot,      agentAllowed: false },
-      { href: "/ai-quality", label: "AI Quality", icon: Gauge, agentAllowed: true },
-      { href: "/flows",       label: "Flows",       icon: Workflow, agentAllowed: false },
-    ],
-  },
-  {
-    label: "Tools",
-    items: [
-      { href: "/data",         label: "Data Store",   icon: LayoutGrid, agentAllowed: false },
-      { href: "/files",        label: "File Manager", icon: HardDrive,  agentAllowed: false },
-      { href: "/integrations", label: "Integrations", icon: Plug,       agentAllowed: false },
-      { href: "/social",       label: "Social Media", icon: Globe,       agentAllowed: false },
-    ],
-  },
-];
+//
+// The list itself lives in @/lib/navigation/sections, shared with the
+// dashboard's quick links and the Profile screen that chooses them.
+// Three copies of "what pages exist" would drift, and the copy that
+// drifted would be a menu offering a page that is not there.
 
 // ---- role chips ----
 

@@ -21,6 +21,7 @@ import { CompanyProfilePanel } from '@/components/settings/company-profile-panel
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { CountryCodeSelect } from '@/components/shared/country-code-select';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
+import { QuickLinksPanel } from './quick-links-panel';
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
@@ -665,6 +666,11 @@ export function ProfileForm() {
           <ChatTranslationPanel />
         </div>
       </div>
+
+      {/* ── Quick links ──
+          Personal, like the translation setting above it: what somebody
+          reaches for all day is not an account-wide fact. */}
+      <QuickLinksPanel />
 
       {/* ── Company Details ──
           Sits with the profile because it is "who we are" information an

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sanitizeQuickLinks } from "@/lib/navigation/sections";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 
@@ -44,6 +45,9 @@ export async function GET() {
       account_id: profile.account_id,
       account_role: accountRole,
       preferred_language: profile.preferred_language,
+      // Sanitised on the way out as well as in: a link stored before a
+      // page was removed must not reach the dashboard as a dead row.
+      quick_links: sanitizeQuickLinks(profile.quick_links),
     },
     account: profile.account
       ? {

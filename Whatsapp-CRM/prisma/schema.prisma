@@ -291,6 +291,12 @@ model Profile {
   /// composer's translate button) doesn't render at all for this person —
   /// off by default, zero behavior change for existing users.
   preferred_language    String?
+  /// This person's own shortcuts on the dashboard — an ordered list of
+  /// hrefs from src/lib/navigation/sections. Per person, not per
+  /// account: what a sales agent reaches for all day is not what the
+  /// owner does. Empty means they have never chosen, and a sensible
+  /// default is shown rather than nothing.
+  quick_links           Json        @default("[]")
   created_at            DateTime    @default(now()) @db.Timestamptz(6)
   updated_at            DateTime    @updatedAt @db.Timestamptz(6)
 

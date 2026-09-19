@@ -35,6 +35,9 @@ interface Profile {
    *  "Malayalam". Null = feature off for this person — the inbox's
    *  "Translate" link and the composer's translate button don't render. */
   preferred_language: string | null;
+  /** This person's own dashboard shortcuts. Already sanitised by the
+   *  API, and sanitised again where it is rendered. */
+  quick_links: string[];
 }
 
 interface AccountSummary {
@@ -98,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           account_id: data.profile.account_id,
           account_role: accountRole,
           preferred_language: data.profile.preferred_language ?? null,
+          quick_links: Array.isArray(data.profile.quick_links) ? data.profile.quick_links : [],
         });
         if (data.account) {
           setAccount({
