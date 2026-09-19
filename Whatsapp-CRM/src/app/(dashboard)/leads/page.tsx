@@ -41,17 +41,22 @@ const SOURCES = ["whatsapp","instagram","website","campaign","referral","manual"
 
 interface TabDef { key: string; label: string; color: string; icon?: React.ReactNode }
 
+// "Mine" leads, because it is where the work is. A claimed lead used to
+// leave New Pool the instant it was claimed and land nowhere anybody
+// looked — see the GET handler in /api/leads for the whole story.
 const TABS: TabDef[] = [
-  { key: "all",       label: "All Leads",  color: "text-slate-600"  },
-  { key: "new_pool",  label: "New Pool",   color: "text-indigo-600" },
+  { key: "mine",      label: "Mine",       color: "text-indigo-600" },
+  { key: "new_pool",  label: "New Pool",   color: "text-sky-600"    },
   { key: "follow_up", label: "Follow-up",  color: "text-orange-600" },
+  { key: "all",       label: "All Open",   color: "text-slate-600"  },
   { key: "closed",    label: "Closed",     color: "text-emerald-600"},
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
 ]
 
 const TAB_DOT: Record<string, string> = {
+  mine: "bg-indigo-500",
   all: "bg-slate-400",
-  new_pool: "bg-indigo-500",
+  new_pool: "bg-sky-500",
   follow_up: "bg-orange-500",
   closed: "bg-emerald-500",
   tasks: "bg-violet-500",
@@ -1003,7 +1008,7 @@ function preferredLeadsView(): "tiles" | "table" {
 export default function LeadsV2() {
   const router = useRouter()
   const { canViewAllLeads } = useAuth()
-  const [tab, setTab] = useState("all")
+  const [tab, setTab] = useState("mine")
   const [leads, setLeads] = useState<Lead[]>([])
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [tasks, setTasks] = useState<Task[]>([])

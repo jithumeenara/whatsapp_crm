@@ -14,8 +14,30 @@ const TAB_STATUS_MAP: Record<string, string | null> = {
   follow_up: 'follow_up',
   closed: 'closed',
   all: null,
+  // Everything this person is working, whatever state it is in. The tab
+  // that was missing — see the GET handler for what its absence cost.
+  mine: null,
 }
 
+/** A finished lead is history, not work. It stays reachable on its own
+ *  tab and in search; it does not sit in a list of things to do. */
+const CLOSED = 'closed'
+
+/**
+ * Lists leads for one tab.
+ *
+ * ── The lead that vanished ──────────────────────────────────────────
+ *
+ * An agent worked out of New Pool, which is `status = new` AND
+ * `assigned_to = null`. Claiming a lead sets `assigned_to`, so the row
+ * left the list the instant it was claimed — and any status change took
+ * it further away. It was still theirs and still open; there was simply
+ * no tab that showed it. "All" was the only place it existed, mixed in
+ * with every closed lead the account had ever had.
+ *
+ * So the work an agent has in hand had no home, and the fix is a tab
+ * that is exactly that: `mine`.
+ */
 export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(req, 'viewer')
@@ -39,9 +61,23 @@ export async function GET(req: NextRequest) {
       where.status = tabStatus
     }
 
+    // Closed leads are excluded everywhere except their own tab.
+    //
+    // "All Leads" meant all of them, closed ones included, so a team
+    // three months in had a list that was mostly finished business and
+    // a handful of live leads somewhere inside it. The tab people open
+    // to see what needs doing should show what needs doing.
+    if (tab !== 'closed' && tabStatus === null) {
+      where.status = { not: CLOSED }
+    }
+
     // Pool: unassigned new leads — visible to all agents
     if (tab === 'new_pool') {
       where.assigned_to = null
+    } else if (tab === 'mine') {
+      // Mine, whoever you are. A supervisor asking for "mine" wants
+      // theirs, not everyone's.
+      where.assigned_to = ctx.userId
     } else if (!isPrivileged) {
       // Agents only see their own leads outside the pool — including on
       // the "all" tab, which used to skip this and leak every agent's

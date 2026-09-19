@@ -40,14 +40,22 @@ export async function GET(
       follow_up: 'follow_up',
       closed: 'closed',
       all: null,
+      mine: null,
     }
 
     const isPrivileged = canViewAllLeads(ctx.role)
     const tabStatus = TAB_STATUS_MAP[fromTab]
     const navWhere: Record<string, unknown> = { account_id: ctx.accountId }
     if (tabStatus !== undefined && tabStatus !== null) navWhere.status = tabStatus
+    // Same exclusion the list applies, or Previous/Next would walk into
+    // closed leads the list never showed.
+    if (fromTab !== 'closed' && tabStatus === null) {
+      navWhere.status = { not: 'closed' }
+    }
     if (fromTab === 'new_pool') {
       navWhere.assigned_to = null
+    } else if (fromTab === 'mine') {
+      navWhere.assigned_to = ctx.userId
     } else if (!isPrivileged && fromTab !== 'all') {
       navWhere.assigned_to = ctx.userId
     }
@@ -98,6 +106,45 @@ export async function PATCH(
           assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
         },
       })
+
+      // The conversation comes with the lead.
+      //
+      // Claiming a lead is saying "I am handling this person", and the
+      // handling happens in the Inbox — but the thread stayed
+      // unassigned, so it was not in the claimer's Inbox and the
+      // assistant carried on answering on their behalf. An agent had to
+      // find the same customer twice, in two places, by hand.
+      //
+      // Only an unassigned thread is taken: one a colleague is already
+      // in is theirs, and a lead claim is not a reason to take it.
+      // Best effort — the claim itself has already succeeded, and a
+      // conversation that cannot be assigned must not undo it.
+      if (lead.contact_id) {
+        await prisma.conversation
+          .updateMany({
+            where: {
+              account_id: ctx.accountId,
+              contact_id: lead.contact_id,
+              assigned_agent_id: null,
+            },
+            data: { assigned_agent_id: ctx.userId },
+          })
+          .then(async ({ count }) => {
+            if (count === 0) return
+            const { emitToAccount } = await import('@/lib/socket')
+            emitToAccount(ctx.accountId, 'conversation', {
+              eventType: 'UPDATE',
+              new: { contact_id: lead.contact_id, assigned_agent_id: ctx.userId },
+              old: {},
+            })
+          })
+          .catch((err) =>
+            console.error(
+              '[leads] claimed, but the conversation could not be assigned:',
+              err instanceof Error ? err.message : err,
+            ),
+          )
+      }
       await prisma.leadActivity.create({
         data: {
           account_id: ctx.accountId,
