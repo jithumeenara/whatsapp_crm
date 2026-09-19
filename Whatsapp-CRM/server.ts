@@ -9,6 +9,7 @@ import { sweepScheduledMessages } from "./src/lib/scheduled-messages/sweep";
 import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
+import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 
@@ -112,6 +113,20 @@ app.prepare().then(() => {
       console.error("[idle-close] sweep interval failed:", err);
     });
   }, 5 * 60_000);
+
+  // Embedding whatever the sweeps above left marked "Not trained".
+  //
+  // Those sweeps keep the *text* current and always have; nothing kept
+  // the embeddings current, so a table somebody edited sat untrained
+  // until a human noticed a badge on a settings screen. Ten minutes is
+  // well inside the hour the content sweep runs on, and a pass over an
+  // unchanged knowledge base costs one query and no provider calls —
+  // syncKnowledgeEmbeddings skips every hash it has already seen.
+  setInterval(() => {
+    trainPendingKnowledge().catch((err) => {
+      console.error("[auto-train] interval failed:", err);
+    });
+  }, 10 * 60_000);
 });
 
 /** Emit a real-time event to all sockets in an account's room. */

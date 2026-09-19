@@ -289,30 +289,70 @@ export function TokensChart({ data, height = 190 }: ChartProps) {
 /** Usage by feature — magnitude across categories, so a single-hue bar
  *  chart with direct value labels, not six categorical colours for what
  *  is really one measure. */
+/**
+ * What each feature was used for, and what it cost.
+ *
+ * The count alone answered the wrong question. "Voice replies: 412" says
+ * nothing about whether voice is the line worth looking at — and it
+ * usually is, because audio is priced well above text. The money is what
+ * somebody opens this page for, so it sits beside the count, and the bar
+ * is scaled by cost rather than by requests: a thousand cheap
+ * classifications should not tower over the forty voice notes that
+ * actually made up the bill.
+ *
+ * Falls back to scaling by request count when nothing has a cost yet —
+ * otherwise a free-tier account gets a chart of empty bars.
+ */
 export function FeatureBars({
   rows,
+  formatMoney,
 }: {
-  rows: Array<{ feature: string; label: string; requests: number; total_tokens: number; cost_usd: number }>;
+  rows: Array<{
+    feature: string;
+    label: string;
+    requests: number;
+    total_tokens: number;
+    cost_usd: number;
+    cost_inr?: number;
+  }>;
+  /** Rendered as the account's own currency by the caller, which is the
+   *  only place that knows the rate it was given. */
+  formatMoney?: (value: number) => string;
 }) {
-  const max = Math.max(1, ...rows.map((r) => r.requests));
+  const amountOf = (r: { cost_inr?: number; cost_usd: number }) => r.cost_inr ?? r.cost_usd;
+  const totalCost = rows.reduce((sum, r) => sum + amountOf(r), 0);
+  const byCost = totalCost > 0;
+  const max = byCost
+    ? Math.max(...rows.map(amountOf))
+    : Math.max(1, ...rows.map((r) => r.requests));
+
   return (
     <div className="space-y-2.5">
-      {rows.map((r) => (
-        <div key={r.feature}>
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="truncate text-[12.5px] text-slate-700">{r.label}</span>
-            <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-slate-800">
-              {r.requests.toLocaleString()}
-            </span>
+      {rows.map((r) => {
+        const amount = amountOf(r);
+        const share = byCost ? amount / max : r.requests / max;
+        return (
+          <div key={r.feature}>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="truncate text-[12.5px] text-slate-700">{r.label}</span>
+              <span className="flex shrink-0 items-baseline gap-2 tabular-nums">
+                <span className="text-[11.5px] text-slate-400">
+                  {r.requests.toLocaleString()}×
+                </span>
+                <span className="text-[12.5px] font-semibold text-slate-800">
+                  {formatMoney ? formatMoney(amount) : amount.toFixed(2)}
+                </span>
+              </span>
+            </div>
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full transition-[width] duration-500"
+                style={{ width: `${Math.max(2, share * 100)}%`, background: SERIES_INPUT }}
+              />
+            </div>
           </div>
-          <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full transition-[width] duration-500"
-              style={{ width: `${Math.max(2, (r.requests / max) * 100)}%`, background: SERIES_INPUT }}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

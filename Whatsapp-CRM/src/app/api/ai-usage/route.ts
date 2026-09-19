@@ -48,6 +48,22 @@ export async function GET(req: Request) {
   const requestedDays = Number(url.searchParams.get('days') ?? '30')
   const days = (ALLOWED_DAYS as readonly number[]).includes(requestedDays) ? requestedDays : 30
 
+  // The Recent list has its own filter, independent of the window above.
+  // The charts answer "what has this been costing lately"; the list
+  // answers "what did we spend in September", and those are different
+  // questions that want different bounds.
+  //
+  // Anything unparseable is ignored rather than rejected: a bad value in
+  // a query string should show the default view, not an error page.
+  const monthParam = url.searchParams.get('month') ?? ''
+  const monthMatch = /^(\d{4})-(\d{2})$/.exec(monthParam)
+  const monthStart = monthMatch
+    ? new Date(Number(monthMatch[1]), Number(monthMatch[2]) - 1, 1)
+    : null
+  const monthEnd = monthStart
+    ? new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1)
+    : null
+
   const now = new Date()
   const windowStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
   const previousStart = new Date(now.getTime() - days * 2 * 24 * 60 * 60 * 1000)
@@ -86,7 +102,10 @@ export async function GET(req: Request) {
       `,
     ),
     prisma.aiUsageEvent.findMany({
-      where: { account_id: accountId },
+      where: {
+        account_id: accountId,
+        ...(monthStart && monthEnd ? { created_at: { gte: monthStart, lt: monthEnd } } : {}),
+      },
       orderBy: { created_at: 'desc' },
       // Ten was enough to prove the tab worked and not enough to answer
       // "what did we spend this on". The window above already bounds
@@ -98,6 +117,19 @@ export async function GET(req: Request) {
       },
     }),
   ])
+
+  // Which months this account has anything in, newest first, so the
+  // filter offers only months that exist. Two years is more than anyone
+  // scrolls and keeps the dropdown a dropdown.
+  const months = await prisma.$queryRaw<Array<{ month: string }>>(
+    Prisma.sql`
+      SELECT DISTINCT to_char(created_at, 'YYYY-MM') AS month
+      FROM ai_usage_events
+      WHERE account_id = ${accountId}::uuid
+      ORDER BY 1 DESC
+      LIMIT 24
+    `,
+  )
 
   const [currentErrors, previousErrors] = await Promise.all([
     prisma.aiUsageEvent.count({ where: { account_id: accountId, created_at: { gte: windowStart }, status: 'error' } }),
@@ -148,6 +180,8 @@ export async function GET(req: Request) {
       cost_inr: usdToInr(Number(r.cost_usd)),
       created_at: r.created_at.toISOString(),
     })),
+    recent_months: months.map((m) => m.month),
+    recent_month: monthMatch ? monthParam : null,
     // The rate is sent with the figures, not baked into them, so the tab
     // can say what it converted at instead of presenting a rupee number
     // as though Google had billed it.

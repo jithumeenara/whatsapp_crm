@@ -7,6 +7,7 @@ import {
   Volume2, Mic, FileScan,
 } from 'lucide-react';
 import { AiButton, AiCard, AiCardHeader, AiBadge, AiSegmented, AiNotice, AiHint, AiIconTile } from './ui-kit';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RequestsChart, TokensChart, FeatureBars, type DailyPoint } from './usage-chart';
 
 /**
@@ -61,6 +62,9 @@ interface UsageResponse {
   by_feature: FeatureRow[];
   daily: DailyPoint[];
   recent: RecentRow[];
+  /** 'YYYY-MM' for every month with any usage, newest first. */
+  recent_months: string[];
+  recent_month: string | null;
   inr_rate: number;
   inr_note: string;
 }
@@ -73,15 +77,21 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   translation: { label: 'Translation', Icon: Languages },
   validation: { label: 'Key check', Icon: ShieldCheck },
   eval_grading: { label: 'Evaluation', Icon: ShieldCheck },
-  tts: { label: 'Voice replies', Icon: Volume2 },
+  tts: { label: 'Voice — Gemini', Icon: Volume2 },
+  tts_cloud: { label: 'Voice — Google Cloud', Icon: Volume2 },
   transcription: { label: 'Voice notes in', Icon: Mic },
   pdf_ocr: { label: 'Scanned PDFs', Icon: FileScan },
 };
 
-/** The window above already bounds how much is here; 200 rows in one
- *  unbroken table is still more than anybody reads at once. Fifty is a
- *  screenful at a time, with the real total stated above it. */
-const RECENT_PAGE_SIZE = 50
+/** How many calls the Recent list shows at once.
+ *
+ *  Five by default, which is deliberately small: this list is read to
+ *  answer "what did that last reply cost", and the answer is in the
+ *  first few rows. Anyone auditing a month changes it. */
+const RECENT_SIZES = [5, 10, 20, 50] as const
+
+/** A Select item needs a value, and "" is not one. */
+const ALL_MONTHS = '__all__'
 
 const RANGES = [
   { value: '7', label: '7 days' },
@@ -91,6 +101,17 @@ const RANGES = [
 
 function featureLabel(feature: string): string {
   return FEATURE_META[feature]?.label ?? feature;
+}
+
+/** "2026-09" as somebody says it. Built from the string rather than
+ *  from a parsed Date so a month never shifts across a timezone. */
+function monthLabel(value: string): string {
+  const [year, month] = value.split('-').map(Number);
+  if (!year || !month) return value;
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
 function formatUsd(value: number): string {
@@ -186,12 +207,16 @@ export function UsageTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [recentPage, setRecentPage] = useState(1);
+  const [recentSize, setRecentSize] = useState<number>(RECENT_SIZES[0]);
+  const [recentMonth, setRecentMonth] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/ai-usage?days=${days}`);
+      const params = new URLSearchParams({ days: String(days) });
+      if (recentMonth) params.set('month', recentMonth);
+      const res = await fetch(`/api/ai-usage?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? 'Could not load usage.');
       setData(json);
@@ -200,7 +225,7 @@ export function UsageTab() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, recentMonth]);
 
   useEffect(() => {
     load();
@@ -333,14 +358,53 @@ export function UsageTab() {
 
               <AiCard>
                 <div className="p-5 pb-3">
-                  <AiCardHeader
-                    title="Recent API calls"
-                    subtitle={
-                      data.recent.length > RECENT_PAGE_SIZE
-                        ? `${data.recent.length} calls, newest first — ${RECENT_PAGE_SIZE} per page.`
-                        : `The ${data.recent.length} most recent, newest first.`
-                    }
-                  />
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <AiCardHeader
+                      title="Recent API calls"
+                      subtitle={
+                        data.recent.length === 0
+                          ? 'Nothing recorded for this period.'
+                          : `${data.recent.length} call${data.recent.length === 1 ? '' : 's'}, newest first.`
+                      }
+                    />
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={recentMonth || ALL_MONTHS}
+                        onValueChange={(v) => {
+                          if (!v) return;
+                          setRecentMonth(v === ALL_MONTHS ? '' : v);
+                          setRecentPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-[150px] rounded-lg border-slate-200 text-[12.5px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ALL_MONTHS}>All months</SelectItem>
+                          {(data.recent_months ?? []).map((m) => (
+                            <SelectItem key={m} value={m}>{monthLabel(m)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={String(recentSize)}
+                        onValueChange={(v) => {
+                          if (!v) return;
+                          setRecentSize(Number(v));
+                          setRecentPage(1);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-[104px] rounded-lg border-slate-200 text-[12.5px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {RECENT_SIZES.map((n) => (
+                            <SelectItem key={n} value={String(n)}>{n} per page</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[620px] border-collapse">
@@ -355,7 +419,7 @@ export function UsageTab() {
                     </thead>
                     <tbody>
                       {data.recent
-                        .slice((recentPage - 1) * RECENT_PAGE_SIZE, recentPage * RECENT_PAGE_SIZE)
+                        .slice((recentPage - 1) * recentSize, recentPage * recentSize)
                         .map((r) => (
                         <tr key={r.id} className="border-b border-slate-50 last:border-0">
                           <td className="whitespace-nowrap px-5 py-2.5 text-[12.5px] text-slate-600">
@@ -369,7 +433,14 @@ export function UsageTab() {
                           <td className="px-5 py-2.5 text-[12.5px] text-slate-700">{featureLabel(r.feature)}</td>
                           <td className="px-5 py-2.5 font-mono text-[11.5px] text-slate-500">{r.model}</td>
                           <td className="whitespace-nowrap px-5 py-2.5 text-[12.5px] tabular-nums text-slate-700">
-                            {r.input_tokens.toLocaleString()} / {r.output_tokens.toLocaleString()}
+                            {/* Google Cloud TTS is billed per character, so it
+                                genuinely has no token count. "0 / 0" reads as a
+                                broken row; a dash reads as what it is. */}
+                            {r.input_tokens === 0 && r.output_tokens === 0 ? (
+                              <span className="text-slate-400">—</span>
+                            ) : (
+                              `${r.input_tokens.toLocaleString()} / ${r.output_tokens.toLocaleString()}`
+                            )}
                           </td>
                           <td className="px-5 py-2.5 text-[12.5px] tabular-nums text-slate-700">
                             {formatUsd(r.cost_inr)}
@@ -389,11 +460,11 @@ export function UsageTab() {
                   </table>
                 </div>
 
-                {data.recent.length > RECENT_PAGE_SIZE && (
+                {data.recent.length > recentSize && (
                   <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
                     <p className="text-[12px] text-slate-500">
-                      {(recentPage - 1) * RECENT_PAGE_SIZE + 1}–
-                      {Math.min(recentPage * RECENT_PAGE_SIZE, data.recent.length)} of {data.recent.length}
+                      {(recentPage - 1) * recentSize + 1}–
+                      {Math.min(recentPage * recentSize, data.recent.length)} of {data.recent.length}
                     </p>
                     <div className="flex items-center gap-1.5">
                       <AiButton
@@ -409,10 +480,10 @@ export function UsageTab() {
                         size="sm"
                         onClick={() =>
                           setRecentPage((p) =>
-                            Math.min(Math.ceil(data.recent.length / RECENT_PAGE_SIZE), p + 1),
+                            Math.min(Math.ceil(data.recent.length / recentSize), p + 1),
                           )
                         }
-                        disabled={recentPage >= Math.ceil(data.recent.length / RECENT_PAGE_SIZE)}
+                        disabled={recentPage >= Math.ceil(data.recent.length / recentSize)}
                       >
                         Next
                       </AiButton>
@@ -424,11 +495,21 @@ export function UsageTab() {
 
             <div className="space-y-5">
               <AiCard className="p-5">
-                <AiCardHeader title="Usage by feature" subtitle="Requests in this period." />
+                <AiCardHeader
+                  title="Usage by feature"
+                  subtitle="What each part cost in this period."
+                />
                 <div className="mt-4">
                   <FeatureBars
                     rows={data.by_feature.map((f) => ({ ...f, label: featureLabel(f.feature) }))}
+                    formatMoney={formatUsd}
                   />
+                  {data.by_feature.some((f) => f.feature === 'tts_cloud') && (
+                    <AiHint className="mt-3">
+                      Google Cloud voice is billed per character rather than per token, so its rows show a
+                      cost and no token count. Gemini voice is billed in audio tokens and shows both.
+                    </AiHint>
+                  )}
                 </div>
               </AiCard>
 

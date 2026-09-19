@@ -983,6 +983,23 @@ function SkeletonRow({ cols = 8 }: { cols?: number }) {
 
 // ---- page ----
 
+/** Narrower than Tailwind's sm:, which is where the view toggle itself
+ *  disappears — so this is the width at which the table stops being
+ *  reachable, not merely cramped. */
+const LEADS_TABLE_MIN_WIDTH = 640
+
+function preferredLeadsView(): "tiles" | "table" {
+  // Server render, and any browser that refuses storage: the table is
+  // the default, and a phone corrects itself on the first effect.
+  if (typeof window === "undefined") return "table"
+  if (window.innerWidth < LEADS_TABLE_MIN_WIDTH) return "tiles"
+  try {
+    return window.localStorage.getItem("leads-view") === "tiles" ? "tiles" : "table"
+  } catch {
+    return "table"
+  }
+}
+
 export default function LeadsV2() {
   const router = useRouter()
   const { canViewAllLeads } = useAuth()
@@ -1004,10 +1021,30 @@ export default function LeadsV2() {
     { icon: "🔗", label: "Referral" }, { icon: "👤", label: "Manual" }, { icon: "📝", label: "Other" },
   ])
   const [loading, setLoading] = useState(true)
-  // Tiles by default — table view is a desktop-only option (see the view
-  // toggle below, hidden under sm:), since a dense data table genuinely
-  // doesn't work on a phone screen rather than just looking cramped.
-  const [view, setView] = useState<"tiles" | "table">("tiles")
+  // Table by default on a desktop, tiles on a phone, and whatever you
+  // last chose after that.
+  //
+  // The two halves are not a compromise. The table is the view people
+  // actually work a lead list in — every lead, every column, sortable —
+  // and it was reachable only by finding a toggle. But the toggle is
+  // hidden under sm:, so defaulting to table on a phone would strand
+  // somebody in a view they cannot read and cannot leave.
+  //
+  // Read lazily so the first paint is already right: a default applied
+  // in an effect flashes the wrong layout on every load.
+  const [view, setView] = useState<"tiles" | "table">(() => preferredLeadsView())
+
+  /** Remembers the choice, so the default is only ever a starting
+   *  point. Storage can throw in a private window; the view still
+   *  changes, it simply is not remembered. */
+  const chooseView = useCallback((next: "tiles" | "table") => {
+    setView(next)
+    try {
+      window.localStorage.setItem("leads-view", next)
+    } catch {
+      /* not remembering is not worth failing over */
+    }
+  }, [])
   const [createOpen, setCreateOpen] = useState(false)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
@@ -1216,12 +1253,12 @@ export default function LeadsV2() {
           </div>
 
           <div className="hidden sm:flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5 shrink-0">
-            <button type="button" onClick={() => setView("tiles")} title="Tile view"
+            <button type="button" onClick={() => chooseView("tiles")} title="Tile view"
               className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all",
                 view === "tiles" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}>
               <LayoutGrid className="h-3.5 w-3.5" />
             </button>
-            <button type="button" onClick={() => setView("table")} title="Table view"
+            <button type="button" onClick={() => chooseView("table")} title="Table view"
               className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all",
                 view === "table" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}>
               <Table2 className="h-3.5 w-3.5" />

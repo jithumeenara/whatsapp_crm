@@ -26,9 +26,19 @@ export type UsageFeature =
   /// 'test' so a suite run's cost is visible as its own line rather
   /// than blurred into the Test AI screen's usage.
   | 'eval_grading'
-  /// Text-to-speech for a voice reply. Billed in audio output
-  /// tokens, which dominate a voice note's cost.
+  /// Text-to-speech for a voice reply, on the built-in Gemini engine.
+  /// Billed in audio output tokens, which dominate a voice note's cost.
+  ///
+  /// Every row recorded before Google Cloud TTS was tracked at all is a
+  /// Gemini one, so this has always meant exactly what it means now —
+  /// no history is reinterpreted by the split.
   | 'tts'
+  /// The same job on Google Cloud TTS, kept apart because the two are
+  /// not comparable: different voices, different quality, and one is
+  /// billed per audio token while the other is billed per character.
+  /// Adding them into a single "voice" line would hide which engine an
+  /// account is actually paying for.
+  | 'tts_cloud'
   /// Turning a customer's voice note into text.
   | 'transcription'
   /// Reading a scanned PDF into the knowledge base. Its own line

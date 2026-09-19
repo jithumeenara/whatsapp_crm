@@ -92,7 +92,7 @@ export async function speak(args: {
           accountId: args.accountId,
           provider: 'google-cloud',
           model: result.voiceUsed ?? 'cloud-tts',
-          feature: 'tts',
+          feature: 'tts_cloud',
           costUsd: estimateCloudTtsCostUsd(spoken.length),
           latencyMs: Date.now() - startedAt,
         })
