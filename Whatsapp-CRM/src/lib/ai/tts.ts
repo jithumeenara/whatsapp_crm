@@ -230,6 +230,58 @@ async function pcmToMp3(pcm: Int16Array, sampleRate: number): Promise<Buffer> {
 }
 
 /**
+ * True when reading this aloud loses something the customer needed.
+ *
+ * A link cannot be heard. Neither can a ten-digit phone number, an email
+ * address, or a reference code — a listener cannot write down what they
+ * only half caught, and asking again costs them a second message. The
+ * caller's answer is to send the text as well as the audio, not to
+ * refuse the audio.
+ */
+export function hasUnspeakableDetail(text: string): boolean {
+  if (/https?:\/\/\S+|\bwww\.\S+/i.test(text)) return true
+  if (/[\w.+-]+@[\w-]+\.[\w.]+/.test(text)) return true
+  // Seven or more digits in a row, or a spaced/dashed run of them —
+  // a phone number, an account number, a reference. Short numbers
+  // (a price, a date, a room number) are perfectly speakable.
+  if (/\d[\d\s-]{6,}\d/.test(text)) return true
+  return false
+}
+
+/**
+ * Digits as a reader of this language would say them.
+ *
+ * Two live failures, both from the same root — a TTS engine is given
+ * characters and guesses at the convention behind them:
+ *
+ *   - "₹3,540" was read as "three rupees fifty-four paise". The comma is
+ *     a thousands separator here and a decimal point in half the world,
+ *     and the engine chose the other one. Indian grouping makes it worse
+ *     ("3,54,000"), so every grouping comma goes.
+ *   - The symbol itself is read where it sits, in front of the number,
+ *     which is not where anybody says it. Moving it after the amount
+ *     turns "₹3540" into "3540 rupees", which is the sentence.
+ */
+export function speakNumbers(text: string): string {
+  return text
+    // Grouping commas only — a comma between two digits. A comma
+    // followed by a space is punctuation and is left alone.
+    .replace(/(\d),(?=\d)/g, '$1')
+    // The symbol and its written forms, moved after the amount. The
+    // decimal part rides along: "3540.50 rupees" is said correctly.
+    //
+    // The trailing guard is a lookahead, not a word boundary. A word
+    // boundary after the rupee sign never matches — it is not a word
+    // character — so "500 ₹" went through untouched and the currency was
+    // simply never said.
+    .replace(/(?:₹|\bRs\.?|\bINR\b)\s*(\d+(?:\.\d+)?)/gi, '$1 rupees')
+    .replace(/(\d+(?:\.\d+)?)\s*(?:₹|\bRs\.?|\bINR\b)(?!\w)/gi, '$1 rupees')
+    // A percent sign is read as "percent" by most engines and as
+    // nothing by some; saying it outright costs nothing.
+    .replace(/(\d+(?:\.\d+)?)\s*%/g, '$1 percent')
+}
+
+/**
  * Removes anything that is formatting rather than words.
  *
  * WhatsApp's own markers are the important case: a reply containing
@@ -237,9 +289,41 @@ async function pcmToMp3(pcm: Int16Array, sampleRate: number): Promise<Buffer> {
  * passed through untouched, which is how the voice preview sounded
  * before this existed. List bullets become pauses rather than the word
  * "dash".
+ *
+ * Applied centrally in `speak()` so both engines get it. It used to be
+ * called by the Gemini path alone, which meant every account on Google
+ * Cloud TTS — the faster, better engine, the one worth having — heard
+ * "star ACSTI Kerala star" on every bolded name.
  */
+/** A run of dotted initials, in any script: A.C.S.T.I, എ.സി.എസ്.ടി.ഐ,
+ *  P.O. Two or more short dotted segments is what distinguishes an
+ *  abbreviation from a sentence that lost the space after its stop.
+ *
+ *  Formatting characters are excluded from the segments deliberately.
+ *  Without that, "*എ.സി.എസ്.ടി.ഐ*" matched *including* its asterisks,
+ *  they were carried past the marker-stripping rule inside the held
+ *  text, and came back at the end — so the bold markers survived on
+ *  exactly the abbreviations this was written to protect. */
+const DOTTED_INITIALS = /(?:[^\s.*_~`]{1,3}\.){2,}[^\s.*_~`]{0,3}/g
+
+/** A control character that cannot occur in a WhatsApp message, so it
+ *  is safe to stand in for an abbreviation while the sentence rules run
+ *  over everything around it. */
+const HOLD = String.fromCharCode(1)
+const HOLD_SLOT = new RegExp(`${HOLD}(\\d+)${HOLD}`, 'g')
+
 export function stripForSpeech(text: string): string {
-  return (text || '')
+  const held: string[] = []
+  const guarded = speakNumbers(text || '').replace(DOTTED_INITIALS, (match) => {
+    held.push(match)
+    return `${HOLD}${held.length - 1}${HOLD}`
+  })
+
+  return spokenForm(guarded).replace(HOLD_SLOT, (_, i) => held[Number(i)] ?? '')
+}
+
+function spokenForm(text: string): string {
+  return text
     // WhatsApp bold/italic/strike markers, kept only when they wrap text.
     .replace(/[*_~]{1,2}([^*_~\n]+)[*_~]{1,2}/g, '$1')
     // Code fences and inline backticks.
@@ -251,7 +335,11 @@ export function stripForSpeech(text: string): string {
     .replace(/^[ \t]*[-*•][ \t]+/gm, '. ')
     .replace(/^[ \t]*(\d{1,2})[.)][ \t]+/gm, '. ')
     // Bare URLs are unlistenable; say so instead of spelling them out.
-    .replace(/https?:\/\/\S+/g, 'the link in the message')
+    // The caller sends the text alongside the audio whenever this
+    // fires, so "in the message" is a promise that gets kept — see
+    // hasUnspeakableDetail.
+    .replace(/https?:\/\/\S+/g, 'the link in the message below')
+    .replace(/\bwww\.\S+/gi, 'the link in the message below')
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{2,}/g, '. ')
     .replace(/\n/g, ' ')
@@ -267,6 +355,14 @@ export function stripForSpeech(text: string): string {
     // failure this whole feature exists to avoid. It would also break
     // "acsti.in". A capital after the stop is the one case that is
     // reliably a sentence boundary.
+    //
+    // Malayalam has no capitals, so the range here means *every*
+    // Malayalam letter — which turned "എ.സി.എസ്.ടി.ഐ" into
+    // "എ. സി. എസ്. ടി. ഐ", read aloud one letter at a time with a pause
+    // after each. The institute's own name, in its own language.
+    // "A.C.S.T.I" had the same fault in English and nobody had noticed.
+    // Dotted initials are lifted out before this line runs and put back
+    // after it — see stripForSpeech.
     .replace(/\.(?=[A-Zഀ-ൿ])/g, '. ')
     .replace(/\s{2,}/g, ' ')
     .trim()

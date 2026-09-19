@@ -16,7 +16,7 @@
 
 import { synthesizeWithCloudTts, detectSpeechLanguage } from './cloud-tts'
 import { resolveTtsCredentials } from './tts-credentials'
-import { synthesizeSpeech as synthesizeWithGemini } from './tts'
+import { synthesizeSpeech as synthesizeWithGemini, stripForSpeech } from './tts'
 import { recordAiUsage } from './usage'
 
 export type SpeechEngine = 'cloud' | 'gemini'
@@ -44,6 +44,16 @@ export async function speak(args: {
   /** Gemini prebuilt voice name, used only by the fallback. */
   geminiVoice?: string
 }): Promise<SpeechOutput> {
+  // Stripped here, once, rather than inside one engine.
+  //
+  // This used to happen in the Gemini path only. Cloud TTS — the faster
+  // engine, the one an account is told to configure — was handed the
+  // reply exactly as WhatsApp would render it, asterisks and all, and
+  // read "*ACSTI Kerala*" aloud as "star ACSTI Kerala star". The better
+  // an account's setup, the worse its voice sounded.
+  const spoken = stripForSpeech(args.text)
+  if (!spoken) throw new Error('Nothing to speak.')
+
   const credentials = args.accountId
     ? await resolveTtsCredentials(args.accountId)
     : { account: null, source: 'none' as const }
@@ -56,7 +66,7 @@ export async function speak(args: {
   if (credentials.account) {
     try {
       const result = await synthesizeWithCloudTts({
-        text: args.text,
+        text: spoken,
         character: args.cloudVoice,
         account: credentials.account,
       })
@@ -86,7 +96,7 @@ export async function speak(args: {
 
   const result = await synthesizeWithGemini({
     apiKey: args.geminiApiKey,
-    text: args.text,
+    text: spoken,
     voiceName: args.geminiVoice,
   })
 
@@ -112,7 +122,7 @@ export async function speak(args: {
   // Flagged rather than merely reported. This engine is fine for a voice
   // note, where nobody is waiting, and far too slow for a live call.
   console.log(
-    `[speech] gemini · ${detectSpeechLanguage(args.text)} · ${elapsed}ms` +
+    `[speech] gemini · ${detectSpeechLanguage(spoken)} · ${elapsed}ms` +
       (elapsed > 2000 ? ' — too slow for a call; a Google Cloud key would make this ~1s' : ''),
   )
   return {
@@ -120,7 +130,7 @@ export async function speak(args: {
     mimeType: result.mimeType,
     engine: 'gemini',
     durationSec: result.durationSec,
-    languageCode: detectSpeechLanguage(args.text),
+    languageCode: detectSpeechLanguage(spoken),
   }
 }
 

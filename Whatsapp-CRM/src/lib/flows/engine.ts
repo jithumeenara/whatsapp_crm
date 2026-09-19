@@ -49,6 +49,7 @@ import { scanActionTokens } from "@/lib/ai/action-tokens";
 import { checkSafetyGuard } from "@/lib/ai/safety-guard";
 import { speak } from "@/lib/ai/speech";
 import { engineSendVoiceNote } from "@/lib/flows/meta-send";
+import { hasUnspeakableDetail } from "@/lib/ai/tts";
 import { markdownToWhatsApp, WHATSAPP_REPLY_STYLE } from "@/lib/whatsapp/markdown-to-whatsapp";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import { loadKnowledge } from "@/lib/ai/knowledge-store";
@@ -2121,6 +2122,24 @@ async function advanceFromNodeKey(
               ...(speech.durationSec ? { duration_sec: Math.round(speech.durationSec) } : {}),
             });
             voiceSent = true;
+
+            // A link, a phone number or a reference cannot be heard —
+            // the same reason auto-reply sends the written copy too.
+            // Best effort: the answer has already arrived as audio.
+            if (hasUnspeakableDetail(reply)) {
+              await engineSendText({
+                accountId: run.account_id,
+                userId: run.user_id,
+                conversationId: run.conversation_id!,
+                contactId: run.contact_id!,
+                text: reply,
+              }).catch((textErr) =>
+                console.error(
+                  "[ai_reply] voice sent but the written copy failed:",
+                  textErr instanceof Error ? textErr.message : textErr,
+                ),
+              );
+            }
           } catch (err) {
             console.error(
               "[ai_reply] voice synthesis failed, sending text instead:",

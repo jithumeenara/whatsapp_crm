@@ -32,6 +32,7 @@ import { runCustomerTurn, formatTurnTimings, type CustomerAiConfig } from './cus
 import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
 import { speak } from './speech'
+import { hasUnspeakableDetail } from './tts'
 import { getProviderKeys } from './providers/registry'
 import { sendHandoffAlert } from './handoff-alert'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -535,6 +536,37 @@ export async function autoReplyToMessage(args: {
         transcript: reply,
       })
       await markAsAssistantReply(sent.whatsapp_message_id)
+
+      // Some answers cannot be heard.
+      //
+      // A customer asked by voice note for the office number and got a
+      // voice note reading ten digits at them. Nobody can write that
+      // down from one listen, and the spoken form had already been
+      // reduced to "the link in the message" for a URL — a message that
+      // was never sent. So when the answer carries a link, an address,
+      // a phone number or a reference code, the text follows it.
+      //
+      // Both, not either. The voice note is what they asked for and is
+      // the part that sounds like a person; the text is the part they
+      // can tap. Best effort on the text: the answer has already
+      // arrived, and a failure here must not look like no reply at all.
+      if (hasUnspeakableDetail(reply)) {
+        await engineSendText({
+          accountId: args.accountId,
+          userId: args.userId,
+          conversationId: args.conversationId,
+          contactId: args.contactId,
+          text: reply,
+        })
+          .then((textMsg) => markAsAssistantReply(textMsg.whatsapp_message_id))
+          .catch((err) =>
+            console.error(
+              '[auto-reply] voice sent but the written copy failed:',
+              err instanceof Error ? err.message : err,
+            ),
+          )
+      }
+
       return 'replied'
     } catch (err) {
       console.error('[auto-reply] voice failed, sending text:', err instanceof Error ? err.message : err)
