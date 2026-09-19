@@ -8,6 +8,7 @@ import {
   X, Filter, MoreHorizontal, Trash2, EyeOff, Eye, AlertTriangle,
   LayoutGrid, Table2, ChevronRight, Clock, Calendar, CheckSquare,
   Sparkles, CheckCircle2, Bell, UserPlus, Globe, Megaphone, Share2, Bot,
+  Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead } from "@/types"
@@ -708,8 +709,33 @@ function LeadTile({
 
 // ---- table row ----
 
+/** One action in the bulk bar. Small, quiet, and identical to its
+ *  neighbours — these are a row of equals, and styling one of them as
+ *  primary would suggest an order they do not have. */
+function BulkButton({
+  children,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="h-7 rounded-lg border border-indigo-200 bg-white px-2.5 text-[12px] font-medium text-indigo-700 transition-colors hover:bg-indigo-100 disabled:opacity-50"
+    >
+      {children}
+    </button>
+  )
+}
+
 function LeadRow({
   lead, index, tab, scoringMode, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
+  selected, onToggleSelect,
 }: {
   lead: Lead; index: number; tab: string; scoringMode: string; menuOpenId: string | null
   sources: { icon: string; label: string }[]
@@ -718,6 +744,8 @@ function LeadRow({
   onDelete: (id: string) => void
   onHide: (id: string, hidden: boolean) => void
   onAddToPipeline: (lead: Lead) => void
+  selected: boolean
+  onToggleSelect: (id: string) => void
 }) {
   const contactName = lead.contact?.name
   const phone = lead.contact?.phone ?? ""
@@ -732,12 +760,24 @@ function LeadRow({
     <tr onClick={() => onOpen(lead.id)}
       className={cn(
         "group border-b border-slate-100 cursor-pointer transition-colors",
-        isNew
-          ? "bg-indigo-50/50 hover:bg-indigo-100/60"
-          : isOdd
-            ? "bg-slate-50/60 hover:bg-indigo-50/40"
-            : "bg-white hover:bg-indigo-50/40"
+        selected
+          ? "bg-indigo-50 hover:bg-indigo-100/70"
+          : isNew
+            ? "bg-indigo-50/50 hover:bg-indigo-100/60"
+            : isOdd
+              ? "bg-slate-50/60 hover:bg-indigo-50/40"
+              : "bg-white hover:bg-indigo-50/40"
       )}>
+      {/* stopPropagation, or ticking a row would also open it. */}
+      <td className="w-10 pl-5 pr-0 py-3.5" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(lead.id)}
+          aria-label={`Select ${lead.contact?.name ?? lead.title}`}
+          className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+        />
+      </td>
       <td className="px-5 py-3.5">
         <div className="flex items-center gap-3">
           {/* New indicator */}
@@ -1007,8 +1047,10 @@ function preferredLeadsView(): "tiles" | "table" {
 
 export default function LeadsV2() {
   const router = useRouter()
-  const { canViewAllLeads } = useAuth()
+  const { canViewAllLeads, userId } = useAuth()
   const [tab, setTab] = useState("mine")
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
@@ -1100,6 +1142,12 @@ export default function LeadsV2() {
     }
   }, [tab, effectiveTab, activeTagId, searchQ])
 
+  // A selection that survives a tab or search change would apply to
+  // leads the person is no longer looking at.
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [tab, activeTagId, searchQ])
+
   useEffect(() => { loadData() }, [loadData])
 
   // Real-time: update the leads list instantly when any lead is patched
@@ -1149,6 +1197,62 @@ export default function LeadsV2() {
       toast.error("Failed to delete lead")
     } finally {
       setDeleting(false)
+    }
+  }
+
+  // Only what is on screen. A "select all" that quietly picks up rows on
+  // page four is how somebody changes forty leads they never saw.
+  const allOnPageSelected = leads.length > 0 && leads.every((l) => selectedIds.has(l.id))
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allOnPageSelected) for (const l of leads) next.delete(l.id)
+      else for (const l of leads) next.add(l.id)
+      return next
+    })
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  /**
+   * Applies one change to everything ticked.
+   *
+   * One request, not one per lead: fifty round trips is fifty chances to
+   * fail halfway, and a half-applied bulk change is invisible once the
+   * list reloads. The server reports what it actually touched, and that
+   * number is what gets shown — "42 updated, 8 skipped" is the truth
+   * when eight of them belonged to somebody else.
+   */
+  async function applyBulk(patch: Record<string, unknown>, what: string) {
+    if (selectedIds.size === 0 || bulkBusy) return
+    setBulkBusy(true)
+    try {
+      const res = await fetch("/api/leads/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [...selectedIds], ...patch }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error ?? `Could not apply that (${res.status})`)
+      toast.success(
+        data.skipped > 0
+          ? `${data.updated} ${what} — ${data.skipped} skipped, not yours to change`
+          : `${data.updated} ${what}`,
+      )
+      setSelectedIds(new Set())
+      await loadData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not apply that change.")
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -1345,6 +1449,63 @@ export default function LeadsV2() {
           )
         )}
 
+        {/* What is ticked, and what can be done with it.
+            Its own row above the list rather than a floating bar: it
+            appears and disappears with the selection, and a bar that
+            overlays the table covers the rows somebody is choosing
+            between. */}
+        {isLeadTab && selectedIds.size > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 py-2">
+            <span className="text-[12.5px] font-semibold text-indigo-700">
+              {selectedIds.size} selected
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-[11.5px] text-indigo-500 transition-colors hover:text-indigo-700"
+            >
+              Clear
+            </button>
+
+            <span className="mx-1 h-4 w-px bg-indigo-200" />
+
+            <BulkButton
+              disabled={bulkBusy}
+              onClick={() => applyBulk({ assigned_to: userId }, "assigned to you")}
+            >
+              Assign to me
+            </BulkButton>
+            <BulkButton
+              disabled={bulkBusy}
+              onClick={() => applyBulk({ status: "follow_up" }, "moved to follow-up")}
+            >
+              Follow-up
+            </BulkButton>
+            <BulkButton
+              disabled={bulkBusy}
+              onClick={() => applyBulk({ status: "call_not_connected" }, "marked not connected")}
+            >
+              Not connected
+            </BulkButton>
+            <BulkButton
+              disabled={bulkBusy}
+              onClick={() => applyBulk({ status: "closed" }, "closed")}
+            >
+              Close
+            </BulkButton>
+            {canViewAllLeads && (
+              <BulkButton
+                disabled={bulkBusy}
+                onClick={() => applyBulk({ assigned_to: null }, "returned to the pool")}
+              >
+                Return to pool
+              </BulkButton>
+            )}
+
+            {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
+          </div>
+        )}
+
         {/* ── Lead tabs ── */}
         {isLeadTab && (
           loading ? (
@@ -1398,6 +1559,15 @@ export default function LeadsV2() {
             <table className="w-full text-[13px]">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="w-10 pl-5 pr-0 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all leads on this page"
+                      className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
+                    />
+                  </th>
                   <th className="px-5 py-3 text-left">Lead</th>
                   <th className="px-4 py-3 text-left">Status</th>
                   <th className="px-4 py-3 text-left hidden md:table-cell">Score</th>
@@ -1413,6 +1583,8 @@ export default function LeadsV2() {
                 {leads.map((lead, i) => (
                   <LeadRow key={lead.id} lead={lead} index={i} tab={effectiveTab} scoringMode={scoringMode}
                     menuOpenId={menuOpenId} sources={sourceOptions}
+                    selected={selectedIds.has(lead.id)}
+                    onToggleSelect={toggleSelect}
                     onPick={handlePick}
                     onOpen={(id) => router.push(`/leads/${id}?from=${effectiveTab}`)}
                     onMenuToggle={(id) => setMenuOpenId((prev) => prev === id ? null : id)}
