@@ -534,7 +534,11 @@ export default function DashboardV2() {
 
       {/* Somebody's own shortcuts. Rendered last so it floats above
           everything; it positions itself. */}
-      <QuickLinks links={profile?.quick_links} isAgent={accountRole === "agent"} />
+      <QuickLinks
+        links={profile?.quick_links}
+        enabled={profile?.quick_links_enabled}
+        isAgent={accountRole === "agent"}
+      />
     </div>
   )
 }

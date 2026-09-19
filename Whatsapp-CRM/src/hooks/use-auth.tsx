@@ -38,6 +38,8 @@ interface Profile {
   /** This person's own dashboard shortcuts. Already sanitised by the
    *  API, and sanitised again where it is rendered. */
   quick_links: string[];
+  /** Whether the dashboard button shows at all. */
+  quick_links_enabled: boolean;
 }
 
 interface AccountSummary {
@@ -102,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           account_role: accountRole,
           preferred_language: data.profile.preferred_language ?? null,
           quick_links: Array.isArray(data.profile.quick_links) ? data.profile.quick_links : [],
+          quick_links_enabled: data.profile.quick_links_enabled !== false,
         });
         if (data.account) {
           setAccount({

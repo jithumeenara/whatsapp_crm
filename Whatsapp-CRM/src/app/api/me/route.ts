@@ -48,6 +48,7 @@ export async function GET() {
       // Sanitised on the way out as well as in: a link stored before a
       // page was removed must not reach the dashboard as a dead row.
       quick_links: sanitizeQuickLinks(profile.quick_links),
+      quick_links_enabled: profile.quick_links_enabled,
     },
     account: profile.account
       ? {

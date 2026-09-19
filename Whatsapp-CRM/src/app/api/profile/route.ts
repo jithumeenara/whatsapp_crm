@@ -22,6 +22,7 @@ export async function PATCH(req: NextRequest) {
       preferred_language?: string | null
       /** Ordered hrefs; validated against the app's own navigation. */
       quick_links?: unknown
+      quick_links_enabled?: boolean
     }
 
     const data: Record<string, unknown> = {}
@@ -56,6 +57,9 @@ export async function PATCH(req: NextRequest) {
       // from a request body.
       data.quick_links = sanitizeQuickLinks(body.quick_links)
     }
+    if (typeof body.quick_links_enabled === "boolean") {
+      data.quick_links_enabled = body.quick_links_enabled
+    }
 
     if (Object.keys(data).length === 0) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 })
@@ -75,6 +79,7 @@ export async function PATCH(req: NextRequest) {
         account_role: true,
         preferred_language: true,
         quick_links: true,
+        quick_links_enabled: true,
       },
     })
 
