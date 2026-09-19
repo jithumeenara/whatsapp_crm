@@ -17,6 +17,8 @@ const TAB_STATUS_MAP: Record<string, string | null> = {
   // Everything this person is working, whatever state it is in. The tab
   // that was missing — see the GET handler for what its absence cost.
   mine: null,
+  // Open leads nobody has touched past the account's own threshold.
+  overdue: null,
 }
 
 /** A finished lead is history, not work. It stays reachable on its own
@@ -69,6 +71,25 @@ export async function GET(req: NextRequest) {
     // to see what needs doing should show what needs doing.
     if (tab !== 'closed' && tabStatus === null) {
       where.status = { not: CLOSED }
+    }
+
+    // Untouched for longer than this account allows.
+    //
+    // Filtered in SQL rather than marked in the browser: the point of
+    // the tab is to find the neglected ones among thousands, and a page
+    // of fifty cannot be filtered into a list of what is late.
+    if (tab === 'overdue') {
+      const settings = await prisma.leadSettings.findUnique({
+        where: { account_id: ctx.accountId },
+        select: { sla_breach_hours: true },
+      })
+      const breachHours = settings?.sla_breach_hours ?? 72
+      // 0 means the account switched the marking off; the tab then has
+      // nothing to say, and says nothing rather than everything.
+      where.updated_at =
+        breachHours > 0
+          ? { lt: new Date(Date.now() - breachHours * 60 * 60 * 1000) }
+          : { lt: new Date(0) }
     }
 
     // Pool: unassigned new leads — visible to all agents

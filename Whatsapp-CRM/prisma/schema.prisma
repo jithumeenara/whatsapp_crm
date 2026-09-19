@@ -2327,6 +2327,16 @@ model LeadSettings {
   lead_sources              Json?   // {icon,label}[] — customisable lead source list
   webhook_secret            String? // plain-text secret for /api/external/webhook?secret=
 
+  /// How long an open lead may sit untouched before the list says so,
+  /// in hours. Not an alarm and not an assignment rule — a colour on a
+  /// row, so "nobody has called this person in four days" is visible
+  /// without anybody auditing for it. 0 turns the marking off.
+  ///
+  /// Two thresholds, because "slipping" and "neglected" want different
+  /// reactions and one number cannot say both.
+  sla_warn_hours            Int     @default(24)
+  sla_breach_hours          Int     @default(72)
+
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
   @@map("lead_settings")

@@ -42,6 +42,8 @@ function normalise(raw: unknown, defaults: ListItem[]): ListItem[] {
 type RawRow = {
   auto_lead_creation: boolean
   scoring_mode: string
+  sla_warn_hours: number | null
+  sla_breach_hours: number | null
   score_options: unknown
   call_not_connected_labels: unknown
   call_connected_labels: unknown
@@ -59,6 +61,15 @@ async function ensureColumns(accountId: string) {
   await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS lead_sources JSONB
   `
+  // Same belt-and-braces as the columns above: the raw SELECT below
+  // names these, so a deployment that has not run migration 095 yet
+  // would fail the whole settings read rather than default them.
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS sla_warn_hours INTEGER NOT NULL DEFAULT 24
+  `
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS sla_breach_hours INTEGER NOT NULL DEFAULT 72
+  `
   await prisma.leadSettings.upsert({
     where:  { account_id: accountId },
     update: {},
@@ -74,6 +85,8 @@ export async function GET() {
     const rows = await prisma.$queryRaw<RawRow[]>`
       SELECT auto_lead_creation,
              scoring_mode,
+             sla_warn_hours,
+             sla_breach_hours,
              score_options,
              call_not_connected_labels,
              call_connected_labels,
@@ -88,6 +101,8 @@ export async function GET() {
     return NextResponse.json({
       auto_lead_creation:        row?.auto_lead_creation   ?? false,
       scoring_mode:              row?.scoring_mode         ?? "score",
+      sla_warn_hours:            row?.sla_warn_hours       ?? 24,
+      sla_breach_hours:          row?.sla_breach_hours     ?? 72,
       score_options:             normalise(row?.score_options,             DEFAULT_SCORE_OPTIONS),
       call_not_connected_labels: normalise(row?.call_not_connected_labels, DEFAULT_NOT_CONNECTED),
       call_connected_labels:     normalise(row?.call_connected_labels,     DEFAULT_CONNECTED),
@@ -108,7 +123,39 @@ export async function PATCH(req: NextRequest) {
     await ensureColumns(ctx.accountId)
 
     // ── ORM fields ─────────────────────────────────────────────────────────────
-    const ormData: { auto_lead_creation?: boolean; scoring_mode?: string } = {}
+    const ormData: {
+      auto_lead_creation?: boolean
+      scoring_mode?: string
+      sla_warn_hours?: number
+      sla_breach_hours?: number
+    } = {}
+
+    // Clamped rather than rejected. These come from a slider, and a
+    // value outside the range is a mis-drag, not an attack; the useful
+    // response is the nearest sane number. 0 is meaningful — it is how
+    // an account turns the marking off — so the floor is 0, not 1.
+    const hours = (v: unknown): number | undefined =>
+      typeof v === "number" && Number.isFinite(v)
+        ? Math.min(24 * 30, Math.max(0, Math.round(v)))
+        : undefined
+
+    const warn = hours(body.sla_warn_hours)
+    if (warn !== undefined) ormData.sla_warn_hours = warn
+    const breach = hours(body.sla_breach_hours)
+    if (breach !== undefined) ormData.sla_breach_hours = breach
+
+    // A breach that fires before the warning is a warning nobody sees.
+    if (
+      ormData.sla_warn_hours !== undefined &&
+      ormData.sla_breach_hours !== undefined &&
+      ormData.sla_breach_hours > 0 &&
+      ormData.sla_breach_hours < ormData.sla_warn_hours
+    ) {
+      return NextResponse.json(
+        { error: "The overdue threshold has to be at least as long as the warning one." },
+        { status: 400 },
+      )
+    }
 
     if (typeof body.auto_lead_creation === "boolean") {
       ormData.auto_lead_creation = body.auto_lead_creation

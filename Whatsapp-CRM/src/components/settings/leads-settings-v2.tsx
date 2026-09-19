@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
-import { Zap, BarChart3, PhoneOff, Phone, Plus, X, GripVertical, XCircle, Smile, Globe } from "lucide-react"
+import { Zap, BarChart3, PhoneOff, Phone, Plus, X, GripVertical, XCircle, Smile, Globe, Clock } from "lucide-react"
 
 export type ListItem = { icon: string; label: string }
 
@@ -286,6 +286,10 @@ const DEF_LEAD_SOURCES: ListItem[] = [
 interface SettingsData {
   auto_lead_creation: boolean
   scoring_mode: string
+  /** Hours a lead may sit untouched before the list marks it. See
+   *  src/lib/leads/sla.ts. */
+  sla_warn_hours: number
+  sla_breach_hours: number
   score_options: ListItem[]
   call_not_connected_labels: ListItem[]
   call_connected_labels: ListItem[]
@@ -293,10 +297,20 @@ interface SettingsData {
   lead_sources: ListItem[]
 }
 
+/** "36 hours" is a number; "1.5 days" is a length of time. Past a day
+ *  people think in days. */
+function describeHours(hours: number): string {
+  if (hours < 24) return `${hours}h`
+  const days = hours / 24
+  return `${Number.isInteger(days) ? days : days.toFixed(1)} day${days === 1 ? "" : "s"}`
+}
+
 export function LeadsSettingsV2() {
   const [settings, setSettings] = useState<SettingsData>({
     auto_lead_creation: false,
     scoring_mode: "score",
+    sla_warn_hours: 24,
+    sla_breach_hours: 72,
     score_options: DEF_SCORE_OPTIONS,
     call_not_connected_labels: DEF_NOT_CONNECTED,
     call_connected_labels: DEF_CONNECTED,
@@ -313,6 +327,8 @@ export function LeadsSettingsV2() {
         setSettings({
           auto_lead_creation: d.auto_lead_creation ?? false,
           scoring_mode: d.scoring_mode ?? "score",
+          sla_warn_hours: typeof d.sla_warn_hours === "number" ? d.sla_warn_hours : 24,
+          sla_breach_hours: typeof d.sla_breach_hours === "number" ? d.sla_breach_hours : 72,
           score_options: normalise(d.score_options, DEF_SCORE_OPTIONS),
           call_not_connected_labels: normalise(d.call_not_connected_labels, DEF_NOT_CONNECTED),
           call_connected_labels: normalise(d.call_connected_labels, DEF_CONNECTED),
@@ -382,6 +398,73 @@ export function LeadsSettingsV2() {
               }`}
             />
           </button>
+        </div>
+      </div>
+
+      {/* ── When a lead counts as neglected ──
+          A colour on a row, not an alarm: nothing is reassigned,
+          escalated or closed on a timer. Action on a schedule is how a
+          lead somebody was deliberately holding gets taken off them at
+          two in the morning. */}
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-50">
+            <Clock className="h-4 w-4 text-rose-500" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold text-slate-800">Going cold</p>
+            <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
+              An open lead nobody has touched for this long is marked in the list — amber first,
+              then red — and the red ones collect on their own Overdue tab. Set either to 0 to
+              turn that off.
+            </p>
+
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-[12px] font-medium text-slate-600">
+                  Amber after{" "}
+                  <span className="text-slate-400">
+                    {settings.sla_warn_hours === 0 ? "off" : describeHours(settings.sla_warn_hours)}
+                  </span>
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={720}
+                  value={settings.sla_warn_hours}
+                  onChange={(e) =>
+                    setSettings((st) => ({ ...st, sla_warn_hours: Math.max(0, Number(e.target.value) || 0) }))
+                  }
+                  className="mt-1.5 h-9 w-full rounded-xl border border-slate-200 px-3 text-[13px] tabular-nums outline-none focus:border-[#5B6CF9]"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-[12px] font-medium text-slate-600">
+                  Red after{" "}
+                  <span className="text-slate-400">
+                    {settings.sla_breach_hours === 0 ? "off" : describeHours(settings.sla_breach_hours)}
+                  </span>
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  max={720}
+                  value={settings.sla_breach_hours}
+                  onChange={(e) =>
+                    setSettings((st) => ({ ...st, sla_breach_hours: Math.max(0, Number(e.target.value) || 0) }))
+                  }
+                  className="mt-1.5 h-9 w-full rounded-xl border border-slate-200 px-3 text-[13px] tabular-nums outline-none focus:border-[#5B6CF9]"
+                />
+              </label>
+            </div>
+
+            {settings.sla_breach_hours > 0 && settings.sla_breach_hours < settings.sla_warn_hours && (
+              <p className="mt-2 text-[11.5px] text-rose-600">
+                Red has to come after amber, or the amber stage never shows.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

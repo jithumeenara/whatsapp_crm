@@ -14,6 +14,7 @@ import { toast } from "sonner"
 import type { Lead } from "@/types"
 import { useAuth } from "@/hooks/use-auth"
 import { useRealtime } from "@/hooks/use-realtime"
+import { slaStateFor, describeUntouched, SLA_STYLES, DEFAULT_SLA, type SlaThresholds } from "@/lib/leads/sla"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 
 // ---- types ----
@@ -49,6 +50,7 @@ const TABS: TabDef[] = [
   { key: "mine",      label: "Mine",       color: "text-indigo-600" },
   { key: "new_pool",  label: "New Pool",   color: "text-sky-600"    },
   { key: "follow_up", label: "Follow-up",  color: "text-orange-600" },
+  { key: "overdue",   label: "Overdue",    color: "text-rose-600"   },
   { key: "all",       label: "All Open",   color: "text-slate-600"  },
   { key: "closed",    label: "Closed",     color: "text-emerald-600"},
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
@@ -59,6 +61,7 @@ const TAB_DOT: Record<string, string> = {
   all: "bg-slate-400",
   new_pool: "bg-sky-500",
   follow_up: "bg-orange-500",
+  overdue: "bg-rose-500",
   closed: "bg-emerald-500",
   tasks: "bg-violet-500",
 }
@@ -735,7 +738,7 @@ function BulkButton({
 
 function LeadRow({
   lead, index, tab, scoringMode, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
-  selected, onToggleSelect,
+  selected, onToggleSelect, sla,
 }: {
   lead: Lead; index: number; tab: string; scoringMode: string; menuOpenId: string | null
   sources: { icon: string; label: string }[]
@@ -746,6 +749,7 @@ function LeadRow({
   onAddToPipeline: (lead: Lead) => void
   selected: boolean
   onToggleSelect: (id: string) => void
+  sla: SlaThresholds
 }) {
   const contactName = lead.contact?.name
   const phone = lead.contact?.phone ?? ""
@@ -755,11 +759,16 @@ function LeadRow({
   const isOdd = index % 2 !== 0
   const isUnassigned = !lead.assignee
   const showPick = isUnassigned && (tab === "new_pool" || tab === "all")
+  // A coloured edge rather than a coloured row: the row already carries
+  // selection and new-lead states, and a third full-row colour would
+  // fight them. The bar reads down a long list in one glance.
+  const slaState = slaStateFor(lead, sla)
 
   return (
     <tr onClick={() => onOpen(lead.id)}
       className={cn(
         "group border-b border-slate-100 cursor-pointer transition-colors",
+        SLA_STYLES[slaState].bar,
         selected
           ? "bg-indigo-50 hover:bg-indigo-100/70"
           : isNew
@@ -841,7 +850,22 @@ function LeadRow({
         )}
       </td>
       <td className="px-4 py-3.5 hidden xl:table-cell text-[11px] text-slate-400">
-        {relTime(lead.updated_at)}
+        {/* Said in words when it is late. "2 days ago" is a fact;
+            "2d untouched" in red is the same fact with the point made. */}
+        {slaState === "ok" ? (
+          relTime(lead.updated_at)
+        ) : (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-medium",
+              SLA_STYLES[slaState].chip,
+            )}
+            title={`Last touched ${relTime(lead.updated_at)}`}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", SLA_STYLES[slaState].dot)} />
+            {describeUntouched(lead.updated_at)}
+          </span>
+        )}
       </td>
       <td className="px-4 py-3.5">
         <div className="flex items-center justify-end gap-1">
@@ -1049,6 +1073,7 @@ export default function LeadsV2() {
   const router = useRouter()
   const { canViewAllLeads, userId } = useAuth()
   const [tab, setTab] = useState("mine")
+  const [sla, setSla] = useState<SlaThresholds>(DEFAULT_SLA)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
@@ -1124,6 +1149,11 @@ export default function LeadsV2() {
         setLeads(lr.leads ?? lr ?? [])
         setTags(tr?.tags ?? tr ?? [])
         setScoringMode(sr.scoring_mode ?? "score")
+        setSla({
+          warnHours: typeof sr.sla_warn_hours === "number" ? sr.sla_warn_hours : DEFAULT_SLA.warnHours,
+          breachHours:
+            typeof sr.sla_breach_hours === "number" ? sr.sla_breach_hours : DEFAULT_SLA.breachHours,
+        })
         if (Array.isArray(sr.score_options) && sr.score_options.length > 0) {
           setScoreOptions(sr.score_options.map((v: unknown) =>
             typeof v === "string" ? { icon: "", label: v } : v as { icon: string; label: string }
@@ -1585,6 +1615,7 @@ export default function LeadsV2() {
                     menuOpenId={menuOpenId} sources={sourceOptions}
                     selected={selectedIds.has(lead.id)}
                     onToggleSelect={toggleSelect}
+                    sla={sla}
                     onPick={handlePick}
                     onOpen={(id) => router.push(`/leads/${id}?from=${effectiveTab}`)}
                     onMenuToggle={(id) => setMenuOpenId((prev) => prev === id ? null : id)}
