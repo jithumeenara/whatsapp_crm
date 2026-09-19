@@ -526,6 +526,10 @@ export async function runCustomerTurn(args: {
     retrievalConfidence: selected.confidence,
     customerMessage: args.customerMessage,
     recentCustomerMessages: history.filter((m) => m.role === 'user').map((m) => m.text),
+    // With the speakers, so "asked again" can mean what it says: we
+    // answered and it did not land, rather than the same message
+    // arriving twice.
+    conversationTurns: history,
     knowledgeEmpty: selected.qaPairs.length === 0 && selected.documentChunks.length === 0,
     // The assistant spoke last, so this message is a reply to it. Short
     // does not mean unclear when it answers a question we just asked.

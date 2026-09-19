@@ -200,7 +200,14 @@ export interface Conversation {
   fep_expires_at?: string | null;
 }
 
-export type SenderType = 'customer' | 'agent' | 'bot';
+/**
+ * 'system' is a note *about* the conversation rather than a message in
+ * it — a handover's reasoning, an automatic close. It is written to the
+ * same table and has always been, but was missing from this union, so
+ * every note was typed as if the customer had sent it and the Inbox
+ * rendered it as an inbound bubble.
+ */
+export type SenderType = 'customer' | 'agent' | 'bot' | 'system';
 export type ContentType =
   | 'text'
   | 'image'

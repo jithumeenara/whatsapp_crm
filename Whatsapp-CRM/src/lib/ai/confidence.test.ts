@@ -97,3 +97,68 @@ describe("assessConfidence — short replies mid-conversation", () => {
     expect(assessment.signals.some((s) => s.label === "No knowledge retrieved")).toBe(true);
   });
 });
+
+/**
+ * "Asked again" is a claim about us, not about them.
+ *
+ * The signal's own wording is "previous answers have not landed", and
+ * that is only true if there was a previous answer. From a live
+ * handover: somebody asked in Malayalam for their email to be saved and
+ * the training calendar mailed to them, the identical text was stored
+ * twice with nothing from us in between, and the penalty it triggered
+ * took 0.69 down to 0.57 — throwing away a reply that offered to do
+ * exactly what they had asked, in favour of "let me connect you with a
+ * team member". They were left waiting on a person for something the
+ * assistant could have done itself.
+ */
+describe("repeated asking", () => {
+  const QUESTION = "ഇമെയിൽ ഐഡി ഒന്ന് സേവ് ചെയ്യൂ";
+
+  it("does not penalise the same message arriving twice", () => {
+    const result = assessConfidence({
+      retrievalConfidence: 0.69,
+      customerMessage: QUESTION,
+      recentCustomerMessages: [QUESTION],
+      conversationTurns: [{ role: "user", text: QUESTION }],
+    });
+    expect(result.signals.map((s) => s.label)).not.toContain("Asked again");
+  });
+
+  it("still penalises a question we answered and they asked again", () => {
+    const result = assessConfidence({
+      retrievalConfidence: 0.69,
+      customerMessage: QUESTION,
+      recentCustomerMessages: [QUESTION],
+      conversationTurns: [
+        { role: "user", text: QUESTION },
+        { role: "model", text: "ഞങ്ങൾ പരിശോധിക്കാം." },
+      ],
+    });
+    expect(result.signals.map((s) => s.label)).toContain("Asked again");
+  });
+
+  it("counts a third unanswered-feeling ask more heavily", () => {
+    const result = assessConfidence({
+      retrievalConfidence: 0.69,
+      customerMessage: QUESTION,
+      conversationTurns: [
+        { role: "user", text: QUESTION },
+        { role: "model", text: "ഒന്ന്" },
+        { role: "user", text: QUESTION },
+        { role: "model", text: "രണ്ട്" },
+      ],
+    });
+    expect(result.signals.map((s) => s.label)).toContain("Asked repeatedly");
+  });
+
+  it("behaves as before when the turns are not supplied", () => {
+    // The evaluation suite and older callers pass only the customer's
+    // side; they must keep the behaviour they were written against.
+    const result = assessConfidence({
+      retrievalConfidence: 0.69,
+      customerMessage: QUESTION,
+      recentCustomerMessages: [QUESTION],
+    });
+    expect(result.signals.map((s) => s.label)).toContain("Asked again");
+  });
+});

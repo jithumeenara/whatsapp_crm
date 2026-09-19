@@ -32,6 +32,8 @@ import {
   Package,
   IndianRupee,
   Languages,
+  Info,
+  ChevronDown,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
@@ -1103,6 +1105,80 @@ function TranslateToggle({ message }: { message: Message }) {
   return <div className="mt-1">{trigger}</div>;
 }
 
+/**
+ * An internal note on the thread, folded shut.
+ *
+ * These are written by the assistant when it hands a conversation over,
+ * and they are long on purpose: the reason it stopped, the reply it
+ * withheld, the confidence signals, what it looked up. All of that is
+ * exactly what somebody picking the thread up needs — once, when they
+ * pick it up.
+ *
+ * Left open, it is twenty lines of diagnostics sitting between two
+ * messages, and scrolling back through a conversation means scrolling
+ * past it every time. So it opens as one line saying what happened, and
+ * everything else is a click away. Shut by default, and shut again on
+ * the next visit: this is reference material, not part of the
+ * conversation.
+ *
+ * Never shown to the customer — a system message is not sent anywhere.
+ */
+function SystemNote({ message }: { message: Message }) {
+  const [open, setOpen] = useState(false);
+  const text = message.content_text ?? "";
+  const lines = text.split("\n").filter((l) => l.trim());
+  // The first line is written to stand alone — "The customer asked to
+  // speak to someone", "Closed automatically — no reply for 1 day".
+  const summary = lines[0] ?? "Note";
+  const hasMore = lines.length > 1;
+  const time = format(new Date(message.created_at), "HH:mm");
+
+  return (
+    <div className="my-2 flex w-full justify-center px-2">
+      <div className="w-full max-w-[92%] overflow-hidden rounded-xl border border-amber-200/70 bg-amber-50/60">
+        <button
+          type="button"
+          onClick={() => hasMore && setOpen((v) => !v)}
+          className={cn(
+            "flex w-full items-start gap-2 px-3 py-2 text-left",
+            hasMore && "transition-colors hover:bg-amber-100/50",
+          )}
+          aria-expanded={hasMore ? open : undefined}
+        >
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12px] font-medium leading-snug text-amber-900" style={WRAP_STYLE}>
+              {summary}
+            </span>
+            {hasMore && !open && (
+              <span className="mt-0.5 block text-[11px] text-amber-700/80">
+                {lines.length - 1} more {lines.length - 1 === 1 ? "line" : "lines"} — tap to read
+              </span>
+            )}
+          </span>
+          <span className="shrink-0 text-[10.5px] tabular-nums text-amber-700/70">{time}</span>
+          {hasMore && (
+            <ChevronDown
+              className={cn(
+                "mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 transition-transform duration-150",
+                open && "rotate-180",
+              )}
+            />
+          )}
+        </button>
+        {hasMore && open && (
+          <div
+            className="whitespace-pre-wrap border-t border-amber-200/70 px-3 py-2.5 text-[12px] leading-relaxed text-amber-900/90"
+            style={WRAP_STYLE}
+          >
+            {lines.slice(1).join("\n")}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function MessageBubble({
   message,
   reply,
@@ -1111,6 +1187,12 @@ export function MessageBubble({
   onToggleReaction,
   agentName,
 }: MessageBubbleProps) {
+  // A note about the conversation, not a message in it. Rendered as its
+  // own folded strip rather than as an inbound bubble, which is what it
+  // used to be mistaken for — a wall of diagnostics arriving, to all
+  // appearances, from the customer.
+  if (message.sender_type === "system") return <SystemNote message={message} />;
+
   const isOutbound = message.sender_type === "agent" || message.sender_type === "bot";
   const isBot = message.sender_type === "bot";
   const isAgent = message.sender_type === "agent";

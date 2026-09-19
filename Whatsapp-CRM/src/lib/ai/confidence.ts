@@ -65,6 +65,36 @@ const FRUSTRATION_MARKERS = [
  *  precise in context. */
 const SPECIFIC_SHORT_FORMS = ['when', 'where', 'how much', 'what time', 'price', 'fees', 'fee']
 
+/**
+ * How many times this question was asked *and answered* before now.
+ *
+ * With the turns available, a prior customer message counts only if a
+ * model turn follows it — that is what makes it an unsatisfied
+ * question rather than a duplicate delivery or a double tap.
+ *
+ * Without them, falls back to counting matching customer messages, so
+ * an older caller behaves exactly as it used to.
+ */
+function countAnsweredRepeats(
+  normalizedNow: string,
+  turns: Array<{ role: 'user' | 'model'; text: string }> | undefined,
+  fallbackHistory: string[],
+): number {
+  if (!turns || turns.length === 0) {
+    return fallbackHistory.filter((m) => similarEnough(normalizeForCompare(m), normalizedNow)).length
+  }
+
+  let count = 0
+  for (let i = 0; i < turns.length; i++) {
+    const turn = turns[i]
+    if (turn.role !== 'user') continue
+    if (!similarEnough(normalizeForCompare(turn.text), normalizedNow)) continue
+    // Answered iff anything of ours came after it.
+    if (turns.slice(i + 1).some((t) => t.role === 'model')) count += 1
+  }
+  return count
+}
+
 export function assessConfidence(args: {
   /** Cosine similarity of the best usable knowledge match, 0-1. */
   retrievalConfidence: number
@@ -80,6 +110,13 @@ export function assessConfidence(args: {
   /** True when the assistant had just asked this customer something.
    *  A one-word reply to a question is an answer, not a vague enquiry. */
   isAnsweringOurQuestion?: boolean
+  /** The recent turns with their speakers, newest last.
+   *
+   *  Needed because "asked again" is a claim about *us*, not about them:
+   *  it means we answered and the answer did not land. Without the
+   *  interleaving there is no way to tell that from a customer whose
+   *  message arrived twice, and the two deserve opposite treatment. */
+  conversationTurns?: Array<{ role: 'user' | 'model'; text: string }>
 }): ConfidenceAssessment {
   const retrievalScore = clamp01(args.retrievalConfidence)
   const signals: ConfidenceSignal[] = []
@@ -145,11 +182,25 @@ export function assessConfidence(args: {
   }
 
   // ── Repeated asking ──────────────────────────────────────────
+  //
   // Compared on a normalised form so "how much is the fee" and "How much
   // is the fee?" count as the same question asked twice.
+  //
+  // Only counted when we answered in between, and that is the whole
+  // point of the signal — its own wording is "previous answers have not
+  // landed". A customer whose message simply arrived twice has had no
+  // answer to reject.
+  //
+  // From a live handover. Somebody asked, in Malayalam, for their email
+  // to be saved and the training calendar mailed to them. The same text
+  // was stored twice with nothing from us between the two, so the
+  // penalty fired, 0.69 became 0.57, and a perfectly good reply — one
+  // that offered to do exactly what they asked — was thrown away in
+  // favour of "let me connect you with a team member". They were then
+  // waiting on a person for something the assistant could have done.
   const normalizedNow = normalizeForCompare(message)
   if (normalizedNow) {
-    const repeats = history.filter((m) => similarEnough(normalizeForCompare(m), normalizedNow)).length
+    const repeats = countAnsweredRepeats(normalizedNow, args.conversationTurns, history)
     if (repeats >= 2) {
       signals.push({
         label: 'Asked repeatedly',
