@@ -76,31 +76,6 @@ export function SidebarV2({
   // an agent may not see, a viewer must not see either.
   const isRestricted = !!accountRole && !hasMinRole(accountRole, "supervisor");
 
-  // Data Store's tables, so the sidebar can offer them directly.
-  //
-  // Fetched once, and only for somebody who can reach the section at
-  // all — an agent never sees Data Store, so there is no reason to ask
-  // the server about it on their behalf. A failure costs the sub-list
-  // and nothing else; the parent link still works.
-  const [dataTables, setDataTables] = useState<Array<{ id: string; name: string }>>([]);
-  useEffect(() => {
-    if (isRestricted) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch("/api/data-tables");
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        const tables = (data.tables ?? data ?? []) as Array<{ id: string; name: string }>;
-        if (!cancelled) setDataTables(tables);
-      } catch {
-        /* the parent link is enough */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [isRestricted]);
 
   useEffect(() => {
     onClose?.();
@@ -256,36 +231,6 @@ export function SidebarV2({
                           )}
                         </Link>
 
-                        {/* Data Store's own tables, one level in.
-                            A table is where the work is — "Data Store"
-                            is the cupboard, not the thing. Only while
-                            the section is open and the sidebar is wide,
-                            and only when there is more than one table:
-                            a single table is reached by the parent link
-                            already. */}
-                        {item.href === "/data" && !collapsed && isActive && dataTables.length > 1 && (
-                          <ul className="mt-0.5 space-y-0.5 border-l border-slate-200 pl-3 ml-[19px]">
-                            {dataTables.map((table) => {
-                              const tableActive = pathname === `/data/${table.id}`;
-                              return (
-                                <li key={table.id}>
-                                  <Link
-                                    href={`/data/${table.id}`}
-                                    className={cn(
-                                      "flex h-7 items-center rounded-md px-2 text-[12.5px] transition-colors",
-                                      tableActive
-                                        ? "bg-indigo-50 text-indigo-600 font-medium"
-                                        : "text-slate-500 hover:bg-slate-50 hover:text-slate-800",
-                                    )}
-                                    title={table.name}
-                                  >
-                                    <span className="truncate">{table.name}</span>
-                                  </Link>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
                       </li>
                     );
                   })}

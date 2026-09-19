@@ -7,6 +7,9 @@ import {
   MAX_QUICK_LINKS,
   navItemFor,
   sanitizeQuickLinks,
+  isDataTableHref,
+  dataTableIdOf,
+  dataTableNavItem,
 } from "./sections";
 
 /**
@@ -71,5 +74,47 @@ describe("sanitizeQuickLinks", () => {
     expect(sanitizeQuickLinks(null)).toEqual([]);
     expect(sanitizeQuickLinks("/inbox")).toEqual([]);
     expect(sanitizeQuickLinks([1, null, {}, "/inbox"])).toEqual(["/inbox"]);
+  });
+});
+
+/**
+ * Data Store tables as quick links.
+ *
+ * A table is what somebody actually wants on a dashboard — "Training
+ * Registration", not "Data Store", which is only the cupboard it sits
+ * in. Tables belong to the account rather than to the app, so they
+ * cannot be in the catalogue and the shape has to be trusted instead;
+ * these pin down how far that trust goes.
+ */
+describe("Data Store table links", () => {
+  const TABLE = "/data/11d2f48d-203f-4986-90d1-d0b20e7cee30";
+
+  it("recognises a table link", () => {
+    expect(isDataTableHref(TABLE)).toBe(true);
+    expect(dataTableIdOf(TABLE)).toBe("11d2f48d-203f-4986-90d1-d0b20e7cee30");
+  });
+
+  it("keeps one through sanitising, alongside ordinary pages", () => {
+    expect(sanitizeQuickLinks(["/inbox", TABLE])).toEqual(["/inbox", TABLE]);
+  });
+
+  it("is a uuid or it is nothing", () => {
+    // The shape is all that is checked here, so it has to be checked
+    // exactly. /data/../../something must never pass for a table.
+    expect(isDataTableHref("/data/not-a-uuid")).toBe(false);
+    expect(isDataTableHref("/data/../admin")).toBe(false);
+    expect(isDataTableHref("/data")).toBe(false);
+    expect(isDataTableHref(`${TABLE}/edit`)).toBe(false);
+    expect(sanitizeQuickLinks(["/data/whatever"])).toEqual([]);
+  });
+
+  it("renders as a normal quick link", () => {
+    const item = dataTableNavItem("11d2f48d-203f-4986-90d1-d0b20e7cee30", "Training Registration");
+    expect(item.href).toBe(TABLE);
+    expect(item.label).toBe("Training Registration");
+    expect(item.icon).toBeTruthy();
+    // Data Store is not an agent's section, and one of its tables is not
+    // either.
+    expect(item.agentAllowed).toBe(false);
   });
 });

@@ -6,6 +6,8 @@ import { Compass, SlidersHorizontal } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   DEFAULT_QUICK_LINKS,
+  dataTableNavItem,
+  isDataTableHref,
   navItemFor,
   sanitizeQuickLinks,
   type NavItem,
@@ -50,6 +52,7 @@ interface QuickLinksProps {
 export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
   const [open, setOpen] = useState(false)
   const [live, setLive] = useState<{ links: string[]; enabled: boolean } | null>(null)
+  const [tables, setTables] = useState<Array<{ id: string; name: string }>>([])
   const rootRef = useRef<HTMLDivElement>(null)
 
   // The authoritative answer, asked for on mount. Cheap, and it is what
@@ -67,6 +70,26 @@ export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
         })
       } catch {
         /* the prop is a perfectly good fallback */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // The account's own tables, for any link that points at one. Fetched
+  // alongside the profile rather than lazily on open: the menu should be
+  // right the moment it appears, not a beat afterwards.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch('/api/data-tables')
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        if (!cancelled) setTables(data.tables ?? data ?? [])
+      } catch {
+        /* a table link simply does not render */
       }
     })()
     return () => {
@@ -96,8 +119,15 @@ export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
   // An empty list means "has not chosen", which is not "wants none" —
   // that is what the toggle above is for.
   const hrefs = showing.links.length > 0 ? showing.links : DEFAULT_QUICK_LINKS
+  // A table link resolves against the tables this account actually has,
+  // so one deleted since it was chosen simply drops out instead of
+  // becoming a row that goes nowhere.
   const items = hrefs
-    .map((href) => navItemFor(href))
+    .map((href): NavItem | undefined => {
+      if (!isDataTableHref(href)) return navItemFor(href)
+      const table = tables.find((t) => `/data/${t.id}` === href)
+      return table ? dataTableNavItem(table.id, table.name) : undefined
+    })
     .filter((i): i is NavItem => Boolean(i))
     .filter((i) => !isAgent || i.agentAllowed !== false)
 

@@ -110,6 +110,36 @@ export const DEFAULT_QUICK_LINKS = ['/inbox', '/leads', '/contacts', '/broadcast
  *  the sidebar it shortcuts. */
 export const MAX_QUICK_LINKS = 6
 
+/**
+ * A link to one Data Store table — "/data/<uuid>".
+ *
+ * These are not in the catalogue above and cannot be: the tables belong
+ * to the account, not to the app, and a different account has different
+ * ones. They are what somebody actually wants on a dashboard, though —
+ * "Training Registration", not "Data Store" — so the shape is accepted
+ * here and the table's existence is checked where it is rendered, by
+ * whoever already knows which tables there are.
+ *
+ * Shape only. A stale id cannot reach another account's data: /data/[id]
+ * scopes every read to the caller's account, as it must regardless of
+ * what a quick link says.
+ */
+const DATA_TABLE_HREF = /^\/data\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function isDataTableHref(href: string): boolean {
+  return DATA_TABLE_HREF.test(href)
+}
+
+export function dataTableIdOf(href: string): string | null {
+  return isDataTableHref(href) ? href.slice('/data/'.length) : null
+}
+
+/** A table as a nav item, so it renders exactly like every other quick
+ *  link. Data Store's own icon: it is one drawer of that cupboard. */
+export function dataTableNavItem(id: string, name: string): NavItem {
+  return { href: `/data/${id}`, label: name, icon: LayoutGrid, agentAllowed: false }
+}
+
 /** Keeps only hrefs this app actually has, in the order given, without
  *  duplicates and within the cap. Applied on the way in and on the way
  *  out: a link saved before a page was removed must not render as a
@@ -121,7 +151,7 @@ export function sanitizeQuickLinks(value: unknown): string[] {
   for (const entry of raw) {
     if (typeof entry !== 'string') continue
     if (seen.has(entry)) continue
-    if (!navItemFor(entry)) continue
+    if (!navItemFor(entry) && !isDataTableHref(entry)) continue
     seen.add(entry)
     out.push(entry)
     if (out.length >= MAX_QUICK_LINKS) break

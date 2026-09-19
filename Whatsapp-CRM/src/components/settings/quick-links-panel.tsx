@@ -10,6 +10,8 @@ import {
   NAV_SECTIONS,
   MAX_QUICK_LINKS,
   DEFAULT_QUICK_LINKS,
+  dataTableNavItem,
+  isDataTableHref,
   navItemFor,
   sanitizeQuickLinks,
 } from '@/lib/navigation/sections';
@@ -43,6 +45,28 @@ export function QuickLinksPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [touched, setTouched] = useState(false);
+  const [tables, setTables] = useState<Array<{ id: string; name: string }>>([]);
+
+  // A Data Store table is what somebody actually wants on a dashboard —
+  // "Training Registration", not "Data Store", which is the cupboard it
+  // sits in. They belong to the account rather than to the app, so they
+  // are fetched rather than listed in the catalogue.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/data-tables');
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setTables(data.tables ?? data ?? []);
+      } catch {
+        /* the rest of the picker works without them */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,10 +128,31 @@ export function QuickLinksPanel() {
     persistLinks(next);
   }
 
-  const remaining = NAV_SECTIONS.map((section) => ({
-    ...section,
-    items: section.items.filter((i) => !chosen.includes(i.href)),
-  })).filter((section) => section.items.length > 0);
+  /** A chosen href as something renderable, table links included. */
+  const resolve = (href: string) => {
+    if (!isDataTableHref(href)) return navItemFor(href);
+    const table = tables.find((t) => `/data/${t.id}` === href);
+    return table ? dataTableNavItem(table.id, table.name) : undefined;
+  };
+
+  const remaining = [
+    ...NAV_SECTIONS,
+    // Offered as their own group, after the fixed pages, because this
+    // group is the only one that differs from account to account.
+    ...(tables.length > 0
+      ? [
+          {
+            label: 'Data Store tables',
+            items: tables.map((t) => dataTableNavItem(t.id, t.name)),
+          },
+        ]
+      : []),
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((i) => !chosen.includes(i.href)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const full = chosen.length >= MAX_QUICK_LINKS;
 
@@ -151,7 +196,7 @@ export function QuickLinksPanel() {
           ) : (
             <>
               {chosen.map((href, i) => {
-                const item = navItemFor(href);
+                const item = resolve(href);
                 if (!item) return null;
                 return (
                   <div
