@@ -15,6 +15,7 @@ import type { Lead } from "@/types"
 import { useAuth } from "@/hooks/use-auth"
 import { useRealtime } from "@/hooks/use-realtime"
 import { slaStateFor, describeUntouched, SLA_STYLES, DEFAULT_SLA, type SlaThresholds } from "@/lib/leads/sla"
+import { DuplicateMergeDialog, DuplicatesButton } from "@/components/leads/duplicate-merge-dialog"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 
 // ---- types ----
@@ -1074,6 +1075,8 @@ export default function LeadsV2() {
   const { canViewAllLeads, userId } = useAuth()
   const [tab, setTab] = useState("mine")
   const [sla, setSla] = useState<SlaThresholds>(DEFAULT_SLA)
+  const [duplicateCount, setDuplicateCount] = useState(0)
+  const [duplicatesOpen, setDuplicatesOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
@@ -1243,6 +1246,28 @@ export default function LeadsV2() {
     })
   }
 
+  /**
+   * How many contacts have more than one open lead.
+   *
+   * Its own request rather than part of the list: the list is one page
+   * of fifty and duplicates are an account-wide fact, so counting them
+   * from what happens to be on screen would report almost none of them.
+   * Quiet on failure — a missing badge is not worth an error toast on a
+   * page somebody opened to do something else.
+   */
+  const countDuplicates = useCallback(async () => {
+    try {
+      const res = await fetch("/api/leads/duplicates")
+      if (!res.ok) return
+      const data = await res.json()
+      setDuplicateCount(typeof data.total === "number" ? data.total : 0)
+    } catch {
+      /* the badge simply does not appear */
+    }
+  }, [])
+
+  useEffect(() => { void countDuplicates() }, [countDuplicates])
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev)
@@ -1327,6 +1352,9 @@ export default function LeadsV2() {
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Refresh">
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </button>
+            {/* Only when there is something to fix. A button that
+                always says zero is one people learn to ignore. */}
+            <DuplicatesButton count={duplicateCount} onClick={() => setDuplicatesOpen(true)} />
             <button type="button" onClick={() => setCreateOpen(true)}
               className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-indigo-700 transition-colors">
               <Plus className="h-3.5 w-3.5" /> New Lead
@@ -1629,6 +1657,12 @@ export default function LeadsV2() {
           )
         )}
       </div>
+
+      <DuplicateMergeDialog
+        open={duplicatesOpen}
+        onClose={() => setDuplicatesOpen(false)}
+        onMerged={() => { void loadData(); void countDuplicates() }}
+      />
 
       <CreateLeadDialog
         open={createOpen}
