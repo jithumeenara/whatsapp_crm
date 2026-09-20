@@ -21,6 +21,10 @@ const TAB_STATUS_MAP: Record<string, string | null> = {
   overdue: null,
   // What the assistant thinks is a lead and nobody has confirmed yet.
   suggested: null,
+  // Leads already in the pool that the assistant read and did not think
+  // were an enquiry. Not hidden from the other tabs — collected here so
+  // somebody can work through them in one sitting.
+  not_enquiry: null,
 }
 
 /** A finished lead is history, not work. It stays reachable on its own
@@ -105,6 +109,11 @@ export async function GET(req: NextRequest) {
       where.status = 'new'
     } else {
       where.ai_suggested = false
+    }
+
+    if (tab === 'not_enquiry') {
+      where.ai_verdict = 'not_enquiry'
+      where.status = { not: CLOSED }
     }
 
     // Pool: unassigned new leads — visible to all agents

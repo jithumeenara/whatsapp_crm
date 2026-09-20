@@ -2321,6 +2321,17 @@ model Lead {
   /// 'accepted' | 'rejected'. This is what makes the accuracy figure in
   /// Settings a measurement rather than a claim.
   ai_review_result String?
+  /// What the assistant concluded about a lead that already existed —
+  /// 'enquiry' | 'not_enquiry'.
+  ///
+  /// Separate from ai_suggested, which says the assistant *proposed*
+  /// this lead. When an account captures every new contact
+  /// automatically, the assistant never proposes anything: the row is
+  /// already there, and the useful thing it can do is read it and say
+  /// which of them were never an enquiry at all. Nothing is deleted or
+  /// hidden on that verdict — it is a mark on the row, and the agent
+  /// still decides.
+  ai_verdict       String?
   created_at       DateTime  @default(now()) @db.Timestamptz(6)
   updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 

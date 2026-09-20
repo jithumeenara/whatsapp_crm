@@ -95,8 +95,8 @@ export function AiLeadSettings({
           <p className="text-[14px] font-semibold text-slate-800">Find leads with AI</p>
           <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
             After the assistant replies, it reads the conversation and decides whether this person
-            is worth following up. It only looks at chats nobody has claimed, and only once every
-            few hours.
+            is worth following up. If a lead already exists it marks that one instead of making a
+            second. It only looks at chats nobody has claimed, and only once every few hours.
           </p>
         </div>
         <button
@@ -262,7 +262,13 @@ export function AiLeadSettings({
 
           {/* ── Suggest or create ── */}
           <section>
-            <p className="text-[13px] font-semibold text-slate-800">What it does when it finds one</p>
+            <p className="text-[13px] font-semibold text-slate-800">
+              What it does when it finds one
+            </p>
+            <p className="mt-0.5 text-[12px] text-slate-500">
+              Only when there is no lead for that person yet. If Auto Lead Creation above already
+              made one, the assistant marks that lead instead.
+            </p>
             <div className="mt-2 space-y-2">
               <ModeOption
                 active={values.ai_lead_mode !== "create"}

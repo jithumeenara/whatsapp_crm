@@ -408,9 +408,10 @@ export function LeadsSettingsV2() {
               lead — the wrong numbers too.
             </p>
             {settings.ai_lead_enabled && settings.auto_lead_creation && (
-              <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11.5px] text-slate-500">
-                Paused while the assistant is finding leads below — otherwise every first message
-                would become a lead before it could be read.
+              <p className="mt-2 rounded-lg bg-violet-50 px-2.5 py-1.5 text-[11.5px] leading-relaxed text-violet-900">
+                Working together with the assistant below: this catches everybody, and the
+                assistant then reads each chat and marks the ones that were never an enquiry. They
+                collect on the <strong>Not enquiries</strong> tab — nothing is deleted or hidden.
               </p>
             )}
           </div>

@@ -60,6 +60,7 @@ const TABS: TabDef[] = [
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
   { key: "funnel",    label: "Funnel",     color: "text-teal-600"   },
   { key: "suggested", label: "Suggested",  color: "text-violet-600" },
+  { key: "not_enquiry", label: "Not enquiries", color: "text-amber-600" },
 ]
 
 const TAB_DOT: Record<string, string> = {
@@ -72,6 +73,7 @@ const TAB_DOT: Record<string, string> = {
   tasks: "bg-violet-500",
   funnel: "bg-teal-500",
   suggested: "bg-violet-500",
+  not_enquiry: "bg-amber-500",
 }
 
 const STATUS_CHIP: Record<string, string> = {
@@ -118,6 +120,30 @@ function fmtDate(iso: string) {
 }
 
 function isPast(iso: string) { return new Date(iso) < new Date() }
+
+/**
+ * "Probably not a real enquiry."
+ *
+ * Deliberately quiet — an amber chip, not a red banner, and it never
+ * moves or hides the row. The assistant is guessing from a chat it read
+ * once; the agent has the phone. Getting this wrong must cost a glance,
+ * not a lost customer.
+ *
+ * The reason travels with it, because a verdict nobody can check is a
+ * verdict nobody should act on.
+ */
+function NotAnEnquiryChip({ lead }: { lead: Lead }) {
+  if (lead.ai_verdict !== "not_enquiry") return null
+  return (
+    <span
+      title={lead.ai_reason ?? "The assistant did not see an enquiry in this conversation."}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-medium text-amber-800"
+    >
+      <Sparkles className="h-2.5 w-2.5" />
+      Probably not an enquiry
+    </span>
+  )
+}
 
 interface TagItem { id: string; name: string; color: string }
 
@@ -665,7 +691,16 @@ function LeadTile({
           {(scoringMode === "score" || scoringMode === "both") && (
             <ScoreBadge score={lead.score} />
           )}
+          <NotAnEnquiryChip lead={lead} />
         </div>
+
+        {/* In a tile there is room for the reason itself, and the
+            reason is the only part an agent can actually check. */}
+        {lead.ai_verdict === "not_enquiry" && lead.ai_reason && (
+          <p className="rounded-xl bg-amber-50/70 px-3 py-2 text-[11.5px] leading-relaxed text-amber-900">
+            {lead.ai_reason}
+          </p>
+        )}
 
         {/* Phone + district */}
         <div className="space-y-1.5">
@@ -808,6 +843,10 @@ function LeadRow({
               {lead.title}
             </p>
           </div>
+          {/* A mark, not a removal. See src/lib/leads/ai-detect.ts —
+              the lead keeps its place in the pool and the agent
+              decides; this only says where to start. */}
+          <NotAnEnquiryChip lead={lead} />
           {isHidden && <EyeOff className="h-3.5 w-3.5 text-slate-300 shrink-0" />}
         </div>
       </td>
@@ -1299,6 +1338,38 @@ export default function LeadsV2() {
    * number is what gets shown — "42 updated, 8 skipped" is the truth
    * when eight of them belonged to somebody else.
    */
+  /**
+   * Answer the assistant about the leads it flagged.
+   *
+   * "accepted" always means the assistant was right, whichever kind of
+   * row it was — here that means these were never enquiries, so they
+   * close. "rejected" clears the flag and leaves the lead untouched.
+   */
+  async function reviewFlagged(decision: "accepted" | "rejected") {
+    if (selectedIds.size === 0 || bulkBusy) return
+    setBulkBusy(true)
+    try {
+      const res = await fetch("/api/leads/ai-review", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_ids: [...selectedIds], decision }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(data?.error ?? `Could not save that (${res.status})`)
+      toast.success(
+        decision === "accepted"
+          ? `${data.accepted} closed as not an enquiry`
+          : `${data.rejected} kept — flag removed`,
+      )
+      setSelectedIds(new Set())
+      await loadData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save that.")
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
   async function applyBulk(patch: Record<string, unknown>, what: string) {
     if (selectedIds.size === 0 || bulkBusy) return
     setBulkBusy(true)
@@ -1349,7 +1420,7 @@ export default function LeadsV2() {
   const visibleTabs = (canViewAllLeads
     ? TABS
     : TABS.filter((t) => t.key !== "all" && t.key !== "funnel")
-  ).filter((t) => t.key !== "suggested" || aiLeadEnabled)
+  ).filter((t) => (t.key !== "suggested" && t.key !== "not_enquiry") || aiLeadEnabled)
 
   const listCount =
     tab === "funnel" || tab === "suggested"
@@ -1650,6 +1721,21 @@ export default function LeadsV2() {
               >
                 Return to pool
               </BulkButton>
+            )}
+
+            {/* Answering the assistant, on the tab where its guesses
+                collect. Both answers are counted — that is what makes
+                the accuracy figure in Settings a measurement. */}
+            {tab === "not_enquiry" && (
+              <>
+                <span className="mx-1 h-4 w-px bg-indigo-200" />
+                <BulkButton disabled={bulkBusy} onClick={() => reviewFlagged("accepted")}>
+                  Right — close them
+                </BulkButton>
+                <BulkButton disabled={bulkBusy} onClick={() => reviewFlagged("rejected")}>
+                  Wrong — they are real
+                </BulkButton>
+              </>
             )}
 
             {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}

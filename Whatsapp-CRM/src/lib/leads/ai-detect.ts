@@ -162,26 +162,50 @@ export async function detectLead(args: {
   // ── The free layer ────────────────────────────────────────────────
   // Each of these is a certainty, not a guess, and each saves a call.
 
+  // A lead may already exist — and with auto lead creation on, one
+  // always does, because that rule fires on the first message before
+  // anybody has read anything.
+  //
+  // That is not a reason to stop. It changes the job: instead of
+  // proposing a lead, the assistant reads the conversation and records
+  // a verdict on the lead that is already sitting in the pool. Which is
+  // the more useful job of the two — a pool that catches everybody is
+  // only worth having if somebody sorts it.
   const existing = await prisma.lead
     .findFirst({
       where: { account_id: args.accountId, contact_id: args.contactId },
-      select: { id: true },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        assigned_to: true,
+        ai_suggested: true,
+        ai_verdict: true,
+        ai_review_result: true,
+      },
     })
     .catch(() => null)
-  if (existing) return { outcome: 'skipped_existing_lead' }
+
+  if (existing && !isReviewable(existing)) {
+    // Somebody has claimed it, moved it on, or already overruled the
+    // assistant about it. A person is on this one.
+    return { outcome: 'skipped_existing_lead' }
+  }
 
   // Somebody already looked at this person and said no. A rejected
   // suggestion leaves no lead row behind, so without this the same
   // person would be offered again as soon as the recheck window
   // elapsed — and being overruled by the software you just corrected
   // is how people stop using a feature.
-  const turnedDown = await prisma.aiLeadReview
-    .findFirst({
-      where: { account_id: args.accountId, contact_id: args.contactId, decision: 'rejected' },
-      select: { id: true },
-    })
-    .catch(() => null)
-  if (turnedDown) return { outcome: 'skipped_rejected_before' }
+  if (!existing) {
+    const turnedDown = await prisma.aiLeadReview
+      .findFirst({
+        where: { account_id: args.accountId, contact_id: args.contactId, decision: 'rejected' },
+        select: { id: true },
+      })
+      .catch(() => null)
+    if (turnedDown) return { outcome: 'skipped_rejected_before' }
+  }
 
   const conversation = await prisma.conversation
     .findFirst({
@@ -291,6 +315,25 @@ export async function detectLead(args: {
 
     await markChecked(args.conversationId)
 
+    // ── The lead is already in the pool: mark it, do not duplicate it ──
+    if (existing) {
+      await recordVerdict({
+        accountId: args.accountId,
+        leadId: existing.id,
+        contactId: args.contactId,
+        isEnquiry: parsed.is_lead === true,
+        previousVerdict: existing.ai_verdict,
+        reason,
+        confidence,
+      })
+      return {
+        outcome: parsed.is_lead === true ? 'lead' : 'not_lead',
+        reason,
+        confidence,
+        leadId: existing.id,
+      }
+    }
+
     if (parsed.is_lead !== true) {
       // No row written. A "no" that created one would put every wrong
       // number in the leads table, which is the thing this module
@@ -360,6 +403,93 @@ function buildPrompt(settings: AiLeadSettings, transcript: string): string {
   )
 
   return parts.join('\n')
+}
+
+/**
+ * Is this lead still the assistant's to comment on?
+ *
+ * Only while nobody has done anything with it. The moment an agent
+ * claims it, moves it on, or overrules a verdict, it stops being an
+ * unsorted row in a pool and becomes somebody's work — and software
+ * that keeps re-labelling work a person has already judged is software
+ * people turn off.
+ *
+ * A previous 'not_enquiry' is deliberately still reviewable: somebody
+ * who asked nothing on Monday may ask the price on Thursday, and the
+ * recheck window is what stops that costing anything in between.
+ */
+function isReviewable(lead: {
+  status: string
+  assigned_to: string | null
+  ai_suggested: boolean
+  ai_verdict: string | null
+  ai_review_result: string | null
+}): boolean {
+  if (lead.assigned_to) return false
+  if (lead.status !== 'new') return false
+  // A suggestion waiting on the Suggested tab is already the
+  // assistant's answer. Re-answering it would move it under the hands
+  // of whoever is looking at it.
+  if (lead.ai_suggested) return false
+  if (lead.ai_review_result) return false
+  return lead.ai_verdict === null || lead.ai_verdict === 'not_enquiry'
+}
+
+/**
+ * Write the verdict onto a lead somebody else created.
+ *
+ * Marks, never removes. The row keeps its place in the pool and the
+ * agent still decides — a model that quietly deleted leads would be one
+ * bad week away from being switched off, and the whole point of this
+ * mode is that nobody gets missed.
+ *
+ * The timeline entry is only written when the verdict changes, so a
+ * conversation that gets re-read every few hours does not fill its own
+ * history with the same sentence.
+ */
+async function recordVerdict(args: {
+  accountId: string
+  leadId: string
+  contactId: string
+  isEnquiry: boolean
+  previousVerdict: string | null
+  reason: string
+  confidence: string
+}): Promise<void> {
+  const verdict = args.isEnquiry ? 'enquiry' : 'not_enquiry'
+  try {
+    await prisma.lead.update({
+      where: { id: args.leadId },
+      data: {
+        ai_verdict: verdict,
+        ai_reason: args.reason,
+        ai_confidence: args.confidence,
+        ai_reviewed_at: new Date(),
+      },
+    })
+
+    if (args.previousVerdict !== verdict) {
+      await prisma.leadActivity
+        .create({
+          data: {
+            account_id: args.accountId,
+            lead_id: args.leadId,
+            contact_id: args.contactId,
+            type: 'note',
+            title: args.isEnquiry
+              ? 'AI read the chat: a real enquiry'
+              : 'AI read the chat: probably not an enquiry',
+            description: args.reason || 'No reason given.',
+          },
+        })
+        .catch(() => {})
+    }
+  } catch (err) {
+    console.error(
+      '[lead-detect] could not record verdict:',
+      err instanceof Error ? err.message : err,
+    )
+  }
 }
 
 /**

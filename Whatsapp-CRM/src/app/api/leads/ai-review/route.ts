@@ -3,7 +3,30 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
- * Accepting or rejecting what the assistant suggested.
+ * Telling the assistant whether it was right.
+ *
+ * ── Two shapes of the same question ─────────────────────────────────
+ *
+ * A row reaches this endpoint one of two ways. Either the assistant
+ * proposed it and it is waiting on the Suggested tab, or it was already
+ * in the pool and the assistant read it and said it was probably not an
+ * enquiry. The question a person answers is the same in both cases —
+ * was the assistant right? — so `accepted` always means yes and
+ * `rejected` always means no, whichever kind of row it was. That is
+ * what keeps the accuracy figure a single, comparable number.
+ *
+ * What agreeing *does* differs, because the rows are in different
+ * places:
+ *
+ *   a suggestion, agreed      → it becomes an ordinary lead
+ *   a suggestion, overruled   → the row goes; it was never a lead
+ *   a flagged lead, agreed    → closed as "Not an enquiry"
+ *   a flagged lead, overruled → the flag is cleared, the lead stays
+ *
+ * Note that a flagged lead is closed rather than deleted. Somebody
+ * created it — the auto-capture rule did, deliberately — and quietly
+ * destroying a row a person can see is a different promise from marking
+ * it.
  *
  * ── Why a reject deletes rather than hides ──────────────────────────
  *
@@ -45,12 +68,19 @@ export async function POST(req: NextRequest) {
 
   try {
     const leads = await prisma.lead.findMany({
-      where: { id: { in: leadIds }, account_id: ctx.accountId, ai_suggested: true },
-      select: { id: true, contact_id: true, title: true },
+      where: {
+        id: { in: leadIds },
+        account_id: ctx.accountId,
+        OR: [{ ai_suggested: true }, { ai_verdict: 'not_enquiry' }],
+      },
+      select: { id: true, contact_id: true, title: true, ai_suggested: true },
     })
     if (leads.length === 0) {
-      return NextResponse.json({ error: 'Those suggestions are no longer there.' }, { status: 404 })
+      return NextResponse.json({ error: 'Those are no longer waiting for an answer.' }, { status: 404 })
     }
+
+    const suggestions = leads.filter((l) => l.ai_suggested)
+    const flagged = leads.filter((l) => !l.ai_suggested)
 
     // Written first, and for both answers, because this table is what
     // the accuracy figure counts. If the work below fails, a recorded
@@ -65,17 +95,37 @@ export async function POST(req: NextRequest) {
       })),
     })
 
+    const ids = (rows: { id: string }[]) => rows.map((r) => r.id)
+
     if (decision === 'accepted') {
-      await prisma.lead.updateMany({
-        where: { id: { in: leads.map((l) => l.id) }, account_id: ctx.accountId },
-        data: {
-          // It is an ordinary lead from here on. Clearing the flag is
-          // what moves it off the Suggested tab and into the pool.
-          ai_suggested: false,
-          ai_review_result: 'accepted',
-          ai_reviewed_at: new Date(),
-        },
-      })
+      // ── The assistant was right ──
+      if (suggestions.length > 0) {
+        await prisma.lead.updateMany({
+          where: { id: { in: ids(suggestions) }, account_id: ctx.accountId },
+          data: {
+            // An ordinary lead from here on. Clearing the flag is what
+            // moves it off the Suggested tab and into the pool.
+            ai_suggested: false,
+            ai_review_result: 'accepted',
+            ai_reviewed_at: new Date(),
+          },
+        })
+      }
+
+      if (flagged.length > 0) {
+        // Agreeing that it was never an enquiry. Closed with a reason,
+        // not deleted — the auto-capture rule created this row on
+        // purpose, and a person can see it.
+        await prisma.lead.updateMany({
+          where: { id: { in: ids(flagged) }, account_id: ctx.accountId },
+          data: {
+            status: 'closed',
+            lost_reason: 'Not an enquiry',
+            ai_review_result: 'accepted',
+            ai_reviewed_at: new Date(),
+          },
+        })
+      }
 
       await prisma.leadActivity
         .createMany({
@@ -84,9 +134,11 @@ export async function POST(req: NextRequest) {
             lead_id: lead.id,
             contact_id: lead.contact_id,
             type: 'stage_change',
-            title: 'Suggestion accepted',
-            description: 'Confirmed as a real lead and moved into the pool.',
-            metadata: { new_status: 'new' },
+            title: lead.ai_suggested ? 'Suggestion accepted' : 'Closed — not an enquiry',
+            description: lead.ai_suggested
+              ? 'Confirmed as a real lead and moved into the pool.'
+              : 'Agreed with the assistant that this was never an enquiry.',
+            metadata: { new_status: lead.ai_suggested ? 'new' : 'closed' },
           })),
         })
         .catch(() => {})
@@ -94,12 +146,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ accepted: leads.length })
     }
 
-    // ── Rejected ──
-    // The row goes. It was never a lead; the decision above is the
-    // record that it was looked at.
-    await prisma.lead.deleteMany({
-      where: { id: { in: leads.map((l) => l.id) }, account_id: ctx.accountId, ai_suggested: true },
-    })
+    // ── The assistant was wrong ──
+
+    if (flagged.length > 0) {
+      // The flag goes and the lead stays exactly where it was. Nothing
+      // about its status or owner changes — overruling a guess should
+      // not move somebody's work.
+      await prisma.lead.updateMany({
+        where: { id: { in: ids(flagged) }, account_id: ctx.accountId },
+        data: { ai_verdict: null, ai_review_result: 'rejected', ai_reviewed_at: new Date() },
+      })
+
+      await prisma.leadActivity
+        .createMany({
+          data: flagged.map((lead) => ({
+            account_id: ctx.accountId,
+            lead_id: lead.id,
+            contact_id: lead.contact_id,
+            type: 'note',
+            title: 'Kept — this is a real enquiry',
+            description: 'The assistant read it as not an enquiry; overruled.',
+          })),
+        })
+        .catch(() => {})
+    }
+
+    if (suggestions.length > 0) {
+      // The row goes. It was never a lead; the decision recorded above
+      // is the record that it was looked at.
+      await prisma.lead.deleteMany({
+        where: { id: { in: ids(suggestions) }, account_id: ctx.accountId, ai_suggested: true },
+      })
+    }
 
     return NextResponse.json({ rejected: leads.length })
   } catch (err) {

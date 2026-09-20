@@ -820,6 +820,16 @@ export interface Lead {
   converted_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Proposed by the assistant and not yet accepted — shows only on the
+   *  Suggested tab until somebody says yes. */
+  ai_suggested?: boolean;
+  /** What the assistant concluded about a lead that was already here:
+   *  'enquiry' | 'not_enquiry'. A mark on the row, never a reason it
+   *  disappears. */
+  ai_verdict?: string | null;
+  /** In the customer's own words where it could quote them. */
+  ai_reason?: string | null;
+  ai_confidence?: string | null;
   contact?: Contact | null;
   assignee?: {
     id: string;
