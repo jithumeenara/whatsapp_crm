@@ -90,17 +90,16 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   )
 }
 
-/** The PEM blocks. Capped and scrollable — a 2048-bit key is 25 lines,
- *  and letting it set the dialog's height is what clipped it before. */
-function PemBlock({ text, tone }: { text: string; tone: 'private' | 'public' }) {
+/** The revealed private key. Capped and scrollable — a 2048-bit key is
+ *  25 lines, and letting it set the dialog's height is what clipped it
+ *  before.
+ *
+ *  Only ever the private half now. The public one is not printed at
+ *  all: the fingerprint is what anybody compares, and the key itself is
+ *  only ever pasted, so a copy button is the whole of what it is for. */
+function PemBlock({ text }: { text: string }) {
   return (
-    <pre
-      className={`max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-lg border p-2.5 text-[10.5px] leading-relaxed ${
-        tone === 'private'
-          ? 'border-emerald-200 bg-emerald-50/60 text-emerald-800'
-          : 'border-sky-200 bg-sky-50/60 text-sky-800'
-      }`}
-    >
+    <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-[10.5px] leading-relaxed text-emerald-800">
       {text}
     </pre>
   )
@@ -125,7 +124,7 @@ function SecretBlock({ text }: { text: string }) {
   return (
     <div className="space-y-1.5">
       {revealed ? (
-        <PemBlock text={text} tone="private" />
+        <PemBlock text={text} />
       ) : (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-3">
           <Lock className="size-3.5 shrink-0 text-emerald-600" />
@@ -400,13 +399,20 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
               </div>
             )}
 
+            {/* The public half is not a secret — Meta holds a copy and
+                is meant to. But nobody reads a PEM, and twenty-five
+                lines of base64 is twenty-five lines of nothing on a
+                screen somebody opened to answer one question.
+
+                The fingerprint above already answers it: that is the
+                value to compare with what Meta shows, and it is short
+                enough to read down a phone line. The key itself is only
+                ever pasted somewhere, so a copy button is the whole of
+                what it is for. */}
             {healthy && currentKey?.publicKey && !keys && (
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-medium text-slate-600">Public key in use</p>
-                  <CopyButton text={currentKey.publicKey} label="Copy PEM" />
-                </div>
-                <PemBlock text={currentKey.publicKey} tone="public" />
+              <div className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2.5 py-2">
+                <p className="text-[11px] font-medium text-slate-600">Public key in use</p>
+                <CopyButton text={currentKey.publicKey} label="Copy PEM" />
               </div>
             )}
           </aside>
@@ -445,10 +451,10 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                   </ol>
                 </div>
                 <p className="text-[11px] leading-relaxed text-slate-400">
-                  The private key is stored encrypted against your WhatsApp number, so the
-                  webhook picks up a new one without a restart. Keeping a copy in{' '}
-                  <code className="rounded bg-slate-100 px-1">.env.local</code> is a backup, not
-                  a requirement.
+                  The private key is stored encrypted against your WhatsApp number and read from
+                  there, so the webhook picks up a new one without a restart. It is kept in one
+                  place on purpose — a secret held in two has two chances to leak and two versions
+                  to disagree.
                 </p>
               </>
             )}
@@ -473,26 +479,47 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                   </div>
                 )}
 
-                <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-[12px] leading-relaxed text-amber-900">
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
-                  <span>
-                    <strong>Copy the private key now.</strong> It is available once and never
-                    again. It stays hidden on screen — copying does not need it shown.
-                  </span>
-                </div>
+                {/* The key lives in the database and nowhere else.
 
-                <StepCard
-                  n={1}
-                  title="Private key"
-                  note={
-                    keys.stored
-                      ? 'Already active. Keep this line as your backup.'
-                      : 'Add this to .env.local and restart the server.'
-                  }
-                  action={<CopyButton text={keys.envValue} label="Copy .env line" />}
-                >
-                  <SecretBlock text={keys.envValue} />
-                </StepCard>
+                    The webhook reads it from there, encrypted against
+                    this WhatsApp number, and picks up a new one without
+                    a restart. An .env copy was only ever a fallback for
+                    the case below — and a secret kept in two places is a
+                    secret with two chances to leak and two versions to
+                    disagree.
+
+                    So when the save worked there is nothing here to
+                    copy, nothing to paste and nothing to lose. Saying
+                    "copy this now or lose it" when neither is true is
+                    how a warning stops being read. */}
+                {keys.stored ? (
+                  <StepCard n={1} title="Private key" note="Kept in the database on this server.">
+                    <p className="text-[12px] leading-relaxed text-slate-600">
+                      Nothing to copy and nothing to save. It is encrypted against your WhatsApp
+                      number and the webhook is already using it.
+                    </p>
+                  </StepCard>
+                ) : (
+                  <>
+                    <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-[12px] leading-relaxed text-amber-900">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                      <span>
+                        <strong>Copy the private key now.</strong> The server could not keep it,
+                        so this is the only copy that will ever exist. It stays hidden on screen —
+                        copying does not need it shown.
+                      </span>
+                    </div>
+
+                    <StepCard
+                      n={1}
+                      title="Private key"
+                      note="Put this in .env.local and restart, until the database problem above is fixed."
+                      action={<CopyButton text={keys.envValue} label="Copy .env line" />}
+                    >
+                      <SecretBlock text={keys.envValue} />
+                    </StepCard>
+                  </>
+                )}
 
                 <StepCard
                   n={2}
@@ -504,7 +531,9 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                   }
                   action={<CopyButton text={keys.publicKey} label="Copy PEM" />}
                 >
-                  <PemBlock text={keys.publicKey} tone="public" />
+                  {/* Same reasoning as the key in use above: uploaded
+                      for you, and copyable if you ever have to do it by
+                      hand. Printing it helps nobody. */}
                   {keys.uploadedToMeta ? (
                     <p className="flex items-center gap-1.5 text-[12px] font-medium text-emerald-700">
                       <CheckCircle2 className="size-4 shrink-0" />
