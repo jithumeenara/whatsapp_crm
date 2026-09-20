@@ -17,6 +17,7 @@ import { useRealtime } from "@/hooks/use-realtime"
 import { slaStateFor, describeUntouched, SLA_STYLES, DEFAULT_SLA, type SlaThresholds } from "@/lib/leads/sla"
 import { DuplicateMergeDialog, DuplicatesButton } from "@/components/leads/duplicate-merge-dialog"
 import { SavedViews } from "@/components/leads/saved-views"
+import { ConversionFunnel } from "@/components/leads/conversion-funnel"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 
 // ---- types ----
@@ -56,6 +57,7 @@ const TABS: TabDef[] = [
   { key: "all",       label: "All Open",   color: "text-slate-600"  },
   { key: "closed",    label: "Closed",     color: "text-emerald-600"},
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
+  { key: "funnel",    label: "Funnel",     color: "text-teal-600"   },
 ]
 
 const TAB_DOT: Record<string, string> = {
@@ -66,6 +68,7 @@ const TAB_DOT: Record<string, string> = {
   overdue: "bg-rose-500",
   closed: "bg-emerald-500",
   tasks: "bg-violet-500",
+  funnel: "bg-teal-500",
 }
 
 const STATUS_CHIP: Record<string, string> = {
@@ -1130,7 +1133,7 @@ export default function LeadsV2() {
   const [pipelineLead, setPipelineLead] = useState<Lead | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const isLeadTab = !["follow_ups", "tasks"].includes(tab)
+  const isLeadTab = !["follow_ups", "tasks", "funnel"].includes(tab)
 
   const effectiveTab = (!canViewAllLeads && tab === "all") ? "new_pool" : tab
 
@@ -1330,11 +1333,16 @@ export default function LeadsV2() {
     }
   }
 
+  // The funnel is a report about the whole team's work, so it is
+  // offered to the people whose job that is. An agent's own conversion
+  // rate shown beside the team's invites a comparison this page was not
+  // asked to make.
   const visibleTabs = canViewAllLeads
     ? TABS
-    : TABS.filter((t) => t.key !== "all")
+    : TABS.filter((t) => t.key !== "all" && t.key !== "funnel")
 
-  const listCount = isLeadTab ? leads.length : tab === "follow_ups" ? followUps.length : tasks.length
+  const listCount =
+    tab === "funnel" ? 0 : isLeadTab ? leads.length : tab === "follow_ups" ? followUps.length : tasks.length
 
   return (
     <div className="min-h-full">
@@ -1629,6 +1637,12 @@ export default function LeadsV2() {
             )}
 
             {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
+          </div>
+        )}
+
+        {tab === "funnel" && (
+          <div className="mt-4">
+            <ConversionFunnel />
           </div>
         )}
 
