@@ -123,6 +123,44 @@ export async function generateCustomerReply(args: {
   }
 }
 
+/**
+ * The shape of a conversation as the API sees it, and nothing else.
+ *
+ * Roles and part kinds only -- never message text. A customer's words
+ * have no business in a server log, and they are not what is in
+ * question: every 400 this path has produced has been about the
+ * *arrangement* of turns, not their content.
+ *
+ * Written for the one error nobody could explain from the source:
+ * "Requests ending with a model turn are not supported", raised in
+ * production against a loop that appends a user turn before every
+ * request. Reading the code could not settle it. This makes the next
+ * occurrence settle it instead -- the line says exactly what the
+ * request ended on, and how it got there.
+ */
+export function describeTurns(contents: Content[]): string {
+  return contents
+    .map((c) => {
+      const kinds = (c.parts ?? []).map((part) => {
+        const p = part as {
+          functionCall?: { name?: string }
+          functionResponse?: { name?: string }
+          text?: string
+          thoughtSignature?: unknown
+        }
+        if (p.functionCall) return `call:${p.functionCall.name ?? '?'}`
+        if (p.functionResponse) return `result:${p.functionResponse.name ?? '?'}`
+        if (typeof p.text === 'string') return p.text.trim() ? 'text' : 'EMPTY-TEXT'
+        // A thought-only part is exactly the kind of turn that could end
+        // a request without looking like it carries anything.
+        if (p.thoughtSignature !== undefined) return 'thought'
+        return 'other'
+      })
+      return `${c.role}[${kinds.join('+') || 'NO-PARTS'}]`
+    })
+    .join(' > ')
+}
+
 async function runToolLoop(args: {
   apiKey: string
   model: string
@@ -166,7 +204,15 @@ async function runToolLoop(args: {
     try {
       return await model.generateContent({ contents })
     } catch (err) {
-      if (thinkingDropped || !thinking || !isThinkingRejection(err)) throw err
+      if (thinkingDropped || !thinking || !isThinkingRejection(err)) {
+        // The request that was refused, described. `contents` does not
+        // leave this function, so the call site cannot report this and
+        // its "tool path failed" line has never been enough to act on.
+        console.error(
+          `[customer-agent] generate refused (${contents.length} turns) -- ${describeTurns(contents)}`,
+        )
+        throw err
+      }
       console.warn('[customer-agent] model rejected the thinking level, retrying without it:', args.model)
       thinkingDropped = true
       model = buildModel(undefined)
