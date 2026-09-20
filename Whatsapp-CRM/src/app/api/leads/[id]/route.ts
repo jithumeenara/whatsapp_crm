@@ -11,7 +11,19 @@ async function getLead(id: string, accountId: string) {
     include: {
       contact: { select: { id: true, name: true, phone: true, alternate_phone: true, avatar_url: true } },
       assignee: { select: { id: true, email: true, profile: { select: { full_name: true, avatar_url: true } } } },
-      activities: { orderBy: { created_at: 'desc' }, take: 50 },
+      activities: {
+        orderBy: { created_at: 'desc' },
+        // 51, so the page can tell "this is all of it" from "this is
+        // the most recent fifty" without a second count query. The
+        // extra row is dropped before it is rendered.
+        take: 51,
+        // Who did it. Without this the timeline says "Status changed to
+        // Follow-up" with nobody attached, which on a shared pool of
+        // five agents is most of the question left unanswered.
+        include: {
+          user: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
+        },
+      },
       follow_ups: { orderBy: { due_at: 'asc' } },
       tasks: { orderBy: { due_date: 'asc' } },
     },

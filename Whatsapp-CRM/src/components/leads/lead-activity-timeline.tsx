@@ -36,6 +36,32 @@ function fmtDT(iso: string) {
   })
 }
 
+/**
+ * "2d ago" rather than "17 Sep, 14:05".
+ *
+ * A timeline is read for the shape of things — how long the lead sat
+ * between the call and the follow-up — and a column of dates makes that
+ * arithmetic the reader's job. The exact stamp is on hover, for the one
+ * time in twenty somebody needs it.
+ */
+function relTime(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000))
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  if (days < 30) return `${days}d ago`
+  const months = Math.round(days / 30)
+  return `${months}mo ago`
+}
+
+/** What the lead GET asks for, so the page can tell "all of it" from
+ *  "the latest fifty" without a second count query. */
+const TIMELINE_LIMIT = 50
+
 // Group activities into phases separated by stage_change events
 // Each phase: list of activities until the next stage_change (inclusive)
 interface Phase {
@@ -70,7 +96,17 @@ interface LeadActivityTimelineProps {
   onItemClick?: (dateKey: string) => void
 }
 
-export function LeadActivityTimeline({ activities, isClosed = false, onItemClick }: LeadActivityTimelineProps) {
+export function LeadActivityTimeline({
+  activities: received,
+  isClosed = false,
+  onItemClick,
+}: LeadActivityTimelineProps) {
+  // The API fetches one more than it shows, so an over-long history can
+  // say so instead of silently ending. A timeline that stops without
+  // explanation reads as "nothing else happened", which is the one
+  // thing it must not imply.
+  const truncated = received.length > TIMELINE_LIMIT
+  const activities = truncated ? received.slice(0, TIMELINE_LIMIT) : received
   const phases = groupIntoPhases(activities)
 
   // When closed: previous phases collapsed, last expanded
@@ -90,7 +126,12 @@ export function LeadActivityTimeline({ activities, isClosed = false, onItemClick
 
   // Flat mode when not closed or single phase
   if (!isClosed || phases.length <= 1) {
-    return <FlatTimeline activities={activities} onItemClick={onItemClick} />
+    return (
+      <>
+        <FlatTimeline activities={activities} onItemClick={onItemClick} />
+        {truncated && <TruncationNote />}
+      </>
+    )
   }
 
   // Grouped mode for closed leads
@@ -149,7 +190,16 @@ export function LeadActivityTimeline({ activities, isClosed = false, onItemClick
           </div>
         )
       })}
+      {truncated && <TruncationNote />}
     </div>
+  )
+}
+
+function TruncationNote() {
+  return (
+    <p className="pt-1 text-center text-[11px] text-slate-400">
+      Showing the {TIMELINE_LIMIT} most recent. Earlier activity is kept.
+    </p>
   )
 }
 
@@ -192,7 +242,12 @@ function FlatTimeline({ activities, compact = false, onItemClick }: {
               )}>
                 {act.title}
               </p>
-              <p className="text-[11px] text-slate-400 shrink-0">{fmtDT(act.created_at)}</p>
+              <p
+                className="shrink-0 text-[11px] text-slate-400"
+                title={fmtDT(act.created_at)}
+              >
+                {relTime(act.created_at)}
+              </p>
             </div>
             {act.description && (
               <p className={cn(
@@ -202,9 +257,16 @@ function FlatTimeline({ activities, compact = false, onItemClick }: {
                 {act.description}
               </p>
             )}
-            {act.user?.profile?.full_name && (
-              <p className="text-[11px] text-slate-400 mt-0.5">by {act.user.profile.full_name}</p>
-            )}
+            {/* Who did it. On a shared pool of five agents this is most
+                of the question — "Status changed to Follow-up" with
+                nobody attached says almost nothing. Falls back to the
+                email when a profile has no name yet, and says
+                "Automatic" when nothing did it by hand. */}
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              {act.user
+                ? `by ${act.user.profile?.full_name?.trim() || act.user.email}`
+                : 'Automatic'}
+            </p>
           </div>
         </div>
       ))}
