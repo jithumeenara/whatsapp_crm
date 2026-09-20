@@ -115,7 +115,10 @@ export async function POST(req: NextRequest) {
   if (!canViewAllLeads(ctx.role)) where.assigned_to = ctx.userId
 
   try {
-    const touched = await prisma.lead.findMany({ where, select: { id: true } })
+    const touched = await prisma.lead.findMany({
+      where,
+      select: { id: true, contact_id: true, assigned_to: true },
+    })
     if (touched.length === 0) {
       return NextResponse.json(
         { error: 'None of those leads are yours to change.', updated: 0 },
@@ -145,6 +148,45 @@ export async function POST(req: NextRequest) {
         // line, not an error the caller has to interpret.
         console.error('[leads] bulk activity log failed:', err instanceof Error ? err.message : err),
       )
+
+    // ── Closing in bulk hands those chats back too ───────────────────
+    //
+    // Same rule as closing one lead on its own page: the claim took the
+    // conversation, so the close gives it back and the assistant picks
+    // up whoever writes next. Doing it here as well, because closing
+    // ten finished enquiries from the list is the common way to close
+    // anything, and a rule that only held on the detail page would be a
+    // rule nobody could rely on.
+    //
+    // Each lead releases only its own owner's hold — a colleague who
+    // has since taken the chat keeps it.
+    if (body.status === 'closed') {
+      const byOwner = new Map<string, string[]>()
+      for (const lead of touched) {
+        if (!lead.contact_id) continue
+        const owner = lead.assigned_to ?? ctx.userId
+        byOwner.set(owner, [...(byOwner.get(owner) ?? []), lead.contact_id])
+      }
+      await Promise.all(
+        [...byOwner.entries()].map(([owner, contactIds]) =>
+          prisma.conversation.updateMany({
+            where: {
+              account_id: ctx.accountId,
+              contact_id: { in: contactIds },
+              assigned_agent_id: owner,
+            },
+            data: { assigned_agent_id: null },
+          }),
+        ),
+      ).catch((err) =>
+        // The leads did close. A chat that stayed assigned is worth a
+        // log line, not a failed request.
+        console.error(
+          '[leads] bulk closed, but a conversation could not be released:',
+          err instanceof Error ? err.message : err,
+        ),
+      )
+    }
 
     return NextResponse.json({
       updated: result.count,

@@ -310,6 +310,49 @@ export async function PATCH(
 
     if (activities.length) await Promise.all(activities)
 
+    // ── Closing the lead hands the chat back to the assistant ────────
+    //
+    // Claiming a lead takes the conversation with it — "I am handling
+    // this person" — and the assistant stays out of an owned thread.
+    // Closing the lead is the same sentence in the past tense, and
+    // until now nothing acted on it: the thread stayed owned, the
+    // assistant stayed silent, and a customer who wrote again was
+    // answered only if that one agent happened to be watching.
+    //
+    // Only the lead's own owner is released. A colleague who has since
+    // taken the chat is handling it for a reason of their own, and one
+    // person finishing their paperwork is not a reason to take it off
+    // them.
+    //
+    // Best effort, after the lead is already saved: a conversation that
+    // cannot be updated must not fail the close.
+    if (status === 'closed' && existing.status !== 'closed' && lead.contact_id) {
+      const owner = existing.assigned_to ?? ctx.userId
+      await prisma.conversation
+        .updateMany({
+          where: {
+            account_id: ctx.accountId,
+            contact_id: lead.contact_id,
+            assigned_agent_id: owner,
+          },
+          data: { assigned_agent_id: null },
+        })
+        .then(({ count }) => {
+          if (count === 0) return
+          emitToAccount(ctx.accountId, 'conversation', {
+            eventType: 'UPDATE',
+            new: { contact_id: lead.contact_id, assigned_agent_id: null },
+            old: {},
+          })
+        })
+        .catch((err) =>
+          console.error(
+            '[leads] closed, but the conversation could not be released:',
+            err instanceof Error ? err.message : err,
+          ),
+        )
+    }
+
     // Broadcast lead update to all connected clients in this account
     emitToAccount(ctx.accountId, 'lead', { eventType: 'UPDATE', new: lead })
 
