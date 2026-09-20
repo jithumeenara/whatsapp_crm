@@ -39,6 +39,18 @@ model User {
   /// auth.ts's jwt callback and GET /api/account/sessions' lazy sweep.
   /// Default 4320 = 3 days, matching the previous hardcoded constant.
   session_inactivity_limit_minutes Int @default(4320)
+
+  /// The last moment this person demonstrably used the app.
+  ///
+  /// Written by the heartbeat the idle timeout already posts on real
+  /// activity, so presence is measured rather than declared — see
+  /// src/lib/agents/presence.ts for why a status people set by hand is
+  /// usually wrong exactly when it matters.
+  ///
+  /// Nullable because it means "never seen", which is different from
+  /// "seen long ago" and is what every account shows before its first
+  /// heartbeat after this column appeared.
+  last_seen_at DateTime? @db.Timestamptz(6)
   created_at     DateTime  @default(now()) @db.Timestamptz(6)
   updated_at     DateTime  @updatedAt @db.Timestamptz(6)
 

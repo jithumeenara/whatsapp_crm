@@ -55,6 +55,13 @@ import { useAuth } from '@/hooks/use-auth';
 import type { AccountRole } from '@/lib/auth/roles';
 import { InviteMemberDialog } from './invite-member-dialog';
 import { AddAgentDialog } from './add-agent-dialog';
+import {
+  presenceOf,
+  describeLastSeen,
+  PRESENCE_DOT,
+  PRESENCE_LABELS,
+} from '@/lib/agents/presence';
+import { useNow } from '@/hooks/use-now';
 
 interface Member {
   user_id: string;
@@ -64,6 +71,7 @@ interface Member {
   role: AccountRole;
   restrict_to_assigned: boolean;
   joined_at: string;
+  last_seen_at?: string | null;
 }
 
 interface Invitation {
@@ -141,6 +149,12 @@ function fmtExpiresIn(iso: string): string {
 
 export function MembersTab() {
   const { userId, canManageMembers } = useAuth();
+
+  // Presence is only worth showing if it stays true. Without a ticking
+  // clock an agent who left ten minutes ago stays green until somebody
+  // reloads the page — exactly the failure the dot exists to prevent.
+  // See src/hooks/use-now.ts for why it starts undefined.
+  const now = useNow(30_000);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -381,6 +395,22 @@ export function MembersTab() {
                           .toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
+                    {/* On the avatar, where a status dot is read without
+                        being looked for. `now` comes from a ticking
+                        clock, so somebody leaving their desk fades from
+                        green to grey on an open page — the point of
+                        presence is that it is current, and a status
+                        that needed a refresh would be a status that is
+                        wrong whenever it matters. */}
+                    <span
+                      className={`-ml-4 mt-5 size-2.5 shrink-0 rounded-full ring-2 ring-white ${
+                        PRESENCE_DOT[presenceOf(member.last_seen_at, now)]
+                      }`}
+                      title={`${
+                        PRESENCE_LABELS[presenceOf(member.last_seen_at, now)].label
+                      } — ${describeLastSeen(member.last_seen_at, now)}`}
+                      aria-label={PRESENCE_LABELS[presenceOf(member.last_seen_at, now)].label}
+                    />
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">

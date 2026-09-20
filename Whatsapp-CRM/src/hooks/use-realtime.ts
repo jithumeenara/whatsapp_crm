@@ -5,7 +5,7 @@ import { io, type Socket } from "socket.io-client";
 import type { Message, Conversation, Lead } from "@/types";
 import { useAuth } from "./use-auth";
 
-interface RealtimeEvent<T> {
+export interface RealtimeEvent<T> {
   eventType: "INSERT" | "UPDATE" | "DELETE";
   new: T;
   old: Partial<T>;

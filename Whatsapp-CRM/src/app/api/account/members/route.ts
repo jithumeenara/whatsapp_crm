@@ -27,6 +27,10 @@ export async function GET() {
         account_role: true,
         restrict_to_assigned: true,
         created_at: true,
+        // Presence travels with the roster rather than on an endpoint of
+        // its own: every screen that wants to know who is here is
+        // already asking who the team is.
+        user: { select: { last_seen_at: true } },
       },
       orderBy: { created_at: "asc" },
     });
@@ -52,6 +56,7 @@ export async function GET() {
           role: row.account_role,
           restrict_to_assigned: row.restrict_to_assigned,
           joined_at: row.created_at.toISOString(),
+          last_seen_at: row.user?.last_seen_at?.toISOString() ?? null,
         },
       ];
     });

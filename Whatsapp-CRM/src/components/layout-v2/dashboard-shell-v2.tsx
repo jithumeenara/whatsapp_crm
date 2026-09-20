@@ -1,6 +1,7 @@
 "use client";
 
 import { IncomingCallPopup } from "@/components/calls/incoming-call-popup";
+import { NewLeadAlert } from '@/components/leads/new-lead-alert'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
@@ -170,6 +171,11 @@ function ShellInner({ children }: { children: React.ReactNode }) {
           {/* Mounted in the shell rather than on a page: a call must not
               stop ringing because the agent happened to navigate. */}
           <IncomingCallPopup />
+
+          {/* Same reasoning, quieter. An unclaimed enquiry is only
+              useful to somebody looking at the lead pool, and nobody is
+              — they are in the Inbox. See the component's own header. */}
+          <NewLeadAlert />
         </div>
       </div>
     </MobileBarCtx.Provider>

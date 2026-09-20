@@ -18,6 +18,7 @@ import {
   isAccountAlertField,
 } from '@/lib/whatsapp/account-webhook'
 import { emitToAccount } from '@/lib/socket'
+import { shouldReleaseOnReturn } from '@/lib/agents/presence'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 import { processInboundOrder } from '@/lib/whatsapp/order-processing'
 import { isCallWebhookField, parseCallWebhook } from '@/lib/whatsapp/calling-api'
@@ -809,6 +810,41 @@ async function processMessage(
     return
   }
 
+  // ── Does a reopened thread keep its owner? ────────────────────────
+  //
+  // Claiming a lead assigns the conversation to the claimer, and the
+  // assistant stays out of an assigned thread. Nothing ever undid that:
+  // closing the lead did not, closing the conversation did not, and the
+  // customer coming back months later did not either. So an agent who
+  // handled someone once held their thread for good — and if they moved
+  // on or stopped watching the Inbox, the next message from that
+  // customer reached nobody. The assistant silent because the thread was
+  // owned, the owner not looking, the lead long since closed and off
+  // every list.
+  //
+  // The fix is not to release every reopened thread. Zendesk's routing
+  // "doesn't assign reopened tickets to agents with Online status" and
+  // decides on the current assignee's status instead, and that is the
+  // right shape: an agent who is here keeps their customer, because
+  // continuity is most of what a returning customer came back for. Only
+  // an owner who has actually gone loses the thread.
+  //
+  // Presence comes from src/lib/agents/presence.ts — measured from the
+  // heartbeat, not from a status anybody has to remember to set.
+  let releaseOwner = false
+  if (conversation.status === 'closed' && conversation.assigned_agent_id) {
+    const owner = await prisma.user
+      .findUnique({
+        where: { id: conversation.assigned_agent_id },
+        select: { last_seen_at: true },
+      })
+      .catch(() => null)
+    // A lookup that failed is not evidence they left. Keeping the
+    // thread where it is leaves a person to notice; moving it on a
+    // database hiccup takes work off somebody for no reason.
+    releaseOwner = owner ? shouldReleaseOnReturn(owner.last_seen_at) : false
+  }
+
   // Update conversation
   try {
     const updatedConv = await prisma.conversation.update({
@@ -825,10 +861,29 @@ async function processMessage(
         // from. This exists because the idle-close sweep can file a
         // conversation the customer then returns to, and an Inbox
         // showing Closed above a live exchange is simply wrong.
+        //
+        // Reopening may also hand the thread back — see below, which
+        // has to run first because it depends on who owns it.
         ...(conversation.status === 'closed' ? { status: 'open' } : {}),
+        ...(releaseOwner ? { assigned_agent_id: null } : {}),
       },
     })
     emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
+
+    if (releaseOwner) {
+      await prisma.message
+        .create({
+          data: {
+            conversation_id: conversation.id,
+            sender_type: 'system',
+            content_type: 'text',
+            content_text:
+              'Returned to the team — this chat was closed, the customer has written again, and the agent who had it is offline. Claim it to take it back.',
+            status: 'sent',
+          },
+        })
+        .catch(() => {})
+    }
   } catch (err) {
     console.error('Error updating conversation:', err)
   }
@@ -879,6 +934,13 @@ async function processMessage(
               description: 'Lead created automatically from first WhatsApp message',
             },
           })
+
+          // Tell whoever is looking. Without this the lead appears in
+          // the pool silently and is found only by somebody who happens
+          // to refresh the Leads page — which is the whole reason a
+          // first enquiry could sit for an hour. Every other path that
+          // creates a lead already emits; this one never did.
+          emitToAccount(accountId, 'lead', { eventType: 'INSERT', new: newLead, old: {} })
         }
       }
     } catch (err) {

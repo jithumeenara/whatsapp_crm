@@ -71,6 +71,11 @@ export interface AccountMember {
   role: AccountRole;
   restrict_to_assigned: boolean;
   joined_at: string;
+  /** The last moment this person demonstrably used the app, or null if
+   *  never. The raw timestamp rather than a computed status, so the
+   *  screen can age it live between fetches instead of showing an
+   *  "Online" that was true when the page loaded. */
+  last_seen_at?: string | null;
 }
 
 /**

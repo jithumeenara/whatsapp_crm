@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getToken, encode } from "next-auth/jwt"
+import { prisma } from "@/lib/db"
 
 const COOKIE_NAME =
   process.env.NODE_ENV === "production" ? "__Secure-authjs.session-token" : "authjs.session-token"
@@ -35,6 +36,21 @@ export async function POST(req: NextRequest) {
   if (!token?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
+
+  // Presence, recorded rather than declared.
+  //
+  // This request already means "a real person did something a moment
+  // ago" — it is the whole reason the route exists — so it is also the
+  // cheapest honest answer to "who is at their desk". See
+  // src/lib/agents/presence.ts for why a status people set by hand is
+  // wrong exactly when it matters.
+  //
+  // Deliberately not awaited and deliberately swallowed: this route's
+  // job is keeping a session alive, and a presence write that fails
+  // must never log somebody out.
+  void prisma.user
+    .update({ where: { id: String(token.id) }, data: { last_seen_at: new Date() } })
+    .catch(() => {})
 
   // Preserve the ORIGINAL sign-in's absolute cutoff rather than letting
   // encode() grant a fresh maxAge from now — otherwise every heartbeat
