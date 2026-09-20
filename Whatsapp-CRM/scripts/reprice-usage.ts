@@ -122,7 +122,10 @@ async function main() {
     )
   }
 
-  console.log(`\n${seen} rows read, ${changed} would change.`)
+  // "would change" after a run that changed them is a small lie, and
+  // a script that reports its dry run as its result is how somebody
+  // ends up applying the same correction twice.
+  console.log(`\n${seen} rows read, ${changed} ${APPLY ? 'changed' : 'would change'}.`)
   console.log(`Total was $${oldTotal.toFixed(4)}, is now $${newTotal.toFixed(4)}.`)
   if (!APPLY && changed > 0) console.log('\nNothing written. Re-run with --apply to keep these numbers.')
 }
