@@ -40,6 +40,22 @@ interface FunnelData {
   lostReasons: Array<{ reason: string; count: number }>
 }
 
+/**
+ * Every row of the funnel, on one set of columns.
+ *
+ * The first version laid each row out with `justify-between`, which
+ * pushes the numbers to the right edge and lets their own width decide
+ * where they sit. A row carrying a "-7" put its count in a different
+ * place from a row without one, so no column lined up with the column
+ * above it and the eye could not run down the figures at all — which is
+ * the only thing a reader does with a funnel.
+ *
+ * Fixed tracks fix that: label, bar, then three numeric columns of
+ * declared width. The numbers are right-aligned and tabular, so digits
+ * sit under digits whether the count is 7 or 1,400.
+ */
+const ROW = 'grid grid-cols-[5.5rem_1fr_2.5rem_2.75rem_2.5rem] items-center gap-x-2 sm:grid-cols-[7rem_1fr_3rem_3rem_3rem] sm:gap-x-3'
+
 const RANGES = [
   { days: 7, label: '7 days' },
   { days: 30, label: '30 days' },
@@ -144,29 +160,56 @@ export function ConversionFunnel() {
           )}
 
           {/* The funnel itself */}
-          <div className="space-y-2">
-            {data.stages.map((stage, i) => (
-              <div key={stage.key}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[12.5px] text-slate-700">{stage.label}</span>
-                  <span className="flex items-baseline gap-2 tabular-nums">
-                    {i > 0 && stage.dropFromPrevious > 0 && (
-                      <span className="text-[11px] text-rose-500">−{stage.dropFromPrevious}</span>
-                    )}
-                    <span className="text-[13px] font-semibold text-slate-800">{stage.count}</span>
-                    <span className="w-9 text-right text-[11px] text-slate-400">
+          <div className="rounded-2xl border border-slate-200 p-4">
+            {/* Column headings. Three numbers a row needs naming once,
+                not guessing at six times. */}
+            <div className={cn(ROW, 'pb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400')}>
+              <span>Stage</span>
+              <span />
+              <span className="text-right">Got</span>
+              <span className="text-right">Lost</span>
+              <span className="text-right">%</span>
+            </div>
+
+            <div className="space-y-1.5">
+              {data.stages.map((stage, i) => {
+                const lost = i > 0 ? stage.dropFromPrevious : 0
+                return (
+                  <div key={stage.key} className={ROW}>
+                    <span className="truncate text-[12.5px] text-slate-700" title={stage.label}>
+                      {stage.label}
+                    </span>
+
+                    <span className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                      <span
+                        className="block h-full rounded-full bg-gradient-to-r from-[#6C7BFF] to-[#5B6CF9] transition-[width] duration-500"
+                        style={{ width: `${Math.max(1, stage.percentOfCreated)}%` }}
+                      />
+                    </span>
+
+                    <span className="text-right text-[13px] font-semibold tabular-nums text-slate-800">
+                      {stage.count}
+                    </span>
+
+                    {/* The column keeps its place when there is nothing
+                        to put in it. A cell that vanishes takes the
+                        alignment of every row below it with it. */}
+                    <span
+                      className={cn(
+                        'text-right text-[11.5px] tabular-nums',
+                        lost > 0 ? 'text-rose-500' : 'text-slate-300',
+                      )}
+                    >
+                      {lost > 0 ? `−${lost}` : '—'}
+                    </span>
+
+                    <span className="text-right text-[11px] tabular-nums text-slate-400">
                       {stage.percentOfCreated}%
                     </span>
-                  </span>
-                </div>
-                <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#6C7BFF] to-[#5B6CF9] transition-[width] duration-500"
-                    style={{ width: `${Math.max(1, stage.percentOfCreated)}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* The half somebody can act on today */}
@@ -176,23 +219,30 @@ export function ConversionFunnel() {
                 <Clock className="h-3.5 w-3.5 text-slate-400" />
                 Still open, and for how long
               </p>
-              <div className="mt-3 space-y-1.5">
+              <div className="mt-3 space-y-1">
+                <div className="grid grid-cols-[1fr_2.5rem_5.5rem] items-center gap-x-3 px-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  <span>Stage</span>
+                  <span className="text-right">Open</span>
+                  <span className="text-right">Untouched</span>
+                </div>
                 {data.open.map((row) => (
                   <div
                     key={row.status}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-slate-50/70 px-3 py-2"
+                    className="grid grid-cols-[1fr_2.5rem_5.5rem] items-center gap-x-3 rounded-lg bg-slate-50/70 px-3 py-2"
                   >
-                    <span className="text-[12.5px] text-slate-700">{prettyStatus(row.status)}</span>
-                    <span className="flex items-baseline gap-3 tabular-nums">
-                      <span className="text-[12.5px] font-semibold text-slate-800">{row.count}</span>
-                      <span
-                        className={cn(
-                          'text-[11.5px]',
-                          row.medianDaysUntouched >= 3 ? 'font-medium text-rose-600' : 'text-slate-400',
-                        )}
-                      >
-                        {row.medianDaysUntouched}d untouched
-                      </span>
+                    <span className="truncate text-[12.5px] text-slate-700">
+                      {prettyStatus(row.status)}
+                    </span>
+                    <span className="text-right text-[12.5px] font-semibold tabular-nums text-slate-800">
+                      {row.count}
+                    </span>
+                    <span
+                      className={cn(
+                        'text-right text-[11.5px] tabular-nums',
+                        row.medianDaysUntouched >= 3 ? 'font-medium text-rose-600' : 'text-slate-400',
+                      )}
+                    >
+                      {row.medianDaysUntouched}d
                     </span>
                   </div>
                 ))}
@@ -209,21 +259,29 @@ export function ConversionFunnel() {
               <div className="rounded-2xl border border-slate-200 p-4">
                 <p className="text-[13px] font-semibold text-slate-800">Which sources convert</p>
                 <div className="mt-3 space-y-1.5">
+                  <div className="grid grid-cols-[1fr_3.5rem_2.75rem] items-center gap-x-3 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    <span>Source</span>
+                    <span className="text-right">Won</span>
+                    <span className="text-right">Rate</span>
+                  </div>
                   {data.bySource.map((row) => (
-                    <div key={row.source} className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-[12.5px] capitalize text-slate-700">
+                    <div
+                      key={row.source}
+                      className="grid grid-cols-[1fr_3.5rem_2.75rem] items-center gap-x-3"
+                    >
+                      <span className="truncate text-[12.5px] capitalize text-slate-700" title={row.source}>
                         {row.source}
                       </span>
-                      <span className="shrink-0 tabular-nums text-[12px] text-slate-500">
-                        {row.converted}/{row.total}{' '}
-                        <span
-                          className={cn(
-                            'font-semibold',
-                            row.rate >= 20 ? 'text-emerald-600' : 'text-slate-400',
-                          )}
-                        >
-                          {row.rate}%
-                        </span>
+                      <span className="text-right text-[12px] tabular-nums text-slate-500">
+                        {row.converted}/{row.total}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-right text-[12px] font-semibold tabular-nums',
+                          row.rate >= 20 ? 'text-emerald-600' : 'text-slate-400',
+                        )}
+                      >
+                        {row.rate}%
                       </span>
                     </div>
                   ))}
@@ -242,9 +300,14 @@ export function ConversionFunnel() {
                 </p>
                 <div className="mt-3 space-y-1.5">
                   {data.lostReasons.map((row) => (
-                    <div key={row.reason} className="flex items-baseline justify-between gap-3">
-                      <span className="truncate text-[12.5px] text-slate-700">{row.reason}</span>
-                      <span className="shrink-0 text-[12px] font-semibold tabular-nums text-slate-600">
+                    <div
+                      key={row.reason}
+                      className="grid grid-cols-[1fr_2.5rem] items-center gap-x-3"
+                    >
+                      <span className="truncate text-[12.5px] text-slate-700" title={row.reason}>
+                        {row.reason}
+                      </span>
+                      <span className="text-right text-[12px] font-semibold tabular-nums text-slate-600">
                         {row.count}
                       </span>
                     </div>
