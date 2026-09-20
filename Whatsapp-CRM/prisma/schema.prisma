@@ -74,6 +74,7 @@ model User {
   follow_ups                   FollowUp[]
   follow_ups_assigned          FollowUp[]                   @relation("FollowUpAssignee")
   lead_activities              LeadActivity[]
+  lead_views                   LeadView[]
   segments                     Segment[]
   tasks                        Task[]
   tasks_assigned               Task[]                       @relation("TaskAssignee")
@@ -234,6 +235,7 @@ model Account {
   push_subscriptions           PushSubscription[]
   capture_config               ContactCaptureConfig?
   lead_settings                LeadSettings?
+  lead_views                   LeadView[]
   api_keys                     ApiKey[]
   webhooks                     Webhook[]
   integrations                 Integration[]
@@ -2314,6 +2316,34 @@ model Lead {
 // ============================================================
 // LEAD SETTINGS
 // ============================================================
+
+/// A filter somebody uses often enough to name.
+///
+/// Per person, not per account: "my hot leads in Malappuram" is a
+/// sentence about one agent's work, and the same filter saved
+/// account-wide would be wrong for everybody else who opens it. An
+/// account-wide view is a different feature with a different owner, and
+/// pretending one column can be both is how a saved view becomes
+/// something people stop trusting.
+model LeadView {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  name       String
+  /// { tab, tagId, search, score, district } — whatever the list was
+  /// showing. Stored loosely on purpose: a filter added next year
+  /// should not need a migration, and a key the page no longer reads
+  /// is simply ignored rather than breaking the view.
+  filters    Json     @default("{}")
+  sort_order Int      @default(0)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, sort_order])
+  @@map("lead_views")
+}
 
 model LeadSettings {
   id                        String  @id @default(uuid()) @db.Uuid

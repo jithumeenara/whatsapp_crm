@@ -16,6 +16,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useRealtime } from "@/hooks/use-realtime"
 import { slaStateFor, describeUntouched, SLA_STYLES, DEFAULT_SLA, type SlaThresholds } from "@/lib/leads/sla"
 import { DuplicateMergeDialog, DuplicatesButton } from "@/components/leads/duplicate-merge-dialog"
+import { SavedViews } from "@/components/leads/saved-views"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 
 // ---- types ----
@@ -1084,6 +1085,8 @@ export default function LeadsV2() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [tags, setTags] = useState<TagItem[]>([])
   const [activeTagId, setActiveTagId] = useState("")
+  const [scoreFilter, setScoreFilter] = useState("")
+  const [districtFilter, setDistrictFilter] = useState("")
   const [search, setSearch] = useState("")
   const [searchQ, setSearchQ] = useState("")
   const [scoringMode, setScoringMode] = useState("score")
@@ -1144,6 +1147,8 @@ export default function LeadsV2() {
         const params = new URLSearchParams({ tab: effectiveTab })
         if (activeTagId) params.set("tag_id", activeTagId)
         if (searchQ) params.set("q", searchQ)
+        if (scoreFilter) params.set("score", scoreFilter)
+        if (districtFilter) params.set("district", districtFilter)
         const [lr, tr, sr] = await Promise.all([
           fetch(`/api/leads?${params}`).then((r) => r.json()),
           fetch("/api/tags").then((r) => r.json()),
@@ -1173,13 +1178,13 @@ export default function LeadsV2() {
     } finally {
       setLoading(false)
     }
-  }, [tab, effectiveTab, activeTagId, searchQ])
+  }, [tab, effectiveTab, activeTagId, searchQ, scoreFilter, districtFilter])
 
   // A selection that survives a tab or search change would apply to
   // leads the person is no longer looking at.
   useEffect(() => {
     setSelectedIds(new Set())
-  }, [tab, activeTagId, searchQ])
+  }, [tab, activeTagId, searchQ, scoreFilter, districtFilter])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -1362,6 +1367,31 @@ export default function LeadsV2() {
           </div>
         </div>
 
+        {/* Filters worth returning to. Sits above the tabs because it
+            can change the tab, and a control that changes what is below
+            it belongs above it. */}
+        {isLeadTab && (
+          <div className="mt-3">
+            <SavedViews
+              current={{
+                tab,
+                tagId: activeTagId,
+                search: searchQ,
+                score: scoreFilter,
+                district: districtFilter,
+              }}
+              onApply={(f) => {
+                setTab(f.tab || "mine")
+                setActiveTagId(f.tagId ?? "")
+                setScoreFilter(f.score ?? "")
+                setDistrictFilter(f.district ?? "")
+                setSearch(f.search ?? "")
+                setSearchQ(f.search ?? "")
+              }}
+            />
+          </div>
+        )}
+
         {/* Tab menu */}
         <div className="mt-4">
           <div className="flex overflow-x-auto scrollbar-hide">
@@ -1399,6 +1429,44 @@ export default function LeadsV2() {
           </div>
 
           <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide flex-1 min-w-0">
+            {/* The two filters a saved view is usually made of — "my hot
+                leads in Malappuram" is these plus a tab. Plain selects
+                rather than chips: nineteen districts as chips would be
+                the whole toolbar. */}
+            <select
+              value={scoreFilter}
+              onChange={(e) => setScoreFilter(e.target.value)}
+              aria-label="Filter by score"
+              className={cn(
+                "h-7 shrink-0 rounded-lg border px-2 text-[11.5px] outline-none transition-colors",
+                scoreFilter
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                  : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
+              )}
+            >
+              <option value="">Any score</option>
+              {scoreOptions.map((o) => (
+                <option key={o.label} value={o.label}>{o.icon} {o.label}</option>
+              ))}
+            </select>
+
+            <select
+              value={districtFilter}
+              onChange={(e) => setDistrictFilter(e.target.value)}
+              aria-label="Filter by district"
+              className={cn(
+                "h-7 shrink-0 rounded-lg border px-2 text-[11.5px] outline-none transition-colors",
+                districtFilter
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                  : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50",
+              )}
+            >
+              <option value="">Any district</option>
+              {KERALA_DISTRICTS.map((d) => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+
             {tags.length > 0 && (
               <>
                 <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
