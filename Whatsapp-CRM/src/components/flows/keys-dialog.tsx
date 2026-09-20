@@ -48,6 +48,7 @@ import {
   RotateCcw,
   ShieldAlert,
   ArrowRight,
+  Lock,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -102,6 +103,45 @@ function PemBlock({ text, tone }: { text: string; tone: 'private' | 'public' }) 
     >
       {text}
     </pre>
+  )
+}
+
+/**
+ * The private key, not shown.
+ *
+ * A secret on screen is a secret in a screenshot, in a screen share and
+ * over a shoulder — and this dialog is opened precisely when somebody
+ * is being helped with a problem, which is when other people are
+ * looking. It was printed in full.
+ *
+ * Copying does not require reading, so the button works on the hidden
+ * text and is the ordinary path. Revealing stays possible because one
+ * real case needs it — pasting the line into a file by hand on a server
+ * — but it takes a deliberate click, and the warning says what that
+ * click costs.
+ */
+function SecretBlock({ text }: { text: string }) {
+  const [revealed, setRevealed] = useState(false)
+  return (
+    <div className="space-y-1.5">
+      {revealed ? (
+        <PemBlock text={text} tone="private" />
+      ) : (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-3">
+          <Lock className="size-3.5 shrink-0 text-emerald-600" />
+          <span className="font-mono text-[11px] tracking-[0.2em] text-emerald-700">
+            ••••••••••••••••••••••••
+          </span>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setRevealed((v) => !v)}
+        className="text-[11px] font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700"
+      >
+        {revealed ? 'Hide it again' : 'Show it (only if nobody is watching)'}
+      </button>
+    </div>
   )
 }
 
@@ -243,7 +283,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* The height cap plus header/body/footer rows are what stop the
           content growing past the viewport and being clipped at both ends. */}
-      <DialogContent className="grid max-h-[90dvh] w-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden bg-white p-0 sm:max-w-3xl">
+      <DialogContent className="grid max-h-[90dvh] w-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden bg-white p-0 sm:max-w-lg">
         <DialogHeader className="border-b border-slate-100 px-4 py-3 text-left sm:px-5 sm:py-4">
           <DialogTitle className="flex items-center gap-2 pr-8 text-[15px]">
             <KeyRound className="size-4 shrink-0 text-indigo-500" />
@@ -255,11 +295,16 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* One column on a phone, two from `md` up. The state column comes
-            first in both, because it decides whether the right-hand side
-            is worth reading at all. */}
-        <div className="grid min-h-0 grid-cols-1 overflow-y-auto md:grid-cols-[minmax(0,300px)_minmax(0,1fr)] md:overflow-hidden">
-          <aside className="space-y-3 border-b border-slate-100 px-4 py-4 md:overflow-y-auto md:border-b-0 md:border-r md:px-5">
+        {/* One column, always.
+
+            Two columns put a short status card beside a tall block of
+            advice, so one side ran out and left a column of nothing
+            next to it. Reading order is the same either way — what the
+            key is doing now, then what to do about it — and in a single
+            column that order is the layout rather than something the
+            layout has to survive. */}
+        <div className="min-h-0 overflow-y-auto">
+          <aside className="space-y-3 border-b border-slate-100 px-4 py-4 sm:px-5">
             {!currentKey && !keys && (
               <div className="flex items-center gap-2 rounded-xl border border-slate-200 p-3.5 text-[12.5px] text-slate-500">
                 <Loader2 className="size-4 shrink-0 animate-spin" />
@@ -366,7 +411,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
             )}
           </aside>
 
-          <div className="min-h-0 space-y-3 px-4 py-4 md:overflow-y-auto md:px-5">
+          <div className="min-h-0 space-y-3 px-4 py-4 sm:px-5">
             {!keys && (
               <>
                 <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
@@ -431,7 +476,8 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                 <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-[12px] leading-relaxed text-amber-900">
                   <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
                   <span>
-                    <strong>Copy the private key now.</strong> It is shown once and never again.
+                    <strong>Copy the private key now.</strong> It is available once and never
+                    again. It stays hidden on screen — copying does not need it shown.
                   </span>
                 </div>
 
@@ -445,7 +491,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                   }
                   action={<CopyButton text={keys.envValue} label="Copy .env line" />}
                 >
-                  <PemBlock text={keys.envValue} tone="private" />
+                  <SecretBlock text={keys.envValue} />
                 </StepCard>
 
                 <StepCard

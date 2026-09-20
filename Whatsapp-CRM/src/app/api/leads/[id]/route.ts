@@ -206,6 +206,29 @@ export async function PATCH(
     if (lost_reason !== undefined) data.lost_reason = lost_reason || null
     if (converted_at !== undefined) data.converted_at = converted_at ? new Date(converted_at) : null
 
+    // ── Acting on a lead claims it ───────────────────────────────────
+    //
+    // An agent could open something from the pool, phone the person,
+    // log the outcome and write a note, and the lead stayed unassigned
+    // — still in the pool, still offered to everybody. The next agent
+    // rang the same customer, who had already been called. The work was
+    // done and the record said nobody had done it.
+    //
+    // Claiming is not a separate intention from working on it. Whoever
+    // changed it owns it.
+    //
+    // Only from unassigned, and never when the change *is* an
+    // assignment: a supervisor handing a lead to somebody else must not
+    // find they have given it to themselves.
+    const autoClaimed =
+      Object.keys(data).length > 0 &&
+      !existing.assigned_to &&
+      assigned_to === undefined
+    if (autoClaimed) {
+      data.assigned_to = ctx.userId
+      data.claimed_at = new Date()
+    }
+
     const lead = await prisma.lead.update({
       where: { id },
       data,
@@ -223,6 +246,22 @@ export async function PATCH(
     }
 
     const activities: Array<ReturnType<typeof prisma.leadActivity.create>> = []
+
+    if (autoClaimed) {
+      activities.push(
+        prisma.leadActivity.create({
+          data: {
+            account_id: ctx.accountId,
+            lead_id: id,
+            contact_id: lead.contact_id ?? null,
+            user_id: ctx.userId,
+            type: 'note',
+            title: 'Claimed by working on it',
+            description: 'Assigned automatically — this agent was the one who changed it.',
+          },
+        }),
+      )
+    }
 
     // Log status change
     if (status && status !== existing.status) {
@@ -309,6 +348,35 @@ export async function PATCH(
     }
 
     if (activities.length) await Promise.all(activities)
+
+    // The chat comes with the lead, however the lead was claimed.
+    //
+    // The explicit claim path already does this. Without it here, an
+    // agent who worked a lead would own the lead but not the
+    // conversation — so the assistant would carry on answering their
+    // customer on their behalf, which is the exact problem that rule
+    // was written to end. Two ways to become the owner, one of which
+    // quietly does half the job.
+    //
+    // Only an unassigned thread is taken, same as there: one a
+    // colleague is already in is theirs.
+    if (autoClaimed && lead.contact_id) {
+      await prisma.conversation
+        .updateMany({
+          where: {
+            account_id: ctx.accountId,
+            contact_id: lead.contact_id,
+            assigned_agent_id: null,
+          },
+          data: { assigned_agent_id: ctx.userId },
+        })
+        .catch((err) =>
+          console.error(
+            '[leads] auto-claimed, but the conversation could not be assigned:',
+            err instanceof Error ? err.message : err,
+          ),
+        )
+    }
 
     // ── Closing the lead hands the chat back to the assistant ────────
     //

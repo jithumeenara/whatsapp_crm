@@ -1131,7 +1131,7 @@ function SystemNote({ message }: { message: Message }) {
   // speak to someone", "Closed automatically — no reply for 1 day".
   const summary = lines[0] ?? "Note";
   const hasMore = lines.length > 1;
-  const time = format(new Date(message.created_at), "HH:mm");
+  const time = format(new Date(message.created_at), "h:mm a");
 
   return (
     <div className="my-2 flex w-full justify-center px-2">
@@ -1198,7 +1198,7 @@ export function MessageBubble({
   const isAgent = message.sender_type === "agent";
   // "You" = message sent by the currently logged-in user
   const isSelf = isAgent && (message.sender_id === currentUserId || agentName === "You");
-  const time = format(new Date(message.created_at), "HH:mm");
+  const time = format(new Date(message.created_at), "h:mm a");
 
   return (
     <div
