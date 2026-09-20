@@ -23,6 +23,7 @@ function fmtDT(iso: string) {
 
 const STATUS_CHIP: Record<string, string> = {
   new:                'bg-indigo-50 text-indigo-700 border-indigo-100',
+  open: 'bg-sky-50 text-sky-700 border-sky-100',
   call_not_connected: 'bg-rose-50 text-rose-700 border-rose-100',
   visited:            'bg-sky-50 text-sky-700 border-sky-100',
   appointment_fixed:  'bg-violet-50 text-violet-700 border-violet-100',
@@ -30,7 +31,7 @@ const STATUS_CHIP: Record<string, string> = {
   closed:             'bg-emerald-50 text-emerald-700 border-emerald-100',
 }
 const STATUS_LABEL: Record<string, string> = {
-  new: 'New', call_not_connected: 'Not Connected', visited: 'Visited',
+  new: 'New', open: 'Open', call_not_connected: 'Not Connected', visited: 'Visited',
   appointment_fixed: 'Appt Fixed', follow_up: 'Follow-up', closed: 'Closed',
 }
 

@@ -123,7 +123,7 @@ const TOOLS: Record<string, ToolImpl> = {
     declaration: {
       name: 'enquiries_by_status',
       description:
-        'Counts enquiries (leads) grouped by their pipeline status — new, call_not_connected, visited, appointment_fixed, follow_up, closed. Use for "where are enquiries stuck" or conversion questions.',
+        'Counts enquiries (leads) grouped by their pipeline status — new, open, call_not_connected, visited, appointment_fixed, follow_up, closed. Use for "where are enquiries stuck" or conversion questions.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: { days_back: DAYS_BACK_PARAM },

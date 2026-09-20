@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead } from "@/types"
+import { outcomeOf, OUTCOME_CHIP, OUTCOME_LABEL } from "@/lib/leads/outcome"
 import { useAuth } from "@/hooks/use-auth"
 import { useRealtime } from "@/hooks/use-realtime"
 import { slaStateFor, describeUntouched, SLA_STYLES, DEFAULT_SLA, type SlaThresholds } from "@/lib/leads/sla"
@@ -78,6 +79,9 @@ const TAB_DOT: Record<string, string> = {
 
 const STATUS_CHIP: Record<string, string> = {
   new:                "bg-indigo-50 text-indigo-700 border-indigo-100",
+  // Being worked, no outcome yet. Sky rather than indigo so it reads
+  // as a step past New without competing with it.
+  open:               "bg-sky-50 text-sky-700 border-sky-100",
   call_not_connected: "bg-rose-50 text-rose-700 border-rose-100",
   visited:            "bg-sky-50 text-sky-700 border-sky-100",
   appointment_fixed:  "bg-violet-50 text-violet-700 border-violet-100",
@@ -86,7 +90,7 @@ const STATUS_CHIP: Record<string, string> = {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  new:"New", call_not_connected:"Not Connected", visited:"Visited",
+  new:"New", open:"Open", call_not_connected:"Not Connected", visited:"Visited",
   appointment_fixed:"Appt Fixed", follow_up:"Follow-up", closed:"Closed",
 }
 
@@ -132,6 +136,33 @@ function isPast(iso: string) { return new Date(iso) < new Date() }
  * The reason travels with it, because a verdict nobody can check is a
  * verdict nobody should act on.
  */
+/**
+ * The status, and for a closed lead how it ended.
+ *
+ * "Closed" was the same word for a customer who signed up and one who
+ * went elsewhere — the single most useful fact about a finished lead,
+ * and the list did not carry it. The close dialog has always asked and
+ * always recorded the answer; only the chip never said it.
+ *
+ * Derived rather than stored, so every lead closed before today shows
+ * its real outcome too. See src/lib/leads/outcome.ts.
+ */
+function StatusChip({ lead }: { lead: Lead }) {
+  const outcome = outcomeOf(lead)
+  const className = outcome
+    ? OUTCOME_CHIP[outcome]
+    : STATUS_CHIP[lead.status] ?? "bg-slate-50 text-slate-600 border-slate-100"
+  const label = outcome ? OUTCOME_LABEL[outcome] : STATUS_LABEL[lead.status] ?? lead.status
+  return (
+    <span
+      className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold", className)}
+      title={outcome === "lost" && lead.lost_reason ? lead.lost_reason : undefined}
+    >
+      {label}
+    </span>
+  )
+}
+
 function NotAnEnquiryChip({ lead }: { lead: Lead }) {
   if (lead.ai_verdict !== "not_enquiry") return null
   return (
@@ -682,12 +713,7 @@ function LeadTile({
 
         {/* Status + score badges */}
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={cn(
-            "rounded-full border px-2.5 py-1 text-[11px] font-bold",
-            STATUS_CHIP[lead.status] ?? "bg-slate-50 text-slate-600 border-slate-100"
-          )}>
-            {STATUS_LABEL[lead.status] ?? lead.status}
-          </span>
+          <StatusChip lead={lead} />
           {(scoringMode === "score" || scoringMode === "both") && (
             <ScoreBadge score={lead.score} />
           )}
@@ -851,10 +877,7 @@ function LeadRow({
         </div>
       </td>
       <td className="px-4 py-3.5">
-        <span className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold",
-          STATUS_CHIP[lead.status] ?? "bg-slate-50 text-slate-600 border-slate-100")}>
-          {STATUS_LABEL[lead.status] ?? lead.status}
-        </span>
+        <StatusChip lead={lead} />
       </td>
       <td className="px-4 py-3.5 hidden md:table-cell">
         {(scoringMode === "score" || scoringMode === "both")

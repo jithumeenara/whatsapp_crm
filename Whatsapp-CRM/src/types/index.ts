@@ -778,6 +778,17 @@ export interface AutomationLog {
 
 export type LeadStatus =
   | 'new'
+  /// Spoken to, being worked, no outcome yet.
+  ///
+  /// The gap every other status left: once an agent had made contact
+  /// they had to claim an outcome — visited, appointment fixed,
+  /// follow-up — when often the honest answer was "we are talking".
+  /// Picking one of those to mean "in progress" is how a pipeline
+  /// stops describing anything.
+  ///
+  /// Deliberately not the same thing as the "All Open" tab, which
+  /// means "any status except closed" and always will.
+  | 'open'
   | 'call_not_connected'
   | 'visited'
   | 'appointment_fixed'

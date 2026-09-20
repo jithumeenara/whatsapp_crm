@@ -43,6 +43,9 @@ const STAGES = [
 
 /** Stages that count as "we spoke to them at all". */
 const CONTACTED_STATUSES = new Set([
+  // 'open' means somebody has spoken to them and the outcome is not
+  // settled yet. That is contact, whatever it turns into.
+  'open',
   'call_not_connected',
   'visited',
   'appointment_fixed',

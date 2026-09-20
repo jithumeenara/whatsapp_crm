@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Loader2, PhoneOff, Phone, MapPin, Calendar, CheckCircle2, MessageSquare } from 'lucide-react'
+import { Loader2, PhoneOff, Phone, MapPin, Calendar, CheckCircle2, MessageSquare, MessageCircle } from 'lucide-react'
 import { CloseEnquiryDialog } from './close-enquiry-dialog'
 import { FollowupInlineForm } from './followup-inline-form'
 
@@ -13,7 +13,7 @@ interface CallActionPanelProps {
 }
 
 type BusyKey = 'out_of_coverage' | 'busy' | 'switched_off' | 'invalid_number'
-type ConnectedKey = 'visited' | 'appointment_fixed' | 'follow_up' | 'closed'
+type ConnectedKey = 'open' | 'visited' | 'appointment_fixed' | 'follow_up' | 'closed'
 
 const NOT_CONNECTED: Array<{ key: BusyKey; label: string }> = [
   { key: 'out_of_coverage', label: 'Out of Coverage' },
@@ -23,6 +23,12 @@ const NOT_CONNECTED: Array<{ key: BusyKey; label: string }> = [
 ]
 
 const CONNECTED: Array<{ key: ConnectedKey; label: string; icon: React.ReactNode }> = [
+  // First, because it is the most honest answer to most calls and the
+  // one the list had no room for. Without it an agent who has spoken to
+  // somebody must claim an outcome — visited, appointment fixed — that
+  // has not happened yet, and a pipeline made of those stops describing
+  // anything.
+  { key: 'open', label: 'Still talking', icon: <MessageCircle className="size-3.5" /> },
   { key: 'visited', label: 'Visited', icon: <MapPin className="size-3.5" /> },
   { key: 'appointment_fixed', label: 'Appointment Fixed', icon: <Calendar className="size-3.5" /> },
   { key: 'follow_up', label: 'Follow-up', icon: <MessageSquare className="size-3.5" /> },

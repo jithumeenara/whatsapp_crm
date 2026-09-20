@@ -33,6 +33,7 @@ const MAX_IDS = 200
 
 const STATUSES = new Set([
   'new',
+  'open',
   'call_not_connected',
   'visited',
   'appointment_fixed',

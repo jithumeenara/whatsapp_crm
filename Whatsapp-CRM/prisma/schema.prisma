@@ -2304,7 +2304,11 @@ model Lead {
   contact_id       String?   @db.Uuid
   title            String
   source           String    @default("manual")  // whatsapp, instagram, website, campaign, referral, manual
-  status           String    @default("new")     // new, call_not_connected, visited, appointment_fixed, follow_up, closed
+  /// new, open, call_not_connected, visited, appointment_fixed,
+  /// follow_up, closed. 'open' means spoken to and being worked with no
+  /// outcome yet — distinct from the "All Open" tab, which means any
+  /// status except closed.
+  status           String    @default("new")
   score            String    @default("warm")    // hot, warm, cold
   lead_quality     String?                       // qualified, not_qualified, wrong_enquiry
   call_outcome     String?                       // out_of_coverage, busy, switched_off, invalid_number

@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
+import { outcomeOf, OUTCOME_COLOR, OUTCOME_LABEL } from "@/lib/leads/outcome"
 import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-lead-dialog"
 import { ScheduleFollowupDialog } from "@/components/leads/schedule-followup-dialog"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
@@ -27,6 +28,7 @@ function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boo
 
 const STATUS_LABEL: Record<string, string> = {
   new: "New",
+  open: "Open",
   call_not_connected: "Not Connected",
   visited: "Visited",
   appointment_fixed: "Appointment Fixed",
@@ -35,6 +37,7 @@ const STATUS_LABEL: Record<string, string> = {
 }
 const STATUS_COLOR: Record<string, string> = {
   new: "bg-indigo-100 text-indigo-700",
+  open: "bg-sky-100 text-sky-700",
   call_not_connected: "bg-rose-100 text-rose-700",
   visited: "bg-sky-100 text-sky-700",
   appointment_fixed: "bg-amber-100 text-amber-700",
@@ -508,6 +511,9 @@ export default function LeadDetailPage() {
   const phone = lead.contact?.phone
   const altPhone = lead.contact?.alternate_phone
   const displayName = lead.contact?.name || lead.title
+  // Null unless this lead is closed; then 'won', 'lost' or plain
+  // 'closed' when nobody recorded which.
+  const leadOutcome = outcomeOf(lead)
 
   return (
     <div className="flex flex-col h-full bg-[#F4F6FA]">
@@ -520,8 +526,19 @@ export default function LeadDetailPage() {
           <button onClick={() => router.push("/leads")} className="text-slate-400 hover:text-slate-600 shrink-0">Leads</button>
           <span className="text-slate-300 shrink-0">/</span>
           <span className="font-bold text-slate-800 truncate">{lead.title}</span>
-          <span className={cn("shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold", STATUS_COLOR[lead.status] ?? "bg-slate-100 text-slate-600")}>
-            {STATUS_LABEL[lead.status] ?? lead.status}
+          {/* A closed lead says how it ended. "Closed" was the same
+              word for somebody who signed up and somebody who went
+              elsewhere — see src/lib/leads/outcome.ts. */}
+          <span
+            className={cn(
+              "shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold",
+              leadOutcome
+                ? OUTCOME_COLOR[leadOutcome]
+                : STATUS_COLOR[lead.status] ?? "bg-slate-100 text-slate-600",
+            )}
+            title={leadOutcome === "lost" && lead.lost_reason ? lead.lost_reason : undefined}
+          >
+            {leadOutcome ? OUTCOME_LABEL[leadOutcome] : STATUS_LABEL[lead.status] ?? lead.status}
           </span>
         </div>
 

@@ -50,7 +50,7 @@ interface Props {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const STATUS_LABEL: Record<string, string> = {
-  new: "New", call_not_connected: "Not Connected", visited: "Visited",
+  new: "New", open: "Open", call_not_connected: "Not Connected", visited: "Visited",
   appointment_fixed: "Appt Fixed", follow_up: "Follow-up", closed: "Closed",
 }
 const STATUS_COLOR: Record<string, string> = {
