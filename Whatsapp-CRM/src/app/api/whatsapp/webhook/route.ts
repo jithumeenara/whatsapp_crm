@@ -845,9 +845,14 @@ async function processMessage(
     try {
       const leadSettings = await prisma.leadSettings.findUnique({
         where: { account_id: accountId },
-        select: { auto_lead_creation: true },
+        select: { auto_lead_creation: true, ai_lead_enabled: true },
       })
-      if (leadSettings?.auto_lead_creation) {
+      // The two rules would fight. This one fires on the first message
+      // from anybody at all, which would hand every wrong number a lead
+      // row — and that row is then the "already a lead" the assistant
+      // skips over, so the careful check would never run on anyone.
+      // When the assistant is reading conversations, it decides.
+      if (leadSettings?.auto_lead_creation && !leadSettings.ai_lead_enabled) {
         const existingLead = await prisma.lead.findFirst({
           where: { contact_id: contactRecord.id, account_id: accountId },
           select: { id: true },

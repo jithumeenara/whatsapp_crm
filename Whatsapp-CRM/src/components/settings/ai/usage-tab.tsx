@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   BarChart3, Loader2, MessageSquare, Database, Send, BookOpen, Languages,
   ShieldCheck, TrendingUp, TrendingDown, Minus, AlertTriangle, Download, Info,
-  Volume2, Mic, FileScan,
+  Volume2, Mic, FileScan, Sparkles,
 } from 'lucide-react';
 import { AiButton, AiCard, AiCardHeader, AiBadge, AiSegmented, AiNotice, AiHint, AiIconTile } from './ui-kit';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -81,6 +81,7 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   tts_cloud: { label: 'Voice — Google Cloud', Icon: Volume2 },
   transcription: { label: 'Voice notes in', Icon: Mic },
   pdf_ocr: { label: 'Scanned PDFs', Icon: FileScan },
+  lead_detect: { label: 'Lead detection', Icon: Sparkles },
 };
 
 /** How many calls the Recent list shows at once.

@@ -19,6 +19,8 @@ const TAB_STATUS_MAP: Record<string, string | null> = {
   mine: null,
   // Open leads nobody has touched past the account's own threshold.
   overdue: null,
+  // What the assistant thinks is a lead and nobody has confirmed yet.
+  suggested: null,
 }
 
 /** A finished lead is history, not work. It stays reachable on its own
@@ -92,6 +94,19 @@ export async function GET(req: NextRequest) {
           : { lt: new Date(0) }
     }
 
+    // A suggestion is not a lead until somebody says so.
+    //
+    // It sits on its own tab and nowhere else — the whole reason the
+    // assistant suggests rather than creates is that its mistakes must
+    // not reach the lists people work from. Excluded everywhere else by
+    // default, including search, including "all".
+    if (tab === 'suggested') {
+      where.ai_suggested = true
+      where.status = 'new'
+    } else {
+      where.ai_suggested = false
+    }
+
     // Pool: unassigned new leads — visible to all agents
     if (tab === 'new_pool') {
       where.assigned_to = null
@@ -99,6 +114,11 @@ export async function GET(req: NextRequest) {
       // Mine, whoever you are. A supervisor asking for "mine" wants
       // theirs, not everyone's.
       where.assigned_to = ctx.userId
+    } else if (tab === 'suggested') {
+      // Unassigned by definition — nobody has claimed something nobody
+      // has agreed is real. Scoping this to assigned_to would show an
+      // agent an empty tab forever.
+      where.assigned_to = null
     } else if (!isPrivileged) {
       // Agents only see their own leads outside the pool — including on
       // the "all" tab, which used to skip this and leak every agent's

@@ -18,6 +18,7 @@ import { slaStateFor, describeUntouched, SLA_STYLES, DEFAULT_SLA, type SlaThresh
 import { DuplicateMergeDialog, DuplicatesButton } from "@/components/leads/duplicate-merge-dialog"
 import { SavedViews } from "@/components/leads/saved-views"
 import { ConversionFunnel } from "@/components/leads/conversion-funnel"
+import { SuggestedLeads } from "@/components/leads/suggested-leads"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 
 // ---- types ----
@@ -58,6 +59,7 @@ const TABS: TabDef[] = [
   { key: "closed",    label: "Closed",     color: "text-emerald-600"},
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
   { key: "funnel",    label: "Funnel",     color: "text-teal-600"   },
+  { key: "suggested", label: "Suggested",  color: "text-violet-600" },
 ]
 
 const TAB_DOT: Record<string, string> = {
@@ -69,6 +71,7 @@ const TAB_DOT: Record<string, string> = {
   closed: "bg-emerald-500",
   tasks: "bg-violet-500",
   funnel: "bg-teal-500",
+  suggested: "bg-violet-500",
 }
 
 const STATUS_CHIP: Record<string, string> = {
@@ -1092,6 +1095,7 @@ export default function LeadsV2() {
   const [districtFilter, setDistrictFilter] = useState("")
   const [search, setSearch] = useState("")
   const [searchQ, setSearchQ] = useState("")
+  const [aiLeadEnabled, setAiLeadEnabled] = useState(false)
   const [scoringMode, setScoringMode] = useState("score")
   const [scoreOptions, setScoreOptions] = useState<{ icon: string; label: string }[]>([
     { icon: "🔥", label: "Hot" }, { icon: "🌡️", label: "Warm" }, { icon: "❄️", label: "Cold" },
@@ -1133,7 +1137,7 @@ export default function LeadsV2() {
   const [pipelineLead, setPipelineLead] = useState<Lead | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const isLeadTab = !["follow_ups", "tasks", "funnel"].includes(tab)
+  const isLeadTab = !["follow_ups", "tasks", "funnel", "suggested"].includes(tab)
 
   const effectiveTab = (!canViewAllLeads && tab === "all") ? "new_pool" : tab
 
@@ -1160,6 +1164,7 @@ export default function LeadsV2() {
         setLeads(lr.leads ?? lr ?? [])
         setTags(tr?.tags ?? tr ?? [])
         setScoringMode(sr.scoring_mode ?? "score")
+        setAiLeadEnabled(sr.ai_lead_enabled === true)
         setSla({
           warnHours: typeof sr.sla_warn_hours === "number" ? sr.sla_warn_hours : DEFAULT_SLA.warnHours,
           breachHours:
@@ -1337,12 +1342,23 @@ export default function LeadsV2() {
   // offered to the people whose job that is. An agent's own conversion
   // rate shown beside the team's invites a comparison this page was not
   // asked to make.
-  const visibleTabs = canViewAllLeads
+  //
+  // Suggested is hidden until the account switches AI lead detection on
+  // in Settings. A tab that can never fill teaches people the page has
+  // dead ends in it.
+  const visibleTabs = (canViewAllLeads
     ? TABS
     : TABS.filter((t) => t.key !== "all" && t.key !== "funnel")
+  ).filter((t) => t.key !== "suggested" || aiLeadEnabled)
 
   const listCount =
-    tab === "funnel" ? 0 : isLeadTab ? leads.length : tab === "follow_ups" ? followUps.length : tasks.length
+    tab === "funnel" || tab === "suggested"
+      ? 0
+      : isLeadTab
+        ? leads.length
+        : tab === "follow_ups"
+          ? followUps.length
+          : tasks.length
 
   return (
     <div className="min-h-full">
@@ -1637,6 +1653,12 @@ export default function LeadsV2() {
             )}
 
             {bulkBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />}
+          </div>
+        )}
+
+        {tab === "suggested" && (
+          <div className="mt-4">
+            <SuggestedLeads onReviewed={loadData} />
           </div>
         )}
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { DEFAULT_SIGNALS, normalizeMode, normalizeThreshold, sanitizeSignals } from "@/lib/leads/ai-signals"
 
 const VALID_SCORING_MODES = ["score", "quality", "both"] as const
 
@@ -49,6 +50,14 @@ type RawRow = {
   call_connected_labels: unknown
   close_enquiry_reasons: unknown
   lead_sources: unknown
+  ai_lead_enabled: boolean | null
+  ai_lead_signals: unknown
+  ai_lead_rules: string | null
+  ai_lead_exclusions: string | null
+  ai_lead_threshold: string | null
+  ai_lead_mode: string | null
+  ai_lead_min_messages: number | null
+  ai_lead_recheck_hours: number | null
 }
 
 async function ensureColumns(accountId: string) {
@@ -70,11 +79,53 @@ async function ensureColumns(accountId: string) {
   await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS sla_breach_hours INTEGER NOT NULL DEFAULT 72
   `
+  // Migration 097's columns, defended the same way. This route reads
+  // them by name, so a VPS that has pulled the code but not yet run the
+  // migration would 500 on the whole settings screen rather than on the
+  // one section that is genuinely missing.
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_enabled BOOLEAN NOT NULL DEFAULT false
+  `
+  await prisma.$executeRaw`ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_signals JSONB`
+  await prisma.$executeRaw`ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_rules TEXT`
+  await prisma.$executeRaw`ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_exclusions TEXT`
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_threshold TEXT NOT NULL DEFAULT 'balanced'
+  `
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_mode TEXT NOT NULL DEFAULT 'suggest'
+  `
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_min_messages INTEGER NOT NULL DEFAULT 2
+  `
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_recheck_hours INTEGER NOT NULL DEFAULT 6
+  `
   await prisma.leadSettings.upsert({
     where:  { account_id: accountId },
     update: {},
     create: { account_id: accountId },
   })
+}
+
+/** The AI half of the payload, shaped the same on both GET and PATCH so
+ *  the settings screen can trust one response to be the whole truth. */
+function aiLeadPayload(row: RawRow | undefined) {
+  return {
+    ai_lead_enabled:       row?.ai_lead_enabled === true,
+    // No stored list means never configured, not "none ticked" — a
+    // fresh account should see the four that are a signal everywhere,
+    // not an empty checklist that detects nothing.
+    ai_lead_signals:       Array.isArray(row?.ai_lead_signals)
+                             ? sanitizeSignals(row?.ai_lead_signals)
+                             : DEFAULT_SIGNALS,
+    ai_lead_rules:         row?.ai_lead_rules ?? "",
+    ai_lead_exclusions:    row?.ai_lead_exclusions ?? "",
+    ai_lead_threshold:     normalizeThreshold(row?.ai_lead_threshold),
+    ai_lead_mode:          normalizeMode(row?.ai_lead_mode),
+    ai_lead_min_messages:  row?.ai_lead_min_messages ?? 2,
+    ai_lead_recheck_hours: row?.ai_lead_recheck_hours ?? 6,
+  }
 }
 
 export async function GET() {
@@ -91,7 +142,15 @@ export async function GET() {
              call_not_connected_labels,
              call_connected_labels,
              close_enquiry_reasons,
-             lead_sources
+             lead_sources,
+             ai_lead_enabled,
+             ai_lead_signals,
+             ai_lead_rules,
+             ai_lead_exclusions,
+             ai_lead_threshold,
+             ai_lead_mode,
+             ai_lead_min_messages,
+             ai_lead_recheck_hours
       FROM   lead_settings
       WHERE  account_id = ${ctx.accountId}::uuid
       LIMIT  1
@@ -108,6 +167,7 @@ export async function GET() {
       call_connected_labels:     normalise(row?.call_connected_labels,     DEFAULT_CONNECTED),
       close_enquiry_reasons:     normalise(row?.close_enquiry_reasons,     DEFAULT_CLOSE_REASONS),
       lead_sources:              normalise(row?.lead_sources,              DEFAULT_LEAD_SOURCES),
+      ...aiLeadPayload(row),
     })
   } catch (err) {
     return toErrorResponse(err)
@@ -239,6 +299,80 @@ export async function PATCH(req: NextRequest) {
       `
     }
 
+    // ── What counts as a lead, in this account's words ──────────────────────────
+    //
+    // Raw SQL for the same reason the lists above use it: these columns
+    // are added by ensureColumns at runtime, so a client generated
+    // before migration 097 still writes them correctly.
+
+    if (typeof body.ai_lead_enabled === "boolean") {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_enabled = ${body.ai_lead_enabled}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+
+    if (Array.isArray(body.ai_lead_signals)) {
+      // Filtered to keys this build knows. A stored key nothing defines
+      // would become an instruction with no text behind it.
+      const signals = sanitizeSignals(body.ai_lead_signals)
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_signals = ${JSON.stringify(signals)}::jsonb
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+
+    // Free text, and long enough for a real paragraph — this is where an
+    // account says what its own business counts, and a cramped box is
+    // how that ends up being one word.
+    if (typeof body.ai_lead_rules === "string") {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_rules = ${body.ai_lead_rules.slice(0, 4000)}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+    if (typeof body.ai_lead_exclusions === "string") {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_exclusions = ${body.ai_lead_exclusions.slice(0, 4000)}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+
+    if (body.ai_lead_threshold !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_threshold = ${normalizeThreshold(body.ai_lead_threshold)}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+    if (body.ai_lead_mode !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_mode = ${normalizeMode(body.ai_lead_mode)}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+
+    // Clamped, not rejected, same as the SLA hours above: these come
+    // from number inputs and a value outside the range is a typo.
+    const clamp = (v: unknown, lo: number, hi: number): number | null =>
+      typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : null
+
+    const minMessages = clamp(body.ai_lead_min_messages, 1, 20)
+    if (minMessages !== null) {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_min_messages = ${minMessages}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+    // 0 means "check every time", which is a real choice for a low
+    // volume account, so the floor is 0 rather than 1.
+    const recheck = clamp(body.ai_lead_recheck_hours, 0, 24 * 30)
+    if (recheck !== null) {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_lead_recheck_hours = ${recheck}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+
     // ── Return persisted state ──────────────────────────────────────────────────
     const rows = await prisma.$queryRaw<RawRow[]>`
       SELECT auto_lead_creation,
@@ -247,7 +381,15 @@ export async function PATCH(req: NextRequest) {
              call_not_connected_labels,
              call_connected_labels,
              close_enquiry_reasons,
-             lead_sources
+             lead_sources,
+             ai_lead_enabled,
+             ai_lead_signals,
+             ai_lead_rules,
+             ai_lead_exclusions,
+             ai_lead_threshold,
+             ai_lead_mode,
+             ai_lead_min_messages,
+             ai_lead_recheck_hours
       FROM   lead_settings
       WHERE  account_id = ${ctx.accountId}::uuid
       LIMIT  1
@@ -262,6 +404,7 @@ export async function PATCH(req: NextRequest) {
       call_connected_labels:     normalise(row?.call_connected_labels,     DEFAULT_CONNECTED),
       close_enquiry_reasons:     normalise(row?.close_enquiry_reasons,     DEFAULT_CLOSE_REASONS),
       lead_sources:              normalise(row?.lead_sources,              DEFAULT_LEAD_SOURCES),
+      ...aiLeadPayload(row),
     })
   } catch (err) {
     return toErrorResponse(err)

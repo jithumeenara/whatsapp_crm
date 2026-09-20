@@ -74,6 +74,7 @@ model User {
   follow_ups                   FollowUp[]
   follow_ups_assigned          FollowUp[]                   @relation("FollowUpAssignee")
   lead_activities              LeadActivity[]
+  ai_lead_reviews              AiLeadReview[] @relation("AiLeadReviewer")
   lead_views                   LeadView[]
   segments                     Segment[]
   tasks                        Task[]
@@ -230,6 +231,7 @@ model Account {
   leads                        Lead[]
   follow_ups                   FollowUp[]
   lead_activities              LeadActivity[]
+  ai_lead_reviews              AiLeadReview[]
   segments                     Segment[]
   tasks                        Task[]
   push_subscriptions           PushSubscription[]
@@ -381,6 +383,7 @@ model Contact {
   leads                        Lead[]
   follow_ups                   FollowUp[]
   lead_activities              LeadActivity[]
+  ai_lead_reviews              AiLeadReview[]
   tasks                        Task[]
   scheduled_messages           ScheduledMessage[]
 
@@ -535,6 +538,12 @@ model Conversation {
 
   // Channel that originated this conversation
   channel         String   @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
+
+  /// When the assistant last read this thread to decide whether it was
+  /// a lead — whichever way it answered. Here rather than on the lead,
+  /// because a "no" writes no lead row at all, and a "no" is exactly
+  /// the answer worth not paying to re-ask an hour later.
+  ai_lead_checked_at DateTime? @db.Timestamptz(6)
 
   // Which connected WhatsApp number this thread belongs to (Finding #14)
   // — null for non-WhatsApp channels and for rows that predate multi-
@@ -2297,6 +2306,21 @@ model Lead {
   converted_at     DateTime? @db.Timestamptz(6)
   external_id      String?                        // dedup key for external integrations (HMS, LMS, etc.)
   is_hidden        Boolean   @default(false)       // hidden from agent view (set via raw SQL in PATCH)
+
+  /// Proposed by the assistant rather than entered by a person, and not
+  /// yet accepted. Kept out of the working lists until somebody says
+  /// yes — a suggested lead that behaved like a real one would put the
+  /// model's mistakes straight into the pool.
+  ai_suggested     Boolean   @default(false)
+  /// Why, in the customer's own words. A reason nobody can check is a
+  /// reason nobody will trust.
+  ai_reason        String?
+  /// 'high' | 'medium' | 'low'.
+  ai_confidence    String?
+  ai_reviewed_at   DateTime? @db.Timestamptz(6)
+  /// 'accepted' | 'rejected'. This is what makes the accuracy figure in
+  /// Settings a measurement rather than a claim.
+  ai_review_result String?
   created_at       DateTime  @default(now()) @db.Timestamptz(6)
   updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 
@@ -2367,6 +2391,39 @@ model LeadSettings {
   sla_warn_hours            Int     @default(24)
   sla_breach_hours          Int     @default(72)
 
+  // ── AI lead detection ──────────────────────────────────────────
+  //
+  // Reading a conversation and deciding whether it is a real enquiry.
+  // Every field here is a business's own definition of "a lead",
+  // because that word means something different in a training
+  // institute, a clinic and a hardware shop — and a fixed definition
+  // would be wrong for two of the three.
+  //
+  /// The master switch. Off means none of the rest applies.
+  ai_lead_enabled           Boolean @default(false)
+  /// Which conversational signals count here — string[] of signal keys
+  /// from src/lib/leads/ai-signals.ts. Deliberately a list rather than
+  /// a column each: a signal added later needs no migration.
+  ai_lead_signals           Json?
+  /// What the business would say if asked "what counts as a lead?",
+  /// in its own words. Read by the model alongside the signals.
+  ai_lead_rules             String?
+  /// And what never counts — the half that keeps the list clean.
+  /// A supplier asking for payment is not a lead in any industry.
+  ai_lead_exclusions        String?
+  /// 'strict' | 'balanced' | 'loose'. How sure the model must be.
+  ai_lead_threshold         String  @default("balanced")
+  /// 'suggest' | 'create'. Suggest is the default because published
+  /// false-positive rates for this run 15-30% in the first months,
+  /// and a wrong lead costs somebody a read.
+  ai_lead_mode              String  @default("suggest")
+  /// Nothing is judged before this many messages. One "hi" is not a
+  /// conversation, and the model would be guessing.
+  ai_lead_min_messages      Int     @default(2)
+  /// Hours before a conversation already judged "not a lead" is looked
+  /// at again. People come back and say more.
+  ai_lead_recheck_hours     Int     @default(6)
+
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
   @@map("lead_settings")
@@ -2422,6 +2479,35 @@ model LeadActivity {
   user    User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
 
   @@map("lead_activities")
+}
+
+/// What a person decided about one of the assistant's suggestions.
+///
+/// Its own table because a rejected suggestion's Lead row is deleted —
+/// it was never a lead, and left in place it would drag down every
+/// conversion figure and turn up in every duplicate check. Deleting it
+/// would take the evidence with it, and an accuracy figure that can
+/// only count accepts reads as 100% forever.
+///
+/// Keyed by contact as well as counted, so the detector can tell that
+/// this particular person has already been looked at and turned down
+/// once, and not offer them again next week.
+model AiLeadReview {
+  id          String   @id @default(uuid()) @db.Uuid
+  account_id  String   @db.Uuid
+  contact_id  String?  @db.Uuid
+  /// 'accepted' | 'rejected'
+  decision    String
+  reviewed_by String?  @db.Uuid
+  reviewed_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account  Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  reviewer User?    @relation("AiLeadReviewer", fields: [reviewed_by], references: [id], onDelete: SetNull)
+
+  @@index([account_id, decision])
+  @@index([account_id, contact_id])
+  @@map("ai_lead_reviews")
 }
 
 // ============================================================

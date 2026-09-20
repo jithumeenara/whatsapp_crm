@@ -129,6 +129,34 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
         issues.push({ path: `${path}.retailer_id`, message: 'a catalog product must be selected' })
       }
       break
+    case 'create_lead': {
+      // No keywords is legal and means "whatever reached this step".
+      // The one combination that cannot work is a matching mode that
+      // needs words with no words to match.
+      const mode = String(c.match_mode ?? 'word')
+      const keywords = Array.isArray(c.keywords)
+        ? c.keywords.filter((k) => typeof k === 'string' && k.trim())
+        : []
+      if (mode === 'exact' && keywords.length === 0) {
+        issues.push({
+          path: `${path}.keywords`,
+          message: '"the whole message is this" needs at least one word to compare against',
+        })
+      }
+      if (
+        c.similarity !== undefined &&
+        (typeof c.similarity !== 'number' ||
+          !Number.isFinite(c.similarity) ||
+          c.similarity < 0.5 ||
+          c.similarity > 0.99)
+      ) {
+        issues.push({
+          path: `${path}.similarity`,
+          message: 'similarity must be between 0.5 and 0.99',
+        })
+      }
+      break
+    }
     default:
       issues.push({ path, message: `unknown step type: ${step.step_type}` })
   }

@@ -77,7 +77,10 @@ export async function GET(req: NextRequest) {
 
   try {
     const leads = await prisma.lead.findMany({
-      where: { account_id: ctx.accountId, created_at: { gte: since } },
+      // Unconfirmed suggestions are not leads yet. Counting them as
+      // created would make the funnel's top number grow every time the
+      // assistant guessed, and the conversion rate fall.
+      where: { account_id: ctx.accountId, created_at: { gte: since }, ai_suggested: false },
       select: {
         id: true,
         status: true,

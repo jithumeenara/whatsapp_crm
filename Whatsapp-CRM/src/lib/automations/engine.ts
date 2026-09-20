@@ -9,6 +9,7 @@ import type {
   SendTemplateStepConfig,
   SendWebhookStepConfig,
   SendCatalogItemStepConfig,
+  CreateLeadStepConfig,
   TagStepConfig,
   UpdateContactFieldStepConfig,
   WaitStepConfig,
@@ -16,6 +17,7 @@ import type {
 } from '@/types'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { createLeadFromAutomation } from '@/lib/leads/create-from-automation'
 import { engineSendText, engineSendTemplate, engineSendCatalogItem } from './meta-send'
 
 // ------------------------------------------------------------
@@ -396,6 +398,23 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         retailerId: cfg.retailer_id,
       })
       return `catalog item sent via Meta (${whatsapp_message_id})`
+    }
+
+    case 'create_lead': {
+      const cfg = step.step_config as CreateLeadStepConfig
+      if (!args.contactId) throw new Error('create_lead needs a contact')
+      const outcome = await createLeadFromAutomation({
+        accountId: args.automation.account_id,
+        userId: args.automation.user_id,
+        contactId: args.contactId,
+        conversationId: args.context.conversation_id?.toString() ?? null,
+        message: (args.context.message_text ?? '').toString(),
+        config: cfg,
+      })
+      // A step that decided not to fire is a success, not a failure —
+      // "no keyword match" is the rule working. Throwing would mark the
+      // whole run failed and stop every step after it.
+      return outcome.detail
     }
 
     default:

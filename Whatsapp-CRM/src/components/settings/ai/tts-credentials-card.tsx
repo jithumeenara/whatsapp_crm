@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Volume2, FileJson } from 'lucide-react';
 import { AiCard, AiNotice, AiButton, AiHint } from './ui-kit';
+import { TtsKeyGuideButton, TtsKeyGuideLink } from './tts-key-guide';
 import { toast } from 'sonner';
 
 type Status = {
@@ -119,7 +120,12 @@ export function TtsCredentialsCard() {
           <Volume2 className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[13px] font-semibold text-slate-900">Better voices</span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[13px] font-semibold text-slate-900">Better voices</span>
+            {/* The steps live six screens deep in somebody else's
+                product. See tts-key-guide.tsx. */}
+            <TtsKeyGuideButton />
+          </span>
           <span className="block text-[11.5px] leading-relaxed text-slate-500">
             {usingAccountKey
               ? 'Using your Google Cloud key — native Malayalam and Tamil voices, about a second per reply.'
@@ -182,9 +188,8 @@ export function TtsCredentialsCard() {
               <FileJson className="h-3 w-3" />
               Where to get the file
             </span>
-            Google Cloud Console → enable the <strong>Text-to-Speech API</strong> → IAM &amp; Admin → Service
-            Accounts → create one with the <strong>Cloud Text-to-Speech User</strong> role → Keys → Add key →
-            JSON. Upload that file here, exactly as downloaded.
+            It is a .json file from Google Cloud Console, downloaded exactly as it comes.{' '}
+            <TtsKeyGuideLink />
           </AiHint>
         </div>
       )}

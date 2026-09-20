@@ -28,6 +28,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { detectLead } from '@/lib/leads/ai-detect'
 import { runCustomerTurn, formatTurnTimings, type CustomerAiConfig } from './customer-pipeline'
 import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
@@ -111,7 +112,7 @@ export type AutoReplyOutcome =
   | 'skipped_no_message'
   | 'failed'
 
-export async function autoReplyToMessage(args: {
+export interface AutoReplyArgs {
   accountId: string
   userId: string
   conversationId: string
@@ -124,7 +125,37 @@ export async function autoReplyToMessage(args: {
    *  typing bubble while the model works. Optional: every other channel
    *  has no such thing, and a missing one costs only the indicator. */
   providerMessageId?: string
-}): Promise<AutoReplyOutcome> {
+}
+
+/**
+ * Reply to the customer, then work out whether they were a lead.
+ *
+ * In that order, and never the other way round. Reading the
+ * conversation costs a model call of its own, and a customer waiting on
+ * an answer must not wait on a question the business is asking itself.
+ * The detection is deliberately not awaited by the caller's critical
+ * path for the same reason — see detectLead, which returns rather than
+ * throws for every failure it can have.
+ */
+export async function autoReplyToMessage(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
+  const outcome = await runAutoReply(args)
+
+  // Only once the exchange actually happened. A skipped or failed turn
+  // has told us nothing new about the person.
+  if (outcome === 'replied' || outcome === 'handed_off') {
+    void detectLead({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      contactId: args.contactId,
+    }).catch((err) =>
+      console.error('[auto-reply] lead detection failed:', err instanceof Error ? err.message : err),
+    )
+  }
+
+  return outcome
+}
+
+async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
   const text = args.message?.trim()
   if (!text) return 'skipped_no_message'
 

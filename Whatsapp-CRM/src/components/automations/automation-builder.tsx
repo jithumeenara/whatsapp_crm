@@ -30,6 +30,7 @@ import {
   ArrowDown,
   ArrowUp,
   ShoppingBag,
+  UserPlus,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -51,6 +52,7 @@ import type {
   Tag as TagRecord,
 } from "@/types"
 import { cn } from "@/lib/utils"
+import { MATCH_MODE_LABELS, type MatchMode } from "@/lib/leads/keyword-match"
 
 // ------------------------------------------------------------
 // Types (builder-local — mirror the flattened rows we POST)
@@ -97,6 +99,7 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
   send_webhook: { label: "Send Webhook", icon: Webhook, border: "border-l-primary" },
   close_conversation: { label: "Close Conversation", icon: CircleSlash, border: "border-l-primary" },
   send_catalog_item: { label: "Send Catalog Item", icon: ShoppingBag, border: "border-l-primary" },
+  create_lead: { label: "Create Lead", icon: UserPlus, border: "border-l-violet-500" },
 }
 
 const ADDABLE_STEPS: AutomationStepType[] = [
@@ -111,6 +114,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   "send_webhook",
   "close_conversation",
   "send_catalog_item",
+  "create_lead",
 ]
 
 const TRIGGER_OPTIONS: { value: AutomationTriggerType; label: string; hint: string }[] = [
@@ -164,6 +168,11 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return {}
     case "send_catalog_item":
       return { catalog_id: "", retailer_id: "" }
+    case "create_lead":
+      // Whole-word matching and no keywords: files a lead for whatever
+      // reached this step, which is what somebody adding it under an
+      // existing keyword trigger means.
+      return { match_mode: "word", keywords: [], skip_if_open_lead: true, assign_to: "pool" }
     default:
       return {}
   }
@@ -1273,9 +1282,154 @@ function StepEditor({
           />
         </FieldBlock>
       )
+    case "create_lead":
+      return <CreateLeadFields cfg={cfg} set={set} />
     default:
       return null
   }
+}
+
+/**
+ * Create Lead — the step's own fields.
+ *
+ * ── Why the mode picker comes first ─────────────────────────────────
+ *
+ * Everything below it changes meaning depending on the answer: with a
+ * word mode the box underneath is a keyword list, with AI it is a
+ * sentence describing what counts. Putting the choice first means the
+ * fields never appear to change under somebody's hands.
+ *
+ * The AI option is marked with what it costs, because the alternative
+ * is free and a person choosing between them deserves to know that
+ * before they pick rather than when the bill arrives.
+ */
+function CreateLeadFields({
+  cfg,
+  set,
+}: {
+  cfg: Record<string, unknown>
+  set: (patch: Record<string, unknown>) => void
+}) {
+  const mode = (cfg.match_mode as string) ?? "word"
+  const keywords = Array.isArray(cfg.keywords) ? (cfg.keywords as string[]) : []
+  const isAi = mode === "ai"
+
+  return (
+    <>
+      <FieldBlock label="Create a lead when…">
+        <select
+          value={mode}
+          onChange={(e) => set({ match_mode: e.target.value })}
+          className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-violet-400"
+        >
+          {(Object.keys(MATCH_MODE_LABELS) as MatchMode[]).map((m) => (
+            <option key={m} value={m}>
+              {MATCH_MODE_LABELS[m].label}
+            </option>
+          ))}
+          <option value="ai">AI decides — reads what they meant</option>
+        </select>
+        <p className="mt-1 text-[11px] text-slate-400">
+          {isAi
+            ? "Costs about a paisa per message. Use it when the words are unlistable."
+            : MATCH_MODE_LABELS[mode as MatchMode]?.hint}
+        </p>
+      </FieldBlock>
+
+      {isAi ? (
+        <FieldBlock label="What counts as an enquiry (optional)">
+          <Textarea
+            value={(cfg.ai_instruction as string) ?? ""}
+            onChange={(e) => set({ ai_instruction: e.target.value })}
+            placeholder="Leave empty to use what you wrote in Settings → Leads. Or describe it here, e.g. anyone asking about prices, dates or how to join."
+            className="min-h-16 bg-slate-100 text-xs text-slate-800"
+          />
+        </FieldBlock>
+      ) : (
+        <>
+          <FieldBlock label="Words (comma separated — leave empty for every message)">
+            <Input
+              value={keywords.join(", ")}
+              onChange={(e) =>
+                set({
+                  keywords: e.target.value
+                    .split(",")
+                    .map((k) => k.trim())
+                    .filter(Boolean),
+                })
+              }
+              placeholder="fees, price, admission, book"
+              className="h-9 bg-slate-100 text-xs text-slate-800"
+            />
+          </FieldBlock>
+
+          {mode === "similar" && (
+            <FieldBlock label={`How close (${Math.round(((cfg.similarity as number) ?? 0.8) * 100)}%)`}>
+              <input
+                type="range"
+                min={50}
+                max={99}
+                value={Math.round(((cfg.similarity as number) ?? 0.8) * 100)}
+                onChange={(e) => set({ similarity: Number(e.target.value) / 100 })}
+                className="w-full accent-violet-600"
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                Lower catches more typos and more wrong matches. 80% is where
+                &ldquo;admision&rdquo; matches &ldquo;admission&rdquo; and &ldquo;submission&rdquo;
+                still does not.
+              </p>
+            </FieldBlock>
+          )}
+        </>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <FieldBlock label="Source">
+          <Input
+            value={(cfg.source as string) ?? ""}
+            onChange={(e) => set({ source: e.target.value })}
+            placeholder="whatsapp"
+            className="h-9 bg-slate-100 text-xs text-slate-800"
+          />
+        </FieldBlock>
+        <FieldBlock label="Score">
+          <Input
+            value={(cfg.score as string) ?? ""}
+            onChange={(e) => set({ score: e.target.value })}
+            placeholder="warm"
+            className="h-9 bg-slate-100 text-xs text-slate-800"
+          />
+        </FieldBlock>
+      </div>
+
+      <FieldBlock label="Who gets it">
+        <select
+          value={(cfg.assign_to as string) ?? "pool"}
+          onChange={(e) => set({ assign_to: e.target.value })}
+          className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-violet-400"
+        >
+          <option value="pool">Leave in New Leads for anyone to claim</option>
+        </select>
+        <p className="mt-1 text-[11px] text-slate-400">
+          Assigning to a specific agent is done from the lead itself — an automation that
+          silently hands work to one person is work nobody else can see.
+        </p>
+      </FieldBlock>
+
+      <label className="mt-1 flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={cfg.skip_if_open_lead !== false}
+          onChange={(e) => set({ skip_if_open_lead: e.target.checked })}
+          className="mt-0.5 accent-violet-600"
+        />
+        <span className="text-[11px] leading-relaxed text-slate-500">
+          Skip if this person already has an open lead. A second lead for somebody an agent is
+          already working is a duplicate, not a new opportunity.
+        </span>
+      </label>
+    </>
+  )
 }
 
 function FieldBlock({
@@ -1307,6 +1461,12 @@ function previewFor(step: BuilderStep): string {
       return (step.step_config.url as string) || "no url"
     case "send_catalog_item":
       return (step.step_config.retailer_id as string) || "pick a product"
+    case "create_lead": {
+      const mode = (step.step_config.match_mode as string) ?? "word"
+      if (mode === "ai") return "when AI says it is an enquiry"
+      const words = Array.isArray(step.step_config.keywords) ? step.step_config.keywords : []
+      return words.length > 0 ? `when message ${mode}: ${words.join(", ")}` : "for every message"
+    }
     default:
       return ""
   }

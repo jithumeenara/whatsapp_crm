@@ -29,6 +29,37 @@ describe("validateStepsForActivation", () => {
     expect(issues).toEqual([]);
   });
 
+  it("lets create_lead run with no keywords at all", () => {
+    // "For every message that reached this step" is a real setup, and
+    // the one somebody gets by dropping the step under an existing
+    // keyword trigger.
+    expect(
+      validateStepsForActivation([
+        { step_type: "create_lead", step_config: { match_mode: "word", keywords: [] } },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("will not let an exact-match create_lead have nothing to compare against", () => {
+    const issues = validateStepsForActivation([
+      { step_type: "create_lead", step_config: { match_mode: "exact", keywords: [] } },
+    ]);
+    expect(issues.map((i) => i.path)).toEqual(["steps[0].keywords"]);
+  });
+
+  it("keeps the similarity threshold inside a range that means something", () => {
+    expect(
+      validateStepsForActivation([
+        { step_type: "create_lead", step_config: { match_mode: "similar", similarity: 0.2 } },
+      ]).map((i) => i.path),
+    ).toEqual(["steps[0].similarity"]);
+    expect(
+      validateStepsForActivation([
+        { step_type: "create_lead", step_config: { match_mode: "similar", similarity: 0.8 } },
+      ]),
+    ).toEqual([]);
+  });
+
   it("flags every required field that is missing", () => {
     const issues = validateStepsForActivation([
       { step_type: "send_message", step_config: { text: "  " } },

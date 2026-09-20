@@ -43,6 +43,8 @@ export async function GET(_req: NextRequest) {
       account_id: ctx.accountId,
       status: { not: 'closed' },
       contact_id: { not: null },
+      // A suggestion nobody has accepted is not one of a pair yet.
+      ai_suggested: false,
     }
     // An agent sees duplicates among their own. A pair where one is
     // theirs and one is a colleague's is a supervisor's call, and

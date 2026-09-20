@@ -46,6 +46,12 @@ export type UsageFeature =
   /// incur here — a 60-page scan is 60 images of input — and one it
   /// pays once per document rather than per message.
   | 'pdf_ocr'
+  /// Reading a finished conversation to decide whether it was a real
+  /// enquiry. Its own line because it is the one charge an account
+  /// incurs per conversation rather than per message, and because
+  /// somebody weighing up whether the Suggested tab earns its keep
+  /// needs to see what it costs beside what it found.
+  | 'lead_detect'
 
 export interface TokenCounts {
   inputTokens: number

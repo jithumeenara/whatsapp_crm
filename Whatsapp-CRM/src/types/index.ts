@@ -555,7 +555,8 @@ export type AutomationStepType =
   | 'condition'
   | 'send_webhook'
   | 'close_conversation'
-  | 'send_catalog_item';
+  | 'send_catalog_item'
+  | 'create_lead';
 
 export type AutomationLogStatus = 'success' | 'partial' | 'failed';
 
@@ -653,6 +654,54 @@ export interface SendCatalogItemStepConfig {
   retailer_id: string;
 }
 
+/**
+ * Turn this conversation into a lead.
+ *
+ * ── Why the matching lives on the step and not only the trigger ─────
+ *
+ * An automation's keyword trigger already decides whether the
+ * automation runs at all. This is a second, narrower question — of the
+ * messages that got this far, which ones are somebody worth calling —
+ * and the two want different words. A rule can fire on "hi" to send a
+ * menu and create a lead only when the reply mentions a price.
+ *
+ * Leave `keywords` empty and the step creates a lead for whatever
+ * reached it, which is what somebody wiring this under an existing
+ * keyword trigger expects.
+ *
+ * ── Why AI is a mode and not a separate step ────────────────────────
+ *
+ * "Create a lead when they ask about price" and "create a lead when
+ * they sound interested" are the same intention at two levels of
+ * precision, and somebody should be able to move between them without
+ * rebuilding the automation. Words cost nothing and are exact; the
+ * model costs a fraction of a paisa and reads meaning. The choice is
+ * the account's, and it is one dropdown.
+ */
+export interface CreateLeadStepConfig {
+  /** 'word' | 'contains' | 'exact' | 'similar' | 'ai'. See
+   *  src/lib/leads/keyword-match.ts for the first four. */
+  match_mode?: string;
+  keywords?: string[];
+  /** Only for 'similar'. 0.5–0.99, default 0.8. */
+  similarity?: number;
+  case_sensitive?: boolean;
+  /** Only for 'ai' — what this business counts as worth following up,
+   *  in its own words. Empty falls back to the account's Lead Settings
+   *  definition, so the two do not have to be written twice. */
+  ai_instruction?: string;
+  /** What to file it as. Defaults to the automation's own channel. */
+  source?: string;
+  score?: string;
+  /** 'pool' leaves it unassigned for anyone to claim; an agent id
+   *  assigns it outright. */
+  assign_to?: string;
+  /** Skip if this contact already has an open lead. On by default —
+   *  a second lead for somebody an agent is already working is not a
+   *  new opportunity, it is a duplicate. */
+  skip_if_open_lead?: boolean;
+}
+
 export type AutomationStepConfig =
   | SendMessageStepConfig
   | SendTemplateStepConfig
@@ -663,6 +712,7 @@ export type AutomationStepConfig =
   | ConditionStepConfig
   | SendWebhookStepConfig
   | SendCatalogItemStepConfig
+  | CreateLeadStepConfig
   | Record<string, never>
   | Record<string, unknown>;
 

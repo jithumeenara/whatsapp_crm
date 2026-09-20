@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { Zap, BarChart3, PhoneOff, Phone, Plus, X, GripVertical, XCircle, Smile, Globe, Clock } from "lucide-react"
+import { AiLeadSettings, type AiLeadValues } from "./ai-lead-settings"
+import { DEFAULT_SIGNALS, sanitizeSignals } from "@/lib/leads/ai-signals"
 
 export type ListItem = { icon: string; label: string }
 
@@ -297,6 +299,10 @@ interface SettingsData {
   lead_sources: ListItem[]
 }
 
+/** The AI block's own fields, kept beside the rest so one Save writes
+ *  the whole screen. */
+type FullSettings = SettingsData & AiLeadValues
+
 /** "36 hours" is a number; "1.5 days" is a length of time. Past a day
  *  people think in days. */
 function describeHours(hours: number): string {
@@ -306,8 +312,16 @@ function describeHours(hours: number): string {
 }
 
 export function LeadsSettingsV2() {
-  const [settings, setSettings] = useState<SettingsData>({
+  const [settings, setSettings] = useState<FullSettings>({
     auto_lead_creation: false,
+    ai_lead_enabled: false,
+    ai_lead_signals: DEFAULT_SIGNALS,
+    ai_lead_rules: "",
+    ai_lead_exclusions: "",
+    ai_lead_threshold: "balanced",
+    ai_lead_mode: "suggest",
+    ai_lead_min_messages: 2,
+    ai_lead_recheck_hours: 6,
     scoring_mode: "score",
     sla_warn_hours: 24,
     sla_breach_hours: 72,
@@ -326,6 +340,16 @@ export function LeadsSettingsV2() {
       .then((d) =>
         setSettings({
           auto_lead_creation: d.auto_lead_creation ?? false,
+          ai_lead_enabled: d.ai_lead_enabled ?? false,
+          ai_lead_signals: Array.isArray(d.ai_lead_signals)
+            ? sanitizeSignals(d.ai_lead_signals)
+            : DEFAULT_SIGNALS,
+          ai_lead_rules: d.ai_lead_rules ?? "",
+          ai_lead_exclusions: d.ai_lead_exclusions ?? "",
+          ai_lead_threshold: d.ai_lead_threshold ?? "balanced",
+          ai_lead_mode: d.ai_lead_mode ?? "suggest",
+          ai_lead_min_messages: typeof d.ai_lead_min_messages === "number" ? d.ai_lead_min_messages : 2,
+          ai_lead_recheck_hours: typeof d.ai_lead_recheck_hours === "number" ? d.ai_lead_recheck_hours : 6,
           scoring_mode: d.scoring_mode ?? "score",
           sla_warn_hours: typeof d.sla_warn_hours === "number" ? d.sla_warn_hours : 24,
           sla_breach_hours: typeof d.sla_breach_hours === "number" ? d.sla_breach_hours : 72,
@@ -380,8 +404,15 @@ export function LeadsSettingsV2() {
             <p className="text-[14px] font-semibold text-slate-800">Auto Lead Creation</p>
             <p className="mt-0.5 text-[12px] text-slate-500">
               Automatically create a lead when a new customer sends their first WhatsApp message.
-              It will appear in the New Leads pool for agents to claim.
+              It will appear in the New Leads pool for agents to claim. Every new number becomes a
+              lead — the wrong numbers too.
             </p>
+            {settings.ai_lead_enabled && settings.auto_lead_creation && (
+              <p className="mt-2 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11.5px] text-slate-500">
+                Paused while the assistant is finding leads below — otherwise every first message
+                would become a lead before it could be read.
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -400,6 +431,12 @@ export function LeadsSettingsV2() {
           </button>
         </div>
       </div>
+
+      {/* ── What counts as a lead, and who decides ── */}
+      <AiLeadSettings
+        values={settings}
+        onChange={(patch) => setSettings((st) => ({ ...st, ...patch }))}
+      />
 
       {/* ── When a lead counts as neglected ──
           A colour on a row, not an alarm: nothing is reassigned,
