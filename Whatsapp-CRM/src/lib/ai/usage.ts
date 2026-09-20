@@ -8,9 +8,9 @@
  *     not depend on an analytics insert succeeding.
  *  2. Measured and estimated are kept separate. Token counts come from
  *     the provider's own response, so they're what the vendor counted.
- *     Cost is derived from the price table below and is therefore an
- *     estimate that drifts whenever Google changes pricing — every
- *     surface that displays it says "estimated" for that reason.
+ *     Cost comes from pricing.ts and is therefore an estimate — every
+ *     surface that displays it says "estimated", and says which
+ *     figures are guesses rather than published rates.
  */
 
 import { prisma } from '@/lib/db'
@@ -53,69 +53,20 @@ export type UsageFeature =
   /// needs to see what it costs beside what it found.
   | 'lead_detect'
 
-export interface TokenCounts {
-  inputTokens: number
-  outputTokens: number
-  totalTokens: number
-}
+import { estimateCostUsd, type TokenCounts } from './pricing'
 
-/**
- * USD per 1 million tokens, from ai.google.dev/pricing (Sept 2026).
- *
- * Matched by longest-prefix so a model id this table has never seen
- * (a new Flash revision, say) still gets a sane family rate instead of
- * silently costing zero. A completely unknown id falls through to zero
- * cost and is recorded honestly as such — the token counts are still
- * exact, and the UI's "estimated" label carries the caveat.
- */
-const PRICES: Array<{ prefix: string; input: number; output: number }> = [
-  { prefix: 'gemini-3.8-flash', input: 0.30, output: 2.50 },
-  { prefix: 'gemini-3.6-flash', input: 0.15, output: 0.60 },
-  { prefix: 'gemini-3.5-flash-lite', input: 0.05, output: 0.20 },
-  { prefix: 'gemini-3.5-flash', input: 0.15, output: 0.60 },
-  { prefix: 'gemini-embedding', input: 0.02, output: 0 },
-  // Audio output is priced well above text, which is exactly why a
-  // voice reply costing nothing on this tab was so misleading.
-  { prefix: 'gemini-3.1-flash-tts', input: 0.50, output: 10.00 },
-  { prefix: 'gemini-2.5-flash-preview-tts', input: 0.50, output: 10.00 },
-  { prefix: 'gemini-3.5-flash-transcribe', input: 0.10, output: 0.40 },
-  // Family fallbacks, so an unrecognized point release still prices.
-  { prefix: 'gemini-3', input: 0.15, output: 0.60 },
-  { prefix: 'gemini', input: 0.15, output: 0.60 },
-]
-
-/**
- * Longest first, so the lookup below can stop at the first match and
- * still be the most specific one.
- *
- * The table is written in a sensible order by hand, and one row had
- * already drifted: "gemini-3.5-flash-transcribe" sat after
- * "gemini-3.5-flash", so every transcription was priced as chat. Sorting
- * makes the comment true instead of relying on whoever edits the list
- * next to notice.
- */
-const PRICES_BY_SPECIFICITY = [...PRICES].sort((a, b) => b.prefix.length - a.prefix.length)
-
-/** Google Cloud TTS is billed per character, not per token, and the
- *  voices this app uses are Chirp3-HD. Verified against
- *  cloud.google.com/text-to-speech pricing, September 2026: Standard and
- *  WaveNet $4, Neural2 $16, Chirp 3 HD $30, Studio $160 per million
- *  characters. */
-const CLOUD_TTS_USD_PER_MILLION_CHARS = 30
-
-export function estimateCloudTtsCostUsd(characters: number): number {
-  return Number(((Math.max(0, characters) / 1_000_000) * CLOUD_TTS_USD_PER_MILLION_CHARS).toFixed(6))
-}
-
-export function estimateCostUsd(model: string, tokens: TokenCounts): number {
-  const id = model.toLowerCase()
-  const price = PRICES_BY_SPECIFICITY.find((p) => id.startsWith(p.prefix))
-  if (!price) return 0
-  const cost = (tokens.inputTokens / 1_000_000) * price.input + (tokens.outputTokens / 1_000_000) * price.output
-  // 6dp matches the column; below that a single cheap call rounds away
-  // to nothing and the daily total under-reports.
-  return Number(cost.toFixed(6))
-}
+// Re-exported so every existing import of these from usage.ts keeps
+// working. The numbers live in pricing.ts; this module is about
+// writing rows.
+export {
+  estimateCostUsd,
+  estimateCloudTtsCostUsd,
+  priceFor,
+  isLooselyPriced,
+  PRICES_CHECKED_ON,
+  type ResolvedPrice,
+  type TokenCounts,
+} from './pricing'
 
 export interface RecordUsageArgs {
   accountId: string

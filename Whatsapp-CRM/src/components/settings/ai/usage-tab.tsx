@@ -9,6 +9,7 @@ import {
 import { AiButton, AiCard, AiCardHeader, AiBadge, AiSegmented, AiNotice, AiHint, AiIconTile } from './ui-kit';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RequestsChart, TokensChart, FeatureBars, type DailyPoint } from './usage-chart';
+import { isLooselyPriced, PRICES_CHECKED_ON } from '@/lib/ai/pricing';
 
 /**
  * Screen 6 — what the AI actually cost and did.
@@ -331,6 +332,29 @@ export function UsageTab() {
             />
           </div>
 
+          {/* How old the rates are, and how to settle it for certain.
+              These figures were five to twenty times under for months
+              because nothing on the screen said when they were last
+              checked or where the real answer lives. */}
+          <p className="-mt-1 text-[11px] leading-relaxed text-slate-400">
+            Costs are worked out from Google&rsquo;s published prices, last checked on{' '}
+            <span className="font-medium text-slate-500">{PRICES_CHECKED_ON}</span>. A{' '}
+            <span className="rounded bg-amber-50 px-1 font-medium text-amber-700 ring-1 ring-amber-200">
+              ~
+            </span>{' '}
+            beside a model means it has no published rate of its own and the figure is the nearest
+            one we know. For what Google actually charged, see your{' '}
+            <a
+              href="https://console.cloud.google.com/billing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 hover:text-slate-600"
+            >
+              Cloud Billing report
+            </a>{' '}
+            — group by SKU and filter to Gemini API.
+          </p>
+
           {totals.errors > 0 && (
             <AiNotice tone="warning" icon={<AlertTriangle className="h-4 w-4" />}>
               {totals.errors} of {totals.requests} calls failed in this period. Failed calls are listed below with the
@@ -432,7 +456,24 @@ export function UsageTab() {
                             })}
                           </td>
                           <td className="px-5 py-2.5 text-[12.5px] text-slate-700">{featureLabel(r.feature)}</td>
-                          <td className="px-5 py-2.5 font-mono text-[11.5px] text-slate-500">{r.model}</td>
+                          <td className="px-5 py-2.5 font-mono text-[11.5px] text-slate-500">
+                            <span className="inline-flex items-center gap-1">
+                              {r.model}
+                              {/* The failure this exists to stop: a model
+                                  with no published rate of its own was
+                                  priced off a family fallback, silently,
+                                  at a twentieth of the truth. A guess that
+                                  looks like a fact gets believed. */}
+                              {isLooselyPriced(r.model, new Date(r.created_at)) && (
+                                <span
+                                  title="This model has no published rate of its own — the cost shown is the nearest rate we know, not Google's figure for it."
+                                  className="cursor-help rounded bg-amber-50 px-1 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200"
+                                >
+                                  ~
+                                </span>
+                              )}
+                            </span>
+                          </td>
                           <td className="whitespace-nowrap px-5 py-2.5 text-[12.5px] tabular-nums text-slate-700">
                             {/* Google Cloud TTS is billed per character, so it
                                 genuinely has no token count. "0 / 0" reads as a
