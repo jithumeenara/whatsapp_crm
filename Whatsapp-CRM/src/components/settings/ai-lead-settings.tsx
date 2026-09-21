@@ -46,6 +46,12 @@ export interface AiLeadValues {
    *  handover at all, and whether it may act on what it works out.
    *  Lives with these because one Save writes the whole screen. */
   ai_judgement_mode: string
+  /** Whether a handover is offered to one named agent with a clock on
+   *  it. Independent of ai_judgement_mode: the judgement decides what
+   *  an offer knows, this decides whether offers happen. */
+  offer_enabled: boolean
+  offer_seconds: number
+  max_concurrent_chats: number
   ai_lead_min_messages: number
   ai_lead_recheck_hours: number
 }

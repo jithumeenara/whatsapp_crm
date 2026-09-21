@@ -57,6 +57,9 @@ type RawRow = {
   ai_lead_threshold: string | null
   ai_lead_mode: string | null
   ai_judgement_mode: string | null
+  offer_enabled: boolean | null
+  offer_seconds: number | null
+  max_concurrent_chats: number | null
   ai_lead_min_messages: number | null
   ai_lead_recheck_hours: number | null
 }
@@ -100,6 +103,15 @@ async function ensureColumns(accountId: string) {
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_judgement_mode TEXT NOT NULL DEFAULT 'off'
   `
   await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS offer_enabled BOOLEAN NOT NULL DEFAULT false
+  `
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS offer_seconds INTEGER NOT NULL DEFAULT 60
+  `
+  await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS max_concurrent_chats INTEGER NOT NULL DEFAULT 3
+  `
+  await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_min_messages INTEGER NOT NULL DEFAULT 2
   `
   await prisma.$executeRaw`
@@ -128,6 +140,9 @@ function aiLeadPayload(row: RawRow | undefined) {
     ai_lead_threshold:     normalizeThreshold(row?.ai_lead_threshold),
     ai_lead_mode:          normalizeMode(row?.ai_lead_mode),
     ai_judgement_mode:     normalizeJudgementMode(row?.ai_judgement_mode),
+    offer_enabled:         row?.offer_enabled === true,
+    offer_seconds:         row?.offer_seconds ?? 60,
+    max_concurrent_chats:  row?.max_concurrent_chats ?? 3,
     ai_lead_min_messages:  row?.ai_lead_min_messages ?? 2,
     ai_lead_recheck_hours: row?.ai_lead_recheck_hours ?? 6,
   }
@@ -168,7 +183,10 @@ export async function GET() {
              ai_lead_mode,
              ai_lead_min_messages,
              ai_lead_recheck_hours,
-             ai_judgement_mode
+             ai_judgement_mode,
+             offer_enabled,
+             offer_seconds,
+             max_concurrent_chats
       FROM   lead_settings
       WHERE  account_id = ${ctx.accountId}::uuid
       LIMIT  1
@@ -374,11 +392,37 @@ export async function PATCH(req: NextRequest) {
         WHERE account_id = ${ctx.accountId}::uuid
       `
     }
-
     // Clamped, not rejected, same as the SLA hours above: these come
     // from number inputs and a value outside the range is a typo.
     const clamp = (v: unknown, lo: number, hi: number): number | null =>
       typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : null
+
+    if (typeof body.offer_enabled === "boolean") {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET offer_enabled = ${body.offer_enabled}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+    // Clamped rather than rejected, like the SLA hours: these come from
+    // number inputs and a value outside the range is a typo, not an
+    // attack. The floor of 15 seconds is real though — below it an
+    // agent cannot finish the sentence they are typing, and the offer
+    // becomes a thing that flickers past rather than one they answer.
+    const offerSeconds = clamp(body.offer_seconds, 15, 600)
+    if (offerSeconds !== null) {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET offer_seconds = ${offerSeconds}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+    const maxChats = clamp(body.max_concurrent_chats, 1, 10)
+    if (maxChats !== null) {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET max_concurrent_chats = ${maxChats}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+
 
     const minMessages = clamp(body.ai_lead_min_messages, 1, 20)
     if (minMessages !== null) {
@@ -414,7 +458,10 @@ export async function PATCH(req: NextRequest) {
              ai_lead_mode,
              ai_lead_min_messages,
              ai_lead_recheck_hours,
-             ai_judgement_mode
+             ai_judgement_mode,
+             offer_enabled,
+             offer_seconds,
+             max_concurrent_chats
       FROM   lead_settings
       WHERE  account_id = ${ctx.accountId}::uuid
       LIMIT  1

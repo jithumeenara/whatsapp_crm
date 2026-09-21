@@ -7,6 +7,7 @@ import { AiLeadSettings, type AiLeadValues } from "./ai-lead-settings"
 import { ServiceCategoriesPanel } from "./service-categories-panel"
 import { OutOfScopePanel } from "./out-of-scope-panel"
 import { JudgementModePanel } from "./judgement-mode-panel"
+import { OfferSettingsPanel } from "./offer-settings-panel"
 import { DEFAULT_SIGNALS, sanitizeSignals } from "@/lib/leads/ai-signals"
 
 export type ListItem = { icon: string; label: string }
@@ -324,6 +325,9 @@ export function LeadsSettingsV2() {
     ai_lead_threshold: "balanced",
     ai_lead_mode: "suggest",
     ai_judgement_mode: "off",
+    offer_enabled: false,
+    offer_seconds: 60,
+    max_concurrent_chats: 3,
     ai_lead_min_messages: 2,
     ai_lead_recheck_hours: 6,
     scoring_mode: "score",
@@ -353,6 +357,9 @@ export function LeadsSettingsV2() {
           ai_lead_threshold: d.ai_lead_threshold ?? "balanced",
           ai_lead_mode: d.ai_lead_mode ?? "suggest",
           ai_judgement_mode: d.ai_judgement_mode ?? "off",
+          offer_enabled: d.offer_enabled === true,
+          offer_seconds: d.offer_seconds ?? 60,
+          max_concurrent_chats: d.max_concurrent_chats ?? 3,
           ai_lead_min_messages: typeof d.ai_lead_min_messages === "number" ? d.ai_lead_min_messages : 2,
           ai_lead_recheck_hours: typeof d.ai_lead_recheck_hours === "number" ? d.ai_lead_recheck_hours : 6,
           scoring_mode: d.scoring_mode ?? "score",
@@ -452,6 +459,16 @@ export function LeadsSettingsV2() {
       <JudgementModePanel
         value={settings.ai_judgement_mode ?? "off"}
         onChange={(mode) => setSettings((st) => ({ ...st, ai_judgement_mode: mode }))}
+      />
+
+      {/* ── Who gets told, and how long they have ──
+          After the judgement panel because an offer is only as good as
+          what the judgement worked out — the subject it routes on and
+          the urgency that decides whether anybody is interrupted at
+          all. */}
+      <OfferSettingsPanel
+        values={settings}
+        onChange={(patch) => setSettings((st) => ({ ...st, ...patch }))}
       />
 
       {/* ── What counts as a lead, and who decides ── */}

@@ -110,6 +110,7 @@ model User {
   calls                         Call[]
   call_transfer_default         CallConfig[]                 @relation("CallTransferAgent")
   call_transfer_fallback        CallConfig[]                 @relation("CallTransferFallback")
+  conversation_offers           ConversationOffer[]
 
   @@map("users")
 }
@@ -269,6 +270,7 @@ model Account {
   call_config                   CallConfig?
   service_categories            ServiceCategory[]
   out_of_scope_answers          OutOfScopeAnswer[]
+  conversation_offers           ConversationOffer[]
 
   @@unique([owner_user_id])
   @@map("accounts")
@@ -331,6 +333,15 @@ model Profile {
   /// able to say so without emptying the list, which would otherwise
   /// read as "has not chosen" and bring the default back.
   quick_links_enabled  Boolean     @default(true)
+
+  /// Category keys from ServiceCategory that this agent handles. Null
+  /// or empty means anything, which is both the sensible default and
+  /// the right answer for a business with no categories set up.
+  ///
+  /// A preference in routing, never a wall: holding a customer for the
+  /// one person who does Dental while three others sit free is choosing
+  /// tidiness over the person waiting.
+  handles_categories Json?
   /// This person's weekly shift, with the time zone it is written in:
   /// { timezone, week: { mon..sun: { mode: full|half|off, from, to } } }.
   ///
@@ -341,9 +352,9 @@ model Profile {
   ///
   /// Null means no hours set, which means always available — the
   /// behaviour every account had before this column existed.
-  working_hours        Json?
-  created_at           DateTime    @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime    @updatedAt @db.Timestamptz(6)
+  working_hours      Json?
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
 
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
@@ -606,9 +617,10 @@ model Conversation {
   // outbound reply to a referral-attributed conversation lands within 24h
   // of the inbound message; while this is in the future, even TEMPLATE
   // messages (not just session messages) are billed free by Meta.
-  fep_expires_at   DateTime?     @db.Timestamptz(6)
+  fep_expires_at   DateTime?           @db.Timestamptz(6)
   ai_judgements    AiJudgement[]
   calls            Call[]
+  offers           ConversationOffer[]
 
   // Was a plain, non-enforcing @@index — findOrCreateConversation
   // (webhook/route.ts) did an unguarded findFirst-then-create with no DB
@@ -2499,13 +2511,29 @@ model LeadSettings {
   /// figure is measured on this business's own messages before anything
   /// irreversible is switched on. Reaching 'act' without spending time
   /// in 'observe' means trusting a number nobody has seen.
-  ai_judgement_mode     String @default("off")
+  ai_judgement_mode String @default("off")
+
+  // ── Offering a handover to one agent at a time ────────────────────
+  //
+  /// Off by default, and independent of ai_judgement_mode — the
+  /// judgement decides what an offer *knows*; this decides whether
+  /// offers happen at all.
+  offer_enabled Boolean @default(false)
+
+  /// Webex defaults to 30s for chat and 18s for a call. WhatsApp is
+  /// neither: the customer is not watching a widget, and the agent is
+  /// usually mid-sentence with somebody else.
+  offer_seconds Int @default(60)
+
+  /// Where the live-chat research lands for an experienced agent. A
+  /// cap, not a target.
+  max_concurrent_chats  Int @default(3)
   /// Nothing is judged before this many messages. One "hi" is not a
   /// conversation, and the model would be guessing.
-  ai_lead_min_messages  Int    @default(2)
+  ai_lead_min_messages  Int @default(2)
   /// Hours before a conversation already judged "not a lead" is looked
   /// at again. People come back and say more.
-  ai_lead_recheck_hours Int    @default(6)
+  ai_lead_recheck_hours Int @default(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
@@ -3147,4 +3175,55 @@ model OutOfScopeAnswer {
   @@unique([account_id, key])
   @@index([account_id, active])
   @@map("out_of_scope_answers")
+}
+
+/// One agent a waiting conversation was offered to.
+///
+/// Expiry is a stored timestamp, not an in-memory timer. A timer lives
+/// in one process and dies with it, and a conversation whose timer died
+/// would wait forever with nothing on any screen to say so — the worst
+/// failure this feature could have, because it looks exactly like
+/// nothing happening.
+///
+/// Rows are kept after they end: they are the only record of who was
+/// asked, in what order, and how long each one sat, which is the
+/// difference between "the team is too small" and "one person never
+/// accepts".
+model ConversationOffer {
+  id              String @id @default(uuid()) @db.Uuid
+  account_id      String @db.Uuid
+  conversation_id String @db.Uuid
+  user_id         String @db.Uuid
+
+  /// pending | accepted | declined | expired | cancelled
+  ///
+  /// 'cancelled' is separate from 'expired' on purpose: an offer that
+  /// ended because somebody else picked the conversation up says
+  /// something good about the team, and counting it as a timeout would
+  /// make a healthy account look slow.
+  status String @default("pending")
+
+  /// Copied here rather than read from settings when checked. The
+  /// window an offer was made under is a fact about that offer, and
+  /// changing the setting must not retroactively expire live ones.
+  window_seconds Int @default(60)
+
+  /// Why this person — written for whoever reads the thread later, and
+  /// shown to the agent when the answer is "nobody free knows this
+  /// subject".
+  reason             String  @default("")
+  outside_speciality Boolean @default(false)
+
+  offered_at  DateTime  @default(now()) @db.Timestamptz(6)
+  answered_at DateTime? @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+
+  account      Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, status, offered_at(sort: Desc)])
+  @@index([conversation_id, created_at])
+  @@index([status, offered_at])
+  @@map("conversation_offers")
 }

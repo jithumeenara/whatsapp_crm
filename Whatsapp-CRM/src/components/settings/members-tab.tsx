@@ -37,6 +37,7 @@ import {
   UserIcon,
   UsersRound,
   Clock,
+  Tags,
 } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -57,6 +58,7 @@ import type { AccountRole } from '@/lib/auth/roles';
 import { InviteMemberDialog } from './invite-member-dialog';
 import { AddAgentDialog } from './add-agent-dialog';
 import { WorkingHoursDialog } from './working-hours-dialog';
+import { AgentSubjectsDialog } from './agent-subjects-dialog';
 import { describeShift, type WorkingHours } from '@/lib/agents/working-hours';
 import {
   presenceOf,
@@ -78,6 +80,7 @@ interface Member {
   last_seen_at?: string | null;
   went_offline_at?: string | null;
   working_hours?: WorkingHours | null;
+  handles_categories?: string[];
 }
 
 interface Invitation {
@@ -170,6 +173,7 @@ export function MembersTab() {
   const [addAgentOpen, setAddAgentOpen] = useState(false);
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
   const [hoursMember, setHoursMember] = useState<Member | null>(null);
+  const [subjectsMember, setSubjectsMember] = useState<Member | null>(null);
   const [accountTimezone, setAccountTimezone] = useState<string | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
     null,
@@ -626,6 +630,34 @@ export function MembersTab() {
                       </Button>
                     )}
 
+                    {/* What they handle. Beside working hours because
+                        the two answer the same question from different
+                        angles — when this person is available, and for
+                        what. */}
+                    {canManageMembers && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSubjectsMember(member)}
+                        disabled={isBusy}
+                        title={
+                          member.handles_categories?.length
+                            ? `Handles ${member.handles_categories.length} subject${
+                                member.handles_categories.length === 1 ? '' : 's'
+                              }`
+                            : 'Handles anything'
+                        }
+                        aria-label={`Subjects for ${member.full_name || 'this member'}`}
+                        className={
+                          member.handles_categories?.length
+                            ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                            : 'text-slate-500'
+                        }
+                      >
+                        <Tags className="size-4" />
+                      </Button>
+                    )}
+
                     {/* Remove. Admin+ only; never on the owner row;
                         never on yourself. Pre-polish styling was
                         neutral-default + red-on-hover — the
@@ -763,6 +795,15 @@ export function MembersTab() {
           onOpenChange={(open) => !open && setHoursMember(null)}
           member={hoursMember}
           accountTimezone={accountTimezone}
+          onSaved={() => void loadEverything()}
+        />
+      )}
+
+      {subjectsMember && (
+        <AgentSubjectsDialog
+          open={Boolean(subjectsMember)}
+          onOpenChange={(open) => !open && setSubjectsMember(null)}
+          member={subjectsMember}
           onSaved={() => void loadEverything()}
         />
       )}

@@ -736,7 +736,40 @@ async function judgeIfEnabled(
     if (mode !== 'observe' && mode !== 'act') return
 
     const { judgeConversation } = await import('@/lib/ai/judge-conversation')
-    await judgeConversation({ accountId, conversationId, contactId })
+    const judged = await judgeConversation({ accountId, conversationId, contactId })
+
+    // ── And then offer it to somebody ─────────────────────────────────
+    //
+    // Separate switch, separate decision. The judgement decides what an
+    // offer knows — which subject, how urgent; whether offers happen at
+    // all is its own setting, so an account can watch the assistant
+    // think for a fortnight without anybody's screen ringing.
+    //
+    // A quiet judgement is not offered. "Somebody selling to us" and a
+    // wrong number do not warrant interrupting a named person with a
+    // sixty-second clock, and an alert that fires for those is one
+    // people learn to close.
+    const j = judged.judgement
+    if (mode !== 'act' || !j || j.priority === 'quiet') return
+
+    const { offerConversation } = await import('@/lib/agents/run-offer')
+    const outcome = await offerConversation({
+      accountId,
+      conversationId,
+      // Only a category it was sure of. An unsure one would send this
+      // to a speciality that may be the wrong one, which is worse than
+      // sending it to whoever is free.
+      category: j.categoryConfidence === 'high' ? j.category : null,
+    })
+
+    if (outcome.result === 'offered' && outcome.offerId && outcome.userId) {
+      const { emitToAccount } = await import('@/lib/socket')
+      emitToAccount(accountId, 'offer', {
+        offerId: outcome.offerId,
+        userId: outcome.userId,
+        conversationId,
+      })
+    }
   } catch (err) {
     // Never surfaced. Nothing downstream of this has happened yet, so
     // there is nothing to roll back and nobody to tell.

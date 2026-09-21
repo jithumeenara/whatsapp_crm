@@ -28,6 +28,7 @@ export async function GET() {
         account_role: true,
         restrict_to_assigned: true,
         working_hours: true,
+        handles_categories: true,
         created_at: true,
         // Presence travels with the roster rather than on an endpoint of
         // its own: every screen that wants to know who is here is
@@ -76,6 +77,11 @@ export async function GET() {
           // can hold anything, and a shape nobody can read means "no
           // hours set" rather than an error on the roster screen.
           working_hours: parseWorkingHours(row.working_hours),
+          handles_categories: Array.isArray(row.handles_categories)
+            ? (row.handles_categories as unknown[]).filter(
+                (h): h is string => typeof h === "string",
+              )
+            : [],
         },
       ];
     });

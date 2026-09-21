@@ -60,6 +60,21 @@ export interface PresenceEvent {
   wentOfflineAt: string | null;
 }
 
+/**
+ * A waiting conversation has been offered to somebody.
+ *
+ * Broadcast to the whole account rather than to one person: the socket
+ * rooms are per account, and a second addressing scheme for this one
+ * event would be a second thing to keep correct. The browser ignores
+ * anything not addressed to it, and the payload carries nothing a
+ * colleague could not already see in the Inbox.
+ */
+export interface OfferEvent {
+  offerId: string;
+  userId: string;
+  conversationId: string;
+}
+
 interface UseRealtimeOptions {
   channelName: string;
   onMessageEvent?: (event: RealtimeEvent<Message>) => void;
@@ -68,6 +83,7 @@ interface UseRealtimeOptions {
   onChatbotEvent?: (event: ChatbotRunEvent) => void;
   onCallEvent?: (event: CallRealtimeEvent) => void;
   onPresenceEvent?: (event: PresenceEvent) => void;
+  onOfferEvent?: (event: OfferEvent) => void;
   enabled?: boolean;
 }
 
@@ -87,6 +103,7 @@ export function useRealtime({
   onChatbotEvent,
   onCallEvent,
   onPresenceEvent,
+  onOfferEvent,
   enabled = true,
 }: UseRealtimeOptions) {
   const { accountId } = useAuth();
@@ -98,6 +115,7 @@ export function useRealtime({
   const onChatbotRef = useRef(onChatbotEvent);
   const onCallRef = useRef(onCallEvent);
   const onPresenceRef = useRef(onPresenceEvent);
+  const onOfferRef = useRef(onOfferEvent);
   useEffect(() => {
     onMessageRef.current = onMessageEvent;
     onConversationRef.current = onConversationEvent;
@@ -105,6 +123,7 @@ export function useRealtime({
     onChatbotRef.current = onChatbotEvent;
     onCallRef.current = onCallEvent;
     onPresenceRef.current = onPresenceEvent;
+    onOfferRef.current = onOfferEvent;
   });
 
   useEffect(() => {
@@ -143,6 +162,10 @@ export function useRealtime({
       onPresenceRef.current?.(event);
     };
 
+    const handleOffer = (event: OfferEvent) => {
+      onOfferRef.current?.(event);
+    };
+
     if (socket.connected) {
       handleConnect();
     }
@@ -155,6 +178,7 @@ export function useRealtime({
     socket.on("chatbot", handleChatbot);
     socket.on("call", handleCall);
     socket.on("presence", handlePresence);
+    socket.on("offer", handleOffer);
 
     return () => {
       socket.off("connect", handleConnect);
@@ -165,6 +189,7 @@ export function useRealtime({
       socket.off("chatbot", handleChatbot);
       socket.off("call", handleCall);
       socket.off("presence", handlePresence);
+      socket.off("offer", handleOffer);
       socket.emit("leave_account", accountId);
       setIsConnected(false);
     };

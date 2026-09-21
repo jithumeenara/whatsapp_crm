@@ -887,6 +887,13 @@ async function processMessage(
     // would make a settled record look live. Not awaited and swallowed
     // — nothing downstream depends on it, and the worst case of losing
     // one is a score that fades a little late.
+    // A customer writing again is also a moment to notice that an offer
+    // has run out. One of the three places this happens — see
+    // src/lib/agents/advance-offers.ts for why there are three.
+    void import('@/lib/agents/advance-offers')
+      .then((m) => m.advanceStaleOffers(accountId))
+      .catch(() => {})
+
     if (conversation.contact_id) {
       void prisma.lead
         .updateMany({
@@ -1051,6 +1058,26 @@ async function processMessage(
       }
       // Falls through when it could not be stored, so the message still
       // reaches the inbox rather than vanishing.
+    }
+
+    // ── They chose a time to be called back ────────────────────────
+    //
+    // Handled before the chatbot, for the same reason a survey rating
+    // is: to a flow this is a reply matching none of the current node's
+    // options, so it would answer "Tomorrow 10:00 AM" by re-sending a
+    // menu. That is both useless and exactly the behaviour that teaches
+    // people their taps are not being read.
+    if (interactiveReplyId?.startsWith('cb_')) {
+      const { recordCallbackChoice } = await import('@/lib/agents/ask-callback')
+      const recorded = await recordCallbackChoice({
+        accountId,
+        conversationId: conversation.id,
+        buttonId: interactiveReplyId,
+      }).catch(() => false)
+      if (recorded) return
+      // Falls through when the slot no longer exists — an hour-old
+      // button, say. The message still reaches the inbox, where a
+      // person can see what they asked for.
     }
 
     const flowResult = await dispatchInboundToFlows({

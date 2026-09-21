@@ -51,11 +51,12 @@ export async function PATCH(
     const { userId } = await params;
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown; restrict_to_assigned?: unknown; working_hours?: unknown }
+      | { role?: unknown; restrict_to_assigned?: unknown; working_hours?: unknown; handles_categories?: unknown }
       | null;
     const role = body?.role;
     const restrictToAssigned = body?.restrict_to_assigned;
     const workingHours = body?.working_hours;
+    const handles = body?.handles_categories;
 
     // Each field may be patched alone — the roster edits a role, the
     // shift editor edits hours, and neither should have to send the
@@ -63,12 +64,29 @@ export async function PATCH(
     const isRoleChange = role !== undefined;
     const isRestrictionChange = typeof restrictToAssigned === 'boolean';
     const isHoursChange = workingHours !== undefined;
+    const isSubjectsChange = handles !== undefined;
 
-    if (!isRoleChange && !isRestrictionChange && !isHoursChange) {
+    if (!isRoleChange && !isRestrictionChange && !isHoursChange && !isSubjectsChange) {
       return NextResponse.json(
-        { error: "Provide 'role', 'restrict_to_assigned' or 'working_hours'" },
+        { error: "Provide 'role', 'restrict_to_assigned', 'working_hours' or 'handles_categories'" },
         { status: 400 },
       );
+    }
+
+    // Only keys this account actually defined. A subject nobody has
+    // heard of could never match a conversation, so storing it would be
+    // storing a preference that can never apply — and it would show up
+    // on the routing reason as a name nobody recognises.
+    let subjects: string[] | undefined;
+    if (isSubjectsChange) {
+      const asked = Array.isArray(handles)
+        ? handles.filter((h): h is string => typeof h === "string")
+        : [];
+      const known = await prisma.serviceCategory.findMany({
+        where: { account_id: ctx.accountId, key: { in: asked } },
+        select: { key: true },
+      });
+      subjects = known.map((k) => k.key);
     }
 
     if (isHoursChange && workingHours !== null) {
@@ -148,6 +166,7 @@ export async function PATCH(
         ...(isRoleChange ? { account_role: role as AccountRole } : {}),
         ...(isRestrictionChange ? { restrict_to_assigned: restrictToAssigned } : {}),
         ...(isHoursChange ? { working_hours: hoursValue } : {}),
+        ...(subjects ? { handles_categories: subjects } : {}),
       },
     });
 

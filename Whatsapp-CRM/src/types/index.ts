@@ -85,6 +85,9 @@ export interface AccountMember {
    *  means always available. Parsed server-side, so anything the screen
    *  receives here is already a shape it can rely on. */
   working_hours?: WorkingHours | null;
+  /** Subject keys this agent handles. Empty means anything — a
+   *  preference in routing, never a wall. */
+  handles_categories?: string[];
 }
 
 /**

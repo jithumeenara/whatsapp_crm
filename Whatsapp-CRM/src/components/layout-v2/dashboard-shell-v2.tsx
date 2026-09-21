@@ -2,6 +2,7 @@
 
 import { IncomingCallPopup } from "@/components/calls/incoming-call-popup";
 import { NewLeadAlert } from '@/components/leads/new-lead-alert'
+import { OfferAlert } from '@/components/agents/offer-alert'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
@@ -176,6 +177,11 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               useful to somebody looking at the lead pool, and nobody is
               — they are in the Inbox. See the component's own header. */}
           <NewLeadAlert />
+          {/* Sits above the waiting-leads pill, and is the only thing in
+              the app allowed to make a noise: it is addressed to this
+              person and it expires, which is what separates an
+              interruption from a notification. */}
+          <OfferAlert />
         </div>
       </div>
     </MobileBarCtx.Provider>
