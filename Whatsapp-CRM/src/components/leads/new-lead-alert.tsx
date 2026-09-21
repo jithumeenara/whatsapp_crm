@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { UserPlus, X } from 'lucide-react'
+import { UserPlus, X, ChevronRight } from 'lucide-react'
 import { useRealtime, type RealtimeEvent } from '@/hooks/use-realtime'
 import type { Lead } from '@/types'
 import { useAuth } from '@/hooks/use-auth'
@@ -50,6 +50,20 @@ const WARN_AFTER_MS = 3 * 60_000
 /** Red past this. At five minutes the enquiry is measurably going cold
  *  and somebody should stop what they are doing. */
 const LATE_AFTER_MS = 5 * 60_000
+
+/**
+ * How many enquiries get a row of their own.
+ *
+ * One summary line — "4 enquiries waiting" — is a number, and a number
+ * is something to deal with later. Three names with three clocks are
+ * three people, and the oldest of them is visibly the one going cold.
+ *
+ * Three and not five: this floats over whatever somebody is actually
+ * doing, and a corner that grows without limit stops being a hint and
+ * becomes a wall. Past three, the rest collapse into a single line that
+ * says how many there are.
+ */
+const SHOWN = 3
 
 interface Waiting {
   id: string
@@ -132,58 +146,107 @@ export function NewLeadAlert() {
 
   if (onLeadsPage || dismissed || waiting.length === 0) return null
 
-  const oldest = waiting.reduce((a, b) => (a.at < b.at ? a : b))
+  // Oldest first: the one that has been waiting longest is the one at
+  // risk, and it should be at the top rather than buried under three
+  // arrivals from the last minute.
+  const byAge = [...waiting].sort((a, b) => a.at - b.at)
+  const shown = byAge.slice(0, SHOWN)
+  const hidden = byAge.length - shown.length
+
   // Zero until the timer's first tick, which is a truthful "just now"
   // rather than a number invented during render.
-  const waited = now > 0 ? Math.max(0, now - oldest.at) : 0
-  const tone =
-    waited >= LATE_AFTER_MS
-      ? { ring: 'ring-rose-200', bg: 'bg-rose-600', pulse: true }
-      : waited >= WARN_AFTER_MS
-        ? { ring: 'ring-amber-200', bg: 'bg-amber-500', pulse: false }
-        : { ring: 'ring-indigo-200', bg: 'bg-[#5B6CF9]', pulse: false }
+  const waitedFor = (at: number) => (now > 0 ? Math.max(0, now - at) : 0)
+  const toneFor = (ms: number) =>
+    ms >= LATE_AFTER_MS
+      ? { ring: 'ring-rose-200', bg: 'bg-rose-600', text: 'text-rose-600', pulse: true }
+      : ms >= WARN_AFTER_MS
+        ? { ring: 'ring-amber-200', bg: 'bg-amber-500', text: 'text-amber-600', pulse: false }
+        : { ring: 'ring-indigo-200', bg: 'bg-[#5B6CF9]', text: 'text-slate-500', pulse: false }
+
+  // The whole card takes its edge from the worst one on it, so a single
+  // enquiry going red is visible without reading any of the rows.
+  const worst = toneFor(waitedFor(byAge[0].at))
+  const open = () => router.push('/leads?tab=new_pool')
 
   return (
     <div className="pointer-events-none fixed bottom-5 right-5 z-[80] flex justify-end">
       <div
         className={cn(
-          'pointer-events-auto flex items-center gap-3 rounded-2xl bg-white py-2.5 pl-2.5 pr-2 shadow-lg ring-1',
-          tone.ring,
+          'pointer-events-auto w-[min(20rem,calc(100vw-2.5rem))] overflow-hidden rounded-2xl bg-white shadow-lg ring-1',
+          worst.ring,
         )}
       >
-        <button
-          type="button"
-          onClick={() => router.push('/leads?tab=new_pool')}
-          className="flex items-center gap-3 text-left"
-        >
-          <span className={cn('relative grid h-9 w-9 shrink-0 place-items-center rounded-xl', tone.bg)}>
-            <UserPlus className="h-4 w-4 text-white" />
-            {tone.pulse && (
-              <span className="absolute inset-0 animate-ping rounded-xl bg-rose-500/40" aria-hidden />
-            )}
+        <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            {byAge.length === 1 ? 'Waiting to be picked up' : `${byAge.length} waiting to be picked up`}
           </span>
-          <span className="min-w-0">
-            <span className="block text-[13px] font-semibold text-slate-900">
-              {waiting.length === 1
-                ? 'New enquiry waiting'
-                : `${waiting.length} enquiries waiting`}
-            </span>
-            <span className="block text-[11.5px] text-slate-500">
-              <span className="tabular-nums">{mmss(waited)}</span> unclaimed
-              {waiting.length === 1 ? ` · ${oldest.title}` : ''}
-            </span>
-          </span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            aria-label="Hide until the next one"
+            title="Hide until the next one"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded-lg text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-500"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={() => setDismissed(true)}
-          aria-label="Hide until the next one"
-          title="Hide until the next one"
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-500"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        <div className="px-1.5 pb-1.5 pt-1">
+          {shown.map((w) => {
+            const ms = waitedFor(w.at)
+            const tone = toneFor(ms)
+            return (
+              <button
+                key={w.id}
+                type="button"
+                onClick={open}
+                className="flex w-full items-center gap-2.5 rounded-xl px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50"
+              >
+                <span
+                  className={cn(
+                    'relative grid h-8 w-8 shrink-0 place-items-center rounded-lg',
+                    tone.bg,
+                  )}
+                >
+                  <UserPlus className="h-3.5 w-3.5 text-white" />
+                  {/* Only on the ones that are genuinely late. A pulse on
+                      every row would make none of them mean anything. */}
+                  {tone.pulse && (
+                    <span
+                      className="absolute inset-0 rounded-lg bg-rose-500/40 motion-safe:animate-ping"
+                      aria-hidden
+                    />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-slate-800">
+                    {w.title}
+                  </span>
+                  <span className={cn('block text-[11px] tabular-nums', tone.text)}>
+                    {mmss(ms)} unclaimed
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* The rest. One line rather than three more rows, because the
+            point of the cutoff is that the corner stops growing. */}
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={open}
+            className="group flex w-full items-center justify-center gap-1.5 border-t border-slate-100 bg-slate-50/70 py-2 text-[11.5px] font-semibold text-indigo-600 transition-colors hover:bg-indigo-50"
+          >
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75 motion-safe:animate-ping" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-indigo-500" />
+            </span>
+            {hidden} more waiting
+            <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+          </button>
+        )}
       </div>
     </div>
   )

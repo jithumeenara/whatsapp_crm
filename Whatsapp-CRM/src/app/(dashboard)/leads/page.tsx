@@ -1189,7 +1189,22 @@ function preferredLeadsView(): "tiles" | "table" {
 export default function LeadsV2() {
   const router = useRouter()
   const { canViewAllLeads, userId } = useAuth()
-  const [tab, setTab] = useState("mine")
+  // New Pool, always.
+  //
+  // It used to open on "Mine", on the reasoning that a claimed lead is
+  // where the work is. That is true once a day is under way and wrong
+  // at the start of one: what nobody has picked up is the only thing on
+  // this page with a clock running on it, and it is the thing that goes
+  // cold while everybody looks at their own list.
+  //
+  // A ?tab= in the address still wins, which is what makes the floating
+  // alert's link land where it says it will — it did not before,
+  // because nothing here read the address at all.
+  const [tab, setTab] = useState(() => {
+    if (typeof window === "undefined") return "new_pool"
+    const asked = new URLSearchParams(window.location.search).get("tab")
+    return asked && TABS.some((t) => t.key === asked) ? asked : "new_pool"
+  })
   const [sla, setSla] = useState<SlaThresholds>(DEFAULT_SLA)
   const [duplicateCount, setDuplicateCount] = useState(0)
   const [duplicatesOpen, setDuplicatesOpen] = useState(false)

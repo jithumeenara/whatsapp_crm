@@ -15,6 +15,7 @@ import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-
 import { ScheduleFollowupDialog } from "@/components/leads/schedule-followup-dialog"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
+import { useAuth } from "@/hooks/use-auth"
 import { FileManagerPicker } from "@/components/inbox/file-manager-picker"
 import { EmojiPickerPopover } from "@/components/inbox/emoji-picker-popover"
 import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
@@ -139,6 +140,8 @@ export default function LeadDetailPage() {
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
+  const { userId } = useAuth()
+  const [picking, setPicking] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -248,6 +251,33 @@ export default function LeadDetailPage() {
     const res = await fetch(`/api/contacts/${contactId}/notes/${noteId}`, { method: "DELETE" })
     if (!res.ok) { setContactNotes(prev); toast.error("Failed to delete note") }
   }
+
+  /**
+   * Take this lead.
+   *
+   * Sent as an explicit assignment rather than relying on the API's
+   * claim-by-working-on-it rule, because this is not a side effect of
+   * changing something — it is the whole intention, and it should
+   * behave identically whether or not anything else gets edited after.
+   */
+  const pickLead = useCallback(async () => {
+    if (!userId) return
+    setPicking(true)
+    try {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ assigned_to: userId }),
+      })
+      if (!res.ok) { toast.error("Could not pick this lead"); return }
+      const body = await res.json()
+      setLead((prev) => prev ? { ...prev, ...body.lead } : body.lead)
+    } catch {
+      toast.error("Could not reach the server")
+    } finally {
+      setPicking(false)
+    }
+  }, [id, userId])
 
   const patchLead = useCallback(async (patch: Record<string, unknown>) => {
     const res = await fetch(`/api/leads/${id}`, {
@@ -827,6 +857,50 @@ export default function LeadDetailPage() {
           {/* Same WhatsApp-style doodle wallpaper as the main Inbox thread
               (bg-[url('/inbox-doodle.svg')]) — this panel previously used a
               flat colour instead of matching the shared pattern. */}
+          {/* ── The chat, behind a decision ──────────────────────────
+              An unclaimed lead is offered to everybody, and reading the
+              conversation is how two agents end up ringing the same
+              customer ten minutes apart — each of them certain nobody
+              had, because nothing they did left a mark.
+
+              So the messages wait for somebody to say they are taking
+              it. Not to hide anything: every word is one tap away, and
+              that tap is what puts a name on the row so the next person
+              can see it is handled.
+
+              It also matches what the API already does — changing
+              anything on an unassigned lead claims it. This makes that
+              rule visible before somebody trips over it, rather than
+              surprising them with an assignment they did not know they
+              were making. */}
+          {!lead.assigned_to ? (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-white bg-[url('/inbox-doodle.svg')] bg-repeat px-6 text-center">
+              <div className="rounded-2xl bg-white/90 px-5 py-6 shadow-sm ring-1 ring-slate-200">
+                <div className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-indigo-50">
+                  <MessageSquare className="h-5 w-5 text-indigo-500" />
+                </div>
+                <p className="mt-3 text-[13.5px] font-semibold text-slate-800">
+                  Pick this lead to see the chat
+                </p>
+                <p className="mx-auto mt-1 max-w-[15rem] text-[12px] leading-relaxed text-slate-500">
+                  Nobody has taken this one yet. Picking it puts your name on it, so somebody else
+                  does not call the same person.
+                </p>
+                <button
+                  type="button"
+                  onClick={pickLead}
+                  disabled={picking || !userId}
+                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-[#5B6CF9] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                >
+                  {picking && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                  Pick this lead
+                </button>
+                <p className="mt-2.5 text-[11px] text-slate-400">
+                  Editing anything on this lead picks it up too.
+                </p>
+              </div>
+            </div>
+          ) : (
           <div className="flex-1 overflow-y-auto bg-white bg-[url('/inbox-doodle.svg')] bg-repeat p-4 space-y-2">
             {!contactId ? (
               <p className="text-center text-[13px] text-slate-400 mt-8">This lead has no linked contact.</p>
@@ -847,7 +921,13 @@ export default function LeadDetailPage() {
               </>
             )}
           </div>
+          )}
 
+          {/* The composer goes with the chat. Offering a reply box above
+              a panel that will not show the conversation would be
+              offering somebody the chance to answer a customer they
+              cannot read. */}
+          {lead.assigned_to && (
           <div className="border-t border-slate-100 p-3 shrink-0">
             <input autoComplete="off" ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected}
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" />
@@ -925,6 +1005,7 @@ export default function LeadDetailPage() {
             </div>
             <p className="mt-1 text-right text-[10px] text-slate-400">Enter to send · Shift+Enter new line</p>
           </div>
+          )}
         </div>
       </div>
 
