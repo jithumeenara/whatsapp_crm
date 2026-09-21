@@ -26,9 +26,13 @@ interface CloseLeadDialogProps {
   onConfirm: (result: CloseLeadResult) => Promise<void>
   /** Seeds the Deal Name field when "Add to Pipeline" is turned on. */
   leadTitle?: string
+  /** Whose lead this is. Used to find the assistant's outstanding
+   *  judgement about this person, so it can be corrected here — see the
+   *  note on the block below. */
+  contactId?: string | null
 }
 
-export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: CloseLeadDialogProps) {
+export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, contactId }: CloseLeadDialogProps) {
   const [outcome, setOutcome] = useState<'won' | 'lost'>('won')
   const [reason, setReason] = useState('')
   const [reasons, setReasons] = useState<ReasonLite[]>([])
@@ -41,6 +45,33 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: Cl
   const [stageId, setStageId] = useState('')
   const [dealTitle, setDealTitle] = useState('')
 
+  /**
+   * The assistant's own verdict on this person, if it has one nobody
+   * has answered yet.
+   *
+   * ── Why the question is asked here ─────────────────────────────────
+   *
+   * Closing a lead is the first moment anybody actually knows what it
+   * was. When the message arrived the assistant was guessing and so was
+   * the agent; by the time it closes, somebody has spoken to them. That
+   * is a far better answer than the one available on the review tab,
+   * and it costs one click on a screen that is already open.
+   *
+   * ── Why it is not "true lead / false lead" ─────────────────────────
+   *
+   * Because that conflates two different questions. A genuine enquiry
+   * that chose a competitor is a real lead that was lost — and half the
+   * agents asked "true or false?" would answer false, because it did
+   * not buy. That would teach the assistant that enquiries which do not
+   * convert are not enquiries, and it would start dismissing real ones.
+   *
+   * Won or lost is already captured above. This asks the other
+   * question, and only that one.
+   */
+  const [judgementId, setJudgementId] = useState<string | null>(null)
+  const [judgementSaidLead, setJudgementSaidLead] = useState<boolean | null>(null)
+  const [reallyEnquiry, setReallyEnquiry] = useState<boolean | null>(null)
+
   useEffect(() => {
     if (!open) return
     setOutcome('won')
@@ -50,6 +81,20 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: Cl
     setPipelineId('')
     setStageId('')
     setDealTitle(leadTitle ?? '')
+    setJudgementId(null)
+    setJudgementSaidLead(null)
+    setReallyEnquiry(null)
+    if (contactId) {
+      fetch(`/api/judgements?scope=open&contact_id=${encodeURIComponent(contactId)}&limit=1`)
+        .then((r) => r.json())
+        .then((d) => {
+          const first = Array.isArray(d.judgements) ? d.judgements[0] : null
+          if (!first) return
+          setJudgementId(first.id)
+          setJudgementSaidLead(first.is_lead === true)
+        })
+        .catch(() => {})
+    }
     fetch('/api/pipelines')
       .then((r) => r.json())
       .then((d) => setPipelines(Array.isArray(d.pipelines) ? d.pipelines : []))
@@ -89,6 +134,19 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: Cl
         stageId: addToPipeline ? stageId : undefined,
         dealTitle: addToPipeline ? dealTitle.trim() : undefined,
       })
+      // After the close, and never allowed to block it. Somebody
+      // closing a lead has finished a piece of work; a failing side
+      // note must not make it look like it did not save.
+      if (judgementId && reallyEnquiry !== null) {
+        void fetch(`/api/judgements/${judgementId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            verdict: reallyEnquiry === judgementSaidLead ? 'agreed' : 'corrected',
+            is_lead: reallyEnquiry,
+          }),
+        }).catch(() => {})
+      }
       onOpenChange(false)
     } finally {
       setSaving(false)
@@ -204,6 +262,51 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle }: Cl
               </div>
             )}
           </div>
+
+          {/* Optional on purpose. Forced wrap-up codes get answered
+              with whatever is nearest the cursor, and a poisoned
+              measurement is worse than a missing one. */}
+          {judgementId && (
+            <div className="mt-3 rounded-2xl border border-violet-100 bg-violet-50/40 p-3.5">
+              <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-700">
+                <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+                Was this ever a real enquiry?
+              </p>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-500">
+                Not whether it was won — that is above. Whether this person was a genuine
+                enquiry at all. The assistant said{' '}
+                <span className="font-medium text-slate-600">
+                  {judgementSaidLead ? 'yes' : 'no'}
+                </span>
+                .
+              </p>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {[
+                  { value: true, label: 'Yes, a real enquiry' },
+                  { value: false, label: 'No, it was not' },
+                ].map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() =>
+                      setReallyEnquiry((cur) => (cur === opt.value ? null : opt.value))
+                    }
+                    className={cn(
+                      'rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors',
+                      reallyEnquiry === opt.value
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+                <span className="self-center text-[11px] text-slate-400">
+                  or skip — it is not required
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={() => onOpenChange(false)} disabled={saving}

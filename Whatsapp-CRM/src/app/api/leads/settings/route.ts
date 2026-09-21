@@ -56,6 +56,7 @@ type RawRow = {
   ai_lead_exclusions: string | null
   ai_lead_threshold: string | null
   ai_lead_mode: string | null
+  ai_judgement_mode: string | null
   ai_lead_min_messages: number | null
   ai_lead_recheck_hours: number | null
 }
@@ -96,6 +97,9 @@ async function ensureColumns(accountId: string) {
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_mode TEXT NOT NULL DEFAULT 'suggest'
   `
   await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_judgement_mode TEXT NOT NULL DEFAULT 'off'
+  `
+  await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_min_messages INTEGER NOT NULL DEFAULT 2
   `
   await prisma.$executeRaw`
@@ -123,9 +127,22 @@ function aiLeadPayload(row: RawRow | undefined) {
     ai_lead_exclusions:    row?.ai_lead_exclusions ?? "",
     ai_lead_threshold:     normalizeThreshold(row?.ai_lead_threshold),
     ai_lead_mode:          normalizeMode(row?.ai_lead_mode),
+    ai_judgement_mode:     normalizeJudgementMode(row?.ai_judgement_mode),
     ai_lead_min_messages:  row?.ai_lead_min_messages ?? 2,
     ai_lead_recheck_hours: row?.ai_lead_recheck_hours ?? 6,
   }
+}
+
+/**
+ * off | observe | act, and anything else is off.
+ *
+ * Defaulting an unreadable value to 'off' rather than 'observe' is
+ * deliberate. This setting costs money on every handover and, at 'act',
+ * changes what customers are told — so a corrupted or half-migrated row
+ * has to fail into doing nothing.
+ */
+function normalizeJudgementMode(value: unknown): string {
+  return value === "observe" || value === "act" ? value : "off"
 }
 
 export async function GET() {
@@ -150,7 +167,8 @@ export async function GET() {
              ai_lead_threshold,
              ai_lead_mode,
              ai_lead_min_messages,
-             ai_lead_recheck_hours
+             ai_lead_recheck_hours,
+             ai_judgement_mode
       FROM   lead_settings
       WHERE  account_id = ${ctx.accountId}::uuid
       LIMIT  1
@@ -350,6 +368,12 @@ export async function PATCH(req: NextRequest) {
         WHERE account_id = ${ctx.accountId}::uuid
       `
     }
+    if (body.ai_judgement_mode !== undefined) {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET ai_judgement_mode = ${normalizeJudgementMode(body.ai_judgement_mode)}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
 
     // Clamped, not rejected, same as the SLA hours above: these come
     // from number inputs and a value outside the range is a typo.
@@ -389,7 +413,8 @@ export async function PATCH(req: NextRequest) {
              ai_lead_threshold,
              ai_lead_mode,
              ai_lead_min_messages,
-             ai_lead_recheck_hours
+             ai_lead_recheck_hours,
+             ai_judgement_mode
       FROM   lead_settings
       WHERE  account_id = ${ctx.accountId}::uuid
       LIMIT  1

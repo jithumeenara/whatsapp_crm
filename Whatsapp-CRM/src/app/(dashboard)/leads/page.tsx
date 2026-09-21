@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import {
   TrendingUp, Plus, Search, RefreshCw, Flame, Snowflake,
@@ -20,6 +20,8 @@ import { DuplicateMergeDialog, DuplicatesButton } from "@/components/leads/dupli
 import { SavedViews } from "@/components/leads/saved-views"
 import { ConversionFunnel } from "@/components/leads/conversion-funnel"
 import { SuggestedLeads } from "@/components/leads/suggested-leads"
+import { ToReview } from "@/components/leads/to-review"
+import { decayScore, describeDecay } from "@/lib/leads/score-decay"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 
 // ---- types ----
@@ -60,8 +62,12 @@ const TABS: TabDef[] = [
   { key: "closed",    label: "Closed",     color: "text-emerald-600"},
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
   { key: "funnel",    label: "Funnel",     color: "text-teal-600"   },
-  { key: "suggested", label: "Suggested",  color: "text-violet-600" },
-  { key: "not_enquiry", label: "Not enquiries", color: "text-amber-600" },
+  // One tab, not two. "Suggested" held what the assistant thought were
+  // leads and "Not enquiries" held what it thought were not — the same
+  // question asked in two places, of which the second was the one
+  // nobody formed a habit of checking.
+  { key: "to_review", label: "To review",  color: "text-violet-600" },
+  { key: "not_enquiry", label: "Flagged leads", color: "text-amber-600" },
 ]
 
 const TAB_DOT: Record<string, string> = {
@@ -73,7 +79,7 @@ const TAB_DOT: Record<string, string> = {
   closed: "bg-emerald-500",
   tasks: "bg-violet-500",
   funnel: "bg-teal-500",
-  suggested: "bg-violet-500",
+  to_review: "bg-violet-500",
   not_enquiry: "bg-amber-500",
 }
 
@@ -180,10 +186,51 @@ interface TagItem { id: string; name: string; color: string }
 
 // ---- score badge ----
 
-function ScoreBadge({ score }: { score: string }) {
-  if (score === "hot")  return <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-rose-500"><Flame className="h-3 w-3" />Hot</span>
-  if (score === "warm") return <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-amber-500"><Thermometer className="h-3 w-3" />Warm</span>
-  return <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-sky-500"><Snowflake className="h-3 w-3" />Cold</span>
+/**
+ * The score as it stands today, rather than as somebody left it.
+ *
+ * A lead marked Hot three weeks ago is not Hot, and a badge that says
+ * so forever fills the Hot filter with leads that *were* hot until
+ * nobody opens it any more. See src/lib/leads/score-decay.ts — nothing
+ * is written back, so what a person set is never lost and this can be
+ * changed or turned off with no repair.
+ *
+ * The icon comes from the level's position on the account's own ladder
+ * rather than from the words "hot" and "cold", so an account that
+ * renamed its levels still gets a flame at the top and a snowflake at
+ * the bottom.
+ */
+function ScoreBadge({ lead, ladder }: { lead: Lead; ladder: string[] }) {
+  const decayed = decayScore({
+    score: lead.score,
+    lastCustomerAt: lead.last_customer_at ?? null,
+    ladder,
+  })
+  const label = decayed.effective
+  const note = describeDecay(decayed)
+
+  const i = ladder.findIndex((l) => l.toLowerCase() === label.trim().toLowerCase())
+  const last = ladder.length - 1
+  const { Icon, tone } =
+    i === 0 && ladder.length >= 2
+      ? { Icon: Flame, tone: "text-rose-500" }
+      : i === last && ladder.length >= 2
+        ? { Icon: Snowflake, tone: "text-sky-500" }
+        : { Icon: Thermometer, tone: "text-amber-500" }
+
+  return (
+    <span
+      title={note ?? undefined}
+      className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${tone}`}
+    >
+      <Icon className="h-3 w-3" />
+      {label}
+      {/* A score that changed on its own with no explanation is the kind
+          of thing people file a bug about. The dot says there is a
+          reason; the tooltip carries it. */}
+      {note && <span className="ml-0.5 text-slate-300" aria-hidden>·</span>}
+    </span>
+  )
 }
 
 // ---- source badge ----
@@ -644,9 +691,9 @@ const STATUS_BAR: Record<string, string> = {
 }
 
 function LeadTile({
-  lead, tab, scoringMode, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
+  lead, tab, scoringMode, scoreLadder, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
 }: {
-  lead: Lead; tab: string; scoringMode: string; menuOpenId: string | null
+  lead: Lead; tab: string; scoringMode: string; scoreLadder: string[]; menuOpenId: string | null
   sources: { icon: string; label: string }[]
   onPick: (id: string) => void; onOpen: (id: string) => void
   onMenuToggle: (id: string) => void
@@ -715,7 +762,7 @@ function LeadTile({
         <div className="flex items-center gap-2 flex-wrap">
           <StatusChip lead={lead} />
           {(scoringMode === "score" || scoringMode === "both") && (
-            <ScoreBadge score={lead.score} />
+            <ScoreBadge lead={lead} ladder={scoreLadder} />
           )}
           <NotAnEnquiryChip lead={lead} />
         </div>
@@ -806,10 +853,10 @@ function BulkButton({
 }
 
 function LeadRow({
-  lead, index, tab, scoringMode, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
+  lead, index, tab, scoringMode, scoreLadder, menuOpenId, sources, onPick, onOpen, onMenuToggle, onDelete, onHide, onAddToPipeline,
   selected, onToggleSelect, sla,
 }: {
-  lead: Lead; index: number; tab: string; scoringMode: string; menuOpenId: string | null
+  lead: Lead; index: number; tab: string; scoringMode: string; scoreLadder: string[]; menuOpenId: string | null
   sources: { icon: string; label: string }[]
   onPick: (id: string) => void; onOpen: (id: string) => void
   onMenuToggle: (id: string) => void
@@ -881,7 +928,7 @@ function LeadRow({
       </td>
       <td className="px-4 py-3.5 hidden md:table-cell">
         {(scoringMode === "score" || scoringMode === "both")
-          ? <ScoreBadge score={lead.score} />
+          ? <ScoreBadge lead={lead} ladder={scoreLadder} />
           : <span className="text-slate-300">—</span>}
       </td>
       <td className="px-4 py-3.5 hidden lg:table-cell">
@@ -1162,6 +1209,10 @@ export default function LeadsV2() {
   const [scoreOptions, setScoreOptions] = useState<{ icon: string; label: string }[]>([
     { icon: "🔥", label: "Hot" }, { icon: "🌡️", label: "Warm" }, { icon: "❄️", label: "Cold" },
   ])
+  /** The account's own levels, hottest first, as plain labels — what
+   *  the decay steps down. Derived rather than stored so it cannot
+   *  drift from the list people edit in Settings. */
+  const scoreLadder = useMemo(() => scoreOptions.map((o) => o.label), [scoreOptions])
   const [sourceOptions, setSourceOptions] = useState<{ icon: string; label: string }[]>([
     { icon: "", label: "WhatsApp" }, { icon: "", label: "Instagram" },
     { icon: "🌐", label: "Website" }, { icon: "📣", label: "Campaign" },
@@ -1199,7 +1250,7 @@ export default function LeadsV2() {
   const [pipelineLead, setPipelineLead] = useState<Lead | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const isLeadTab = !["follow_ups", "tasks", "funnel", "suggested"].includes(tab)
+  const isLeadTab = !["follow_ups", "tasks", "funnel", "to_review"].includes(tab)
 
   const effectiveTab = (!canViewAllLeads && tab === "all") ? "new_pool" : tab
 
@@ -1443,10 +1494,10 @@ export default function LeadsV2() {
   const visibleTabs = (canViewAllLeads
     ? TABS
     : TABS.filter((t) => t.key !== "all" && t.key !== "funnel")
-  ).filter((t) => (t.key !== "suggested" && t.key !== "not_enquiry") || aiLeadEnabled)
+  ).filter((t) => (t.key !== "to_review" && t.key !== "not_enquiry") || aiLeadEnabled)
 
   const listCount =
-    tab === "funnel" || tab === "suggested"
+    tab === "funnel" || tab === "to_review"
       ? 0
       : isLeadTab
         ? leads.length
@@ -1765,8 +1816,17 @@ export default function LeadsV2() {
           </div>
         )}
 
-        {tab === "suggested" && (
-          <div className="mt-4">
+        {tab === "to_review" && (
+          <div className="mt-4 space-y-8">
+            {/* Every decision the assistant made, whichever way it went.
+                The new mechanism records one judgement per handover and
+                shows the customer's own words beside it. */}
+            <ToReview onReviewed={loadData} />
+
+            {/* Suggestions made before that existed, still waiting for
+                an answer. Kept on the same tab rather than orphaned on
+                one that no longer exists: they drain away as they are
+                answered, and nothing is lost in the meantime. */}
             <SuggestedLeads onReviewed={loadData} />
           </div>
         )}
@@ -1815,7 +1875,7 @@ export default function LeadsV2() {
           ) : view === "tiles" ? (
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {leads.map((lead) => (
-                <LeadTile key={lead.id} lead={lead} tab={effectiveTab} scoringMode={scoringMode}
+                <LeadTile key={lead.id} lead={lead} tab={effectiveTab} scoringMode={scoringMode} scoreLadder={scoreLadder}
                   menuOpenId={menuOpenId} sources={sourceOptions}
                   onPick={handlePick}
                   onOpen={(id) => router.push(`/leads/${id}?from=${effectiveTab}`)}
@@ -1852,7 +1912,7 @@ export default function LeadsV2() {
               </thead>
               <tbody>
                 {leads.map((lead, i) => (
-                  <LeadRow key={lead.id} lead={lead} index={i} tab={effectiveTab} scoringMode={scoringMode}
+                  <LeadRow key={lead.id} lead={lead} index={i} tab={effectiveTab} scoringMode={scoringMode} scoreLadder={scoreLadder}
                     menuOpenId={menuOpenId} sources={sourceOptions}
                     selected={selectedIds.has(lead.id)}
                     onToggleSelect={toggleSelect}

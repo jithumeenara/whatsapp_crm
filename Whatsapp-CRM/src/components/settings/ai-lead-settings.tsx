@@ -42,6 +42,10 @@ export interface AiLeadValues {
   ai_lead_exclusions: string
   ai_lead_threshold: string
   ai_lead_mode: string
+  /** 'off' | 'observe' | 'act' — whether the assistant may judge a
+   *  handover at all, and whether it may act on what it works out.
+   *  Lives with these because one Save writes the whole screen. */
+  ai_judgement_mode: string
   ai_lead_min_messages: number
   ai_lead_recheck_hours: number
 }

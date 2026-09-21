@@ -661,12 +661,13 @@ async function handOver(args: {
   assignTo?: string | null
 }): Promise<void> {
   try {
-    await prisma.conversation.update({
+    const conversation = await prisma.conversation.update({
       where: { id: args.conversationId },
       data: {
         status: 'pending',
         ...(args.assignTo ? { assigned_agent_id: args.assignTo } : {}),
       },
+      select: { contact_id: true },
     })
 
     // Stored as an internal note on the thread: an agent opening the
@@ -688,8 +689,58 @@ async function handOver(args: {
       new: { id: args.conversationId, status: 'pending' },
       old: {},
     })
+
+    // ── The judgement ────────────────────────────────────────────────
+    //
+    // This is the one moment worth reading a conversation properly: the
+    // assistant has just admitted it cannot answer, so something is
+    // about to be decided about this person whether anybody decides it
+    // or not — whether they become a lead, who hears about them, how
+    // loudly, and whether anybody rings back.
+    //
+    // Deliberately after the handover, deliberately not awaited, and
+    // deliberately swallowed. The important thing has already happened:
+    // the conversation is pending and the note is written, so a person
+    // can act on it. The judgement only makes that better, and a slow
+    // or failed model call must never delay a customer's message or
+    // undo the handover that prompted it.
+    //
+    // Fires only where the account has asked for it, because it costs
+    // money per handover. Off for every account until somebody turns it
+    // on. See lead_settings.ai_judgement_mode.
+    void judgeIfEnabled(args.accountId, args.conversationId, conversation.contact_id)
   } catch (err) {
     console.error('[auto-reply] handoff failed:', err instanceof Error ? err.message : err)
+  }
+}
+
+/**
+ * Judge this handover, if this account has switched it on.
+ *
+ * Records what the assistant decided and does nothing else — acting on
+ * a judgement is a separate step that only runs in 'act' mode, and does
+ * not exist yet. In 'observe' this builds the evidence an owner needs
+ * before letting it act at all.
+ */
+async function judgeIfEnabled(
+  accountId: string,
+  conversationId: string,
+  contactId: string | null,
+): Promise<void> {
+  try {
+    const settings = await prisma.leadSettings.findUnique({
+      where: { account_id: accountId },
+      select: { ai_judgement_mode: true },
+    })
+    const mode = settings?.ai_judgement_mode ?? 'off'
+    if (mode !== 'observe' && mode !== 'act') return
+
+    const { judgeConversation } = await import('@/lib/ai/judge-conversation')
+    await judgeConversation({ accountId, conversationId, contactId })
+  } catch (err) {
+    // Never surfaced. Nothing downstream of this has happened yet, so
+    // there is nothing to roll back and nobody to tell.
+    console.error('[judge] skipped:', err instanceof Error ? err.message : err)
   }
 }
 

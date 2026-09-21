@@ -928,7 +928,13 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      <CloseLeadDialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen} onConfirm={handleCloseConfirm} leadTitle={lead?.title ?? ''} />
+      <CloseLeadDialog
+        open={closeDialogOpen}
+        onOpenChange={setCloseDialogOpen}
+        onConfirm={handleCloseConfirm}
+        leadTitle={lead?.title ?? ''}
+        contactId={contactId}
+      />
 
       <ScheduleFollowupDialog
         open={followupOpen}

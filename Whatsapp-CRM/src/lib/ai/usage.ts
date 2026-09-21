@@ -22,6 +22,11 @@ export type UsageFeature =
   | 'embedding'
   | 'translation'
   | 'validation'
+  /// The one call made when the assistant cannot answer: is this a
+  /// lead, what is it about, can we help, how urgent, did they name a
+  /// time. Its own line because it runs on every handover and is the
+  /// first thing anybody will want to check the cost of.
+  | 'judgement'
   /// Grading a run of the evaluation suite. Tracked separately from
   /// 'test' so a suite run's cost is visible as its own line rather
   /// than blurred into the Test AI screen's usage.

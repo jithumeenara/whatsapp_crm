@@ -4,6 +4,9 @@ import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { Zap, BarChart3, PhoneOff, Phone, Plus, X, GripVertical, XCircle, Smile, Globe, Clock } from "lucide-react"
 import { AiLeadSettings, type AiLeadValues } from "./ai-lead-settings"
+import { ServiceCategoriesPanel } from "./service-categories-panel"
+import { OutOfScopePanel } from "./out-of-scope-panel"
+import { JudgementModePanel } from "./judgement-mode-panel"
 import { DEFAULT_SIGNALS, sanitizeSignals } from "@/lib/leads/ai-signals"
 
 export type ListItem = { icon: string; label: string }
@@ -320,6 +323,7 @@ export function LeadsSettingsV2() {
     ai_lead_exclusions: "",
     ai_lead_threshold: "balanced",
     ai_lead_mode: "suggest",
+    ai_judgement_mode: "off",
     ai_lead_min_messages: 2,
     ai_lead_recheck_hours: 6,
     scoring_mode: "score",
@@ -348,6 +352,7 @@ export function LeadsSettingsV2() {
           ai_lead_exclusions: d.ai_lead_exclusions ?? "",
           ai_lead_threshold: d.ai_lead_threshold ?? "balanced",
           ai_lead_mode: d.ai_lead_mode ?? "suggest",
+          ai_judgement_mode: d.ai_judgement_mode ?? "off",
           ai_lead_min_messages: typeof d.ai_lead_min_messages === "number" ? d.ai_lead_min_messages : 2,
           ai_lead_recheck_hours: typeof d.ai_lead_recheck_hours === "number" ? d.ai_lead_recheck_hours : 6,
           scoring_mode: d.scoring_mode ?? "score",
@@ -432,6 +437,22 @@ export function LeadsSettingsV2() {
           </button>
         </div>
       </div>
+
+      {/* ── The two lists the assistant judges against ──
+          Kept next to each other and next to the lead rules, because
+          they answer neighbouring questions: what this business
+          handles, and what it does not. */}
+      <ServiceCategoriesPanel />
+      <OutOfScopePanel />
+
+      {/* ── Whether the assistant may act on what it works out ──
+          Placed after the two lists it judges against, because its
+          answers are only as good as those, and before the lead rules,
+          because this is the switch somebody comes here to find. */}
+      <JudgementModePanel
+        value={settings.ai_judgement_mode ?? "off"}
+        onChange={(mode) => setSettings((st) => ({ ...st, ai_judgement_mode: mode }))}
+      />
 
       {/* ── What counts as a lead, and who decides ── */}
       <AiLeadSettings
