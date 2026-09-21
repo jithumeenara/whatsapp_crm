@@ -65,6 +65,7 @@ import {
   PRESENCE_LABELS,
 } from '@/lib/agents/presence';
 import { useNow } from '@/hooks/use-now';
+import { useRealtime, type PresenceEvent } from '@/hooks/use-realtime';
 
 interface Member {
   user_id: string;
@@ -217,6 +218,28 @@ export function MembersTab() {
   useEffect(() => {
     void loadEverything();
   }, [loadEverything]);
+
+  // ── Somebody arrived or left, just now ──────────────────────────────
+  //
+  // The polling below keeps this honest, but it is up to half a minute
+  // behind — and half a minute is a long time on the one screen whose
+  // entire job is saying who is here. Somebody signing in should turn
+  // green while their supervisor is still looking at the row.
+  //
+  // The row is patched from the event rather than refetched: a refetch
+  // for one changed timestamp would redraw the whole list, and the
+  // event already carries exactly what changed.
+  const onPresence = useCallback((event: PresenceEvent) => {
+    setMembers((prev) =>
+      prev.map((m) =>
+        m.user_id === event.userId
+          ? { ...m, last_seen_at: event.lastSeenAt, went_offline_at: event.wentOfflineAt }
+          : m,
+      ),
+    );
+  }, []);
+
+  useRealtime({ channelName: 'members-presence', onPresenceEvent: onPresence });
 
   // ── Presence has to arrive, not just age ────────────────────────────
   //
@@ -432,16 +455,39 @@ export function MembersTab() {
                         presence is that it is current, and a status
                         that needed a refresh would be a status that is
                         wrong whenever it matters. */}
+                    {/* The dot, and a ring that breathes while somebody
+                        is actually here.
+
+                        Only on 'online', and only there: a pulse is a
+                        claim that something is live, and putting one on
+                        an away or offline dot would spend the one piece
+                        of motion on this screen saying nothing. The
+                        colour alone already had to be watched for; the
+                        movement is what catches an eye that was reading
+                        a different row.
+
+                        Held still for anybody who has asked their
+                        system for less motion. */}
                     <span
-                      className={`-ml-4 mt-5 size-2.5 shrink-0 rounded-full ring-2 ring-white ${
-                        PRESENCE_DOT[presenceOf(member, now)]
-                      }`}
+                      className="relative -ml-4 mt-5 grid size-2.5 shrink-0 place-items-center"
                       title={`${PRESENCE_LABELS[presenceOf(member, now)].label} — ${describeLastSeen(
                         member,
                         now,
                       )}`}
                       aria-label={PRESENCE_LABELS[presenceOf(member, now)].label}
-                    />
+                    >
+                      {presenceOf(member, now) === 'online' && (
+                        <span
+                          className="absolute inset-0 rounded-full bg-emerald-400/70 motion-safe:animate-ping"
+                          aria-hidden
+                        />
+                      )}
+                      <span
+                        className={`relative size-2.5 rounded-full ring-2 ring-white transition-colors duration-500 ${
+                          PRESENCE_DOT[presenceOf(member, now)]
+                        }`}
+                      />
+                    </span>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">

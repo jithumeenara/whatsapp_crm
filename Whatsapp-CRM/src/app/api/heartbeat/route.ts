@@ -31,6 +31,43 @@ const ABSOLUTE_SESSION_MAX_AGE_S = 8 * 60 * 60
  * already failed the idle check never reaches this handler at all, so an
  * already-expired session can't "revive" itself via a heartbeat.
  */
+/**
+ * Record that this person is here, and tell their team.
+ *
+ * The write and the announcement are one function because they must not
+ * drift: a dot that moved without the row moving would flick back on
+ * the next refetch, which reads as a flickering bug rather than as
+ * presence.
+ *
+ * The account is looked up from the profile because presence is only
+ * interesting to the people sharing an account with them.
+ */
+async function announcePresence(userId: string): Promise<void> {
+  try {
+    const seen = new Date()
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { last_seen_at: seen },
+      select: { went_offline_at: true, profile: { select: { account_id: true } } },
+    })
+    const accountId = user.profile?.account_id
+    if (!accountId) return
+
+    const { emitToAccount } = await import("@/lib/socket")
+    emitToAccount(accountId, "presence", {
+      userId,
+      lastSeenAt: seen.toISOString(),
+      // Sent as it stands rather than cleared. Presence compares the
+      // two, and a listener that got only half the pair would have to
+      // guess at the other.
+      wentOfflineAt: user.went_offline_at?.toISOString() ?? null,
+    })
+  } catch {
+    // Swallowed on purpose. This route's job is keeping a session
+    // alive, and a presence write that fails must never log anybody out.
+  }
+}
+
 export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET, cookieName: COOKIE_NAME })
   if (!token?.id) {
@@ -54,9 +91,12 @@ export async function POST(req: NextRequest) {
   // Deliberately not awaited and deliberately swallowed: this route's
   // job is keeping a session alive, and a presence write that fails
   // must never log somebody out.
-  void prisma.user
-    .update({ where: { id: String(token.id) }, data: { last_seen_at: new Date() } })
-    .catch(() => {})
+  //
+  // And says so out loud. Writing the row is accurate but silent: a
+  // supervisor's Members screen would only learn about it on its next
+  // refetch, so somebody who had just signed in stayed grey for up to
+  // half a minute on the one screen whose entire job is being current.
+  void announcePresence(String(token.id))
 
   // Preserve the ORIGINAL sign-in's absolute cutoff rather than letting
   // encode() grant a fresh maxAge from now — otherwise every heartbeat

@@ -43,9 +43,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  await prisma.user
-    .update({ where: { id: String(token.id) }, data: { went_offline_at: new Date() } })
-    .catch((err) => console.error('Failed to record departure:', err))
+  try {
+    const left = new Date()
+    const user = await prisma.user.update({
+      where: { id: String(token.id) },
+      data: { went_offline_at: left },
+      select: { last_seen_at: true, profile: { select: { account_id: true } } },
+    })
+
+    // Announced as well as recorded, for the same reason the heartbeat
+    // is: a supervisor watching the team should see somebody go when
+    // they go, not up to half a minute later.
+    const accountId = user.profile?.account_id
+    if (accountId) {
+      const { emitToAccount } = await import('@/lib/socket')
+      emitToAccount(accountId, 'presence', {
+        userId: String(token.id),
+        lastSeenAt: user.last_seen_at?.toISOString() ?? left.toISOString(),
+        wentOfflineAt: left.toISOString(),
+      })
+    }
+  } catch (err) {
+    console.error('Failed to record departure:', err)
+  }
 
   // 204: nobody is listening. The page that sent this no longer exists.
   return new NextResponse(null, { status: 204 })

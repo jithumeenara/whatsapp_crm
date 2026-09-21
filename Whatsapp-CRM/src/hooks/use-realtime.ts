@@ -37,6 +37,29 @@ export interface CallRealtimeEvent {
   ringSeconds?: number;
 }
 
+/**
+ * Somebody's presence changed, right now.
+ *
+ * Presence is read from users.last_seen_at, which the heartbeat writes
+ * on activity. That is accurate but silent: a screen showing the team
+ * only learns about it when it next refetches, so an agent who signed
+ * in a moment ago stayed grey for up to half a minute on their
+ * supervisor's screen. For the one thing on that screen whose whole job
+ * is being current, half a minute is too long.
+ *
+ * So the heartbeat also says so out loud, and anything showing the team
+ * moves the dot without waiting to ask.
+ */
+export interface PresenceEvent {
+  userId: string;
+  /** ISO. What the row now says, so a listener updates rather than
+   *  guesses. */
+  lastSeenAt: string;
+  /** Set when they have just gone — signed out, or closed their last
+   *  window. Null on an ordinary heartbeat. */
+  wentOfflineAt: string | null;
+}
+
 interface UseRealtimeOptions {
   channelName: string;
   onMessageEvent?: (event: RealtimeEvent<Message>) => void;
@@ -44,6 +67,7 @@ interface UseRealtimeOptions {
   onLeadEvent?: (event: RealtimeEvent<Lead>) => void;
   onChatbotEvent?: (event: ChatbotRunEvent) => void;
   onCallEvent?: (event: CallRealtimeEvent) => void;
+  onPresenceEvent?: (event: PresenceEvent) => void;
   enabled?: boolean;
 }
 
@@ -62,6 +86,7 @@ export function useRealtime({
   onLeadEvent,
   onChatbotEvent,
   onCallEvent,
+  onPresenceEvent,
   enabled = true,
 }: UseRealtimeOptions) {
   const { accountId } = useAuth();
@@ -72,12 +97,14 @@ export function useRealtime({
   const onLeadRef = useRef(onLeadEvent);
   const onChatbotRef = useRef(onChatbotEvent);
   const onCallRef = useRef(onCallEvent);
+  const onPresenceRef = useRef(onPresenceEvent);
   useEffect(() => {
     onMessageRef.current = onMessageEvent;
     onConversationRef.current = onConversationEvent;
     onLeadRef.current = onLeadEvent;
     onChatbotRef.current = onChatbotEvent;
     onCallRef.current = onCallEvent;
+    onPresenceRef.current = onPresenceEvent;
   });
 
   useEffect(() => {
@@ -112,6 +139,10 @@ export function useRealtime({
       onCallRef.current?.(event);
     };
 
+    const handlePresence = (event: PresenceEvent) => {
+      onPresenceRef.current?.(event);
+    };
+
     if (socket.connected) {
       handleConnect();
     }
@@ -123,6 +154,7 @@ export function useRealtime({
     socket.on("lead", handleLead);
     socket.on("chatbot", handleChatbot);
     socket.on("call", handleCall);
+    socket.on("presence", handlePresence);
 
     return () => {
       socket.off("connect", handleConnect);
@@ -132,6 +164,7 @@ export function useRealtime({
       socket.off("lead", handleLead);
       socket.off("chatbot", handleChatbot);
       socket.off("call", handleCall);
+      socket.off("presence", handlePresence);
       socket.emit("leave_account", accountId);
       setIsConnected(false);
     };
