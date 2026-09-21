@@ -45,6 +45,12 @@ export async function POST(req: NextRequest) {
   // src/lib/agents/presence.ts for why a status people set by hand is
   // wrong exactly when it matters.
   //
+  // It does not clear went_offline_at, and does not need to: presence
+  // compares the two timestamps, so this newer one simply wins. Leaving
+  // the old departure in place keeps a true record of when they last
+  // left, and means two writes racing can never produce a person who is
+  // neither present nor gone.
+  //
   // Deliberately not awaited and deliberately swallowed: this route's
   // job is keeping a session alive, and a presence write that fails
   // must never log somebody out.

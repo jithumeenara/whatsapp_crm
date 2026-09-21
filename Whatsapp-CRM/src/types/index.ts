@@ -1,4 +1,5 @@
 import type { AccountRole } from "@/lib/auth/roles";
+import type { WorkingHours } from "@/lib/agents/working-hours";
 
 export interface Profile {
   id: string;
@@ -76,6 +77,14 @@ export interface AccountMember {
    *  screen can age it live between fetches instead of showing an
    *  "Online" that was true when the page loaded. */
   last_seen_at?: string | null;
+  /** When they last pressed Log out or closed their final window. Sent
+   *  alongside last_seen_at because neither alone can distinguish "here
+   *  a moment ago" from "left a moment ago". */
+  went_offline_at?: string | null;
+  /** This person's weekly shift, or null if nobody has set one — which
+   *  means always available. Parsed server-side, so anything the screen
+   *  receives here is already a shape it can rely on. */
+  working_hours?: WorkingHours | null;
 }
 
 /**
@@ -834,6 +843,11 @@ export interface Lead {
   claimed_at: string | null;
   lost_reason: string | null;
   converted_at: string | null;
+  /** When the customer last wrote. Distinct from updated_at, which
+   *  moves whenever anybody here touches the lead — see
+   *  src/lib/leads/score-decay.ts for why a score needs the first and
+   *  not the second. Optional because older rows may not have one. */
+  last_customer_at?: string | null;
   created_at: string;
   updated_at: string;
   /** Proposed by the assistant and not yet accepted — shows only on the

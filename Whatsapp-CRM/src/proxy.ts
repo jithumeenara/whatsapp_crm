@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-
 // Auto-logout after this long with zero real user interaction (mouse,
 // keyboard, touch, scroll) anywhere in the app — enforced here, not just
 // client-side, since `lastActivity` lives inside the signed JWT itself and
@@ -9,7 +8,12 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 // on real activity (see auth.ts's jwt callback + use-idle-timeout.ts). A
 // client that stopped running JS (or a stolen cookie replayed elsewhere)
 // can't extend this by itself — the check below runs on every request.
-const IDLE_TIMEOUT_MS = 10 * 60_000
+//
+// It is imported rather than written here because this is the number the
+// presence indicator, the flow agent picker and the conversation-release
+// rule all have to agree with. See the file for what went wrong when
+// each of them held its own copy.
+import { IDLE_TIMEOUT_MS } from '@/lib/auth/session-timing'
 
 // Public paths that never require a session
 const PUBLIC_PATHS = new Set([

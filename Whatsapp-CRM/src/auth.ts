@@ -228,4 +228,54 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return session;
     },
   },
+  events: {
+    /**
+     * Somebody pressed Log out.
+     *
+     * Nothing used to happen here at all, and two things quietly stayed
+     * wrong afterwards. Their presence dot stayed green for three
+     * minutes, because presence only knew when they were last seen and
+     * they had just been seen. And their UserSession row stayed
+     * unrevoked, so the flow agent picker kept counting them as a live
+     * session for a quarter of an hour and could hand a waiting customer
+     * to somebody who had gone home.
+     *
+     * Both are recorded now, at the one moment the app is certain: the
+     * person asked to leave.
+     *
+     * Neither write is allowed to fail the sign-out. Signing out must
+     * always succeed — a database that is briefly unreachable must not
+     * be able to trap somebody in a session — so these are attempted,
+     * logged and abandoned. The idle timeout is the backstop that makes
+     * that safe: even with both writes lost, the same person reads as
+     * offline eleven minutes later, which is the behaviour this event
+     * exists to improve on rather than to replace.
+     */
+    async signOut(message) {
+      const token = "token" in message ? message.token : null;
+      if (!token?.id) return;
+
+      await Promise.allSettled([
+        prisma.user.update({
+          where: { id: String(token.id) },
+          data: { went_offline_at: new Date() },
+        }),
+        // Revoked, not deleted: Settings > Profile > Sessions lists past
+        // devices, and a row that vanishes on sign-out would take the
+        // evidence of a session with it.
+        token.sessionId
+          ? prisma.userSession.update({
+              where: { id: String(token.sessionId) },
+              data: { revoked_at: new Date() },
+            })
+          : Promise.resolve(null),
+      ]).then((results) => {
+        for (const r of results) {
+          if (r.status === "rejected") {
+            console.error("Failed to record sign-out:", r.reason);
+          }
+        }
+      });
+    },
+  },
 });

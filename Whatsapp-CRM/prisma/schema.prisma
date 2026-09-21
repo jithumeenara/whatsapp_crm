@@ -12,33 +12,33 @@ datasource db {
 // ============================================================
 
 model User {
-  id             String    @id @default(uuid()) @db.Uuid
-  email          String    @unique
-  password_hash  String?
-  email_verified DateTime? @db.Timestamptz(6)
+  id                               String    @id @default(uuid()) @db.Uuid
+  email                            String    @unique
+  password_hash                    String?
+  email_verified                   DateTime? @db.Timestamptz(6)
   // Login MFA -- defaults to 'disabled' for every existing and new user, so
   // this ships with zero behavior change until a user opts in themselves
   // (see Settings > Profile > Security). 'sms'/'whatsapp' send a 6-digit
   // code each login; 'totp' verifies against an authenticator app (Google
   // Authenticator etc.) with no server-sent code at all.
-  mfa_method     String    @default("disabled") // 'disabled' | 'sms' | 'whatsapp' | 'totp'
-  mfa_phone      String?   // E.164 -- delivery number for sms/whatsapp OTP
+  mfa_method                       String    @default("disabled") // 'disabled' | 'sms' | 'whatsapp' | 'totp'
+  mfa_phone                        String? // E.164 -- delivery number for sms/whatsapp OTP
   /// AES-256-GCM encrypted base32 TOTP secret -- only set when mfa_method = 'totp'.
-  totp_secret    String?
-  mfa_enabled_at DateTime? @db.Timestamptz(6)
+  totp_secret                      String?
+  mfa_enabled_at                   DateTime? @db.Timestamptz(6)
   /// Set by "Sign out everywhere" (Settings > Profile > Sessions) -- the
   /// bulk revocation mechanism: any token issued before this timestamp is
   /// rejected in auth.ts's jwt callback on its next use, regardless of
   /// which UserSession row it belongs to. Per-device revocation is
   /// UserSession.revoked_at below; this field is for revoking all of them
   /// at once without having to touch every row.
-  session_invalidated_at DateTime? @db.Timestamptz(6)
+  session_invalidated_at           DateTime? @db.Timestamptz(6)
   /// User-configurable inactivity auto-logout (Settings > Profile >
   /// Sessions > gear icon) — a device with no activity for this many
   /// minutes gets auto-revoked. See INACTIVITY_LIMIT_MS's replacement in
   /// auth.ts's jwt callback and GET /api/account/sessions' lazy sweep.
   /// Default 4320 = 3 days, matching the previous hardcoded constant.
-  session_inactivity_limit_minutes Int @default(4320)
+  session_inactivity_limit_minutes Int       @default(4320)
 
   /// The last moment this person demonstrably used the app.
   ///
@@ -51,57 +51,67 @@ model User {
   /// "seen long ago" and is what every account shows before its first
   /// heartbeat after this column appeared.
   last_seen_at DateTime? @db.Timestamptz(6)
-  created_at     DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
 
-  profile                      Profile?
+  /// When this person last deliberately left: pressed Log out, or closed
+  /// their last window.
+  ///
+  /// Presence is offline when this is newer than last_seen_at. Compared
+  /// rather than cleared, so returning needs no cleanup — the next
+  /// heartbeat writes a later last_seen_at and wins on its own.
+  went_offline_at DateTime? @db.Timestamptz(6)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  profile                       Profile?
   mfa_challenges                MfaChallenge[]
-  owned_accounts               Account[]                    @relation("AccountOwner")
-  contacts                     Contact[]
-  tags                         Tag[]
-  custom_fields                CustomField[]
-  contact_notes                ContactNote[]
-  conversations                Conversation[]
-  message_templates            MessageTemplate[]
-  pipelines                    Pipeline[]
-  deals                        Deal[]
-  broadcasts                   Broadcast[]
-  automations                  Automation[]
-  automation_logs              AutomationLog[]
+  owned_accounts                Account[]                    @relation("AccountOwner")
+  contacts                      Contact[]
+  tags                          Tag[]
+  custom_fields                 CustomField[]
+  contact_notes                 ContactNote[]
+  conversations                 Conversation[]
+  message_templates             MessageTemplate[]
+  pipelines                     Pipeline[]
+  deals                         Deal[]
+  broadcasts                    Broadcast[]
+  automations                   Automation[]
+  automation_logs               AutomationLog[]
   automation_pending_executions AutomationPendingExecution[]
-  flows                        Flow[]
-  flow_runs                    FlowRun[]
-  whatsapp_configs             WhatsAppConfig[]
-  ai_configs                   AiConfig[]
-  sms_configs                  SmsConfig[]
-  email_configs                EmailConfig[]
-  rcs_configs                  RcsConfig[]
-  meta_ads_configs             MetaAdsConfig[]
+  flows                         Flow[]
+  flow_runs                     FlowRun[]
+  whatsapp_configs              WhatsAppConfig[]
+  ai_configs                    AiConfig[]
+  sms_configs                   SmsConfig[]
+  email_configs                 EmailConfig[]
+  rcs_configs                   RcsConfig[]
+  meta_ads_configs              MetaAdsConfig[]
   catalog_configs               CatalogConfig[]
-  payment_gateway_configs        PaymentGatewayConfig[]
-  invitations_created          AccountInvitation[]          @relation("InvitationCreator")
-  invitations_accepted         AccountInvitation[]          @relation("InvitationAcceptor")
-  leads                        Lead[]
-  leads_assigned               Lead[]                       @relation("LeadAssignee")
-  follow_ups                   FollowUp[]
-  follow_ups_assigned          FollowUp[]                   @relation("FollowUpAssignee")
-  lead_activities              LeadActivity[]
-  ai_lead_reviews              AiLeadReview[] @relation("AiLeadReviewer")
-  lead_views                   LeadView[]
-  segments                     Segment[]
-  tasks                        Task[]
-  tasks_assigned               Task[]                       @relation("TaskAssignee")
-  conversations_assigned       Conversation[]               @relation("ConversationAgent")
-  push_subscriptions           PushSubscription[]
-  scheduled_messages           ScheduledMessage[]
-  email_verification_tokens    EmailVerificationToken[]
-  sessions                     UserSession[]
-  contact_merges_performed     ContactMerge[]
+  payment_gateway_configs       PaymentGatewayConfig[]
+  invitations_created           AccountInvitation[]          @relation("InvitationCreator")
+  invitations_accepted          AccountInvitation[]          @relation("InvitationAcceptor")
+  leads                         Lead[]
+  leads_assigned                Lead[]                       @relation("LeadAssignee")
+  follow_ups                    FollowUp[]
+  follow_ups_assigned           FollowUp[]                   @relation("FollowUpAssignee")
+  lead_activities               LeadActivity[]
+  ai_lead_reviews               AiLeadReview[]               @relation("AiLeadReviewer")
+  lead_views                    LeadView[]
+  segments                      Segment[]
+  tasks                         Task[]
+  tasks_assigned                Task[]                       @relation("TaskAssignee")
+  conversations_assigned        Conversation[]               @relation("ConversationAgent")
+  push_subscriptions            PushSubscription[]
+  scheduled_messages            ScheduledMessage[]
+  email_verification_tokens     EmailVerificationToken[]
+  sessions                      UserSession[]
+  contact_merges_performed      ContactMerge[]
+  ai_judgements_reviewed        AiJudgement[]                @relation("AiJudgementReviewer")
+  calls                         Call[]
+  call_transfer_default         CallConfig[]                 @relation("CallTransferAgent")
+  call_transfer_fallback        CallConfig[]                 @relation("CallTransferFallback")
 
   @@map("users")
-  calls                Call[]
-  call_transfer_default   CallConfig[] @relation("CallTransferAgent")
-  call_transfer_fallback  CallConfig[] @relation("CallTransferFallback")
 }
 
 /// One row per login -- real per-device session tracking (Settings >
@@ -135,12 +145,12 @@ model UserSession {
 // confirm someone else's email, the raw token only ever appears once, in
 // the emailed link itself.
 model EmailVerificationToken {
-  id         String    @id @default(uuid()) @db.Uuid
-  user_id    String    @db.Uuid
-  token_hash String    @unique
-  expires_at DateTime  @db.Timestamptz(6)
+  id          String    @id @default(uuid()) @db.Uuid
+  user_id     String    @db.Uuid
+  token_hash  String    @unique
+  expires_at  DateTime  @db.Timestamptz(6)
   consumed_at DateTime? @db.Timestamptz(6)
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
@@ -156,20 +166,20 @@ model EmailVerificationToken {
 // there's no server-generated code to check, the live 30-second window is
 // verified directly against the user's stored secret instead.
 model MfaChallenge {
-  id         String    @id @default(uuid()) @db.Uuid
-  user_id    String    @db.Uuid
-  purpose    String    // 'login' | 'enroll'
-  method     String    // 'sms' | 'whatsapp' | 'totp'
+  id            String    @id @default(uuid()) @db.Uuid
+  user_id       String    @db.Uuid
+  purpose       String // 'login' | 'enroll'
+  method        String // 'sms' | 'whatsapp' | 'totp'
   /// bcrypt hash of the 6-digit code (sms/whatsapp only).
-  code_hash  String?
+  code_hash     String?
   // 'enroll' only -- the phone number being verified, held here (not yet
   // written to User.mfa_phone) until the code is confirmed.
   pending_phone String?
-  verified   Boolean   @default(false)
-  consumed_at DateTime? @db.Timestamptz(6)
-  attempts   Int       @default(0)
-  expires_at DateTime  @db.Timestamptz(6)
-  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  verified      Boolean   @default(false)
+  consumed_at   DateTime? @db.Timestamptz(6)
+  attempts      Int       @default(0)
+  expires_at    DateTime  @db.Timestamptz(6)
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
@@ -203,62 +213,65 @@ model Account {
   profiles    Profile[]
   invitations AccountInvitation[]
 
-  contacts                     Contact[]
-  tags                         Tag[]
-  custom_fields                CustomField[]
-  contact_notes                ContactNote[]
-  conversations                Conversation[]
+  contacts                      Contact[]
+  tags                          Tag[]
+  custom_fields                 CustomField[]
+  contact_notes                 ContactNote[]
+  conversations                 Conversation[]
   whatsapp_configs              WhatsAppConfig[]
-  ai_config                    AiConfig?
-  ai_knowledge_items           AiKnowledgeItem[]
-  ai_usage_events              AiUsageEvent[]
-  ai_eval_cases                AiEvalCase[]
-  ai_eval_runs                 AiEvalRun[]
-  conversation_feedback        ConversationFeedback[]
-  company_profile              CompanyProfile?
-  sms_config                   SmsConfig?
-  email_config                 EmailConfig?
-  rcs_config                   RcsConfig?
-  meta_ads_config              MetaAdsConfig?
+  ai_config                     AiConfig?
+  ai_knowledge_items            AiKnowledgeItem[]
+  ai_usage_events               AiUsageEvent[]
+  ai_eval_cases                 AiEvalCase[]
+  ai_eval_runs                  AiEvalRun[]
+  conversation_feedback         ConversationFeedback[]
+  company_profile               CompanyProfile?
+  sms_config                    SmsConfig?
+  email_config                  EmailConfig?
+  rcs_config                    RcsConfig?
+  meta_ads_config               MetaAdsConfig?
   catalog_config                CatalogConfig?
-  products                     Product[]
-  orders                       Order[]
-  payment_gateway_configs      PaymentGatewayConfig[]
-  whatsapp_payments            WhatsAppPayment[]
-  lead_ad_forms                LeadAdForm[]
-  lead_ad_submissions          LeadAdSubmission[]
-  contact_merges               ContactMerge[]
-  meta_custom_audiences        MetaCustomAudience[]
-  message_templates            MessageTemplate[]
-  pipelines                    Pipeline[]
-  deals                        Deal[]
-  broadcasts                   Broadcast[]
-  automations                  Automation[]
-  automation_logs              AutomationLog[]
+  products                      Product[]
+  orders                        Order[]
+  payment_gateway_configs       PaymentGatewayConfig[]
+  whatsapp_payments             WhatsAppPayment[]
+  lead_ad_forms                 LeadAdForm[]
+  lead_ad_submissions           LeadAdSubmission[]
+  contact_merges                ContactMerge[]
+  meta_custom_audiences         MetaCustomAudience[]
+  message_templates             MessageTemplate[]
+  pipelines                     Pipeline[]
+  deals                         Deal[]
+  broadcasts                    Broadcast[]
+  automations                   Automation[]
+  automation_logs               AutomationLog[]
   automation_pending_executions AutomationPendingExecution[]
-  flows                        Flow[]
-  flow_runs                    FlowRun[]
-  data_tables                  DataTable[]
-  file_uploads                 FileUpload[]
-  leads                        Lead[]
-  follow_ups                   FollowUp[]
-  lead_activities              LeadActivity[]
-  ai_lead_reviews              AiLeadReview[]
-  segments                     Segment[]
-  tasks                        Task[]
-  push_subscriptions           PushSubscription[]
-  capture_config               ContactCaptureConfig?
-  lead_settings                LeadSettings?
-  lead_views                   LeadView[]
-  api_keys                     ApiKey[]
-  webhooks                     Webhook[]
-  integrations                 Integration[]
-  scheduled_messages           ScheduledMessage[]
+  flows                         Flow[]
+  flow_runs                     FlowRun[]
+  data_tables                   DataTable[]
+  file_uploads                  FileUpload[]
+  leads                         Lead[]
+  follow_ups                    FollowUp[]
+  lead_activities               LeadActivity[]
+  ai_lead_reviews               AiLeadReview[]
+  segments                      Segment[]
+  tasks                         Task[]
+  push_subscriptions            PushSubscription[]
+  capture_config                ContactCaptureConfig?
+  lead_settings                 LeadSettings?
+  lead_views                    LeadView[]
+  api_keys                      ApiKey[]
+  webhooks                      Webhook[]
+  integrations                  Integration[]
+  scheduled_messages            ScheduledMessage[]
+  ai_judgements                 AiJudgement[]
+  calls                         Call[]
+  call_config                   CallConfig?
+  service_categories            ServiceCategory[]
+  out_of_scope_answers          OutOfScopeAnswer[]
 
   @@unique([owner_user_id])
   @@map("accounts")
-  calls        Call[]
-  call_config  CallConfig?
 }
 
 model AccountInvitation {
@@ -273,53 +286,64 @@ model AccountInvitation {
   accepted_at         DateTime?   @db.Timestamptz(6)
   accepted_by_user_id String?     @db.Uuid
 
-  account      Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  created_by   User?   @relation("InvitationCreator", fields: [created_by_user_id], references: [id], onDelete: SetNull)
-  accepted_by  User?   @relation("InvitationAcceptor", fields: [accepted_by_user_id], references: [id], onDelete: SetNull)
+  account     Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  created_by  User?   @relation("InvitationCreator", fields: [created_by_user_id], references: [id], onDelete: SetNull)
+  accepted_by User?   @relation("InvitationAcceptor", fields: [accepted_by_user_id], references: [id], onDelete: SetNull)
 
   @@map("account_invitations")
 }
 
 model Profile {
-  id           String      @id @default(uuid()) @db.Uuid
-  user_id      String      @unique @db.Uuid
-  full_name    String      @default("")
-  email        String
-  avatar_url   String?
+  id                   String      @id @default(uuid()) @db.Uuid
+  user_id              String      @unique @db.Uuid
+  full_name            String      @default("")
+  email                String
+  avatar_url           String?
   /// This person's own WhatsApp number (E.164, e.g. "+919876543210") —
   /// collected at signup as a country-code select + local-number input,
   /// combined into one string before saving. Distinct from
   /// WhatsAppConfig.phone_number_id, which is the Business Platform
   /// number the app sends/receives through, not a team member's own.
-  phone        String?
+  phone                String?
   /// When phone was last confirmed via a WhatsApp/SMS OTP (Settings > Profile
   /// "Verify" button). Null = not verified. Cleared back to null whenever
   /// `phone` itself is changed, so an edited number can't inherit the old
   /// number's verified status.
-  phone_verified_at DateTime? @db.Timestamptz(6)
-  account_id   String      @db.Uuid
-  account_role          AccountRole
-  restrict_to_assigned  Boolean     @default(false)
+  phone_verified_at    DateTime?   @db.Timestamptz(6)
+  account_id           String      @db.Uuid
+  account_role         AccountRole
+  restrict_to_assigned Boolean     @default(false)
   /// Personal chat-translation setting (Settings > Profile) — a free-text
   /// language name (e.g. "Malayalam", "English"), not a fixed enum, since
   /// Gemini's translation isn't limited to a short hardcoded list. Null =
   /// translation UI (the "Translate" link on inbound messages, the
   /// composer's translate button) doesn't render at all for this person —
   /// off by default, zero behavior change for existing users.
-  preferred_language    String?
+  preferred_language   String?
   /// This person's own shortcuts on the dashboard — an ordered list of
   /// hrefs from src/lib/navigation/sections. Per person, not per
   /// account: what a sales agent reaches for all day is not what the
   /// owner does. Empty means they have never chosen, and a sensible
   /// default is shown rather than nothing.
-  quick_links           Json        @default("[]")
+  quick_links          Json        @default("[]")
   /// Whether the dashboard's quick-links button appears at all. On by
   /// default; somebody who does not want a floating button should be
   /// able to say so without emptying the list, which would otherwise
   /// read as "has not chosen" and bring the default back.
-  quick_links_enabled   Boolean     @default(true)
-  created_at            DateTime    @default(now()) @db.Timestamptz(6)
-  updated_at            DateTime    @updatedAt @db.Timestamptz(6)
+  quick_links_enabled  Boolean     @default(true)
+  /// This person's weekly shift, with the time zone it is written in:
+  /// { timezone, week: { mon..sun: { mode: full|half|off, from, to } } }.
+  ///
+  /// The zone lives inside the value on purpose — nothing else in this
+  /// schema stores one, so hours without it would be evaluated on the
+  /// server's clock (UTC) rather than the agent's. See
+  /// src/lib/agents/working-hours.ts.
+  ///
+  /// Null means no hours set, which means always available — the
+  /// behaviour every account had before this column existed.
+  working_hours        Json?
+  created_at           DateTime    @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime    @updatedAt @db.Timestamptz(6)
 
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
@@ -332,93 +356,93 @@ model Profile {
 // ============================================================
 
 model Contact {
-  id               String   @id @default(uuid()) @db.Uuid
-  account_id       String   @db.Uuid
-  user_id          String   @db.Uuid
-  phone            String
-  phone_normalized String?
-  alternate_phone  String?
-  name             String?
-  email            String?
-  company          String?
-  gender           String?
-  avatar_url       String?
-  external_id      String?                        // dedup key for external integrations (HMS, LMS, etc.)
+  id                     String    @id @default(uuid()) @db.Uuid
+  account_id             String    @db.Uuid
+  user_id                String    @db.Uuid
+  phone                  String
+  phone_normalized       String?
+  alternate_phone        String?
+  name                   String?
+  email                  String?
+  company                String?
+  gender                 String?
+  avatar_url             String?
+  external_id            String? // dedup key for external integrations (HMS, LMS, etc.)
   // Dedicated per-platform identity columns — never reuse `phone` for these.
   // Instagram/Facebook platform IDs are matched by exact equality only, never
   // via the fuzzy last-8-digit suffix matching used for real phone numbers
   // (findExistingContact in src/lib/contacts/dedupe.ts) — that heuristic only
   // makes sense for phone numbers and would risk cross-channel identity
   // collisions if reused here.
-  instagram_id     String?                        // Instagram-scoped platform ID (IGSID)
-  facebook_id      String?                        // Facebook Messenger-scoped platform ID (PSID)
+  instagram_id           String? // Instagram-scoped platform ID (IGSID)
+  facebook_id            String? // Facebook Messenger-scoped platform ID (PSID)
   /// Tri-state: "unknown" (default — most creation paths have no explicit
   /// consent signal), "opted_in" (an inbound message on any channel, or an
   /// explicit action like a Lead Ads form submission, is itself consent),
   /// "opted_out" (reserved for a future inbound-STOP-keyword handler — not
   /// built yet, nothing sets this today).
-  opt_in_status    String   @default("unknown")
+  opt_in_status          String    @default("unknown")
   /// Which creation path captured this contact — see the tag list in
   /// findOrCreateContact-style call sites across the webhook/import routes.
-  opt_in_source    String?
-  opt_in_at        DateTime? @db.Timestamptz(6)
-  opted_out_at     DateTime? @db.Timestamptz(6)
+  opt_in_source          String?
+  opt_in_at              DateTime? @db.Timestamptz(6)
+  opted_out_at           DateTime? @db.Timestamptz(6)
   // Set when this contact was absorbed by a "Merge contacts" action (IG·04)
   // — soft-deleted rather than hard-deleted so every existing FK pointing
   // at it (conversations, deals, leads, etc.) stays valid; UIs that list
   // live contacts filter WHERE merged_into_contact_id IS NULL.
-  merged_into_contact_id String? @db.Uuid
+  merged_into_contact_id String?   @db.Uuid
   /// Language this contact's messages were last detected in (chat
   /// translation feature) — a free-text language name, e.g. "Arabic",
   /// "Tamil". Updated whenever an inbound message from them is
   /// translated; lets the composer's "Translate" button translate an
   /// outbound draft into their language without re-detecting it. Null
   /// until their first message is ever translated.
-  detected_language String?
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+  detected_language      String?
+  created_at             DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime  @updatedAt @db.Timestamptz(6)
 
-  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  merged_into      Contact?  @relation("ContactMergedInto", fields: [merged_into_contact_id], references: [id], onDelete: SetNull)
+  account           Account   @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  merged_into       Contact?  @relation("ContactMergedInto", fields: [merged_into_contact_id], references: [id], onDelete: SetNull)
   absorbed_contacts Contact[] @relation("ContactMergedInto")
 
-  tags                         ContactTag[]
-  custom_values                ContactCustomValue[]
-  notes                        ContactNote[]
-  conversations                Conversation[]
-  deals                        Deal[]
-  broadcast_recipients         BroadcastRecipient[]
-  automation_logs              AutomationLog[]
+  tags                          ContactTag[]
+  custom_values                 ContactCustomValue[]
+  notes                         ContactNote[]
+  conversations                 Conversation[]
+  deals                         Deal[]
+  broadcast_recipients          BroadcastRecipient[]
+  automation_logs               AutomationLog[]
   automation_pending_executions AutomationPendingExecution[]
-  flow_runs                    FlowRun[]
-  leads                        Lead[]
-  follow_ups                   FollowUp[]
-  lead_activities              LeadActivity[]
-  ai_lead_reviews              AiLeadReview[]
-  tasks                        Task[]
-  scheduled_messages           ScheduledMessage[]
+  flow_runs                     FlowRun[]
+  leads                         Lead[]
+  follow_ups                    FollowUp[]
+  lead_activities               LeadActivity[]
+  ai_lead_reviews               AiLeadReview[]
+  tasks                         Task[]
+  scheduled_messages            ScheduledMessage[]
+  ai_judgements                 AiJudgement[]
+  calls                         Call[]
+  feedback                      ConversationFeedback[]
+  data_records                  DataRecord[]
+  /// When this contact was blocked. Null means not blocked — "when"
+  /// answers "whether" as well, so there is no separate boolean to keep
+  /// in step with it.
+  blocked_at                    DateTime?                    @db.Timestamptz(6)
+  block_reason                  String?
+  /// 'manual' | 'flood'. An automatic block is a guess and should be
+  /// easy to overturn; a manual one is a decision and must not be
+  /// quietly undone by the rule that would have guessed differently.
+  blocked_source                String?
+  /// Who pressed it. Null for an automatic block, which is how the two
+  /// are told apart without reading the reason text.
+  blocked_by                    String?                      @db.Uuid
 
   @@unique([account_id, phone_normalized], name: "contacts_account_phone_normalized")
   @@unique([account_id, instagram_id], name: "contacts_account_instagram_id")
   @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
   @@map("contacts")
-  calls Call[]
-  feedback ConversationFeedback[]
-  data_records DataRecord[]
-  /// When this contact was blocked. Null means not blocked — "when"
-  /// answers "whether" as well, so there is no separate boolean to keep
-  /// in step with it.
-  blocked_at     DateTime? @db.Timestamptz(6)
-  block_reason   String?
-  /// 'manual' | 'flood'. An automatic block is a guess and should be
-  /// easy to overturn; a manual one is a decision and must not be
-  /// quietly undone by the rule that would have guessed differently.
-  blocked_source String?
-  /// Who pressed it. Null for an automatic block, which is how the two
-  /// are told apart without reading the reason text.
-  blocked_by     String?   @db.Uuid
-
 }
 
 // Audit trail for IG·04 "Merge contacts across channels" — who merged what
@@ -439,8 +463,8 @@ model ContactMerge {
   performed_by_user_id    String   @db.Uuid
   created_at              DateTime @default(now()) @db.Timestamptz(6)
 
-  account         Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  performed_by    User    @relation(fields: [performed_by_user_id], references: [id], onDelete: Cascade)
+  account      Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  performed_by User    @relation(fields: [performed_by_user_id], references: [id], onDelete: Cascade)
 
   @@index([account_id, created_at])
   @@map("contact_merges")
@@ -541,15 +565,15 @@ model Conversation {
   contact        Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
   assigned_agent User?   @relation("ConversationAgent", fields: [assigned_agent_id], references: [id], onDelete: SetNull)
 
-  messages         Message[]
-  message_reactions MessageReaction[]
-  deals            Deal[]
-  flow_runs        FlowRun[]
+  messages           Message[]
+  message_reactions  MessageReaction[]
+  deals              Deal[]
+  flow_runs          FlowRun[]
   scheduled_messages ScheduledMessage[]
-  feedback         ConversationFeedback[]
+  feedback           ConversationFeedback[]
 
   // Channel that originated this conversation
-  channel         String   @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
+  channel String @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
 
   /// When the assistant last read this thread to decide whether it was
   /// a lead — whichever way it answered. Here rather than on the lead,
@@ -564,11 +588,11 @@ model Conversation {
   // messaging two different business numbers now gets two separate
   // conversations instead of collapsing into one.
   whatsapp_config_id String?         @db.Uuid
-  whatsapp_config     WhatsAppConfig? @relation(fields: [whatsapp_config_id], references: [id], onDelete: SetNull)
+  whatsapp_config    WhatsAppConfig? @relation(fields: [whatsapp_config_id], references: [id], onDelete: SetNull)
 
   // Contact name capture flow state
-  capture_state   String?  // null | 'awaiting_confirm' | 'awaiting_name'
-  capture_wa_name String?  // WhatsApp profile name shown in the confirmation prompt
+  capture_state   String? // null | 'awaiting_confirm' | 'awaiting_name'
+  capture_wa_name String? // WhatsApp profile name shown in the confirmation prompt
 
   // Click-to-WhatsApp ad attribution — captured once, from the referral
   // object on the customer's first message, never overwritten after.
@@ -582,10 +606,10 @@ model Conversation {
   // outbound reply to a referral-attributed conversation lands within 24h
   // of the inbound message; while this is in the future, even TEMPLATE
   // messages (not just session messages) are billed free by Meta.
-  fep_expires_at   DateTime? @db.Timestamptz(6)
+  fep_expires_at   DateTime?     @db.Timestamptz(6)
+  ai_judgements    AiJudgement[]
+  calls            Call[]
 
-  @@index([account_id, unread_count])
-  @@index([account_id, last_message_at])
   // Was a plain, non-enforcing @@index — findOrCreateConversation
   // (webhook/route.ts) did an unguarded findFirst-then-create with no DB
   // backstop, so two near-simultaneous inbound deliveries for the same
@@ -613,27 +637,28 @@ model Conversation {
   // an index covering these same columns in the same order — a second
   // plain index here would just be dead weight.
   @@unique([account_id, contact_id, channel, whatsapp_config_id])
+  @@index([account_id, unread_count])
+  @@index([account_id, last_message_at])
   @@map("conversations")
-  calls Call[]
 }
 
 model Message {
-  id                  String   @id @default(uuid()) @db.Uuid
-  conversation_id     String   @db.Uuid
-  sender_type         String
-  sender_id           String?  @db.Uuid
-  content_type        String   @default("text")
-  content_text        String?
-  media_url           String?
+  id                   String    @id @default(uuid()) @db.Uuid
+  conversation_id      String    @db.Uuid
+  sender_type          String
+  sender_id            String?   @db.Uuid
+  content_type         String    @default("text")
+  content_text         String?
+  media_url            String?
   // Real MIME type from Meta's webhook payload (e.g. "application/pdf") —
   // was parsed and immediately discarded before (`void mediaType`, no
   // column to put it in). Needed to reliably detect a PDF vs. any other
   // document type rather than sniffing a filename string.
-  media_mime_type     String?
+  media_mime_type      String?
   // The document's original filename, kept separate from content_text —
   // content_text prefers the customer's caption when one is given, which
   // would otherwise be the ONLY thing stored, losing the real filename.
-  media_filename      String?
+  media_filename       String?
   // AI-generated transcript of an inbound WhatsApp voice note (audio
   // messages only) — populated asynchronously after the message is
   // created, by src/lib/whatsapp/audio-transcription.ts. Mirrored into
@@ -641,37 +666,37 @@ model Message {
   // list show real content instead of "[Audio]", but a completed
   // transcript deliberately does NOT re-trigger automations/flow dispatch
   // for that message — see the migration/plan for why.
-  transcript          String?
+  transcript           String?
   // Structured snapshot of an inbound WhatsApp order message — populated
   // post-hoc by src/lib/whatsapp/order-processing.ts once the matching
   // Order row is created, same "dedicated column mirrored in after the
   // fact" shape as `transcript` above. Read directly by the inbox bubble,
   // no extra fetch/join: { items: [{retailer_id, quantity, item_price,
   // name}], subtotal, currency, deal_id }.
-  order_snapshot      Json?
+  order_snapshot       Json?
   // Instagram story_reply/story_mention only — the replied-to (or
   // mentioned) story's own media, so the inbox bubble can render a
   // reply-context card above the message instead of just plain text.
-  story_media_url     String?
-  story_media_id      String?
+  story_media_url      String?
+  story_media_id       String?
   /// Which bot sent this, for the automated messages only — currently
   /// 'ai_auto_reply'. sender_type says a bot sent it; this says which,
   /// because chatbot steps, automation actions and the assistant were
   /// otherwise indistinguishable once written, and the assistant's reply
   /// limit was counting all three against itself.
-  bot_source          String?
-  template_name       String?
-  message_id          String?
-  status              String   @default("sent")
+  bot_source           String?
+  template_name        String?
+  message_id           String?
+  status               String    @default("sent")
   interactive_reply_id String?
-  reply_to_message_id String?   @db.Uuid
-  email_subject       String?   // Email channel only — subject/body split the other channels don't have
+  reply_to_message_id  String?   @db.Uuid
+  email_subject        String? // Email channel only — subject/body split the other channels don't have
   // Set only for a message a Broadcast campaign sent — previously broadcasts
   // never wrote a Message row at all (only broadcast_recipients), so a sent
   // campaign was completely invisible in that contact's Inbox thread. This
   // both makes the message show up AND lets the bubble render a "Broadcast"
   // tag instead of looking like an indistinguishable one-off agent send.
-  broadcast_id        String?   @db.Uuid
+  broadcast_id         String?   @db.Uuid
   // Chat translation (agent-facing "Translate" link on inbound text
   // messages) — same "populated after the fact, mirrored onto a
   // dedicated column" shape as `transcript` above. Cached per-message so
@@ -679,18 +704,18 @@ model Message {
   // already translated once; detected_lang/translated_lang together let
   // a stale cache (e.g. the agent's preferred_language changed) be
   // detected and re-translated rather than shown wrong.
-  detected_lang       String?
-  translated_text     String?
-  translated_lang     String?
-  created_at          DateTime  @default(now()) @db.Timestamptz(6)
-  deleted_at          DateTime? @db.Timestamptz(6)
+  detected_lang        String?
+  translated_text      String?
+  translated_lang      String?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_at           DateTime? @db.Timestamptz(6)
 
-  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
-  reply_to        Message?     @relation("MessageReplies", fields: [reply_to_message_id], references: [id], onDelete: SetNull)
-  replies         Message[]    @relation("MessageReplies")
+  conversation    Conversation      @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  reply_to        Message?          @relation("MessageReplies", fields: [reply_to_message_id], references: [id], onDelete: SetNull)
+  replies         Message[]         @relation("MessageReplies")
   reactions       MessageReaction[]
-  prompt_for_runs FlowRun[]    @relation("LastPromptMessage")
-  broadcast       Broadcast?   @relation(fields: [broadcast_id], references: [id], onDelete: SetNull)
+  prompt_for_runs FlowRun[]         @relation("LastPromptMessage")
+  broadcast       Broadcast?        @relation(fields: [broadcast_id], references: [id], onDelete: SetNull)
 
   @@map("messages")
 }
@@ -702,11 +727,11 @@ model Message {
 // scoped to a single ongoing conversation, e.g. "remind this customer every
 // 2 days until they reply, up to 5 times."
 model ScheduledMessage {
-  id              String    @id @default(uuid()) @db.Uuid
-  account_id      String    @db.Uuid
-  conversation_id String    @db.Uuid
-  contact_id      String    @db.Uuid
-  created_by      String    @db.Uuid
+  id              String @id @default(uuid()) @db.Uuid
+  account_id      String @db.Uuid
+  conversation_id String @db.Uuid
+  contact_id      String @db.Uuid
+  created_by      String @db.Uuid
 
   // Scheduled messages must be Meta-approved templates -- WhatsApp rejects
   // free-form text/media outside the 24h customer-service window, which a
@@ -714,33 +739,33 @@ model ScheduledMessage {
   // outside of. template_name/template_language identify the approved
   // template; the rest fill its variables. content_text holds a rendered
   // preview only, for the list UI -- it is never sent as-is.
-  content_text          String?
-  template_name         String?
-  template_language     String?
-  template_body_params  Json? // string[] -- body variable values, in order
-  template_header_text  String? // header variable value, if the template's header has one
+  content_text           String?
+  template_name          String?
+  template_language      String?
+  template_body_params   Json? // string[] -- body variable values, in order
+  template_header_text   String? // header variable value, if the template's header has one
   template_button_params Json? // Record<number, string> -- per-URL-button variable suffixes
   // media_url/media_type serve two purposes that never overlap on the same
   // row: (1) a media-header override for a media-type template, picked at
   // schedule time (see the sweep, which passes this as headerMediaUrl), and
   // (2) the legacy free-form media field on rows created before templates
   // became mandatory.
-  media_url    String?
-  media_type   String? // 'image' | 'video' | 'document' | 'audio'
-  buttons      Json?   // InteractiveButton[] ({id, title}), 1-3 entries -- legacy only
+  media_url              String?
+  media_type             String? // 'image' | 'video' | 'document' | 'audio'
+  buttons                Json? // InteractiveButton[] ({id, title}), 1-3 entries -- legacy only
 
-  schedule_type  String @default("once") // 'once' | 'recurring'
+  schedule_type  String  @default("once") // 'once' | 'recurring'
   interval_value Int? // recurring only
   interval_unit  String? // 'minutes' | 'hours' | 'days'
   stop_on_reply  Boolean @default(true) // recurring only -- stop once the customer sends a message after last_sent_at
   max_sends      Int     @default(1)
   sends_count    Int     @default(0)
 
-  status       String    @default("active") // 'active' | 'paused' | 'completed' | 'cancelled' | 'failed' | 'expired'
-  next_send_at DateTime  @db.Timestamptz(6)
-  last_sent_at DateTime? @db.Timestamptz(6)
+  status        String    @default("active") // 'active' | 'paused' | 'completed' | 'cancelled' | 'failed' | 'expired'
+  next_send_at  DateTime  @db.Timestamptz(6)
+  last_sent_at  DateTime? @db.Timestamptz(6)
   error_message String? // set when status = 'failed' -- the last send error, shown in the list UI
-  error_count   Int     @default(0) // consecutive failures; status flips to 'failed' after 3
+  error_count   Int       @default(0) // consecutive failures; status flips to 'failed' after 3
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
@@ -783,35 +808,35 @@ model MessageReaction {
 // account" (src/app/api/whatsapp/config/route.ts) still holds — this is
 // several rows per account, never a shared number.
 model WhatsAppConfig {
-  id                     String    @id @default(uuid()) @db.Uuid
-  account_id             String    @db.Uuid
-  user_id                String    @db.Uuid
-  phone_number_id        String
-  waba_id                String?
-  access_token           String
-  verify_token           String?
-  status                 String    @default("disconnected")
-  registered_at          DateTime? @db.Timestamptz(6)
-  subscribed_apps_at     DateTime? @db.Timestamptz(6)
-  last_registration_error String?
-  connected_at           DateTime? @db.Timestamptz(6)
+  id                        String    @id @default(uuid()) @db.Uuid
+  account_id                String    @db.Uuid
+  user_id                   String    @db.Uuid
+  phone_number_id           String
+  waba_id                   String?
+  access_token              String
+  verify_token              String?
+  status                    String    @default("disconnected")
+  registered_at             DateTime? @db.Timestamptz(6)
+  subscribed_apps_at        DateTime? @db.Timestamptz(6)
+  last_registration_error   String?
+  connected_at              DateTime? @db.Timestamptz(6)
   /// Debounces re-notifying on webhook redelivery of the same account/
   /// phone-number alert (quality change, account alert, review decision,
   /// security event) — see src/lib/whatsapp/account-webhook.ts.
-  last_alert_notified_at DateTime? @db.Timestamptz(6)
+  last_alert_notified_at    DateTime? @db.Timestamptz(6)
   /// How this connection was set up — "quick" (Meta Embedded Signup popup)
   /// or "manual" (credentials pasted into the API Credentials form).
-  connect_method         String    @default("manual")
+  connect_method            String    @default("manual")
   /// AES-256-GCM encrypted RSA private key for Meta Flows decryption.
   /// When set, takes priority over FLOWS_PRIVATE_KEY env var — no server restart needed.
-  flows_private_key      String?
+  flows_private_key         String?
   /// Display label for this number ("Sales Line") — shown wherever a
   /// tenant with multiple numbers has to pick one.
-  label                  String?
+  label                     String?
   /// Exactly one true per account — the fallback number used wherever a
   /// specific one isn't otherwise resolvable. The first number an
   /// account ever connects becomes the default automatically.
-  is_default             Boolean   @default(false)
+  is_default                Boolean   @default(false)
   /// Raw value of Meta's marketing_messages_onboarding_status WABA field
   /// (Finding #10) — refreshed on demand, not polled. Only "ELIGIBLE"
   /// (Meta's own literal) unlocks routing marketing sends through
@@ -822,13 +847,13 @@ model WhatsAppConfig {
   /// partner-manager approval per WABA that no API call can grant —
   /// this toggle only matters once that approval already exists; it
   /// never calls Meta itself.
-  direct_send_enabled    Boolean   @default(false)
-  created_at             DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime  @updatedAt @db.Timestamptz(6)
+  direct_send_enabled       Boolean   @default(false)
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime  @updatedAt @db.Timestamptz(6)
 
-  account         Account              @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user            User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  conversations   Conversation[]
+  account                Account               @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user                   User                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  conversations          Conversation[]
   payment_gateway_config PaymentGatewayConfig?
 
   // DB-level enforcement of the app-level "one phone_number_id, one
@@ -918,25 +943,25 @@ model MetaAdsConfig {
 // Embedded Signup business token MetaAdsConfig's discovery already uses,
 // but stored separately so a Manual Connect can supply a different one).
 model CatalogConfig {
-  id                 String    @id @default(uuid()) @db.Uuid
-  account_id         String    @unique @db.Uuid
-  user_id            String    @db.Uuid
-  catalog_id         String
-  business_id        String?
+  id                  String    @id @default(uuid()) @db.Uuid
+  account_id          String    @unique @db.Uuid
+  user_id             String    @db.Uuid
+  catalog_id          String
+  business_id         String?
   /// AES-256-GCM encrypted, same cipher/helper as MetaAdsConfig.access_token.
-  access_token       String
+  access_token        String
   // Optional — no default pipeline/stage means an inbound order still
   // creates an Order row, just not an auto-created Deal. Nothing else in
   // this codebase auto-creates a Deal today, so this is opt-in by design.
-  default_pipeline_id String?  @db.Uuid
-  default_stage_id    String?  @db.Uuid
-  status             String    @default("disconnected")
-  connected_at       DateTime? @db.Timestamptz(6)
-  last_synced_at     DateTime? @db.Timestamptz(6)
-  last_tested_at     DateTime? @db.Timestamptz(6)
-  test_error         String?
-  created_at         DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  default_pipeline_id String?   @db.Uuid
+  default_stage_id    String?   @db.Uuid
+  status              String    @default("disconnected")
+  connected_at        DateTime? @db.Timestamptz(6)
+  last_synced_at      DateTime? @db.Timestamptz(6)
+  last_tested_at      DateTime? @db.Timestamptz(6)
+  test_error          String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -951,25 +976,25 @@ model CatalogConfig {
 // sync_status reflects that honestly instead of pretending an immediate
 // confirmation exists.
 model Product {
-  id                String    @id @default(uuid()) @db.Uuid
-  account_id        String    @db.Uuid
+  id                String   @id @default(uuid()) @db.Uuid
+  account_id        String   @db.Uuid
   catalog_id        String
   // SKU sent to Meta as retailer_id — auto-generated ("prod-{uuid}") if
   // the user doesn't set one, but always unique per account.
   retailer_id       String
   name              String
   description       String?
-  price             Decimal?  @db.Decimal(12, 2)
+  price             Decimal? @db.Decimal(12, 2)
   currency          String?
   image_url         String?
-  availability      String    @default("in stock")
+  availability      String   @default("in stock")
   category          String?
   brand             String?
   // pending (just saved, not yet confirmed against Meta) | synced | error
-  sync_status       String    @default("pending")
+  sync_status       String   @default("pending")
   raw_meta_response Json?
-  created_at        DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
@@ -983,28 +1008,28 @@ model Product {
 // deliberately unenforced soft references (this codebase's existing
 // loose-coupling style for optional cross-links), not Prisma relations.
 model Order {
-  id              String    @id @default(uuid()) @db.Uuid
-  account_id      String    @db.Uuid
+  id              String   @id @default(uuid()) @db.Uuid
+  account_id      String   @db.Uuid
   // Meta's wamid for the order message — the idempotency key, since a
   // webhook can redeliver the same event.
-  wa_message_id   String    @unique
-  message_id      String?   @db.Uuid
-  contact_id      String?   @db.Uuid
-  conversation_id String?   @db.Uuid
+  wa_message_id   String   @unique
+  message_id      String?  @db.Uuid
+  contact_id      String?  @db.Uuid
+  conversation_id String?  @db.Uuid
   catalog_id      String
   currency        String?
   // Snapshot at order time: [{retailer_id, quantity, item_price, name}].
   // item_price comes from the webhook itself (authoritative at order
   // time), not the Product's current price, which may have changed since.
   items           Json
-  subtotal        Decimal?  @db.Decimal(12, 2)
+  subtotal        Decimal? @db.Decimal(12, 2)
   // Set when CatalogConfig.default_pipeline_id/default_stage_id were
   // configured at ingestion time and a Deal was auto-created.
-  deal_id         String?   @db.Uuid
-  status          String    @default("received") // received | converted | cancelled
+  deal_id         String?  @db.Uuid
+  status          String   @default("received") // received | converted | cancelled
   raw_payload     Json?
-  created_at      DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
@@ -1030,11 +1055,11 @@ model Order {
 // on Meta's side, matching how CatalogConfig/MarketingMessages are
 // account-wide but this is deliberately number-scoped).
 model PaymentGatewayConfig {
-  id                 String    @id @default(uuid()) @db.Uuid
-  account_id         String    @db.Uuid
-  whatsapp_config_id String    @unique @db.Uuid
-  user_id            String    @db.Uuid
-  gateway            String    // 'razorpay' | 'payu' | 'billdesk' | 'zaakpay' — the only 4 Meta supports
+  id                 String   @id @default(uuid()) @db.Uuid
+  account_id         String   @db.Uuid
+  whatsapp_config_id String   @unique @db.Uuid
+  user_id            String   @db.Uuid
+  gateway            String // 'razorpay' | 'payu' | 'billdesk' | 'zaakpay' — the only 4 Meta supports
   /// AES-256-GCM encrypted key/secret pair, shape depends on `gateway`.
   credentials        Json
   // UPI Intent mode fields — VPA (Virtual Payment Address), Merchant
@@ -1045,9 +1070,9 @@ model PaymentGatewayConfig {
   /// Never flips to "connected" the way Catalogs' status does — stays
   /// "pending_meta_approval" until the tenant confirms Meta has granted
   /// the WaBiz payments case, since nothing here can verify that itself.
-  status             String    @default("pending_meta_approval")
-  created_at         DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
+  status             String   @default("pending_meta_approval")
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
 
   account         Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user            User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1061,14 +1086,14 @@ model PaymentGatewayConfig {
 // codebase's existing loose-coupling style for optional cross-links —
 // same shape as the Catalogs Order model.
 model WhatsAppPayment {
-  id                      String    @id @default(uuid()) @db.Uuid
-  account_id              String    @db.Uuid
-  whatsapp_config_id      String    @db.Uuid
-  conversation_id         String?   @db.Uuid
-  contact_id              String?   @db.Uuid
+  id                     String   @id @default(uuid()) @db.Uuid
+  account_id             String   @db.Uuid
+  whatsapp_config_id     String   @db.Uuid
+  conversation_id        String?  @db.Uuid
+  contact_id             String?  @db.Uuid
   /// Meta's wamid for the order_details message — idempotency key, same
   /// pattern as the Catalogs Order model's wa_message_id.
-  wa_order_message_id     String    @unique
+  wa_order_message_id    String   @unique
   /// This app's own order/invoice reference, threaded through the UPI
   /// intent link, the order_status follow-up, and Razorpay's own
   /// `reference_id` field on the payment link — Razorpay echoes that
@@ -1077,14 +1102,14 @@ model WhatsAppPayment {
   /// tenant's gateway credentials) a given webhook POST is about, since
   /// Razorpay's webhook URL is one shared endpoint across every tenant,
   /// not a per-payment or per-tenant URL. @unique so that lookup is safe.
-  reference_id            String    @unique
-  amount                  Decimal   @db.Decimal(12, 2)
-  currency                String    @default("INR")
-  status                  String    @default("pending") // pending | processing | completed | failed
-  gateway_transaction_id  String?
-  raw_payload             Json?
-  created_at              DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime  @updatedAt @db.Timestamptz(6)
+  reference_id           String   @unique
+  amount                 Decimal  @db.Decimal(12, 2)
+  currency               String   @default("INR")
+  status                 String   @default("pending") // pending | processing | completed | failed
+  gateway_transaction_id String?
+  raw_payload            Json?
+  created_at             DateTime @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
@@ -1094,14 +1119,14 @@ model WhatsAppPayment {
 
 // One row per Meta Lead Ads / Instant Form the account has chosen to sync.
 model LeadAdForm {
-  id            String   @id @default(uuid()) @db.Uuid
-  account_id    String   @db.Uuid
-  meta_form_id  String   @unique
-  page_id       String
-  name          String
-  is_active     Boolean  @default(true)
-  created_at    DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+  id           String   @id @default(uuid()) @db.Uuid
+  account_id   String   @db.Uuid
+  meta_form_id String   @unique
+  page_id      String
+  name         String
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @updatedAt @db.Timestamptz(6)
 
   account     Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
   submissions LeadAdSubmission[]
@@ -1139,7 +1164,7 @@ model LeadAdSubmission {
 
   account Account     @relation(fields: [account_id], references: [id], onDelete: Cascade)
   form    LeadAdForm? @relation(fields: [form_id], references: [id], onDelete: Cascade)
-  lead    Lead?      @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  lead    Lead?       @relation(fields: [lead_id], references: [id], onDelete: SetNull)
 
   @@index([account_id, created_at])
   @@map("lead_ad_submissions")
@@ -1149,15 +1174,15 @@ model LeadAdSubmission {
 // phones for retargeting/lookalikes) — a Segment can map to at most one
 // Meta audience, re-synced on demand rather than continuously.
 model MetaCustomAudience {
-  id              String    @id @default(uuid()) @db.Uuid
-  account_id      String    @db.Uuid
-  segment_id      String    @unique @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  account_id       String    @db.Uuid
+  segment_id       String    @unique @db.Uuid
   meta_audience_id String
-  synced_count    Int       @default(0)
-  last_synced_at  DateTime? @db.Timestamptz(6)
-  last_error      String?
-  created_at      DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+  synced_count     Int       @default(0)
+  last_synced_at   DateTime? @db.Timestamptz(6)
+  last_error       String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   segment Segment @relation(fields: [segment_id], references: [id], onDelete: Cascade)
@@ -1170,21 +1195,21 @@ model MetaCustomAudience {
 // ============================================================
 
 model AiConfig {
-  id            String   @id @default(uuid()) @db.Uuid
-  account_id    String   @unique @db.Uuid
-  user_id       String   @db.Uuid
+  id            String  @id @default(uuid()) @db.Uuid
+  account_id    String  @unique @db.Uuid
+  user_id       String  @db.Uuid
   /// Legacy single-provider fields — kept in place, unread by new code, as
   /// a rollback safety net for one release. Superseded by active_provider
   /// + provider_keys below. Do not read these in new code.
-  provider      String   @default("gemini")
+  provider      String  @default("gemini")
   api_key       String
-  model         String   @default("gemini-1.5-flash")
-  temperature   Float    @default(0.7)
+  model         String  @default("gemini-1.5-flash")
+  temperature   Float   @default(0.7)
   /// A ceiling, not a target — providers bill for what they actually
   /// generate, so a generous limit costs nothing on short replies and
   /// stops long ones being cut off mid-sentence. 500 was the old value
   /// and truncated ordinary answers.
-  max_tokens    Int      @default(2048)
+  max_tokens    Int     @default(2048)
   system_prompt String?
   /// Q&A pairs — { question, answer }[]. Re-scored for relevance against
   /// each incoming message at generation time (src/lib/ai/knowledge.ts),
@@ -1204,21 +1229,21 @@ model AiConfig {
 
   /// Free-text reference documents -- { id, title, content, created_at }[],
   /// the richer half of "training" alongside training_data above.
-  knowledge_documents  Json    @default("[]")
+  knowledge_documents            Json    @default("[]")
   /// Guardrail line the model is instructed to use instead of guessing
   /// when nothing relevant is found in the knowledge base.
-  fallback_answer      String?
+  fallback_answer                String?
   /// Topics/phrases that should trigger "hand this to a human" guidance.
-  escalation_topics    Json    @default("[]")
+  escalation_topics              Json    @default("[]")
   /// Account-level default for how many past messages to include as
   /// conversation history; a flow node's own history_depth overrides this.
-  history_depth_default Int    @default(6)
+  history_depth_default          Int     @default(6)
   /// Minimum retrieval confidence (0-1, cosine similarity when semantic
   /// search is active, or a normalized keyword-overlap score otherwise)
   /// for ai_reply to answer on its own. Below this, the node hands off
   /// to a human instead of guessing — see engine.ts's ai_reply handler.
   /// Only takes effect when low_confidence_handoff_enabled is true.
-  confidence_threshold  Float   @default(0.35)
+  confidence_threshold           Float   @default(0.35)
   /// Off by default — this is a real behavior change (a code-enforced
   /// handoff, not just prompt guidance like escalation_topics above),
   /// so existing accounts see zero difference until the owner turns it
@@ -1261,7 +1286,7 @@ model AiConfig {
   /// one shapes how internal data questions are answered for staff. One
   /// shared prompt meant every tweak aimed at customers quietly changed
   /// the analytics answers too.
-  admin_system_prompt    String?
+  admin_system_prompt String?
 
   /// Include the contact's own CRM context (lead stage, recent
   /// activity, where they came from) in customer replies, so the same
@@ -1275,7 +1300,7 @@ model AiConfig {
   /// inferred per message instead — see src/lib/ai/language.ts. Kept as
   /// a column because "always reply in X" is a legitimate future
   /// override, but nothing writes it today.
-  reply_language                 String?
+  reply_language String?
 
   /// Answer a voice note with a voice note.
   ///
@@ -1283,13 +1308,13 @@ model AiConfig {
   /// inconvenient — sending back a wall of text ignores the thing they
   /// just told you about themselves. Text questions still get text
   /// answers; this only mirrors the channel the customer chose.
-  voice_reply_enabled            Boolean @default(true)
+  voice_reply_enabled Boolean @default(true)
   /// Gemini prebuilt voice name (Kore, Puck, Charon, Fenrir, Aoede...).
-  voice_name                     String  @default("Kore")
+  voice_name          String  @default("Kore")
   /// Replies longer than this are sent as text instead. A spoken
   /// two-minute answer cannot be skimmed, searched or screenshotted,
   /// which is exactly what someone does with fees and dates.
-  voice_max_chars                Int     @default(700)
+  voice_max_chars     Int     @default(700)
 
   /// Google Cloud TTS voice "character" (Achernar, Charon, Aoede...).
   ///
@@ -1302,7 +1327,7 @@ model AiConfig {
   /// Only the character is stored. The language half of the voice name
   /// is derived from the reply text at send time, so one choice here
   /// sounds like the same person in every language it answers in.
-  cloud_voice                    String  @default("Achernar")
+  cloud_voice String @default("Achernar")
 
   /// The real-time voice console in Settings — talk to the assistant and
   /// hear it answer, over the Gemini Live API.
@@ -1310,13 +1335,13 @@ model AiConfig {
   /// Off by default. It streams audio in both directions for as long as
   /// the session is open, which bills differently from a text reply, and
   /// it is a testing tool: no customer ever reaches it.
-  live_voice_enabled             Boolean @default(false)
+  live_voice_enabled Boolean @default(false)
   /// Stored rather than hardcoded because every native-audio model is
   /// currently a preview and previews get withdrawn without notice.
-  live_voice_model               String  @default("models/gemini-2.5-flash-native-audio-preview-12-2025")
+  live_voice_model   String  @default("models/gemini-2.5-flash-native-audio-preview-12-2025")
   /// The Live API speaks with its own voice set, separate from Cloud
   /// TTS's, so this cannot share cloud_voice.
-  live_voice_name                String  @default("Kore")
+  live_voice_name    String  @default("Kore")
 
   /// Answer inbound messages that no chatbot or automation claimed.
   ///
@@ -1329,18 +1354,18 @@ model AiConfig {
   /// Off by default: this is the assistant talking to real customers
   /// with no flow around it, which is a real behaviour change and should
   /// not arrive switched on after a deploy.
-  ai_auto_reply_enabled          Boolean @default(false)
+  ai_auto_reply_enabled        Boolean @default(false)
   /// Channels the fallback covers. WhatsApp only to begin with — it is
   /// the one with a real send path, formatting rules and testing behind
   /// it.
-  ai_auto_reply_channels         Json    @default("[\"whatsapp\"]")
+  ai_auto_reply_channels       Json    @default("[\"whatsapp\"]")
   /// How many times the assistant may answer one conversation before it
   /// stops and waits for a person. Two parties going back and forth with
   /// a bot that cannot help is worse than silence.
-  ai_auto_reply_max_turns        Int     @default(8)
+  ai_auto_reply_max_turns      Int     @default(8)
   /// Stop once a human has joined the thread. Nothing damages trust
   /// faster than an agent typing while a bot talks over them.
-  ai_auto_reply_pause_on_agent   Boolean @default(true)
+  ai_auto_reply_pause_on_agent Boolean @default(true)
 
   /// Close a conversation the customer has walked away from.
   ///
@@ -1349,14 +1374,14 @@ model AiConfig {
   /// Pending thread is never touched — that is where a handover leaves
   /// one, and it means a person here still owes an answer.
   /// See src/lib/ai/idle-close.ts.
-  idle_close_enabled             Boolean @default(false)
+  idle_close_enabled       Boolean @default(false)
   /// How long the silence must last. Minutes, because the useful range
   /// spans a shop's half hour and an institute's two days.
-  idle_close_after_minutes       Int     @default(1440)
+  idle_close_after_minutes Int     @default(1440)
   /// An optional last word before closing. Null closes quietly, which
   /// is right for a conversation that simply finished. Only ever sent
   /// while Meta's 24-hour service window is still open.
-  idle_close_message             String?
+  idle_close_message       String?
 
   /// Google Cloud service-account JSON for Text-to-Speech, encrypted
   /// with the same helper that holds this account's WhatsApp token and
@@ -1369,30 +1394,30 @@ model AiConfig {
   /// row can send messages as the business and spend its money.
   ///
   /// Never leaves the server. The API reports only the two fields below.
-  google_tts_credentials         String?
+  google_tts_credentials  String?
   /// Shown in Settings so somebody can see which key is loaded without
   /// it being readable. An email and a project id grant nothing.
-  google_tts_client_email        String?
-  google_tts_project_id          String?
+  google_tts_client_email String?
+  google_tts_project_id   String?
   /// When the key was last proven to work by an actual synthesis call.
   /// A key that was never verified is not trusted at send time.
-  google_tts_verified_at         DateTime? @db.Timestamptz(6)
+  google_tts_verified_at  DateTime? @db.Timestamptz(6)
 
   /// Check a reply against its own retrieved context before sending,
   /// and hand off rather than send an unsupported figure.
   /// See src/lib/ai/validator.ts.
-  response_validation_enabled    Boolean @default(true)
+  response_validation_enabled  Boolean @default(true)
   /// Blend retrieval similarity with question ambiguity, repeated
   /// rephrasing and customer sentiment, instead of gating on similarity
   /// alone. See src/lib/ai/confidence.ts.
-  composite_confidence_enabled   Boolean @default(true)
+  composite_confidence_enabled Boolean @default(true)
   /// How aggressively Gemini's own safety filters block a generation:
   /// 'strict' | 'balanced' (Gemini's own default) | 'relaxed'. Mapped to
   /// HarmBlockThreshold across all four harm categories in
   /// src/lib/ai/providers/gemini.ts. Deliberately does NOT offer
   /// BLOCK_NONE — fully disabling safety on a customer-facing bot is not
   /// a one-click setting.
-  safety_filter                  String  @default("balanced")
+  safety_filter                String  @default("balanced")
 
   /// How much the model is allowed to deliberate before it answers.
   ///
@@ -1407,7 +1432,7 @@ model AiConfig {
   /// provider's own vocabulary in src/lib/ai/reasoning.ts, and sent only
   /// to models documented to accept it — an older model is left alone
   /// rather than sent a parameter it would reject.
-  reasoning_effort               String  @default("low")
+  reasoning_effort String @default("low")
 
   /// Tell a person, on WhatsApp, when the assistant gives up.
   ///
@@ -1416,23 +1441,23 @@ model AiConfig {
   /// numbers get the customer's name, their number, what they asked and
   /// why the assistant stopped — so somebody knows a lead is waiting
   /// without watching the inbox. See src/lib/ai/handoff-alert.ts.
-  handoff_alert_enabled          Boolean @default(false)
+  handoff_alert_enabled  Boolean @default(false)
   /// E.164 numbers, as a JSON array of strings.
-  handoff_alert_numbers          Json    @default("[]")
+  handoff_alert_numbers  Json    @default("[]")
   /// Name of an approved Utility template. Without one, an alert only
   /// arrives if that staff number messaged the business in the last 24
   /// hours — Meta blocks free-form business-initiated messages outside
   /// that window, and no amount of code changes that.
-  handoff_alert_template         String?
+  handoff_alert_template String?
   /// Which handoff reasons are worth interrupting somebody for. Empty
   /// means all of them. JSON array of reason keys.
-  handoff_alert_reasons          Json    @default("[]")
+  handoff_alert_reasons  Json    @default("[]")
 
-  created_at    DateTime @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime @updatedAt @db.Timestamptz(6)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
 
-  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account              Account                @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user                 User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
   knowledge_embeddings AiKnowledgeEmbedding[]
   knowledge_items      AiKnowledgeItem[]
   eval_cases           AiEvalCase[]
@@ -1460,8 +1485,8 @@ model AiConfig {
 /// fast without an index. Revisit only if an account's knowledge base
 /// genuinely grows into the thousands of entries.
 model AiKnowledgeEmbedding {
-  id              String   @id @default(uuid()) @db.Uuid
-  ai_config_id    String   @db.Uuid
+  id              String                      @id @default(uuid()) @db.Uuid
+  ai_config_id    String                      @db.Uuid
   /// SHA-256 hex of the exact text that was embedded.
   content_hash    String
   /// 'qa' | 'chunk' — which half of the knowledge base this came from.
@@ -1477,7 +1502,7 @@ model AiKnowledgeEmbedding {
   /// through raw SQL (embeddings.ts, knowledge.ts). gemini-embedding-001's
   /// documented default output size.
   embedding       Unsupported("vector(3072)")
-  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  created_at      DateTime                    @default(now()) @db.Timestamptz(6)
 
   ai_config AiConfig @relation(fields: [ai_config_id], references: [id], onDelete: Cascade)
 
@@ -1505,12 +1530,12 @@ model AiKnowledgeItem {
   /// What this entry is: 'qa' | 'document' | 'website' | 'text' | 'database'.
   /// Drives both how `content` is built and what the Training tab shows
   /// in its Type column.
-  kind         String
+  kind   String
   /// Display name in the knowledge base table.
-  name         String
+  name   String
   /// Where it came from: 'manual' | 'upload' | 'web_sync' | 'data_store'
   /// | 'test_feedback' (a Test AI reply saved as an example).
-  source       String @default("manual")
+  source String @default("manual")
 
   /// Who this entry may be said to: 'customer' (safe to send to a
   /// person on WhatsApp/Instagram/Messenger/RCS/Email), 'internal'
@@ -1525,7 +1550,7 @@ model AiKnowledgeItem {
   /// would not be a boundary — a model can be talked out of those.
   /// Defaults to 'customer' so nothing an account already added
   /// silently disappears from replies.
-  audience     String @default("customer")
+  audience String @default("customer")
 
   /// What this entry is for, in the account's own words — "our 2026 fee
   /// structure for all courses", "hostel rules, staff reference only".
@@ -1535,24 +1560,24 @@ model AiKnowledgeItem {
   /// it from a fragment. A table of numbers with no context is the
   /// classic case where retrieval finds the right chunk and the model
   /// still misreads it.
-  description  String?
+  description String?
 
   /// Q&A entries only.
-  question     String?
-  answer       String?
+  question   String?
+  answer     String?
   /// Everything else — the extracted/entered text that actually gets
   /// chunked and embedded.
-  content      String?
+  content    String?
   /// Website entries: the URL to (re-)fetch. Database entries: the
   /// DataTable id whose records are serialized in.
-  source_url   String?
-  source_ref   String? @db.Uuid
+  source_url String?
+  source_ref String? @db.Uuid
 
   /// 'trained' (embedded and in use) | 'pending' (saved, not embedded
   /// yet) | 'failed' (last sync or embed attempt errored — see
   /// last_error) | 'disabled' (kept but excluded from retrieval).
-  status       String  @default("pending")
-  last_error   String?
+  status         String    @default("pending")
+  last_error     String?
   /// Set when a website/database entry was last re-fetched, so the
   /// Training tab can show real "Updated" values rather than just the
   /// row's own mtime.
@@ -1570,12 +1595,12 @@ model AiKnowledgeItem {
 
   /// The language this entry is written in, as a plain name. Null means
   /// it applies regardless of what the customer writes in.
-  language    String?
+  language   String?
   /// "Admissions", "Accounts", "Hostel". Rides along into the handoff
   /// note so the right person picks the conversation up.
-  department  String?
+  department String?
   /// Tie-breaker when two entries match a question equally well.
-  priority    Int     @default(0)
+  priority   Int     @default(0)
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
@@ -1604,8 +1629,8 @@ model CompanyProfile {
   id         String @id @default(uuid()) @db.Uuid
   account_id String @unique @db.Uuid
 
-  legal_name   String?
-  display_name String?
+  legal_name     String?
+  display_name   String?
   /// Broad industry, from the picker — or 'other', in which case
   /// category_other holds what was typed.
   category       String?
@@ -1617,23 +1642,32 @@ model CompanyProfile {
 
   /// A paragraph in the account's own words — what the business does,
   /// who it serves. The single most useful field here for reply quality.
-  about        String?
+  about    String?
   /// Comma-separated headline offerings, kept as plain text rather than
   /// a relation: this is prompt context, not a catalogue.
-  services     String?
+  services String?
 
-  website      String?
-  email        String?
-  phone        String?
-  address      String?
-  city         String?
-  state        String?
-  country      String?
+  website       String?
+  email         String?
+  phone         String?
+  address       String?
+  city          String?
+  state         String?
+  country       String?
   /// Free text, because real working hours are full of exceptions
   /// ("9-6 Mon-Sat, closed 1-2, Sunday appointments only").
   working_hours String?
   /// Languages the business actually serves customers in.
   languages     String?
+  /// The clock this business runs on — an IANA name ("Asia/Kolkata"),
+  /// never an offset, because half the world changes offset twice a
+  /// year and a stored "+05:30" is right for six months and wrong for
+  /// the other six.
+  ///
+  /// Used wherever an instant has to become a local date or time, and
+  /// as the default an agent's shift schedule starts from. Null means
+  /// nobody has chosen yet. See src/lib/agents/timezones.ts.
+  timezone      String?
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
@@ -1670,9 +1704,9 @@ model AiUsageEvent {
   /// 'validation' (the key check on the Configure screen).
   feature  String
 
-  input_tokens  Int @default(0)
-  output_tokens Int @default(0)
-  total_tokens  Int @default(0)
+  input_tokens  Int     @default(0)
+  output_tokens Int     @default(0)
+  total_tokens  Int     @default(0)
   /// Estimated, in USD, to 6dp — a single Flash call costs far less
   /// than a cent, and rounding to 2dp would record every call as zero.
   cost_usd      Decimal @default(0) @db.Decimal(12, 6)
@@ -1705,33 +1739,33 @@ model AiUsageEvent {
 // separate REST/FHIR data-pull connectors, not messaging credentials.
 
 model SmsConfig {
-  id              String    @id @default(uuid()) @db.Uuid
-  account_id      String    @unique @db.Uuid
-  user_id         String    @db.Uuid
-  provider        String    @default("msg91") // 'msg91' | 'textbee'
+  id                 String    @id @default(uuid()) @db.Uuid
+  account_id         String    @unique @db.Uuid
+  user_id            String    @db.Uuid
+  provider           String    @default("msg91") // 'msg91' | 'textbee'
   /// AES-256-GCM encrypted secret — MSG91's Auth Key, or TextBee's API key,
   /// depending on `provider`. Same encrypted slot, different meaning.
-  auth_key        String
-  sender_id       String?   // 6-char DLT-approved sender ID (msg91 only)
-  route           String?   @default("4") // MSG91 transactional route (msg91 only)
-  dlt_entity_id   String?   // India DLT compliance (msg91 only)
-  dlt_template_id String?   // per-account default; may need to move to a
-                            // per-MessageTemplate column — see Stage 3 open
-                            // questions in the implementation plan (msg91 only)
-  device_id       String?   // TextBee device to send from; blank = TextBee's
-                            // own default/most-recently-active device (textbee only)
+  auth_key           String
+  sender_id          String? // 6-char DLT-approved sender ID (msg91 only)
+  route              String?   @default("4") // MSG91 transactional route (msg91 only)
+  dlt_entity_id      String? // India DLT compliance (msg91 only)
+  dlt_template_id    String? // per-account default; may need to move to a
+  // per-MessageTemplate column — see Stage 3 open
+  // questions in the implementation plan (msg91 only)
+  device_id          String? // TextBee device to send from; blank = TextBee's
+  // own default/most-recently-active device (textbee only)
   // TextBee's webhook subscription id, so re-saving PATCHes the existing
   // subscription (auto-registered via their API) instead of creating a
   // duplicate one on every save (textbee only).
   textbee_webhook_id String?
-  webhook_secret  String?   // shared secret for inbound webhook auth — also
-                            // doubles as the HMAC signing secret we register
-                            // with TextBee's webhook API (see sms.ts)
-  status          String    @default("disconnected")
-  last_tested_at  DateTime? @db.Timestamptz(6)
-  test_error      String?
-  created_at      DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+  webhook_secret     String? // shared secret for inbound webhook auth — also
+  // doubles as the HMAC signing secret we register
+  // with TextBee's webhook API (see sms.ts)
+  status             String    @default("disconnected")
+  last_tested_at     DateTime? @db.Timestamptz(6)
+  test_error         String?
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1746,15 +1780,15 @@ model EmailConfig {
   provider           String    @default("sendgrid")
   /// AES-256-GCM encrypted SendGrid API key.
   api_key            String
-  from_email         String    // must be a SendGrid-verified sender
+  from_email         String // must be a SendGrid-verified sender
   from_name          String?
-  inbound_parse_host String?   // MX subdomain configured for Inbound Parse
-  inbound_secret     String?   // per-account token embedded in the inbound
-                                // webhook URL path — Inbound Parse has no
-                                // signature header, this is the substitute
-  webhook_public_key String?   // SendGrid Ed25519 key, for the separate
-                                // Event Webhook (delivery/open/click) — stretch,
-                                // not required for MVP inbound messaging
+  inbound_parse_host String? // MX subdomain configured for Inbound Parse
+  inbound_secret     String? // per-account token embedded in the inbound
+  // webhook URL path — Inbound Parse has no
+  // signature header, this is the substitute
+  webhook_public_key String? // SendGrid Ed25519 key, for the separate
+  // Event Webhook (delivery/open/click) — stretch,
+  // not required for MVP inbound messaging
   status             String    @default("disconnected")
   last_tested_at     DateTime? @db.Timestamptz(6)
   test_error         String?
@@ -1768,21 +1802,21 @@ model EmailConfig {
 }
 
 model RcsConfig {
-  id                     String    @id @default(uuid()) @db.Uuid
-  account_id             String    @unique @db.Uuid
-  user_id                String    @db.Uuid
-  provider               String    @default("twilio")
-  account_sid            String    // Twilio Account SID (not secret, kept alongside)
+  id                    String    @id @default(uuid()) @db.Uuid
+  account_id            String    @unique @db.Uuid
+  user_id               String    @db.Uuid
+  provider              String    @default("twilio")
+  account_sid           String // Twilio Account SID (not secret, kept alongside)
   /// AES-256-GCM encrypted Twilio Auth Token.
-  auth_token             String
-  messaging_service_sid  String?   // recommended over a raw From number
-  rcs_agent_id           String?   // once the RCS agent is approved by Google/Twilio
-  from_number            String?   // fallback SMS/RCS sender if not using a messaging service
-  status                 String    @default("disconnected")
-  last_tested_at         DateTime? @db.Timestamptz(6)
-  test_error             String?
-  created_at             DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime  @updatedAt @db.Timestamptz(6)
+  auth_token            String
+  messaging_service_sid String? // recommended over a raw From number
+  rcs_agent_id          String? // once the RCS agent is approved by Google/Twilio
+  from_number           String? // fallback SMS/RCS sender if not using a messaging service
+  status                String    @default("disconnected")
+  last_tested_at        DateTime? @db.Timestamptz(6)
+  test_error            String?
+  created_at            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1959,8 +1993,8 @@ model Broadcast {
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   updated_at         DateTime  @updatedAt @db.Timestamptz(6)
 
-  account    Account             @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user       User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account    Account              @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
   recipients BroadcastRecipient[]
   messages   Message[]
 
@@ -1968,22 +2002,22 @@ model Broadcast {
 }
 
 model BroadcastRecipient {
-  id                   String    @id @default(uuid()) @db.Uuid
-  broadcast_id         String    @db.Uuid
-  contact_id           String    @db.Uuid
-  whatsapp_message_id  String?   @unique
-  status               String    @default("pending")
-  sent_at              DateTime? @db.Timestamptz(6)
-  delivered_at         DateTime? @db.Timestamptz(6)
-  read_at              DateTime? @db.Timestamptz(6)
-  replied_at           DateTime? @db.Timestamptz(6)
-  error_message        String?
+  id                  String    @id @default(uuid()) @db.Uuid
+  broadcast_id        String    @db.Uuid
+  contact_id          String    @db.Uuid
+  whatsapp_message_id String?   @unique
+  status              String    @default("pending")
+  sent_at             DateTime? @db.Timestamptz(6)
+  delivered_at        DateTime? @db.Timestamptz(6)
+  read_at             DateTime? @db.Timestamptz(6)
+  replied_at          DateTime? @db.Timestamptz(6)
+  error_message       String?
   // The actual per-recipient body text after variable substitution —
   // computed once at send time (whether the send succeeded or failed) so
   // the report page can show exactly what this recipient's message said,
   // without re-deriving it later from data that may have since changed.
-  rendered_body        String?
-  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  rendered_body       String?
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
 
   broadcast Broadcast @relation(fields: [broadcast_id], references: [id], onDelete: Cascade)
   contact   Contact   @relation(fields: [contact_id], references: [id])
@@ -1996,41 +2030,41 @@ model BroadcastRecipient {
 // ============================================================
 
 model Automation {
-  id              String    @id @default(uuid()) @db.Uuid
-  account_id      String    @db.Uuid
-  user_id         String    @db.Uuid
-  name            String
-  description     String?
-  trigger_type    String
-  trigger_config  Json      @default("{}")
-  is_active       Boolean   @default(false)
-  execution_count Int       @default(0)
+  id               String    @id @default(uuid()) @db.Uuid
+  account_id       String    @db.Uuid
+  user_id          String    @db.Uuid
+  name             String
+  description      String?
+  trigger_type     String
+  trigger_config   Json      @default("{}")
+  is_active        Boolean   @default(false)
+  execution_count  Int       @default(0)
   last_executed_at DateTime? @db.Timestamptz(6)
-  created_at      DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at      DateTime  @updatedAt @db.Timestamptz(6)
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 
-  account  Account           @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user     User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  steps    AutomationStep[]
-  logs     AutomationLog[]
-  pending  AutomationPendingExecution[]
+  account Account                      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user    User                         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  steps   AutomationStep[]
+  logs    AutomationLog[]
+  pending AutomationPendingExecution[]
 
   @@map("automations")
 }
 
 model AutomationStep {
-  id             String  @id @default(uuid()) @db.Uuid
-  automation_id  String  @db.Uuid
-  parent_step_id String? @db.Uuid
+  id             String   @id @default(uuid()) @db.Uuid
+  automation_id  String   @db.Uuid
+  parent_step_id String?  @db.Uuid
   branch         String?
   step_type      String
-  step_config    Json    @default("{}")
+  step_config    Json     @default("{}")
   position       Int
   created_at     DateTime @default(now()) @db.Timestamptz(6)
 
-  automation  Automation      @relation(fields: [automation_id], references: [id], onDelete: Cascade)
-  parent      AutomationStep? @relation("StepChildren", fields: [parent_step_id], references: [id], onDelete: Cascade)
-  children    AutomationStep[] @relation("StepChildren")
+  automation Automation       @relation(fields: [automation_id], references: [id], onDelete: Cascade)
+  parent     AutomationStep?  @relation("StepChildren", fields: [parent_step_id], references: [id], onDelete: Cascade)
+  children   AutomationStep[] @relation("StepChildren")
 
   pending_executions AutomationPendingExecution[]
 
@@ -2060,25 +2094,25 @@ model AutomationLog {
 }
 
 model AutomationPendingExecution {
-  id                  String   @id @default(uuid()) @db.Uuid
-  account_id          String   @db.Uuid
-  automation_id       String   @db.Uuid
-  user_id             String   @db.Uuid
-  contact_id          String?  @db.Uuid
-  log_id              String?  @db.Uuid
-  parent_step_id      String?  @db.Uuid
-  branch              String?
-  next_step_position  Int
-  context             Json     @default("{}")
-  status              String   @default("pending")
-  run_at              DateTime @db.Timestamptz(6)
-  created_at          DateTime @default(now()) @db.Timestamptz(6)
+  id                 String   @id @default(uuid()) @db.Uuid
+  account_id         String   @db.Uuid
+  automation_id      String   @db.Uuid
+  user_id            String   @db.Uuid
+  contact_id         String?  @db.Uuid
+  log_id             String?  @db.Uuid
+  parent_step_id     String?  @db.Uuid
+  branch             String?
+  next_step_position Int
+  context            Json     @default("{}")
+  status             String   @default("pending")
+  run_at             DateTime @db.Timestamptz(6)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
 
-  account    Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  automation Automation     @relation(fields: [automation_id], references: [id], onDelete: Cascade)
-  user       User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  contact    Contact?       @relation(fields: [contact_id], references: [id], onDelete: SetNull)
-  log        AutomationLog? @relation(fields: [log_id], references: [id], onDelete: Cascade)
+  account    Account         @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  automation Automation      @relation(fields: [automation_id], references: [id], onDelete: Cascade)
+  user       User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact    Contact?        @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  log        AutomationLog?  @relation(fields: [log_id], references: [id], onDelete: Cascade)
   parent     AutomationStep? @relation(fields: [parent_step_id], references: [id], onDelete: SetNull)
 
   @@map("automation_pending_executions")
@@ -2094,7 +2128,7 @@ model Flow {
   user_id          String    @db.Uuid
   name             String
   description      String?
-  flow_type        String    @default("flow")   // "flow" | "chatbot"
+  flow_type        String    @default("flow") // "flow" | "chatbot"
   channel          String    @default("whatsapp") // 'whatsapp' | 'instagram'
   status           String    @default("draft")
   trigger_type     String
@@ -2137,33 +2171,33 @@ model FlowNode {
 }
 
 model FlowRun {
-  id                    String    @id @default(uuid()) @db.Uuid
-  account_id            String    @db.Uuid
-  flow_id               String    @db.Uuid
-  user_id               String    @db.Uuid
-  contact_id            String?   @db.Uuid
-  conversation_id       String?   @db.Uuid
-  status                String    @default("active")
-  current_node_key      String?
-  last_prompt_message_id String?  @db.Uuid
+  id                     String    @id @default(uuid()) @db.Uuid
+  account_id             String    @db.Uuid
+  flow_id                String    @db.Uuid
+  user_id                String    @db.Uuid
+  contact_id             String?   @db.Uuid
+  conversation_id        String?   @db.Uuid
+  status                 String    @default("active")
+  current_node_key       String?
+  last_prompt_message_id String?   @db.Uuid
   /// Set while suspended on a send_flow node, waiting for the customer to
   /// submit that WhatsApp Flow. Matched against the flow_token WhatsApp
   /// echoes back in the completed Flow's nfm_reply message so the reply can
   /// be routed to the correct paused run. Cleared once consumed.
-  pending_flow_token    String?   @unique
-  vars                  Json      @default("{}")
-  reprompt_count        Int       @default(0)
-  started_at            DateTime  @default(now()) @db.Timestamptz(6)
-  last_advanced_at      DateTime  @default(now()) @db.Timestamptz(6)
-  ended_at              DateTime? @db.Timestamptz(6)
-  end_reason            String?
+  pending_flow_token     String?   @unique
+  vars                   Json      @default("{}")
+  reprompt_count         Int       @default(0)
+  started_at             DateTime  @default(now()) @db.Timestamptz(6)
+  last_advanced_at       DateTime  @default(now()) @db.Timestamptz(6)
+  ended_at               DateTime? @db.Timestamptz(6)
+  end_reason             String?
 
-  account      Account       @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  flow         Flow          @relation(fields: [flow_id], references: [id], onDelete: Cascade)
-  user         User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  contact      Contact?      @relation(fields: [contact_id], references: [id], onDelete: SetNull)
-  conversation Conversation? @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
-  last_prompt  Message?      @relation("LastPromptMessage", fields: [last_prompt_message_id], references: [id], onDelete: SetNull)
+  account      Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  flow         Flow           @relation(fields: [flow_id], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact      Contact?       @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  conversation Conversation?  @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
+  last_prompt  Message?       @relation("LastPromptMessage", fields: [last_prompt_message_id], references: [id], onDelete: SetNull)
   events       FlowRunEvent[]
 
   @@map("flow_runs")
@@ -2187,19 +2221,19 @@ model FlowRunEvent {
 // ============================================================
 
 model DataTable {
-  id          String   @id @default(uuid()) @db.Uuid
-  account_id  String   @db.Uuid
+  id          String  @id @default(uuid()) @db.Uuid
+  account_id  String  @db.Uuid
   name        String
   slug        String
-  icon        String   @default("database")
+  icon        String  @default("database")
   description String?
-  sort_order  Int      @default(0)
+  sort_order  Int     @default(0)
 
   /// Whether the assistant may create rows in this table on a customer's
   /// behalf. Off everywhere until somebody turns it on: an assistant that
   /// can write is a different proposition from one that answers, and
   /// nobody should find they had enabled it by accident.
-  ai_can_register Boolean @default(false)
+  ai_can_register    Boolean  @default(false)
   /// What the assistant says once a row lands. Per table, because "we'll
   /// email your joining instructions" is right for a training institute
   /// and wrong for a garage. Null gives a plain confirmation.
@@ -2209,16 +2243,16 @@ model DataTable {
   /// empty list means no check at all, which is the default because
   /// switching it on for everyone would start refusing registrations
   /// that are legitimate today.
-  ai_unique_by       Json    @default("[]")
+  ai_unique_by       Json     @default("[]")
   /// Fields that "full" is counted over, with the ceiling. A clinic
   /// counts doctor+date+time to a limit of 1; an institute counts the
   /// programme to a limit of 40. Null limit means no ceiling, which is
   /// the default: an account that has not thought about capacity should
   /// not start turning people away.
-  ai_capacity_by     Json    @default("[]")
+  ai_capacity_by     Json     @default("[]")
   ai_capacity_limit  Int?
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
-  updated_at  DateTime @updatedAt @db.Timestamptz(6)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime @updatedAt @db.Timestamptz(6)
 
   account          Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
   fields           DataField[]  @relation("TableFields")
@@ -2298,30 +2332,30 @@ model FileUpload {
 // ============================================================
 
 model Lead {
-  id               String    @id @default(uuid()) @db.Uuid
-  account_id       String    @db.Uuid
-  user_id          String    @db.Uuid
-  contact_id       String?   @db.Uuid
-  title            String
-  source           String    @default("manual")  // whatsapp, instagram, website, campaign, referral, manual
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  user_id         String    @db.Uuid
+  contact_id      String?   @db.Uuid
+  title           String
+  source          String    @default("manual") // whatsapp, instagram, website, campaign, referral, manual
   /// new, open, call_not_connected, visited, appointment_fixed,
   /// follow_up, closed. 'open' means spoken to and being worked with no
   /// outcome yet — distinct from the "All Open" tab, which means any
   /// status except closed.
-  status           String    @default("new")
-  score            String    @default("warm")    // hot, warm, cold
-  lead_quality     String?                       // qualified, not_qualified, wrong_enquiry
-  call_outcome     String?                       // out_of_coverage, busy, switched_off, invalid_number
-  closing_remarks  String?
-  district         String?
-  place            String?
-  notes            String?
-  assigned_to      String?   @db.Uuid
-  claimed_at       DateTime? @db.Timestamptz(6)
-  lost_reason      String?
-  converted_at     DateTime? @db.Timestamptz(6)
-  external_id      String?                        // dedup key for external integrations (HMS, LMS, etc.)
-  is_hidden        Boolean   @default(false)       // hidden from agent view (set via raw SQL in PATCH)
+  status          String    @default("new")
+  score           String    @default("warm") // hot, warm, cold
+  lead_quality    String? // qualified, not_qualified, wrong_enquiry
+  call_outcome    String? // out_of_coverage, busy, switched_off, invalid_number
+  closing_remarks String?
+  district        String?
+  place           String?
+  notes           String?
+  assigned_to     String?   @db.Uuid
+  claimed_at      DateTime? @db.Timestamptz(6)
+  lost_reason     String?
+  converted_at    DateTime? @db.Timestamptz(6)
+  external_id     String? // dedup key for external integrations (HMS, LMS, etc.)
+  is_hidden       Boolean   @default(false) // hidden from agent view (set via raw SQL in PATCH)
 
   /// Proposed by the assistant rather than entered by a person, and not
   /// yet accepted. Kept out of the working lists until somebody says
@@ -2348,18 +2382,31 @@ model Lead {
   /// hidden on that verdict — it is a mark on the row, and the agent
   /// still decides.
   ai_verdict       String?
-  created_at       DateTime  @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+  /// When the customer last sent a message.
+  ///
+  /// Deliberately not updated_at, which is when anybody *here* last
+  /// touched the lead. An agent can call, log the outcome and write a
+  /// note every day while the customer says nothing — on updated_at
+  /// that lead looks fresh, and it is cooling the whole time.
+  ///
+  /// Read by src/lib/leads/score-decay.ts and never written back to by
+  /// it, so a wrong or missing value costs at most a score that does
+  /// not fade.
+  last_customer_at DateTime? @db.Timestamptz(6)
 
-  account    Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user       User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  contact    Contact?     @relation(fields: [contact_id], references: [id], onDelete: SetNull)
-  assignee   User?        @relation("LeadAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
-  activities LeadActivity[]
-  follow_ups FollowUp[]
-  tasks      Task[]
-  deals      Deal[]
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account             Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user                User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  contact             Contact?           @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  assignee            User?              @relation("LeadAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
+  activities          LeadActivity[]
+  follow_ups          FollowUp[]
+  tasks               Task[]
+  deals               Deal[]
   lead_ad_submissions LeadAdSubmission[]
+  ai_judgements       AiJudgement[]
 
   @@map("leads")
 }
@@ -2400,12 +2447,12 @@ model LeadSettings {
   id                        String  @id @default(uuid()) @db.Uuid
   account_id                String  @unique @db.Uuid
   auto_lead_creation        Boolean @default(false)
-  scoring_mode              String  @default("score")  // score | quality | both
-  score_options             Json?   // string[] — custom score level labels (replaces hardcoded Hot/Warm/Cold)
-  call_not_connected_labels Json?   // string[] — custom labels for not-connected outcomes
-  call_connected_labels     Json?   // string[] — custom labels for connected outcomes
-  close_enquiry_reasons     Json?   // string[] — reasons shown in close lead dropdown
-  lead_sources              Json?   // {icon,label}[] — customisable lead source list
+  scoring_mode              String  @default("score") // score | quality | both
+  score_options             Json? // string[] — custom score level labels (replaces hardcoded Hot/Warm/Cold)
+  call_not_connected_labels Json? // string[] — custom labels for not-connected outcomes
+  call_connected_labels     Json? // string[] — custom labels for connected outcomes
+  close_enquiry_reasons     Json? // string[] — reasons shown in close lead dropdown
+  lead_sources              Json? // {icon,label}[] — customisable lead source list
   webhook_secret            String? // plain-text secret for /api/external/webhook?secret=
 
   /// How long an open lead may sit untouched before the list says so,
@@ -2415,8 +2462,8 @@ model LeadSettings {
   ///
   /// Two thresholds, because "slipping" and "neglected" want different
   /// reactions and one number cannot say both.
-  sla_warn_hours            Int     @default(24)
-  sla_breach_hours          Int     @default(72)
+  sla_warn_hours   Int @default(24)
+  sla_breach_hours Int @default(72)
 
   // ── AI lead detection ──────────────────────────────────────────
   //
@@ -2427,29 +2474,38 @@ model LeadSettings {
   // would be wrong for two of the three.
   //
   /// The master switch. Off means none of the rest applies.
-  ai_lead_enabled           Boolean @default(false)
+  ai_lead_enabled    Boolean @default(false)
   /// Which conversational signals count here — string[] of signal keys
   /// from src/lib/leads/ai-signals.ts. Deliberately a list rather than
   /// a column each: a signal added later needs no migration.
-  ai_lead_signals           Json?
+  ai_lead_signals    Json?
   /// What the business would say if asked "what counts as a lead?",
   /// in its own words. Read by the model alongside the signals.
-  ai_lead_rules             String?
+  ai_lead_rules      String?
   /// And what never counts — the half that keeps the list clean.
   /// A supplier asking for payment is not a lead in any industry.
-  ai_lead_exclusions        String?
+  ai_lead_exclusions String?
   /// 'strict' | 'balanced' | 'loose'. How sure the model must be.
-  ai_lead_threshold         String  @default("balanced")
+  ai_lead_threshold  String  @default("balanced")
   /// 'suggest' | 'create'. Suggest is the default because published
   /// false-positive rates for this run 15-30% in the first months,
   /// and a wrong lead costs somebody a read.
-  ai_lead_mode              String  @default("suggest")
+  ai_lead_mode       String  @default("suggest")
+
+  /// 'off' | 'observe' | 'act'.
+  ///
+  /// The middle position is the point: the assistant judges every
+  /// handover and writes it down while changing nothing, so the accuracy
+  /// figure is measured on this business's own messages before anything
+  /// irreversible is switched on. Reaching 'act' without spending time
+  /// in 'observe' means trusting a number nobody has seen.
+  ai_judgement_mode     String @default("off")
   /// Nothing is judged before this many messages. One "hi" is not a
   /// conversation, and the model would be guessing.
-  ai_lead_min_messages      Int     @default(2)
+  ai_lead_min_messages  Int    @default(2)
   /// Hours before a conversation already judged "not a lead" is looked
   /// at again. People come back and say more.
-  ai_lead_recheck_hours     Int     @default(6)
+  ai_lead_recheck_hours Int    @default(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
@@ -2494,7 +2550,7 @@ model LeadActivity {
   contact_id  String?  @db.Uuid
   lead_id     String?  @db.Uuid
   user_id     String?  @db.Uuid
-  type        String   // note, call, email, whatsapp, stage_change, follow_up, flow_submitted, created
+  type        String // note, call, email, whatsapp, stage_change, follow_up, flow_submitted, created
   title       String
   description String?
   metadata    Json     @default("{}")
@@ -2553,8 +2609,8 @@ model Segment {
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   updated_at    DateTime @updatedAt @db.Timestamptz(6)
 
-  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  account              Account             @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user                 User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
   meta_custom_audience MetaCustomAudience?
 
   @@map("segments")
@@ -2573,7 +2629,7 @@ model Task {
   title        String
   description  String?
   priority     String    @default("medium") // low, medium, high, urgent
-  status       String    @default("todo")   // todo, in_progress, done, cancelled
+  status       String    @default("todo") // todo, in_progress, done, cancelled
   due_date     DateTime? @db.Date
   assigned_to  String?   @db.Uuid
   completed_at DateTime? @db.Timestamptz(6)
@@ -2615,24 +2671,24 @@ model PushSubscription {
 // ============================================================
 
 model ContactCaptureConfig {
-  id               String   @id @default(uuid()) @db.Uuid
-  account_id       String   @unique @db.Uuid
-  enabled          Boolean  @default(false)
-  confirm_message  String   @default("Hi {{name}}! Is that your real name? Please reply *Yes* to confirm or *No* to enter a different name.")
-  ask_name_message String   @default("No problem! Please type your correct full name and I'll save it for you.")
+  id               String  @id @default(uuid()) @db.Uuid
+  account_id       String  @unique @db.Uuid
+  enabled          Boolean @default(false)
+  confirm_message  String  @default("Hi {{name}}! Is that your real name? Please reply *Yes* to confirm or *No* to enter a different name.")
+  ask_name_message String  @default("No problem! Please type your correct full name and I'll save it for you.")
 
   /// Tell staff on WhatsApp when a number nobody has seen before starts
   /// a conversation. Off by default: an account taking hundreds of new
   /// contacts a day should not be woken by all of them unasked.
-  new_contact_alert_enabled  Boolean @default(false)
+  new_contact_alert_enabled  Boolean  @default(false)
   /// E.164 numbers, as a JSON array of strings.
-  new_contact_alert_numbers  Json    @default("[]")
+  new_contact_alert_numbers  Json     @default("[]")
   /// Name of an approved Utility template. Without one the alert only
   /// reaches staff who messaged this business number in the last 24
   /// hours — Meta's rule, not a setting.
   new_contact_alert_template String?
-  created_at       DateTime @default(now()) @db.Timestamptz(6)
-  updated_at       DateTime @updatedAt @db.Timestamptz(6)
+  created_at                 DateTime @default(now()) @db.Timestamptz(6)
+  updated_at                 DateTime @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
@@ -2696,15 +2752,15 @@ model Integration {
   id                    String    @id @default(uuid()) @db.Uuid
   account_id            String    @db.Uuid
   name                  String
-  category              String    @default("custom")  // "ecommerce"|"payment"|"crm"|"feedback"|"healthcare"|"inventory"|"custom"
-  source_type           String    @default("rest")    // "fhir" | "rest"
+  category              String    @default("custom") // "ecommerce"|"payment"|"crm"|"feedback"|"healthcare"|"inventory"|"custom"
+  source_type           String    @default("rest") // "fhir" | "rest"
   base_url              String
-  resource              String                         // e.g. "Patient" or "/api/orders"
-  auth_type             String    @default("none")    // "none" | "api_key" | "bearer" | "basic"
-  auth_config           Json?                          // { header, value } | { token } | { username, password }
-  table_name            String?                        // override auto-generated table name
-  sync_interval_minutes Int?                           // null=manual, 5/15/30/60/360/1440=auto
-  status                String    @default("active")  // "active" | "paused" | "error"
+  resource              String // e.g. "Patient" or "/api/orders"
+  auth_type             String    @default("none") // "none" | "api_key" | "bearer" | "basic"
+  auth_config           Json? // { header, value } | { token } | { username, password }
+  table_name            String? // override auto-generated table name
+  sync_interval_minutes Int? // null=manual, 5/15/30/60/360/1440=auto
+  status                String    @default("active") // "active" | "paused" | "error"
   last_synced_at        DateTime? @db.Timestamptz(6)
   created_at            DateTime  @default(now()) @db.Timestamptz(6)
   updated_at            DateTime  @updatedAt @db.Timestamptz(6)
@@ -2716,20 +2772,19 @@ model Integration {
 }
 
 model IntegrationSync {
-  id             String    @id @default(uuid()) @db.Uuid
-  integration_id String    @db.Uuid
-  status         String                        // "running" | "success" | "error"
-  records_synced Int       @default(0)
-  contacts_created Int     @default(0)
-  error_message  String?
-  started_at     DateTime  @default(now()) @db.Timestamptz(6)
-  completed_at   DateTime? @db.Timestamptz(6)
+  id               String    @id @default(uuid()) @db.Uuid
+  integration_id   String    @db.Uuid
+  status           String // "running" | "success" | "error"
+  records_synced   Int       @default(0)
+  contacts_created Int       @default(0)
+  error_message    String?
+  started_at       DateTime  @default(now()) @db.Timestamptz(6)
+  completed_at     DateTime? @db.Timestamptz(6)
 
   integration Integration @relation(fields: [integration_id], references: [id], onDelete: Cascade)
 
   @@map("integration_syncs")
 }
-
 
 /// One question the AI is expected to handle correctly.
 ///
@@ -2742,19 +2797,19 @@ model AiEvalCase {
   account_id   String @db.Uuid
   ai_config_id String @db.Uuid
 
-  question String
+  question       String
   /// What a correct answer must convey. Graded by a model rather than
   /// string-matched, so "45,000" and "forty-five thousand" both pass.
-  expected String?
+  expected       String?
   /// Cases that SHOULD refuse or hand off. A suite without these only
   /// measures eagerness — a bot that answers everything scores perfectly
   /// right up until it invents a refund policy.
   expect_handoff Boolean @default(false)
   /// Free text ('fees', 'admissions', 'safety'), so a run's failures can
   /// be read by area instead of as a single number.
-  category String?
-  notes    String?
-  enabled  Boolean @default(true)
+  category       String?
+  notes          String?
+  enabled        Boolean @default(true)
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
@@ -2857,11 +2912,11 @@ model Call {
   transferred_at  DateTime? @db.Timestamptz(6)
   transfer_reason String?
 
-  started_at  DateTime  @default(now()) @db.Timestamptz(6)
+  started_at       DateTime  @default(now()) @db.Timestamptz(6)
   /// Null on a missed call; the gap from started_at is how long they
   /// waited before giving up.
-  answered_at DateTime? @db.Timestamptz(6)
-  ended_at    DateTime? @db.Timestamptz(6)
+  answered_at      DateTime? @db.Timestamptz(6)
+  ended_at         DateTime? @db.Timestamptz(6)
   /// Talk time, not ring time. Stored rather than derived so the list can
   /// sort and total without recomputing, and so a call whose end event
   /// never arrived reads as null instead of silently zero.
@@ -2972,4 +3027,124 @@ model ConversationFeedback {
   @@index([account_id, asked_at])
   @@index([conversation_id, asked_at])
   @@map("conversation_feedback")
+}
+
+/// What the assistant decided about a conversation it could not answer,
+/// and whether a person agreed.
+///
+/// One row, not five. The five questions that matter at a handover —
+/// is this a lead, what is it about, can we help at all, how urgent,
+/// did they name a time — come out of one model call about one
+/// conversation, so they are one record. A sixth question next year is
+/// a column here and nothing else.
+///
+/// The human's answer lives in the same row on purpose: accuracy is a
+/// comparison, and keeping both halves together means it cannot go
+/// missing.
+model AiJudgement {
+  id              String  @id @default(uuid()) @db.Uuid
+  account_id      String  @db.Uuid
+  conversation_id String  @db.Uuid
+  contact_id      String? @db.Uuid
+  /// Set only if acting on this judgement produced a lead.
+  lead_id         String? @db.Uuid
+
+  // ── What the assistant said ───────────────────────────────────────
+  is_lead             Boolean
+  not_lead_reason     String?
+  category            String?
+  category_confidence String  @default("unsure")
+  priority            String  @default("normal")
+  out_of_scope_key    String?
+  /// The customer's own words ("tomorrow evening"), not a timestamp —
+  /// converting one needs the business's calendar and time zone.
+  follow_up_phrase    String?
+  reason              String  @default("")
+
+  /// false = recorded but nothing was done. Lets this run beside the
+  /// existing behaviour until the accuracy figure earns trust.
+  acted Boolean @default(false)
+
+  // ── What a person said about it ───────────────────────────────────
+  /// Null until somebody reviews it, which is most rows. Silence is not
+  /// agreement, so an unreviewed row counts in neither half.
+  human_verdict  String?
+  human_is_lead  Boolean?
+  human_category String?
+  reviewed_at    DateTime? @db.Timestamptz(6)
+  reviewed_by    String?   @db.Uuid
+
+  model      String   @default("")
+  latency_ms Int?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  account      Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contact_id], references: [id], onDelete: SetNull)
+  lead         Lead?        @relation(fields: [lead_id], references: [id], onDelete: SetNull)
+  reviewer     User?        @relation("AiJudgementReviewer", fields: [reviewed_by], references: [id], onDelete: SetNull)
+
+  @@index([account_id, reviewed_at, created_at(sort: Desc)])
+  @@index([conversation_id, created_at(sort: Desc)])
+  @@map("ai_judgements")
+}
+
+/// What this business handles — departments, course streams, product
+/// lines. Never in code: a hospital's list and a jeweller's have
+/// nothing in common, and the fourth customer is always one nobody
+/// thought of.
+///
+/// Proposed from the company profile and knowledge base with one
+/// button, then edited. Nobody fills an empty box.
+model ServiceCategory {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  /// Stable and never shown, so the label can be renamed without
+  /// orphaning every judgement and agent skill pointing at it.
+  key        String
+  label      String
+  /// Where this one ends and the next begins. The single most useful
+  /// field here — overlapping categories are where accuracy goes.
+  hint       String?
+  sort_order Int      @default(0)
+  active     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@unique([account_id, key])
+  @@index([account_id, active, sort_order])
+  @@map("service_categories")
+}
+
+/// Things this business does not offer, paired with what to say.
+///
+/// The answer column is the whole point. Without it the assistant knows
+/// only that it has no answer, so it interrupts somebody who types "no
+/// we don't have a hostel" and goes back to work. With it the customer
+/// is answered in two seconds and nobody is disturbed.
+///
+/// Cannot be derived: an absent knowledge entry does not mean the
+/// service is absent, and guessing would deny a real service. Starts
+/// empty and grows from repeated real questions.
+model OutOfScopeAnswer {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  key        String
+  /// In the words people ask it in.
+  question   String
+  answer     String
+  /// How often it was confirmed before being added, so the suggestion
+  /// that created it can show its own evidence.
+  seen_count Int      @default(0)
+  active     Boolean  @default(true)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@unique([account_id, key])
+  @@index([account_id, active])
+  @@map("out_of_scope_answers")
 }
