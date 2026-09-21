@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TimezonePicker } from './timezone-picker';
 
 /**
  * The business's own details.
@@ -41,6 +42,7 @@ interface CompanyProfile {
   country: string | null;
   working_hours: string | null;
   languages: string | null;
+  timezone: string | null;
 }
 
 type Form = Record<keyof CompanyProfile, string>;
@@ -48,7 +50,7 @@ type Form = Record<keyof CompanyProfile, string>;
 const EMPTY: Form = {
   legal_name: '', display_name: '', category: '', category_other: '', section: '', section_other: '',
   about: '', services: '', website: '', email: '', phone: '', address: '', city: '', state: '',
-  country: '', working_hours: '', languages: '',
+  country: '', working_hours: '', languages: '', timezone: '',
 };
 
 export function CompanyProfilePanel() {
@@ -267,6 +269,22 @@ export function CompanyProfilePanel() {
             <Input value={form.country} onChange={(e) => set('country', e.target.value)} className="h-10 rounded-xl border-slate-200 text-[13px]" />
           </Field>
         </div>
+
+        {/* Filed under the address because that is what it is: where the
+            business is, in the one sense the software can act on. City
+            and country are read by a person; this is read by every
+            calculation that has to turn a stored instant into a date or
+            a working hour. */}
+        <Field
+          label="Time zone"
+          hint="Used for dates the assistant tells customers, and as the default for agent working hours."
+        >
+          <TimezonePicker
+            value={form.timezone || null}
+            onChange={(tz) => set('timezone', tz)}
+            disabled={saving}
+          />
+        </Field>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Working hours" hint="Free text — real hours have exceptions.">

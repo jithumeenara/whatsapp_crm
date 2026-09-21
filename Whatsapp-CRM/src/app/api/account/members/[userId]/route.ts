@@ -25,8 +25,10 @@
 import { NextResponse } from "next/server";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { parseWorkingHours, validateWorkingHours } from "@/lib/agents/working-hours";
 import { isAccountRole, type AccountRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -49,20 +51,35 @@ export async function PATCH(
     const { userId } = await params;
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown; restrict_to_assigned?: unknown }
+      | { role?: unknown; restrict_to_assigned?: unknown; working_hours?: unknown }
       | null;
     const role = body?.role;
     const restrictToAssigned = body?.restrict_to_assigned;
+    const workingHours = body?.working_hours;
 
-    // Allow patching restrict_to_assigned alone (without a role change)
+    // Each field may be patched alone — the roster edits a role, the
+    // shift editor edits hours, and neither should have to send the
+    // other's value back unchanged and risk overwriting it.
     const isRoleChange = role !== undefined;
     const isRestrictionChange = typeof restrictToAssigned === 'boolean';
+    const isHoursChange = workingHours !== undefined;
 
-    if (!isRoleChange && !isRestrictionChange) {
+    if (!isRoleChange && !isRestrictionChange && !isHoursChange) {
       return NextResponse.json(
-        { error: "Provide 'role' or 'restrict_to_assigned'" },
+        { error: "Provide 'role', 'restrict_to_assigned' or 'working_hours'" },
         { status: 400 },
       );
+    }
+
+    if (isHoursChange && workingHours !== null) {
+      // Checked here and not only in the browser. The message is the one
+      // the person typing sees, so it names the day rather than the
+      // field — see validateWorkingHours for why this is stricter than
+      // what the app is willing to read back out of the database.
+      const problem = validateWorkingHours(workingHours);
+      if (problem) {
+        return NextResponse.json({ error: problem }, { status: 400 });
+      }
     }
 
     if (isRoleChange) {
@@ -106,11 +123,31 @@ export async function PATCH(
       );
     }
 
+    // Stored through the parser rather than as it arrived, so the column
+    // only ever holds the shape the rest of the app expects and an extra
+    // field somebody sent cannot ride along into it.
+    //
+    // Prisma.DbNull, not null: for a nullable JSON column `null` means
+    // the JSON value null, and DbNull means the column is empty. Only
+    // the second one reads back as "no hours set". The parser returning
+    // null cannot happen after the check above, but it maps to the same
+    // place, because an unreadable schedule and no schedule mean the
+    // same thing here — available whenever.
+    //
+    // The cast is Prisma's JSON input type wanting an index signature
+    // that a named interface does not have; the value has already been
+    // validated and parsed, so there is nothing left to check.
+    const hoursValue =
+      workingHours === null
+        ? Prisma.DbNull
+        : ((parseWorkingHours(workingHours) ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue);
+
     await prisma.profile.update({
       where: { user_id: userId },
       data: {
         ...(isRoleChange ? { account_role: role as AccountRole } : {}),
         ...(isRestrictionChange ? { restrict_to_assigned: restrictToAssigned } : {}),
+        ...(isHoursChange ? { working_hours: hoursValue } : {}),
       },
     });
 

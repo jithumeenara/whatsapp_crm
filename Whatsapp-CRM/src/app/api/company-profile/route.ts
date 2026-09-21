@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { COMPANY_CATEGORIES, COMPANY_SECTIONS } from '@/lib/ai/company-profile'
+import { isKnownTimezone } from '@/lib/agents/timezones'
 
 /**
  * The account's company details.
@@ -14,7 +15,7 @@ import { COMPANY_CATEGORIES, COMPANY_SECTIONS } from '@/lib/ai/company-profile'
 const FIELDS = [
   'legal_name', 'display_name', 'category', 'category_other', 'section', 'section_other',
   'about', 'services', 'website', 'email', 'phone', 'address', 'city', 'state',
-  'country', 'working_hours', 'languages',
+  'country', 'working_hours', 'languages', 'timezone',
 ] as const
 
 export async function GET() {
@@ -45,6 +46,23 @@ export async function PUT(req: Request) {
 
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+
+  // Checked rather than trimmed like the rest.
+  //
+  // Every other field here is free text where a typo costs a slightly
+  // worse sentence in a prompt. This one is read back by date
+  // arithmetic, and a name this server cannot resolve would silently
+  // fall back to the server's own clock — the exact failure the column
+  // exists to end, reintroduced by a typo nobody would ever see.
+  if ('timezone' in body) {
+    const tz = body.timezone
+    if (tz !== null && tz !== '' && (typeof tz !== 'string' || !isKnownTimezone(tz))) {
+      return NextResponse.json(
+        { error: 'That is not a time zone this server recognises.' },
+        { status: 400 },
+      )
+    }
+  }
 
   const data: Record<string, string | null> = {}
   for (const field of FIELDS) {

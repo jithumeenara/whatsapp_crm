@@ -36,6 +36,7 @@ import {
   UserCog,
   UserIcon,
   UsersRound,
+  Clock,
 } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -55,6 +56,8 @@ import { useAuth } from '@/hooks/use-auth';
 import type { AccountRole } from '@/lib/auth/roles';
 import { InviteMemberDialog } from './invite-member-dialog';
 import { AddAgentDialog } from './add-agent-dialog';
+import { WorkingHoursDialog } from './working-hours-dialog';
+import { describeShift, type WorkingHours } from '@/lib/agents/working-hours';
 import {
   presenceOf,
   describeLastSeen,
@@ -72,6 +75,8 @@ interface Member {
   restrict_to_assigned: boolean;
   joined_at: string;
   last_seen_at?: string | null;
+  went_offline_at?: string | null;
+  working_hours?: WorkingHours | null;
 }
 
 interface Invitation {
@@ -163,6 +168,8 @@ export function MembersTab() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [addAgentOpen, setAddAgentOpen] = useState(false);
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
+  const [hoursMember, setHoursMember] = useState<Member | null>(null);
+  const [accountTimezone, setAccountTimezone] = useState<string | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
     null,
   );
@@ -181,8 +188,12 @@ export function MembersTab() {
         toast.error(payload.error || 'Failed to load members');
         return;
       }
-      const mdata = (await mres.json()) as { members: Member[] };
+      const mdata = (await mres.json()) as {
+        members: Member[];
+        account_timezone?: string | null;
+      };
       setMembers(mdata.members);
+      setAccountTimezone(mdata.account_timezone ?? null);
 
       if (ires) {
         if (!ires.ok) {
@@ -205,6 +216,25 @@ export function MembersTab() {
 
   useEffect(() => {
     void loadEverything();
+  }, [loadEverything]);
+
+  // ── Presence has to arrive, not just age ────────────────────────────
+  //
+  // The ticking clock above can only ever make people fade: last_seen_at
+  // fetched once gets older, so green becomes amber becomes grey on its
+  // own. What it cannot do is show somebody arriving. An agent who
+  // signed in five minutes after this page loaded stayed grey until
+  // somebody reloaded, which is exactly the question a supervisor opens
+  // this tab to answer.
+  //
+  // So the rows are refetched on the same half-minute as the clock. It
+  // is a small query over the handful of people on one account, and only
+  // while this tab is on screen.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.visibilityState === 'visible') void loadEverything();
+    }, 30_000);
+    return () => clearInterval(t);
   }, [loadEverything]);
 
   async function handleRestrictToggle(member: Member, nextValue: boolean) {
@@ -404,12 +434,13 @@ export function MembersTab() {
                         wrong whenever it matters. */}
                     <span
                       className={`-ml-4 mt-5 size-2.5 shrink-0 rounded-full ring-2 ring-white ${
-                        PRESENCE_DOT[presenceOf(member.last_seen_at, now)]
+                        PRESENCE_DOT[presenceOf(member, now)]
                       }`}
-                      title={`${
-                        PRESENCE_LABELS[presenceOf(member.last_seen_at, now)].label
-                      } — ${describeLastSeen(member.last_seen_at, now)}`}
-                      aria-label={PRESENCE_LABELS[presenceOf(member.last_seen_at, now)].label}
+                      title={`${PRESENCE_LABELS[presenceOf(member, now)].label} — ${describeLastSeen(
+                        member,
+                        now,
+                      )}`}
+                      aria-label={PRESENCE_LABELS[presenceOf(member, now)].label}
                     />
 
                     <div className="min-w-0 flex-1">
@@ -426,6 +457,25 @@ export function MembersTab() {
                       {member.email && (
                         <p className="truncate text-xs text-slate-500">
                           {member.email}
+                        </p>
+                      )}
+                      {/* Being signed in and being on duty are two
+                          different facts, so they get two different
+                          lines. The dot says whether this person is
+                          reachable; this says whether they are meant to
+                          be working, and when they are next due. Shown
+                          only once somebody has set hours — a line
+                          reading "no working hours set" on every row of
+                          an account that does not use them is noise. */}
+                      {member.working_hours && (
+                        <p
+                          className={`truncate text-[11px] ${
+                            describeShift(member.working_hours, now).onShift
+                              ? 'text-emerald-600'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {describeShift(member.working_hours, now).label}
                         </p>
                       )}
                     </div>
@@ -501,6 +551,33 @@ export function MembersTab() {
                         <RoleIcon className="size-3.5" />
                         {roleMeta.label}
                       </span>
+                    )}
+
+                    {/* Working hours. Admin+, and allowed on every row
+                        including the owner's and your own — a rota is
+                        not a permission, and the person most likely to
+                        be setting their own hours is whoever is doing
+                        the setting up. */}
+                    {canManageMembers && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setHoursMember(member)}
+                        disabled={isBusy}
+                        title={
+                          member.working_hours
+                            ? describeShift(member.working_hours, now).label
+                            : 'Set working hours'
+                        }
+                        aria-label={`Working hours for ${member.full_name || 'this member'}`}
+                        className={
+                          member.working_hours
+                            ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                            : 'text-slate-500'
+                        }
+                      >
+                        <Clock className="size-4" />
+                      </Button>
                     )}
 
                     {/* Remove. Admin+ only; never on the owner row;
@@ -630,6 +707,19 @@ export function MembersTab() {
         onOpenChange={setInviteOpen}
         onCreated={loadEverything}
       />
+
+      {/* One dialog for whichever row was clicked, rather than one per
+          member: the roster can be long, and seven days of state each
+          is a lot of nothing to keep mounted. */}
+      {hoursMember && (
+        <WorkingHoursDialog
+          open={Boolean(hoursMember)}
+          onOpenChange={(open) => !open && setHoursMember(null)}
+          member={hoursMember}
+          accountTimezone={accountTimezone}
+          onSaved={() => void loadEverything()}
+        />
+      )}
 
       <ConfirmIconDialog
         open={removingMember !== null}
