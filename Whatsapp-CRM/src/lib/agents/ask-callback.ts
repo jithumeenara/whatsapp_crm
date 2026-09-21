@@ -77,11 +77,17 @@ export async function askForCallbackTime(args: {
     const rota = await loadAccountHours(args.accountId)
     const slots = callbackSlots(rota, now)
 
-    const sent = await sendAsk(args.accountId, conversation.id, conversation.contact.phone, slots)
-
-    // Always, whether or not they answer, and whether or not the
-    // message even sent. The obligation is to the customer, and it does
-    // not depend on WhatsApp having been reachable this second.
+    // ── The obligation is recorded before the promise is made ───────
+    //
+    // Written first, deliberately. If the row is created after the
+    // message and creating it fails, the customer has been asked when
+    // to ring them back and nothing anywhere is scheduled to do it —
+    // the exact failure this file exists to prevent, arrived at by
+    // ordering two statements the convenient way round.
+    //
+    // This way the worst case is a follow-up somebody has to action
+    // without the customer having been asked, which is a far better
+    // kind of wrong.
     const fallbackAt =
       slots[0]?.at ?? new Date(now.getTime() + BLIND_FALLBACK_HOURS * 60 * 60_000)
 
@@ -102,6 +108,25 @@ export async function askForCallbackTime(args: {
       },
       select: { id: true },
     })
+
+    // ── The buttons name the row they belong to ─────────────────────
+    //
+    // The reply used to be matched back to "this contact's newest
+    // pending callback", which is a guess that is usually right. Usually
+    // is not good enough here: a customer with two conversations, or an
+    // agent who scheduled something in between, and the tap moves a row
+    // it had nothing to do with — silently, and in a way nobody would
+    // ever trace back to a button press.
+    //
+    // The follow-up exists by now, so its id travels on the button and
+    // comes back with the answer. Nothing to look up and nothing to
+    // guess. Well inside WhatsApp's 256-character limit for a reply id.
+    const sent = await sendAsk(
+      args.accountId,
+      conversation.id,
+      conversation.contact.phone,
+      slots.map((s) => ({ ...s, id: `${s.id}_${followUp.id}` })),
+    )
 
     return { asked: sent, followUpId: followUp.id }
   } catch (err) {
@@ -195,6 +220,43 @@ async function sendAsk(
   }
 }
 
+/** `cb_<epoch ms>_<follow-up id>` back into the moment it named and the
+ *  row it belongs to. Anything else — a button from another feature, a
+ *  malformed id — is not ours to act on. */
+function parseSlotId(buttonId: string): { at: Date; followUpId: string } | null {
+  if (!buttonId.startsWith('cb_')) return null
+  const rest = buttonId.slice(3)
+  const split = rest.indexOf('_')
+  if (split <= 0) return null
+
+  const ms = Number(rest.slice(0, split))
+  if (!Number.isFinite(ms) || ms <= 0) return null
+  const at = new Date(ms)
+  if (Number.isNaN(at.getTime())) return null
+
+  const followUpId = rest.slice(split + 1)
+  if (!followUpId) return null
+
+  return { at, followUpId }
+}
+
+/** The chosen time in the business's own words, for the note and the
+ *  thread. Read back from the instant rather than carried along, so it
+ *  cannot disagree with the time that was actually stored. */
+function describeInstant(at: Date, timezone?: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      ...(timezone ? { timeZone: timezone } : {}),
+      weekday: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(at)
+  } catch {
+    return at.toISOString()
+  }
+}
+
 /** So the thread reads as a conversation rather than jumping from
  *  silence to a callback nobody can see was arranged. */
 async function recordOutbound(conversationId: string, text: string): Promise<void> {
@@ -225,7 +287,27 @@ export async function recordCallbackChoice(args: {
   now?: Date
 }): Promise<boolean> {
   const now = args.now ?? new Date()
-  if (!args.buttonId.startsWith('cb_')) return false
+
+  // ── The moment comes out of the button, not out of a fresh lookup ──
+  //
+  // This used to regenerate the day's slots at reply time and match by
+  // id. The id was relative — "one day ahead, at 10:00" — so a customer
+  // who tapped after midnight had their choice resolved against a list
+  // where that id meant the day after, and the callback landed a day
+  // late. Worse, a slot that had since fallen inside the "too soon"
+  // filter simply did not exist any more, so the tap was silently
+  // ignored and fell through to the chatbot.
+  //
+  // An absolute instant cannot drift, and needs nothing stored to be
+  // understood later.
+  const chosen = parseSlotId(args.buttonId)
+  if (!chosen) return false
+  const chosenAt = chosen.at
+
+  // A month out is far beyond anything this offers, so it is either a
+  // very stale button or a made-up one. Refused rather than turned into
+  // a follow-up nobody expects.
+  if (chosenAt.getTime() - now.getTime() > 31 * 24 * 60 * 60_000) return false
 
   try {
     const conversation = await prisma.conversation.findFirst({
@@ -234,34 +316,38 @@ export async function recordCallbackChoice(args: {
     })
     if (!conversation?.contact_id) return false
 
-    const rota = await loadAccountHours(args.accountId)
-    const slot = callbackSlots(rota, now).find((s) => s.id === args.buttonId)
-    if (!slot) return false
-
-    // The most recent one still outstanding for this person. Matched by
-    // contact rather than by id because the button reply carries no
-    // reference to the row.
+    // Exactly the row this button was made for. Scoped to the account
+    // and contact as well as the id, so a button id from somewhere else
+    // cannot reach into this conversation's follow-ups.
     const pending = await prisma.followUp.findFirst({
       where: {
+        id: chosen.followUpId,
         account_id: args.accountId,
         contact_id: conversation.contact_id,
         status: 'pending',
       },
-      orderBy: { created_at: 'desc' },
       select: { id: true },
     })
     if (!pending) return false
 
+    const rota = await loadAccountHours(args.accountId)
+    const label = describeInstant(chosenAt, rota?.timezone)
+
+    // A tap that arrives after the time it chose is late, not invalid.
+    // The customer still asked to be rung; they are simply owed it now
+    // rather than then.
+    const dueAt = chosenAt.getTime() > now.getTime() ? chosenAt : now
+
     await prisma.followUp.update({
       where: { id: pending.id },
       data: {
-        due_at: slot.at,
+        due_at: dueAt,
         title: 'Call back — the customer chose this time',
-        note: `They picked "${slot.label}" themselves, so they are expecting the call.`,
+        note: `They picked ${label} themselves, so they are expecting the call.`,
       },
     })
 
-    await recordOutbound(args.conversationId, `Customer chose ${slot.label} for a callback.`)
+    await recordOutbound(args.conversationId, `Customer chose ${label} for a callback.`)
     return true
   } catch (err) {
     console.error('[callback] could not record choice:', err instanceof Error ? err.message : err)

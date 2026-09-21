@@ -139,14 +139,30 @@ function DeleteConfirm({ contactId, contactName, deleting, onCancel, onConfirm }
   onConfirm: () => void
 }) {
   const [impact, setImpact] = useState<DeleteImpact | null>(null)
+  const [impactFailed, setImpactFailed] = useState(false)
   const [loadingImpact, setLoadingImpact] = useState(true)
 
+  // A failed lookup is not an empty one.
+  //
+  // This used to swallow both a non-OK response and a dropped
+  // connection, leaving `impact` null — which the render below read as
+  // "nothing is attached to this contact" and said so, in as many
+  // words, immediately above a Delete button. Reassurance invented out
+  // of a network error, at the exact moment somebody is deciding
+  // whether to destroy eighteen months of history.
+  //
+  // Failing is tracked separately so the dialog can say it does not
+  // know, which is the truth and is the one thing that makes somebody
+  // stop and check.
   useEffect(() => {
     let cancelled = false
     fetch(`/api/contacts/${contactId}/delete-impact`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled && d) setImpact(d as DeleteImpact) })
-      .catch(() => {})
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status))
+        return r.json()
+      })
+      .then((d) => { if (!cancelled) setImpact(d as DeleteImpact) })
+      .catch(() => { if (!cancelled) setImpactFailed(true) })
       .finally(() => { if (!cancelled) setLoadingImpact(false) })
     return () => { cancelled = true }
   }, [contactId])
@@ -194,6 +210,14 @@ function DeleteConfirm({ contactId, contactName, deleting, onCancel, onConfirm }
           {loadingImpact ? (
             <div className="mb-5 flex justify-center py-3">
               <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+            </div>
+          ) : impactFailed ? (
+            <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
+              <p className="text-[12px] leading-relaxed text-amber-900">
+                Could not check what is attached to this contact. Deleting will still remove every
+                conversation, message, lead, note, task and follow-up belonging to them — this just
+                could not say how many.
+              </p>
             </div>
           ) : lines.length > 0 ? (
             <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">

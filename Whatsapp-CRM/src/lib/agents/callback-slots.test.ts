@@ -177,11 +177,173 @@ describe('how the times read', () => {
     }
   })
 
-  it('gives every slot an id that survives the round trip', () => {
-    // It comes back as a button reply and has to be matched to the
-    // moment it stood for.
+  it('gives every slot an id that carries the moment itself', () => {
+    // The id used to encode "days ahead, at this time", which only
+    // means anything relative to when it was sent — so a tap after
+    // midnight resolved to the wrong day. An absolute instant cannot
+    // drift however long the customer takes to answer.
     const slots = callbackSlots(hours(), at('2026-09-21T01:00:00Z'))
-    for (const s of slots) expect(s.id).toMatch(/^cb_\d+_\d+$/)
+    for (const s of slots) {
+      expect(s.id).toMatch(/^cb_\d+$/)
+      expect(Number(s.id.slice(3))).toBe(s.at.getTime())
+    }
     expect(new Set(slots.map((s) => s.id)).size).toBe(slots.length)
+  })
+})
+
+describe('a zone that changes its clocks', () => {
+  /** New York, 09:00–17:00 weekdays, open Saturday morning. */
+  const newYork = (): WorkingHours => ({
+    timezone: 'America/New_York',
+    week: {
+      ...DEFAULT_WEEK,
+      mon: { mode: 'full', from: '09:00', to: '17:00' },
+      tue: { mode: 'full', from: '09:00', to: '17:00' },
+      wed: { mode: 'full', from: '09:00', to: '17:00' },
+      thu: { mode: 'full', from: '09:00', to: '17:00' },
+      fri: { mode: 'full', from: '09:00', to: '17:00' },
+      sat: { mode: 'half', from: '09:00', to: '13:00' },
+      sun: { mode: 'off', from: '09:00', to: '17:00' },
+    },
+  })
+
+  const hourIn = (d: Date, zone: string) =>
+    Number(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: zone,
+        hour: '2-digit',
+        hourCycle: 'h23',
+      }).format(d),
+    )
+
+  const dayIn = (d: Date, zone: string) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d)
+
+  it('lands on the right wall-clock hour across the spring change', () => {
+    // 2026-03-08 is when New York loses an hour. Adding 24-hour blocks
+    // instead of advancing the calendar date puts every slot an hour
+    // out, which is exactly the kind of wrong nobody notices until a
+    // customer says nobody rang.
+    const friday = at('2026-03-06T20:00:00Z') // Fri 3pm New York
+    for (const s of callbackSlots(newYork(), friday)) {
+      const h = hourIn(s.at, 'America/New_York')
+      expect(h).toBeGreaterThanOrEqual(9)
+      expect(h).toBeLessThan(17)
+    }
+  })
+
+  it('lands on the right wall-clock hour across the autumn change', () => {
+    // 2026-11-01, when the day is 25 hours long.
+    const friday = at('2026-10-30T19:00:00Z') // Fri 3pm New York
+    for (const s of callbackSlots(newYork(), friday)) {
+      const h = hourIn(s.at, 'America/New_York')
+      expect(h).toBeGreaterThanOrEqual(9)
+      expect(h).toBeLessThan(17)
+    }
+  })
+
+  it('advances one calendar day at a time, not one 24-hour block', () => {
+    // The invariant that breaks when days are counted in hours: the day
+    // whose shift was read and the day the timestamp lands on have to
+    // be the same day. Across the 23-hour day they drift apart, and the
+    // callback gets offered for a moment the rota never approved.
+    //
+    // Asserted as "every slot is inside its own day's shift" rather
+    // than as a fixed list of dates, because which days get used
+    // depends on how many slots each one yields — and that is not what
+    // this test is about.
+    const rota = newYork()
+    const saturday = at('2026-03-07T18:00:00Z') // Sat 1pm New York
+    const slots = callbackSlots(rota, saturday)
+    expect(slots.length).toBeGreaterThan(0)
+
+    // It must have moved past Saturday afternoon and Sunday.
+    const days = [...new Set(slots.map((s) => dayIn(s.at, 'America/New_York')))]
+    expect(days.every((d) => d >= '2026-03-09')).toBe(true)
+
+    const shiftFor: Record<string, [number, number] | null> = {
+      Mon: [9, 17], Tue: [9, 17], Wed: [9, 17], Thu: [9, 17], Fri: [9, 17],
+      Sat: [9, 13], Sun: null,
+    }
+    for (const s of slots) {
+      const weekday = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        weekday: 'short',
+      }).format(s.at)
+      const shift = shiftFor[weekday]
+      expect(shift).not.toBeNull()
+      const h = hourIn(s.at, 'America/New_York')
+      expect(h).toBeGreaterThanOrEqual(shift![0])
+      expect(h).toBeLessThan(shift![1])
+    }
+  })
+
+  it('never offers a time on a day the business is shut', () => {
+    const sunday = at('2026-11-01T15:00:00Z')
+    for (const s of callbackSlots(newYork(), sunday)) {
+      const weekday = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        weekday: 'short',
+      }).format(s.at)
+      expect(weekday).not.toBe('Sun')
+    }
+  })
+})
+
+describe('local times that do not exist', () => {
+  // America/New_York springs forward on 8 March 2026: 01:59 is followed
+  // straight by 03:00, so nothing between them happens at all.
+  //
+  // A rota opening at 01:00 puts its "an hour after opening" candidate
+  // at exactly 02:00 — a time the clock skips. The old correction
+  // landed on 03:00 and labelled it "2:00 AM", which is a promise to
+  // ring an hour before the business could.
+  const graveyard: WorkingHours = {
+    timezone: 'America/New_York',
+    week: {
+      mon: { mode: 'full', from: '01:00', to: '05:00' },
+      tue: { mode: 'full', from: '01:00', to: '05:00' },
+      wed: { mode: 'full', from: '01:00', to: '05:00' },
+      thu: { mode: 'full', from: '01:00', to: '05:00' },
+      fri: { mode: 'full', from: '01:00', to: '05:00' },
+      sat: { mode: 'full', from: '01:00', to: '05:00' },
+      sun: { mode: 'full', from: '01:00', to: '05:00' },
+    },
+  }
+
+  it('never offers a label the clock will not show', () => {
+    // Saturday 7 March 2026, 06:00 New York — so tomorrow is the day
+    // the hour disappears.
+    const now = new Date('2026-03-07T11:00:00Z')
+    const slots = callbackSlots(graveyard, now)
+
+    expect(slots.length).toBeGreaterThan(0)
+
+    for (const slot of slots) {
+      const shown = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(slot.at)
+
+      // The label's clock time is what the zone actually reads at that
+      // instant — never an hour adrift because of the jump.
+      expect(slot.label).toContain(shown.replace(/\u202f/g, ' '))
+    }
+  })
+
+  it('drops the skipped hour rather than sliding it', () => {
+    const now = new Date('2026-03-07T11:00:00Z')
+    const slots = callbackSlots(graveyard, now)
+
+    // Sunday's 02:00 candidate does not exist, so no slot may land on
+    // Sunday morning at the hour the clock skipped.
+    const sundayTwo = slots.find((s) => s.label.startsWith('Tomorrow 2:'))
+    expect(sundayTwo).toBeUndefined()
   })
 })

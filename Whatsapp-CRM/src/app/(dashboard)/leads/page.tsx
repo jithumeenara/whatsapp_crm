@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState, useCallback, useRef, useMemo, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
   TrendingUp, Plus, Search, RefreshCw, Flame, Snowflake,
   Thermometer, MapPin, Phone, User, UserCheck,
@@ -1186,7 +1186,24 @@ function preferredLeadsView(): "tiles" | "table" {
   }
 }
 
-export default function LeadsV2() {
+/**
+ * useSearchParams has to sit behind a Suspense boundary.
+ *
+ * Next builds this page ahead of a request, where no address exists
+ * yet, and a component reading the query string there has nothing to
+ * read. Without a boundary that is a build error; with one, Next
+ * renders the fallback during the build and the real thing as soon as
+ * the address is known — which is immediately, in the browser.
+ */
+export default function LeadsPage() {
+  return (
+    <Suspense fallback={null}>
+      <LeadsV2 />
+    </Suspense>
+  )
+}
+
+function LeadsV2() {
   const router = useRouter()
   const { canViewAllLeads, userId } = useAuth()
   // New Pool, always.
@@ -1200,9 +1217,21 @@ export default function LeadsV2() {
   // A ?tab= in the address still wins, which is what makes the floating
   // alert's link land where it says it will — it did not before,
   // because nothing here read the address at all.
+  // Read through useSearchParams, not window.
+  //
+  // Reading window.location during the initial render makes the server
+  // and the client disagree: the server has no window so it returned
+  // "new_pool", while a browser opening /leads?tab=closed returned
+  // "closed" — and React treats that difference as a hydration failure,
+  // which on this version throws rather than patching it up. Arriving
+  // from the waiting-leads alert, which is precisely what puts ?tab= in
+  // the address, was enough to break the page.
+  //
+  // useSearchParams has the same answer in both places, because the
+  // route is rendered per request.
+  const searchParams = useSearchParams()
   const [tab, setTab] = useState(() => {
-    if (typeof window === "undefined") return "new_pool"
-    const asked = new URLSearchParams(window.location.search).get("tab")
+    const asked = searchParams.get("tab")
     return asked && TABS.some((t) => t.key === asked) ? asked : "new_pool"
   })
   const [sla, setSla] = useState<SlaThresholds>(DEFAULT_SLA)

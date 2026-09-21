@@ -49,8 +49,23 @@ export async function GET(
       })
     ).map((c) => c.id)
 
-    const [leads, wonLeads, messages, notes, followUps, tasks, deals] = await Promise.all([
-      prisma.lead.count({ where: { contact_id: id } }),
+    // The delete removes follow-ups and tasks by contact *and* by lead,
+    // so the warning has to count them the same way. Counting only by
+    // contact understated it: a follow-up created against a lead, with
+    // no contact of its own, would be destroyed without ever appearing
+    // in the list of what was about to be destroyed.
+    //
+    // A warning that undercounts is worse than one that does not exist,
+    // because it is believed.
+    const leadIds = (
+      await prisma.lead.findMany({ where: { contact_id: id }, select: { id: true } })
+    ).map((l) => l.id)
+
+    const orLeadOrContact = leadIds.length > 0
+      ? { OR: [{ contact_id: id }, { lead_id: { in: leadIds } }] }
+      : { contact_id: id }
+
+    const [wonLeads, messages, notes, followUps, tasks, deals] = await Promise.all([
       // Closed and converted. The half of the count worth hesitating
       // over.
       prisma.lead.count({ where: { contact_id: id, converted_at: { not: null } } }),
@@ -58,10 +73,13 @@ export async function GET(
         ? prisma.message.count({ where: { conversation_id: { in: conversationIds } } })
         : Promise.resolve(0),
       prisma.contactNote.count({ where: { contact_id: id } }),
-      prisma.followUp.count({ where: { contact_id: id } }),
-      prisma.task.count({ where: { contact_id: id } }),
+      // OR, not two counts added: a row carrying both a contact and a
+      // lead is one row and must not be warned about twice.
+      prisma.followUp.count({ where: orLeadOrContact }),
+      prisma.task.count({ where: orLeadOrContact }),
       prisma.deal.count({ where: { contact_id: id } }),
     ])
+    const leads = leadIds.length
 
     return NextResponse.json({
       contact: { name: contact.name, phone: contact.phone },

@@ -1,0 +1,38 @@
+# Things that live beside the app but must never be committed.
+#
+# The application has its own .gitignore inside Whatsapp-CRM/. This one
+# covers the repository root, which had none — so every scratch file
+# dropped next to the project was one `git add .` away from being
+# published, with no warning and no way to take it back.
+#
+# Nothing listed here has ever been committed. This exists so that stays
+# true.
+
+# Working notes. The ones in this repo have held live Meta and Instagram
+# access tokens and a 2FA PIN in plain text — the sort of file that is
+# genuinely useful to keep locally and catastrophic to push.
+/README.txt
+/NOTES.txt
+/notes.txt
+
+# Browser-automation captures. Accessibility snapshots record whatever
+# was on screen, which during a login test is the password and during an
+# inbox test is real customers' names, numbers and messages.
+.playwright-mcp/
+/pw-*.cjs
+/pw-*.js
+
+# Exports and backups. Whole-account data, by definition.
+/*.zip
+/*.tar
+/*.tar.gz
+/*.sql
+/*.dump
+
+# Anything that even looks like credentials.
+/.env
+/.env.*
+/*.pem
+/*.key
+/*credentials*.json
+/*service-account*.json

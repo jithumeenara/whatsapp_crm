@@ -45,7 +45,21 @@ const SOONEST_MINUTES = 45
 const SEARCH_DAYS = 8
 
 export interface CallbackSlot {
-  /** Stable, and what comes back on the button reply. */
+  /**
+   * What comes back on the button reply, and it carries the moment
+   * itself — `cb_<epoch ms>`.
+   *
+   * It used to encode "how many days ahead, at what time", which is
+   * only meaningful relative to when it was sent. A customer who taps
+   * an hour later, after midnight, would have had their reply resolved
+   * against a fresh set of slots where the same id means the following
+   * day — so the callback landed a day late, or vanished entirely
+   * because the slot no longer passed the "far enough ahead" filter and
+   * the tap was silently ignored.
+   *
+   * An absolute instant cannot drift. Nothing has to be stored, and no
+   * amount of time passing changes what it meant.
+   */
   id: string
   /** What the customer reads: "Today 4:00 PM", "Monday 10:00 AM". */
   label: string
@@ -92,33 +106,72 @@ function localNow(timezone: string, now: Date): LocalNow | null {
  * The UTC instant of a local wall-clock time, a given number of days
  * ahead.
  *
- * Done by measuring the zone's offset at roughly the right moment and
- * correcting, rather than by assuming one — an assumed offset is wrong
- * twice a year in half the world, and wrong in exactly the week when
- * somebody is most likely to notice a callback arriving an hour out.
+ * ── Why the day is advanced on the calendar, not by 24 hours ────────
+ *
+ * Adding `daysAhead * 24h` to `now` and then reading the local date
+ * back is wrong on the two days a year a zone changes offset: a 23-hour
+ * day means "+24h" lands on the day after next, a 25-hour day means it
+ * lands back on today. The caller has already chosen which weekday's
+ * shift to use by counting calendar days — so if this counted hours
+ * instead, the shift being read and the date being built would be for
+ * different days, and the callback would be offered at a time the
+ * business is shut.
+ *
+ * So the local calendar date is taken from `now` and the day component
+ * is incremented. Date.UTC normalises an out-of-range day, so month and
+ * year ends roll correctly.
+ *
+ * ── Why the offset is measured twice ────────────────────────────────
+ *
+ * The offset is measured at the naive instant and subtracted; but on a
+ * transition day the corrected instant can land on the far side of the
+ * change, where the offset is different. Measuring again there and
+ * re-correcting settles it. Both passes use the zone's own answer
+ * rather than an assumed offset, which is wrong twice a year in half
+ * the world.
  */
 function instantFor(timezone: string, now: Date, daysAhead: number, minutesOfDayLocal: number): Date | null {
   try {
-    const probe = new Date(now.getTime() + daysAhead * 24 * 60 * 60_000)
-
     const fmt = new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
     })
-    const [y, m, d] = fmt.format(probe).split('-').map(Number)
+    const [y, m, d] = fmt.format(now).split('-').map(Number)
     if (!y || !m || !d) return null
 
     const hh = Math.floor(minutesOfDayLocal / 60)
     const mm = minutesOfDayLocal % 60
 
-    // Treat the wall-clock time as if it were UTC, then subtract the
-    // zone's actual offset at that moment.
-    const asUtc = Date.UTC(y, m - 1, d, hh, mm, 0)
-    const offsetMs = offsetAt(timezone, new Date(asUtc))
-    if (offsetMs === null) return null
-    return new Date(asUtc - offsetMs)
+    const naive = Date.UTC(y, m - 1, d + daysAhead, hh, mm, 0)
+
+    const first = offsetAt(timezone, new Date(naive))
+    if (first === null) return null
+    let result = naive - first
+
+    const second = offsetAt(timezone, new Date(result))
+    if (second !== null && second !== first) result = naive - second
+
+    // ── Some local times simply do not happen ─────────────────────────
+    //
+    // On the morning a zone springs forward, the clock jumps straight
+    // from 01:59 to 03:00 — so a rota opening at 02:00 names a time
+    // that does not exist that day. The correction above cannot produce
+    // it; it lands on the nearest instant that does exist, an hour from
+    // what was asked for.
+    //
+    // Offering that would be telling a customer 2:00 and ringing at
+    // 3:00, which is worse than not offering a slot at all. So the
+    // answer is read back and the hour it lands on has to be the hour
+    // that was asked for; when it is not, this day's candidate is
+    // dropped and the search moves on.
+    const at = new Date(result)
+    const landed = offsetAt(timezone, at)
+    if (landed === null) return null
+    if (at.getTime() + landed !== naive) return null
+
+    return at
   } catch {
     return null
   }
@@ -210,7 +263,7 @@ export function callbackSlots(hours: WorkingHours | null, now: Date = new Date()
       const when =
         ahead === 0 ? 'Today' : ahead === 1 ? 'Tomorrow' : DAY_NAMES[dayKey]
       slots.push({
-        id: `cb_${ahead}_${minutes}`,
+        id: `cb_${at.getTime()}`,
         // WhatsApp caps a reply button's title at 20 characters, so
         // this has to stay short enough to survive being sent.
         label: `${when} ${clockLabel(minutes)}`.slice(0, 20),

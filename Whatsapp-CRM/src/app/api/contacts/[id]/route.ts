@@ -83,6 +83,32 @@ export async function DELETE(
     }
 
     await prisma.$transaction(async (tx) => {
+      // ── Hold the contact still while it is taken apart ────────────
+      //
+      // The ownership check above runs outside the transaction, and the
+      // lead collection below runs inside it — leaving a window where a
+      // message arriving on the webhook can create a lead after the
+      // list has been taken but before the contact is deleted. That
+      // lead would survive with a null contact: an orphan, which is the
+      // exact thing the explicit lead cleanup here exists to prevent.
+      //
+      // FOR UPDATE closes it. Inserting a row that references a contact
+      // takes FOR KEY SHARE on that contact, and FOR UPDATE conflicts
+      // with it — so a concurrent lead insert waits until this
+      // transaction ends, by which point the contact is gone and the
+      // insert fails on its own foreign key rather than succeeding into
+      // nothing.
+      //
+      // It also re-checks account_id inside the transaction, so the
+      // authorisation and the deletion are no longer two separate
+      // moments.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM contacts
+        WHERE id = ${id}::uuid AND account_id = ${ctx.accountId}::uuid
+        FOR UPDATE
+      `
+      if (locked.length === 0) return
+
       // FlowRun.last_prompt_message_id is a nullable FK to Message with
       // onDelete:SetNull, but the database-level cascade order can race:
       // contact→conversation→message cascade deletes messages before
