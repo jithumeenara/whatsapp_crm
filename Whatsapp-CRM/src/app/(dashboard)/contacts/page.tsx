@@ -7,7 +7,7 @@ import type { Contact, Tag } from "@/types"
 import {
   Users, Search, Plus, Pencil, Trash2, ChevronLeft, ChevronRight,
   Phone, Mail, Upload, MoreHorizontal, MessageSquare, SortAsc,
-  Tag as TagIcon, X, ChevronDown, Camera, Radio, GitMerge,
+  Tag as TagIcon, X, ChevronDown, Camera, Radio, GitMerge, Loader2,
 } from "lucide-react"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { ContactDetailViewV2 } from "@/components/contacts/contact-detail-view-v2"
@@ -100,12 +100,71 @@ function relTime(iso: string) {
   try { return formatDistanceToNow(new Date(iso), { addSuffix: true }) } catch { return "" }
 }
 
-function DeleteConfirm({ contactName, deleting, onCancel, onConfirm }: {
+/**
+ * What this delete actually costs, before it happens.
+ *
+ * ── Why counts and not "this cannot be undone" ──────────────────────
+ *
+ * That sentence is on every delete dialog ever written and carries no
+ * information. It is equally true of a contact somebody typed by
+ * mistake ten seconds ago and of eighteen months of conversation with a
+ * customer who bought twice, and the person clicking has to be able to
+ * tell those two apart. Only the numbers do that.
+ *
+ * ── Why won leads get their own line ────────────────────────────────
+ *
+ * A won lead is not a record of a person, it is a record of money
+ * coming in, and every conversion figure on the Reports screen is
+ * computed from it. Deleting one quietly rewrites history somebody may
+ * be reporting to an owner or a bank. This does not refuse — the
+ * account's data is theirs — but it is the last moment the cost can be
+ * seen, so it is said plainly rather than folded into a total.
+ */
+interface DeleteImpact {
+  conversations: number
+  messages: number
+  leads: number
+  won_leads: number
+  notes: number
+  follow_ups: number
+  tasks: number
+  deals: number
+}
+
+function DeleteConfirm({ contactId, contactName, deleting, onCancel, onConfirm }: {
+  contactId: string
   contactName: string
   deleting: boolean
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const [impact, setImpact] = useState<DeleteImpact | null>(null)
+  const [loadingImpact, setLoadingImpact] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/contacts/${contactId}/delete-impact`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setImpact(d as DeleteImpact) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingImpact(false) })
+    return () => { cancelled = true }
+  }, [contactId])
+
+  // Only what this contact actually has. A list of eight zeroes reads
+  // as a bigger threat than it is, and hides the one line that matters.
+  const lines = impact
+    ? ([
+        [impact.conversations, "conversation", "conversations"],
+        [impact.messages, "message", "messages"],
+        [impact.leads, "lead", "leads"],
+        [impact.notes, "note", "notes"],
+        [impact.follow_ups, "follow-up", "follow-ups"],
+        [impact.tasks, "task", "tasks"],
+        [impact.deals, "deal", "deals"],
+      ] as const).filter(([n]) => n > 0)
+    : []
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" onClick={() => !deleting && onCancel()} />
@@ -122,11 +181,48 @@ function DeleteConfirm({ contactName, deleting, onCancel, onConfirm }: {
             </div>
             <div>
               <h2 className="text-[16px] font-bold text-slate-900">Delete Contact?</h2>
-              <p className="mt-2 text-[13px] text-slate-500 leading-relaxed max-w-[260px]">
-                <span className="font-semibold text-slate-700">{contactName}</span> and all their messages will be permanently deleted. This cannot be undone.
+              <p className="mt-2 text-[13px] text-slate-500 leading-relaxed max-w-[280px]">
+                <span className="font-semibold text-slate-700">{contactName}</span> and everything
+                belonging to them will be permanently deleted.
               </p>
             </div>
           </div>
+
+          {/* The numbers. Fetched rather than guessed, because a warning
+              that overstates gets dismissed as readily as one that
+              understates. */}
+          {loadingImpact ? (
+            <div className="mb-5 flex justify-center py-3">
+              <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+            </div>
+          ) : lines.length > 0 ? (
+            <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
+              <p className="text-[11.5px] font-semibold text-slate-600">This will also delete</p>
+              <ul className="mt-1.5 space-y-0.5">
+                {lines.map(([n, one, many]) => (
+                  <li key={many} className="text-[12px] text-slate-600">
+                    <span className="font-semibold tabular-nums text-slate-800">{n}</span>{" "}
+                    {n === 1 ? one : many}
+                  </li>
+                ))}
+              </ul>
+              {impact && impact.won_leads > 0 && (
+                <p className="mt-2.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-900">
+                  <span className="font-semibold">
+                    {impact.won_leads} of those {impact.won_leads === 1 ? "leads was" : "leads were"} won.
+                  </span>{" "}
+                  Your conversion figures are counted from these — deleting them changes what the
+                  Reports screen has already shown.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5">
+              <p className="text-[12px] text-slate-500">
+                Nothing else is attached to this contact.
+              </p>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex gap-3">
@@ -176,7 +272,9 @@ function BulkDeleteConfirm({ count, deleting, onCancel, onConfirm }: {
             <div>
               <h2 className="text-[16px] font-bold text-slate-900">Delete {count} Contact{count !== 1 ? "s" : ""}?</h2>
               <p className="mt-2 text-[13px] text-slate-500 leading-relaxed max-w-[260px]">
-                These <span className="font-semibold text-slate-700">{count} contacts</span> and all their messages will be permanently deleted. This cannot be undone.
+                These <span className="font-semibold text-slate-700">{count} contacts</span> will be
+                permanently deleted, along with every conversation, message, lead, note, task and
+                follow-up belonging to them — including any leads already marked won.
               </p>
             </div>
           </div>
@@ -870,6 +968,7 @@ export default function ContactsV2() {
       {/* Delete confirm dialog */}
       {deleteId && (
         <DeleteConfirm
+          contactId={deleteId}
           contactName={contacts.find((c) => c.id === deleteId)?.name || contacts.find((c) => c.id === deleteId)?.phone || "This contact"}
           deleting={deleting}
           onCancel={() => setDeleteId(null)}

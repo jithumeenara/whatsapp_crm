@@ -98,6 +98,38 @@ export async function DELETE(
       await tx.deal.deleteMany({ where: { contact_id: id } })
       await tx.task.deleteMany({ where: { contact_id: id } })
       await tx.followUp.deleteMany({ where: { contact_id: id } })
+
+      // ── The leads go too ─────────────────────────────────────────
+      //
+      // They did not, until now. Lead.contact_id is SetNull, so
+      // deleting somebody left their enquiries behind with no contact
+      // attached: rows that still counted in every total on the Leads
+      // page and in the funnel, that an agent could open and be told to
+      // call somebody whose number had been erased, and that no search
+      // for that person would ever find again.
+      //
+      // An orphan is worse than either keeping the lead or removing it,
+      // because it is the only one of the three that nobody can act on
+      // and nobody can see is broken. Somebody deleting a contact means
+      // "remove this person from my CRM", and a lead is part of that
+      // person.
+      //
+      // Activities hang off leads with SetNull as well, so they are
+      // removed explicitly for the same reason — a timeline entry
+      // pointing at a lead that no longer exists is unreadable by
+      // definition.
+      const leadIds = (
+        await tx.lead.findMany({ where: { contact_id: id }, select: { id: true } })
+      ).map((l) => l.id)
+
+      if (leadIds.length > 0) {
+        await tx.leadActivity.deleteMany({ where: { lead_id: { in: leadIds } } })
+        await tx.followUp.deleteMany({ where: { lead_id: { in: leadIds } } })
+        await tx.task.deleteMany({ where: { lead_id: { in: leadIds } } })
+        await tx.lead.deleteMany({ where: { id: { in: leadIds } } })
+      }
+      await tx.leadActivity.deleteMany({ where: { contact_id: id } })
+
       await tx.contact.delete({ where: { id } })
     })
     return NextResponse.json({ ok: true })
