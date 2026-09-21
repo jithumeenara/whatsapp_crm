@@ -836,13 +836,13 @@ async function processMessage(
     const owner = await prisma.user
       .findUnique({
         where: { id: conversation.assigned_agent_id },
-        select: { last_seen_at: true },
+        select: { last_seen_at: true, went_offline_at: true },
       })
       .catch(() => null)
     // A lookup that failed is not evidence they left. Keeping the
     // thread where it is leaves a person to notice; moving it on a
     // database hiccup takes work off somebody for no reason.
-    releaseOwner = owner ? shouldReleaseOnReturn(owner.last_seen_at) : false
+    releaseOwner = owner ? shouldReleaseOnReturn(owner) : false
   }
 
   // Update conversation
@@ -869,6 +869,36 @@ async function processMessage(
       },
     })
     emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
+
+    // ── The lead's own clock ─────────────────────────────────────────
+    //
+    // A second timestamp, because the one above cannot answer the
+    // question a score needs answering. `updated_at` on a lead moves
+    // whenever anybody here touches it — a call logged, a note, a
+    // status change — so an agent working a lead daily keeps it looking
+    // fresh while the customer says nothing and the interest cools.
+    //
+    // This moves only when the customer writes. See
+    // src/lib/leads/score-decay.ts, which fades a score set weeks ago
+    // rather than letting the Hot list fill with leads that were once
+    // hot.
+    //
+    // Open leads only: a closed one is finished, and moving its clock
+    // would make a settled record look live. Not awaited and swallowed
+    // — nothing downstream depends on it, and the worst case of losing
+    // one is a score that fades a little late.
+    if (conversation.contact_id) {
+      void prisma.lead
+        .updateMany({
+          where: {
+            account_id: accountId,
+            contact_id: conversation.contact_id,
+            status: { not: 'closed' },
+          },
+          data: { last_customer_at: new Date() },
+        })
+        .catch(() => {})
+    }
 
     if (releaseOwner) {
       await prisma.message
