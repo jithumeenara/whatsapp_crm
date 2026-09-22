@@ -348,6 +348,26 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
       currentChannel: args.channel,
       conversationId: args.conversationId,
       userId: args.userId,
+      // ── Already promised a person ──────────────────────────────────
+      //
+      // Pending means the assistant handed this over. It does not stop
+      // the assistant replying — that was tried, and an unowned thread
+      // went silent for good, because nothing moves a conversation back
+      // to Open on its own. What it must change is *what* the assistant
+      // says.
+      //
+      // The failure this fixes: a customer wrote "please call me", was
+      // told a colleague would ring back, then said "I am retired from
+      // service" — and was asked whether they wanted details of the
+      // training programmes. The business promised a call and then
+      // started selling, to somebody who had just said they no longer
+      // work.
+      //
+      // A human reply ends it. Once an agent has spoken in this
+      // exchange they are handling it, and the assistant is a
+      // participant in their conversation rather than a stand-in for a
+      // colleague who has not arrived.
+      awaitingHuman: conversation?.status === 'pending' && !lastHumanReply,
     })
   } catch (err) {
     // A provider refusal reaches a person rather than ending in silence.

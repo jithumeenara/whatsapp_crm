@@ -136,6 +136,10 @@ export async function buildCustomerSystemPrompt(args: {
   currentChannel?: string
   /** A flow node's extra instruction for this one step, if any. */
   stepInstruction?: string | null
+  /** True when this thread has been handed to a person and nobody has
+   *  taken it yet. Changes what the assistant is for: acknowledging,
+   *  not advising. */
+  awaitingHuman?: boolean
   /** False when there is no contact to scope lookups to. */
   toolsAvailable: boolean
   /** Already in flight, or already resolved, from `loadPromptSources`.
@@ -176,6 +180,36 @@ export async function buildCustomerSystemPrompt(args: {
   }
 
   if (args.stepInstruction) parts.push(`Additionally, for this step: ${args.stepInstruction}`)
+
+  // ── Somebody has already been promised a person ──────────────────
+  //
+  // This conversation was handed over and nobody has picked it up yet.
+  // The assistant is still the only thing answering, and the failure to
+  // avoid is not silence — it is carrying on as though the handover had
+  // not happened.
+  //
+  // A real one: a customer wrote "please call me", was told a colleague
+  // would ring them back, then said "I am retired from service", and was
+  // asked whether they were interested in the training programmes. Two
+  // things wrong at once. The business had just promised a call and then
+  // started selling, and it offered staff training to somebody who had
+  // just said they no longer work.
+  //
+  // So while a thread is waiting on a person, the assistant
+  // acknowledges and stops. It does not open a new subject, and it does
+  // not ask a question, because a question invites a reply that nobody
+  // is there to answer.
+  if (args.awaitingHuman) {
+    parts.push(
+      [
+        'IMPORTANT — this conversation has already been passed to a colleague, and the customer has been told somebody will contact them.',
+        'Acknowledge what they just said, briefly, and confirm that a colleague will be in touch. Nothing else.',
+        'Do NOT ask a question. Do NOT introduce a new topic. Do NOT offer or suggest any service, product, course or programme, even if it seems relevant to what they wrote.',
+        'If they have given information — a phone number, a time, a detail about themselves — say it has been noted and passed on.',
+        'Two short sentences at most.',
+      ].join(' '),
+    )
+  }
 
   // A language pinned in settings still wins when explicitly set;
   // otherwise it is inferred from what this customer actually wrote.
@@ -425,6 +459,11 @@ export async function runCustomerTurn(args: {
    *  customer-tools' start_chatbot. */
   conversationId?: string
   userId?: string
+  /** This conversation is already waiting on a colleague. The assistant
+   *  keeps answering — going quiet would strand a customer nobody has
+   *  picked up — but it acknowledges rather than advises. See the block
+   *  it turns on in buildCustomerSystemPrompt. */
+  awaitingHuman?: boolean
 }): Promise<CustomerTurnResult> {
   const startedAt = Date.now()
   const history = args.conversationHistory ?? []
@@ -571,6 +610,7 @@ export async function runCustomerTurn(args: {
     currentChannel: args.currentChannel,
     toolsAvailable: Boolean(toolContext),
     sources: sourcesPromise,
+    awaitingHuman: args.awaitingHuman,
   })
 
   // A provider refusal is a handoff, not an exception for the caller to
