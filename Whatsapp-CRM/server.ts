@@ -12,6 +12,7 @@ import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
+import { isClientGone } from "./src/lib/net/client-gone";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -25,7 +26,13 @@ process.on("unhandledRejection", (reason) => {
   );
 });
 
+// A caller who hung up is not a crash. Ordinary disconnects used to
+// arrive here — see src/lib/net/client-gone.ts — which forced this
+// handler to be lenient about everything, including real faults. They
+// are handled at the socket now, so anything that still reaches this
+// point is a surprise and gets logged as one.
 process.on("uncaughtException", (err) => {
+  if (isClientGone(err)) return;
   console.error("[uncaughtException]", err.stack ?? err);
 });
 
@@ -34,8 +41,36 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
   const httpServer = createServer((req, res) => {
+    // Listen for the abort before handing the request on.
+    //
+    // When a browser abandons a request, Node emits an error on the
+    // request object. With no listener attached, that error has nowhere
+    // to go but `uncaughtException` — which is precisely the stack the
+    // production log was full of. Attaching a listener is the whole fix;
+    // there is nothing to do about a caller who has already left.
+    req.on("error", (err) => {
+      if (!isClientGone(err)) console.error("[request]", err);
+    });
+    res.on("error", (err) => {
+      if (!isClientGone(err)) console.error("[response]", err);
+    });
+
     const parsedUrl = parse(req.url!, true);
     handle(req, res, parsedUrl);
+  });
+
+  // Connections that fail before they are a request at all: a socket
+  // dropped mid-handshake, or a malformed request line. Node's default
+  // is to destroy the socket and, in some cases, surface the error
+  // globally. A dropped connection is simply closed; anything else is
+  // told plainly that it was malformed, so a broken client sees a real
+  // answer instead of silence.
+  httpServer.on("clientError", (err, socket) => {
+    if (isClientGone(err) || !socket.writable) {
+      socket.destroy();
+      return;
+    }
+    socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
   });
 
   const io = new SocketIOServer(httpServer, {
