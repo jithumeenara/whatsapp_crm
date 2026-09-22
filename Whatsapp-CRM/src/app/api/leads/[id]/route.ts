@@ -207,8 +207,23 @@ export async function PATCH(
     if (district !== undefined) data.district = district || null
     if (place !== undefined) data.place = place || null
     if (assigned_to !== undefined) data.assigned_to = assigned_to || null
-    if (lost_reason !== undefined) data.lost_reason = lost_reason || null
-    if (converted_at !== undefined) data.converted_at = converted_at ? new Date(converted_at) : null
+    if (lost_reason !== undefined) {
+      data.lost_reason = lost_reason || null
+      // Stamped and cleared with the reason it belongs to, so the two
+      // can never disagree. Clearing matters as much as setting: a lead
+      // that was lost and is now being worked again must stop counting
+      // as a loss, or the week it was reopened reads worse than it was.
+      data.lost_at = lost_reason ? new Date() : null
+    }
+    if (converted_at !== undefined) {
+      data.converted_at = converted_at ? new Date(converted_at) : null
+      // Won and lost are not both true. Recording a conversion clears
+      // the loss, which is what reopening-then-winning actually means.
+      if (converted_at) {
+        data.lost_reason = null
+        data.lost_at = null
+      }
+    }
 
     // ── Acting on a lead claims it ───────────────────────────────────
     //

@@ -850,6 +850,10 @@ export interface Lead {
   assigned_to: string | null;
   claimed_at: string | null;
   lost_reason: string | null;
+  /** When the loss was recorded — the mirror of converted_at. Null
+   *  while the lead is still being worked, and cleared again if it is
+   *  reopened or won. */
+  lost_at?: string | null;
   converted_at: string | null;
   /** When the customer last wrote. Distinct from updated_at, which
    *  moves whenever anybody here touches the lead — see

@@ -121,6 +121,12 @@ export async function POST(req: NextRequest) {
           data: {
             status: 'closed',
             lost_reason: 'Not an enquiry',
+            // Stamped wherever a loss is recorded, not only on the lead
+            // page. A reason without a time is a loss the dashboard
+            // cannot see, and these are the losses an account gets most
+            // of — so leaving it out here would quietly flatter every
+            // conversion rate in the place.
+            lost_at: new Date(),
             ai_review_result: 'accepted',
             ai_reviewed_at: new Date(),
           },

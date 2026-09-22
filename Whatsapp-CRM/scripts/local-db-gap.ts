@@ -75,6 +75,8 @@ const CHECKS: Array<{ file: string; sql: string }> = [
   { file: '106_lead_last_customer_at.sql', sql: col('leads', 'last_customer_at') },
   { file: '107_conversation_offers.sql', sql: table('conversation_offers') },
   { file: '108_conversation_offers_one_pending.sql', sql: index('conversation_offers_one_pending_idx') },
+  { file: '109_page_access.sql', sql: col('profiles', 'page_access') },
+  { file: '110_lead_lost_at.sql', sql: col('leads', 'lost_at') },
 ]
 
 function table(name: string): string {

@@ -2371,6 +2371,11 @@ model Lead {
   assigned_to     String?   @db.Uuid
   claimed_at      DateTime? @db.Timestamptz(6)
   lost_reason     String?
+  /// When the loss was recorded — the mirror of converted_at. Written
+  /// alongside lost_reason and cleared when a lead is reopened or won,
+  /// so "how many did we lose this week" does not have to lean on
+  /// updated_at, which moves whenever anything on the row is touched.
+  lost_at         DateTime? @db.Timestamptz(6)
   converted_at    DateTime? @db.Timestamptz(6)
   external_id     String? // dedup key for external integrations (HMS, LMS, etc.)
   is_hidden       Boolean   @default(false) // hidden from agent view (set via raw SQL in PATCH)

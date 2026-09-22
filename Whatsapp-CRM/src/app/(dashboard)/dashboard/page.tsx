@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
+import { MyPerformance, TeamPerformance } from "@/components/dashboard/my-performance"
 import {
   AreaChart,
   Area,
@@ -247,6 +248,17 @@ export default function DashboardV2() {
       </div>
 
       <VerificationBanner />
+
+      {/* ── What this person did ──────────────────────────────────
+          First, above the account's figures, because for an agent it
+          is the only part of this screen that is about them. A
+          supervisor sees their own row here and the whole team below,
+          in that order for the same reason: a manager who also works
+          leads is still a person with a week behind them. */}
+      <div className="mb-8 space-y-4">
+        <MyPerformance />
+        {isManager && <TeamPerformance />}
+      </div>
 
       {/* Metric cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-8">
