@@ -115,6 +115,12 @@ export async function proxy(req: NextRequest) {
   // Razorpay and Meta, not about the framework.
   const forwarded = new Headers(req.headers)
   forwarded.set('x-nonce', nonce)
+  // The dashboard layout has to know which page was asked for, and a
+  // layout is not given the address. Next does not pass one, and the
+  // proxy is the only place that reliably has it before the page
+  // renders — so it is handed over here. See (dashboard)/layout.tsx,
+  // which uses it to refuse a page this member may not open.
+  forwarded.set('x-pathname', req.nextUrl.pathname)
   forwarded.set('Content-Security-Policy', strictCsp(nonce))
 
   const res = await route(req, forwarded)

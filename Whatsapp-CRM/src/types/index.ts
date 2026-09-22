@@ -2,6 +2,11 @@ import type { AccountRole } from "@/lib/auth/roles";
 import type { WorkingHours } from "@/lib/agents/working-hours";
 
 export interface Profile {
+  /** Pages this member may open, already resolved by the server — the
+   *  role default when nothing was chosen, everything for an owner or
+   *  admin. Drawn on by the sidebar. Not a security boundary: the
+   *  refusal happens in (dashboard)/layout.tsx. */
+  allowed_pages?: string[];
   id: string;
   user_id: string;
   full_name: string;

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/auth";
 import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
+import { canOpenPath } from "./page-access";
 import { verifyApiKey } from "./api-key";
 import { checkRateLimit, RATE_LIMITS, type RateLimitResult } from "@/lib/rate-limit";
 
@@ -77,6 +78,11 @@ type CachedProfile = {
   account_id: string
   account_role: string
   account: { id: string; name: string }
+  /** Raw `profiles.page_access`. Interpreted by lib/auth/page-access.ts,
+   *  never here — this only carries it. Cached alongside the role and so
+   *  takes the same 60 seconds to reflect an admin's change, which is
+   *  already true of a role change and is the behaviour people expect. */
+  page_access: unknown
   expiresAt: number
 }
 
@@ -112,6 +118,11 @@ export interface AccountContext {
   role: AccountRole;
   /** Lightweight account meta — id + name. */
   account: { id: string; name: string };
+  /** Which pages this person may open, as stored. Pass to
+   *  lib/auth/page-access.ts rather than reading it directly: null means
+   *  "not decided" and an empty array means "decided: none", and the
+   *  difference matters. */
+  pageAccess: unknown;
 }
 
 export async function getCurrentAccount(): Promise<AccountContext> {
@@ -145,6 +156,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
       account_id: profile.account_id,
       account_role: profile.account_role,
       account: { id: profile.account.id, name: profile.account.name },
+      page_access: profile.page_access,
     })
     cached = getCachedProfile(userId)!
   }
@@ -155,6 +167,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     accountId: cached.account_id,
     role: cached.account_role as AccountRole,
     account: cached.account,
+    pageAccess: cached.page_access,
   };
 }
 
@@ -163,6 +176,68 @@ export async function requireRole(min: AccountRole): Promise<AccountContext> {
   if (!hasMinRole(ctx.role, min)) {
     throw new ForbiddenError(
       `This action requires the '${min}' role or higher`
+    );
+  }
+  return ctx;
+}
+
+/**
+ * A role floor *and* the page this data belongs to.
+ *
+ * ── Why a role alone is not enough any more ─────────────────────────
+ *
+ * Page access is set per person (profiles.page_access), so "may see
+ * Reports" is no longer answerable from a rank. Two things have to be
+ * true, and they fail differently:
+ *
+ *   - the floor, which page access can never lower. Writing a broadcast
+ *     needs agent rank whatever anybody ticked, because granting a page
+ *     grants a screen, not a promotion.
+ *   - the grant, which is what an admin actually decided.
+ *
+ * Checking only the rank is what left this app open: Reports, Pipelines
+ * and Broadcasts each asked for `viewer`, the lowest rank there is, so
+ * anybody signed in could read them by calling the API — and hiding the
+ * menu item was the whole of the protection.
+ *
+ * Checking only the grant would be worse in the other direction: an
+ * admin ticking a box would hand out the ability to write wherever the
+ * route happened to allow it.
+ *
+ * ── Why the page is named here and not inferred ─────────────────────
+ *
+ * Deriving it from the request path would be wrong exactly where it
+ * matters: /api/reports serves the Reports page, and nothing in either
+ * name says so. The route states which screen its data belongs to, and
+ * a route that forgets is a route that is not protected — which is why
+ * this is a distinct function rather than an optional argument to
+ * requireRole, where it could be left out unnoticed.
+ */
+/**
+ * The page half of the check, for a route that already has its context.
+ *
+ * Routes authenticate in several ways — requireRole, requireRoleOrApiKey,
+ * requireUser — and rewriting each to funnel through one of them would
+ * be a large change to make a small point. This composes instead: keep
+ * whatever the route already does, add one line naming the screen its
+ * data belongs to.
+ */
+export function assertPageAccess(ctx: AccountContext, page: string): void {
+  if (!canOpenPath(ctx.role, ctx.pageAccess, page)) {
+    throw new ForbiddenError(
+      "You do not have access to this section. An administrator can grant it in Settings → Members.",
+    );
+  }
+}
+
+export async function requirePageAccess(
+  page: string,
+  min: AccountRole,
+): Promise<AccountContext> {
+  const ctx = await requireRole(min);
+  if (!canOpenPath(ctx.role, ctx.pageAccess, page)) {
+    throw new ForbiddenError(
+      "You do not have access to this section. An administrator can grant it in Settings → Members.",
     );
   }
   return ctx;
@@ -217,6 +292,12 @@ export async function requireRoleOrApiKey(
       accountId: result.accountId,
       role: apiRole,
       account: { id: profile.account.id, name: profile.account.name },
+      // null, not the borrowed profile's own setting. An API key is not
+      // a person and does not inherit one person's menu: it acts at
+      // supervisor level, and null means "use the default for that
+      // role". Carrying the profile's value here would make a key's
+      // reach depend on which member happened to be created first.
+      pageAccess: null,
     };
   }
 

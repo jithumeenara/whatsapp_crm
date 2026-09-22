@@ -40,6 +40,15 @@ interface Profile {
   quick_links: string[];
   /** Whether the dashboard button shows at all. */
   quick_links_enabled: boolean;
+  /** Which nav pages this member may open, already resolved by the
+   *  server: the role default when an admin has chosen nothing, and
+   *  every page for an owner or admin. Drives what the sidebar draws.
+   *
+   *  Optional because an older cached response may not carry it, and a
+   *  menu that vanishes on a stale payload is worse than one that falls
+   *  back. Not a security boundary either way — the refusal happens in
+   *  (dashboard)/layout.tsx, on the server. */
+  allowed_pages?: string[];
 }
 
 interface AccountSummary {

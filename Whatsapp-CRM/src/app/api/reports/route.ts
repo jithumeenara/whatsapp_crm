@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { requireRole, toErrorResponse, assertPageAccess } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 
 export async function GET(_req: NextRequest) {
   try {
     const ctx = await requireRole('viewer')
+    // The data behind /reports. Withholding the page while leaving
+    // its API open is what made the old menu-only restriction
+    // decorative — anyone signed in could read this by asking.
+    assertPageAccess(ctx, '/reports');
     const accountId = ctx.accountId
 
     const [

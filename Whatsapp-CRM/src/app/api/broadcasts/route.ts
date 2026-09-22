@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import type { AccountContext } from "@/lib/auth/account";
 import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-sending";
 
@@ -11,6 +11,10 @@ import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-send
 export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(req, "viewer");
+    // The data behind /broadcasts. Withholding the page while leaving
+    // its API open is what made the old menu-only restriction
+    // decorative — anyone signed in could read this by asking.
+    assertPageAccess(ctx, '/broadcasts');
     const broadcasts = await ctx.db.broadcast.findMany({
       where: { account_id: ctx.accountId },
       orderBy: { created_at: "desc" },
@@ -35,6 +39,10 @@ export async function GET(req: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(request, "agent");
+    // The data behind /broadcasts. Withholding the page while leaving
+    // its API open is what made the old menu-only restriction
+    // decorative — anyone signed in could read this by asking.
+    assertPageAccess(ctx, '/broadcasts');
     const db = ctx.db;
 
     const body = await request.json() as {

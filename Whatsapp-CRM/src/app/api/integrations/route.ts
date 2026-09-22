@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 
 export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(req, "viewer")
+    // The data behind /integrations. Withholding the page while leaving
+    // its API open is what made the old menu-only restriction
+    // decorative — anyone signed in could read this by asking.
+    assertPageAccess(ctx, '/integrations');
     const integrations = await prisma.integration.findMany({
       where: { account_id: ctx.accountId },
       include: { syncs: { orderBy: { started_at: "desc" }, take: 1 } },
@@ -19,6 +23,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(req, "admin")
+    // The data behind /integrations. Withholding the page while leaving
+    // its API open is what made the old menu-only restriction
+    // decorative — anyone signed in could read this by asking.
+    assertPageAccess(ctx, '/integrations');
     const body = await req.json() as {
       name: string
       category?: string

@@ -34,6 +34,7 @@ import {
   Plug,
   Globe,
 } from 'lucide-react'
+import { PAGE_SECTIONS } from './pages'
 
 export interface NavItem {
   href: string
@@ -47,50 +48,47 @@ export interface NavSection {
   items: NavItem[]
 }
 
-export const NAV_SECTIONS: NavSection[] = [
-  {
-    label: 'CRM',
-    items: [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, agentAllowed: true },
-      { href: '/leads', label: 'Leads', icon: TrendingUp, agentAllowed: true },
-      { href: '/pipelines', label: 'Pipelines', icon: Kanban, agentAllowed: false },
-      { href: '/contacts', label: 'Contacts', icon: Users, agentAllowed: true },
-      { href: '/reports', label: 'Reports', icon: BarChart2, agentAllowed: false },
-      { href: '/ads', label: 'Ads', icon: Megaphone, agentAllowed: false },
-      { href: '/catalog', label: 'Catalog', icon: ShoppingBag, agentAllowed: true },
-    ],
-  },
-  {
-    label: 'Messaging',
-    items: [
-      { href: '/inbox', label: 'Inbox', icon: MessageSquare, agentAllowed: true },
-      { href: '/calls', label: 'Calls', icon: Phone, agentAllowed: true },
-      { href: '/broadcasts', label: 'Broadcasts', icon: Radio, agentAllowed: false },
-      { href: '/templates', label: 'Templates', icon: FileText, agentAllowed: false },
-    ],
-  },
-  {
-    label: 'Automation',
-    items: [
-      { href: '/automations', label: 'Automations', icon: Zap, agentAllowed: false },
-      { href: '/chatbot', label: 'Chatbot', icon: Bot, agentAllowed: false },
-      { href: '/ai-quality', label: 'AI Quality', icon: Gauge, agentAllowed: true },
-      { href: '/flows', label: 'Flows', icon: Workflow, agentAllowed: false },
-    ],
-  },
-  {
-    label: 'Tools',
-    items: [
-      { href: '/data', label: 'Data Store', icon: LayoutGrid, agentAllowed: false },
-      { href: '/files', label: 'File Manager', icon: HardDrive, agentAllowed: false },
-      { href: '/integrations', label: 'Integrations', icon: Plug, agentAllowed: false },
-      { href: '/social', label: 'Social Media', icon: Globe, agentAllowed: false },
-    ],
-  },
-]
+/**
+ * The menu: every page from pages.ts, with its icon attached.
+ *
+ * The hrefs and labels are not repeated here. They live in pages.ts so
+ * that the permission layer can read them without pulling React icon
+ * components into every API route — see that file. Adding a page there
+ * puts it in this menu and makes it grantable in one edit.
+ */
+const ICONS: Record<string, NavItem['icon']> = {
+  '/dashboard': LayoutDashboard,
+  '/leads': TrendingUp,
+  '/pipelines': Kanban,
+  '/contacts': Users,
+  '/reports': BarChart2,
+  '/ads': Megaphone,
+  '/catalog': ShoppingBag,
+  '/inbox': MessageSquare,
+  '/calls': Phone,
+  '/broadcasts': Radio,
+  '/templates': FileText,
+  '/automations': Zap,
+  '/chatbot': Bot,
+  '/ai-quality': Gauge,
+  '/flows': Workflow,
+  '/data': LayoutGrid,
+  '/files': HardDrive,
+  '/integrations': Plug,
+  '/social': Globe,
+}
 
-/** Flattened, for anything that needs to resolve an href back to a
- *  label and icon — a stored quick link, for instance. */
+export const NAV_SECTIONS: NavSection[] = PAGE_SECTIONS.map((section) => ({
+  label: section.label,
+  items: section.items.map((item) => ({
+    ...item,
+    // A page with no icon would render an empty square rather than
+    // fail, which is the kind of thing that ships. LayoutGrid is the
+    // neutral fallback the data tables already use.
+    icon: ICONS[item.href] ?? LayoutGrid,
+  })),
+}))
+
 export const NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((s) => s.items)
 
 export function navItemFor(href: string): NavItem | undefined {

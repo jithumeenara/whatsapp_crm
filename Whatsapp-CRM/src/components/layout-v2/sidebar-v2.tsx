@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import {
@@ -75,6 +75,16 @@ export function SidebarV2({
   // plus the Settings entry that agents are deliberately denied. Anything
   // an agent may not see, a viewer must not see either.
   const isRestricted = !!accountRole && !hasMinRole(accountRole, "supervisor");
+
+  // What the server says this member may open, which an admin sets per
+  // person in Settings → Members. Absent only while the profile is
+  // still loading; until then nothing is drawn rather than a full menu
+  // that flickers away, which would show somebody a page they cannot
+  // have and then take it back.
+  const allowed = useMemo(
+    () => (profile?.allowed_pages ? new Set(profile.allowed_pages) : null),
+    [profile?.allowed_pages],
+  );
 
 
   useEffect(() => {
@@ -170,8 +180,12 @@ export function SidebarV2({
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto scroll-styled px-2 py-3 space-y-5">
           {NAV_SECTIONS.map((section) => {
-            const visibleItems = section.items.filter(
-              (item) => !isRestricted || item.agentAllowed,
+            // The server's answer when there is one. `agentAllowed`
+            // stays as the fallback for the moment before the profile
+            // arrives — it is the same default the server would apply,
+            // so the menu does not change shape once it loads.
+            const visibleItems = section.items.filter((item) =>
+              allowed ? allowed.has(item.href) : !isRestricted || item.agentAllowed,
             );
             if (visibleItems.length === 0) return null;
 

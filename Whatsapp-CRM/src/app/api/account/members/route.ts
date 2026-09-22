@@ -29,6 +29,7 @@ export async function GET() {
         restrict_to_assigned: true,
         working_hours: true,
         handles_categories: true,
+        page_access: true,
         created_at: true,
         // Presence travels with the roster rather than on an endpoint of
         // its own: every screen that wants to know who is here is
@@ -77,6 +78,11 @@ export async function GET() {
           // can hold anything, and a shape nobody can read means "no
           // hours set" rather than an error on the roster screen.
           working_hours: parseWorkingHours(row.working_hours),
+          // Raw, not resolved. The dialog has to tell "following the
+          // role default" (null) apart from "an admin ticked exactly
+          // the default set" (an array that happens to match), and a
+          // resolved list loses that difference.
+          page_access: Array.isArray(row.page_access) ? row.page_access : null,
           handles_categories: Array.isArray(row.handles_categories)
             ? (row.handles_categories as unknown[]).filter(
                 (h): h is string => typeof h === "string",

@@ -38,6 +38,7 @@ import {
   UsersRound,
   Clock,
   Tags,
+  LayoutGrid,
 } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -59,6 +60,7 @@ import { InviteMemberDialog } from './invite-member-dialog';
 import { AddAgentDialog } from './add-agent-dialog';
 import { WorkingHoursDialog } from './working-hours-dialog';
 import { AgentSubjectsDialog } from './agent-subjects-dialog';
+import { MemberPagesDialog } from './member-pages-dialog';
 import { describeShift, type WorkingHours } from '@/lib/agents/working-hours';
 import {
   presenceOf,
@@ -81,6 +83,8 @@ interface Member {
   went_offline_at?: string | null;
   working_hours?: WorkingHours | null;
   handles_categories?: string[];
+  /** Raw: null means this member follows their role's default. */
+  page_access?: string[] | null;
 }
 
 interface Invitation {
@@ -174,6 +178,7 @@ export function MembersTab() {
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
   const [hoursMember, setHoursMember] = useState<Member | null>(null);
   const [subjectsMember, setSubjectsMember] = useState<Member | null>(null);
+  const [pagesMember, setPagesMember] = useState<Member | null>(null);
   const [accountTimezone, setAccountTimezone] = useState<string | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
     null,
@@ -634,6 +639,31 @@ export function MembersTab() {
                         the two answer the same question from different
                         angles — when this person is available, and for
                         what. */}
+                    {/* Which screens this person is given. Distinct from
+                        their role, which decides what they may do once
+                        they are on one. */}
+                    {canManageMembers && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPagesMember(member)}
+                        disabled={isBusy}
+                        title={
+                          Array.isArray(member.page_access)
+                            ? `${member.page_access.length} page${member.page_access.length === 1 ? '' : 's'} chosen`
+                            : `Following the ${member.role} default`
+                        }
+                        aria-label={`Pages for ${member.full_name || 'this member'}`}
+                        className={
+                          Array.isArray(member.page_access)
+                            ? 'border-violet-200 bg-violet-50 text-violet-600 hover:bg-violet-100'
+                            : 'text-slate-500'
+                        }
+                      >
+                        <LayoutGrid className="size-4" />
+                      </Button>
+                    )}
+
                     {canManageMembers && (
                       <Button
                         variant="outline"
@@ -795,6 +825,15 @@ export function MembersTab() {
           onOpenChange={(open) => !open && setHoursMember(null)}
           member={hoursMember}
           accountTimezone={accountTimezone}
+          onSaved={() => void loadEverything()}
+        />
+      )}
+
+      {pagesMember && (
+        <MemberPagesDialog
+          open={Boolean(pagesMember)}
+          onOpenChange={(open) => !open && setPagesMember(null)}
+          member={pagesMember}
           onSaved={() => void loadEverything()}
         />
       )}

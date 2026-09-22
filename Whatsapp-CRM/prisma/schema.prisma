@@ -342,6 +342,12 @@ model Profile {
   /// one person who does Dental while three others sit free is choosing
   /// tidiness over the person waiting.
   handles_categories Json?
+  /// Which nav pages this member may open, e.g. ["/dashboard","/leads"].
+  /// NULL = not decided, fall back to the default for their role; an
+  /// empty array = an admin deliberately took every page away. Read
+  /// through src/lib/auth/page-access.ts, which also enforces the rule
+  /// that an owner or admin can never be locked out.
+  page_access        Json?
   /// This person's weekly shift, with the time zone it is written in:
   /// { timezone, week: { mon..sun: { mode: full|half|off, from, to } } }.
   ///

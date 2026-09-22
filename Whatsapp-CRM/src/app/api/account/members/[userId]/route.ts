@@ -28,6 +28,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { parseWorkingHours, validateWorkingHours } from "@/lib/agents/working-hours";
 import { isAccountRole, type AccountRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db";
+import { parsePageAccess } from "@/lib/auth/page-access";
 import { Prisma } from "@prisma/client";
 import {
   checkRateLimit,
@@ -51,12 +52,13 @@ export async function PATCH(
     const { userId } = await params;
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown; restrict_to_assigned?: unknown; working_hours?: unknown; handles_categories?: unknown }
+      | { role?: unknown; restrict_to_assigned?: unknown; working_hours?: unknown; handles_categories?: unknown; page_access?: unknown }
       | null;
     const role = body?.role;
     const restrictToAssigned = body?.restrict_to_assigned;
     const workingHours = body?.working_hours;
     const handles = body?.handles_categories;
+    const pageAccess = body?.page_access;
 
     // Each field may be patched alone — the roster edits a role, the
     // shift editor edits hours, and neither should have to send the
@@ -65,10 +67,11 @@ export async function PATCH(
     const isRestrictionChange = typeof restrictToAssigned === 'boolean';
     const isHoursChange = workingHours !== undefined;
     const isSubjectsChange = handles !== undefined;
+    const isPagesChange = pageAccess !== undefined;
 
-    if (!isRoleChange && !isRestrictionChange && !isHoursChange && !isSubjectsChange) {
+    if (!isRoleChange && !isRestrictionChange && !isHoursChange && !isSubjectsChange && !isPagesChange) {
       return NextResponse.json(
-        { error: "Provide 'role', 'restrict_to_assigned', 'working_hours' or 'handles_categories'" },
+        { error: "Provide 'role', 'restrict_to_assigned', 'working_hours', 'handles_categories' or 'page_access'" },
         { status: 400 },
       );
     }
@@ -160,6 +163,39 @@ export async function PATCH(
         ? Prisma.DbNull
         : ((parseWorkingHours(workingHours) ?? Prisma.DbNull) as unknown as Prisma.InputJsonValue);
 
+    // ── Which pages this member may open ────────────────────────────
+    //
+    // null clears the choice and returns them to their role's default,
+    // which is how an admin undoes a restriction without having to
+    // remember what the default was. An array is taken as given, after
+    // dropping anything that is not a real page — including the empty
+    // array, which is a deliberate "no pages at all" and must not be
+    // quietly turned back into the defaults.
+    //
+    // Nothing here exempts an owner or admin; that rule lives in
+    // pagesFor() and applies however this column was written, so a
+    // value stored by a script cannot lock the account's last
+    // administrator out of it.
+    const parsedPages = pageAccess === null ? null : parsePageAccess(pageAccess);
+
+    // parsePageAccess returns null for anything that is not an array,
+    // which here means the caller sent something that is not a list of
+    // pages. Saying so beats silently resetting them to the default.
+    if (isPagesChange && pageAccess !== null && parsedPages === null) {
+      return NextResponse.json(
+        { error: "'page_access' must be an array of page paths, or null to reset" },
+        { status: 400 },
+      );
+    }
+
+    // Prisma.DbNull, not null: for a nullable Json column plain null is
+    // rejected by the client's own types, and the two do not mean the
+    // same thing to it.
+    const pagesValue: Prisma.InputJsonValue | Prisma.NullTypes.DbNull =
+      parsedPages === null
+        ? Prisma.DbNull
+        : (parsedPages as unknown as Prisma.InputJsonValue);
+
     await prisma.profile.update({
       where: { user_id: userId },
       data: {
@@ -167,6 +203,7 @@ export async function PATCH(
         ...(isRestrictionChange ? { restrict_to_assigned: restrictToAssigned } : {}),
         ...(isHoursChange ? { working_hours: hoursValue } : {}),
         ...(subjects ? { handles_categories: subjects } : {}),
+        ...(isPagesChange ? { page_access: pagesValue } : {}),
       },
     });
 
