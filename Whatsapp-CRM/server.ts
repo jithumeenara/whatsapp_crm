@@ -18,6 +18,38 @@ const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
 const port = parseInt(process.env.PORT ?? "3000", 10);
 
+/**
+ * Which network interface to accept connections on.
+ *
+ * ── Why this is not simply "all of them" ────────────────────────────
+ *
+ * `listen(port)` with no host binds to every interface, so the app was
+ * reachable on the server's public address as well as on loopback. A
+ * firewall rule was the only thing standing between the internet and a
+ * direct connection to Node — `ss` showed `*:3000`, and it was the UFW
+ * default-deny alone that made that harmless.
+ *
+ * One rule is a thin place to keep a whole application. The cost of a
+ * mistake there is not "port 3000 is open": nginx is what sets
+ * `X-Real-IP` and strips whatever the caller claimed, so a request that
+ * reaches Node without passing through nginx carries headers the caller
+ * wrote. Every rate limit in this app is keyed on that value (see
+ * src/lib/net/client-ip.ts), and so is every address a user sees on
+ * their Sessions screen. Bypassing nginx does not just skip a proxy; it
+ * hands the caller the identity the limiter counts.
+ *
+ * Binding to loopback means the kernel refuses that connection whether
+ * or not the firewall is configured, so the two protections fail
+ * independently instead of together.
+ *
+ * nginx proxies to `http://127.0.0.1:3000`, so this changes nothing
+ * about how real traffic arrives. BIND_HOST exists for the deployment
+ * where it must differ — a container, or a proxy on another host —
+ * which then has to be a decision somebody makes rather than a default
+ * nobody noticed.
+ */
+const bindHost = process.env.BIND_HOST ?? (dev ? "localhost" : "127.0.0.1");
+
 // Log unhandled rejections with full stack so bugs are easy to find.
 process.on("unhandledRejection", (reason) => {
   console.error(
@@ -103,8 +135,10 @@ app.prepare().then(() => {
     });
   });
 
-  httpServer.listen(port, () => {
-    console.log(`> Ready on http://${hostname}:${port}`);
+  httpServer.listen(port, bindHost, () => {
+    // Says the interface, not just the port, so a deployment that has
+    // been opened up says so in its own first line of log.
+    console.log(`> Ready on http://${hostname}:${port} (bound to ${bindHost})`);
   });
 
   // Scheduled/recurring conversation messages -- sends run from right here,

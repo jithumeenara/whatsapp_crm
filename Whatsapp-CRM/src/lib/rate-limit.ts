@@ -163,6 +163,14 @@ export const RATE_LIMITS = {
    *  worry; the worry is that each attempt costs a database lookup and
    *  nothing stopped a script from making them. */
   emailVerify: { limit: 20, windowMs: 15 * 60_000 },
+  /** Browser CSP violation reports (public, per-IP). 60 per 15 min.
+   *  Generous, because one page load can legitimately produce several
+   *  distinct violations and a real browser is not the problem here —
+   *  the limit exists because the endpoint has to be unauthenticated
+   *  (the user agent posts it, not the app) and anything unauthenticated
+   *  needs a ceiling. Reports past the limit are dropped, which costs a
+   *  duplicate of something already recorded. */
+  cspReport: { limit: 60, windowMs: 15 * 60_000 },
   /** External API key reads. 120 req/min per key — comfortable for
    *  polling integrations (HMS, LMS, etc.) without enabling abuse. */
   apiRead:  { limit: 120, windowMs: 60_000 },

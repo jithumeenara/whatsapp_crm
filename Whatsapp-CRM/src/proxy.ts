@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { clientIpKey } from '@/lib/net/client-ip'
+import { makeNonce, strictCsp, reportingEndpoints } from '@/lib/security/csp'
 import { getToken } from 'next-auth/jwt'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 // Auto-logout after this long with zero real user interaction (mouse,
@@ -21,6 +22,14 @@ const PUBLIC_PATHS = new Set([
   '/login',
   '/signup',
   '/forgot-password',
+  // The browser posts CSP violation reports itself, with no session —
+  // it is the user agent reporting, not the application. Behind the
+  // session check these would be redirected to /login and the report
+  // would be an empty log that looked like a clean result, which is the
+  // worst possible outcome for something whose whole purpose is to say
+  // whether the strict policy is safe. Rate limited below, and the
+  // route stores nothing.
+  '/api/csp-report',
 ])
 
 // Paths whose prefix is always public (NextAuth internals, public API)
@@ -77,9 +86,48 @@ const AUTH_LIMITS = [
   { path: '/api/auth/register', method: 'POST', key: 'register', rule: RATE_LIMITS.register },
   { path: '/api/auth/password', method: 'POST', key: 'pwchange', rule: RATE_LIMITS.passwordChange },
   { path: '/api/auth/verify-email', method: 'GET', key: 'emailverify', rule: RATE_LIMITS.emailVerify },
+  { path: '/api/csp-report', method: 'POST', key: 'cspreport', rule: RATE_LIMITS.cspReport },
 ] as const
 
+/**
+ * Every response leaves here carrying the strict policy, in report-only
+ * form.
+ *
+ * ── Why the wrapper, rather than editing seven return statements ────
+ *
+ * The routing below has seven exits — rate limited, public, API key,
+ * unauthorised, idle, redirected, allowed. A header added at some of
+ * them is a header missing at the others, and the ones it would be
+ * missing from are exactly the interesting ones: the login redirect,
+ * the 401. So the routing decides what to return and this decides what
+ * every return carries, and neither can forget the other.
+ *
+ * See src/lib/security/csp.ts for why the strict policy is report-only
+ * and what has to happen before it can enforce.
+ */
 export async function proxy(req: NextRequest) {
+  const nonce = makeNonce()
+
+  // Next.js reads the nonce from the request's own CSP header and
+  // stamps it on the inline scripts it emits. Without this the
+  // report-only policy would flag Next's own hydration script on every
+  // page and drown the real findings — the report has to be about
+  // Razorpay and Meta, not about the framework.
+  const forwarded = new Headers(req.headers)
+  forwarded.set('x-nonce', nonce)
+  forwarded.set('Content-Security-Policy', strictCsp(nonce))
+
+  const res = await route(req, forwarded)
+
+  // Report-only, never enforcing. The policy in next.config.ts is what
+  // the browser actually obeys; this one it only checks and reports on,
+  // so nothing that works today can stop working because of it.
+  res.headers.set('Content-Security-Policy-Report-Only', strictCsp(nonce))
+  res.headers.set('Reporting-Endpoints', reportingEndpoints())
+  return res
+}
+
+async function route(req: NextRequest, forwarded: Headers) {
   const { pathname } = req.nextUrl
 
   // ── Throttle the unauthenticated doors before anything else ──────
@@ -112,7 +160,7 @@ export async function proxy(req: NextRequest) {
     // Pattern: /api/flows/{uuid}/webhook
     /^\/api\/flows\/[^/]+\/webhook$/.test(pathname)
   ) {
-    return NextResponse.next()
+    return NextResponse.next({ request: { headers: forwarded } })
   }
 
   // API key auth — let Bearer wcrm_ requests pass through to the route handler.
@@ -120,12 +168,12 @@ export async function proxy(req: NextRequest) {
   // against the database; the middleware only skips the session check here.
   const authHeader = req.headers.get('authorization') ?? ''
   if (authHeader.startsWith('Bearer wcrm_')) {
-    return NextResponse.next()
+    return NextResponse.next({ request: { headers: forwarded } })
   }
 
   // Inbound webhook uses its own secret token in the query string
   if (pathname === '/api/external/webhook') {
-    return NextResponse.next()
+    return NextResponse.next({ request: { headers: forwarded } })
   }
 
   // Verify session via JWT (Edge-safe — no Prisma required)
@@ -174,7 +222,7 @@ export async function proxy(req: NextRequest) {
     return res
   }
 
-  return NextResponse.next()
+  return NextResponse.next({ request: { headers: forwarded } })
 }
 
 export const config = {
