@@ -3,11 +3,10 @@ import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/db"
 import { createChallenge } from "@/lib/auth/mfa"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { clientIpKey } from "@/lib/net/client-ip"
 
 function getClientIp(request: NextRequest): string {
-  const xff = request.headers.get("x-forwarded-for")
-  if (xff) return xff.split(",")[0].trim()
-  return request.headers.get("x-real-ip")?.trim() ?? "unknown"
+  return clientIpKey(request.headers)
 }
 
 /**

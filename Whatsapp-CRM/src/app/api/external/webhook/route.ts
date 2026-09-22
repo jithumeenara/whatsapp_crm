@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { clientIpKey } from '@/lib/net/client-ip'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
@@ -31,7 +32,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 
 export async function POST(req: NextRequest) {
   // Rate-limit by IP to prevent abuse from misconfigured external systems
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  const ip = clientIpKey(req.headers)
   const rl = checkRateLimit(`ext-webhook:${ip}`, RATE_LIMITS.apiWrite)
   if (!rl.success) {
     return NextResponse.json({ error: 'Rate limit exceeded.' }, { status: 429 })

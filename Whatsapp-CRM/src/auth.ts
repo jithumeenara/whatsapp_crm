@@ -5,11 +5,10 @@ import { prisma } from "@/lib/db";
 import { consumeLoginChallenge } from "@/lib/auth/mfa";
 import { getSessionInvalidatedAt } from "@/lib/auth/session-invalidation";
 import { deriveDeviceLabel } from "@/lib/auth/device";
+import { clientIp } from "@/lib/net/client-ip";
 
 function getClientIp(request: Request): string | null {
-  const xff = request.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  return request.headers.get("x-real-ip")?.trim() ?? null;
+  return clientIp(request.headers);
 }
 
 // Only updated when it's at least this stale, so a session's normal use

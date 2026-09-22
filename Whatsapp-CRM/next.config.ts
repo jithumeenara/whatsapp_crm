@@ -159,6 +159,11 @@ const nextConfig: NextConfig = {
    * they apply to every response regardless of which cache rule
    * matched.
    */
+  // Nothing is gained by telling every caller which framework and
+  // therefore which advisories to go and read. Next.js sends this
+  // header by default; there is no reason to.
+  poweredByHeader: false,
+
   async headers() {
     return [
       {

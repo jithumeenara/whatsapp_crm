@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { clientIpKey } from '@/lib/net/client-ip'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sendWebConversionEvent } from '@/lib/meta-ads/api'
@@ -34,7 +35,7 @@ export async function OPTIONS() {
  * phone?, fbc?, fbp?}, custom_data?: {currency?, value?, ...} }
  */
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  const ip = clientIpKey(req.headers)
   const rl = checkRateLimit(`meta-ads-track:${ip}`, RATE_LIMITS.inboundWebhookSecret)
   if (!rl.success) {
     return NextResponse.json({ error: 'Rate limit exceeded' }, { status: 429, headers: CORS_HEADERS })

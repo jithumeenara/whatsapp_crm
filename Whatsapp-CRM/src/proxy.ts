@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { clientIpKey } from '@/lib/net/client-ip'
 import { getToken } from 'next-auth/jwt'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 // Auto-logout after this long with zero real user interaction (mouse,
@@ -66,15 +67,40 @@ const PUBLIC_PREFIXES = [
   '/join/',  // invitation acceptance flow
 ]
 
+/**
+ * The unauthenticated (or cheap-to-abuse) endpoints and what each is
+ * allowed. Keyed by exact path and method so a rule cannot quietly
+ * widen to cover something it was never reasoned about.
+ */
+const AUTH_LIMITS = [
+  { path: '/api/auth/callback/credentials', method: 'POST', key: 'login', rule: RATE_LIMITS.login },
+  { path: '/api/auth/register', method: 'POST', key: 'register', rule: RATE_LIMITS.register },
+  { path: '/api/auth/password', method: 'POST', key: 'pwchange', rule: RATE_LIMITS.passwordChange },
+  { path: '/api/auth/verify-email', method: 'GET', key: 'emailverify', rule: RATE_LIMITS.emailVerify },
+] as const
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Rate-limit login attempts before anything else
-  if (pathname === '/api/auth/callback/credentials' && req.method === 'POST') {
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-      ?? req.headers.get('x-real-ip')
-      ?? 'unknown'
-    const result = checkRateLimit(`login:${ip}`, RATE_LIMITS.login)
+  // ── Throttle the unauthenticated doors before anything else ──────
+  //
+  // These run here rather than inside each route because this is the
+  // one place every request passes through, and because a limit that
+  // lives in a route is a limit somebody can forget to add to the next
+  // route. The login entry was already here; the other three were not,
+  // and each of them is reachable without a session.
+  //
+  // Note the keys are prefixed per rule. Sharing one bucket across all
+  // four would let a burst of signups lock a legitimate user out of
+  // signing in, which is the wrong failure.
+  const limited = AUTH_LIMITS.find(
+    (rule) => rule.path === pathname && rule.method === req.method,
+  )
+  if (limited) {
+    const result = checkRateLimit(
+      `${limited.key}:${clientIpKey(req.headers)}`,
+      limited.rule,
+    )
     if (!result.success) return rateLimitResponse(result)
   }
 

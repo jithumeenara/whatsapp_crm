@@ -146,6 +146,23 @@ export const RATE_LIMITS = {
    *  and brute-force at the source. Window is per-IP so a shared NAT
    *  is treated as one client (acceptable trade-off vs. no limit). */
   login: { limit: 10, windowMs: 15 * 60_000 },
+  /** Account signup (public, per-IP). 5 per hour. Every success here
+   *  writes a User, an Account and a Profile with no approval step in
+   *  between, so an unlimited endpoint is an invitation to fill the
+   *  database from a script. Five is far above what a real person
+   *  signing up once will ever need. */
+  register: { limit: 5, windowMs: 60 * 60_000 },
+  /** Password change (authed, per-user). 10 per 15 min. The limit is
+   *  not about guessing — the caller is already signed in — it is
+   *  about cost: every attempt runs bcrypt, which is deliberately slow
+   *  and burns a core each time. On a small server a loop against this
+   *  endpoint is a cheap way to make the whole CRM crawl. */
+  passwordChange: { limit: 10, windowMs: 15 * 60_000 },
+  /** Email verification link (public, per-IP). 20 per 15 min. The
+   *  token is a SHA-256 of a random value, so guessing it is not the
+   *  worry; the worry is that each attempt costs a database lookup and
+   *  nothing stopped a script from making them. */
+  emailVerify: { limit: 20, windowMs: 15 * 60_000 },
   /** External API key reads. 120 req/min per key — comfortable for
    *  polling integrations (HMS, LMS, etc.) without enabling abuse. */
   apiRead:  { limit: 120, windowMs: 60_000 },

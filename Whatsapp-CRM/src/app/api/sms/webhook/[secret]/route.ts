@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { clientIpKey } from "@/lib/net/client-ip"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe"
@@ -35,11 +36,7 @@ async function resolveAccountBySecret(secret: string) {
 }
 
 function getClientIp(request: NextRequest): string {
-  const xff = request.headers.get("x-forwarded-for")
-  if (xff) return xff.split(",")[0].trim()
-  const xri = request.headers.get("x-real-ip")
-  if (xri) return xri.trim()
-  return "unknown"
+  return clientIpKey(request.headers)
 }
 
 function extractInboundFields(payload: Record<string, unknown>): { from: string; text: string; messageId: string | null } | null {
