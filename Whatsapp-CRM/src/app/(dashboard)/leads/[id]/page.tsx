@@ -352,6 +352,16 @@ export default function LeadDetailPage() {
     }
 
     toast.success(result.outcome === "won" ? "Lead closed — Won 🎉" : "Lead closed — Lost")
+
+    // Back to the list, because this lead is finished.
+    //
+    // Staying here left an agent looking at a closed record with
+    // nothing left to do on it — and the next thing they want is
+    // always the next lead, so they pressed back anyway. Returning to
+    // the tab they came from keeps their place: closing one out of New
+    // Pool should not drop them into Mine.
+    setCloseDialogOpen(false)
+    router.push(fromTab ? `/leads?tab=${encodeURIComponent(fromTab)}` : "/leads")
   }
 
   async function copyPhone(value: string) {

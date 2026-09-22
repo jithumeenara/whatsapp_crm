@@ -3,6 +3,7 @@
 import { IncomingCallPopup } from "@/components/calls/incoming-call-popup";
 import { NewLeadAlert } from '@/components/leads/new-lead-alert'
 import { OfferAlert } from '@/components/agents/offer-alert'
+import { CallbackAlert } from '@/components/leads/callback-alert'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
@@ -182,6 +183,11 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               person and it expires, which is what separates an
               interruption from a notification. */}
           <OfferAlert />
+          {/* A promise to ring back, once its time has passed. Sits
+              beside the offer alert because both are the same kind of
+              thing — something with a clock on it that will be missed
+              if nobody is told. */}
+          <CallbackAlert />
         </div>
       </div>
     </MobileBarCtx.Provider>
