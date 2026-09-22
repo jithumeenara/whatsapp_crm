@@ -103,14 +103,27 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
     setConfirmError(null);
     setSaving(true);
     try {
-      const res = await fetch('/api/account/password', {
-        method: 'PATCH',
+      // POST /api/auth/password — not PATCH /api/account/password.
+      //
+      // There has never been a route at that address, and the handler
+      // that does exist only accepts POST. So this form has been posting
+      // into nothing: the request 404'd, and the 404 is an HTML page
+      // rather than JSON, so `res.json()` below threw a parser error and
+      // the toast showed something about an unexpected token. Nothing in
+      // that points at a wrong URL, which is why changing the password
+      // simply did not work and never said why.
+      const res = await fetch('/api/auth/password', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ current_password: current, new_password: next }),
       });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || `Update failed: HTTP ${res.status}`);
+        // A failure is not guaranteed to be JSON — a 404 or a proxy
+        // error is HTML, and parsing it blindly replaces a useful status
+        // code with a parser error. Fall back to the status, which at
+        // least names what happened.
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || `Update failed: HTTP ${res.status}`);
       }
 
       setCurrent('');
