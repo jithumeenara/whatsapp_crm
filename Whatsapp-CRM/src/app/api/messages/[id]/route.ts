@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
+import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 
+// Same key as the two read routes, so whichever runs first covers all
+// three for the lifetime of the process.
 async function ensureDeletedAtColumn() {
-  await prisma.$executeRaw`
+  await onceSchemaPatch('messages.deleted_at', () => prisma.$executeRaw`
     ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
-  `.catch(() => {})
+  `).catch(() => {})
 }
 
 async function requireUser() {

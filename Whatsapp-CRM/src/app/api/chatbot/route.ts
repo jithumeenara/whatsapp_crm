@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -21,9 +22,9 @@ async function requireUser() {
 }
 
 async function ensureChannelColumn() {
-  await prisma.$executeRaw`
+  await onceSchemaPatch('flows.channel', () => prisma.$executeRaw`
     ALTER TABLE flows ADD COLUMN IF NOT EXISTS channel TEXT NOT NULL DEFAULT 'whatsapp'
-  `.catch(() => {})
+  `).catch(() => {})
 }
 
 /** GET /api/chatbot — list all chatbots for the caller's account */

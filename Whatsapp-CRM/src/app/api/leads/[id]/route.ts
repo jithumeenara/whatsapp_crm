@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
@@ -173,9 +174,12 @@ export async function PATCH(
 
     // Handle is_hidden toggle via raw SQL (column added on first use)
     if (typeof body.is_hidden === 'boolean') {
-      await prisma.$executeRaw`
+      // No .catch here, matching the original: if this column cannot be
+      // created the UPDATE below would fail anyway, and failing loudly
+      // is better than reporting a hide that did not happen.
+      await onceSchemaPatch('leads.is_hidden', () => prisma.$executeRaw`
         ALTER TABLE leads ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN DEFAULT FALSE
-      `
+      `)
       await prisma.$executeRaw`
         UPDATE leads SET is_hidden = ${body.is_hidden} WHERE id = ${id}::uuid
       `

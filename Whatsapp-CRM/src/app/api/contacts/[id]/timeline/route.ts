@@ -1,4 +1,5 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -53,9 +54,9 @@ export async function GET(
 
     // Raw query ensures deleted_at is included even before prisma generate
     // (matches the pattern in the single-conversation messages route).
-    await ctx.db.$executeRaw`
+    await onceSchemaPatch('messages.deleted_at', () => ctx.db.$executeRaw`
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
-    `.catch(() => {})
+    `).catch(() => {})
 
     const messages = await ctx.db.$queryRaw<Array<Record<string, unknown>>>`
       SELECT m.id, m.conversation_id, m.sender_type, m.sender_id, m.content_type,

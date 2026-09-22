@@ -1,4 +1,5 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(
@@ -26,10 +27,18 @@ export async function GET(
       )
     }
 
-    // Raw query ensures deleted_at is included even before prisma generate
-    await ctx.db.$executeRaw`
+    // The raw SELECT below names deleted_at, so the column has to exist
+    // even on a database whose migration has not been run. Applied once
+    // per process rather than once per click — this is an ALTER TABLE
+    // against the largest table in the database, and it used to run
+    // every single time an agent opened a conversation.
+    //
+    // The failure is still swallowed: on a deployment whose database
+    // user cannot ALTER, the column is already there and the read
+    // succeeds regardless.
+    await onceSchemaPatch('messages.deleted_at', () => ctx.db.$executeRaw`
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
-    `.catch(() => {})
+    `).catch(() => {})
 
     // LEFT JOIN LATERAL (not a plain JOIN) so a template with multiple rows
     // (different languages) can't multiply the message row — this only

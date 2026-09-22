@@ -64,7 +64,53 @@ type RawRow = {
   ai_lead_recheck_hours: number | null
 }
 
+/**
+ * The columns this route reads, for a database that predates them.
+ *
+ * ── Why this is memoised ────────────────────────────────────────────
+ *
+ * There are seventeen ALTER TABLE statements below and they used to run
+ * on every request — awaited one after another, so seventeen round
+ * trips to Postgres before the settings could even be read. The Leads
+ * page asks for this on every load, and PATCH asks again on every save.
+ *
+ * `IF NOT EXISTS` makes each one a no-op, but a no-op is not free: it
+ * is still a statement, still a round trip, and still asks for a lock
+ * on a table the app is reading. Seventeen of them is most of what the
+ * Leads page was waiting for.
+ *
+ * Whether a column exists cannot change while this process runs, so the
+ * work happens once and every later caller waits on the same promise.
+ * The per-account part stays per-request — see below.
+ */
+let schemaReady: Promise<void> | null = null
+
+function ensureSchema(): Promise<void> {
+  schemaReady ??= runMigrations().catch((err) => {
+    // Do not leave the promise rejected: a single transient failure
+    // would otherwise be replayed to every request for the lifetime of
+    // the process. Clearing it lets the next caller try again.
+    schemaReady = null
+    throw err
+  })
+  return schemaReady
+}
+
 async function ensureColumns(accountId: string) {
+  await ensureSchema()
+
+  // This half is genuinely per-account and per-request: it guarantees
+  // this account has a settings row to read. It is one upsert, not
+  // seventeen statements, and it cannot be cached because a new account
+  // can appear at any time.
+  await prisma.leadSettings.upsert({
+    where:  { account_id: accountId },
+    update: {},
+    create: { account_id: accountId },
+  })
+}
+
+async function runMigrations() {
   await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS close_enquiry_reasons JSONB
   `
@@ -117,11 +163,6 @@ async function ensureColumns(accountId: string) {
   await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_lead_recheck_hours INTEGER NOT NULL DEFAULT 6
   `
-  await prisma.leadSettings.upsert({
-    where:  { account_id: accountId },
-    update: {},
-    create: { account_id: accountId },
-  })
 }
 
 /** The AI half of the payload, shaped the same on both GET and PATCH so
