@@ -20,6 +20,14 @@ interface MessageActionsProps {
   onReply: () => void;
   onReact: (emoji: string) => void;
   onDelete?: () => void;
+  /** What the delete control is honestly called on this channel.
+   *
+   *  Instagram and Messenger withdraw the message from the customer's
+   *  app; WhatsApp cannot, because Meta's API gives a business no way to
+   *  unsend, so there it only leaves this inbox. One icon, two different
+   *  acts — and an agent should know which before pressing it, not from
+   *  the customer afterwards. */
+  deleteLabel?: string;
   children: ReactNode;
 }
 
@@ -33,6 +41,7 @@ export function MessageActions({
   onReply,
   onReact,
   onDelete,
+  deleteLabel = 'Delete',
   children,
 }: MessageActionsProps) {
   // Touch devices have no hover. Long-press fires `contextmenu`; we capture
@@ -155,7 +164,8 @@ export function MessageActions({
             type="button"
             onClick={() => { onDelete(); setTouchOpen(false); }}
             className="flex h-5 w-5 items-center justify-center rounded-full text-slate-800/80 hover:bg-rose-100 hover:text-rose-600"
-            aria-label="Delete"
+            aria-label={deleteLabel}
+            title={deleteLabel}
           >
             <Trash2 className="h-3 w-3" />
           </button>

@@ -60,6 +60,12 @@ const TABS: TabDef[] = [
   { key: "overdue",   label: "Overdue",    color: "text-rose-600"   },
   { key: "all",       label: "All Open",   color: "text-slate-600"  },
   { key: "closed",    label: "Closed",     color: "text-emerald-600"},
+  // Open and closed together. "All Open" answers "what needs doing" and
+  // is the right default; this answers "where is that person", which
+  // otherwise means searching twice and getting an empty result the
+  // first time. Each row says which it is — see StatusChip, where a
+  // closed lead reads Won or Lost rather than just Closed.
+  { key: "everything", label: "Everything", color: "text-slate-500"  },
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
   { key: "funnel",    label: "Funnel",     color: "text-teal-600"   },
   // One tab, not two. "Suggested" held what the assistant thought were

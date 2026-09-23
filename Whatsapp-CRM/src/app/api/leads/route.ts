@@ -75,7 +75,13 @@ export async function GET(req: NextRequest) {
     // three months in had a list that was mostly finished business and
     // a handful of live leads somewhere inside it. The tab people open
     // to see what needs doing should show what needs doing.
-    if (tab !== 'closed' && tabStatus === null) {
+    // `everything` is the exception, and the reason it exists.
+    //
+    // "All Open" answers "what needs doing", which is the right default
+    // and the wrong question when somebody is looking for a particular
+    // person — that search has to be run twice, once in each tab, and
+    // whichever one they try first is the one that comes back empty.
+    if (tab !== 'closed' && tab !== 'everything' && tabStatus === null) {
       where.status = { not: CLOSED }
     }
 

@@ -459,6 +459,24 @@ export async function DELETE(
     const existing = await prisma.lead.findFirst({ where: { id, account_id: ctx.accountId } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await prisma.lead.delete({ where: { id } })
+
+    // Say so, or the screens keep showing it.
+    //
+    // Creating a lead emitted an event and changing one emitted an
+    // event; removing one emitted nothing. So the waiting-leads alert,
+    // which builds its list from these, went on offering a lead that no
+    // longer existed until somebody reloaded the page — and clicking it
+    // led to a 404.
+    //
+    // `old` carries the row, because `new` has nothing to carry. A
+    // listener has to identify what went away, and the id is the whole
+    // of what it needs.
+    emitToAccount(ctx.accountId, 'lead', {
+      eventType: 'DELETE',
+      new: null,
+      old: { id, assigned_to: existing.assigned_to, status: existing.status },
+    })
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
+import { emitToAccount } from "@/lib/socket"
 
 /**
  * GET /api/contacts/[id]
@@ -82,6 +83,9 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
+    // Collected inside the transaction, announced outside it.
+    let removedLeadIds: string[] = []
+
     await prisma.$transaction(async (tx) => {
       // ── Hold the contact still while it is taken apart ────────────
       //
@@ -147,6 +151,7 @@ export async function DELETE(
       const leadIds = (
         await tx.lead.findMany({ where: { contact_id: id }, select: { id: true } })
       ).map((l) => l.id)
+      removedLeadIds = leadIds
 
       if (leadIds.length > 0) {
         await tx.leadActivity.deleteMany({ where: { lead_id: { in: leadIds } } })
@@ -158,6 +163,27 @@ export async function DELETE(
 
       await tx.contact.delete({ where: { id } })
     })
+
+    // Announced after the transaction commits, never inside it.
+    //
+    // A listener that reacted to a rollback would remove a lead from
+    // the screen that is still in the database, and the screen would be
+    // wrong until a reload. The cost of announcing late is a second;
+    // the cost of announcing wrongly is somebody not calling a customer
+    // who is still waiting.
+    //
+    // Deleting a contact takes their leads with it, and those leads may
+    // be sitting in somebody's waiting-to-be-picked-up alert right now.
+    // Without this they stay there, pointing at rows that no longer
+    // exist — which is what a test deletion showed.
+    for (const leadId of removedLeadIds) {
+      emitToAccount(ctx.accountId, 'lead', {
+        eventType: 'DELETE',
+        new: null,
+        old: { id: leadId },
+      })
+    }
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

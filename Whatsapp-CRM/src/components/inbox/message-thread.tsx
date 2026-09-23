@@ -838,6 +838,24 @@ export function MessageThread({
           const err = await res.json().catch(() => ({})) as { error?: string };
           toast.error(err.error ?? "Delete failed");
           onUpdateMessage(msg.id, { deleted_at: null });
+          return;
+        }
+
+        // Two different things are called "delete" here, and an agent
+        // has to know which one happened. On Instagram and Messenger
+        // the message is withdrawn from the customer's app. On WhatsApp
+        // it cannot be — Meta's API has no way for a business to unsend
+        // — so it leaves this inbox and stays on their phone.
+        //
+        // Saying "Deleted" for both would be the kind of lie somebody
+        // finds out about from the customer.
+        const body = (await res.json().catch(() => ({}))) as { removed_here_only?: boolean };
+        if (body.removed_here_only) {
+          toast.success("Removed from your inbox", {
+            description: "WhatsApp does not allow deleting a sent message — the customer still has it.",
+          });
+        } else {
+          toast.success("Deleted for everyone");
         }
       } catch {
         toast.error("Delete failed");
@@ -1032,6 +1050,14 @@ export function MessageThread({
                     onReact={(emoji) => {
                       if (emoji) void postReaction(msg.id, emoji);
                     }}
+                    // WhatsApp has no business-side unsend, so there the
+                    // control does what it can and says so. See the
+                    // DELETE handler in api/messages/[id].
+                    deleteLabel={
+                      ((conversation as { channel?: string })?.channel ?? "whatsapp") === "whatsapp"
+                        ? "Remove from inbox (the customer keeps it)"
+                        : "Delete for everyone"
+                    }
                     onDelete={
                       (msg.sender_type === "agent" || msg.sender_type === "bot") && !msg.deleted_at
                         ? () => void handleDeleteMessage(msg)

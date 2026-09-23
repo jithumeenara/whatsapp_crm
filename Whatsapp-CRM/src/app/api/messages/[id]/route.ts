@@ -51,14 +51,36 @@ export async function DELETE(
     const channel = body.channel ?? (conv as { channel?: string })?.channel ?? "whatsapp"
     const platformMid = body.message_id ?? msg.message_id
 
-    // ── Call platform delete API ──────────────────────────────────────────────
-    if (platformMid) {
+    // ── Unsend on the platform, where the platform allows it ────────────────
+    //
+    // Instagram and Messenger do: DELETE /{message-id} removes the
+    // message from the recipient's app, which is what "delete for
+    // everyone" means.
+    //
+    // WhatsApp does not, and this route used to try anyway — the same
+    // DELETE call, copied across. Meta answers it exactly as you would
+    // expect: "does not exist, cannot be loaded due to missing
+    // permissions, or does not support this operation." The request
+    // then threw, the optimistic removal was rolled back, and the agent
+    // saw "Delete failed" with the message still sitting there.
+    //
+    // Checked against Meta's own reference rather than assumed: the
+    // Messages endpoint documents POST and nothing else, and the one
+    // "revoke" in the WhatsApp docs is an inbound webhook telling a
+    // business that a *customer* deleted their own message. There is no
+    // business-side unsend. The phone app has one; the Cloud API does
+    // not expose it.
+    //
+    // So WhatsApp is removed here and only here. Saying so is the
+    // honest half of the fix — see `removed_here_only` below, which is
+    // what the inbox tells the agent.
+    const platformUnsends = channel === "instagram" || channel === "facebook"
+
+    if (platformMid && platformUnsends) {
       if (channel === "instagram") {
         await deleteInstagramMessage(user.accountId, platformMid)
-      } else if (channel === "facebook") {
-        await deleteFacebookMessage(user.accountId, platformMid)
       } else {
-        await deleteWhatsAppMessage(user.accountId, platformMid, msg.conversation_id)
+        await deleteFacebookMessage(user.accountId, platformMid)
       }
     }
 
@@ -67,7 +89,12 @@ export async function DELETE(
       UPDATE messages SET deleted_at = now() WHERE id = ${id}::uuid
     `
 
-    return NextResponse.json({ ok: true })
+    // The agent needs to know which of the two just happened. A
+    // message gone from their screen but still on the customer's phone
+    // is a different fact from one that is gone from both, and the
+    // difference matters the moment they wonder whether to ring and
+    // apologise.
+    return NextResponse.json({ ok: true, removed_here_only: !platformUnsends })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error("[DELETE /api/messages/[id]]", msg)
@@ -75,27 +102,11 @@ export async function DELETE(
   }
 }
 
-async function deleteWhatsAppMessage(accountId: string, messageId: string, conversationId?: string) {
-  const config = await resolveWhatsAppConfig({ accountId, conversationId }).catch((err) => {
-    if (err instanceof NoWhatsAppConfigError) throw new Error("WhatsApp not configured")
-    throw err
-  })
-  const accessToken = decrypt(config.access_token)
-
-  const res = await fetch(
-    `https://graph.facebook.com/v17.0/${encodeURIComponent(messageId)}`,
-    {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    }
-  )
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({})) as { error?: { message: string } }
-    // 131009 = message too old or already deleted — treat as success
-    if ((data as { error?: { code?: number } }).error?.code === 131009) return
-    throw new Error(data.error?.message ?? `WhatsApp delete failed: ${res.status}`)
-  }
-}
+// deleteWhatsAppMessage used to live here. It called
+// DELETE /{wamid} on the Graph API, which WhatsApp has never supported
+// for a business's own messages — see the note in the DELETE handler.
+// Removed rather than left behind, because an unused helper that looks
+// like it works is an invitation to call it again.
 
 async function deleteInstagramMessage(accountId: string, messageId: string) {
   const rows = await prisma.$queryRaw<{ access_token: string }[]>`

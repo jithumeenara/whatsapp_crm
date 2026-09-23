@@ -19,7 +19,6 @@ const SUB_TABS = [
   { key: 'capture', label: 'Capture', short: 'Capture', icon: MousePointerClick, supervisorOnly: false },
   { key: 'tags', label: 'Tags', short: 'Tags', icon: Tag, supervisorOnly: false },
   { key: 'custom-fields', label: 'Custom Fields', short: 'Fields', icon: LayoutGrid, supervisorOnly: false },
-  { key: 'leads', label: 'Leads', short: 'Leads', icon: Layers, supervisorOnly: true },
 ] as const
 
 /**
@@ -63,7 +62,6 @@ export function ContactSettingsTab() {
       case 'capture':       return <CapturePanel />
       case 'tags':           return <TagManager />
       case 'custom-fields':  return <CustomFieldsPanel />
-      case 'leads':           return isSupervisor ? <LeadsSettingsV2 /> : null
       default:                return <CapturePanel />
     }
   }

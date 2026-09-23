@@ -9,11 +9,13 @@ import {
   Users, Bot, Database, Bell, Key, Webhook, Settings,
   Search, ShieldCheck, X, ChevronLeft, ChevronRight, Megaphone, ShoppingBag, IndianRupee,
   Phone,
+  Layers,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
 import { ProfileForm } from "@/components/settings/profile-form"
 import { ContactSettingsTab } from "@/components/settings/contact-settings-tab"
+import { LeadsSettingsV2 } from "@/components/settings/leads-settings-v2";
 import { MembersTab } from "@/components/settings/members-tab"
 import { AiConfig } from "@/components/settings/ai-config"
 import { DatabasePanel } from "@/components/settings/database-panel"
@@ -60,14 +62,18 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       { key: "catalog",   label: "Catalog",         icon: ShoppingBag,   ownerOnly: true, aliases: ["Products", "Commerce", "Meta Catalog", "WhatsApp Shop", "Orders"] },
       { key: "payments",  label: "Payments",        icon: IndianRupee,   ownerOnly: true, aliases: ["UPI", "Razorpay", "In-chat Payments", "India"] },
       { key: "calls",     label: "Calls",           icon: Phone,         ownerOnly: false, aliases: ["Voice", "Call", "SIP", "Ring", "Missed calls"] },
-      // Capture/Tags/Custom Fields/Leads used to be four separate
-      // sidebar entries (then a standalone "Configuration" group of one)
-      // — collapsed into a single "Contact" entry with an inner tab bar
-      // (contact-settings-tab.tsx), since they're all facets of the same
-      // thing. Leads itself is still supervisor-gated inside that tab
-      // bar; this outer entry stays visible to everyone so Capture/Tags/
-      // Custom Fields aren't hidden from non-supervisors.
-      { key: "contact",   label: "Contact",         icon: Contact,       aliases: ["Capture", "Tags", "Custom Fields", "Custom Field", "Leads", "Lead Scoring", "Call Outcomes"] },
+      // Capture/Tags/Custom Fields used to be three separate sidebar
+      // entries — collapsed into one "Contact" entry with an inner tab
+      // bar (contact-settings-tab.tsx), since they are all facets of the
+      // same thing: what is recorded about a person.
+      { key: "contact",   label: "Contact",         icon: Contact,       aliases: ["Capture", "Tags", "Custom Fields", "Custom Field"] },
+      // Leads was a fourth tab inside Contact and is now its own entry.
+      // It had grown into the longest screen in Settings — scoring, call
+      // outcomes, SLA thresholds, AI detection, judgement mode, offer
+      // routing — and a page that size reached by a tab inside another
+      // page is a page people do not find. Supervisor and above: it
+      // decides how the whole team's work is scored and routed.
+      { key: "leads",     label: "Leads",           icon: Layers,        aliases: ["Lead Scoring", "Call Outcomes", "SLA", "AI Leads", "Judgement", "Offers", "Follow-up"] },
     ],
   },
   {
@@ -205,6 +211,7 @@ function SettingsContent() {
       case "calls":            return <CallsTab />
       case "platform":         return isOwner ? <PlatformMetaTab /> : null
       case "contact":          return <ContactSettingsTab />
+      case "leads":            return <LeadsSettingsV2 />
       case "members":          return isAdmin ? <MembersTab /> : null
       case "ai":               return isAdmin ? <AiConfig /> : null
       case "database":         return isAdmin ? <DatabasePanel /> : null

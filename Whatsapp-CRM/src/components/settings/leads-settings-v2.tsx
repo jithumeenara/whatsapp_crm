@@ -291,6 +291,10 @@ const DEF_LEAD_SOURCES: ListItem[] = [
 
 interface SettingsData {
   auto_lead_creation: boolean
+  /** The corner pill listing enquiries nobody has picked up. On unless
+   *  an account turns it off — the thing it announces is the one with a
+   *  clock running on it. */
+  new_lead_alert_enabled: boolean
   scoring_mode: string
   /** Hours a lead may sit untouched before the list marks it. See
    *  src/lib/leads/sla.ts. */
@@ -325,6 +329,7 @@ export function LeadsSettingsV2() {
     ai_lead_threshold: "balanced",
     ai_lead_mode: "suggest",
     ai_judgement_mode: "off",
+    new_lead_alert_enabled: true,
     offer_enabled: false,
     offer_seconds: 60,
     max_concurrent_chats: 3,
@@ -357,6 +362,7 @@ export function LeadsSettingsV2() {
           ai_lead_threshold: d.ai_lead_threshold ?? "balanced",
           ai_lead_mode: d.ai_lead_mode ?? "suggest",
           ai_judgement_mode: d.ai_judgement_mode ?? "off",
+          new_lead_alert_enabled: d.new_lead_alert_enabled !== false,
           offer_enabled: d.offer_enabled === true,
           offer_seconds: d.offer_seconds ?? 60,
           max_concurrent_chats: d.max_concurrent_chats ?? 3,
@@ -460,6 +466,48 @@ export function LeadsSettingsV2() {
         value={settings.ai_judgement_mode ?? "off"}
         onChange={(mode) => setSettings((st) => ({ ...st, ai_judgement_mode: mode }))}
       />
+
+      {/* ── The corner pill for an unclaimed enquiry ──
+          Its own switch, and not folded into the offer settings above.
+          The two are different promises: an offer interrupts one named
+          person with a clock running, and this only says a lead is
+          sitting there. An account may reasonably want the quiet one
+          and not the loud one. */}
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-5">
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={settings.new_lead_alert_enabled !== false}
+            aria-label="Show waiting leads in the corner"
+            onClick={() =>
+              setSettings((st) => ({
+                ...st,
+                new_lead_alert_enabled: !(st.new_lead_alert_enabled !== false),
+              }))
+            }
+            className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
+              settings.new_lead_alert_enabled !== false ? "bg-[#5B6CF9]" : "bg-slate-200"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                settings.new_lead_alert_enabled !== false ? "left-[22px]" : "left-0.5"
+              }`}
+            />
+          </button>
+          <div className="min-w-0">
+            <p className="text-[14px] font-semibold text-slate-800">
+              Show waiting leads in the corner
+            </p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">
+              A small pill on every screen listing enquiries nobody has picked up, with
+              how long each has been waiting. It disappears on the Leads page — there the
+              list itself is the answer — and clicking one opens it.
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* ── Who gets told, and how long they have ──
           After the judgement panel because an offer is only as good as

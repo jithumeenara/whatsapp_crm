@@ -88,6 +88,30 @@ export function NewLeadAlert() {
   // has to give the same answer for the same inputs, and Date.now()
   // does not — the timer below is what makes it move.
   const [now, setNow] = useState(0)
+  // Whether this account wants the alert at all.
+  //
+  // Starts null and not true: until the answer arrives, nothing is
+  // shown. Defaulting to on would flash the alert at an account that
+  // has switched it off, every time somebody loads a page, which is
+  // worse than a second's delay for everybody else.
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    if (!userId) return
+    let cancelled = false
+    fetch('/api/leads/settings', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return
+        // Absent means an older account that has never saved this, and
+        // the alert is what those accounts already have.
+        setEnabled(d?.new_lead_alert_enabled !== false)
+      })
+      .catch(() => !cancelled && setEnabled(true))
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   // One second, only while something is actually waiting. A timer
   // ticking on an idle page for no reason is a battery complaint.
@@ -99,6 +123,23 @@ export function NewLeadAlert() {
 
   const onLeadEvent = useCallback(
     (event: RealtimeEvent<Lead>) => {
+      // ── Gone is gone ────────────────────────────────────────────
+      //
+      // A DELETE carries nothing in `new` — there is no row any more —
+      // so the guard below would have returned and the lead would sit
+      // in this list until a reload. Deleting two contacts while
+      // testing left both of them here, offering leads that no longer
+      // existed and a click that led to a 404.
+      //
+      // Handled before the guard rather than inside it, because the
+      // identifying id is in `old` and the rest of this function reads
+      // `new`.
+      if (event.eventType === 'DELETE') {
+        const goneId = String((event.old as Partial<Lead> | undefined)?.id ?? '')
+        if (goneId) setWaiting((prev) => prev.filter((w) => w.id !== goneId))
+        return
+      }
+
       const lead = event.new as (Partial<Lead> & { ai_suggested?: boolean }) | undefined
       if (!lead) return
 
@@ -144,7 +185,7 @@ export function NewLeadAlert() {
   // its own event.
   const onLeadsPage = pathname?.startsWith('/leads') ?? false
 
-  if (onLeadsPage || dismissed || waiting.length === 0) return null
+  if (enabled !== true || onLeadsPage || dismissed || waiting.length === 0) return null
 
   // Oldest first: the one that has been waiting longest is the one at
   // risk, and it should be at the top rather than buried under three

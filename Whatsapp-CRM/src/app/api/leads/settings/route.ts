@@ -57,6 +57,7 @@ type RawRow = {
   ai_lead_threshold: string | null
   ai_lead_mode: string | null
   ai_judgement_mode: string | null
+  new_lead_alert_enabled: boolean | null
   offer_enabled: boolean | null
   offer_seconds: number | null
   max_concurrent_chats: number | null
@@ -149,6 +150,9 @@ async function runMigrations() {
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS ai_judgement_mode TEXT NOT NULL DEFAULT 'off'
   `
   await prisma.$executeRaw`
+    ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS new_lead_alert_enabled BOOLEAN NOT NULL DEFAULT true
+  `
+  await prisma.$executeRaw`
     ALTER TABLE lead_settings ADD COLUMN IF NOT EXISTS offer_enabled BOOLEAN NOT NULL DEFAULT false
   `
   await prisma.$executeRaw`
@@ -181,6 +185,10 @@ function aiLeadPayload(row: RawRow | undefined) {
     ai_lead_threshold:     normalizeThreshold(row?.ai_lead_threshold),
     ai_lead_mode:          normalizeMode(row?.ai_lead_mode),
     ai_judgement_mode:     normalizeJudgementMode(row?.ai_judgement_mode),
+    // Default on. An account that has never opened this screen should
+    // still be told when an enquiry is sitting unclaimed — the alert
+    // exists because that is the thing with a clock running on it.
+    new_lead_alert_enabled: row?.new_lead_alert_enabled !== false,
     offer_enabled:         row?.offer_enabled === true,
     offer_seconds:         row?.offer_seconds ?? 60,
     max_concurrent_chats:  row?.max_concurrent_chats ?? 3,
@@ -225,6 +233,7 @@ export async function GET() {
              ai_lead_min_messages,
              ai_lead_recheck_hours,
              ai_judgement_mode,
+             new_lead_alert_enabled,
              offer_enabled,
              offer_seconds,
              max_concurrent_chats
@@ -438,6 +447,13 @@ export async function PATCH(req: NextRequest) {
     const clamp = (v: unknown, lo: number, hi: number): number | null =>
       typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : null
 
+    if (typeof body.new_lead_alert_enabled === "boolean") {
+      await prisma.$executeRaw`
+        UPDATE lead_settings SET new_lead_alert_enabled = ${body.new_lead_alert_enabled}
+        WHERE account_id = ${ctx.accountId}::uuid
+      `
+    }
+
     if (typeof body.offer_enabled === "boolean") {
       await prisma.$executeRaw`
         UPDATE lead_settings SET offer_enabled = ${body.offer_enabled}
@@ -500,6 +516,7 @@ export async function PATCH(req: NextRequest) {
              ai_lead_min_messages,
              ai_lead_recheck_hours,
              ai_judgement_mode,
+             new_lead_alert_enabled,
              offer_enabled,
              offer_seconds,
              max_concurrent_chats
