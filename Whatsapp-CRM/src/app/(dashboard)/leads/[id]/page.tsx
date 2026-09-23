@@ -21,6 +21,7 @@ import { EmojiPickerPopover } from "@/components/inbox/emoji-picker-popover"
 import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
+import { LeadDescription } from "@/components/leads/lead-description"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
 import type { MessageTemplate, Contact } from "@/types"
@@ -664,6 +665,14 @@ export default function LeadDetailPage() {
               )}
             </div>
           </div>
+
+          {/* What this lead is for and what they need — right under who
+              they are, so nobody has to scroll the timeline to find out. */}
+          <LeadDescription
+            value={lead.notes ?? ""}
+            suggestion={lead.ai_reason ?? null}
+            onSave={(notes) => patchLead({ notes })}
+          />
 
           {/* Lead Details + Log Call Outcome */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

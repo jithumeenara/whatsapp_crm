@@ -200,7 +200,16 @@ export async function PATCH(
     if (source !== undefined) data.source = source
     if (status !== undefined) data.status = status
     if (score !== undefined) data.score = score
-    if (notes !== undefined) data.notes = notes
+    if (notes !== undefined) {
+      // The lead's description — what it is for and what they need.
+      if (notes !== null && typeof notes !== 'string') {
+        return NextResponse.json({ error: 'Description must be text' }, { status: 400 })
+      }
+      if (typeof notes === 'string' && notes.length > 2000) {
+        return NextResponse.json({ error: 'Keep the description under 2000 characters' }, { status: 400 })
+      }
+      data.notes = typeof notes === 'string' ? notes.trim() || null : null
+    }
     if (lead_quality !== undefined) data.lead_quality = lead_quality || null
     if (call_outcome !== undefined) data.call_outcome = call_outcome || null
     if (closing_remarks !== undefined) data.closing_remarks = closing_remarks || null

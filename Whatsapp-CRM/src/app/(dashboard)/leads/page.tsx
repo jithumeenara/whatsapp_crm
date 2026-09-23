@@ -23,6 +23,7 @@ import { SuggestedLeads } from "@/components/leads/suggested-leads"
 import { ToReview } from "@/components/leads/to-review"
 import { decayScore, describeDecay } from "@/lib/leads/score-decay"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
+import { NewFollowUpDialog } from "@/components/leads/new-follow-up-dialog"
 
 // ---- types ----
 
@@ -510,6 +511,17 @@ function CreateLeadDialog({
             />
           </div>
 
+          <div>
+            <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Description</label>
+            <textarea autoComplete="off"
+              rows={3} maxLength={2000}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none resize-none"
+              placeholder="Purpose of the lead and what they need"
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Source</label>
@@ -574,16 +586,6 @@ function CreateLeadDialog({
             </div>
           </div>
 
-          <div>
-            <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Notes</label>
-            <textarea autoComplete="off"
-              rows={3}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none resize-none"
-              placeholder="Optional notes…"
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-            />
-          </div>
 
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={() => { onClose(); resetAll() }}
@@ -1294,6 +1296,7 @@ function LeadsV2() {
     }
   }, [])
   const [createOpen, setCreateOpen] = useState(false)
+  const [followUpOpen, setFollowUpOpen] = useState(false)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -1301,6 +1304,10 @@ function LeadsV2() {
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isLeadTab = !["follow_ups", "tasks", "funnel", "to_review"].includes(tab)
+  // On the Follow-up tabs, the thing people come to add is a call to
+  // make at a time, not a lead — so that is what the button opens.
+  const isFollowUpTab = tab === "follow_up" || tab === "follow_ups"
+  const openCreate = () => (isFollowUpTab ? setFollowUpOpen(true) : setCreateOpen(true))
 
   const effectiveTab = (!canViewAllLeads && tab === "all") ? "new_pool" : tab
 
@@ -1579,9 +1586,12 @@ function LeadsV2() {
             {/* Only when there is something to fix. A button that
                 always says zero is one people learn to ignore. */}
             <DuplicatesButton count={duplicateCount} onClick={() => setDuplicatesOpen(true)} />
-            <button type="button" onClick={() => setCreateOpen(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-indigo-700 transition-colors">
-              <Plus className="h-3.5 w-3.5" /> New Lead
+            <button type="button" onClick={openCreate}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium text-white transition-colors",
+                isFollowUpTab ? "bg-orange-500 hover:bg-orange-600" : "bg-indigo-600 hover:bg-indigo-700",
+              )}>
+              <Plus className="h-3.5 w-3.5" /> {isFollowUpTab ? "New Follow-up" : "New Lead"}
             </button>
           </div>
         </div>
@@ -1737,7 +1747,13 @@ function LeadsV2() {
               <tbody>{[...Array(6)].map((_, i) => <SkeletonRow key={i} cols={4} />)}</tbody>
             </table>
           ) : followUps.length === 0 ? (
-            <EmptyState icon={<Bell className="h-8 w-8 text-amber-300" />} title="No follow-ups" desc="Follow-ups linked to leads will appear here" />
+            <EmptyState icon={<Bell className="h-8 w-8 text-amber-300" />} title="No follow-ups" desc="Follow-ups linked to leads will appear here"
+              action={
+                <button type="button" onClick={() => setFollowUpOpen(true)}
+                  className="mt-5 flex items-center gap-1.5 rounded-xl bg-orange-500 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-orange-600 transition-colors">
+                  <Plus className="h-4 w-4" /> Create Follow-up
+                </button>
+              } />
           ) : (
             <table className="w-full text-[13px]">
               <thead className="sticky top-0 z-10">
@@ -1914,11 +1930,14 @@ function LeadsV2() {
             <EmptyState
               icon={<TrendingUp className="h-8 w-8 text-indigo-300" />}
               title="No leads found"
-              desc={searchQ ? "Try a different search term" : "Create your first lead to get started"}
+              desc={searchQ ? "Try a different search term" : isFollowUpTab ? "Schedule a call back and it will appear here" : "Create your first lead to get started"}
               action={!searchQ ? (
-                <button type="button" onClick={() => setCreateOpen(true)}
-                  className="mt-5 flex items-center gap-1.5 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-700 transition-colors shadow-sm shadow-indigo-200">
-                  <Plus className="h-4 w-4" /> Create Lead
+                <button type="button" onClick={openCreate}
+                  className={cn(
+                    "mt-5 flex items-center gap-1.5 rounded-xl px-5 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-sm",
+                    isFollowUpTab ? "bg-orange-500 hover:bg-orange-600 shadow-orange-200" : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200",
+                  )}>
+                  <Plus className="h-4 w-4" /> {isFollowUpTab ? "Create Follow-up" : "Create Lead"}
                 </button>
               ) : undefined}
             />
@@ -1985,6 +2004,12 @@ function LeadsV2() {
         open={duplicatesOpen}
         onClose={() => setDuplicatesOpen(false)}
         onMerged={() => { void loadData(); void countDuplicates() }}
+      />
+
+      <NewFollowUpDialog
+        open={followUpOpen}
+        onClose={() => setFollowUpOpen(false)}
+        onSaved={loadData}
       />
 
       <CreateLeadDialog

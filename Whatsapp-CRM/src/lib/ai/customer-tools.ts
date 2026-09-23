@@ -395,7 +395,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         .findFirst({
           where: { account_id: ctx.accountId, contact_id: ctx.contactId, status: { not: 'closed' } },
           orderBy: { created_at: 'desc' },
-          select: { id: true, assigned_to: true },
+          select: { id: true, assigned_to: true, status: true },
         })
         .catch(() => null)
 
@@ -437,6 +437,60 @@ const TOOLS: Record<string, CustomerToolImpl> = {
           scheduled: false,
           note: 'It could not be saved. Tell the customer a colleague will be in touch, without promising a specific time.',
         }
+      }
+
+      // ── Put it where people look ─────────────────────────────────
+      //
+      // A reminder in the follow-ups table alone was invisible from the
+      // Leads page. Its Follow-up tab lists leads whose *status* is
+      // follow_up, which is what a follow-up scheduled by hand does to a
+      // lead — and this did not, so a callback the assistant arranged
+      // never appeared there and looked as though nothing had happened.
+      //
+      // Two cases, deliberately different:
+      //
+      //  - The lead is somebody's. It moves to Follow-up, exactly as if
+      //    they had scheduled it themselves, and lands in their tab.
+      //
+      //  - Nobody has picked it up. It stays New, in the pool. Moving an
+      //    unclaimed lead to Follow-up takes it out of New Pool, and an
+      //    agent can only see leads that are theirs or in the pool — so
+      //    it would vanish from every agent's screen at the moment a
+      //    customer is waiting for a call. The request goes on its
+      //    timeline instead, where whoever picks it up reads it first.
+      if (lead) {
+        const moveToFollowUp = Boolean(lead.assigned_to) && lead.status !== 'follow_up'
+        await prisma
+          .$transaction([
+            ...(moveToFollowUp
+              ? [prisma.lead.update({ where: { id: lead.id }, data: { status: 'follow_up' } })]
+              : []),
+            prisma.leadActivity.create({
+              data: {
+                account_id: ctx.accountId,
+                lead_id: lead.id,
+                contact_id: ctx.contactId,
+                // Nobody: the assistant did this. A user_id here would
+                // count as that agent's call on the performance screen.
+                user_id: null,
+                type: moveToFollowUp ? 'stage_change' : 'follow_up',
+                title: `Customer asked for a call back — ${label}`,
+                description: stated ? `They said: "${stated}"` : 'Arranged by the assistant from the conversation.',
+                metadata: moveToFollowUp
+                  ? { previous_status: lead.status, new_status: 'follow_up', by: 'assistant' }
+                  : { due_at: at.toISOString(), by: 'assistant' },
+              },
+            }),
+          ])
+          .catch((err) =>
+            console.error('[schedule_callback] lead not updated:', err instanceof Error ? err.message : err),
+          )
+
+        const { emitToAccount } = await import('@/lib/socket')
+        emitToAccount(ctx.accountId, 'lead', {
+          eventType: 'UPDATE',
+          new: { id: lead.id, assigned_to: lead.assigned_to, status: moveToFollowUp ? 'follow_up' : lead.status },
+        })
       }
 
       return {
