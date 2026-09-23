@@ -18,7 +18,20 @@
  * be talked into reading another customer's record when no tool it has
  * is capable of naming one.
  *
- * Everything is read-only. Nothing here creates, updates or deletes.
+ * Not everything is read-only any more, and the ones that write are
+ * held to a narrower rule than "the model asked for it".
+ *
+ * `schedule_callback` writes a reminder from a time the customer named,
+ * and refuses one already past, one more than a year out, or an hour
+ * that does not exist on the day in question.
+ *
+ * `contact_handed_over` writes a note and a task and changes no contact.
+ * A number given in a message may be a digit short or missing its
+ * country code, and replacing an organisation's only working number on
+ * that basis loses the one that worked — see handover-contact.ts.
+ *
+ * The shape of the rule is the same in both: the model may record what
+ * it was told, and a person decides what it means.
  */
 
 import {
@@ -30,6 +43,7 @@ import { prisma } from '@/lib/db'
 // shared with the callback slots the offer system sends.
 import { zonedInstant } from '@/lib/agents/zoned-time'
 import { anyOwner } from '@/lib/agents/ask-callback'
+import { recordContactHandover } from './handover-contact'
 
 export interface CustomerToolContext {
   accountId: string
@@ -433,6 +447,49 @@ const TOOLS: Record<string, CustomerToolImpl> = {
     },
   },
 
+  contact_handed_over: {
+    declaration: {
+      name: 'contact_handed_over',
+      description:
+        `Record that this person no longer holds the post we have them down for, and has given somebody else's number instead. Use it when they say they have retired, left, been transferred, or that somebody else now handles this — and they give a number to use. Do not use it when they simply give an extra number for themselves, and do not use it without a number.`,
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          new_phone: {
+            type: SchemaType.STRING,
+            description: 'The number they gave, exactly as they wrote it, including any country code.',
+          },
+          new_name: {
+            type: SchemaType.STRING,
+            description: 'The name of the person taking over, if they said one. Leave out if they did not.',
+          },
+          said: {
+            type: SchemaType.STRING,
+            description: 'What they said about it, in their own words.',
+          },
+        },
+        required: ['new_phone'],
+      },
+    },
+    async run(args, ctx) {
+      const phone = typeof args.new_phone === 'string' ? args.new_phone : ''
+      if (!phone.trim()) {
+        return {
+          recorded: false,
+          note: 'No number was given. Ask them for the number of the person who has taken over.',
+        }
+      }
+      return recordContactHandover({
+        accountId: ctx.accountId,
+        fromContactId: ctx.contactId,
+        newPhone: phone,
+        newName: typeof args.new_name === 'string' ? args.new_name : null,
+        said: typeof args.said === 'string' ? args.said : null,
+        userId: ctx.userId ?? null,
+      })
+    },
+  },
+
   my_conversation_history: {
     declaration: {
       name: 'my_conversation_history',
@@ -545,6 +602,17 @@ export const CUSTOMER_TOOL_INSTRUCTION = [
   // The tool reports whether it saved, and that is what to go on.
   '- Only tell them a time is arranged after the tool says it was. If it reports a failure, say a colleague will be in touch and do not name a time.',
   '- Do not invent a time. If they ask to be called but name none, say somebody will call and leave it there.',
+  '',
+  'WHEN THE PERSON HAS CHANGED:',
+  // The case this is for: these records hold a society's secretary by
+  // their personal number, and secretaries retire. The person who
+  // answers says so and gives the new one's number — and until now
+  // nothing captured it, so the next campaign rang the same retired
+  // person again. Worse, the assistant read "I am retired from service"
+  // as a topic and offered them staff training.
+  '- If they say they have retired, left, moved on, or that somebody else now holds the post — and they give a number — record it with contact_handed_over.',
+  '- Never tell them our records have been updated. They have not been: a colleague rings the new number first, because a number typed into a message can be a digit short.',
+  '- Do not offer them anything. Somebody who has just said they no longer hold the post is not a person to ask about courses or programmes. Thank them, and say somebody will contact the new person.',
 ].join('\n')
 
 /**
