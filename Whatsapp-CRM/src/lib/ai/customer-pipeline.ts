@@ -195,6 +195,29 @@ export async function buildCustomerSystemPrompt(args: {
   const parts: string[] = [nowBlock, companyBlock, customerContext, aiConfig.system_prompt ?? '', knowledgeBlock]
     .filter((p) => Boolean(p && p.trim()))
 
+  // ── "What is coming up" is not "what do you offer" ────────────────
+  //
+  // A live account asked "which programmes are coming up?" and got
+  // three: one with dates and a fee, and two that the business does run
+  // but has not scheduled. They came from a general document describing
+  // everything the institute offers, and the model had no rule telling
+  // it that being described is not the same as being on the calendar.
+  //
+  // It can tell now, because it is told today's date (nowBlock above).
+  // Anything without a date in the knowledge, or with one already past,
+  // is still something the business does — it is just not upcoming, and
+  // saying so is the honest answer.
+  if (knowledgeBlock) {
+    parts.push(
+      [
+        'UPCOMING AND SCHEDULED ITEMS:',
+        '- When asked what is upcoming, scheduled, next, or open for registration, list ONLY items the knowledge gives a specific date for, and only where that date is today or later.',
+        '- Something the knowledge describes without a date is offered generally but not scheduled. Do not list it as upcoming. If it is relevant, say it is offered and that dates have not been announced yet.',
+        '- Never invent or estimate a date.',
+      ].join('\n'),
+    )
+  }
+
   // Prompt-level guidance, not code-enforced — a model can ignore an
   // instruction. The validator below is the part that cannot be ignored.
   if (aiConfig.fallback_answer) {

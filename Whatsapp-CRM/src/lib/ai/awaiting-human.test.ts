@@ -69,3 +69,31 @@ describe('awaitingHuman', () => {
     expect(systemPrompt).toContain('training institute')
   })
 })
+
+describe('upcoming items', () => {
+  // A live account asked which programmes were coming up and got two
+  // that the business runs but has not scheduled, listed beside one that
+  // has dates. Being described is not being on the calendar.
+  const withKnowledge = {
+    ...base,
+    customerMessage: 'Which programmes are coming up?',
+    selected: {
+      qaPairs: [{ question: 'Sub staff STP', answer: '29 Sep 2026 - 01 Oct 2026, fee 3540' }],
+      documentChunks: [],
+      confidence: 0.8,
+    },
+  }
+
+  it('limits "upcoming" to dated items that have not passed', async () => {
+    const { systemPrompt } = await buildCustomerSystemPrompt(withKnowledge as never)
+    expect(systemPrompt).toMatch(/list ONLY items the knowledge gives a specific date for/)
+    expect(systemPrompt).toMatch(/today or later/)
+    expect(systemPrompt).toMatch(/dates have not been announced yet/)
+    expect(systemPrompt).toMatch(/Never invent or estimate a date/)
+  })
+
+  it('is not added when there is no knowledge to be about', async () => {
+    const { systemPrompt } = await buildCustomerSystemPrompt(base as never)
+    expect(systemPrompt).not.toMatch(/UPCOMING AND SCHEDULED ITEMS/)
+  })
+})

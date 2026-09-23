@@ -3102,18 +3102,36 @@ async function handleReplyForActiveRun(
     return { consumed: true, flow_run_id: run.id, outcome: "handed_off" };
   }
 
-  // A question that got an answer is not a failed attempt, so it does not
-  // spend one of the customer's reprompts. Without this, three honest
-  // questions would exhaust the allowance and hand a perfectly
-  // well-behaved customer to a person.
-  const newReprompts =
-    digression === "answered" ? run.reprompt_count : run.reprompt_count + 1;
-  if (newReprompts !== run.reprompt_count) {
-    await prisma.flowRun.update({
-      where: { id: run.id },
-      data: { reprompt_count: newReprompts },
-    });
+  // ── A question that was answered does not get the menu back ────────
+  //
+  // This used to fall through to the reprompt below, so an answered
+  // question was followed by the same menu again. On a live account: a
+  // customer said "Hi" and got the welcome list, typed "which programmes
+  // are coming up?" instead of tapping it, got a proper answer from the
+  // assistant — and then "Welcome to ACSTI KERALA! Please select an
+  // option" underneath it, as if the answer had not happened. Every
+  // further question did the same. To the customer it reads as a bot
+  // that is not listening.
+  //
+  // Somebody who types instead of tapping has told us how they want to
+  // talk. The run stays where it is, so the list already in the chat
+  // still works if they go back to it — it is only the re-sending that
+  // stops. A reply that was *not* answered still gets the prompt, which
+  // is what the reprompt is for.
+  if (digression === "answered") {
+    return { consumed: true, flow_run_id: run.id, outcome: "fallback_fired" };
   }
+
+  // Only an unanswered reply reaches here — an answered question returned
+  // above — so every arrival is a genuine miss and spends one reprompt.
+  // Answered questions still cost nothing, which keeps three honest
+  // questions from exhausting the allowance and handing a well-behaved
+  // customer to a person.
+  const newReprompts = run.reprompt_count + 1;
+  await prisma.flowRun.update({
+    where: { id: run.id },
+    data: { reprompt_count: newReprompts },
+  });
 
   const action = decideFallback({ policy, reprompt_count: newReprompts });
   await logEvent(run.id, "fallback_fired", run.current_node_key, {
