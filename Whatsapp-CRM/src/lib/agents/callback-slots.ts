@@ -31,6 +31,10 @@
  */
 
 import { DAY_KEYS, DAY_NAMES, minutesOfDay, type WorkingHours } from './working-hours'
+// One implementation of "a wall clock in this zone is this moment",
+// shared with the assistant's schedule_callback tool. Two copies of
+// daylight-saving handling is one copy too many.
+import { offsetAt } from './zoned-time'
 
 /** Three, because that is what WhatsApp allows as reply buttons and
  *  because a fourth would not change anybody's answer. */
@@ -172,35 +176,6 @@ function instantFor(timezone: string, now: Date, daysAhead: number, minutesOfDay
     if (at.getTime() + landed !== naive) return null
 
     return at
-  } catch {
-    return null
-  }
-}
-
-/** A zone's offset from UTC, in milliseconds, at a given instant. */
-function offsetAt(timezone: string, at: Date): number | null {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23',
-    }).formatToParts(at)
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
-    const asIfUtc = Date.UTC(
-      get('year'),
-      get('month') - 1,
-      get('day'),
-      get('hour'),
-      get('minute'),
-      get('second'),
-    )
-    if (Number.isNaN(asIfUtc)) return null
-    return asIfUtc - at.getTime()
   } catch {
     return null
   }

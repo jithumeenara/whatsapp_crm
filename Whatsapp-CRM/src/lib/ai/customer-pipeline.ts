@@ -15,6 +15,7 @@
  */
 
 import { loadCompanyProfile, formatCompanyBlock } from './company-profile'
+import { localDate, localWeekday } from '@/lib/agents/zoned-time'
 import { buildCustomerContext } from './customer-context'
 import { loadKnowledge } from './knowledge-store'
 import { selectRelevantContext, formatKnowledgeBlock, type SelectedContext } from './knowledge'
@@ -61,6 +62,11 @@ export interface PromptAssembly {
   systemPrompt: string
   knowledgeBlock: string
   companyBlock: string
+  /** Today's date and the business's zone, so the model can resolve
+   *  "tomorrow at nine" into something storable. */
+  nowBlock: string
+  /** The zone those dates are in — IANA, e.g. "Asia/Kolkata". */
+  timezone: string
   customerContext: string
   /** The pieces the validator is allowed to treat as source material. */
   contextParts: string[]
@@ -72,6 +78,12 @@ export interface PromptAssembly {
  *  retrieval finishes; see `loadPromptSources`. */
 export interface PromptSources {
   companyBlock: string
+  /** Today's date and the business's zone. A model has no clock, so
+   *  without this it cannot turn "tomorrow at nine" into anything —
+   *  which is exactly what a customer asking for a callback says. */
+  nowBlock: string
+  /** The zone those dates are in — IANA, e.g. "Asia/Kolkata". */
+  timezone: string
   customerContext: string
   toolInstruction: string
 }
@@ -111,10 +123,31 @@ export async function loadPromptSources(args: {
       : Promise.resolve(''),
   ])
 
+  // ── What day it is, where the business is ──────────────────────
+  //
+  // A model has no clock. Without this it cannot turn "tomorrow at
+  // nine" into anything, which is exactly what a customer asking for a
+  // callback says — and the assistant was answering such messages
+  // without ever being able to act on them.
+  //
+  // The zone matters as much as the date. A wall clock is not a moment
+  // until you know whose wall it is on: "nine in the morning" is four
+  // different instants for a business in Kerala, one in Dubai and a
+  // server in Frankfurt, and being wrong means ringing somebody at six.
+  const timezone = companyProfile?.timezone?.trim() || 'Asia/Kolkata'
+  const today = localDate(timezone)
+  const weekday = localWeekday(timezone)
+  const nowBlock =
+    today && weekday
+      ? `Today is ${weekday}, ${today}. The business operates in the ${timezone} time zone — every date and time you are told, or that you record, is in that zone.`
+      : ''
+
   return {
     companyBlock: formatCompanyBlock(companyProfile, 'customer') || '',
     customerContext,
     toolInstruction,
+    nowBlock,
+    timezone,
   }
 }
 
@@ -150,7 +183,7 @@ export async function buildCustomerSystemPrompt(args: {
   const { aiConfig } = args
   const knowledgeBlock = formatKnowledgeBlock(args.selected)
 
-  const { companyBlock, customerContext, toolInstruction } = await (args.sources ??
+  const { companyBlock, customerContext, toolInstruction, nowBlock, timezone } = await (args.sources ??
     loadPromptSources({
       aiConfig,
       accountId: args.accountId,
@@ -159,7 +192,7 @@ export async function buildCustomerSystemPrompt(args: {
       toolsAvailable: args.toolsAvailable,
     }))
 
-  const parts: string[] = [companyBlock, customerContext, aiConfig.system_prompt ?? '', knowledgeBlock]
+  const parts: string[] = [nowBlock, companyBlock, customerContext, aiConfig.system_prompt ?? '', knowledgeBlock]
     .filter((p) => Boolean(p && p.trim()))
 
   // Prompt-level guidance, not code-enforced — a model can ignore an
@@ -231,6 +264,8 @@ export async function buildCustomerSystemPrompt(args: {
     systemPrompt: parts.join('\n\n') || 'You are a helpful assistant.',
     knowledgeBlock,
     companyBlock,
+    nowBlock,
+    timezone,
     customerContext,
     // The account's own prompt counts as source material.
     //

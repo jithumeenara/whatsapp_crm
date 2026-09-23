@@ -77,6 +77,10 @@ export interface CompanyProfileShape {
   country?: string | null
   working_hours?: string | null
   languages?: string | null
+  /** IANA zone the business runs on, from Settings → Business. Not part
+   *  of the description the model is given — it is what turns a time
+   *  somebody names into a moment. See lib/agents/zoned-time.ts. */
+  timezone?: string | null
 }
 
 /** 'Other' in the picker means the real answer is in the free-text box;

@@ -26,6 +26,10 @@ import {
   type FunctionDeclaration,
 } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
+// One implementation of "a wall clock in this zone is this moment",
+// shared with the callback slots the offer system sends.
+import { zonedInstant } from '@/lib/agents/zoned-time'
+import { anyOwner } from '@/lib/agents/ask-callback'
 
 export interface CustomerToolContext {
   accountId: string
@@ -304,6 +308,131 @@ const TOOLS: Record<string, CustomerToolImpl> = {
     },
   },
 
+  schedule_callback: {
+    declaration: {
+      name: 'schedule_callback',
+      description:
+        `Write down a time the customer asked to be called back. Use this whenever they name a time — "tomorrow at 9", "this evening", "Monday morning" — including when you are also handing the conversation to a colleague. Give the date and time in the business's own time zone, which is stated in your instructions along with today's date. Do not use this for a vague "sometime" with no time in it, and do not invent a time the customer did not give.`,
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          date: {
+            type: SchemaType.STRING,
+            description: `The calendar date, as YYYY-MM-DD, in the business's time zone. Work it out from today's date, which is in your instructions.`,
+          },
+          time: {
+            type: SchemaType.STRING,
+            description: `24-hour clock time, as HH:MM. "9 in the morning" is 09:00; "evening" with no hour given is 17:00.`,
+          },
+          note: {
+            type: SchemaType.STRING,
+            description: 'What the customer actually said about it, in their own words, so whoever rings them knows what this is about.',
+          },
+        },
+        required: ['date', 'time'],
+      },
+    },
+    async run(args, ctx) {
+      const date = typeof args.date === 'string' ? args.date : ''
+      const time = typeof args.time === 'string' ? args.time : ''
+
+      // The zone is read from the account, never from the model. A model
+      // that offered its own would be guessing, and the guess would be
+      // UTC — six hours out for this business, in the direction that
+      // rings somebody before dawn.
+      const profile = await prisma.companyProfile
+        .findUnique({ where: { account_id: ctx.accountId }, select: { timezone: true } })
+        .catch(() => null)
+      const timezone = profile?.timezone?.trim() || 'Asia/Kolkata'
+
+      const at = zonedInstant(timezone, date, time)
+      if (!at) {
+        return {
+          scheduled: false,
+          note: 'That date and time could not be read. Ask the customer to say the day and hour plainly, and do not tell them anything has been arranged.',
+        }
+      }
+
+      // A time already gone is a misread, not a request. "Tomorrow" that
+      // resolves to yesterday means the model got the date wrong, and
+      // writing it would put a reminder in the Overdue list the moment
+      // it was created.
+      if (at.getTime() <= Date.now()) {
+        return {
+          scheduled: false,
+          note: 'That time has already passed. Check what day the customer meant and try again; do not tell them it is arranged.',
+        }
+      }
+
+      // A year out is the other direction of the same mistake — a model
+      // that wrote 2027 for "next Monday".
+      if (at.getTime() - Date.now() > 365 * 24 * 60 * 60_000) {
+        return {
+          scheduled: false,
+          note: 'That is more than a year away, which is unlikely to be what was meant. Ask the customer to confirm the date.',
+        }
+      }
+
+      const stated = typeof args.note === 'string' ? args.note.trim().slice(0, 300) : ''
+
+      // The lead this contact already has, if any, so the reminder opens
+      // the record somebody will work from rather than a bare contact.
+      const lead = await prisma.lead
+        .findFirst({
+          where: { account_id: ctx.accountId, contact_id: ctx.contactId, status: { not: 'closed' } },
+          orderBy: { created_at: 'desc' },
+          select: { id: true, assigned_to: true },
+        })
+        .catch(() => null)
+
+      const label = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timezone,
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+      }).format(at)
+
+      try {
+        await prisma.followUp.create({
+          data: {
+            account_id: ctx.accountId,
+            // Owned by whoever owns the lead, and otherwise by nobody —
+            // the same rule the rest of the pool follows. An unowned
+            // callback still surfaces: see /api/follow-ups/due, which
+            // counts them for anyone who can act across the account.
+            user_id: lead?.assigned_to ?? ctx.userId ?? (await anyOwner(ctx.accountId)),
+            contact_id: ctx.contactId,
+            lead_id: lead?.id ?? null,
+            assigned_to: lead?.assigned_to ?? null,
+            // The prefix advance-offers.ts already looks for when
+            // deciding whether this customer has been asked about a
+            // callback, so the two paths do not arrange one each.
+            title: `Call back — ${label}`,
+            note: stated
+              ? `The customer asked for a call at this time. They said: "${stated}"`
+              : 'The customer asked to be called back at this time.',
+            due_at: at,
+          },
+        })
+      } catch (err) {
+        console.error('[schedule_callback] could not save:', err instanceof Error ? err.message : err)
+        return {
+          scheduled: false,
+          note: 'It could not be saved. Tell the customer a colleague will be in touch, without promising a specific time.',
+        }
+      }
+
+      return {
+        scheduled: true,
+        when: label,
+        note: `Recorded for ${label}. Confirm that time back to the customer in their own language, briefly.`,
+      }
+    },
+  },
+
   my_conversation_history: {
     declaration: {
       name: 'my_conversation_history',
@@ -404,6 +533,18 @@ export const CUSTOMER_TOOL_INSTRUCTION = [
   '- If a lookup returns nothing, say so plainly and offer to take their details. Do not invent a record.',
   '- Never state a price, date or reference number that did not come from a lookup or from the knowledge you were given.',
   '- You can only see this one customer. If they ask about someone else, explain you can only discuss their own records.',
+  '',
+  'CALL BACKS:',
+  // A tool nobody is told when to use is a tool that does not get used.
+  // The failure this fixes: a customer wrote "can you arrange a call
+  // back for me tomorrow at 9 in the morning", the conversation was
+  // handed to a person, and no reminder was created anywhere — the
+  // agent had to notice the message and type it in by hand.
+  '- If the customer names a time they want to be called — "tomorrow at 9", "this evening", "Monday morning" — record it with schedule_callback. Do this even when you are also passing the conversation to a colleague; the two are not alternatives.',
+  // Confirming a time nobody wrote down is worse than not offering one.
+  // The tool reports whether it saved, and that is what to go on.
+  '- Only tell them a time is arranged after the tool says it was. If it reports a failure, say a colleague will be in touch and do not name a time.',
+  '- Do not invent a time. If they ask to be called but name none, say somebody will call and leave it there.',
 ].join('\n')
 
 /**

@@ -163,8 +163,12 @@ async function loadAccountHours(accountId: string) {
 }
 
 /** Somebody to own the row. FollowUp.user_id is required, and the
- *  account owner is the one user guaranteed to exist. */
-async function anyOwner(accountId: string): Promise<string> {
+ *  account owner is the one user guaranteed to exist.
+ *
+ *  Exported because the assistant's schedule_callback tool writes the
+ *  same kind of row from the other direction — a customer who named
+ *  their own time rather than one who was offered three. */
+export async function anyOwner(accountId: string): Promise<string> {
   const account = await prisma.account.findUnique({
     where: { id: accountId },
     select: { owner_user_id: true },
