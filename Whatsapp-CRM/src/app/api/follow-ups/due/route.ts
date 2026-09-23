@@ -83,7 +83,9 @@ export async function GET() {
         where: {
           ...base,
           assigned_to: null,
-          lead: null,
+          // No lead, or a lead nobody has picked — the assistant opens
+          // one in Follow-up when a customer asks for a call.
+          OR: [{ lead: null }, { lead: { assigned_to: null } }],
           contact: { leads: { none: { assigned_to: { not: null } } } },
         },
       }),

@@ -389,16 +389,6 @@ const TOOLS: Record<string, CustomerToolImpl> = {
 
       const stated = typeof args.note === 'string' ? args.note.trim().slice(0, 300) : ''
 
-      // The lead this contact already has, if any, so the reminder opens
-      // the record somebody will work from rather than a bare contact.
-      const lead = await prisma.lead
-        .findFirst({
-          where: { account_id: ctx.accountId, contact_id: ctx.contactId, status: { not: 'closed' } },
-          orderBy: { created_at: 'desc' },
-          select: { id: true, assigned_to: true, status: true },
-        })
-        .catch(() => null)
-
       const label = new Intl.DateTimeFormat('en-GB', {
         timeZone: timezone,
         weekday: 'short',
@@ -408,6 +398,60 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         minute: '2-digit',
         hourCycle: 'h23',
       }).format(at)
+
+      // ── Put it where people look ─────────────────────────────────
+      //
+      // The Leads page's Follow-up tab lists leads whose *status* is
+      // follow_up. A reminder on its own never showed there, so a call
+      // the assistant had promised looked as though nothing happened.
+      // So the customer's lead goes to Follow-up — or, when they have
+      // none, one is opened there: someone asking to be rung at a time
+      // is an enquiry, whatever the lead settings would have decided.
+      //
+      // Unclaimed stays unclaimed. The Follow-up tab shows agents the
+      // unclaimed ones as well as their own (see /api/leads), so one
+      // moved there is still in front of everybody who could pick it.
+      let lead = await prisma.lead
+        .findFirst({
+          where: { account_id: ctx.accountId, contact_id: ctx.contactId, status: { not: 'closed' } },
+          orderBy: { created_at: 'desc' },
+          select: { id: true, assigned_to: true, status: true, ai_suggested: true },
+        })
+        .catch(() => null)
+      let leadCreated = false
+
+      if (!lead) {
+        const contact = await prisma.contact
+          .findFirst({
+            where: { id: ctx.contactId, account_id: ctx.accountId },
+            select: { name: true, phone: true, user_id: true },
+          })
+          .catch(() => null)
+        if (contact) {
+          lead = await prisma.lead
+            .create({
+              data: {
+                account_id: ctx.accountId,
+                user_id: contact.user_id,
+                contact_id: ctx.contactId,
+                title: contact.name || contact.phone,
+                source: 'whatsapp',
+                status: 'follow_up',
+                ai_reason: stated
+                  ? `Asked for a call back — ${label}. They said: "${stated}"`
+                  : `Asked for a call back — ${label}.`,
+                ai_reviewed_at: new Date(),
+                ai_review_result: 'auto_accepted',
+              },
+              select: { id: true, assigned_to: true, status: true, ai_suggested: true },
+            })
+            .catch((err) => {
+              console.error('[schedule_callback] lead not opened:', err instanceof Error ? err.message : err)
+              return null
+            })
+          leadCreated = Boolean(lead)
+        }
+      }
 
       try {
         await prisma.followUp.create({
@@ -439,31 +483,23 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         }
       }
 
-      // ── Put it where people look ─────────────────────────────────
-      //
-      // A reminder in the follow-ups table alone was invisible from the
-      // Leads page. Its Follow-up tab lists leads whose *status* is
-      // follow_up, which is what a follow-up scheduled by hand does to a
-      // lead — and this did not, so a callback the assistant arranged
-      // never appeared there and looked as though nothing had happened.
-      //
-      // Two cases, deliberately different:
-      //
-      //  - The lead is somebody's. It moves to Follow-up, exactly as if
-      //    they had scheduled it themselves, and lands in their tab.
-      //
-      //  - Nobody has picked it up. It stays New, in the pool. Moving an
-      //    unclaimed lead to Follow-up takes it out of New Pool, and an
-      //    agent can only see leads that are theirs or in the pool — so
-      //    it would vanish from every agent's screen at the moment a
-      //    customer is waiting for a call. The request goes on its
-      //    timeline instead, where whoever picks it up reads it first.
       if (lead) {
-        const moveToFollowUp = Boolean(lead.assigned_to) && lead.status !== 'follow_up'
+        const moved = !leadCreated && lead.status !== 'follow_up'
         await prisma
           .$transaction([
-            ...(moveToFollowUp
-              ? [prisma.lead.update({ where: { id: lead.id }, data: { status: 'follow_up' } })]
+            ...(moved || lead.ai_suggested
+              ? [
+                  prisma.lead.update({
+                    where: { id: lead.id },
+                    data: {
+                      status: 'follow_up',
+                      // A suggestion only the Suggested tab shows would
+                      // stay hidden from the Follow-up tab. Asking for a
+                      // call settles whether it is a real enquiry.
+                      ...(lead.ai_suggested ? { ai_suggested: false, ai_review_result: 'auto_accepted' } : {}),
+                    },
+                  }),
+                ]
               : []),
             prisma.leadActivity.create({
               data: {
@@ -473,11 +509,11 @@ const TOOLS: Record<string, CustomerToolImpl> = {
                 // Nobody: the assistant did this. A user_id here would
                 // count as that agent's call on the performance screen.
                 user_id: null,
-                type: moveToFollowUp ? 'stage_change' : 'follow_up',
+                type: moved ? 'stage_change' : 'follow_up',
                 title: `Customer asked for a call back — ${label}`,
                 description: stated ? `They said: "${stated}"` : 'Arranged by the assistant from the conversation.',
-                metadata: moveToFollowUp
-                  ? { previous_status: lead.status, new_status: 'follow_up', by: 'assistant' }
+                metadata: moved
+                  ? { previous_status: lead.status, new_status: 'follow_up', due_at: at.toISOString(), by: 'assistant' }
                   : { due_at: at.toISOString(), by: 'assistant' },
               },
             }),
@@ -488,8 +524,9 @@ const TOOLS: Record<string, CustomerToolImpl> = {
 
         const { emitToAccount } = await import('@/lib/socket')
         emitToAccount(ctx.accountId, 'lead', {
-          eventType: 'UPDATE',
-          new: { id: lead.id, assigned_to: lead.assigned_to, status: moveToFollowUp ? 'follow_up' : lead.status },
+          eventType: leadCreated ? 'INSERT' : 'UPDATE',
+          new: { id: lead.id, assigned_to: lead.assigned_to, status: 'follow_up' },
+          old: leadCreated ? {} : { id: lead.id, status: lead.status },
         })
       }
 

@@ -34,6 +34,7 @@ export type FollowUpInput =
       contactId: string | null
       phone: string | null
       name: string | null
+      alternatePhone: string | null
       dueAt: Date
       description: string
     }
@@ -58,6 +59,12 @@ export function parseFollowUpInput(body: unknown, now = new Date()): FollowUpInp
 
   const name = typeof b.name === 'string' ? b.name.trim().slice(0, MAX_NAME) || null : null
 
+  let alternatePhone: string | null = null
+  if (!contactId && typeof b.alternate_phone === 'string' && b.alternate_phone.trim()) {
+    alternatePhone = normalizeEnteredPhone(b.alternate_phone)
+    if (!alternatePhone) return { ok: false, error: 'The alternate number is not a valid phone number' }
+  }
+
   const dueRaw = typeof b.due_at === 'string' ? b.due_at : ''
   const dueAt = new Date(dueRaw)
   if (!dueRaw || Number.isNaN(dueAt.getTime())) return { ok: false, error: 'Choose a date and time' }
@@ -70,5 +77,5 @@ export function parseFollowUpInput(body: unknown, now = new Date()): FollowUpInp
     return { ok: false, error: `Keep the description under ${MAX_DESCRIPTION} characters` }
   }
 
-  return { ok: true, contactId, phone, name, dueAt, description }
+  return { ok: true, contactId, phone, name, alternatePhone, dueAt, description }
 }

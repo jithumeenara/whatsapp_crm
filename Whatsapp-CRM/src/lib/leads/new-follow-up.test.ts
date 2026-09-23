@@ -37,6 +37,13 @@ describe('parseFollowUpInput', () => {
     if (r.ok) { expect(r.phone).toBe('919847012345'); expect(r.name).toBe('Anu') }
   })
 
+  it('takes an alternate number with a new contact, and refuses a bad one', () => {
+    const ok = parseFollowUpInput({ ...base, contact_id: undefined, phone: '9847012345', alternate_phone: '94470 12345' }, NOW)
+    expect(ok.ok && ok.alternatePhone).toBe('919447012345')
+    const bad = parseFollowUpInput({ ...base, contact_id: undefined, phone: '9847012345', alternate_phone: 'soon' }, NOW)
+    expect(bad.ok).toBe(false)
+  })
+
   it('refuses a contact id that is not an id', () => {
     expect(parseFollowUpInput({ ...base, contact_id: "1' OR 1=1" }, NOW).ok).toBe(false)
   })

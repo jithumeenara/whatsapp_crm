@@ -24,6 +24,7 @@ import { ToReview } from "@/components/leads/to-review"
 import { decayScore, describeDecay } from "@/lib/leads/score-decay"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 import { NewFollowUpDialog } from "@/components/leads/new-follow-up-dialog"
+import { ContactPicker, type PickedContact } from "@/components/leads/contact-picker"
 
 // ---- types ----
 
@@ -313,8 +314,6 @@ function formatSourceLabel(raw: string) {
 
 // ---- create lead dialog ----
 
-interface ContactOption { id: string; name?: string | null; phone?: string | null; email?: string | null }
-
 function CreateLeadDialog({
   open, onClose, onSaved, scoringMode, scoreOptions, sourceOptions,
 }: { open: boolean; onClose: () => void; onSaved: () => void; scoringMode: string; scoreOptions: { icon: string; label: string }[]; sourceOptions: { icon: string; label: string }[] }) {
@@ -323,13 +322,8 @@ function CreateLeadDialog({
   const [duplicateInfo, setDuplicateInfo] = useState<DuplicateInfo | null>(null)
   const [pendingForm, setPendingForm] = useState<Record<string, string> | null>(null)
 
-  // Contact search
-  const [contactQuery, setContactQuery] = useState("")
-  const [contactOptions, setContactOptions] = useState<ContactOption[]>([])
-  const [contactSearching, setContactSearching] = useState(false)
-  const [selectedContact, setSelectedContact] = useState<ContactOption | null>(null)
-  const [showContactDropdown, setShowContactDropdown] = useState(false)
-  const contactTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Who the lead is for: a contact on record, or a new one to add.
+  const [picked, setPicked] = useState<PickedContact>(null)
 
   const [form, setForm] = useState({
     title: "", source: sourceOptions.find(s => s.label.toLowerCase() === "manual")?.label ?? sourceOptions[0]?.label ?? "manual",
@@ -339,38 +333,34 @@ function CreateLeadDialog({
 
   function resetAll() {
     setForm({ title: "", source: sourceOptions.find(s => s.label.toLowerCase() === "manual")?.label ?? sourceOptions[0]?.label ?? "manual", status: "new", score: (scoreOptions[1] ?? scoreOptions[0])?.label ?? "", lead_quality: "", district: "", place: "", notes: "" })
-    setSelectedContact(null); setContactQuery(""); setContactOptions([])
+    setPicked(null)
     setDuplicateInfo(null); setPendingForm(null)
   }
 
-  function handleContactSearch(v: string) {
-    setContactQuery(v)
-    setSelectedContact(null)
-    if (contactTimer.current) clearTimeout(contactTimer.current)
-    if (v.trim().length < 2) { setContactOptions([]); return }
-    contactTimer.current = setTimeout(async () => {
-      setContactSearching(true)
-      try {
-        const r = await fetch(`/api/contacts?search=${encodeURIComponent(v.trim())}&limit=8`).then((x) => x.json())
-        setContactOptions(r.contacts ?? r ?? [])
-        setShowContactDropdown(true)
-      } catch { /* ignore */ }
-      finally { setContactSearching(false) }
-    }, 300)
-  }
-
-  async function doCreate(formData: Record<string, string>, contactId: string | null, force = false) {
+  async function doCreate(formData: Record<string, string>, target: PickedContact | string | null, force = false) {
     setSaving(true)
     try {
       const res = await fetch("/api/leads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, contact_id: contactId ?? undefined, force_create: force }),
+        body: JSON.stringify({
+          ...formData,
+          ...(typeof target === "string"
+            ? { contact_id: target }
+            : target?.kind === "existing"
+              ? { contact_id: target.contact.id }
+              : target?.kind === "new"
+                ? { new_contact: target.contact }
+                : {}),
+          force_create: force,
+        }),
       })
       if (res.status === 409) {
         const data = await res.json()
         if (data.duplicate) {
-          setPendingForm({ ...formData, contact_id: contactId ?? "" })
+          // A new contact was saved before the duplicate was found, so
+          // "create anyway" goes to that contact rather than a second one.
+          setPendingForm({ ...formData, contact_id: (data as DuplicateInfo).contact?.id ?? "" })
           setDuplicateInfo(data as DuplicateInfo)
           return
         }
@@ -388,14 +378,11 @@ function CreateLeadDialog({
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     if (!form.title.trim()) return
-    // If the user typed in the contact search but never selected from the dropdown,
-    // the contact_id would be null and duplicate detection would be skipped.
-    // Force them to either pick a contact or clear the field.
-    if (contactQuery.trim().length > 0 && !selectedContact) {
-      toast.error("Please select a contact from the dropdown or clear the contact field.")
+    if (picked?.kind === "new" && !picked.contact.phone.trim()) {
+      toast.error("Enter the new contact's phone number, or search for an existing contact.")
       return
     }
-    await doCreate(form, selectedContact?.id ?? null)
+    await doCreate(form, picked)
   }
 
   // Duplicate dialog actions
@@ -441,63 +428,7 @@ function CreateLeadDialog({
         </div>
         <form onSubmit={handleSave} className="p-5 space-y-4">
 
-          {/* Contact picker */}
-          <div>
-            <label className="block text-[12px] font-medium text-slate-600 mb-1.5">Contact</label>
-            <div className="relative">
-              {selectedContact ? (
-                <div className="flex items-center gap-2 rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-2">
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-200 text-[10px] font-bold text-indigo-700">
-                    {(selectedContact.name ?? selectedContact.phone ?? "?")[0]?.toUpperCase()}
-                  </div>
-                  <span className="flex-1 text-[13px] font-medium text-slate-900 truncate">
-                    {selectedContact.name ?? selectedContact.phone}
-                  </span>
-                  {selectedContact.phone && (
-                    <span className="text-[11px] text-slate-500 shrink-0">{selectedContact.phone}</span>
-                  )}
-                  <button type="button" onClick={() => { setSelectedContact(null); setContactQuery("") }}
-                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-slate-400 hover:text-slate-600">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="relative">
-                  <input
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none pr-8"
-                    placeholder="Search by name or phone…"
-                    value={contactQuery}
-                    onChange={(e) => handleContactSearch(e.target.value)}
-                    onFocus={() => contactOptions.length > 0 && setShowContactDropdown(true)}
-                    onBlur={() => setTimeout(() => setShowContactDropdown(false), 150)}
-                    autoComplete="off"
-                  />
-                  {contactSearching && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-indigo-500" />
-                  )}
-                  {showContactDropdown && contactOptions.length > 0 && (
-                    <div className="absolute z-20 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden">
-                      {contactOptions.map((c) => (
-                        <button
-                          key={c.id} type="button"
-                          className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-indigo-50 text-left transition-colors"
-                          onMouseDown={() => { setSelectedContact(c); setContactQuery(c.name ?? c.phone ?? ""); setShowContactDropdown(false) }}
-                        >
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold text-slate-600">
-                            {(c.name ?? c.phone ?? "?")[0]?.toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-[13px] font-medium text-slate-900 truncate">{c.name ?? "No name"}</p>
-                            {c.phone && <p className="text-[11px] text-slate-500">{c.phone}</p>}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <ContactPicker value={picked} onChange={setPicked} idPrefix="lead" />
 
           {/* Title */}
           <div>
@@ -715,7 +646,7 @@ function LeadTile({
   const isHidden = (lead as unknown as Record<string, unknown>).is_hidden === true
   const isNew = lead.status === "new" && tab === "all"
   const isUnassigned = !lead.assignee
-  const showPick = isUnassigned && (tab === "new_pool" || tab === "all")
+  const showPick = isUnassigned && (tab === "new_pool" || tab === "all" || tab === "follow_up")
 
   return (
     <div onClick={() => onOpen(lead.id)}
@@ -882,7 +813,7 @@ function LeadRow({
   const isNew = lead.status === "new" && tab === "all"
   const isOdd = index % 2 !== 0
   const isUnassigned = !lead.assignee
-  const showPick = isUnassigned && (tab === "new_pool" || tab === "all")
+  const showPick = isUnassigned && (tab === "new_pool" || tab === "all" || tab === "follow_up")
   // A coloured edge rather than a coloured row: the row already carries
   // selection and new-lead states, and a third full-row colour would
   // fight them. The bar reads down a long list in one glance.

@@ -3,7 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { findOrCreateContact } from '@/lib/contacts/find-or-create'
 import { parseFollowUpInput } from '@/lib/leads/new-follow-up'
 
 /**
@@ -40,34 +40,15 @@ export async function POST(req: NextRequest) {
       })
       if (!contact) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
     } else {
-      const phone = input.phone as string
-      const existing = await findExistingContact(ctx.accountId, phone)
-      if (existing) {
-        contact = { id: existing.id, name: existing.name ?? null, phone: existing.phone }
-      } else {
-        try {
-          contact = await prisma.contact.create({
-            data: {
-              account_id: ctx.accountId,
-              user_id: ctx.userId,
-              phone,
-              phone_normalized: phone,
-              name: input.name || phone,
-              // Typed in by staff, not the customer's own consent.
-              opt_in_source: 'manual',
-              opt_in_at: new Date(),
-            },
-            select: { id: true, name: true, phone: true },
-          })
-          contactCreated = true
-        } catch (err) {
-          // Two people adding the same new number at once.
-          if (!isUniqueViolation(err)) throw err
-          const again = await findExistingContact(ctx.accountId, phone)
-          if (!again) throw err
-          contact = { id: again.id, name: again.name ?? null, phone: again.phone }
-        }
-      }
+      const found = await findOrCreateContact({
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        phone: input.phone as string,
+        name: input.name,
+        alternatePhone: input.alternatePhone,
+      })
+      contact = found.contact
+      contactCreated = found.created
     }
 
     // ── Their lead ───────────────────────────────────────────────────
@@ -163,9 +144,6 @@ export async function POST(req: NextRequest) {
       return { leadId, created, followUp }
     })
 
-    if (contactCreated) {
-      emitToAccount(ctx.accountId, 'contact', { eventType: 'INSERT', new: contact, old: {} })
-    }
     emitToAccount(ctx.accountId, 'lead', {
       eventType: result.created ? 'INSERT' : 'UPDATE',
       new: { id: result.leadId, status: 'follow_up', assigned_to: assignee },

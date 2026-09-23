@@ -69,6 +69,8 @@ export async function GET(
       navWhere.assigned_to = null
     } else if (fromTab === 'mine') {
       navWhere.assigned_to = ctx.userId
+    } else if (fromTab === 'follow_up' && !isPrivileged) {
+      navWhere.OR = [{ assigned_to: ctx.userId }, { assigned_to: null }]
     } else if (!isPrivileged && fromTab !== 'all') {
       navWhere.assigned_to = ctx.userId
     }
@@ -158,6 +160,16 @@ export async function PATCH(
             ),
           )
       }
+      // A call back arranged while nobody owned the lead is now the
+      // claimer's to make — and theirs to be alerted about when it is due.
+      await prisma.followUp
+        .updateMany({
+          where: { account_id: ctx.accountId, lead_id: id, status: 'pending', assigned_to: null },
+          data: { assigned_to: ctx.userId },
+        })
+        .catch((err) =>
+          console.error('[leads] claimed, but its follow-ups were not reassigned:', err instanceof Error ? err.message : err),
+        )
       await prisma.leadActivity.create({
         data: {
           account_id: ctx.accountId,

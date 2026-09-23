@@ -3,6 +3,8 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
+import { findOrCreateContact } from '@/lib/contacts/find-or-create'
+import { normalizeEnteredPhone } from '@/lib/leads/new-follow-up'
 
 const PAGE_SIZE = 25
 
@@ -134,6 +136,11 @@ export async function GET(req: NextRequest) {
       // has agreed is real. Scoping this to assigned_to would show an
       // agent an empty tab forever.
       where.assigned_to = null
+    } else if (tab === 'follow_up' && !isPrivileged) {
+      // A callback the assistant arranged for a customer nobody has
+      // picked yet waits here unclaimed. Agents see those beside their
+      // own, the way the pool works, so somebody can pick it up.
+      where.AND = [{ OR: [{ assigned_to: ctx.userId }, { assigned_to: null }] }]
     } else if (!isPrivileged) {
       // Agents only see their own leads outside the pool — including on
       // the "all" tab, which used to skip this and leak every agent's
@@ -203,11 +210,46 @@ export async function POST(req: NextRequest) {
     if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
     const {
-      title, contact_id, source, status, score, notes, assigned_to,
+      title, contact_id: rawContactId, source, status, score, notes, assigned_to,
       lead_quality, district, place,
       force_create,  // when true: bypass duplicate check and always create
     } = body as Record<string, string | boolean | undefined>
     if (!title) return NextResponse.json({ error: 'title is required' }, { status: 400 })
+
+    // ── Who the lead is for ─────────────────────────────────────────────────────
+    // A picked contact must be one of this account's. A new number typed
+    // into the form (new_contact) is matched to the contact that already
+    // has it, or becomes a new one.
+    let contact_id: string | undefined
+    if (typeof rawContactId === 'string' && rawContactId) {
+      const owned = await prisma.contact.findFirst({
+        where: { id: rawContactId, account_id: ctx.accountId },
+        select: { id: true },
+      })
+      if (!owned) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
+      contact_id = owned.id
+    } else if (body.new_contact && typeof body.new_contact === 'object') {
+      const nc = body.new_contact as Record<string, unknown>
+      const phone = typeof nc.phone === 'string' ? normalizeEnteredPhone(nc.phone) : null
+      if (!phone) {
+        return NextResponse.json({ error: 'Enter a valid phone number, e.g. 9847012345 or 919847012345' }, { status: 400 })
+      }
+      let alternatePhone: string | null = null
+      if (typeof nc.alternate_phone === 'string' && nc.alternate_phone.trim()) {
+        alternatePhone = normalizeEnteredPhone(nc.alternate_phone)
+        if (!alternatePhone) {
+          return NextResponse.json({ error: 'The alternate number is not a valid phone number' }, { status: 400 })
+        }
+      }
+      const found = await findOrCreateContact({
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        phone,
+        name: typeof nc.name === 'string' ? nc.name.trim().slice(0, 120) || null : null,
+        alternatePhone,
+      })
+      contact_id = found.contact.id
+    }
 
     // ── Duplicate detection ─────────────────────────────────────────────────────
     // When a contact is linked, check whether they already have leads.
