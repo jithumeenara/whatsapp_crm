@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
 
 /**
  * POST /api/broadcasts/[id]/rescue
@@ -43,8 +44,9 @@ export async function POST(
 
     await ctx.db.broadcast.update({
       where: { id },
-      data: { status: "failed", failed_count: { increment: count } },
+      data: { status: "failed" },
     });
+    await refreshBroadcastCounts(id);
 
     return NextResponse.json({ ok: true, rescued: count });
   } catch (err) {

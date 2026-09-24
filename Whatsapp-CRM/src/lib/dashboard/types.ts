@@ -49,6 +49,19 @@ export interface ActivityItem {
   at: string
   /** Optional deep-link for the whole row (not all items have a target). */
   href?: string
+  /** Second line: a short preview of the message, and so on. Only sent
+   *  to supervisors and above — see loadActivity. */
+  detail?: string
+}
+
+/** One figure per day, oldest first, for the small trend line on each
+ *  headline card. */
+export interface Sparks {
+  days: string[]
+  conversations: number[]
+  newContacts: number[]
+  messagesSent: number[]
+  hotLeads: number[]
 }
 
 export interface LeadStatusCount {
@@ -64,4 +77,6 @@ export interface CRMStats {
   overdueFollowUps: number
   pendingTasks: number
   overdueTasks: number
+  /** People in this account who can work conversations. */
+  teamMembers: number
 }

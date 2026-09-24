@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import type { AccountContext } from "@/lib/auth/account";
 import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-sending";
+import { liveCounts } from "@/lib/broadcasts/counts";
 
 /**
  * GET /api/broadcasts
@@ -15,10 +16,15 @@ export async function GET(req: NextRequest) {
     // its API open is what made the old menu-only restriction
     // decorative — anyone signed in could read this by asking.
     assertPageAccess(ctx, '/broadcasts');
-    const broadcasts = await ctx.db.broadcast.findMany({
+    const rows = await ctx.db.broadcast.findMany({
       where: { account_id: ctx.accountId },
       orderBy: { created_at: "desc" },
     });
+    // Counted from the recipients, the same way each broadcast's own page
+    // does, so the list and the page can never disagree — and so rows
+    // whose stored totals drifted before this fix show right at once.
+    const live = await liveCounts(rows.map((b) => b.id));
+    const broadcasts = rows.map((b) => ({ ...b, ...(live.get(b.id) ?? {}) }));
     return NextResponse.json({ broadcasts });
   } catch (err) {
     return toErrorResponse(err);

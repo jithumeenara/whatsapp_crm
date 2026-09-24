@@ -15,6 +15,7 @@ import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/templat
 import { resolveMediaRef } from "@/lib/whatsapp/media-ref";
 import { classifyMetaError } from "@/lib/whatsapp/meta-error-codes";
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config";
+import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
 
 const INTER_MESSAGE_MS = 350;
 const RATE_LIMIT_BACKOFF_MS = 5_000;
@@ -243,8 +244,6 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       .filter((c): c is NonNullable<typeof c> => Boolean(c)),
   );
 
-  let sentCount = 0;
-  let failedCount = 0;
 
   for (let i = 0; i < broadcast.recipients.length; i++) {
     const recipient = broadcast.recipients[i];
@@ -267,8 +266,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         where: { id: recipient.id },
         data: { status: "failed", error_message: "No phone number on contact" },
       });
-      failedCount++;
-      await prisma.broadcast.update({ where: { id: broadcastId }, data: { failed_count: { increment: 1 } } });
+      await refreshBroadcastCounts(broadcastId);
       continue;
     }
 
@@ -278,8 +276,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         where: { id: recipient.id },
         data: { status: "failed", error_message: "Invalid phone number format" },
       });
-      failedCount++;
-      await prisma.broadcast.update({ where: { id: broadcastId }, data: { failed_count: { increment: 1 } } });
+      await refreshBroadcastCounts(broadcastId);
       continue;
     }
 
@@ -372,8 +369,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         where: { id: recipient.id },
         data: { status: "sent", sent_at: new Date(), whatsapp_message_id: sentMessageId, error_message: null, rendered_body: renderedBody },
       });
-      sentCount++;
-      await prisma.broadcast.update({ where: { id: broadcastId }, data: { sent_count: { increment: 1 } } });
+      await refreshBroadcastCounts(broadcastId);
       await recordBroadcastMessage({
         accountId,
         ownerUserId: broadcast.user_id,
@@ -390,8 +386,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         where: { id: recipient.id },
         data: { status: "failed", error_message: lastError ?? "Send failed", rendered_body: renderedBody },
       });
-      failedCount++;
-      await prisma.broadcast.update({ where: { id: broadcastId }, data: { failed_count: { increment: 1 } } });
+      await refreshBroadcastCounts(broadcastId);
 
       // The token is bad for every remaining recipient too — stop burning
       // API calls one doomed request at a time and bulk-fail whatever's
@@ -405,11 +400,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
             error_message: "Broadcast aborted: WhatsApp access token expired mid-run. Reconnect WhatsApp in Settings, then retry the failed recipients.",
           },
         });
-        const remaining = broadcast.recipients.length - (i + 1);
-        if (remaining > 0) {
-          failedCount += remaining;
-          await prisma.broadcast.update({ where: { id: broadcastId }, data: { failed_count: { increment: remaining } } });
-        }
+        await refreshBroadcastCounts(broadcastId);
         await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: "failed" } });
         return;
       }
@@ -419,10 +410,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   // C4 fix: use the DB's accumulated sent_count (not local counter) so that
   // a retry run which itself sends 0 doesn't mark a previously-partially-sent
   // broadcast as "failed".
-  const finalRow = await prisma.broadcast.findFirst({
-    where: { id: broadcastId },
-    select: { sent_count: true },
-  });
-  const finalStatus = (finalRow?.sent_count ?? 0) > 0 ? "sent" : "failed";
+  const finalRow = await refreshBroadcastCounts(broadcastId);
+  const finalStatus = finalRow.sent_count > 0 ? "sent" : "failed";
   await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: finalStatus } });
 }

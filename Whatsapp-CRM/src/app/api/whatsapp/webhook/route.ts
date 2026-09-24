@@ -29,6 +29,7 @@ import {
   forwardCallWebhook,
 } from '@/lib/whatsapp/call-handler'
 import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
+import { refreshBroadcastCounts } from '@/lib/broadcasts/counts'
 
 /** Why nothing was sent, in words rather than a reason code. These are
  *  read by whoever is looking at pm2 logs asking why a customer got no
@@ -510,25 +511,12 @@ async function handleStatusUpdate(status: {
     return
   }
 
-  // Increment the aggregate count on the parent Broadcast row so the
-  // detail page stats reflect reality without requiring a full recount.
-  const countField: Record<string, string> = {
-    sent: 'sent_count',
-    delivered: 'delivered_count',
-    read: 'read_count',
-    replied: 'replied_count',
-    failed: 'failed_count',
-  }
-  const field = countField[status.status]
-  if (field) {
-    try {
-      await prisma.broadcast.update({
-        where: { id: recipient.broadcast_id },
-        data: { [field]: { increment: 1 } },
-      })
-    } catch (err) {
-      console.error('Error incrementing broadcast count:', err)
-    }
+  // Recounted from the recipients rather than added to — a status Meta
+  // delivers twice used to count twice. See lib/broadcasts/counts.ts.
+  try {
+    await refreshBroadcastCounts(recipient.broadcast_id)
+  } catch (err) {
+    console.error('Error refreshing broadcast counts:', err)
   }
 }
 
@@ -561,10 +549,7 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
       data: { status: 'replied', replied_at: new Date() },
       select: { broadcast_id: true },
     })
-    await prisma.broadcast.update({
-      where: { id: updated.broadcast_id },
-      data: { replied_count: { increment: 1 } },
-    })
+    await refreshBroadcastCounts(updated.broadcast_id)
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err)
   }

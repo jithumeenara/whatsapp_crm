@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
 
 /**
  * PATCH /api/broadcasts/[id]/recipients
@@ -59,13 +60,7 @@ export async function PATCH(
     const failedInBatch = body.updates.filter((u) => u.status === "failed").length;
 
     if (sentInBatch > 0 || failedInBatch > 0) {
-      await ctx.db.broadcast.update({
-        where: { id: broadcastId },
-        data: {
-          ...(sentInBatch   > 0 ? { sent_count:   { increment: sentInBatch } }   : {}),
-          ...(failedInBatch > 0 ? { failed_count: { increment: failedInBatch } } : {}),
-        },
-      });
+      await refreshBroadcastCounts(broadcastId);
     }
 
     return NextResponse.json({ ok: true });

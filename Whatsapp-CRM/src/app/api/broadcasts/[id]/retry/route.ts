@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
 import { runBroadcast } from "@/lib/broadcasts/run-broadcast";
+import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
 
 /**
  * POST /api/broadcasts/[id]/retry
@@ -47,8 +48,9 @@ export async function POST(
     // Mark broadcast as sending and reset failed_count
     await ctx.db.broadcast.update({
       where: { id },
-      data: { status: "sending", failed_count: 0 },
+      data: { status: "sending" },
     });
+    await refreshBroadcastCounts(id);
 
     setImmediate(() => {
       runBroadcast(id, ctx.accountId).catch((err) => {

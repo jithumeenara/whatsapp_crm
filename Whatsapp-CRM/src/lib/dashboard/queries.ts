@@ -14,6 +14,7 @@ import type {
   MetricsBundle,
   ResponseTimeBucket,
   ResponseTimeSummary,
+  Sparks,
 } from './types'
 
 // --- 1. Metric cards ---------------------------------------------------
@@ -187,9 +188,22 @@ function contactLabel(contact: { name?: string | null; phone?: string | null; em
   return fallback
 }
 
+/** First line of a message, short enough for one row. */
+function preview(text: string): string {
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length > 70 ? `${line.slice(0, 69)}…` : line
+}
+
 // --- 4. Activity feed --------------------------------------------------
 
-export async function loadActivity(accountId: string, limit = 20): Promise<ActivityItem[]> {
+export async function loadActivity(
+  accountId: string,
+  limit = 20,
+  /** Include what customers wrote. Off for agents: the feed spans the
+   *  whole account, and an agent has no business reading a colleague's
+   *  customers' messages from the dashboard. */
+  withDetail = false,
+): Promise<ActivityItem[]> {
   const [msgs, contacts, broadcasts, autoLogs] = await Promise.all([
     prisma.message.findMany({
       where: { sender_type: 'customer', conversation: { account_id: accountId } },
@@ -240,6 +254,7 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
       text: `New message from ${who}`,
       at: m.created_at.toISOString(),
       href: `/inbox?c=${m.conversation_id}`,
+      ...(withDetail && m.content_text ? { detail: preview(m.content_text) } : {}),
     })
   }
 
@@ -250,6 +265,7 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
       text: `New contact: ${contactLabel(c, 'Unknown')}`,
       at: c.created_at.toISOString(),
       href: '/contacts',
+      detail: 'Contact added',
     })
   }
 
@@ -288,15 +304,18 @@ export async function loadActivity(accountId: string, limit = 20): Promise<Activ
 export async function loadCRMStats(accountId: string): Promise<CRMStats> {
   const now = new Date()
 
-  const [leadGroups, hotLeads, pendingFollowUps, overdueFollowUps, pendingTasks, overdueTasks] =
+  const [leadGroups, hotLeads, pendingFollowUps, overdueFollowUps, pendingTasks, overdueTasks, teamMembers] =
     await Promise.all([
       prisma.lead.groupBy({
         by: ['status'],
         where: { account_id: accountId },
         _count: { _all: true },
       }),
+      // Score is stored as the label chosen in settings ("Hot", "hot"),
+      // and an open lead is anything not closed — the old filter looked
+      // for 'converted' and 'lost', statuses this app has never had.
       prisma.lead.count({
-        where: { account_id: accountId, score: 'hot', status: { notIn: ['converted', 'lost'] } },
+        where: { account_id: accountId, score: { equals: 'hot', mode: 'insensitive' }, status: { not: 'closed' } },
       }),
       prisma.followUp.count({
         where: { account_id: accountId, status: 'pending', due_at: { gte: now } },
@@ -318,6 +337,9 @@ export async function loadCRMStats(accountId: string): Promise<CRMStats> {
           due_date: { not: null, lt: now },
         },
       }),
+      prisma.profile.count({
+        where: { account_id: accountId, account_role: { in: ['owner', 'admin', 'supervisor', 'agent'] } },
+      }),
     ])
 
   const leadsByStatus = leadGroups.map((g) => ({ status: g.status, count: g._count._all }))
@@ -331,5 +353,56 @@ export async function loadCRMStats(accountId: string): Promise<CRMStats> {
     overdueFollowUps,
     pendingTasks,
     overdueTasks,
+    teamMembers,
   }
+}
+
+// --- 6. Small trend lines for the headline cards ------------------------
+
+export async function loadSparks(accountId: string, days = 7): Promise<Sparks> {
+  const start = daysAgoStart(days - 1)
+  const keys = lastNDayKeys(days)
+  const index = new Map(keys.map((k, i) => [k, i]))
+  const zeros = () => keys.map(() => 0)
+
+  const [messages, contacts, hot] = await Promise.all([
+    prisma.message.findMany({
+      where: { created_at: { gte: start }, conversation: { account_id: accountId } },
+      select: { created_at: true, sender_type: true, conversation_id: true },
+    }),
+    prisma.contact.findMany({
+      where: { account_id: accountId, created_at: { gte: start } },
+      select: { created_at: true },
+    }),
+    prisma.lead.findMany({
+      where: { account_id: accountId, created_at: { gte: start }, score: { equals: 'hot', mode: 'insensitive' } },
+      select: { created_at: true },
+    }),
+  ])
+
+  const conversations = zeros()
+  const messagesSent = zeros()
+  const newContacts = zeros()
+  const hotLeads = zeros()
+  // A conversation counts once a day, on any day the customer wrote.
+  const seen = new Set<string>()
+  for (const m of messages) {
+    const i = index.get(localDayKey(m.created_at.toISOString()))
+    if (i === undefined) continue
+    if (m.sender_type === 'customer') {
+      const k = `${i}:${m.conversation_id}`
+      if (!seen.has(k)) { seen.add(k); conversations[i] += 1 }
+    } else if (m.sender_type === 'agent') {
+      messagesSent[i] += 1
+    }
+  }
+  for (const c of contacts) {
+    const i = index.get(localDayKey(c.created_at.toISOString()))
+    if (i !== undefined) newContacts[i] += 1
+  }
+  for (const l of hot) {
+    const i = index.get(localDayKey(l.created_at.toISOString()))
+    if (i !== undefined) hotLeads[i] += 1
+  }
+  return { days: keys, conversations, newContacts, messagesSent, hotLeads }
 }
