@@ -488,6 +488,11 @@ export type ParsedInbound =
       /** The completed Flow's submitted field values (parsed response_json). */
       response: Record<string, unknown>;
       meta_message_id: string;
+      /** Our own id for the message that carried the Flow — Meta names it
+       *  in the reply's `context.id`. For a Flow sent inside a template,
+       *  this is how we learn which Flow was filled in: the template's
+       *  FLOW button says. Null when that message is not on record. */
+      source_message_id?: string | null;
     };
 
 export interface DispatchInboundInput {

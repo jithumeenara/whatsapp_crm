@@ -399,6 +399,12 @@ export function summarizeChatbotNode(
   }
   switch (nodeType) {
     case 'start':
+      // Says what starts it, so a Flow-submitted chatbot is not mistaken
+      // for an always-on one at a glance.
+      if (config.trigger_on === 'flow_submitted') {
+        return `When Flow submitted: ${t(config.trigger_flow_name) || 'any Flow'}`
+      }
+      return config.trigger_keyword ? `Keyword: ${t(config.trigger_keyword, 40)}` : null
     case 'end':
       return null
     case 'send_text':

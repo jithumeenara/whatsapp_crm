@@ -90,14 +90,24 @@ export function ChatbotShell({
     setSaveStatus("saving");
     try {
       const startNode = nodesRef.current.find((n) => n.node_type === "start");
-      const startCfg = startNode?.config as { trigger_keyword?: string; trigger_match?: string } | undefined;
-      const keyword = startCfg?.trigger_keyword?.trim() ?? "";
+      const startCfg = startNode?.config as {
+        trigger_keyword?: string; trigger_match?: string
+        trigger_on?: string; trigger_flow_id?: string
+      } | undefined;
+      // Started by a submitted WhatsApp Flow rather than a message. Saved
+      // as 'manual' so no ordinary message starts it — see
+      // src/lib/flows/flow-submitted-trigger.ts.
+      const onFlowSubmitted = startCfg?.trigger_on === "flow_submitted";
+      const keyword = onFlowSubmitted ? "" : startCfg?.trigger_keyword?.trim() ?? "";
       const keywords = keyword
         ? keyword.split("|").map((k) => k.trim()).filter(Boolean)
         : [];
-      const triggerType = keywords.length > 0 ? "keyword" : "always";
+      const triggerType = onFlowSubmitted ? "manual" : keywords.length > 0 ? "keyword" : "always";
       const triggerConfig = {
         ...(keywords.length > 0 ? { keywords, match_type: startCfg?.trigger_match ?? "exact" } : {}),
+        ...(onFlowSubmitted
+          ? { start_on: "flow_submitted", meta_flow_id: startCfg?.trigger_flow_id?.trim() || null }
+          : {}),
         no_reply_delay_enabled: noReplyEnabledRef.current,
         no_reply_delay_minutes: noReplyMinutesRef.current,
         no_reply_message: noReplyMessageRef.current,

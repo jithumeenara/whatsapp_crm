@@ -1093,6 +1093,7 @@ async function processMessage(
               flow_token: flowReply.token,
               response: flowReply.response,
               meta_message_id: message.id,
+              source_message_id: replyToInternalId,
             }
           : interactiveReplyId
           ? {

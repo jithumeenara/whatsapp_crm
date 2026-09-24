@@ -69,6 +69,7 @@ import {
   engineSendCatalog,
 } from "./meta-send";
 import { decideFallback, isEscapeRequest, resolveFallbackPolicy } from "./fallback";
+import { FLOW_SUBMITTED, flowVarsFromResponse, identifySubmittedFlow, pickFlowSubmittedChatbot } from "./flow-submitted-trigger";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -593,6 +594,9 @@ async function findEntryFlow(
       : message.kind === "interactive_reply"
         ? message.reply_title
         : null;
+  if (message.kind === "flow_reply") {
+    return findFlowSubmittedEntry(accountId, message, channel);
+  }
   if (!triggerText && message.kind !== "text") return null;
   // Always-on / first_inbound flows should only fire on true text messages,
   // not button taps, to avoid re-starting a flow when the user taps a button
@@ -636,6 +640,36 @@ async function findEntryFlow(
     console.error("[flows] findEntryFlow error:", err instanceof Error ? err.message : err);
   }
   return null;
+}
+
+/** A chatbot set to start when a WhatsApp Flow is submitted — see
+ *  flow-submitted-trigger.ts. Only for a submission no run was waiting
+ *  on; one a send_flow node sent is its own run's business. */
+async function findFlowSubmittedEntry(
+  accountId: string,
+  message: Extract<ParsedInbound, { kind: "flow_reply" }>,
+  channel?: string,
+): Promise<FlowRow | null> {
+  try {
+    const rows = await prisma.$queryRaw<Parameters<typeof toFlowRow>[0][]>`
+      SELECT id, account_id, user_id, name, description, status, trigger_type,
+             trigger_config, entry_node_id, fallback_policy,
+             execution_count, last_executed_at, created_at, updated_at
+      FROM flows
+      WHERE account_id = ${accountId}::uuid
+        AND status = 'active'
+        AND trigger_type = 'manual'
+        AND trigger_config->>'start_on' = ${FLOW_SUBMITTED}
+        AND COALESCE(channel, 'whatsapp') = ${channel ?? "whatsapp"}
+      ORDER BY created_at ASC
+    `;
+    if (!rows.length) return null;
+    const metaFlowId = await identifySubmittedFlow(accountId, message.source_message_id);
+    return pickFlowSubmittedChatbot(rows.map(toFlowRow), metaFlowId);
+  } catch (err) {
+    console.error("[flows] findFlowSubmittedEntry error:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 // ============================================================
@@ -2831,6 +2865,21 @@ export async function dispatchInboundToFlows(
         }
       }
 
+      // A Flow this run did not send — one inside a template, say —
+      // is not an answer to whatever this run last asked. Treating it
+      // as one would re-send that question. It either starts the
+      // chatbot set to receive it, or is left to the Inbox.
+      if (
+        input.message.kind === "flow_reply" &&
+        !(activeRun.pending_flow_token && input.message.flow_token === activeRun.pending_flow_token)
+      ) {
+        const receiver = await findEntryFlow(input.accountId, input.message, false, input.channel);
+        if (!receiver?.entry_node_id) return { consumed: false, outcome: "no_match" };
+        await endRun(activeRun.id, "completed", "superseded_by_flow_submission");
+        const receiverNodes = await loadAllNodes(receiver.id);
+        return startNewRun(receiver, input, receiverNodes);
+      }
+
       // One SELECT for the whole flow's nodes — advance loop is now
       // in-memory. See loadAllNodes.
       const nodes = await loadAllNodes(activeRun.flow_id);
@@ -3272,6 +3321,11 @@ async function startNewRun(
         conversation_id: input.conversationId,
         status: "active",
         current_node_key: flow.entry_node_id,
+        // Started by a submitted WhatsApp Flow: what they filled in is
+        // there from the first node, as {{vars.flow_<field>}}.
+        ...(input.message.kind === "flow_reply"
+          ? { vars: flowVarsFromResponse(input.message.response) as Prisma.InputJsonValue }
+          : {}),
       },
     });
     run = toFlowRunRow(inserted);

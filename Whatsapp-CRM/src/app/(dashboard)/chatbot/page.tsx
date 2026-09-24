@@ -19,7 +19,7 @@ interface Chatbot {
   id: string
   name: string
   trigger_type: string
-  trigger_config: { keywords?: string[]; match_type?: string } | null
+  trigger_config: { keywords?: string[]; match_type?: string; start_on?: string } | null
   is_active: boolean
   status: string
   execution_count: number
@@ -47,12 +47,22 @@ const TRIGGER_LABELS: Record<string, string> = {
   always:        "Always On",
   whatsapp_flow: "WhatsApp Flow",
   manual:        "Manual",
+  flow_submitted: "Flow Submitted",
 }
 const TRIGGER_ICONS: Record<string, React.ReactNode> = {
   keyword:       <Hash className="h-3 w-3" />,
   always:        <Radio className="h-3 w-3" />,
   whatsapp_flow: <Play className="h-3 w-3" />,
   manual:        <Zap className="h-3 w-3" />,
+  flow_submitted: <Play className="h-3 w-3" />,
+}
+
+/** A chatbot started by a submitted WhatsApp Flow is stored as 'manual'
+ *  with start_on — see src/lib/flows/flow-submitted-trigger.ts. */
+function triggerKey(bot: Chatbot): string {
+  return bot.trigger_type === "manual" && bot.trigger_config?.start_on === "flow_submitted"
+    ? "flow_submitted"
+    : bot.trigger_type
 }
 
 function WhatsAppIcon({ className }: Readonly<{ className?: string }>) {
@@ -425,8 +435,8 @@ export default function ChatbotV2() {
                 )}
                 <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                   <p className="flex items-center gap-1 text-[10px] text-white/80">
-                    {TRIGGER_ICONS[bot.trigger_type] ?? <Zap className="h-3 w-3" />}
-                    {TRIGGER_LABELS[bot.trigger_type] ?? bot.trigger_type.replace(/_/g, " ")}
+                    {TRIGGER_ICONS[triggerKey(bot)] ?? <Zap className="h-3 w-3" />}
+                    {TRIGGER_LABELS[triggerKey(bot)] ?? bot.trigger_type.replace(/_/g, " ")}
                   </p>
                   <ChannelBadge channel={bot.channel} />
                 </div>
@@ -597,8 +607,8 @@ export default function ChatbotV2() {
                   <td className="px-4 py-3">
                     <div className="flex flex-col gap-1.5">
                       <span className="flex items-center gap-1.5 text-[12px] text-slate-500">
-                        {TRIGGER_ICONS[bot.trigger_type] ?? <Zap className="h-3 w-3" />}
-                        {TRIGGER_LABELS[bot.trigger_type] ?? bot.trigger_type.replace(/_/g, " ")}
+                        {TRIGGER_ICONS[triggerKey(bot)] ?? <Zap className="h-3 w-3" />}
+                        {TRIGGER_LABELS[triggerKey(bot)] ?? bot.trigger_type.replace(/_/g, " ")}
                       </span>
                       {getKeywords(bot).length > 0 && (
                         <div className="flex flex-wrap gap-1">

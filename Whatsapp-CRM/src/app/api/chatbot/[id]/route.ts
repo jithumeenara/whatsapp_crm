@@ -76,6 +76,12 @@ export async function PUT(
     } | null
 
     if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    if (
+      body.trigger_type !== undefined &&
+      !['keyword', 'first_inbound_message', 'always', 'manual'].includes(body.trigger_type)
+    ) {
+      return NextResponse.json({ error: 'Unknown trigger type' }, { status: 400 })
+    }
 
     const patch: Record<string, unknown> = { updated_at: new Date() }
     if (body.name !== undefined)          patch.name          = body.name

@@ -68,7 +68,7 @@ function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string
       if (typeof n.config.save_reply_to === "string" && n.config.save_reply_to) {
         keys.add(n.config.save_reply_to);
       }
-    } else if (n.node_type === "send_flow") {
+    } else if (n.node_type === "send_flow" || (n.node_type === "start" && n.config.trigger_on === "flow_submitted")) {
       const tokens = Array.isArray(n.config.available_vars)
         ? (n.config.available_vars as unknown[]).filter((t): t is string => typeof t === "string")
         : [];
@@ -395,45 +395,74 @@ function MediaUrlField({
 function StartForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const keyword = String(cfg.trigger_keyword ?? "");
   const match = String(cfg.trigger_match ?? "exact");
+  const onFlow = cfg.trigger_on === "flow_submitted";
 
   return (
     <div className="space-y-4">
-      {/* Trigger keyword */}
-      <Field
-        label="Trigger keyword"
-        hint={
-          keyword
-            ? `Chatbot starts when a message or button reply ${match === "exact" ? "exactly matches" : match === "contains" ? "contains" : "starts with"} any keyword. Separate multiple keywords with |.`
-            : "Leave blank to trigger on every message (always-on)."
-        }
-      >
-        <Input
-          className="h-8 text-xs"
-          value={keyword}
-          onChange={(e) => onChange({ ...cfg, trigger_keyword: e.target.value })}
-          placeholder='e.g. "Hi" or "Know More|Start|Hello"'
-        />
+      <Field label="Start this chatbot when">
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ["message", "A message arrives"],
+            ["flow_submitted", "A WhatsApp Flow is submitted"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onChange({ ...cfg, trigger_on: value })}
+              className={`rounded-md border px-2 py-1.5 text-[11px] font-medium leading-tight transition-colors ${
+                (value === "flow_submitted") === onFlow
+                  ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                  : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-slate-900"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </Field>
 
-      {keyword && (
-        <Field label="Match type">
-          <div className="flex gap-2">
-            {(["exact", "contains", "starts_with"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => onChange({ ...cfg, trigger_match: m })}
-                className={`flex-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
-                  match === m
-                    ? "border-indigo-500 bg-indigo-50 text-indigo-600"
-                    : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-slate-900"
-                }`}
-              >
-                {m === "exact" ? "Exact" : m === "contains" ? "Contains" : "Starts with"}
-              </button>
-            ))}
-          </div>
-        </Field>
+      {onFlow ? (
+        <FlowSubmittedTrigger cfg={cfg} onChange={onChange} />
+      ) : (
+        <>
+          {/* Trigger keyword */}
+          <Field
+            label="Trigger keyword"
+            hint={
+              keyword
+                ? `Chatbot starts when a message or button reply ${match === "exact" ? "exactly matches" : match === "contains" ? "contains" : "starts with"} any keyword. Separate multiple keywords with |.`
+                : "Leave blank to trigger on every message (always-on)."
+            }
+          >
+            <Input
+              className="h-8 text-xs"
+              value={keyword}
+              onChange={(e) => onChange({ ...cfg, trigger_keyword: e.target.value })}
+              placeholder='e.g. "Hi" or "Know More|Start|Hello"'
+            />
+          </Field>
+
+          {keyword && (
+            <Field label="Match type">
+              <div className="flex gap-2">
+                {(["exact", "contains", "starts_with"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => onChange({ ...cfg, trigger_match: m })}
+                    className={`flex-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                      match === m
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                        : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-slate-900"
+                    }`}
+                  >
+                    {m === "exact" ? "Exact" : m === "contains" ? "Contains" : "Starts with"}
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+        </>
       )}
 
       <NodeSelect
@@ -442,8 +471,92 @@ function StartForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         allNodes={allNodes}
         currentKey={nodeKey}
         onChange={(v) => onChange({ ...cfg, next_node_key: v })}
-        hint="The first node that runs when this chatbot starts."
+        hint={onFlow
+          ? "Runs right after the customer submits the Flow. Their answers are ready as {{vars.flow_<field>}}."
+          : "The first node that runs when this chatbot starts."}
       />
+    </div>
+  );
+}
+
+/**
+ * Which submitted Flow starts this chatbot. For Flows sent inside a
+ * template — a broadcast, or a template sent from the Inbox — which no
+ * chatbot was waiting on. A Flow a chatbot sends itself (Send Flow node)
+ * carries on in that chatbot instead.
+ */
+function FlowSubmittedTrigger({ cfg, onChange }: { cfg: Record<string, unknown>; onChange: (c: Record<string, unknown>) => void }) {
+  const [flows, setFlows] = useState<MetaFlowOption[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/flows?flow_type=whatsapp_flow&status=active")
+      .then((r) => r.json())
+      .then((j: { flows?: Array<{ id: string; name: string; trigger_config: Record<string, unknown> }> }) => {
+        setFlows(
+          (j.flows ?? [])
+            .filter((f) => f.trigger_config?.meta_flow_id)
+            .map((f) => ({
+              metaFlowId: String(f.trigger_config.meta_flow_id),
+              name: f.name,
+              variableTokens: extractAllFlowVariables(f.trigger_config?.screens),
+            })),
+        );
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  // Keep the chosen Flow's field names on the Start node, so later nodes
+  // can offer {{vars.flow_x}} without fetching the Flow again.
+  useEffect(() => {
+    const found = flows.find((f) => f.metaFlowId === String(cfg.trigger_flow_id ?? ""));
+    const next = found?.variableTokens ?? [];
+    const current = Array.isArray(cfg.available_vars) ? (cfg.available_vars as string[]) : [];
+    const same = current.length === next.length && current.every((v, i) => v === next[i]);
+    if (loaded && !same) onChange({ ...cfg, available_vars: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flows, loaded, cfg.trigger_flow_id]);
+
+  return (
+    <div className="space-y-2">
+      <Field
+        label="Which Flow"
+        hint="Starts when a customer submits this Flow from a template message — a broadcast, or a template sent from the Inbox."
+      >
+        <Select
+          value={String(cfg.trigger_flow_id || "__any__")}
+          onValueChange={(v) => {
+            const found = flows.find((f) => f.metaFlowId === v);
+            onChange({
+              ...cfg,
+              trigger_flow_id: v === "__any__" ? "" : v,
+              trigger_flow_name: found?.name ?? "",
+            });
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="Any Flow" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__any__" className="text-xs">Any Flow</SelectItem>
+            {flows.map((f) => (
+              <SelectItem key={f.metaFlowId} value={f.metaFlowId} className="text-xs">
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      {loaded && flows.length === 0 && (
+        <p className="text-[10px] text-amber-600">
+          No published Flows yet. Publish one under WhatsApp Flows, or use Sync from Meta on a Send Flow node.
+        </p>
+      )}
+      <div className="rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-[10px] leading-relaxed text-sky-800">
+        The template must have a Flow button for this Flow, and be synced in Templates — that is how the
+        submission is matched to it. A chatbot tied to a specific Flow is chosen before one set to Any Flow.
+      </div>
     </div>
   );
 }

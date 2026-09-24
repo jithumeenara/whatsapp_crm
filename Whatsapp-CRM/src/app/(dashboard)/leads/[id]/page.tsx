@@ -22,6 +22,7 @@ import { ScheduleMenuButton } from "@/components/inbox/schedule-menu-button"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { LeadDescription } from "@/components/leads/lead-description"
+import { LeadFollowUps, type LeadFollowUp } from "@/components/leads/lead-follow-ups"
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
 import type { MessageTemplate, Contact } from "@/types"
@@ -672,6 +673,12 @@ export default function LeadDetailPage() {
             value={lead.notes ?? ""}
             suggestion={lead.ai_reason ?? null}
             onSave={(notes) => patchLead({ notes })}
+          />
+
+          {/* Scheduled calls, and Done / Reschedule / Couldn't reach on each. */}
+          <LeadFollowUps
+            items={(lead as Lead & { follow_ups?: LeadFollowUp[] }).follow_ups ?? []}
+            onChanged={loadLead}
           />
 
           {/* Lead Details + Log Call Outcome */}
