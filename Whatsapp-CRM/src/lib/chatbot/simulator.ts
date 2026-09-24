@@ -434,6 +434,18 @@ export function runUntilInteractive(
         return state
       }
 
+      case 'wait_flow_submit': {
+        const name = typeof cfg.flow_name === 'string' && cfg.flow_name ? cfg.flow_name : 'the form'
+        state.msgs.push({
+          id: uid(),
+          role: 'bot',
+          text: `⏳ Waiting for the customer to submit ${name}`,
+          buttons: [{ id: 'flow_submitted', label: 'Simulate: form submitted', nextKey: String(cfg.next_node_key ?? '') }],
+        })
+        state.currentKey = null
+        return state
+      }
+
       case 'send_flow': {
         const flowName = typeof cfg.flow_name === 'string' && cfg.flow_name
           ? cfg.flow_name

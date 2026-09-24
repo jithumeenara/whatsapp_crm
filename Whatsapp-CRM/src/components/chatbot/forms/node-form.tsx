@@ -43,6 +43,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { RichTextArea } from "./rich-text-area";
 import type { ChatbotBuilderNode, ChatbotNodeType } from "@/lib/chatbot/types";
+import { NODE_META, NODE_NAME_MAX, nodeDisplayName } from "@/lib/chatbot/node-meta";
 
 // ─── Variable helpers ────────────────────────────────────────────
 
@@ -68,7 +69,11 @@ function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string
       if (typeof n.config.save_reply_to === "string" && n.config.save_reply_to) {
         keys.add(n.config.save_reply_to);
       }
-    } else if (n.node_type === "send_flow" || (n.node_type === "start" && n.config.trigger_on === "flow_submitted")) {
+    } else if (
+      n.node_type === "send_flow" ||
+      n.node_type === "wait_flow_submit" ||
+      (n.node_type === "start" && n.config.trigger_on === "flow_submitted")
+    ) {
       const tokens = Array.isArray(n.config.available_vars)
         ? (n.config.available_vars as unknown[]).filter((t): t is string => typeof t === "string")
         : [];
@@ -159,7 +164,7 @@ function NodeSelect({
           </SelectItem>
           {opts.map((n) => (
             <SelectItem key={n.node_key} value={n.node_key} className="text-xs">
-              {n.node_key} ({n.node_type})
+              {nodeDisplayName(n)} · {n.node_key}
             </SelectItem>
           ))}
         </SelectContent>
@@ -2520,6 +2525,109 @@ function extractAllFlowVariables(screens: unknown): string[] {
   return Array.from(result);
 }
 
+/**
+ * Holds the chatbot until the customer submits a WhatsApp Flow — put it
+ * after a Send Template whose template has a Flow button, and the steps
+ * after it (a delay, a thank-you, a lead) only run for someone who
+ * actually filled the form in. Messages in the meantime go to the
+ * assistant and the Inbox; the chatbot keeps waiting.
+ */
+function WaitFlowSubmitForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const [flows, setFlows] = useState<MetaFlowOption[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/flows?flow_type=whatsapp_flow&status=active")
+      .then((r) => r.json())
+      .then((j: { flows?: Array<{ id: string; name: string; trigger_config: Record<string, unknown> }> }) => {
+        setFlows(
+          (j.flows ?? [])
+            .filter((f) => f.trigger_config?.meta_flow_id)
+            .map((f) => ({
+              metaFlowId: String(f.trigger_config.meta_flow_id),
+              name: f.name,
+              variableTokens: extractAllFlowVariables(f.trigger_config?.screens),
+            })),
+        );
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  // The chosen Flow's field names, kept on the node so later steps can
+  // offer {{vars.flow_x}}.
+  useEffect(() => {
+    const found = flows.find((f) => f.metaFlowId === String(cfg.flow_id ?? ""));
+    const next = found?.variableTokens ?? [];
+    const current = Array.isArray(cfg.available_vars) ? (cfg.available_vars as string[]) : [];
+    const same = current.length === next.length && current.every((v, i) => v === next[i]);
+    if (loaded && !same) onChange({ ...cfg, available_vars: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flows, loaded, cfg.flow_id]);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-[11px] leading-relaxed text-violet-800">
+        Place this right after a <b>Send Template</b> whose template has a Flow button. The chatbot stops here
+        and goes on to the next step <b>only after the customer submits the form</b>. Anything they type meanwhile
+        is answered by the assistant or the team, and the chatbot keeps waiting.
+      </div>
+
+      <Field label="Which Flow" hint="Choose the Flow in the template, or Any Flow.">
+        <Select
+          value={String(cfg.flow_id || "__any__")}
+          onValueChange={(v) => {
+            const found = flows.find((f) => f.metaFlowId === v);
+            onChange({ ...cfg, flow_id: v === "__any__" ? "" : v, flow_name: found?.name ?? "" });
+          }}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="Any Flow" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__any__" className="text-xs">Any Flow</SelectItem>
+            {flows.map((f) => (
+              <SelectItem key={f.metaFlowId} value={f.metaFlowId} className="text-xs">
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Field>
+      {loaded && flows.length === 0 && (
+        <p className="text-[10px] text-amber-600">No published Flows found — Any Flow will still work.</p>
+      )}
+
+      <Field
+        label="Wait up to (hours)"
+        hint="If the form is not submitted in this time, the chatbot ends (and sends its no-reply message, if one is set). 1 to 168 hours."
+      >
+        <Input
+          id={`wait-hours-${nodeKey}`}
+          type="number"
+          min={1}
+          max={168}
+          className="h-8 text-xs"
+          value={String(cfg.wait_hours ?? 24)}
+          onChange={(e) => {
+            const n = Number(e.target.value)
+            onChange({ ...cfg, wait_hours: Number.isFinite(n) ? Math.min(Math.max(Math.round(n), 1), 168) : 24 })
+          }}
+        />
+      </Field>
+
+      <NodeSelect
+        label="After the form is submitted *"
+        value={String(cfg.next_node_key ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, next_node_key: v })}
+        hint="Runs only once the Flow is submitted. The answers are ready as {{vars.flow_<field>}}."
+      />
+    </div>
+  );
+}
+
 function SendFlowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const [flows, setFlows] = useState<MetaFlowOption[]>([]);
   const [syncing, setSyncing] = useState(false);
@@ -3269,6 +3377,7 @@ export function NodeForm({ node, allNodes, onChange }: NodeFormProps) {
     end:            EndForm,
     link_chatbot:   LinkChatbotForm,
     send_flow:      SendFlowForm,
+    wait_flow_submit: WaitFlowSubmitForm,
     send_template:  SendTemplateForm,
     join:           JoinForm,
     switch_case:    SwitchCaseForm,
@@ -3282,5 +3391,22 @@ export function NodeForm({ node, allNodes, onChange }: NodeFormProps) {
       <p className="text-xs text-slate-400 italic">No form for this node type.</p>
     );
 
-  return <Form {...props} />;
+  return (
+    <div className="space-y-4">
+      {/* A name for this step, shown on its card and in every "next
+          node" list — so a chatbot with six Send Buttons steps can be
+          read without opening each one. */}
+      <Field label="Step name" hint="Optional. Shown on the card instead of the step type.">
+        <Input
+          id={`node-name-${node.node_key}`}
+          className="h-8 text-xs"
+          maxLength={NODE_NAME_MAX}
+          value={String(node.config.node_name ?? "")}
+          onChange={(e) => onChange({ ...node.config, node_name: e.target.value })}
+          placeholder={NODE_META[node.node_type]?.label ?? "e.g. Ask course"}
+        />
+      </Field>
+      <Form {...props} />
+    </div>
+  );
 }

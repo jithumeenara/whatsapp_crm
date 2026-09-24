@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { flowWaitMinutes } from '@/lib/flows/flow-submitted-trigger'
 import { resolveFallbackPolicy } from '@/lib/flows/fallback'
 
 // See chatbot/cron/route.ts — reading `request.headers` directly doesn't
@@ -47,6 +48,7 @@ export async function GET(request: Request) {
         user_id: true,
         contact_id: true,
         last_advanced_at: true,
+        current_node_key: true,
         flow: { select: { fallback_policy: true } },
       },
     })
@@ -59,6 +61,17 @@ export async function GET(request: Request) {
       const lastAdvanced = new Date(r.last_advanced_at)
       const ageHours = (now.getTime() - lastAdvanced.getTime()) / (1000 * 60 * 60)
       if (ageHours < policy.on_timeout_hours) continue
+      // Waiting on a WhatsApp Flow form: that step's own limit, which
+      // may be longer than the flow's general one.
+      if (r.current_node_key) {
+        const node = await prisma.flowNode
+          .findFirst({
+            where: { flow_id: r.flow_id, node_key: r.current_node_key },
+            select: { node_type: true, config: true },
+          })
+          .catch(() => null)
+        if (node?.node_type === 'wait_flow_submit' && ageHours * 60 < flowWaitMinutes(node.config)) continue
+      }
 
       // Mark timed_out — guarded by the precondition `status='active'`
       // so concurrent advance from a late inbound doesn't overwrite a

@@ -22,6 +22,7 @@ export type ChatbotNodeType =
   | 'end'
   | 'link_chatbot'
   | 'send_flow'
+  | 'wait_flow_submit'
   | 'send_template'
   | 'join'
   | 'switch_case'
@@ -49,6 +50,19 @@ export interface ChatbotListSection {
 }
 
 // ─── Per-node config interfaces ─────────────────────────────────
+
+/** Holds the chatbot until the customer submits a WhatsApp Flow —
+ *  typically the one inside a template sent by the step before. */
+export interface WaitFlowSubmitNodeCfg {
+  /** Meta Flow id to wait for; empty accepts any submitted Flow. */
+  flow_id?: string
+  flow_name?: string
+  /** The Flow's field names, cached for {{vars.flow_x}} autocomplete. */
+  available_vars?: string[]
+  /** How long to hold before giving up, in hours (1–168, default 24). */
+  wait_hours?: number
+  next_node_key: string
+}
 
 export interface StartNodeCfg {
   next_node_key: string
@@ -348,6 +362,7 @@ export type ChatbotNodeConfig =
   | ({ node_type: 'end' } & EndNodeCfg)
   | ({ node_type: 'link_chatbot' } & LinkChatbotNodeCfg)
   | ({ node_type: 'send_flow' } & SendFlowNodeCfg)
+  | ({ node_type: 'wait_flow_submit' } & WaitFlowSubmitNodeCfg)
   | ({ node_type: 'send_template' } & SendTemplateNodeCfg)
   | ({ node_type: 'join' } & JoinNodeCfg)
   | ({ node_type: 'switch_case' } & SwitchCaseNodeCfg)
@@ -391,7 +406,7 @@ export const CHATBOT_NODE_TYPES = [
   'start', 'send_text', 'send_buttons', 'send_list', 'send_media',
   'collect_input', 'condition', 'ai_reply', 'http_request', 'delay',
   'set_variable', 'set_tag', 'update_contact', 'crm_action', 'handoff', 'end',
-  'link_chatbot', 'send_flow', 'send_template', 'join', 'switch_case', 'send_to_number',
+  'link_chatbot', 'send_flow', 'wait_flow_submit', 'send_template', 'join', 'switch_case', 'send_to_number',
   'send_catalog',
 ] as const satisfies readonly ChatbotNodeType[]
 
@@ -420,6 +435,7 @@ export function defaultConfigFor(type: ChatbotNodeType): Record<string, unknown>
     case 'end':          return { close_conversation: false }
     case 'link_chatbot': return { target_chatbot_id: '', target_chatbot_name: '' }
     case 'send_flow':    return { flow_id: '', flow_name: '', button_text: 'Open form', next_node_key: '' }
+    case 'wait_flow_submit': return { flow_id: '', flow_name: '', wait_hours: 24, next_node_key: '' }
     case 'send_template': return { template_name: '', language_code: 'en_US', body_params: '', next_node_key: '' }
     case 'join':          return { label: '', next_node_key: '' }
     case 'switch_case':   return {

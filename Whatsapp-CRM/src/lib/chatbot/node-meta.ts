@@ -9,6 +9,7 @@ import {
   Inbox,
   Layers,
   ListChecks,
+  ClipboardCheck,
   ListPlus,
   MessageCircle,
   Paperclip,
@@ -32,7 +33,7 @@ import type { ChatbotNodeType } from './types'
 
 /** Instagram: send_buttons works via its Quick Replies API; the rest don't have an equivalent. */
 const INSTAGRAM_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
-  'send_list', 'send_template', 'send_flow', 'send_to_number', 'send_catalog',
+  'send_list', 'send_template', 'send_flow', 'wait_flow_submit', 'send_to_number', 'send_catalog',
 ])
 
 /**
@@ -48,7 +49,7 @@ const INSTAGRAM_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
  * through to the WhatsApp-only send path instead of erroring clearly.
  */
 const TEXT_ONLY_CHANNEL_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
-  'send_list', 'send_buttons', 'send_template', 'send_flow', 'send_to_number',
+  'send_list', 'send_buttons', 'send_template', 'send_flow', 'wait_flow_submit', 'send_to_number',
   // send_media isn't wired to a channel-aware sender for these 3 channels
   // either (engineSendMedia only branches for 'instagram') — same silent
   // misroute-to-WhatsApp risk as the node types above.
@@ -241,6 +242,14 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     bg: 'bg-violet-50',
     group: 'Messaging',
   },
+  wait_flow_submit: {
+    label: 'Wait for Flow Submit',
+    description: 'Continue only after the customer submits the WhatsApp Flow (e.g. from the template above)',
+    icon: ClipboardCheck,
+    color: 'text-violet-600',
+    bg: 'bg-violet-50',
+    group: 'Interactive',
+  },
   send_template: {
     label: 'Send Template',
     description: 'Send a pre-approved WhatsApp message template',
@@ -283,6 +292,16 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
   },
 }
 
+/** Longest name a step may be given. */
+export const NODE_NAME_MAX = 60
+
+/** What a step is called: the name someone gave it, else its type —
+ *  "Ask course" reads better than the third "Send Buttons" in a row. */
+export function nodeDisplayName(node: { node_type: ChatbotNodeType; config: Record<string, unknown> }): string {
+  const given = typeof node.config.node_name === 'string' ? node.config.node_name.trim() : ''
+  return given || NODE_META[node.node_type]?.label || node.node_type
+}
+
 // ─── Palette groups in display order ────────────────────────────
 
 export const PALETTE_GROUPS: PaletteGroup[] = [
@@ -307,7 +326,7 @@ export const PALETTE_GROUP_COLORS: Record<PaletteGroup, string> = {
 export const PALETTE_NODES: ChatbotNodeType[] = [
   'send_text', 'send_buttons', 'send_list', 'send_media',
   'send_flow', 'send_template', 'send_to_number', 'send_catalog',
-  'collect_input',
+  'collect_input', 'wait_flow_submit',
   'condition', 'switch_case', 'join', 'delay', 'set_variable',
   'ai_reply', 'http_request',
   'set_tag', 'update_contact', 'crm_action',
@@ -508,6 +527,10 @@ export function summarizeChatbotNode(
       const name = typeof config.flow_name === 'string' ? config.flow_name : ''
       const btn = typeof config.button_text === 'string' ? config.button_text : ''
       return name ? `Flow: ${name}` : btn ? `Button: ${btn}` : 'Send WhatsApp Flow'
+    }
+    case 'wait_flow_submit': {
+      const name = typeof config.flow_name === 'string' ? config.flow_name : ''
+      return name ? `Waits for: ${name}` : 'Waits for any Flow to be submitted'
     }
     case 'send_template': {
       const name = typeof config.template_name === 'string' ? config.template_name : ''

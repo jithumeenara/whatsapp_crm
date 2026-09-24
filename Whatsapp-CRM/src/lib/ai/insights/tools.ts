@@ -663,6 +663,8 @@ function describeNode(nodeType: string, config: Record<string, unknown>): string
       return `opens a WhatsApp form (Flow ${text('flow_id', 'not chosen')}) behind the button "${text('button_text', 'Open')}"`
     case 'send_catalog':
       return 'shows the product catalog'
+    case 'wait_flow_submit':
+      return `waits until the customer submits the WhatsApp form${text('flow_name') ? ` "${text('flow_name')}"` : ''} before going on`
     case 'collect_input':
       return `asks "${preview(text('prompt_text', '(no question)'))}" and waits, saving the answer as ${text('save_to', 'an unnamed variable')}`
     case 'ai_reply':

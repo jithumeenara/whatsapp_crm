@@ -268,6 +268,7 @@ export type FlowNodeType =
   | "join"
   | "link_chatbot"
   | "send_flow"
+  | "wait_flow_submit"
   | "http_request"
   | "switch_case"
   | "send_to_number";

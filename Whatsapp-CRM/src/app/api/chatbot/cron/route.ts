@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { engineSendText } from '@/lib/flows/meta-send'
+import { flowWaitMinutes } from '@/lib/flows/flow-submitted-trigger'
 
 // This handler reads the cron secret via the raw `request.headers` object,
 // which — unlike the `headers()`/`cookies()` helpers from `next/headers` —
@@ -51,6 +52,8 @@ export async function GET(request: Request) {
         contact_id: true,
         conversation_id: true,
         last_advanced_at: true,
+        flow_id: true,
+        current_node_key: true,
         flow: {
           select: {
             flow_type: true,
@@ -78,6 +81,20 @@ export async function GET(request: Request) {
       const ageMinutes = (now.getTime() - lastAdvanced.getTime()) / (1000 * 60)
 
       if (ageMinutes < delayMinutes) continue
+
+      // A run waiting on a WhatsApp Flow form keeps its own clock. Filling
+      // in a form takes longer than answering a button, and the chatbot's
+      // no-reply limit — often a few minutes — would end it while the
+      // customer is still typing. See flowWaitMinutes.
+      if (run.current_node_key) {
+        const node = await prisma.flowNode
+          .findFirst({
+            where: { flow_id: run.flow_id, node_key: run.current_node_key },
+            select: { node_type: true, config: true },
+          })
+          .catch(() => null)
+        if (node?.node_type === 'wait_flow_submit' && ageMinutes < flowWaitMinutes(node.config)) continue
+      }
 
       // Guard: only end if still active (race condition safety)
       const updated = await prisma.flowRun.updateMany({

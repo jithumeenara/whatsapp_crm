@@ -169,7 +169,8 @@ export function isSuspending(node_type: string): boolean {
   return (
     node_type === "send_buttons" ||
     node_type === "send_list" ||
-    node_type === "collect_input"
+    node_type === "collect_input" ||
+    node_type === "wait_flow_submit"
   );
 }
 
@@ -2661,6 +2662,19 @@ The assistant could not generate a reply: ${detail}`,
     // to WhatsApp along with the Flow so the completed submission (an
     // nfm_reply on the main webhook) can be matched back to this exact
     // paused run and resumed with the answers loaded into run.vars.
+    // wait_flow_submit — sends nothing. Holds the run here until the
+    // customer submits a WhatsApp Flow (usually the one inside the
+    // template the previous step sent), so nothing after it — a delay,
+    // a thank-you, a lead — happens for someone who never filled it in.
+    if (node.node_type === "wait_flow_submit") {
+      const advanced = await advanceCurrentNodeKey(run.id, run.current_node_key, node.node_key);
+      if (!advanced) {
+        await logEvent(run.id, "error", node.node_key, { reason: "lost_race_during_advance" });
+      }
+      await logEvent(run.id, "node_entered", node.node_key, { waiting_for: "flow_submission" });
+      return { outcome: "advanced" };
+    }
+
     if (node.node_type === "send_flow") {
       const cfg = node.config as {
         flow_id?: string;
@@ -2869,8 +2883,12 @@ export async function dispatchInboundToFlows(
       // is not an answer to whatever this run last asked. Treating it
       // as one would re-send that question. It either starts the
       // chatbot set to receive it, or is left to the Inbox.
+      const waitingForForm = activeRun.current_node_key
+        ? (await loadAllNodes(activeRun.flow_id)).get(activeRun.current_node_key)?.node_type === "wait_flow_submit"
+        : false;
       if (
         input.message.kind === "flow_reply" &&
+        !waitingForForm &&
         !(activeRun.pending_flow_token && input.message.flow_token === activeRun.pending_flow_token)
       ) {
         const receiver = await findEntryFlow(input.accountId, input.message, false, input.channel);
@@ -3081,6 +3099,33 @@ async function handleReplyForActiveRun(
     }
   } else if (
     message.kind === "flow_reply" &&
+    currentNode.node_type === "wait_flow_submit"
+  ) {
+    const cfg = currentNode.config as { flow_id?: string; next_node_key?: string };
+    // Tied to one Flow: a submission we can tell is a *different* Flow
+    // does not count. One we cannot identify is accepted — the node was
+    // placed to wait for exactly this customer's next form.
+    const wanted = cfg.flow_id?.trim();
+    const submitted = wanted ? await identifySubmittedFlow(run.account_id, message.source_message_id) : null;
+    if (!wanted || !submitted || submitted === wanted) {
+      const newVars = { ...run.vars, ...flowVarsFromResponse(message.response) };
+      try {
+        await prisma.flowRun.update({
+          where: { id: run.id },
+          data: { vars: newVars as Prisma.InputJsonValue },
+        });
+        run.vars = newVars;
+        await logEvent(run.id, "node_entered", currentNode.node_key, {
+          flow_submitted: true,
+          captured_flow_vars: Object.keys(newVars).filter((k) => k.startsWith("flow_")),
+        });
+        matched = cfg.next_node_key ?? null;
+      } catch {
+        // capture failed — fall through
+      }
+    }
+  } else if (
+    message.kind === "flow_reply" &&
     currentNode.node_type === "send_flow"
   ) {
     // Only accept a submission whose token matches the one we minted when
@@ -3137,6 +3182,13 @@ async function handleReplyForActiveRun(
       flow_run_id: run.id,
       outcome: outcome.outcome,
     };
+  }
+
+  // Still waiting for the form. A message in the meantime is not a wrong
+  // answer — there is no question to repeat — so it is left for the
+  // assistant and the Inbox, and the run keeps waiting.
+  if (!matched && currentNode.node_type === "wait_flow_submit") {
+    return { consumed: false, flow_run_id: run.id, outcome: "no_match" };
   }
 
   // No match → fallback. Apply the policy.

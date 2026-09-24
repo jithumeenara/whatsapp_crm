@@ -42,6 +42,7 @@ import {
 
 import {
   NODE_META,
+  nodeDisplayName,
   PALETTE_GROUPS,
   PALETTE_GROUP_COLORS,
   PALETTE_NODES,
@@ -718,10 +719,10 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="truncate text-[14px] font-bold text-slate-900">
-                  {NODE_META[sheetNode.node_type].label}
+                  {nodeDisplayName(sheetNode)}
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  {NODE_META[sheetNode.node_type].group}
+                  {sheetNode.config.node_name ? NODE_META[sheetNode.node_type].label : NODE_META[sheetNode.node_type].group}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -860,7 +861,7 @@ function NodeContextMenu({
     const q = query.trim().toLowerCase();
     if (!q) return otherNodes;
     return otherNodes.filter((n) =>
-      n.node_key.toLowerCase().includes(q) || NODE_META[n.node_type].label.toLowerCase().includes(q),
+      n.node_key.toLowerCase().includes(q) || nodeDisplayName(n).toLowerCase().includes(q),
     );
   }, [query, otherNodes]);
 
@@ -956,7 +957,7 @@ function NodeContextMenu({
                               <div className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-md", meta.bg)}>
                                 <Icon className={cn("h-3 w-3", meta.color)} />
                               </div>
-                              <span className="min-w-0 truncate text-[11px] font-medium text-slate-700">{meta.label}</span>
+                              <span className="min-w-0 truncate text-[11px] font-medium text-slate-700">{nodeDisplayName(n)}</span>
                             </button>
                           );
                         })

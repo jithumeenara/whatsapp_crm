@@ -4,7 +4,8 @@ const message = vi.hoisted(() => ({ findFirst: vi.fn() }))
 const messageTemplate = vi.hoisted(() => ({ findMany: vi.fn() }))
 vi.mock('@/lib/db', () => ({ prisma: { message, messageTemplate } }))
 
-import { flowVarsFromResponse, identifySubmittedFlow, pickFlowSubmittedChatbot } from './flow-submitted-trigger'
+import { flowVarsFromResponse, flowWaitMinutes, identifySubmittedFlow, pickFlowSubmittedChatbot } from './flow-submitted-trigger'
+import { isAutoAdvancing, isSuspending } from './engine'
 
 const bot = (id: string, trigger_type: string, trigger_config: unknown) => ({ id, trigger_type, trigger_config })
 
@@ -60,5 +61,21 @@ describe('identifySubmittedFlow', () => {
     message.findFirst.mockResolvedValue({ template_name: 't' })
     messageTemplate.findMany.mockResolvedValue([{ buttons: [{ type: 'URL', text: 'Site' }] }])
     expect(await identifySubmittedFlow('acc', 'msg')).toBeNull()
+  })
+})
+
+describe('Wait for Flow Submit step', () => {
+  it('holds the run rather than moving on', () => {
+    expect(isSuspending('wait_flow_submit')).toBe(true)
+    expect(isAutoAdvancing('wait_flow_submit')).toBe(false)
+  })
+
+  it('waits a day unless told otherwise, between an hour and a week', () => {
+    expect(flowWaitMinutes({})).toBe(24 * 60)
+    expect(flowWaitMinutes(null)).toBe(24 * 60)
+    expect(flowWaitMinutes({ wait_hours: 48 })).toBe(48 * 60)
+    expect(flowWaitMinutes({ wait_hours: 0 })).toBe(60)
+    expect(flowWaitMinutes({ wait_hours: 10_000 })).toBe(168 * 60)
+    expect(flowWaitMinutes({ wait_hours: '5' })).toBe(24 * 60)
   })
 })

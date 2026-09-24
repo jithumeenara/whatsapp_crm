@@ -3,7 +3,7 @@
 import { memo, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { AlertTriangle } from "lucide-react";
-import { NODE_META, summarizeChatbotNode, getSourceHandles, CHANNEL_INCOMPATIBLE_NODES, CHANNEL_LABEL } from "@/lib/chatbot/node-meta";
+import { NODE_META, summarizeChatbotNode, getSourceHandles, CHANNEL_INCOMPATIBLE_NODES, CHANNEL_LABEL, nodeDisplayName } from "@/lib/chatbot/node-meta";
 import type { ChatbotNodeType } from "@/lib/chatbot/types";
 import { ChatbotChannelContext, ChatbotDirectionContext } from "./chatbot-canvas";
 
@@ -34,6 +34,8 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
   const sourceHandles = getSourceHandles(node_type, config);
   const isTerminal = node_type === "end" || node_type === "handoff";
   const isStart = node_type === "start";
+  const nodeName = nodeDisplayName({ node_type, config });
+  const hasName = typeof config.node_name === "string" && config.node_name.trim() !== "";
 
   // switch_case (many case branches) and send_list (many rows) can grow a
   // lot wider than the default card — widen in TB mode so their footer of
@@ -85,14 +87,14 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
           <Icon className={cn("h-4 w-4", meta.color)} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[12px] font-bold leading-tight text-slate-800">{meta.label}</span>
+          <span className="truncate text-[12px] font-bold leading-tight text-slate-800" title={nodeName}>{nodeName}</span>
           {isEntry ? (
             <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-600">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Entry
             </span>
           ) : (
-            <span className="text-[10px] text-slate-400">{meta.group}</span>
+            <span className="truncate text-[10px] text-slate-400">{hasName ? meta.label : meta.group}</span>
           )}
         </div>
       </div>

@@ -95,3 +95,12 @@ export async function identifySubmittedFlow(
   }
   return null;
 }
+
+/** How long a Wait-for-Flow step holds before the chatbot gives up, in
+ *  minutes: its own "wait up to" hours, default a day, 1 to 168. Both
+ *  run sweepers use it, so neither ends a run the other would keep. */
+export function flowWaitMinutes(config: unknown): number {
+  const raw = (config as { wait_hours?: unknown } | null)?.wait_hours
+  const hours = typeof raw === "number" && Number.isFinite(raw) ? raw : 24
+  return Math.min(Math.max(hours, 1), 168) * 60
+}

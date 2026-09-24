@@ -891,6 +891,16 @@ function validateNode(
       break;
     }
 
+    case "wait_flow_submit": {
+      const cfg = node.config as { next_node_key?: string };
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Wait-for-Flow must point to the step to run after the form is submitted." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Wait-for-Flow points to non-existent node "${cfg.next_node_key}".` });
+      }
+      break;
+    }
+
     case "send_flow": {
       const cfg = node.config as { flow_id?: string; button_text?: string; next_node_key?: string };
       if (!cfg.flow_id?.trim()) {
@@ -1043,6 +1053,7 @@ function outgoingEdges(node: NodeInput): string[] {
     case "crm_action":
     case "save_to_table":
     case "send_flow":
+    case "wait_flow_submit":
     case "send_to_number":
     case "send_catalog": {
       const cfg = node.config as { next_node_key?: string };
