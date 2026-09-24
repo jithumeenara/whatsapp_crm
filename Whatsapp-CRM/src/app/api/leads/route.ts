@@ -8,6 +8,9 @@ import { normalizeEnteredPhone } from '@/lib/leads/new-follow-up'
 
 const PAGE_SIZE = 25
 
+/** Statuses an unassigned lead can have and still be in New Pool. */
+const POOL_STATUSES = ['new', 'follow_up']
+
 const TAB_STATUS_MAP: Record<string, string | null> = {
   new_pool: 'new',
   call_not_connected: 'call_not_connected',
@@ -124,8 +127,12 @@ export async function GET(req: NextRequest) {
       where.status = { not: CLOSED }
     }
 
-    // Pool: unassigned new leads — visible to all agents
+    // Pool: what nobody has picked up — new enquiries, and call-backs a
+    // customer asked for (the assistant puts those in Follow-up). Both
+    // are waiting on whoever takes them, so both belong where agents
+    // look for work.
     if (tab === 'new_pool') {
+      where.status = { in: POOL_STATUSES }
       where.assigned_to = null
     } else if (tab === 'mine') {
       // Mine, whoever you are. A supervisor asking for "mine" wants

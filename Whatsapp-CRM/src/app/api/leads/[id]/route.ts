@@ -66,6 +66,8 @@ export async function GET(
       navWhere.status = { not: 'closed' }
     }
     if (fromTab === 'new_pool') {
+      // Same as the list: new enquiries and unclaimed call-backs.
+      navWhere.status = { in: ['new', 'follow_up'] }
       navWhere.assigned_to = null
     } else if (fromTab === 'mine') {
       navWhere.assigned_to = ctx.userId

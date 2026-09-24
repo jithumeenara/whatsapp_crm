@@ -415,7 +415,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         .findFirst({
           where: { account_id: ctx.accountId, contact_id: ctx.contactId, status: { not: 'closed' } },
           orderBy: { created_at: 'desc' },
-          select: { id: true, assigned_to: true, status: true, ai_suggested: true },
+          select: { id: true, title: true, assigned_to: true, status: true, ai_suggested: true },
         })
         .catch(() => null)
       let leadCreated = false
@@ -443,7 +443,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
                 ai_reviewed_at: new Date(),
                 ai_review_result: 'auto_accepted',
               },
-              select: { id: true, assigned_to: true, status: true, ai_suggested: true },
+              select: { id: true, title: true, assigned_to: true, status: true, ai_suggested: true },
             })
             .catch((err) => {
               console.error('[schedule_callback] lead not opened:', err instanceof Error ? err.message : err)
@@ -525,7 +525,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         const { emitToAccount } = await import('@/lib/socket')
         emitToAccount(ctx.accountId, 'lead', {
           eventType: leadCreated ? 'INSERT' : 'UPDATE',
-          new: { id: lead.id, assigned_to: lead.assigned_to, status: 'follow_up' },
+          new: { id: lead.id, title: lead.title, assigned_to: lead.assigned_to, status: 'follow_up' },
           old: leadCreated ? {} : { id: lead.id, status: lead.status },
         })
       }

@@ -8,6 +8,9 @@ import type { Lead } from '@/types'
 import { useAuth } from '@/hooks/use-auth'
 import { cn } from '@/lib/utils'
 
+/** Statuses an unclaimed lead can have and still be waiting in New Pool. */
+const POOL = new Set(['new', 'follow_up'])
+
 /**
  * A new enquiry is waiting, and nobody has picked it up.
  *
@@ -148,7 +151,8 @@ export function NewLeadAlert() {
         // created already assigned is somebody's work, not an
         // announcement, and a suggestion is not a lead yet.
         if (lead.assigned_to) return
-        if (lead.status && lead.status !== 'new') return
+        // A call-back the assistant opened is waiting on someone too.
+        if (lead.status && !POOL.has(lead.status)) return
         if (lead.ai_suggested === true) return
 
         const id = String(lead.id ?? '')
@@ -169,7 +173,7 @@ export function NewLeadAlert() {
       // list of things already dealt with.
       const id = String(lead.id ?? '')
       if (!id) return
-      if (lead.assigned_to || (lead.status && lead.status !== 'new')) {
+      if (lead.assigned_to || (lead.status && !POOL.has(lead.status))) {
         setWaiting((prev) => prev.filter((w) => w.id !== id))
       }
     },
