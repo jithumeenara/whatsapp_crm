@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 
 const PAGE_SIZE = 25
 
@@ -46,6 +47,13 @@ export async function POST(req: NextRequest) {
     const { title, note, due_at, contact_id, lead_id, assigned_to } = body as Record<string, string | undefined>
     if (!title) return NextResponse.json({ error: 'title is required' }, { status: 400 })
     if (!due_at) return NextResponse.json({ error: 'due_at is required' }, { status: 400 })
+    if (typeof title !== 'string' || title.length > 300) return NextResponse.json({ error: 'Invalid title' }, { status: 400 })
+    if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > 2000)) {
+      return NextResponse.json({ error: 'Invalid note' }, { status: 400 })
+    }
+    if (Number.isNaN(new Date(due_at).getTime())) return NextResponse.json({ error: 'Invalid due_at' }, { status: 400 })
+    const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id, lead_id, assigned_to })
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
     const followUp = await prisma.followUp.create({
       data: {

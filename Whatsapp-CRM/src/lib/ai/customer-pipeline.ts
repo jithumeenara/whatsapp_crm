@@ -173,6 +173,9 @@ export async function buildCustomerSystemPrompt(args: {
    *  taken it yet. Changes what the assistant is for: acknowledging,
    *  not advising. */
   awaitingHuman?: boolean
+  /** The message is a WhatsApp Flow the customer just submitted,
+   *  written out by describeFlowSubmission — not a question. */
+  formSubmission?: boolean
   /** False when there is no contact to scope lookups to. */
   toolsAvailable: boolean
   /** Already in flight, or already resolved, from `loadPromptSources`.
@@ -267,11 +270,33 @@ export async function buildCustomerSystemPrompt(args: {
     )
   }
 
+  // ── A form was just submitted ─────────────────────────────────────
+  //
+  // No chatbot step confirmed it, so this reply is the customer's only
+  // sign the form arrived. It is a confirmation, not an answer: nothing
+  // was asked, so the knowledge base having nothing on it is not a
+  // reason to say "I don't know" or to hand over.
+  if (args.formSubmission) {
+    parts.push(
+      [
+        'THE CUSTOMER HAS JUST SUBMITTED A FORM. Their message lists what they entered.',
+        '- Thank them and confirm it was received successfully.',
+        '- Repeat the key details back briefly so they can check them: the programme or subject, dates, and their name or organisation. Use the values exactly as given.',
+        '- Never repeat an ID number such as Aadhaar or PAN, even masked, and never ask for it again.',
+        '- If the knowledge above says what happens next after registering (confirmation call, fees, venue), say so in one line. Otherwise say the team will be in touch. Never invent a next step, a fee or a date.',
+        '- This is not a question: do not give the fallback "I do not know" answer and do not ask them anything.',
+        '- Reply in the language the customer used earlier in this conversation; if they have not written anything, use the language of the answers in the form.',
+      ].join('\n'),
+    )
+  }
+
   // A language pinned in settings still wins when explicitly set;
   // otherwise it is inferred from what this customer actually wrote.
   if (aiConfig.reply_language) {
     parts.push(`Always reply in ${aiConfig.reply_language}, regardless of which language the customer writes in.`)
-  } else {
+  } else if (!args.formSubmission) {
+    // A form is written in its own labels' language, which says nothing
+    // about the customer's — the block above covers it instead.
     parts.push(buildLanguageBlock(args.customerMessage))
   }
 
@@ -522,6 +547,8 @@ export async function runCustomerTurn(args: {
    *  picked up — but it acknowledges rather than advises. See the block
    *  it turns on in buildCustomerSystemPrompt. */
   awaitingHuman?: boolean
+  /** A submitted WhatsApp Flow to confirm, not a question to answer. */
+  formSubmission?: boolean
 }): Promise<CustomerTurnResult> {
   const startedAt = Date.now()
   const history = args.conversationHistory ?? []
@@ -637,7 +664,11 @@ export async function runCustomerTurn(args: {
     : selected.confidence
   timings.checks += Date.now() - checksStartedAt
 
+  // A submitted form matches no knowledge — it is not a question — so
+  // it would always score low and always be handed over, leaving the
+  // customer with no confirmation at all.
   if (
+    !args.formSubmission &&
     args.aiConfig.low_confidence_handoff_enabled &&
     effectiveConfidence < args.aiConfig.confidence_threshold
   ) {
@@ -669,6 +700,7 @@ export async function runCustomerTurn(args: {
     toolsAvailable: Boolean(toolContext),
     sources: sourcesPromise,
     awaitingHuman: args.awaitingHuman,
+    formSubmission: args.formSubmission,
   })
 
   // A provider refusal is a handoff, not an exception for the caller to

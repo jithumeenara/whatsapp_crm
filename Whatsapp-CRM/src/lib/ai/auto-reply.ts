@@ -125,6 +125,9 @@ export interface AutoReplyArgs {
    *  typing bubble while the model works. Optional: every other channel
    *  has no such thing, and a missing one costs only the indicator. */
   providerMessageId?: string
+  /** The message is a submitted WhatsApp Flow no chatbot confirmed —
+   *  the assistant confirms it instead. See describeFlowSubmission. */
+  formSubmission?: boolean
 }
 
 /**
@@ -348,6 +351,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
       currentChannel: args.channel,
       conversationId: args.conversationId,
       userId: args.userId,
+      formSubmission: args.formSubmission,
       // ── Already promised a person ──────────────────────────────────
       //
       // Pending means the assistant handed this over. It does not stop

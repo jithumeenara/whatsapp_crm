@@ -24,6 +24,15 @@ function logDebug(flowId: string, entry: DebugEntry) {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
+/** "1234 5678 9012" → "XXXX XXXX 9012". Anything that is not twelve
+ *  digits keeps only its last four characters. */
+export function maskAadhaar(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (digits.length === 12) return `XXXX XXXX ${digits.slice(-4)}`
+  const v = value.trim()
+  return v.length <= 4 ? v : `${'X'.repeat(Math.min(v.length - 4, 8))}${v.slice(-4)}`
+}
+
 function makeVarName(fieldKey: string): string {
   return fieldKey.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_options'
 }
@@ -821,7 +830,10 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     }
     const formData = rawData
 
-    console.log('[data_exchange] screen:', currentScreenId, '| formData:', JSON.stringify(formData))
+    // Field names only. The values are what a customer typed — names,
+    // phone and Aadhaar numbers — and server logs are kept, copied and
+    // read far more widely than the database they are saved to.
+    console.log('[data_exchange] screen:', currentScreenId, '| fields:', Object.keys(formData).join(', '))
 
     const submittedScreen = screens.find((s) => sanitizeId(s.id) === currentScreenId) ?? screens[0]
     const submittedComps = flatComps(submittedScreen?.components ?? [])
@@ -847,7 +859,13 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       const out: Record<string, string> = {}
       const put = (key: string, value: unknown) => {
         if (!key || key === 'flow_token' || value === undefined || value === null) return
-        const text = Array.isArray(value) ? value.map(String).join(', ') : typeof value === 'object' ? '' : String(value)
+        let text = Array.isArray(value) ? value.map(String).join(', ') : typeof value === 'object' ? '' : String(value)
+        // An Aadhaar number leaves here masked, the way UIDAI's own
+        // "masked Aadhaar" shows it: only the last four digits. The full
+        // number is still saved to the Data Store table the form writes
+        // to; this copy travels through Meta, the chatbot's variables and
+        // the messages it sends, none of which need the whole number.
+        if (/aadh?aa?r|uidai/i.test(key)) text = maskAadhaar(text)
         if (text !== '' || !(key in out)) out[key] = text.slice(0, 1000)
       }
       for (const fv of allFlowFieldVars) {
@@ -1106,7 +1124,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
         }
       }
 
-      console.log('[data_exchange:save] record:', JSON.stringify(record))
+      console.log('[data_exchange:save] fields:', Object.keys(record).join(', '))
 
       if (Object.keys(record).length > 0) {
         const table = await prisma.dataTable.findUnique({

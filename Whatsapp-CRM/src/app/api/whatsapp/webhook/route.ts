@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { describeFlowSubmission } from '@/lib/flows/describe-submission'
 import { prisma } from '@/lib/db'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
@@ -1190,6 +1191,8 @@ async function processMessage(
           // bubble while it works, instead of leaving the customer
           // looking at an unread message for several seconds.
           providerMessageId: message.id,
+          // A form no chatbot step confirmed: the assistant confirms it.
+          formSubmission: Boolean(flowReply),
         })
           // Logged whatever the outcome, not only on a thrown error.
           // Every "skipped_*" reason used to be discarded here, so a
@@ -1372,7 +1375,9 @@ async function parseMessageContent(
           if (typeof flow_token === 'string' && flow_token) {
             return {
               ...empty,
-              contentText: 'Flow submitted',
+              // What they entered, so the Inbox and the assistant can
+              // both read it. See describeFlowSubmission.
+              contentText: describeFlowSubmission(response) ?? 'Flow submitted',
               flowReply: { token: flow_token, response },
             }
           }
