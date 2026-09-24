@@ -829,6 +829,50 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     const allSaveFields = collectAllSaveFields(screens)
     const allFlowFieldVars = collectAllFlowFieldVars(screens)
 
+    // What the customer entered, to hand back to WhatsApp when the Flow
+    // closes.
+    //
+    // Meta forwards whatever the closing response puts in
+    // extension_message_response.params to the messages webhook, as the
+    // nfm_reply's response_json ("Implementing your Flow endpoint",
+    // developers.facebook.com). This endpoint used to send flow_token
+    // alone, so the reply arrived empty: a chatbot's
+    // {{vars.flow_from_date}} printed nothing and "From {{…}} to {{…}}"
+    // reached the customer as "From  to".
+    //
+    // Keyed both ways the builder offers them — the component's own name
+    // and, for a field mapped in Field Mapping, its DataStore field key —
+    // with option ids turned back into their titles, as they are saved.
+    const flowAnswers = (): Record<string, string> => {
+      const out: Record<string, string> = {}
+      const put = (key: string, value: unknown) => {
+        if (!key || key === 'flow_token' || value === undefined || value === null) return
+        const text = Array.isArray(value) ? value.map(String).join(', ') : typeof value === 'object' ? '' : String(value)
+        if (text !== '' || !(key in out)) out[key] = text.slice(0, 1000)
+      }
+      for (const fv of allFlowFieldVars) {
+        const found = findFlowFieldVarKey(submittedComps, fv.token)
+        if (found && found.varKey in formData) {
+          const raw = formData[found.varKey]
+          put(fv.token, found.collector ? resolveStaticOptionValue(found.collector, raw) : raw)
+        } else if (fv.carryVar in formData) {
+          put(fv.token, formData[fv.carryVar])
+        }
+      }
+      for (const sf of allSaveFields) {
+        const found = findSaveFieldVarKey(submittedComps, sf.fieldKey)
+        if (found && found.varKey in formData) {
+          const raw = formData[found.varKey]
+          put(sf.fieldKey, found.collector ? resolveStaticOptionValue(found.collector, raw) : raw)
+        } else if (sf.carryVar in formData) {
+          const collector = findStaticCollector(screens, sf.fieldKey)
+          const carried = formData[sf.carryVar]
+          put(sf.fieldKey, collector ? resolveStaticOptionValue(collector, carried) : carried)
+        }
+      }
+      return out
+    }
+
     const filterTrigger = submittedComps.find(
       (c) => c._filter_trigger === true && c.name && (c.name as string) in formData,
     )
@@ -927,7 +971,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       if (!formScreen) {
         return sendEncrypted({
           version: '3.0', screen: 'SUCCESS',
-          data: { extension_message_response: { params: { flow_token: flowToken ?? 'unused' } } },
+          data: { extension_message_response: { params: { ...flowAnswers(), flow_token: flowToken ?? 'unused' } } },
         })
       }
 
@@ -1138,7 +1182,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       screen: 'SUCCESS',
       data: {
         extension_message_response: {
-          params: { flow_token: flowToken ?? 'unused' },
+          params: { ...flowAnswers(), flow_token: flowToken ?? 'unused' },
         },
       },
     })

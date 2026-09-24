@@ -42,6 +42,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { RichTextArea } from "./rich-text-area";
+import { VariablePicker } from "./variable-picker";
 import type { ChatbotBuilderNode, ChatbotNodeType } from "@/lib/chatbot/types";
 import { NODE_META, NODE_NAME_MAX, nodeDisplayName } from "@/lib/chatbot/node-meta";
 
@@ -3440,6 +3441,8 @@ export function NodeForm({ node, allNodes, onChange }: NodeFormProps) {
           placeholder={NODE_META[node.node_type]?.label ?? "e.g. Ask course"}
         />
       </Field>
+      {/* Every variable in the chatbot, pick a step then a variable. */}
+      {node.node_type !== "start" && <VariablePicker allNodes={allNodes} idPrefix={`vp-${node.node_key}`} />}
       <Form {...props} />
     </div>
   );
