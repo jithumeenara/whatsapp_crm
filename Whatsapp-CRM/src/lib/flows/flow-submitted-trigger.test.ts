@@ -78,4 +78,9 @@ describe('Wait for Flow Submit step', () => {
     expect(flowWaitMinutes({ wait_hours: 10_000 })).toBe(168 * 60)
     expect(flowWaitMinutes({ wait_hours: '5' })).toBe(24 * 60)
   })
+
+  it('never gives up when set to wait until submitted', () => {
+    expect(flowWaitMinutes({ wait_mode: 'until_submitted', wait_hours: 2 })).toBe(Infinity)
+    expect(flowWaitMinutes({ wait_mode: 'time_limit', wait_hours: 2 })).toBe(120)
+  })
 })

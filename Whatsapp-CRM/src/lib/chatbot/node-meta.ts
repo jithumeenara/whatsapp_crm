@@ -530,7 +530,10 @@ export function summarizeChatbotNode(
     }
     case 'wait_flow_submit': {
       const name = typeof config.flow_name === 'string' ? config.flow_name : ''
-      return name ? `Waits for: ${name}` : 'Waits for any Flow to be submitted'
+      const limit = config.wait_mode === 'until_submitted'
+        ? 'no time limit'
+        : `up to ${typeof config.wait_hours === 'number' ? config.wait_hours : 24}h`
+      return `${name ? `Waits for: ${name}` : 'Waits for any Flow'} · ${limit}`
     }
     case 'send_template': {
       const name = typeof config.template_name === 'string' ? config.template_name : ''

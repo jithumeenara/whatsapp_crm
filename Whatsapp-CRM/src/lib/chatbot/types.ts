@@ -59,6 +59,9 @@ export interface WaitFlowSubmitNodeCfg {
   flow_name?: string
   /** The Flow's field names, cached for {{vars.flow_x}} autocomplete. */
   available_vars?: string[]
+  /** 'until_submitted' waits with no limit; 'time_limit' (default)
+   *  gives up after wait_hours. */
+  wait_mode?: 'until_submitted' | 'time_limit'
   /** How long to hold before giving up, in hours (1–168, default 24). */
   wait_hours?: number
   next_node_key: string
@@ -435,7 +438,7 @@ export function defaultConfigFor(type: ChatbotNodeType): Record<string, unknown>
     case 'end':          return { close_conversation: false }
     case 'link_chatbot': return { target_chatbot_id: '', target_chatbot_name: '' }
     case 'send_flow':    return { flow_id: '', flow_name: '', button_text: 'Open form', next_node_key: '' }
-    case 'wait_flow_submit': return { flow_id: '', flow_name: '', wait_hours: 24, next_node_key: '' }
+    case 'wait_flow_submit': return { flow_id: '', flow_name: '', wait_mode: 'until_submitted', wait_hours: 24, next_node_key: '' }
     case 'send_template': return { template_name: '', language_code: 'en_US', body_params: '', next_node_key: '' }
     case 'join':          return { label: '', next_node_key: '' }
     case 'switch_case':   return {

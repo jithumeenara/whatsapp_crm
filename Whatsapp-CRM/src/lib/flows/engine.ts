@@ -2886,6 +2886,18 @@ export async function dispatchInboundToFlows(
       const waitingForForm = activeRun.current_node_key
         ? (await loadAllNodes(activeRun.flow_id)).get(activeRun.current_node_key)?.node_type === "wait_flow_submit"
         : false;
+      // Waiting on a form with no time limit must not trap the customer:
+      // a keyword that starts another chatbot takes over. Only a keyword
+      // — an always-on chatbot matches everything and would end every
+      // wait at the first "ok".
+      if (waitingForForm && input.message.kind === "text") {
+        const other = await findEntryFlow(input.accountId, input.message, false, input.channel);
+        if (other?.entry_node_id && other.trigger_type === "keyword" && other.id !== activeRun.flow_id) {
+          await endRun(activeRun.id, "completed", "superseded_by_keyword");
+          return startNewRun(other, input, await loadAllNodes(other.id));
+        }
+      }
+
       if (
         input.message.kind === "flow_reply" &&
         !waitingForForm &&

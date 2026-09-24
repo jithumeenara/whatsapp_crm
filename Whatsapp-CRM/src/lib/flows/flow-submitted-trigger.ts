@@ -97,10 +97,13 @@ export async function identifySubmittedFlow(
 }
 
 /** How long a Wait-for-Flow step holds before the chatbot gives up, in
- *  minutes: its own "wait up to" hours, default a day, 1 to 168. Both
- *  run sweepers use it, so neither ends a run the other would keep. */
+ *  minutes. "Until submitted" never gives up (Infinity); "time limit"
+ *  uses its own hours, default a day, 1 to 168. Both run sweepers use
+ *  it, so neither ends a run the other would keep. */
 export function flowWaitMinutes(config: unknown): number {
-  const raw = (config as { wait_hours?: unknown } | null)?.wait_hours
+  const cfg = config as { wait_mode?: unknown; wait_hours?: unknown } | null
+  if (cfg?.wait_mode === "until_submitted") return Infinity
+  const raw = cfg?.wait_hours
   const hours = typeof raw === "number" && Number.isFinite(raw) ? raw : 24
   return Math.min(Math.max(hours, 1), 168) * 60
 }

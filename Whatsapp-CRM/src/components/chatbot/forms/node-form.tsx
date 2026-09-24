@@ -2598,23 +2598,57 @@ function WaitFlowSubmitForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         <p className="text-[10px] text-amber-600">No published Flows found — Any Flow will still work.</p>
       )}
 
-      <Field
-        label="Wait up to (hours)"
-        hint="If the form is not submitted in this time, the chatbot ends (and sends its no-reply message, if one is set). 1 to 168 hours."
-      >
-        <Input
-          id={`wait-hours-${nodeKey}`}
-          type="number"
-          min={1}
-          max={168}
-          className="h-8 text-xs"
-          value={String(cfg.wait_hours ?? 24)}
-          onChange={(e) => {
-            const n = Number(e.target.value)
-            onChange({ ...cfg, wait_hours: Number.isFinite(n) ? Math.min(Math.max(Math.round(n), 1), 168) : 24 })
-          }}
-        />
+      <Field label="How long to wait">
+        <div className="grid grid-cols-2 gap-2">
+          {([
+            ["until_submitted", "Until submitted", "No time limit"],
+            ["time_limit", "Time limit", "Give up after some hours"],
+          ] as const).map(([value, title, sub]) => {
+            const current = cfg.wait_mode === "until_submitted" ? "until_submitted" : "time_limit";
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onChange({ ...cfg, wait_mode: value })}
+                className={`rounded-md border px-2 py-1.5 text-left transition-colors ${
+                  current === value
+                    ? "border-indigo-500 bg-indigo-50"
+                    : "border-slate-200 hover:border-indigo-300"
+                }`}
+              >
+                <span className={`block text-[11px] font-semibold ${current === value ? "text-indigo-600" : "text-slate-700"}`}>{title}</span>
+                <span className="block text-[10px] text-slate-500">{sub}</span>
+              </button>
+            );
+          })}
+        </div>
       </Field>
+
+      {cfg.wait_mode === "until_submitted" ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-[10px] leading-relaxed text-slate-600">
+          The chatbot waits as long as it takes and continues the moment the form is submitted — the
+          chatbot&apos;s No-reply timer does not end it. If the customer types a keyword that starts
+          another chatbot meanwhile, that chatbot takes over.
+        </p>
+      ) : (
+        <Field
+          label="Wait up to (hours)"
+          hint="If the form is not submitted in this time, the chatbot ends (and sends its no-reply message, if one is set). 1 to 168 hours."
+        >
+          <Input
+            id={`wait-hours-${nodeKey}`}
+            type="number"
+            min={1}
+            max={168}
+            className="h-8 text-xs"
+            value={String(cfg.wait_hours ?? 24)}
+            onChange={(e) => {
+              const n = Number(e.target.value)
+              onChange({ ...cfg, wait_hours: Number.isFinite(n) ? Math.min(Math.max(Math.round(n), 1), 168) : 24 })
+            }}
+          />
+        </Field>
+      )}
 
       <NodeSelect
         label="After the form is submitted *"
