@@ -52,7 +52,14 @@ const STATUS_CHIP: Record<string, { label: string; cls: string }> = {
  * Open ones first, each with the three things that happen to a call:
  * Done, Reschedule, Couldn't reach. Closed ones below, folded away.
  */
-export function LeadFollowUps({ items, onChanged }: { items: LeadFollowUp[]; onChanged: () => void }) {
+export function LeadFollowUps({
+  items, onChanged, unclaimed = false,
+}: {
+  items: LeadFollowUp[]
+  onChanged: () => void
+  /** Nobody holds this lead: acting on a follow-up picks it up. */
+  unclaimed?: boolean
+}) {
   const [active, setActive] = useState<{ id: string; outcome: Outcome } | null>(null)
   const [note, setNote] = useState("")
   const [next, setNext] = useState({ date: "", time: "" })
@@ -113,6 +120,13 @@ export function LeadFollowUps({ items, onChanged }: { items: LeadFollowUp[]; onC
 
       {open.length === 0 && (
         <p className="text-[13px] text-slate-400 italic mb-2">No follow-up waiting.</p>
+      )}
+
+      {unclaimed && open.length > 0 && (
+        <p className="mb-3 rounded-lg bg-sky-50 px-3 py-2 text-[12px] text-sky-800">
+          Nobody has picked this lead yet. Marking a follow-up done, rescheduling it or recording that you
+          couldn&apos;t reach them picks the lead up for you.
+        </p>
       )}
 
       <div className="space-y-3">

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { findOrCreateContact } from '@/lib/contacts/find-or-create'
 import { parseFollowUpInput } from '@/lib/leads/new-follow-up'
+import { claimIfUnassigned } from '@/lib/leads/claim'
 
 /**
  * POST /api/leads/follow-up — "call this person back at this time".
@@ -67,6 +68,16 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Scheduling a call on a lead nobody holds is picking it up — the
+    // conversation and any earlier call-backs come with it.
+    if (lead && !lead.assigned_to) {
+      await claimIfUnassigned({
+        accountId: ctx.accountId,
+        leadId: lead.id,
+        userId: ctx.userId,
+        how: 'by scheduling a follow-up',
+      })
+    }
     const assignee = lead?.assigned_to ?? ctx.userId
     const label = contact.name || contact.phone
 

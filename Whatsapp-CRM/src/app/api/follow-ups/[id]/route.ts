@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { checkOwnedRefs, FOLLOW_UP_STATUSES } from '@/lib/leads/owned-refs'
+import { claimIfUnassigned } from '@/lib/leads/claim'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -38,6 +39,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id, lead_id, assigned_to })
     if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
+
+    // Editing a call-back on a lead nobody holds is picking it up.
+    if (existing.lead_id && !existing.lead?.assigned_to) {
+      const claimed = await claimIfUnassigned({
+        accountId: ctx.accountId,
+        leadId: existing.lead_id,
+        userId: ctx.userId,
+        how: 'by editing a follow-up',
+      })
+      // Somebody else picked it in the same moment: it is theirs now.
+      if (!claimed && !canViewAllLeads(ctx.role)) {
+        const now = await prisma.lead.findFirst({ where: { id: existing.lead_id }, select: { assigned_to: true } })
+        if (now?.assigned_to && now.assigned_to !== ctx.userId) {
+          return NextResponse.json({ error: 'A colleague has just picked this lead' }, { status: 409 })
+        }
+      }
+    }
 
     const isCompleting = status === 'done' && existing.status !== 'done'
     const isSkipping   = status === 'skipped' && existing.status !== 'skipped'

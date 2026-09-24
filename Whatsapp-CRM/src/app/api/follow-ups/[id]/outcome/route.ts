@@ -4,6 +4,7 @@ import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { outcomeTitle, parseOutcomeInput } from '@/lib/leads/follow-up-outcome'
+import { claimIfUnassigned } from '@/lib/leads/claim'
 
 /**
  * POST /api/follow-ups/:id/outcome — Done, Reschedule or Couldn't reach.
@@ -51,6 +52,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }).format(d)
 
     const { outcome, note, nextAt } = input
+
+    // Working a call-back on a lead nobody holds is picking it up.
+    if (existing.lead_id && !existing.lead?.assigned_to) {
+      const claimed = await claimIfUnassigned({
+        accountId: ctx.accountId,
+        leadId: existing.lead_id,
+        userId: ctx.userId,
+        how: outcome === 'done'
+          ? 'by marking a follow-up done'
+          : outcome === 'rescheduled'
+            ? 'by rescheduling a follow-up'
+            : "by recording a follow-up as couldn't reach",
+      })
+      // Somebody else picked it in the same moment: it is theirs now.
+      if (!claimed && !canViewAllLeads(ctx.role)) {
+        const now = await prisma.lead.findFirst({ where: { id: existing.lead_id }, select: { assigned_to: true } })
+        if (now?.assigned_to && now.assigned_to !== ctx.userId) {
+          return NextResponse.json({ error: 'A colleague has just picked this lead' }, { status: 409 })
+        }
+      }
+    }
     const assignee = existing.assigned_to ?? ctx.userId
 
     const description = [
@@ -70,6 +92,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           where: { id },
           data: {
             status: outcome === 'done' ? 'done' : 'skipped',
+            assigned_to: assignee,
             // The original note — what the call was about — is kept;
             // what happened goes on the lead's timeline below.
             completed_at: new Date(),

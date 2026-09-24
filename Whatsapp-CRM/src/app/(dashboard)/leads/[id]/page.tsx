@@ -679,6 +679,7 @@ export default function LeadDetailPage() {
           <LeadFollowUps
             items={(lead as Lead & { follow_ups?: LeadFollowUp[] }).follow_ups ?? []}
             onChanged={loadLead}
+            unclaimed={!lead.assigned_to}
           />
 
           {/* Lead Details + Log Call Outcome */}
