@@ -20,7 +20,7 @@ import {
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
-import { sendEmail } from '@/lib/messaging/channels/email'
+import { sendConversationEmail } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads')
@@ -323,10 +323,14 @@ async function engineSendTextRcs(args: SendTextEngineArgs): Promise<{ whatsapp_m
 async function engineSendTextEmail(args: SendTextEngineArgs): Promise<{ whatsapp_message_id: string }> {
   const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { email: true } })
   if (!contact?.email) throw new Error('Email contact has no email address')
-  // Plain-text MVP has no subject-composing UI yet — derive one from the
-  // body so the email isn't blank in the subject line.
-  const subject = args.text.slice(0, 60).trim() || 'New message'
-  const { messageId } = await sendEmail({ accountId: args.accountId, to: contact.email, subject, text: args.text })
+  // A chatbot step answers the customer's latest email, in its thread.
+  const { messageId, subject } = await sendConversationEmail({
+    accountId: args.accountId,
+    conversationId: args.conversationId,
+    to: contact.email,
+    text: args.text,
+    mode: 'reply',
+  })
   const finalId = messageId || `email_bot_${Date.now()}`
   const savedMsg = await prisma.message.create({
     data: { conversation_id: args.conversationId, sender_type: 'bot', content_type: 'text', content_text: args.text, email_subject: subject, message_id: finalId, status: 'sent' },

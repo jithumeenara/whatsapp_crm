@@ -24,7 +24,7 @@ import {
 import type { MessageTemplate } from '@/types'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
-import { sendEmail } from '@/lib/messaging/channels/email'
+import { sendConversationEmail, cleanSubject, type EmailMode } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads')
@@ -283,18 +283,36 @@ async function handleEmailSend({
   conversationId,
   contactEmail,
   contentText,
+  mode,
+  subject: requestedSubject,
+  replyToMessageId,
 }: {
   accountId:      string
   userId:         string
   conversationId: string
   contactEmail:   string
   contentText:    string
+  mode:           EmailMode
+  subject:        string
+  replyToMessageId: string | null
 }): Promise<NextResponse> {
-  const subject = contentText.slice(0, 60).trim() || 'New message'
+  if (mode === 'new' && !requestedSubject) {
+    return NextResponse.json({ error: 'A new email needs a subject' }, { status: 400 })
+  }
   let messageId: string
+  let subject: string
   try {
-    const result = await sendEmail({ accountId, to: contactEmail, subject, text: contentText })
+    const result = await sendConversationEmail({
+      accountId,
+      conversationId,
+      to: contactEmail,
+      text: contentText,
+      mode,
+      subject: requestedSubject,
+      replyToMessageId,
+    })
     messageId = result.messageId || `email_agent_${Date.now()}`
+    subject = result.subject
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Email send failed'
     console.error('[email/send] error:', msg)
@@ -478,12 +496,28 @@ export async function POST(request: Request) {
       if (message_type !== 'text' || !content_text) {
         return NextResponse.json({ error: 'Only plain text is supported for the Email channel right now' }, { status: 400 })
       }
+      if (typeof content_text !== 'string' || content_text.length > 50_000) {
+        return NextResponse.json({ error: 'The email is too long' }, { status: 400 })
+      }
+      // Answering one of their emails is only allowed within this
+      // conversation — the id comes from the browser.
+      let replyTarget: string | null = null
+      if (typeof reply_to_message_id === 'string' && reply_to_message_id) {
+        const owned = await prisma.message.findFirst({
+          where: { id: reply_to_message_id, conversation_id, sender_type: 'customer' },
+          select: { id: true },
+        })
+        replyTarget = owned?.id ?? null
+      }
       return handleEmailSend({
         accountId,
         userId,
         conversationId: conversation_id,
         contactEmail: contact.email,
         contentText: content_text,
+        mode: body.email_mode === 'new' ? 'new' : 'reply',
+        subject: cleanSubject(body.email_subject),
+        replyToMessageId: replyTarget,
       })
     }
 

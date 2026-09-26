@@ -9,7 +9,7 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { prisma } from '@/lib/db'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
-import { sendEmail } from '@/lib/messaging/channels/email'
+import { sendConversationEmail } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
 interface SendTextArgs {
@@ -88,8 +88,14 @@ export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_mes
   if (channel === 'email') {
     const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { email: true } })
     if (!contact?.email) throw new Error('Email contact has no email address')
-    const subject = args.text.slice(0, 60).trim() || 'New message'
-    const { messageId } = await sendEmail({ accountId: args.accountId, to: contact.email, subject, text: args.text })
+    // Answers the customer's latest email, in its thread.
+    const { messageId, subject } = await sendConversationEmail({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      to: contact.email,
+      text: args.text,
+      mode: 'reply',
+    })
     const finalId = messageId || `email_bot_${Date.now()}`
     await persistBotTextMessage(args.accountId, args.conversationId, args.text, finalId, subject)
     return { whatsapp_message_id: finalId }

@@ -239,6 +239,39 @@ export async function sendMail(token: string, args: { to: string; subject: strin
   })
 }
 
+/** Plain text as the HTML Graph expects in a reply's comment: escaped,
+ *  with line breaks kept. */
+export function textToHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\r?\n/g, '<br>')
+}
+
+/** The mailbox's own id for an email, from its Internet Message-ID (what
+ *  the Inbox stores). Null when it is not in this mailbox any more. */
+export async function findByInternetMessageId(token: string, internetMessageId: string): Promise<string | null> {
+  const filter = `internetMessageId eq '${internetMessageId.replace(/'/g, "''")}'`
+  const data = await graph<{ value?: Array<{ id: string }> }>(
+    token,
+    `/me/messages?$filter=${encodeURIComponent(filter)}&$select=id&$top=1`,
+  )
+  return data?.value?.[0]?.id ?? null
+}
+
+/** Reply to one email, in its own thread. Graph quotes the original,
+ *  keeps the thread headers, and saves the reply to Sent Items
+ *  ("message: reply", Microsoft Graph v1.0). */
+export async function replyToMessage(token: string, graphMessageId: string, text: string) {
+  await graph(token, `/me/messages/${encodeURIComponent(graphMessageId)}/reply`, {
+    method: 'POST',
+    body: JSON.stringify({ comment: textToHtml(text) }),
+  })
+}
+
 // ── The account's mailbox ───────────────────────────────────────────────
 
 export async function loadMailbox(accountId: string) {

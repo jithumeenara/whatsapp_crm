@@ -9,7 +9,7 @@
  */
 import { prisma } from "@/lib/db"
 import { encrypt, decrypt } from "@/lib/whatsapp/encryption"
-import { accessTokenFor, connectedMailbox, sendMail as sendMicrosoftMail } from "@/lib/email/microsoft/graph"
+import { accessTokenFor, connectedMailbox, findByInternetMessageId, replyToMessage, sendMail as sendMicrosoftMail } from "@/lib/email/microsoft/graph"
 
 const SENDGRID_SEND_URL = "https://api.sendgrid.com/v3/mail/send"
 const SENDGRID_ACCOUNT_URL = "https://api.sendgrid.com/v3/user/account"
@@ -73,14 +73,29 @@ export async function sendEmail(args: {
   subject: string
   text: string
   html?: string
+  /** The email this answers, as stored on the Inbox message: an Internet
+   *  Message-ID, or "graph:<id>". With a Microsoft mailbox the reply then
+   *  stays in that email's thread, for us and for the customer. */
+  inReplyTo?: string | null
 }): Promise<{ messageId: string }> {
   // A mailbox connected with Microsoft sends as itself, and the reply
   // lands in its Sent Items like any other. SendGrid is the fallback.
   const microsoft = await connectedMailbox(args.accountId)
   if (microsoft) {
     const token = await accessTokenFor(microsoft)
+    if (args.inReplyTo) {
+      const graphId = args.inReplyTo.startsWith("graph:")
+        ? args.inReplyTo.slice(6)
+        : await findByInternetMessageId(token, args.inReplyTo).catch(() => null)
+      if (graphId) {
+        await replyToMessage(token, graphId, args.text)
+        return { messageId: "" }
+      }
+      // The original is gone from the mailbox: a new email with the
+      // same "Re:" subject is the closest thing to a reply left.
+    }
     await sendMicrosoftMail(token, { to: args.to, subject: args.subject, text: args.text })
-    // Graph's sendMail returns no message id.
+    // Graph's sendMail and reply return no message id.
     return { messageId: "" }
   }
 

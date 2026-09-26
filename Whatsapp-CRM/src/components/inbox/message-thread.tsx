@@ -34,6 +34,8 @@ import {
 import { MessageBubble } from "./message-bubble";
 import { MessageActions } from "./message-actions";
 import { MessageComposer } from "./message-composer";
+import { EmailThread } from "./email-thread";
+import { EmailComposer, type EmailDraft, type EmailReplyTarget } from "./email-composer";
 import { TemplatePicker } from "./template-picker";
 import { CatalogPicker, type CatalogSendPayload } from "./catalog-picker";
 import { PaymentRequestDialog } from "./payment-request-dialog";
@@ -253,6 +255,9 @@ export function MessageThread({
     }, 700);
   }, [isRefreshing, onRefresh]);
   const [replyTo, setReplyTo] = useState<ReplyDraft | null>(null);
+  // Email conversations: which of their emails a reply answers (null =
+  // their latest).
+  const [emailTarget, setEmailTarget] = useState<EmailReplyTarget | null>(null);
 
   // Merged cross-channel history view — read-only aggregation of every
   // channel this contact has a conversation on (see
@@ -530,6 +535,53 @@ export function MessageThread({
         const reason = err instanceof Error ? err.message : "network error";
         toast.error(`Failed to send: ${reason}`);
         onUpdateMessage(tempId, { status: "failed" });
+      }
+    },
+    [conversation, userId, onNewMessage, onUpdateMessage]
+  );
+
+  /** Email conversations: Reply (in the customer's thread) or New email
+   *  (own subject). Shown at once, then confirmed by the realtime row. */
+  const handleSendEmail = useCallback(
+    async (draft: EmailDraft): Promise<boolean> => {
+      if (!conversation) return false;
+      const tempId = `temp-${Date.now()}`;
+      onNewMessage({
+        id: tempId,
+        conversation_id: conversation.id,
+        sender_type: "agent",
+        sender_id: userId ?? undefined,
+        content_type: "text",
+        content_text: draft.text,
+        email_subject: draft.mode === "new" ? draft.subject : null,
+        status: "sending",
+        created_at: new Date().toISOString(),
+      });
+      try {
+        const res = await fetch("/api/whatsapp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversation_id: conversation.id,
+            message_type: "text",
+            content_text: draft.text,
+            email_mode: draft.mode,
+            email_subject: draft.subject || undefined,
+            reply_to_message_id: draft.replyToId ?? undefined,
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          toast.error(`Email not sent: ${payload?.error || `HTTP ${res.status}`}`);
+          onUpdateMessage(tempId, { status: "failed" });
+          return false;
+        }
+        onUpdateMessage(tempId, { status: "sent" });
+        return true;
+      } catch (err) {
+        toast.error(`Email not sent: ${err instanceof Error ? err.message : "network error"}`);
+        onUpdateMessage(tempId, { status: "failed" });
+        return false;
       }
     },
     [conversation, userId, onNewMessage, onUpdateMessage]
@@ -965,6 +1017,9 @@ export function MessageThread({
 
   const displayName = contact.name || contact.phone;
   const displayMessages = mergedView ? mergedMessages : messages;
+  const isEmailConversation = ((conversation as { channel?: string })?.channel ?? "whatsapp") === "email";
+  const latestEmailSubject =
+    [...messages].reverse().find((m) => m.email_subject)?.email_subject ?? null;
   const messageGroups = groupMessagesByDate(displayMessages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -988,6 +1043,23 @@ export function MessageThread({
           Send a template to start the conversation
         </p>
       </div>
+    );
+  } else if (isEmailConversation && !mergedView) {
+    // Email reads as email: cards with sender, subject and folded quotes.
+    messagesContent = (
+      <EmailThread
+        messages={displayMessages}
+        contactName={contactDisplayName}
+        contactEmail={contact?.email ?? null}
+        agentLabelFor={agentLabelFor}
+        onReply={(m) =>
+          setEmailTarget({
+            id: m.id,
+            subject: m.email_subject ?? null,
+            preview: (m.email_subject || m.content_text || "their email").replace(/\s+/g, " ").slice(0, 90),
+          })
+        }
+      />
     );
   } else if (mergedView) {
     // Read-only merged view — no reply/react/delete affordances, since
@@ -1087,7 +1159,7 @@ export function MessageThread({
   }
 
   return (
-    <div className={cn("flex flex-1 flex-col overflow-hidden", DOODLE_BG_CLASSES)}>
+    <div className={cn("flex flex-1 flex-col overflow-hidden", isEmailConversation ? "bg-slate-50" : DOODLE_BG_CLASSES)}>
       {/* ── Header — WhatsApp-style on mobile ── */}
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 border-b border-slate-200 bg-white px-2 py-2 sm:px-3 lg:px-4 lg:py-0 lg:h-14">
         {/* Back arrow (mobile) */}
@@ -1129,7 +1201,8 @@ export function MessageThread({
                 </DropdownMenuTrigger>
               }
             />
-            {sessionInfo.remaining && (
+            {/* WhatsApp's 24-hour window means nothing for email. */}
+            {sessionInfo.remaining && !isEmailConversation && (
               <span className={cn(
                 "shrink-0 text-[11px] leading-none",
                 sessionInfo.expired ? "text-red-400" : "text-slate-400"
@@ -1253,7 +1326,17 @@ export function MessageThread({
         channel={(conversation as { channel?: string })?.channel}
       />
 
-      {/* Composer */}
+      {/* Composer — an email box for email, the chat box for everything else */}
+      {isEmailConversation ? (
+        <EmailComposer
+          key={conversation.id}
+          contactEmail={contact?.email ?? null}
+          latestSubject={latestEmailSubject}
+          target={emailTarget}
+          onClearTarget={() => setEmailTarget(null)}
+          onSend={handleSendEmail}
+        />
+      ) : (
       <MessageComposer
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
@@ -1268,6 +1351,7 @@ export function MessageThread({
         onClearReply={() => setReplyTo(null)}
         contactDetectedLanguage={contact?.detected_language}
       />
+      )}
 
       <TemplatePicker
         open={templateModalOpen}
