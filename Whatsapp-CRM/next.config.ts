@@ -13,6 +13,12 @@ const isDev = process.env.NODE_ENV === "development";
  */
 const APP_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
+/** NEXT_BUILD_CPUS as a worker count from 1 to 8, or undefined. */
+function buildCpus(): number | undefined {
+  const n = Number(process.env.NEXT_BUILD_CPUS);
+  return Number.isInteger(n) && n >= 1 && n <= 8 ? n : undefined;
+}
+
 /**
  * Baseline security headers applied to every response.
  *
@@ -119,8 +125,20 @@ const nextConfig: NextConfig = {
   turbopack: { root: APP_ROOT },
 
   serverExternalPackages: ["exceljs"],
+  // The full type check is the heaviest part of a build, and on the
+  // 2 GB VPS it is what got killed. Every commit is type-checked before
+  // it is pushed (tsc --noEmit), so the server can skip repeating it:
+  // NEXT_SKIP_TYPECHECK=1 there. Unset, the build checks types as usual.
+  typescript: {
+    ignoreBuildErrors: process.env.NEXT_SKIP_TYPECHECK === "1",
+  },
   experimental: {
     optimizePackageImports: ["lucide-react", "date-fns", "sonner"],
+    // How many build workers to run at once, when the server asks for
+    // fewer. The VPS has 2 GB of RAM, and Next's default of one worker
+    // per core ran it out of memory mid-build ("Killed"). Set
+    // NEXT_BUILD_CPUS=1 for the build there; unset, nothing changes.
+    ...(buildCpus() ? { cpus: buildCpus() } : {}),
   },
   /**
    * Cache-Control policy.
