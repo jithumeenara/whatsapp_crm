@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { tileAccent } from '@/components/settings/settings-ui-kit';
+import { MicrosoftMailCard } from '@/components/settings/microsoft-mail-card';
 
 const MASKED = '••••••••••••••••';
 
@@ -182,6 +183,11 @@ export function EmailConfig() {
 
   return (
     <div className="space-y-5">
+      {/* Microsoft 365 / Outlook first: signing in with a mailbox is the
+          simpler way in. SendGrid below stays for accounts using it. */}
+      <MicrosoftMailCard />
+      <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Or use SendGrid</p>
+
       {/* ── Status Bar ── */}
       <div className={cn(
         'rounded-2xl border px-5 py-4 flex items-center gap-4',

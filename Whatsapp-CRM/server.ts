@@ -10,6 +10,7 @@ import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
+import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 import { isClientGone } from "./src/lib/net/client-gone";
@@ -196,6 +197,17 @@ app.prepare().then(() => {
       console.error("[auto-train] interval failed:", err);
     });
   }, 10 * 60_000);
+
+  // Connected Microsoft mailboxes: Graph stops reporting new mail after
+  // at most seven days unless the subscription is renewed. Hourly, and
+  // once shortly after start, renewing anything due within a day.
+  const microsoftUpkeep = () => {
+    sweepMicrosoftSubscriptions().catch((err) => {
+      console.error("[microsoft-mail] upkeep failed:", err);
+    });
+  };
+  setTimeout(microsoftUpkeep, 60_000);
+  setInterval(microsoftUpkeep, 60 * 60_000);
 });
 
 /** Emit a real-time event to all sockets in an account's room. */

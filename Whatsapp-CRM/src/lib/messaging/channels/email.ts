@@ -9,6 +9,7 @@
  */
 import { prisma } from "@/lib/db"
 import { encrypt, decrypt } from "@/lib/whatsapp/encryption"
+import { accessTokenFor, connectedMailbox, sendMail as sendMicrosoftMail } from "@/lib/email/microsoft/graph"
 
 const SENDGRID_SEND_URL = "https://api.sendgrid.com/v3/mail/send"
 const SENDGRID_ACCOUNT_URL = "https://api.sendgrid.com/v3/user/account"
@@ -73,8 +74,18 @@ export async function sendEmail(args: {
   text: string
   html?: string
 }): Promise<{ messageId: string }> {
+  // A mailbox connected with Microsoft sends as itself, and the reply
+  // lands in its Sent Items like any other. SendGrid is the fallback.
+  const microsoft = await connectedMailbox(args.accountId)
+  if (microsoft) {
+    const token = await accessTokenFor(microsoft)
+    await sendMicrosoftMail(token, { to: args.to, subject: args.subject, text: args.text })
+    // Graph's sendMail returns no message id.
+    return { messageId: "" }
+  }
+
   const config = await loadEmailConfig(args.accountId)
-  if (!config) throw new Error("Email (SendGrid) not configured for this account")
+  if (!config) throw new Error("Email is not connected for this account")
 
   const res = await fetch(SENDGRID_SEND_URL, {
     method: "POST",

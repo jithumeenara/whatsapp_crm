@@ -40,6 +40,9 @@ const PUBLIC_PREFIXES = [
   '/api/instagram/webhook',   // Meta Instagram webhook — server-to-server, no session cookie
   '/api/facebook/webhook',    // Meta Facebook Messenger webhook — server-to-server, no session cookie
   '/api/flows/data-exchange/', // Meta WhatsApp Flows data-exchange (server-to-server, RSA-encrypted)
+  // Microsoft Graph new-mail notifications. Checked in the route by a
+  // per-mailbox clientState; POST only, and GET is not handled there.
+  '/api/email/microsoft/notify',
   // Provider-secret-authenticated inbound webhooks (SMS: MSG91/TextBee,
   // Email: SendGrid Inbound Parse, RCS: Twilio) — each has its own secret
   // embedded in the URL path or a signature header verified inside the

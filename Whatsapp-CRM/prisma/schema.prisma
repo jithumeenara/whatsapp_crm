@@ -1791,6 +1791,42 @@ model SmsConfig {
   @@map("sms_config")
 }
 
+/// A Microsoft 365 / Outlook mailbox connected with "Connect with
+/// Microsoft" (OAuth 2.0 + Microsoft Graph). The app registration's
+/// details are entered by an admin in Settings and kept here, encrypted —
+/// not in the server's environment. One mailbox per account.
+model MicrosoftMailbox {
+  id                      String    @id @default(uuid()) @db.Uuid
+  account_id              String    @unique @db.Uuid
+  user_id                 String    @db.Uuid
+  /// Directory (tenant) ID and Application (client) ID — GUIDs, not secret.
+  tenant_id               String
+  client_id               String
+  /// AES-256-GCM encrypted client secret. Never returned to the browser.
+  client_secret           String
+  /// Filled once somebody signs in with the mailbox.
+  mailbox_email           String?
+  mailbox_name            String?
+  /// AES-256-GCM encrypted OAuth tokens.
+  refresh_token           String?
+  access_token            String?
+  access_expires_at       DateTime? @db.Timestamptz(6)
+  /// Graph change-notification subscription for new Inbox messages, and
+  /// the address it delivers to (kept so a lapsed one can be recreated).
+  subscription_id         String?   @unique
+  notification_url        String?
+  subscription_expires_at DateTime? @db.Timestamptz(6)
+  /// Random per-mailbox value Graph echoes on every notification; checked
+  /// so a forged notification is ignored.
+  client_state            String
+  status                  String    @default("not_connected")
+  last_error              String?
+  created_at              DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@map("microsoft_mailboxes")
+}
+
 model EmailConfig {
   id                 String    @id @default(uuid()) @db.Uuid
   account_id         String    @unique @db.Uuid

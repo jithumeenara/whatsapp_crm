@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import {
   ArrowLeft,
@@ -176,9 +177,9 @@ const CHANNELS: Record<
     icon: Mail,
     accent: '#F59E0B',
     pale: '#FFF8E8',
-    provider: 'SendGrid',
+    provider: 'Microsoft 365 or SendGrid',
     description:
-      'Turn customer email into team conversations with a connected delivery and inbound provider.',
+      'Turn customer email into team conversations — connect a Microsoft 365 / Outlook mailbox, or a SendGrid account.',
     hasProfile: false,
     Config: EmailConfig,
   },
@@ -225,8 +226,12 @@ async function checkChannelConnected(key: ChannelKey): Promise<boolean> {
         return !!r.connected;
       }
       case 'email': {
-        const r = await fetch('/api/email/config').then((x) => x.json());
-        return !!r.connected;
+        // SendGrid, or a mailbox connected with Microsoft — either counts.
+        const [sg, ms] = await Promise.all([
+          fetch('/api/email/config').then((x) => x.json()).catch(() => ({})) as Promise<{ connected?: boolean }>,
+          fetch('/api/email/microsoft/config').then((x) => (x.ok ? x.json() : {})).catch(() => ({})) as Promise<{ status?: string }>,
+        ]);
+        return !!sg.connected || ms.status === 'connected';
       }
       case 'rcs': {
         const r = await fetch('/api/rcs/config').then((x) => x.json());
@@ -294,7 +299,13 @@ function ConnectionAction({
 }
 
 export function ChannelsTab() {
-  const [channel, setChannel] = useState<ChannelKey>('whatsapp');
+  // ?channel=email opens that channel — where "Connect with Microsoft"
+  // returns to after signing in.
+  const searchParams = useSearchParams();
+  const [channel, setChannel] = useState<ChannelKey>(() => {
+    const asked = searchParams.get('channel');
+    return asked && asked in CHANNELS ? (asked as ChannelKey) : 'whatsapp';
+  });
   const [view, setView] = useState<'onboarding' | 'config' | 'profile'>(
     'onboarding'
   );
