@@ -32,7 +32,9 @@ import { getFieldConfig, type FieldConfig } from './types'
 import {
   BRAND_COLORS,
   columnsNeeded,
+  effectiveRules,
   fillValue,
+  uniquenessOf,
   isShown,
   optionsFor,
   type Answers,
@@ -155,21 +157,48 @@ export async function describeSources(
   fields: ReadonlyArray<{ field_key: string; field_type: string; options: unknown }>,
 ): Promise<FormSource[]> {
   const out: FormSource[] = []
+  // Several dropdowns usually read the same table; read it once.
+  const tables = new Map<string, Promise<{ name: string; fields: { field_key: string; label: string; field_type: string }[]; rows: Record<string, unknown>[] } | null>>()
+  const load = (tableId: string) => {
+    if (!tables.has(tableId)) {
+      tables.set(
+        tableId,
+        (async () => {
+          const source = await prisma.dataTable.findFirst({
+            where: { id: tableId, account_id: accountId },
+            select: {
+              name: true,
+              fields: { orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }], select: { field_key: true, label: true, field_type: true } },
+            },
+          })
+          if (!source) return null
+          const records = await prisma.dataRecord.findMany({
+            where: { table_id: tableId, account_id: accountId },
+            select: { data: true },
+            take: 1000,
+          })
+          const rows = records.map((r) => (r.data && typeof r.data === 'object' ? (r.data as Record<string, unknown>) : {}))
+          return { name: source.name, fields: source.fields, rows }
+        })(),
+      )
+    }
+    return tables.get(tableId)!
+  }
   for (const f of fields) {
     if (f.field_type !== 'select' && f.field_type !== 'radio') continue
     const cfg = getFieldConfig(f.options as FieldConfig | null)
     if (!cfg.source_table_id || !cfg.source_field_key) continue
-    const source = await prisma.dataTable.findFirst({
-      where: { id: cfg.source_table_id, account_id: accountId },
-      select: {
-        name: true,
-        fields: { orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }], select: { field_key: true, label: true, field_type: true } },
-      },
-    })
+    const source = await load(cfg.source_table_id)
     if (!source) continue
     const columns = source.fields.filter(lookupColumnAllowed).map((c) => ({ key: c.field_key, label: c.label }))
     if (!columns.some((c) => c.key === cfg.source_field_key)) continue
-    out.push({ field_key: f.field_key, table_name: source.name, option_column: cfg.source_field_key, columns })
+    out.push({
+      field_key: f.field_key,
+      table_name: source.name,
+      option_column: cfg.source_field_key,
+      columns,
+      uniqueness: uniquenessOf(source.rows, cfg.source_field_key),
+    })
   }
   return out
 }
@@ -266,6 +295,16 @@ export async function loadPublicForm(token: string): Promise<PublicForm | null> 
 
   const config = parseFormConfig(table.form_config, table.fields.map((f) => f.field_key))
   const shown = formFieldOrder(table.fields, config)
+  // The links the names imply (month → programme → dates), on top of
+  // any set by hand — unless the account switched them off. From here on
+  // these are the rules: the page shows them and the submit enforces them.
+  if (config.auto_link) {
+    const sources = await describeSources(table.account_id, shown)
+    const questions = shown
+      .filter((f) => !WEB_FORM_DISPLAY_TYPES.has(f.field_type))
+      .map((f) => ({ key: f.field_key, label: f.label }))
+    config.rules = effectiveRules(config.rules, questions, sources, true).rules
+  }
   const resolved = await resolveFormFields(table.account_id, shown)
   const fields: PublicFormField[] = resolved.map((f, i) => {
     const extra = getFieldConfig(shown[i].options as FieldConfig | null)

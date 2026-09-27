@@ -226,6 +226,8 @@ export interface FormSource {
   option_column: string
   /** Columns a rule may use: filter on, or fill from. */
   columns: Array<{ key: string; label: string }>
+  /** See uniquenessOf. Missing = treated as picking one row. */
+  uniqueness?: number
 }
 
 const STOP = new Set(['of', 'the', 'a', 'an'])
@@ -257,11 +259,35 @@ export interface LinkSuggestion {
   text: string
 }
 
+/** How nearly every row has its own value in `column`: 1 when each
+ *  value appears once (a programme name), lower when values repeat (a
+ *  month, a target group). The field to fill *from* is the one that
+ *  picks a single row. */
+export function uniquenessOf(rows: ReadonlyArray<Record<string, unknown>>, column: string): number {
+  let filled = 0
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const v = norm(row[column])
+    if (!v) continue
+    filled++
+    seen.add(v)
+  }
+  return filled ? seen.size / filled : 0
+}
+
 /**
- * The links a table's own names already imply. For each dropdown fed by
- * another table: an EARLIER question named like one of that table's
- * columns narrows it (month → Month), and a LATER question named like a
- * column is filled from the chosen row, locked (From Date ← Date from).
+ * The links a table's own names already imply.
+ *
+ * Several dropdowns can be fed from the same table — month, programme
+ * and target group all read Training. Filling the dates "from month"
+ * would take whichever October row came first, so:
+ *
+ *  • A field is FILLED only from the dropdown before it that picks one
+ *    row — the most unique option column (the programme name), the
+ *    earliest on a tie — and never from a field that is itself filled.
+ *  • A dropdown that is not filled is NARROWED by an earlier answer named
+ *    like one of its table's columns (programme ← month).
+ *
  * Existing rules are kept; only gaps are filled.
  */
 export function suggestRules(
@@ -273,39 +299,55 @@ export function suggestRules(
   const added: LinkSuggestion[] = []
   const labelOf = new Map(questions.map((q) => [q.key, q.label]))
   const position = new Map(questions.map((q, i) => [q.key, i]))
+  const sourceOf = new Map(sources.filter((s) => position.has(s.field_key)).map((s) => [s.field_key, s]))
+  const uniq = (s: FormSource) => s.uniqueness ?? 1
+  const ruleFor = (key: string) => (rules[key] ??= { filter: null, fill: null, show_if: null })
 
-  for (const source of sources) {
-    const at = position.get(source.field_key)
-    if (at === undefined) continue
-    const columns = source.columns.filter((c) => c.key !== source.option_column)
-    const rule = (rules[source.field_key] ??= { filter: null, fill: null, show_if: null })
-
-    if (!rule.filter) {
-      for (const q of questions.slice(0, at)) {
-        const col = columns.find((c) => matchesColumn(q, c))
-        if (col) {
-          rule.filter = { depends_on: q.key, match_column: col.key }
-          added.push({
-            field: source.field_key,
-            kind: 'filter',
-            text: `“${labelOf.get(source.field_key)}” shows only the ${source.table_name} rows whose ${col.label} matches “${q.label}”`,
-          })
-          break
-        }
+  // Fills, question by question in order.
+  for (const [i, q] of questions.entries()) {
+    const own = sourceOf.get(q.key)
+    if (rules[q.key]?.fill) continue
+    let best: { source: FormSource; column: { key: string; label: string }; at: number } | null = null
+    for (const [key, source] of sourceOf) {
+      const at = position.get(key)!
+      if (at >= i || rules[key]?.fill) continue
+      // Never fill a dropdown from one that picks rows less precisely
+      // than it does itself (a programme from a month).
+      if (own && uniq(own) > uniq(source)) continue
+      const column = source.columns.find((c) => c.key !== source.option_column && matchesColumn(q, c))
+      if (!column) continue
+      // Equally precise: the EARLIER dropdown is the one chosen from, and
+      // later ones reading the same table are what it fills (programme
+      // before target group — in a small table every group can be
+      // different too).
+      if (!best || uniq(source) > uniq(best.source) || (uniq(source) === uniq(best.source) && at < best.at)) {
+        best = { source, column, at }
       }
     }
+    // Only a dropdown that really picks one row is worth filling from.
+    if (!best || uniq(best.source) < 0.6) continue
+    ruleFor(q.key).fill = { from_field: best.source.field_key, column: best.column.key, locked: true }
+    added.push({
+      field: q.key,
+      kind: 'fill',
+      text: `“${q.label}” fills in from the chosen “${labelOf.get(best.source.field_key)}” (${best.column.label}) and is locked`,
+    })
+  }
 
-    for (const q of questions.slice(at + 1)) {
-      const target = (rules[q.key] ??= { filter: null, fill: null, show_if: null })
-      if (target.fill) continue
-      const col = columns.find((c) => c.key !== rule.filter?.match_column && matchesColumn(q, c))
+  // Filters, for dropdowns nobody fills.
+  for (const [key, source] of sourceOf) {
+    if (rules[key]?.fill || rules[key]?.filter) continue
+    const at = position.get(key)!
+    for (const q of questions.slice(0, at)) {
+      const col = source.columns.find((c) => c.key !== source.option_column && matchesColumn(q, c))
       if (!col) continue
-      target.fill = { from_field: source.field_key, column: col.key, locked: true }
+      ruleFor(key).filter = { depends_on: q.key, match_column: col.key }
       added.push({
-        field: q.key,
-        kind: 'fill',
-        text: `“${q.label}” fills in from the chosen “${labelOf.get(source.field_key)}” (${col.label}) and is locked`,
+        field: key,
+        kind: 'filter',
+        text: `“${labelOf.get(key)}” shows only the ${source.table_name} rows whose ${col.label} matches “${q.label}”`,
       })
+      break
     }
   }
 
@@ -313,6 +355,23 @@ export function suggestRules(
     if (!r.filter && !r.fill && !r.show_if) delete rules[k]
   }
   return { rules, added }
+}
+
+/**
+ * The rules a form actually runs: what somebody set by hand, and — unless
+ * switched off — the links the names imply for every field they did not
+ * set. A field with a rule of its own keeps it whole.
+ */
+export function effectiveRules(
+  explicit: FormRules,
+  questions: ReadonlyArray<{ key: string; label: string }>,
+  sources: readonly FormSource[],
+  auto: boolean,
+): { rules: FormRules; automatic: Set<string> } {
+  if (!auto) return { rules: explicit, automatic: new Set() }
+  const { rules } = suggestRules(questions, sources, explicit)
+  const automatic = new Set(Object.keys(rules).filter((k) => !explicit[k]))
+  return { rules, automatic }
 }
 
 /** A rule in one line, for lists of what is set up. */

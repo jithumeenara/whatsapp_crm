@@ -20,7 +20,10 @@ import {
   getSelectItems, getFieldConfig, DATA_FIELD_TYPES,
 } from '@/lib/data-store/types';
 import { COUNTRIES, getStatesForCountry } from '@/lib/data-store/geo-data';
-import { fillValue, isShown, optionsFor, type Answers, type FormLookups, type FormRules } from '@/lib/data-store/form-logic';
+import {
+  effectiveRules, fillValue, isShown, optionsFor, uniquenessOf,
+  type Answers, type FormLookups, type FormRules, type FormSource,
+} from '@/lib/data-store/form-logic';
 import { cn } from '@/lib/utils';
 
 // ─── File upload widget ───────────────────────────────────────
@@ -297,10 +300,16 @@ interface Props {
   fields: DataField[];
   record?: DataRecord | null;
   onSaved: (record: DataRecord) => void;
-  /** The table's linked fields (narrow / fill / show-if) — the same
+  /** Linked fields set by hand (narrow / fill / show-if) — the same
    *  rules the public form runs. */
   rules?: FormRules;
+  /** Also link the fields the names imply (month → programme → dates).
+   *  On unless the table switched it off. */
+  autoLink?: boolean;
 }
+
+/** Column types a link may read from another table. */
+const LINKABLE = (type: string) => !['password', 'hidden', 'signature', 'file', 'image', 'section_header', 'html_block'].includes(type);
 
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return '';
@@ -314,7 +323,7 @@ function cellText(value: unknown): string {
 
 // ─── Main form ────────────────────────────────────────────────
 
-export function RecordForm({ open, onClose, tableId, fields, record, onSaved, rules = {} }: Props) {
+export function RecordForm({ open, onClose, tableId, fields, record, onSaved, rules: explicitRules = {}, autoLink = true }: Props) {
   const [data, setData] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -351,7 +360,9 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved, ru
   const [tableSourceOptions, setTableSourceOptions] = useState<Record<string, SelectOption[]>>({});
   // The source rows themselves, for linked fields: which programmes a
   // month has, and what a chosen programme's dates are.
-  const [sourceRows, setSourceRows] = useState<Record<string, { option: string; rows: Record<string, unknown>[] }>>({});
+  const [sourceRows, setSourceRows] = useState<Record<string, { option: string; tableId: string; rows: Record<string, unknown>[] }>>({});
+  // Each source table's name and columns, for linking by names.
+  const [sourceTables, setSourceTables] = useState<Record<string, { name: string; columns: { key: string; label: string }[] }>>({});
 
   useEffect(() => {
     const sourceFields = dataFields.filter((f) => {
@@ -371,17 +382,30 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved, ru
           const val = cellText(data[cfg.source_field_key!]);
           if (val && !seen.has(val)) { seen.add(val); opts.push({ label: val, value: val }); }
         }
-        return { key: f.field_key, opts, rows, option: cfg.source_field_key! };
+        return { key: f.field_key, opts, rows, option: cfg.source_field_key!, tableId: cfg.source_table_id! };
       }),
-    ).then((results) => {
+    ).then(async (results) => {
       const map: Record<string, SelectOption[]> = {};
-      const raw: Record<string, { option: string; rows: Record<string, unknown>[] }> = {};
-      for (const { key, opts, rows, option } of results) {
+      const raw: Record<string, { option: string; tableId: string; rows: Record<string, unknown>[] }> = {};
+      for (const { key, opts, rows, option, tableId: sourceId } of results) {
         map[key] = opts;
-        raw[key] = { option, rows };
+        raw[key] = { option, tableId: sourceId, rows };
       }
       setTableSourceOptions(map);
       setSourceRows(raw);
+      const ids = Array.from(new Set(results.map((r) => r.tableId)));
+      const defs = await Promise.all(
+        ids.map(async (id) => {
+          const res = await fetch(`/api/data-tables/${id}`).catch(() => null);
+          const d = res && res.ok ? await res.json().catch(() => null) : null;
+          const t = d?.table as { name?: string; fields?: DataField[] } | undefined;
+          return [id, {
+            name: t?.name ?? '',
+            columns: (t?.fields ?? []).filter((c) => LINKABLE(c.field_type)).map((c) => ({ key: c.field_key, label: c.label })),
+          }] as const;
+        }),
+      );
+      setSourceTables(Object.fromEntries(defs));
     });
   }, [fields, open]);
 
@@ -428,6 +452,21 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved, ru
     return a;
   };
   const answers = toAnswers(data);
+  // What this form runs: links set by hand, plus — unless switched off —
+  // the ones the names imply, worked out from the source tables' columns
+  // and how uniquely each dropdown picks a row.
+  const rules: FormRules = useMemo(() => {
+    const sources: FormSource[] = [];
+    for (const [key, src] of Object.entries(sourceRows)) {
+      const def = sourceTables[src.tableId];
+      if (!def || !def.columns.some((c) => c.key === src.option)) continue;
+      sources.push({ field_key: key, table_name: def.name, option_column: src.option, columns: def.columns, uniqueness: uniquenessOf(src.rows, src.option) });
+    }
+    const questions = dataFields.map((f) => ({ key: f.field_key, label: f.label }));
+    return effectiveRules(explicitRules, questions, sources, autoLink).rules;
+    // dataFields follows `fields`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [explicitRules, autoLink, sourceRows, sourceTables, fields]);
   const hasRules = Object.keys(rules).length > 0;
   const shownHere = (f: DataField) => !hasRules || isShown(f.field_key, rules, answers);
 

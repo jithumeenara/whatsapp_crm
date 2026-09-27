@@ -74,8 +74,11 @@ export interface TableFormConfig {
   personal_only: boolean
   /** Logo, name, tagline, colour, contact details. */
   brand: FormBrand
-  /** Filter / fill / show-if, per question (lib/data-store/form-logic). */
+  /** Filter / fill / show-if set by hand, per question (lib/data-store/form-logic). */
   rules: FormRules
+  /** Also link fields the names imply (month → programme → dates), with
+   *  no setup. On unless switched off. */
+  auto_link: boolean
 }
 
 export const EMPTY_FORM_CONFIG: TableFormConfig = {
@@ -91,6 +94,7 @@ export const EMPTY_FORM_CONFIG: TableFormConfig = {
   personal_only: false,
   brand: DEFAULT_BRAND,
   rules: {},
+  auto_link: true,
 }
 
 export const DEFAULT_CONSENT =
@@ -140,6 +144,7 @@ export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): Ta
     personal_only: r.personal_only === true,
     brand: parseBrand(r.brand),
     rules: parseRules(r.rules, keys.length ? keys : (fieldKeys ?? [])),
+    auto_link: r.auto_link !== false,
   }
 }
 

@@ -9,6 +9,7 @@ import {
   pipeAnswers,
   sameName,
   suggestRules,
+  effectiveRules,
   type FormLookups,
 } from './form-logic'
 
@@ -146,6 +147,61 @@ describe('linking fields automatically', () => {
     const existing = parseRules({ from_date: { fill: { from_field: 'training_programe', column: 'fee', locked: false } } }, questions.map((q) => q.key))
     const { rules } = suggestRules(questions, sources, existing)
     expect(rules.from_date.fill).toEqual({ from_field: 'training_programe', column: 'fee', locked: false })
+  })
+
+  it('with month, programme and group all fed from Training, fills from the programme — never from month', () => {
+    const cols = sources[0].columns
+    const all = [
+      { field_key: 'month', table_name: 'Training', option_column: 'month', columns: cols, uniqueness: 0.5 },
+      { ...sources[0], uniqueness: 1 },
+      { field_key: 'target_group', table_name: 'Training', option_column: 'target_group', columns: cols, uniqueness: 0.5 },
+    ]
+    const { rules } = suggestRules(questions, all, {})
+    expect(rules.training_programe).toEqual({ filter: { depends_on: 'month', match_column: 'month' }, fill: null, show_if: null })
+    expect(rules.target_group.fill).toEqual({ from_field: 'training_programe', column: 'target_group', locked: true })
+    expect(rules.from_date.fill?.from_field).toBe('training_programe')
+    expect(rules.to_date.fill?.from_field).toBe('training_programe')
+    expect(rules.month).toBeUndefined()
+    // …and the whole chain works on real rows.
+    const lookups = {
+      training_programe: {
+        option: 'name_of_programme',
+        rows: [
+          { name_of_programme: 'STP (M)', month: 'october', target_group: 'Sub-staff', date_from: '2026-10-26', date_to: '2026-10-31' },
+          { name_of_programme: 'Gold loan', month: 'october', target_group: 'All categories', date_from: '2026-10-16', date_to: '2026-10-17' },
+          { name_of_programme: 'STP (S)', month: 'september', target_group: 'Sub-staff', date_from: '2026-09-29', date_to: '2026-10-01' },
+        ],
+      },
+    }
+    expect(optionsFor('training_programe', rules, lookups, { month: 'october' })).toEqual(['STP (M)', 'Gold loan'])
+    const answers = { month: 'october', training_programe: 'Gold loan' }
+    expect(fillValue('target_group', rules, lookups, answers)).toBe('All categories')
+    expect(fillValue('from_date', rules, lookups, answers)).toBe('2026-10-16')
+    expect(fillValue('to_date', rules, lookups, answers)).toBe('2026-10-17')
+  })
+
+  it('when every target group is different too, still fills from the programme', () => {
+    const cols = sources[0].columns
+    const all = [
+      { field_key: 'month', table_name: 'Training', option_column: 'month', columns: cols, uniqueness: 0.5 },
+      { ...sources[0], uniqueness: 1 },
+      { field_key: 'target_group', table_name: 'Training', option_column: 'target_group', columns: cols, uniqueness: 1 },
+    ]
+    const { rules } = suggestRules(questions, all, {})
+    expect(rules.training_programe.filter).toEqual({ depends_on: 'month', match_column: 'month' })
+    expect(rules.training_programe.fill).toBeNull()
+    expect(rules.target_group.fill).toEqual({ from_field: 'training_programe', column: 'target_group', locked: true })
+    expect(rules.from_date.fill?.from_field).toBe('training_programe')
+    expect(rules.to_date.fill?.from_field).toBe('training_programe')
+  })
+
+  it('works automatically, and a rule set by hand wins for its field', () => {
+    const explicit = parseRules({ to_date: { fill: { from_field: 'training_programe', column: 'fee', locked: false } } }, questions.map((q) => q.key))
+    const { rules, automatic } = effectiveRules(explicit, questions, sources, true)
+    expect(rules.to_date.fill?.column).toBe('fee')
+    expect(automatic.has('to_date')).toBe(false)
+    expect(automatic.has('from_date')).toBe(true)
+    expect(effectiveRules(explicit, questions, sources, false).rules).toEqual(explicit)
   })
 
   it('never links a question to one after it', () => {

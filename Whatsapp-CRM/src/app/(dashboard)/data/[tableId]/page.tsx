@@ -232,8 +232,8 @@ export default function DataTablePage() {
   const importRef = useRef<HTMLInputElement>(null)
   // The table's linked fields (month → programme → dates), which Add
   // Record applies exactly as the public form does.
-  const linkRules = useMemo(
-    () => parseFormConfig(table?.form_config, fields.map((f) => f.field_key)).rules,
+  const linkConfig = useMemo(
+    () => parseFormConfig(table?.form_config, fields.map((f) => f.field_key)),
     [table, fields],
   )
 
@@ -868,7 +868,8 @@ export default function DataTablePage() {
           tableId={tableId}
           fields={fields}
           record={editingRecord}
-          rules={linkRules}
+          rules={linkConfig.rules}
+          autoLink={linkConfig.auto_link}
           onClose={() => { setFormOpen(false); setEditingRecord(null) }}
           onSaved={() => { setFormOpen(false); setEditingRecord(null); load() }}
         />

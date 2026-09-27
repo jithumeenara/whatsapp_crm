@@ -22,7 +22,7 @@ import {
   type TableFormConfig,
 } from "@/lib/data-store/public-form"
 import { getSelectItems, type DataField } from "@/lib/data-store/types"
-import { parseRules, suggestRules, type FieldRule, type FormBrand } from "@/lib/data-store/form-logic"
+import { effectiveRules, parseRules, type FieldRule, type FormBrand } from "@/lib/data-store/form-logic"
 import type { FormSource } from "@/lib/data-store/form-logic"
 import { FormBrandEditor, type LogoPreview } from "./form-brand-editor"
 import { FormRuleEditor, type EarlierQuestion } from "./form-rule-editor"
@@ -260,25 +260,17 @@ export function PublicFormPanel({
     setOrder(shown.has(key) ? asked.filter((k) => k !== key) : [...asked, key])
   }
 
-  /** Links the fields the names already imply, and saves. */
-  function linkAutomatically() {
-    const questions = asked
-      .map((k) => formFields.find((f) => f.field_key === k))
-      .filter((f): f is DataField => !!f && !WEB_FORM_DISPLAY_TYPES.has(f.field_type))
-      .map((f) => ({ key: f.field_key, label: f.label }))
-    const { rules, added } = suggestRules(questions, sources, config.rules)
-    if (added.length === 0) {
-      toast.message(
-        sources.length === 0
-          ? "First make a dropdown take its options from another table (Fields → edit the field → Options from a table)."
-          : "Nothing more to link — no other question is named like a column of the linked table.",
-      )
-      return
-    }
-    const next = { ...config, rules }
+  // The links in force: set by hand, plus the automatic ones.
+  const questionsInOrder = asked
+    .map((k) => formFields.find((f) => f.field_key === k))
+    .filter((f): f is DataField => !!f && !WEB_FORM_DISPLAY_TYPES.has(f.field_type))
+    .map((f) => ({ key: f.field_key, label: f.label }))
+  const effective = effectiveRules(config.rules, questionsInOrder, sources, config.auto_link)
+
+  function setAutoLink(v: boolean) {
+    const next = { ...config, auto_link: v }
     setConfig(next)
     void save(next)
-    toast.success(`Linked ${added.length} question${added.length === 1 ? "" : "s"}`)
   }
 
   return (
@@ -447,13 +439,15 @@ export function PublicFormPanel({
             title="Questions"
             hint={<>Tick what the form asks and drag ⋮⋮ to set the order. <Wand2 className="inline h-3 w-3" /> opens a question&apos;s smart settings. Required, hints and limits are set in Fields.</>}
           >
-            <button
-              type="button"
-              onClick={linkAutomatically}
-              className="inline-flex h-9 items-center gap-1.5 self-start rounded-lg bg-primary/10 px-3 text-[12.5px] font-semibold text-primary transition hover:bg-primary/15"
-            >
-              <Sparkles className="h-3.5 w-3.5" /> Link fields automatically
-            </button>
+            <label className="flex items-start justify-between gap-3 rounded-xl bg-primary/5 px-3 py-2.5 text-[12.5px] text-slate-700">
+              <span>
+                <span className="flex items-center gap-1.5 font-semibold text-slate-800"><Sparkles className="h-3.5 w-3.5 text-primary" /> Link fields automatically</span>
+                <span className="mt-0.5 block text-[11.5px] leading-relaxed text-slate-500">
+                  By their names: month narrows the programmes, the programme fills group and dates. Change any one below.
+                </span>
+              </span>
+              <Switch checked={config.auto_link} onCheckedChange={setAutoLink} />
+            </label>
 
             <SortableList
               className="flex flex-col gap-1"
@@ -463,9 +457,12 @@ export function PublicFormPanel({
               onReorder={(keys) => setOrder(keys)}
               renderItem={(f, handle) => {
                 const heading = WEB_FORM_DISPLAY_TYPES.has(f.field_type)
-                const rule = config.rules[f.field_key]
+                // Shown and edited as in force; editing an automatic link
+                // turns it into one set by hand.
+                const rule = effective.rules[f.field_key]
+                const isAuto = effective.automatic.has(f.field_key)
                 const open = ruleOpen === f.field_key
-                const smart = [rule?.filter && "narrowed", rule?.fill && (rule.fill.locked ? "auto-filled, locked" : "auto-filled"), rule?.show_if && "conditional"].filter(Boolean)
+                const smart = [rule?.filter && "narrowed", rule?.fill && (rule.fill.locked ? "filled, locked" : "filled"), rule?.show_if && "conditional", isAuto && "auto"].filter(Boolean)
                 return (
                   <div className={open ? "rounded-xl bg-white ring-1 ring-primary/30" : undefined}>
                     <div className={`flex items-center gap-2 rounded-lg px-1 py-1.5 text-[13px] hover:bg-slate-50 ${heading ? "mt-1 font-semibold text-slate-800" : "text-slate-700"}`}>

@@ -1,20 +1,22 @@
 "use client"
 
 /**
- * Linked fields, set up in one click.
+ * Linked fields — automatic.
  *
  * A dropdown whose options come from another table (Training Programe ←
- * Training) can narrow by an earlier answer (month) and fill the fields
- * named like that table's columns (Target Group, From Date, To Date).
- * "Link automatically" reads the names and does it; each link is then
- * listed in plain words and can be removed. The links work in Add
- * Record here and in the public form alike.
+ * Training) narrows by an earlier answer named like one of that table's
+ * columns (month), and the fields named like its other columns (Target
+ * Group, From Date, To Date) fill in from the chosen row. Nothing to set
+ * up: this card shows what is linked, marks what is automatic, and has
+ * the one switch to turn automatic linking off. Links set by hand (Share
+ * form → Questions) are listed too and can be removed here.
  */
 
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Link2, Loader2, Sparkles, X } from "lucide-react"
-import { describeRule, suggestRules, type FieldRule, type FormRules, type FormSource } from "@/lib/data-store/form-logic"
+import { Switch } from "@/components/ui/switch"
+import { describeRule, effectiveRules, type FieldRule, type FormRules, type FormSource } from "@/lib/data-store/form-logic"
 import type { TableFormConfig } from "@/lib/data-store/public-form"
 import type { DataField } from "@/lib/data-store/types"
 
@@ -46,7 +48,7 @@ export function LinkedFieldsCard({
       .catch(() => !cancelled && setHidden(true))
     return () => { cancelled = true }
     // Re-read when fields change: a dropdown may just have been pointed
-    // at another table.
+    // at another table, or the order changed.
   }, [tableId, fields])
 
   if (hidden || !config) return null
@@ -59,15 +61,15 @@ export function LinkedFieldsCard({
     .map((k) => fields.find((f) => f.field_key === k))
     .filter((f): f is DataField => !!f && f.field_type !== "section_header" && f.field_type !== "html_block")
     .map((f) => ({ key: f.field_key, label: f.label }))
+  const { rules, automatic } = effectiveRules(config.rules, questions, sources, config.auto_link)
 
-  async function save(rules: FormRules, message: string) {
-    if (!config) return
+  async function save(next: TableFormConfig, message: string) {
     setBusy(true)
     try {
       const res = await fetch(`/api/data-tables/${tableId}/form`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ config: { ...config, rules } }),
+        body: JSON.stringify({ config: next }),
       })
       const data = (await res.json().catch(() => ({}))) as { config?: TableFormConfig; error?: string }
       if (!res.ok || !data.config) throw new Error(data.error || "Could not save")
@@ -81,34 +83,22 @@ export function LinkedFieldsCard({
     }
   }
 
-  function linkAutomatically() {
-    if (!config) return
-    const { rules, added } = suggestRules(questions, sources, config.rules)
-    if (added.length === 0) {
-      toast.message(
-        sources.length === 0
-          ? "First make a dropdown take its options from another table (edit the field → Options from a table)."
-          : "Nothing more to link — no other field is named like a column of the linked table.",
-      )
-      return
-    }
-    void save(rules, `Linked ${added.length} field${added.length === 1 ? "" : "s"}`)
-  }
-
   function remove(key: string, part: keyof FieldRule) {
     if (!config) return
-    const next = { ...config.rules }
+    const next: FormRules = { ...config.rules }
     const rule = { ...next[key], [part]: null } as FieldRule
     if (rule.filter || rule.fill || rule.show_if) next[key] = rule
     else delete next[key]
-    void save(next, "Link removed")
+    void save({ ...config, rules: next }, "Link removed")
   }
 
-  const lines: Array<{ key: string; part: keyof FieldRule; text: string }> = []
-  for (const [key, rule] of Object.entries(config.rules)) {
-    const texts = describeRule(key, rule, label, columnLabel)
+  const lines: Array<{ key: string; part: keyof FieldRule; text: string; auto: boolean }> = []
+  for (const q of questions) {
+    const rule = rules[q.key]
+    if (!rule) continue
+    const texts = describeRule(q.key, rule, label, columnLabel)
     const parts: Array<keyof FieldRule> = (["filter", "fill", "show_if"] as const).filter((p) => rule[p])
-    parts.forEach((part, i) => lines.push({ key, part, text: texts[i] }))
+    parts.forEach((part, i) => lines.push({ key: q.key, part, text: texts[i], auto: automatic.has(q.key) }))
   }
 
   return (
@@ -124,34 +114,47 @@ export function LinkedFieldsCard({
             Add Record and the public form.
           </p>
         </div>
+        <label className="flex shrink-0 items-center gap-2 text-[12px] font-medium text-slate-600">
+          {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Automatic
+          <Switch
+            checked={config.auto_link}
+            disabled={busy}
+            onCheckedChange={(v) => void save({ ...config, auto_link: v }, v ? "Fields link automatically" : "Automatic linking is off")}
+          />
+        </label>
       </div>
 
-      {lines.length > 0 && (
+      {lines.length > 0 ? (
         <ul className="mt-3 flex flex-col gap-1.5">
           {lines.map((l) => (
             <li key={`${l.key}-${l.part}`} className="flex items-start gap-2 rounded-lg bg-white px-3 py-2 text-[12.5px] text-slate-700 ring-1 ring-slate-200">
+              {l.auto && <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-label="Automatic" />}
               <span className="min-w-0 flex-1">{l.text}</span>
-              <button type="button" onClick={() => remove(l.key, l.part)} disabled={busy} aria-label="Remove this link"
-                className="grid h-5 w-5 shrink-0 place-items-center rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40">
-                <X className="h-3.5 w-3.5" />
-              </button>
+              {l.auto ? (
+                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10.5px] font-semibold text-primary">auto</span>
+              ) : (
+                <button type="button" onClick={() => remove(l.key, l.part)} disabled={busy} aria-label="Remove this link"
+                  className="grid h-5 w-5 shrink-0 place-items-center rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
+      ) : (
+        <p className="mt-3 rounded-lg bg-white px-3 py-2.5 text-[12px] leading-relaxed text-slate-500 ring-1 ring-slate-200">
+          {sources.length === 0
+            ? "Nothing to link yet. Make a dropdown take its options from another table: edit the field → Options from a table (for example Training Programe ← Training → Name of programme)."
+            : config.auto_link
+              ? "No field is named like a column of the linked table. Name them alike — “From Date” for “Date from” — or link by hand in Share form → Questions."
+              : "Automatic linking is off. Turn it on, or link by hand in Share form → Questions."}
+        </p>
       )}
 
-      <button
-        type="button"
-        onClick={linkAutomatically}
-        disabled={busy}
-        className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-      >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-        Link fields automatically
-      </button>
       <p className="mt-2 text-[11.5px] leading-relaxed text-slate-400">
-        Works from names: a field called “From Date” is filled from a column called “Date from”. Order matters — the
-        field you choose first must be above. Fine-tune each field in Share form → Questions.
+        Linked by names: “From Date” fills from a column called “Date from”. Values are taken from the dropdown that picks
+        one row (the programme), never from month or group. The field chosen first must be above — drag ⋮⋮ below.
       </p>
     </section>
   )
