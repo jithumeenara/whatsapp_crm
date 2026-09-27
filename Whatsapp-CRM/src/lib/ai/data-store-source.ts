@@ -31,6 +31,18 @@ export interface SerializedTable {
   text: string
 }
 
+const NEVER_KNOWLEDGE_TYPES = new Set(['password', 'hidden', 'signature'])
+/** Identity documents and secrets. Deliberately narrower than the alert
+ *  masking: a fee table's bank account and IFSC are published on purpose
+ *  and are exactly what a customer asks for. */
+const IDENTITY_OR_SECRET =
+  /aadh?aa?r|\bpan\b|pan[\s_-]*(no|num|number|card)|passport|password|passcode|\botp\b|\bm?pin\b(?!\s*code)|cvv|voter[\s_-]*id/i
+
+export function isNeverKnowledge(field: { field_key: string; label: string; field_type: string }): boolean {
+  if (NEVER_KNOWLEDGE_TYPES.has(field.field_type)) return true
+  return IDENTITY_OR_SECRET.test(`${field.label} ${field.field_key.replace(/[_-]+/g, ' ')}`)
+}
+
 function formatValue(value: unknown): string | null {
   if (value === null || value === undefined) return null
   if (typeof value === 'string') return value.trim() || null
@@ -80,8 +92,11 @@ export async function serializeDataTable(
 
   // Password-typed fields are excluded outright — whatever an account
   // stores in one, feeding it into a prompt (and an embedding, and
-  // potentially a reply) is not something to do silently.
-  const fields = table.fields.filter((f) => f.field_type !== 'password')
+  // potentially a reply) is not something to do silently. So are
+  // identity numbers and one-time secrets by name: a registrations
+  // table connected as knowledge must never let the assistant read out
+  // somebody's Aadhaar number to whoever asks.
+  const fields = table.fields.filter((f) => !isNeverKnowledge(f))
   if (fields.length === 0) throw new Error('That table has no fields to read.')
 
   const records = await prisma.dataRecord.findMany({

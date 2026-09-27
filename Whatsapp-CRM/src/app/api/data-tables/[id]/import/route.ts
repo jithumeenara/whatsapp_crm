@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import ExcelJS from 'exceljs'
+import { ensureDataStoreColumns } from '@/lib/data-store/schema'
 
 async function requireTable(tableId: string) {
   const session = await auth()
@@ -173,11 +174,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
 
     // Bulk create
+    await ensureDataStoreColumns().catch(() => {})
     await prisma.dataRecord.createMany({
       data: rowsData.map((data) => ({
         table_id: tableId,
         account_id: accountId,
         data: data as never,
+        source: 'import',
       })),
     })
 

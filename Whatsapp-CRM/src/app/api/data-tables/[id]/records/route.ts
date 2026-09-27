@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
-import { dispatchWebhooks } from '@/lib/webhooks/deliver'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { afterRecordCreated } from '@/lib/data-store/record-events'
+import { checkRecordData } from '@/lib/data-store/record-data'
+import { ensureDataStoreColumns } from '@/lib/data-store/schema'
 
 async function requireTable(req: Request, tableId: string): Promise<
-  | { ok: true; accountId: string; tableName: string }
+  | { ok: true; accountId: string; tableName: string; viaApiKey: boolean }
   | { ok: false; status: number; body: { error: string } }
 > {
+  await ensureDataStoreColumns().catch(() => {})
   // Accept session OR Bearer API key
   const authHeader = req.headers.get('authorization') ?? ''
   let accountId: string | null = null
@@ -40,7 +43,7 @@ async function requireTable(req: Request, tableId: string): Promise<
     select: { id: true, name: true },
   })
   if (!table) return { ok: false, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true, accountId, tableName: table.name }
+  return { ok: true, accountId, tableName: table.name, viaApiKey: authHeader.startsWith('Bearer wcrm_') }
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -51,7 +54,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const url = new URL(req.url)
     const page = Math.max(1, parseInt(url.searchParams.get('page') ?? '1'))
-    const pageSize = Math.min(100, parseInt(url.searchParams.get('pageSize') ?? '50'))
+    // Up to 500 a page: the grid pages through the whole table with
+    // this, and at 100 a table of a few hundred rows showed only the
+    // newest hundred with nothing saying the rest existed.
+    const pageSize = Math.min(500, Math.max(1, parseInt(url.searchParams.get('pageSize') ?? '50') || 50))
     const search = url.searchParams.get('search') ?? ''
 
     const where = { table_id: tableId }
@@ -90,21 +96,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
+    const checked = checkRecordData(body.data)
+    if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 })
 
+    const source = guard.viaApiKey ? 'api' : 'manual'
     const record = await prisma.dataRecord.create({
       data: {
         table_id: tableId,
         account_id: guard.accountId,
-        data: body.data ?? {},
+        data: checked.data as never,
+        source,
       },
     })
 
-    dispatchWebhooks(guard.accountId, 'record.created', tableId, {
-      id: record.id,
-      data: record.data as Record<string, unknown>,
-      created_at: record.created_at.toISOString(),
-      updated_at: record.updated_at.toISOString(),
-    }, guard.tableName)
+    afterRecordCreated({ ...record, source })
 
     return NextResponse.json({ record }, { status: 201 })
   } catch (err) {

@@ -9,6 +9,8 @@
  * instead of a runtime rejection from Meta.
  */
 
+import { mintFlowToken } from '@/lib/flows/flow-token'
+
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
@@ -539,7 +541,9 @@ export async function sendFlowMessage(
       name: 'flow',
       parameters: {
         flow_message_version: '3',
-        flow_token: flowToken ?? crypto.randomUUID(),
+        // Signed for the recipient unless the caller brought its own
+        // (the chatbot does, and records it on the run).
+        flow_token: flowToken ?? mintFlowToken(to),
         flow_id: flowId,
         flow_cta: flowCta,
         // Meta rejects a data_exchange send that also carries a
@@ -658,6 +662,7 @@ export async function sendTemplateMessage(
       headerMediaUrl: messageParams?.headerMediaUrl,
       headerMediaId: messageParams?.headerMediaId,
       buttonParams: messageParams?.buttonParams,
+      recipient: to,
     })
     if (components.length > 0) {
       templatePayload.components = components
@@ -740,6 +745,7 @@ export async function sendMarketingTemplateMessage(
       headerMediaUrl: messageParams?.headerMediaUrl,
       headerMediaId: messageParams?.headerMediaId,
       buttonParams: messageParams?.buttonParams,
+      recipient: to,
     })
     if (components.length > 0) {
       templatePayload.components = components

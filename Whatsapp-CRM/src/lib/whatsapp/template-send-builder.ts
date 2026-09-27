@@ -33,6 +33,7 @@
 import type { MessageTemplate, TemplateButton } from '@/types';
 import { extractVariableIndices } from './template-validators';
 import { extractVariableKeys, isPositionalKey } from './template-variable-keys';
+import { mintFlowToken } from '@/lib/flows/flow-token';
 
 export interface SendTimeParams {
   /** Values for body {{1}}, {{2}}, … indexed by variable position.
@@ -56,6 +57,9 @@ export interface SendTimeParams {
    * override at send time.
    */
   buttonParams?: Record<number, string>;
+  /** Who the message goes to. A FLOW button's token is signed for this
+   *  number, so the Flow's saved answers can be linked to the customer. */
+  recipient?: string;
 }
 
 export type MetaSendComponent =
@@ -203,6 +207,7 @@ function buildButtonComponent(
   button: TemplateButton,
   index: number,
   override: string | undefined,
+  recipient?: string,
 ): MetaSendComponent | null {
   if (!buttonNeedsSendParam(button, override)) return null;
 
@@ -244,8 +249,10 @@ function buildButtonComponent(
     case 'PHONE_NUMBER':
       return null;
     case 'FLOW': {
-      // Meta requires a flow_token per send — use caller's override or generate a unique one.
-      const flowToken = override?.trim() || crypto.randomUUID();
+      // Meta requires a flow_token per send — use the caller's override,
+      // or one signed for the recipient so the Flow's saved answers can
+      // be linked back to them (see lib/flows/flow-token.ts).
+      const flowToken = override?.trim() || (recipient ? mintFlowToken(recipient) : crypto.randomUUID());
       return {
         type: 'button',
         sub_type: 'flow',
@@ -273,7 +280,7 @@ export function buildSendComponents(
   if (template.buttons?.length) {
     template.buttons.forEach((btn, i) => {
       const override = params.buttonParams?.[i];
-      const component = buildButtonComponent(btn, i, override);
+      const component = buildButtonComponent(btn, i, override, params.recipient);
       if (component) out.push(component);
     });
   }

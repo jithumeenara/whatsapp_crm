@@ -73,6 +73,13 @@ const PUBLIC_PREFIXES = [
   // here is what lets that check be the only one, rather than a second
   // gate that a non-browser client can never pass.
   '/api/mcp',
+  // A Data Store table's public "Get Data" form, and its submit
+  // endpoint. The link's 256-bit token is what grants access; the route
+  // exports POST only and limits, size-caps and bot-checks every
+  // request itself (src/app/api/forms/[token]/route.ts). The page reads
+  // nothing but the form's own definition.
+  '/f/',
+  '/api/forms/',
   '/_next/',
   '/favicon',
   '/icon',   // Next.js App Router favicon generator

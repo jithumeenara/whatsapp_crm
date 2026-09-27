@@ -11,6 +11,7 @@ import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
+import { ensureDataStoreColumns } from "./src/lib/data-store/schema";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 import { isClientGone } from "./src/lib/net/client-gone";
@@ -208,6 +209,13 @@ app.prepare().then(() => {
   };
   setTimeout(microsoftUpkeep, 60_000);
   setInterval(microsoftUpkeep, 60 * 60_000);
+
+  // Every Data Store query names the columns migration 113 adds; make
+  // sure they exist before the first request needs them, on a server
+  // whose database has not had the migration run.
+  ensureDataStoreColumns().catch((err) => {
+    console.error("[data-store] could not add the tracking columns:", err);
+  });
 });
 
 /** Emit a real-time event to all sockets in an account's room. */

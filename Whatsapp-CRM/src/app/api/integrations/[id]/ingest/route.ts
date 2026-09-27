@@ -63,10 +63,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (existing) {
         await prisma.dataRecord.update({ where: { id: existing.id }, data: { data: row } })
       } else {
-        await prisma.dataRecord.create({ data: { table_id: table.id, account_id: integration.account_id, data: row } })
+        await prisma.dataRecord.create({ data: { table_id: table.id, account_id: integration.account_id, data: row, source: 'integration' } })
       }
     } else {
-      await prisma.dataRecord.create({ data: { table_id: table.id, account_id: integration.account_id, data: row } })
+      await prisma.dataRecord.create({ data: { table_id: table.id, account_id: integration.account_id, data: row, source: 'integration' } })
     }
     recordsUpserted++
 

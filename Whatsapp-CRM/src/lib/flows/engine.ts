@@ -90,6 +90,7 @@ import {
   type KeywordTriggerConfig,
   type FlowFallbackPolicy,
 } from "./types";
+import { afterRecordCreated } from "@/lib/data-store/record-events";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -2302,6 +2303,15 @@ The assistant could not generate a reply: ${detail}`,
       };
       if (cfg.table_id) {
         try {
+          // The table id comes from the bot's saved config. Checked
+          // against this run's account before anything is written — a
+          // bare create would put a row into whichever account owns that
+          // id, which is not necessarily the one whose bot this is.
+          const ownTable = await prisma.dataTable.findFirst({
+            where: { id: cfg.table_id, account_id: run.account_id },
+            select: { id: true },
+          });
+          if (!ownTable) throw new Error("Table not found in this account");
           const recordData: Record<string, unknown> = {};
           const contactForTable = await getContact();
           for (const m of cfg.field_mappings ?? []) {
@@ -2309,13 +2319,20 @@ The assistant could not generate a reply: ${detail}`,
               recordData[m.field_key] = interpolateWithContact(m.value ?? "", run.vars, contactForTable);
             }
           }
-          await prisma.dataRecord.create({
+          // With the customer this run is talking to. Without it a row
+          // the bot saved could not be traced to anybody: no name or
+          // number beside it in the Data Store, and the assistant told
+          // the same person they had no registration.
+          const created = await prisma.dataRecord.create({
             data: {
-              table_id: cfg.table_id,
+              table_id: ownTable.id,
               account_id: run.account_id,
+              contact_id: run.contact_id ?? null,
               data: recordData as Prisma.InputJsonValue,
+              source: "chatbot",
             },
           });
+          afterRecordCreated({ ...created, source: "chatbot" });
         } catch (err) {
           await logEvent(run.id, "error", node.node_key, {
             reason: "save_to_table_failed",

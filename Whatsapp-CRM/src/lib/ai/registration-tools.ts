@@ -21,6 +21,7 @@ import { SchemaType, type FunctionDeclaration } from '@google/generative-ai'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { listRegistrationForms, validateValues } from './registration'
+import { afterRecordCreated } from '@/lib/data-store/record-events'
 
 export interface RegistrationToolContext {
   accountId: string
@@ -285,9 +286,10 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
           account_id: ctx.accountId,
           contact_id: ctx.contactId,
           data: check.values as Prisma.InputJsonValue,
+          source: 'whatsapp_ai',
         },
-        select: { id: true },
       })
+      afterRecordCreated({ ...record, source: 'whatsapp_ai' })
 
       const table = await prisma.dataTable.findUnique({
         where: { id: form.table_id },

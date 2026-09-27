@@ -51,6 +51,66 @@ export interface TrainPendingResult {
  *  holds a connection and a quota for minutes. */
 const MAX_CONFIGS_PER_PASS = 20
 
+export interface TrainConfigResult {
+  /** Why nothing was attempted, when nothing was. */
+  skipped: 'no_config' | 'knowledge_off' | 'no_gemini_key' | null
+  embedded: number
+  trained: number
+  failed: number
+  firstError: string | null
+}
+
+/**
+ * Brings one account's embeddings in line with its knowledge base, and
+ * marks entries trained only when nothing failed — the same thing the
+ * Training tab's button does. Used by the timer below and by the Data
+ * Store's own "Train now", so the two can never disagree about what
+ * trained means.
+ */
+export async function trainKnowledgeConfig(configId: string): Promise<TrainConfigResult> {
+  const none: TrainConfigResult = { skipped: null, embedded: 0, trained: 0, failed: 0, firstError: null }
+  const config = await prisma.aiConfig.findUnique({
+    where: { id: configId },
+    select: { id: true, account_id: true, provider_keys: true, knowledge_base_enabled: true },
+  })
+  if (!config) return { ...none, skipped: 'no_config' }
+  if (!config.knowledge_base_enabled) return { ...none, skipped: 'knowledge_off' }
+
+  const { apiKey } = geminiCredentials(config)
+  if (!apiKey) return { ...none, skipped: 'no_gemini_key' }
+
+  // 'all', not 'customer': the audience boundary is applied at
+  // retrieval time, so staff-only entries are embedded too and Admin
+  // search can find them by meaning. Same call the button makes.
+  const { qaPairs, documents } = await loadKnowledge(config.id, 'all')
+  const items = toKnowledgeItems(qaPairs, documents.flatMap((doc) => chunkDocument(doc)))
+
+  const synced = await syncKnowledgeEmbeddings({
+    aiConfigId: config.id,
+    apiKey,
+    items,
+    accountId: config.account_id,
+  })
+
+  // Only claim trained when nothing failed. A partial run leaving
+  // everything green would hide the one entry that did not embed.
+  let trained = 0
+  if (synced.failed === 0) {
+    const updated = await prisma.aiKnowledgeItem.updateMany({
+      where: { ai_config_id: config.id, status: { in: ['pending', 'failed'] } },
+      data: { status: 'trained', last_error: null },
+    })
+    trained = updated.count
+  }
+  return {
+    skipped: null,
+    embedded: synced.embedded,
+    trained,
+    failed: synced.failed,
+    firstError: synced.firstError ?? null,
+  }
+}
+
 /**
  * Embeds every entry left `pending` or `failed`, for every account that
  * has some.
@@ -80,41 +140,13 @@ export async function trainPendingKnowledge(): Promise<TrainPendingResult> {
   for (const { ai_config_id: configId } of stale) {
     result.configsChecked += 1
     try {
-      const config = await prisma.aiConfig.findUnique({
-        where: { id: configId },
-        select: { id: true, account_id: true, provider_keys: true, knowledge_base_enabled: true },
-      })
-      if (!config || !config.knowledge_base_enabled) continue
-
-      const { apiKey } = geminiCredentials(config)
-      if (!apiKey) continue
-
-      // 'all', not 'customer': the audience boundary is applied at
-      // retrieval time, so staff-only entries are embedded too and Admin
-      // search can find them by meaning. Same call the button makes.
-      const { qaPairs, documents } = await loadKnowledge(config.id, 'all')
-      const items = toKnowledgeItems(qaPairs, documents.flatMap((doc) => chunkDocument(doc)))
-
-      const synced = await syncKnowledgeEmbeddings({
-        aiConfigId: config.id,
-        apiKey,
-        items,
-        accountId: config.account_id,
-      })
-      result.embedded += synced.embedded
-      result.failed += synced.failed
-
-      // Only claim trained when nothing failed, exactly as the button
-      // does. A partial run leaving everything green would hide the one
-      // entry that did not embed.
-      if (synced.failed === 0) {
-        const updated = await prisma.aiKnowledgeItem.updateMany({
-          where: { ai_config_id: config.id, status: { in: ['pending', 'failed'] } },
-          data: { status: 'trained', last_error: null },
-        })
-        result.trained += updated.count
-      } else if (synced.firstError) {
-        console.warn(`[auto-train] ${config.id}: ${synced.failed} failed — ${synced.firstError}`)
+      const one = await trainKnowledgeConfig(configId)
+      if (one.skipped) continue
+      result.embedded += one.embedded
+      result.failed += one.failed
+      result.trained += one.trained
+      if (one.failed > 0 && one.firstError) {
+        console.warn(`[auto-train] ${configId}: ${one.failed} failed — ${one.firstError}`)
       }
     } catch (err) {
       // One account's failure must not stop the others.

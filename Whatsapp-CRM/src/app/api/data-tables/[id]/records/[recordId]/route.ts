@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { dispatchWebhooks } from '@/lib/webhooks/deliver'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkRecordData } from '@/lib/data-store/record-data'
 
 async function requireRecord(req: Request, tableId: string, recordId: string): Promise<
   | { ok: true; accountId: string; tableName: string }
@@ -58,10 +59,12 @@ export async function PUT(
 
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
+    const checked = checkRecordData(body.data)
+    if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 })
 
     const record = await prisma.dataRecord.update({
       where: { id: recordId },
-      data: { data: body.data ?? {} },
+      data: { data: checked.data as never },
     })
 
     dispatchWebhooks(guard.accountId, 'record.updated', tableId, {

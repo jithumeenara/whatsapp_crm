@@ -256,6 +256,34 @@ export async function listRegistrationForms(accountId: string): Promise<Registra
 }
 
 /**
+ * A table's fields with the values each will accept — the same reading
+ * the assistant gets, for the public web form. Options drawn from another
+ * table are the values really there now, so a web form cannot be used
+ * to register for a batch that is not running either.
+ */
+export async function resolveFormFields(
+  accountId: string,
+  fields: ReadonlyArray<{ field_key: string; label: string; field_type: string; required: boolean; options: unknown }>,
+): Promise<RegistrationField[]> {
+  const sourced = new Map<string, string[]>()
+  const out: RegistrationField[] = []
+  for (const f of fields) {
+    const { _source, ...field } = toField(f)
+    if (!_source) {
+      out.push(field)
+      continue
+    }
+    const key = `${_source.tableId}:${_source.fieldKey}`
+    if (!sourced.has(key)) {
+      sourced.set(key, await readColumnValues(accountId, _source.tableId, _source.fieldKey).catch(() => []))
+    }
+    const live = sourced.get(key) ?? []
+    out.push(live.length ? { ...field, options: live } : field)
+  }
+  return out
+}
+
+/**
  * Keeps only the field keys the table still has.
  *
  * A rule naming a field somebody has since deleted would otherwise match

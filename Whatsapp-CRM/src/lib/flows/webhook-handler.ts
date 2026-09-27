@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import crypto from 'crypto'
+import { afterRecordCreated } from '@/lib/data-store/record-events'
+import { phoneFromFlowToken } from './flow-token'
 
 // ── In-memory debug log (last 10 decrypted payloads per flow) ────────
 interface DebugEntry {
@@ -688,7 +690,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
 
   const flow = await prisma.flow.findFirst({
     where: { id: flowId },
-    select: { trigger_config: true },
+    select: { trigger_config: true, account_id: true },
   })
   if (!flow) {
     return NextResponse.json({ error: 'Flow not found' }, { status: 404 })
@@ -1127,8 +1129,12 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       console.log('[data_exchange:save] fields:', Object.keys(record).join(', '))
 
       if (Object.keys(record).length > 0) {
-        const table = await prisma.dataTable.findUnique({
-          where: { id: saveTableId },
+        // Only a table of the Flow's own account. The id comes from the
+        // Flow's saved config; without the account in the lookup a Flow
+        // could be pointed at — and write rows into — another
+        // business's table.
+        const table = await prisma.dataTable.findFirst({
+          where: { id: saveTableId, account_id: flow.account_id },
           select: { account_id: true },
         })
         if (table) {
@@ -1156,15 +1162,35 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
                 .catch(() => null)
             : null
 
-          await prisma.dataRecord.create({
+          // A Flow opened from a template button (a broadcast, usually)
+          // has no run, but its token is signed for the number it was
+          // sent to — see lib/flows/flow-token.ts. That customer, looked
+          // up in this account only.
+          let contactId = run?.contact_id ?? null
+          if (!contactId) {
+            const phone = phoneFromFlowToken(flowToken)
+            if (phone) {
+              const contact = await prisma.contact
+                .findFirst({
+                  where: { account_id: table.account_id, phone_normalized: phone },
+                  select: { id: true },
+                })
+                .catch(() => null)
+              contactId = contact?.id ?? null
+            }
+          }
+
+          const created = await prisma.dataRecord.create({
             data: {
               table_id: saveTableId,
               account_id: table.account_id,
-              contact_id: run?.contact_id ?? null,
+              contact_id: contactId,
               data: record as Prisma.InputJsonValue,
+              source: 'whatsapp_flow',
             },
           })
-          if (!run?.contact_id) {
+          afterRecordCreated({ ...created, source: 'whatsapp_flow' })
+          if (!contactId) {
             console.warn(
               '[data_exchange:save] saved without a contact — this row will not appear in the customer\u2019s own registrations',
             )

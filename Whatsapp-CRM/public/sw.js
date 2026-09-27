@@ -46,6 +46,14 @@ self.addEventListener('notificationclick', (event) => {
     url = '/follow-ups'
   } else if (data.type === 'task') {
     url = '/tasks'
+  } else if (
+    data.type === 'data_record' &&
+    typeof data.tableId === 'string' &&
+    /^[0-9a-f-]{36}$/i.test(data.tableId)
+  ) {
+    // Built from an id, never taken as a URL, so a payload can only
+    // ever open a Data Store table inside this app.
+    url = '/data/' + data.tableId
   }
 
   event.waitUntil(

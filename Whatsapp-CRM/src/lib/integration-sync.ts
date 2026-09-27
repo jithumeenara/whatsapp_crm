@@ -161,7 +161,7 @@ async function upsertRecord(db: PrismaClient, tableId: string, accountId: string
       return
     }
   }
-  await db.dataRecord.create({ data: { table_id: tableId, account_id: accountId, data: row } })
+  await db.dataRecord.create({ data: { table_id: tableId, account_id: accountId, data: row, source: 'integration' } })
 }
 
 async function upsertContact(db: PrismaClient, accountId: string, userId: string, row: Record<string, string>): Promise<boolean> {

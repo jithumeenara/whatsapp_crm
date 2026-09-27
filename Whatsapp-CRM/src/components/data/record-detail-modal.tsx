@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { DataField, DataRecord, FieldType } from '@/lib/data-store/types';
 import { getSelectItems } from '@/lib/data-store/types';
+import { sourceLabel } from '@/lib/data-store/sources';
 import { cn } from '@/lib/utils';
 
 /**
@@ -294,14 +295,38 @@ export function RecordDetailModal({
               </span>
               <span className="text-slate-300">·</span>
               <span>
-                Updated{' '}
-                {new Date(record.updated_at).toLocaleString(undefined, {
+                Added{' '}
+                {new Date(record.created_at).toLocaleString(undefined, {
                   day: 'numeric',
                   month: 'short',
+                  year: 'numeric',
                   hour: '2-digit',
                   minute: '2-digit',
                 })}
+                {record.source ? ` via ${sourceLabel(record.source)}` : ''}
               </span>
+              {record.updated_at !== record.created_at && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span>
+                    Updated{' '}
+                    {new Date(record.updated_at).toLocaleString(undefined, {
+                      day: 'numeric',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </>
+              )}
+              {record.contact && (
+                <>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-slate-500">
+                    {record.contact.name || 'Customer'} · {record.contact.phone}
+                  </span>
+                </>
+              )}
             </p>
           </div>
           <button

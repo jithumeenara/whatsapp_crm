@@ -117,6 +117,9 @@ export interface DataRecord {
    *  Null for every row staff or an import created, which is most. */
   contact_id?: string | null
   contact?: { id: string; name: string | null; phone: string } | null
+  /** Where the row came from — see lib/data-store/sources.ts. Null for
+   *  rows written before this was recorded. */
+  source?: string | null
   created_at: string
   updated_at: string
 }
