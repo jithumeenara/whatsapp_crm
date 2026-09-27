@@ -29,6 +29,17 @@ import {
   type TableFormConfig,
 } from './public-form'
 import { getFieldConfig, type FieldConfig } from './types'
+import {
+  BRAND_COLORS,
+  columnsNeeded,
+  fillValue,
+  isShown,
+  optionsFor,
+  type Answers,
+  type FormLookups,
+  type FormRules,
+} from './form-logic'
+import { isSensitiveField } from './record-alert'
 
 const TICKET_MIN_MS = 3_000
 const TICKET_MAX_MS = 12 * 60 * 60_000
@@ -95,14 +106,149 @@ export function checkRenderTicket(
   return 'ok'
 }
 
+export interface PublicFormBrand {
+  name: string | null
+  tagline: string | null
+  /** Hex, from BRAND_COLORS only. */
+  color: string
+  logoUrl: string | null
+  contact: { phone: string | null; email: string | null; website: string | null; address: string | null } | null
+}
+
 export interface PublicForm {
   tableId: string
   accountId: string
   tableName: string
   businessName: string | null
+  brand: PublicFormBrand
   config: TableFormConfig
   fields: PublicFormField[]
+  lookups: FormLookups
   responses: number
+}
+
+/** Columns that may travel to a stranger's browser to drive a dropdown
+ *  or fill a question. Never contact details, identity numbers, secrets
+ *  or files — if a rule names one, that rule simply does nothing. */
+function lookupColumnAllowed(f: { field_key: string; label: string; field_type: string }): boolean {
+  if (['password', 'hidden', 'signature', 'phone', 'email', 'file', 'image', 'section_header', 'html_block'].includes(f.field_type)) return false
+  return !isSensitiveField(f)
+}
+
+function cellText(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value)) return value.map(cellText).filter(Boolean).join(', ')
+  if (typeof value === 'object') {
+    const v = value as { label?: unknown; name?: unknown; value?: unknown }
+    return cellText(v.label ?? v.name ?? v.value ?? '')
+  }
+  return String(value).trim().slice(0, 500)
+}
+
+export interface FormSource {
+  /** The dropdown on this table whose options come from another table. */
+  field_key: string
+  table_name: string
+  /** The column its options are read from. */
+  option_column: string
+  /** Columns a rule may use: filter on, or fill from. */
+  columns: Array<{ key: string; label: string }>
+}
+
+/** For the settings panel: each dropdown fed by another table, and the
+ *  columns of that table a rule may safely use. */
+export async function describeSources(
+  accountId: string,
+  fields: ReadonlyArray<{ field_key: string; field_type: string; options: unknown }>,
+): Promise<FormSource[]> {
+  const out: FormSource[] = []
+  for (const f of fields) {
+    if (f.field_type !== 'select' && f.field_type !== 'radio') continue
+    const cfg = getFieldConfig(f.options as FieldConfig | null)
+    if (!cfg.source_table_id || !cfg.source_field_key) continue
+    const source = await prisma.dataTable.findFirst({
+      where: { id: cfg.source_table_id, account_id: accountId },
+      select: {
+        name: true,
+        fields: { orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }], select: { field_key: true, label: true, field_type: true } },
+      },
+    })
+    if (!source) continue
+    const columns = source.fields.filter(lookupColumnAllowed).map((c) => ({ key: c.field_key, label: c.label }))
+    if (!columns.some((c) => c.key === cfg.source_field_key)) continue
+    out.push({ field_key: f.field_key, table_name: source.name, option_column: cfg.source_field_key, columns })
+  }
+  return out
+}
+
+/** Keeps only rules whose columns exist in, and may be read from, the
+ *  source table they point at. */
+export function rulesWithinSources(rules: FormRules, sources: FormSource[]): FormRules {
+  const byField = new Map(sources.map((s) => [s.field_key, new Set(s.columns.map((c) => c.key))]))
+  const out: FormRules = {}
+  for (const [key, rule] of Object.entries(rules)) {
+    const next = { ...rule }
+    if (next.filter && !byField.get(key)?.has(next.filter.match_column)) next.filter = null
+    if (next.fill && !byField.get(next.fill.from_field)?.has(next.fill.column)) next.fill = null
+    if (next.filter || next.fill || next.show_if) out[key] = next
+  }
+  return out
+}
+
+/**
+ * The rows each smart dropdown needs, read from its source table in the
+ * form's own account, cut down to the columns the rules use.
+ */
+async function buildLookups(
+  accountId: string,
+  formFields: ReadonlyArray<{ field_key: string; field_type: string; options: unknown }>,
+  rules: FormRules,
+): Promise<FormLookups> {
+  const wanted = new Set<string>()
+  for (const [key, rule] of Object.entries(rules)) {
+    if (rule.filter) wanted.add(key)
+    if (rule.fill) wanted.add(rule.fill.from_field)
+  }
+  const lookups: FormLookups = {}
+  const tables = new Map<string, { allowed: Set<string>; rows: Array<Record<string, unknown>> } | null>()
+
+  for (const key of wanted) {
+    const field = formFields.find((f) => f.field_key === key)
+    if (!field || (field.field_type !== 'select' && field.field_type !== 'radio')) continue
+    const cfg = getFieldConfig(field.options as FieldConfig | null)
+    if (!cfg.source_table_id || !cfg.source_field_key) continue
+
+    if (!tables.has(cfg.source_table_id)) {
+      const source = await prisma.dataTable.findFirst({
+        where: { id: cfg.source_table_id, account_id: accountId },
+        select: { id: true, fields: { select: { field_key: true, label: true, field_type: true } } },
+      })
+      if (!source) {
+        tables.set(cfg.source_table_id, null)
+      } else {
+        const rows = await prisma.dataRecord.findMany({
+          where: { table_id: source.id, account_id: accountId },
+          orderBy: { created_at: 'asc' },
+          take: 1000,
+          select: { data: true },
+        })
+        tables.set(cfg.source_table_id, {
+          allowed: new Set(source.fields.filter(lookupColumnAllowed).map((f) => f.field_key)),
+          rows: rows.map((r) => (r.data && typeof r.data === 'object' ? (r.data as Record<string, unknown>) : {})),
+        })
+      }
+    }
+    const table = tables.get(cfg.source_table_id)
+    if (!table || !table.allowed.has(cfg.source_field_key)) continue
+    const cols = columnsNeeded(key, rules, cfg.source_field_key).filter((c) => table.allowed.has(c))
+    lookups[key] = {
+      option: cfg.source_field_key,
+      rows: table.rows
+        .map((data) => Object.fromEntries(cols.map((c) => [c, cellText(data[c])])))
+        .filter((row) => row[cfg.source_field_key!]),
+    }
+  }
+  return lookups
 }
 
 /** A form by its link, or null. Everything a stranger's request is
@@ -153,20 +299,46 @@ export async function loadPublicForm(token: string): Promise<PublicForm | null> 
     return out
   })
 
-  const [company, responses] = await Promise.all([
+  const [company, account, responses, lookups] = await Promise.all([
     prisma.companyProfile
-      .findUnique({ where: { account_id: table.account_id }, select: { display_name: true, legal_name: true } })
+      .findUnique({
+        where: { account_id: table.account_id },
+        select: { display_name: true, legal_name: true, phone: true, email: true, website: true, address: true, city: true },
+      })
       .catch(() => null),
+    prisma.account.findUnique({ where: { id: table.account_id }, select: { name: true } }).catch(() => null),
     prisma.dataRecord.count({ where: { table_id: table.id, account_id: table.account_id, source: 'web_form' } }),
+    buildLookups(table.account_id, shown, config.rules),
   ])
+
+  const businessName =
+    config.brand.name || company?.display_name?.trim() || company?.legal_name?.trim() || account?.name?.trim() || null
+  const website = company?.website?.trim()
+  const contact = config.brand.show_contact && company
+    ? {
+        phone: company.phone?.trim() || null,
+        email: company.email?.trim() || null,
+        // Only a web address becomes a link on the page.
+        website: website && /^https?:\/\//i.test(website) ? website : website ? `https://${website}` : null,
+        address: [company.address?.trim(), company.city?.trim()].filter(Boolean).join(', ') || null,
+      }
+    : null
 
   return {
     tableId: table.id,
     accountId: table.account_id,
     tableName: table.name,
-    businessName: company?.display_name?.trim() || company?.legal_name?.trim() || null,
+    businessName,
+    brand: {
+      name: businessName,
+      tagline: config.brand.tagline,
+      color: BRAND_COLORS[config.brand.color].hex,
+      logoUrl: config.brand.logo_file_id ? `/api/forms/${token}/logo` : null,
+      contact: contact && Object.values(contact).some(Boolean) ? contact : null,
+    },
     config,
     fields,
+    lookups,
     responses,
   }
 }
@@ -214,16 +386,51 @@ function limitProblem(field: PublicFormField, value: unknown): string | null {
  * validator, so a row typed on the web and a row taken on WhatsApp are
  * held to the same rules.
  */
-export function validateFormValues(fields: PublicFormField[], raw: unknown): FormValidation {
+export function validateFormValues(
+  fields: PublicFormField[],
+  raw: unknown,
+  logic: { rules: FormRules; lookups: FormLookups } = { rules: {}, lookups: {} },
+): FormValidation {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, problems: ['Nothing was sent.'] }
-  const input = raw as Record<string, unknown>
+  const sent = raw as Record<string, unknown>
+
+  // The rules, applied here and never trusted from the page: a hidden
+  // question is dropped, a locked one is recomputed from the table, and
+  // a filtered dropdown accepts only what the earlier answer allows.
+  const answers: Answers = {}
+  for (const [k, v] of Object.entries(sent)) {
+    if (typeof v === 'string' || typeof v === 'boolean') answers[k] = v
+    else if (typeof v === 'number') answers[k] = String(v)
+  }
+  const input: Record<string, unknown> = { ...sent }
+  const skip = new Set<string>()
+  const narrowed = new Map<string, string[]>()
+  for (const f of fields) {
+    const rule = logic.rules[f.key]
+    if (!rule) continue
+    if (!isShown(f.key, logic.rules, answers)) {
+      skip.add(f.key)
+      delete input[f.key]
+      continue
+    }
+    if (rule.fill?.locked) {
+      const v = fillValue(f.key, logic.rules, logic.lookups, answers)
+      if (v) input[f.key] = v
+      else delete input[f.key]
+    }
+    const allowed = optionsFor(f.key, logic.rules, logic.lookups, answers)
+    if (allowed && answers[rule.filter?.depends_on ?? '']) narrowed.set(f.key, allowed)
+  }
+  fields = fields
+    .filter((f) => !skip.has(f.key))
+    .map((f) => (narrowed.has(f.key) ? { ...f, options: narrowed.get(f.key)! } : f))
   const problems: string[] = []
   const values: Record<string, unknown> = {}
   const delegated: RegistrationField[] = []
   const delegatedRaw: Record<string, unknown> = {}
 
   const answerable = fields.filter((f) => !WEB_FORM_DISPLAY_TYPES.has(f.type))
-  const known = new Set(answerable.map((f) => f.key))
+  const known = new Set([...answerable.map((f) => f.key), ...skip])
   if (Object.keys(input).some((key) => !known.has(key))) {
     problems.push('The form sent a field it does not have. Reload the page and try again.')
   }

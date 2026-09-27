@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { parseFormConfig, formState, formFieldOrder } from './public-form'
+import { parseRules } from './form-logic'
 import {
   checkRenderTicket,
   issueRenderTicket,
@@ -134,6 +135,47 @@ describe('validateFormValues', () => {
     expect(bad.problems.join(' ')).toMatch(/at least 18/)
     // A heading takes no answer.
     expect(validateFormValues(withLimits, { part: 'x', name: 'Anu' }).ok).toBe(false)
+  })
+
+  it('enforces the smart rules on the server, whatever the page sent', () => {
+    const smart = [
+      { key: 'month', label: 'Month', type: 'select', required: true, options: ['October', 'September'] },
+      { key: 'programme', label: 'Programme', type: 'select', required: true, options: ['STP (M)', 'Gold loan', 'STP (SV)'] },
+      { key: 'from_date', label: 'From', type: 'text', required: true },
+      { key: 'reason', label: 'Reason', type: 'text', required: true },
+    ]
+    const logic = {
+      rules: parseRules(
+        {
+          programme: { filter: { depends_on: 'month', match_column: 'month' } },
+          from_date: { fill: { from_field: 'programme', column: 'date_from', locked: true } },
+          reason: { show_if: { field: 'month', equals: 'September' } },
+        },
+        ['month', 'programme', 'from_date', 'reason'],
+      ),
+      lookups: {
+        programme: {
+          option: 'name',
+          rows: [
+            { name: 'STP (M)', month: 'October', date_from: '2026-10-05' },
+            { name: 'Gold loan', month: 'October', date_from: '2026-10-12' },
+            { name: 'STP (SV)', month: 'September', date_from: '2026-09-29' },
+          ],
+        },
+      },
+    }
+    // A tampered locked date is replaced; the hidden question is not asked.
+    expect(validateFormValues(smart, { month: 'October', programme: 'gold loan', from_date: '1999-01-01' }, logic)).toEqual({
+      ok: true,
+      values: { month: 'October', programme: 'Gold loan', from_date: '2026-10-12' },
+    })
+    // A programme from another month is refused.
+    const wrongMonth = validateFormValues(smart, { month: 'October', programme: 'STP (SV)', reason: 'x' }, logic)
+    expect(wrongMonth.ok).toBe(false)
+    // The shown-only-when question is required once it shows.
+    const needsReason = validateFormValues(smart, { month: 'September', programme: 'STP (SV)' }, logic)
+    expect(needsReason.ok).toBe(false)
+    if (!needsReason.ok) expect(needsReason.problems.join(' ')).toMatch(/Reason/)
   })
 
   it('refuses nothing-at-all', () => {

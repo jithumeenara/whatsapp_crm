@@ -47,6 +47,12 @@ const en = {
   secure: (b: string) => `Sent securely and seen only by ${b}.`,
   thisBusiness: "this business",
   language: "Language",
+  filledForYou: "Filled in from your choice",
+  chooseFirst: (label: string) => `Choose “${label}” first`,
+  searchOptions: "Type to search…",
+  noMatch: "No match — try another word",
+  optionsCount: (n: number) => (n === 1 ? "1 option" : `${n} options`),
+  contact: "Contact",
 }
 
 export type FormStrings = typeof en
@@ -92,6 +98,12 @@ const ml: FormStrings = {
   secure: (b) => `സുരക്ഷിതമായി അയയ്ക്കുന്നു — ${b}-ന് മാത്രം കാണാം.`,
   thisBusiness: "ഈ സ്ഥാപനം",
   language: "ഭാഷ",
+  filledForYou: "നിങ്ങളുടെ തിരഞ്ഞെടുപ്പിൽ നിന്ന് തനിയെ പൂരിപ്പിച്ചത്",
+  chooseFirst: (label) => `ആദ്യം “${label}” തിരഞ്ഞെടുക്കുക`,
+  searchOptions: "തിരയാൻ ടൈപ്പ് ചെയ്യുക…",
+  noMatch: "പൊരുത്തമില്ല — മറ്റൊരു വാക്ക് ശ്രമിക്കുക",
+  optionsCount: (n) => `${n} ഓപ്ഷനുകൾ`,
+  contact: "ബന്ധപ്പെടുക",
 }
 
 export const FORM_STRINGS: Record<FormLang, FormStrings> = { en, ml }

@@ -119,7 +119,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       return reply({ error: 'Please tick the box to agree before sending.' }, 400)
     }
 
-    const checked = validateFormValues(form.fields, body.values)
+    const checked = validateFormValues(form.fields, body.values, { rules: form.config.rules, lookups: form.lookups })
     if (!checked.ok) return reply({ error: checked.problems.join(' '), problems: checked.problems }, 400)
 
     if (form.config.one_per_person && contact) {

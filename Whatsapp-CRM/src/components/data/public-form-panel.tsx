@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
-  Copy, ExternalLink, Link2, Loader2, QrCode, RefreshCw, Search, Send, ShieldCheck, UserRound,
+  ArrowDown, ArrowUp, ChevronDown, Copy, ExternalLink, Link2, Loader2, QrCode, RefreshCw, Search, Send, ShieldCheck, UserRound, Wand2,
 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -21,7 +21,11 @@ import {
   WEB_FORM_FIELD_TYPES,
   type TableFormConfig,
 } from "@/lib/data-store/public-form"
-import type { DataField } from "@/lib/data-store/types"
+import { getSelectItems, type DataField } from "@/lib/data-store/types"
+import { parseRules, type FieldRule, type FormBrand } from "@/lib/data-store/form-logic"
+import type { FormSource } from "@/lib/data-store/public-form-server"
+import { FormBrandEditor, type LogoPreview } from "./form-brand-editor"
+import { FormRuleEditor, type EarlierQuestion } from "./form-rule-editor"
 
 const FIELD =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
@@ -71,6 +75,9 @@ export function PublicFormPanel({
   const [query, setQuery] = useState("")
   const [hits, setHits] = useState<ContactHit[]>([])
   const [personal, setPersonal] = useState<{ url: string; contact: ContactHit } | null>(null)
+  const [sources, setSources] = useState<FormSource[]>([])
+  const [logo, setLogo] = useState<LogoPreview | null>(null)
+  const [ruleOpen, setRuleOpen] = useState<string | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const origin = typeof window !== "undefined" ? window.location.origin : ""
@@ -81,10 +88,18 @@ export function PublicFormPanel({
   )
   const questionCount = formFields.filter((f) => WEB_FORM_FIELD_TYPES.has(f.field_type)).length
 
-  const apply = useCallback((data: { config?: TableFormConfig; path?: string | null; responses?: number }) => {
+  const apply = useCallback((data: {
+    config?: TableFormConfig
+    path?: string | null
+    responses?: number
+    sources?: FormSource[]
+    logo?: LogoPreview | null
+  }) => {
     if (data.config) setConfig(data.config)
     if (data.path !== undefined) setPath(data.path)
     if (typeof data.responses === "number") setResponses(data.responses)
+    if (Array.isArray(data.sources)) setSources(data.sources)
+    if (data.logo !== undefined) setLogo(data.logo)
   }, [])
 
   useEffect(() => {
@@ -196,14 +211,61 @@ export function PublicFormPanel({
     setQuery("")
   }
 
-  const shown = new Set(config.field_keys.length ? config.field_keys : formFields.map((f) => f.field_key))
+  const tableOrder = formFields.map((f) => f.field_key)
+  // The form's own order: what it asks, in the order it asks it. Empty
+  // in the settings means "every question, in the table's order".
+  const asked = config.field_keys.length ? config.field_keys.filter((k) => tableOrder.includes(k)) : tableOrder
+  const shown = new Set(asked)
+  const listed = [
+    ...asked.map((k) => formFields.find((f) => f.field_key === k)!).filter(Boolean),
+    ...formFields.filter((f) => !shown.has(f.field_key)),
+  ]
+
+  /** The questions before `key` on the form, for a rule to look at. */
+  function earlierThan(key: string): EarlierQuestion[] {
+    const out: EarlierQuestion[] = []
+    for (const k of asked) {
+      if (k === key) break
+      const f = formFields.find((x) => x.field_key === k)
+      if (!f || WEB_FORM_DISPLAY_TYPES.has(f.field_type)) continue
+      const options = getSelectItems(f.options)
+        .map((o) => (typeof o === "string" ? o : String(o?.label ?? o?.value ?? "")))
+        .filter(Boolean)
+      out.push({ key: f.field_key, label: f.label, options: f.field_type === "boolean" ? ["true", "false"] : options })
+    }
+    return out
+  }
+
+  function setRule(key: string, rule: FieldRule) {
+    const rules = { ...config.rules }
+    if (rule.filter || rule.fill || rule.show_if) rules[key] = rule
+    else delete rules[key]
+    patch({ rules })
+  }
+
+  function patchBrand(p: Partial<FormBrand>, preview?: LogoPreview | null) {
+    patch({ brand: { ...config.brand, ...p } })
+    if (preview !== undefined) setLogo(preview)
+  }
+
+  /** Saves a new order, and drops any rule it breaks — a rule may only
+   *  look at a question asked before it. */
+  function setOrder(next: string[]) {
+    const same = next.length === tableOrder.length && next.every((k, i) => k === tableOrder[i])
+    patch({ field_keys: same ? [] : next, rules: parseRules(config.rules, next) })
+  }
 
   function toggleField(key: string) {
-    const current = formFields.map((f) => f.field_key).filter((k) => shown.has(k))
-    const next = current.includes(key) ? current.filter((k) => k !== key) : [...current, key]
-    // Kept in the table's own order.
-    const ordered = formFields.map((f) => f.field_key).filter((k) => next.includes(k))
-    patch({ field_keys: ordered.length === formFields.length ? [] : ordered })
+    setOrder(shown.has(key) ? asked.filter((k) => k !== key) : [...asked, key])
+  }
+
+  function move(key: string, by: -1 | 1) {
+    const i = asked.indexOf(key)
+    const j = i + by
+    if (i < 0 || j < 0 || j >= asked.length) return
+    const next = [...asked]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    setOrder(next)
   }
 
   return (
@@ -359,28 +421,89 @@ export function PublicFormPanel({
             />
           </PanelSection>
 
-          <PanelSection title="Questions" hint="Required ones, hints and limits are set in Fields. Section headings split a long form into parts. Files and signatures are not asked on the web form.">
+          <PanelSection title="Business header" hint="How the top of the form looks: your logo, name and colour.">
+            <FormBrandEditor
+              brand={config.brand}
+              logo={logo}
+              placeholderName={tableName}
+              onChange={patchBrand}
+            />
+          </PanelSection>
+
+          <PanelSection
+            title="Questions"
+            hint={<>Tick what the form asks, and use the arrows to set the order. <Wand2 className="inline h-3 w-3" /> Smart: narrow a dropdown by an earlier answer, fill a question from an earlier choice (locked), or ask it only when it applies. Required, hints and limits are set in Fields.</>}
+          >
             <div className="flex flex-col gap-1">
-              {formFields.map((f) => {
+              {listed.map((f) => {
                 const heading = WEB_FORM_DISPLAY_TYPES.has(f.field_type)
+                const position = asked.indexOf(f.field_key)
+                const rule = config.rules[f.field_key]
+                const open = ruleOpen === f.field_key
+                const smart = [rule?.filter && "narrowed", rule?.fill && (rule.fill.locked ? "auto-filled, locked" : "auto-filled"), rule?.show_if && "conditional"].filter(Boolean)
                 return (
-                  <label
-                    key={f.id}
-                    className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] hover:bg-slate-50 ${heading ? "mt-1 font-semibold text-slate-800" : "text-slate-700"}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={shown.has(f.field_key)}
-                      onChange={() => toggleField(f.field_key)}
-                      className="h-4 w-4 accent-[var(--primary)]"
-                    />
-                    <span className="flex-1 truncate">{f.label}</span>
-                    {heading && <span className="text-[11px] font-normal text-slate-400">section</span>}
-                    {!heading && f.required && <span className="text-[11px] text-rose-500">required</span>}
-                  </label>
+                  <div key={f.id} className={open ? "rounded-xl ring-1 ring-primary/30" : undefined}>
+                    <div className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] hover:bg-slate-50 ${heading ? "mt-1 font-semibold text-slate-800" : "text-slate-700"}`}>
+                      <input
+                        type="checkbox"
+                        checked={shown.has(f.field_key)}
+                        onChange={() => toggleField(f.field_key)}
+                        aria-label={`Ask “${f.label}”`}
+                        className="h-4 w-4 accent-[var(--primary)]"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{f.label}</span>
+                        {smart.length > 0 && <span className="block truncate text-[11px] font-normal text-primary">{smart.join(" · ")}</span>}
+                      </span>
+                      {heading && <span className="text-[11px] font-normal text-slate-400">section</span>}
+                      {!heading && f.required && <span className="text-[11px] text-rose-500">required</span>}
+                      {position >= 0 && (
+                        <span className="flex shrink-0 items-center">
+                          <button type="button" onClick={() => move(f.field_key, -1)} disabled={position === 0}
+                            aria-label={`Move “${f.label}” up`} title="Move up"
+                            className="grid h-7 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-25 disabled:hover:bg-transparent">
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button type="button" onClick={() => move(f.field_key, 1)} disabled={position === asked.length - 1}
+                            aria-label={`Move “${f.label}” down`} title="Move down"
+                            className="grid h-7 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-25 disabled:hover:bg-transparent">
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </button>
+                        </span>
+                      )}
+                      {!heading && shown.has(f.field_key) && (
+                        <button
+                          type="button"
+                          onClick={() => setRuleOpen(open ? null : f.field_key)}
+                          aria-expanded={open}
+                          title="Smart settings"
+                          aria-label={`Smart settings for ${f.label}`}
+                          className={`flex h-7 items-center gap-1 rounded-md px-1.5 text-[11.5px] font-medium transition-colors ${open || smart.length ? "bg-primary/10 text-primary" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"}`}
+                        >
+                          <Wand2 className="h-3.5 w-3.5" />
+                          <ChevronDown className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`} />
+                        </button>
+                      )}
+                    </div>
+                    {open && (
+                      <div className="px-2 pb-2">
+                        <FormRuleEditor
+                          fieldKey={f.field_key}
+                          rule={rule}
+                          earlier={earlierThan(f.field_key)}
+                          sources={sources}
+                          onChange={(r) => setRule(f.field_key, r)}
+                        />
+                      </div>
+                    )}
+                  </div>
                 )
               })}
             </div>
+            <p className="text-[11.5px] leading-relaxed text-slate-400">
+              Tip: fill answers in advance through the link — add <code className="rounded bg-slate-100 px-1">?field_key=value</code>.
+              In the thank-you message, <code className="rounded bg-slate-100 px-1">{"{{field_key}}"}</code> repeats an answer.
+            </p>
           </PanelSection>
 
           <PanelSection title="When it stops">

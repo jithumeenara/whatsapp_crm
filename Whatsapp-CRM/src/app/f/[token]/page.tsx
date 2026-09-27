@@ -55,9 +55,25 @@ export default async function PublicFormPage({
       })
     : null
 
+  // Answers carried in the link itself (?course=PSC), as Tally and
+  // Typeform allow: a starting value the person can still change. A
+  // question the form fills and locks is never taken from the link.
+  const prefill: Record<string, string> = {}
+  for (const f of form.fields) {
+    const raw = query[f.key]
+    if (typeof raw !== 'string' || !raw.trim()) continue
+    if (form.config.rules[f.key]?.fill?.locked || f.type === 'section_header' || f.type === 'boolean') continue
+    const value = raw.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 500)
+    if ((f.type === 'select' || f.type === 'radio') && f.options?.length) {
+      const hit = f.options.find((o) => o.toLowerCase() === value.toLowerCase())
+      if (hit) prefill[f.key] = hit
+    } else {
+      prefill[f.key] = value
+    }
+  }
+
   // Filled in for the person the business sent the link to, so they
   // confirm rather than retype. Only from a verified personal link.
-  const prefill: Record<string, string> = {}
   if (contact) {
     for (const f of form.fields) {
       if (f.type === 'phone' && contact.phone && !prefill[f.key]) prefill[f.key] = `+${contact.phone.replace(/\D/g, '')}`
@@ -72,6 +88,10 @@ export default async function PublicFormPage({
       personal={contact ? personal : null}
       greeting={contact?.name ?? null}
       businessName={form.businessName}
+      brand={form.brand}
+      rules={form.config.rules}
+      lookups={form.lookups}
+      successMessage={form.config.success_message}
       title={form.config.title || form.tableName}
       intro={form.config.intro}
       fields={form.fields}

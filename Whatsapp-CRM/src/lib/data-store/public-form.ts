@@ -13,6 +13,8 @@
  * them, which is signed (see public-form-server.ts).
  */
 
+import { DEFAULT_BRAND, parseBrand, parseRules, type FormBrand, type FormRules } from './form-logic'
+
 export const WEB_FORM_FIELD_TYPES: ReadonlySet<string> = new Set([
   'text',
   'textarea',
@@ -70,6 +72,10 @@ export interface TableFormConfig {
   consent_text: string | null
   /** Only people sent a personal link can answer. */
   personal_only: boolean
+  /** Logo, name, tagline, colour, contact details. */
+  brand: FormBrand
+  /** Filter / fill / show-if, per question (lib/data-store/form-logic). */
+  rules: FormRules
 }
 
 export const EMPTY_FORM_CONFIG: TableFormConfig = {
@@ -83,6 +89,8 @@ export const EMPTY_FORM_CONFIG: TableFormConfig = {
   one_per_person: false,
   consent_text: null,
   personal_only: false,
+  brand: DEFAULT_BRAND,
+  rules: {},
 }
 
 export const DEFAULT_CONSENT =
@@ -94,8 +102,10 @@ function text(raw: unknown, max: number): string | null {
   return t || null
 }
 
-/** Reads stored or submitted settings safely. `fieldKeys` drops fields
- *  the table no longer has. */
+/** Reads stored or submitted settings safely. `fieldKeys` — the table's
+ *  fields in their order — drops fields the table no longer has, and
+ *  gives the order rules are checked against (a rule may only look at a
+ *  question that comes before it). */
 export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): TableFormConfig {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...EMPTY_FORM_CONFIG }
   const r = raw as Record<string, unknown>
@@ -128,6 +138,8 @@ export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): Ta
     one_per_person: r.one_per_person === true,
     consent_text: text(r.consent_text, 500),
     personal_only: r.personal_only === true,
+    brand: parseBrand(r.brand),
+    rules: parseRules(r.rules, keys.length ? keys : (fieldKeys ?? [])),
   }
 }
 
