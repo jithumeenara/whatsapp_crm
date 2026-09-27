@@ -8,6 +8,27 @@ describe('email markup', () => {
     )
   })
 
+  it('links web addresses, bare or with their own words', () => {
+    const html = markupToHtml('See [our fees](https://acsti.in/fees) or https://acsti.in/a__b__c.')
+    expect(html).toContain(
+      '<a href="https://acsti.in/fees" style="color:#0b57d0;text-decoration:underline" target="_blank" rel="noopener noreferrer">our fees</a>',
+    )
+    // Underscores inside an address are not formatting, and the full stop
+    // after it is the sentence's.
+    expect(html).toContain('>https://acsti.in/a__b__c</a>.')
+    expect(html).not.toContain('<u>')
+    expect(markupToPlain('See [our fees](https://acsti.in/fees)')).toBe('See our fees (https://acsti.in/fees)')
+    expect(markupToHtml('**https://acsti.in**')).toContain('<a href="https://acsti.in/"')
+  })
+
+  it('never makes a link that could run something or break out of the tag', () => {
+    const bad = markupToHtml('[x](javascript:alert(1)) javascript:alert(1) [y](https://a.com/"onmouseover="alert(1))')
+    expect(bad).not.toContain('javascript:alert(1)"')
+    expect(bad).not.toMatch(/href="javascript/i)
+    expect(bad).not.toContain('"onmouseover')
+    expect(markupToHtml('data:text/html,<script>alert(1)</script>')).not.toContain('<a')
+  })
+
   it('makes bullet and numbered lists', () => {
     const html = markupToHtml('Fees:\n- Basic\n- Advanced\n1. Apply\n2. Pay')
     expect(html).toContain('<ul style="margin:0 0 12px;padding-left:24px"><li>Basic</li><li>Advanced</li></ul>')

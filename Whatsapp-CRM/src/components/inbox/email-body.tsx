@@ -8,7 +8,7 @@ import type { Message } from "@/types";
 /**
  * The composer's light formatting, drawn as React elements — never as
  * HTML — so what an agent typed can only ever be text with bold,
- * italic, underline and lists.
+ * italic, underline, lists and web links.
  */
 function Runs({ runs }: { runs: Inline[] }) {
   return (
@@ -18,6 +18,14 @@ function Runs({ runs }: { runs: Inline[] }) {
         if (r.u) node = <u>{node}</u>;
         if (r.i) node = <em>{node}</em>;
         if (r.b) node = <strong>{node}</strong>;
+        // Only ever an http(s) address — parseInline refuses anything else.
+        if (r.href) {
+          node = (
+            <a href={r.href} target="_blank" rel="noopener noreferrer nofollow" className="text-sky-700 underline underline-offset-2 hover:text-sky-900">
+              {node}
+            </a>
+          );
+        }
         return <Fragment key={i}>{node}</Fragment>;
       })}
     </>

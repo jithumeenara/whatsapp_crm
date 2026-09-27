@@ -2,18 +2,31 @@
  * The light formatting the email composer writes, and what it becomes.
  *
  *   **bold**   *italic*   __underline__
+ *   [our fees](https://example.com/fees)   a link with its own words
+ *   https://example.com                    a bare address, linked as is
  *   - bullet item            (a line starting with "- " or "• ")
  *   1. numbered item         (a line starting with "1. ", "2) " …)
  *
  * Why a markup of our own rather than HTML from a rich-text editor: the
  * text is escaped first and only these few patterns are turned back into
  * tags, so nothing an agent pastes — and nothing a customer's reply could
- * smuggle into a draft — can become a script, a style or a link in
- * someone's mail client. There is nothing to sanitise because nothing
- * but these tags is ever produced.
+ * smuggle into a draft — can become a script or a style in someone's
+ * mail client. A link is only ever an http(s) address that parses as
+ * one: never javascript:, data: or anything else a mail client might run.
  */
 
-export type Inline = { text: string; b?: boolean; i?: boolean; u?: boolean }
+export type Inline = { text: string; b?: boolean; i?: boolean; u?: boolean; href?: string }
+
+/** The address, normalised, if it is a plain web address — else null. */
+export function safeLink(raw: string): string | null {
+  if (raw.length > 2000) return null
+  try {
+    const u = new URL(raw)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : null
+  } catch {
+    return null
+  }
+}
 export type Block =
   | { type: 'p'; lines: Inline[][] }
   | { type: 'ul'; items: Inline[][] }
@@ -26,14 +39,27 @@ const NUMBER = /^\s*\d{1,3}[.)]\s+(.*)$/
  *  same line; an unclosed one is left as typed. */
 export function parseInline(line: string): Inline[] {
   const out: Inline[] = []
-  const re = /\*\*(.+?)\*\*|__(.+?)__|\*(?!\s)(.+?)(?<!\s)\*/g
+  // Links come first in the alternation, so the underscores and stars
+  // inside an address are never read as formatting.
+  const re =
+    /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]{1,2000})\)|(https?:\/\/[^\s<>"']{1,2000})|\*\*(.+?)\*\*|__(.+?)__|\*(?!\s)(.+?)(?<!\s)\*/g
   let last = 0
   let m: RegExpExecArray | null
   while ((m = re.exec(line))) {
     if (m.index > last) out.push({ text: line.slice(last, m.index) })
-    if (m[1] !== undefined) out.push(...parseInline(m[1]).map((r) => ({ ...r, b: true })))
-    else if (m[2] !== undefined) out.push(...parseInline(m[2]).map((r) => ({ ...r, u: true })))
-    else if (m[3] !== undefined) out.push(...parseInline(m[3]).map((r) => ({ ...r, i: true })))
+    if (m[1] !== undefined) {
+      const href = safeLink(m[2])
+      if (href) out.push(...parseInline(m[1]).map((r) => ({ ...r, href })))
+      else out.push({ text: m[0] })
+    } else if (m[3] !== undefined) {
+      // "see https://x.com/fees." — the full stop is the sentence's.
+      const address = m[3].replace(/[.,;:!?'")\]]+$/, '')
+      const href = safeLink(address)
+      out.push(href ? { text: address, href } : { text: address })
+      if (address.length < m[3].length) out.push({ text: m[3].slice(address.length) })
+    } else if (m[4] !== undefined) out.push(...parseInline(m[4]).map((r) => ({ ...r, b: true })))
+    else if (m[5] !== undefined) out.push(...parseInline(m[5]).map((r) => ({ ...r, u: true })))
+    else if (m[6] !== undefined) out.push(...parseInline(m[6]).map((r) => ({ ...r, i: true })))
     last = m.index + m[0].length
   }
   if (last < line.length) out.push({ text: line.slice(last) })
@@ -78,12 +104,16 @@ function inlineHtml(runs: Inline[]): string {
       if (r.u) h = `<u>${h}</u>`
       if (r.i) h = `<em>${h}</em>`
       if (r.b) h = `<strong>${h}</strong>`
+      if (r.href) {
+        h = `<a href="${escapeHtml(r.href)}" style="color:#0b57d0;text-decoration:underline" target="_blank" rel="noopener noreferrer">${h}</a>`
+      }
       return h
     })
     .join('')
 }
 
-/** HTML for the email body — only p/br/strong/em/u/ul/ol/li, ever. */
+/** HTML for the email body — only p/br/strong/em/u/ul/ol/li and
+ *  http(s) links, ever. */
 export function markupToHtml(text: string): string {
   return parseMarkup(text)
     .map((b) => {
@@ -96,7 +126,15 @@ export function markupToHtml(text: string): string {
 
 /** The plain-text version: markers removed, lists kept readable. */
 export function markupToPlain(text: string): string {
-  const plain = (runs: Inline[]) => runs.map((r) => r.text).join('')
+  // A link with its own words keeps its address in brackets, so the
+  // plain-text copy still gets them there.
+  const plain = (runs: Inline[]) =>
+    runs
+      .map((r, i) => {
+        const endsLink = r.href && r.text !== r.href && runs[i + 1]?.href !== r.href
+        return endsLink ? `${r.text} (${r.href})` : r.text
+      })
+      .join('')
   return parseMarkup(text)
     .map((b) => {
       if (b.type === 'p') return b.lines.map(plain).join('\n')

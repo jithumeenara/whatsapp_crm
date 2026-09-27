@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Bold, CalendarClock, CornerUpLeft, Forward, Italic, Languages, List, ListOrdered, Loader2, Mail, Paperclip,
+  Bold, CalendarClock, CornerUpLeft, Forward, Italic, Languages, Link2, List, ListOrdered, Loader2, Mail, Paperclip,
   PenSquare, ReplyAll, Send, ShoppingBag, Sparkles, Underline, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -211,6 +211,25 @@ export function EmailComposer({
     const { selectionStart: s, selectionEnd: e } = el;
     const selected = text.slice(s, e);
     replaceRange(s, e, `${marker}${selected}${marker}`, s + marker.length, e + marker.length);
+  }
+
+  /** Turns the selection into [words](https://…) with the cursor where
+   *  the address goes; a selected address is linked as it stands. */
+  function linkify() {
+    const el = bodyRef.current;
+    if (!el) return;
+    const { selectionStart: s, selectionEnd: e } = el;
+    const selected = text.slice(s, e).trim();
+    if (/^https?:\/\/\S+$/i.test(selected)) {
+      el.focus();
+      return;
+    }
+    const words = selected || "link text";
+    const snippet = `[${words}](https://)`;
+    const cursor = s + words.length + 3 + "https://".length;
+    // With nothing selected, "link text" is selected so typing replaces it.
+    if (selected) replaceRange(s, e, snippet, cursor, cursor);
+    else replaceRange(s, e, snippet, s + 1, s + 1 + words.length);
   }
 
   function listify(kind: "bullet" | "number") {
@@ -469,6 +488,7 @@ export function EmailComposer({
           <ToolButton label="Bold (Ctrl+B)" onClick={() => wrap("**")}><Bold className="h-4 w-4" /></ToolButton>
           <ToolButton label="Italic (Ctrl+I)" onClick={() => wrap("*")}><Italic className="h-4 w-4" /></ToolButton>
           <ToolButton label="Underline (Ctrl+U)" onClick={() => wrap("__")}><Underline className="h-4 w-4" /></ToolButton>
+          <ToolButton label="Link (Ctrl+K) — or just paste a web address" onClick={linkify}><Link2 className="h-4 w-4" /></ToolButton>
           <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
           <ToolButton label="Bulleted list" onClick={() => listify("bullet")}><List className="h-4 w-4" /></ToolButton>
           <ToolButton label="Numbered list" onClick={() => listify("number")}><ListOrdered className="h-4 w-4" /></ToolButton>
@@ -487,6 +507,7 @@ export function EmailComposer({
             else if (mod && e.key.toLowerCase() === "b") { e.preventDefault(); wrap("**"); }
             else if (mod && e.key.toLowerCase() === "i") { e.preventDefault(); wrap("*"); }
             else if (mod && e.key.toLowerCase() === "u") { e.preventDefault(); wrap("__"); }
+            else if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); linkify(); }
           }}
           rows={5}
           maxLength={50_000}
