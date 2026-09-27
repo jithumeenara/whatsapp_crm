@@ -1,15 +1,29 @@
 "use client"
 
+/**
+ * One Data Store table.
+ *
+ * Two quiet rows above the grid, and nothing bulky: the title row holds
+ * the table's name, its AI state and the few actions people use daily
+ * (share the form, alerts, Add record) with the rest in one "more" menu;
+ * the tool row holds search and the ways to narrow and shape the view —
+ * filter, source, which columns, how dense. Selecting rows swaps the
+ * tool row for what can be done to them.
+ *
+ * The grid pins the tick box on the left and the row actions on the
+ * right on solid backgrounds, so a long value can never show through
+ * them; every value is cut to one line with the full text on hover.
+ */
+
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
-  ArrowLeft, Plus, Search, Trash2, Edit2, MoreVertical,
-  RefreshCw, Settings2, X, Upload, Download, Loader2,
-  Database, AlertTriangle, ChevronRight, ChevronLeft,
-  Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock,
-  CalendarClock, ToggleLeft, ChevronDown, ListChecks, CircleDot, Globe,
-  MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon, PenLine, EyeOff,
-  Heading, Code2, Bot, SlidersHorizontal, BellRing,
+  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, BellRing, Check, ChevronLeft, ChevronRight, Columns3, Database,
+  Download, Loader2, MoreHorizontal, Pencil, Plus, RefreshCw, Rows3, Rows4, Search, Settings2, Share2,
+  SlidersHorizontal, Trash2, Upload, X,
+  Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock, CalendarClock, ToggleLeft,
+  ChevronDown, ListChecks, CircleDot, Globe, MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon,
+  PenLine, EyeOff, Heading, Code2,
 } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
@@ -22,14 +36,12 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { TableAiChip } from "@/components/data/table-ai-chip"
 import { RecordAlertsPanel } from "@/components/data/record-alerts-panel"
 import { PublicFormPanel } from "@/components/data/public-form-panel"
+import { SidePanel } from "@/components/data/side-panel"
 import { RECORD_SOURCE_LABELS, isRecordSource, sourceLabel, type RecordSource } from "@/lib/data-store/sources"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
+import { cn } from "@/lib/utils"
 import type { DataTable, DataField, DataRecord, FieldType } from "@/lib/data-store/types"
-
-function cn(...c: (string | boolean | undefined | null)[]) {
-  return c.filter(Boolean).join(" ")
-}
 
 const FIELD_TYPE_ICONS: Record<FieldType, React.ComponentType<{ className?: string }>> = {
   text: Type, textarea: AlignLeft, number: Hash, email: Mail, password: KeyRound,
@@ -40,17 +52,8 @@ const FIELD_TYPE_ICONS: Record<FieldType, React.ComponentType<{ className?: stri
   section_header: Heading, html_block: Code2,
 }
 
-function formatValue(field: DataField, value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—"
-  const str = String(value)
-  if (field.field_type === "date") {
-    const d = /^\d{10}$/.test(str) ? new Date(parseInt(str) * 1000) : new Date(str)
-    return isNaN(d.getTime()) ? str : d.toLocaleDateString()
-  }
-  if (field.field_type === "boolean") return value ? "Yes" : "No"
-  if (Array.isArray(value)) return (value as string[]).join(", ")
-  return str.length > 56 ? str.slice(0, 56) + "…" : str
-}
+/** Columns that hold no value and never belong in a grid. */
+const NOT_A_COLUMN = new Set<string>(["section_header", "html_block"])
 
 /** One colour per channel, so a glance down the Source column says
  *  where the week's sign-ups came from. */
@@ -66,51 +69,165 @@ const SOURCE_STYLE: Record<RecordSource, string> = {
   integration: "bg-violet-50 text-violet-700",
 }
 
-function stamp(iso: string): string {
-  const d = new Date(iso)
-  return isNaN(d.getTime())
-    ? "—"
-    : d.toLocaleString(undefined, { day: "numeric", month: "short", year: "2-digit", hour: "2-digit", minute: "2-digit" })
-}
+/** The system columns, keyed so they can be hidden and sorted like fields. */
+const SYS = { customer: "__customer", source: "__source", added: "__added" } as const
 
 /** Everything a table holds, a page of 500 at a time. The API used to
  *  cap one request at 100, so a table past that showed only its newest
  *  hundred rows with nothing saying the rest existed. */
 const LOAD_PAGE = 500
 const LOAD_MAX = 10_000
+const PAGE_SIZES = [25, 50, 100] as const
+
+type Density = "comfortable" | "compact"
+type Sort = { key: string; dir: "asc" | "desc" } | null
+
+function formatValue(field: DataField, value: unknown): string {
+  if (value === null || value === undefined || value === "") return ""
+  if (field.field_type === "boolean") return value ? "Yes" : "No"
+  if (Array.isArray(value)) return value.map((v) => (typeof v === "object" && v ? String((v as { label?: unknown }).label ?? "") : String(v))).join(", ")
+  if (typeof value === "object") {
+    const v = value as { label?: unknown; name?: unknown }
+    return String(v.label ?? v.name ?? "")
+  }
+  const str = String(value)
+  if (field.field_type === "date") {
+    const d = /^\d{10}$/.test(str) ? new Date(parseInt(str) * 1000) : new Date(str)
+    return isNaN(d.getTime()) ? str : d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })
+  }
+  return str
+}
+
+function stamp(iso: string): string {
+  const d = new Date(iso)
+  return isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleString(undefined, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+}
+
+// ── View preferences, per table, in this browser only ───────────────────
+interface ViewPrefs { hidden: string[]; density: Density; pageSize: number }
+
+function readPrefs(tableId: string): ViewPrefs {
+  try {
+    const raw = window.localStorage.getItem(`data-view:${tableId}`)
+    const p = raw ? (JSON.parse(raw) as Partial<ViewPrefs>) : {}
+    return {
+      hidden: Array.isArray(p.hidden) ? p.hidden.filter((k): k is string => typeof k === "string") : [],
+      density: p.density === "compact" ? "compact" : "comfortable",
+      pageSize: PAGE_SIZES.includes(p.pageSize as (typeof PAGE_SIZES)[number]) ? (p.pageSize as number) : 25,
+    }
+  } catch {
+    return { hidden: [], density: "comfortable", pageSize: 25 }
+  }
+}
+
+function writePrefs(tableId: string, prefs: ViewPrefs) {
+  try { window.localStorage.setItem(`data-view:${tableId}`, JSON.stringify(prefs)) } catch { /* private window */ }
+}
+
+// ── Small building blocks ───────────────────────────────────────────────
+/** A button-triggered panel that closes on a click elsewhere or Escape. */
+function Menu({
+  label, icon, badge, active, align = "left", children, width = "w-60", iconOnly,
+}: {
+  label: string
+  icon: React.ReactNode
+  badge?: number
+  active?: boolean
+  align?: "left" | "right"
+  width?: string
+  iconOnly?: boolean
+  children: (close: () => void) => React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false) }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [open])
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+        className={cn(
+          "flex h-8 items-center gap-1.5 rounded-lg text-[12.5px] font-medium transition-colors",
+          iconOnly ? "w-8 justify-center" : "px-2.5",
+          active || open ? "bg-primary/10 text-primary" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+        )}
+      >
+        {icon}
+        {!iconOnly && <span className="hidden sm:inline">{label}</span>}
+        {!!badge && (
+          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+            {badge}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className={cn("absolute top-10 z-40 rounded-xl border border-slate-200 bg-white p-1 shadow-xl", width, align === "right" ? "right-0" : "left-0")}>
+            {children(() => setOpen(false))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function MenuItem({ icon, children, onClick, danger }: { icon: React.ReactNode; children: React.ReactNode; onClick: () => void; danger?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors",
+        danger ? "text-rose-600 hover:bg-rose-50" : "text-slate-700 hover:bg-slate-50",
+      )}
+    >
+      <span className="text-slate-400">{icon}</span>
+      {children}
+    </button>
+  )
+}
 
 export default function DataTablePage() {
   const { tableId } = useParams<{ tableId: string }>()
   const router = useRouter()
+  const { accountRole } = useAuth()
+  const isAdmin = !!accountRole && hasMinRole(accountRole, "admin")
 
   const [table, setTable] = useState<DataTable | null>(null)
   const [fields, setFields] = useState<DataField[]>([])
   const [records, setRecords] = useState<DataRecord[]>([])
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [filters, setFilters] = useState<FilterMap>({})
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [sourceFilter, setSourceFilter] = useState("")
+  const [sort, setSort] = useState<Sort>(null)
+  const [prefs, setPrefs] = useState<ViewPrefs>({ hidden: [], density: "comfortable", pageSize: 25 })
+  const [page, setPage] = useState(1)
   const [formOpen, setFormOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<DataRecord | null>(null)
-  const [deleting, setDeleting] = useState<string | null>(null)
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
-  const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
-  const [allTables, setAllTables] = useState<DataTable[]>([])
-  const [importing, setImporting] = useState(false)
-  const importRef = useRef<HTMLInputElement>(null)
-  const [confirmRecordId, setConfirmRecordId] = useState<string | null>(null)
   const [viewingRecord, setViewingRecord] = useState<DataRecord | null>(null)
+  const [confirmRecordId, setConfirmRecordId] = useState<string | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
-  const [page, setPage] = useState(1)
-  const [total, setTotal] = useState(0)
-  const [sourceFilter, setSourceFilter] = useState<string>("")
+  const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [formPanelOpen, setFormPanelOpen] = useState(false)
-  const { accountRole } = useAuth()
-  const isAdmin = !!accountRole && hasMinRole(accountRole, "admin")
-  const PAGE_SIZE = 20
+  const [allTables, setAllTables] = useState<DataTable[]>([])
+  const [importing, setImporting] = useState(false)
+  const importRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -135,11 +252,20 @@ export default function DataTablePage() {
       setFields(tData.table?.fields ?? [])
       setRecords(all)
       setTotal(count)
-    } catch { toast.error("Failed to load table") }
+      setPrefs(readPrefs(tableId))
+    } catch { toast.error("Could not load this table") }
     finally { setLoading(false) }
   }, [tableId, router])
 
   useEffect(() => { load() }, [load])
+
+  function updatePrefs(patch: Partial<ViewPrefs>) {
+    setPrefs((p) => {
+      const next = { ...p, ...patch }
+      writePrefs(tableId, next)
+      return next
+    })
+  }
 
   const openFieldPanel = useCallback(async () => {
     setFieldPanelOpen(true)
@@ -148,14 +274,14 @@ export default function DataTablePage() {
         const res = await fetch("/api/data-tables")
         const data = await res.json()
         setAllTables(data.tables ?? [])
-      } catch { /* ignore */ }
+      } catch { /* the relation picker just shows fewer tables */ }
     }
   }, [allTables.length])
 
   async function downloadTemplate() {
     try {
       const res = await fetch(`/api/data-tables/${tableId}/import`)
-      if (!res.ok) { toast.error("Failed to generate template"); return }
+      if (!res.ok) { toast.error("Could not make the template"); return }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
@@ -163,7 +289,7 @@ export default function DataTablePage() {
       a.download = `${table?.name ?? "template"}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
-    } catch { toast.error("Failed to generate template") }
+    } catch { toast.error("Could not make the template") }
   }
 
   async function handleImport(file: File) {
@@ -184,13 +310,13 @@ export default function DataTablePage() {
     if (!confirmRecordId) return
     const id = confirmRecordId
     setConfirmRecordId(null)
-    setDeleting(id)
     try {
-      await fetch(`/api/data-tables/${tableId}/records/${id}`, { method: "DELETE" })
+      const res = await fetch(`/api/data-tables/${tableId}/records/${id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error()
       setRecords((p) => p.filter((r) => r.id !== id))
+      setTotal((t) => Math.max(0, t - 1))
       toast.success("Record deleted")
-    } catch { toast.error("Delete failed") }
-    finally { setDeleting(null) }
+    } catch { toast.error("Could not delete that record") }
   }
 
   async function confirmBulkDeleteRecords() {
@@ -199,61 +325,88 @@ export default function DataTablePage() {
     setBulkDeleting(true)
     try {
       const results = await Promise.allSettled(
-        ids.map((id) => fetch(`/api/data-tables/${tableId}/records/${id}`, { method: "DELETE" })),
+        ids.map((id) => fetch(`/api/data-tables/${tableId}/records/${id}`, { method: "DELETE" }).then((r) => { if (!r.ok) throw new Error() })),
       )
-      const failed = results.filter((r) => r.status === "rejected").length
-      setRecords((p) => p.filter((r) => !selectedIds.has(r.id)))
+      const gone = new Set(ids.filter((_, i) => results[i].status === "fulfilled"))
+      const failed = ids.length - gone.size
+      setRecords((p) => p.filter((r) => !gone.has(r.id)))
+      setTotal((t) => Math.max(0, t - gone.size))
       setSelectedIds(new Set())
-      if (failed > 0) toast.error(`${failed} record${failed !== 1 ? "s" : ""} failed to delete`)
+      if (failed > 0) toast.error(`${failed} record${failed !== 1 ? "s" : ""} could not be deleted`)
       else toast.success(`${ids.length} record${ids.length !== 1 ? "s" : ""} deleted`)
-    } catch { toast.error("Bulk delete failed") }
-    finally { setBulkDeleting(false) }
+    } finally { setBulkDeleting(false) }
   }
 
-  // The search box reads every column; the filter bar narrows by one
-  // column at a time. They compose rather than competing — search
-  // within a filtered set is the common way somebody actually looks
-  // something up.
-  const needle = search.toLowerCase()
+  // ── What is shown ─────────────────────────────────────────────────────
+  // Search reads every column; the filter bar narrows one column at a
+  // time; the source picker narrows by channel. They compose.
+  const needle = search.trim().toLowerCase()
   const searched = records.filter((r) => {
     if (sourceFilter && (r.source ?? "") !== sourceFilter) return false
-    if (!search) return true
+    if (!needle) return true
     return (
-      Object.values(r.data as Record<string, unknown>).some((v) =>
-        String(v ?? "").toLowerCase().includes(needle)
-      ) ||
+      Object.values(r.data as Record<string, unknown>).some((v) => String(v ?? "").toLowerCase().includes(needle)) ||
       (r.contact?.name ?? "").toLowerCase().includes(needle) ||
       (r.contact?.phone ?? "").includes(needle) ||
       sourceLabel(r.source).toLowerCase().includes(needle)
     )
   })
-  // Which channels this table has actually received rows from — the
-  // source filter offers those, not all nine.
-  const presentSources = Array.from(new Set(records.map((r) => r.source).filter(isRecordSource)))
-  const hasCustomers = records.some((r) => r.contact)
   const filtered = applyFilters(searched, fields, filters)
   const activeFilters = activeFilterCount(filters)
   const canFilter = filterableFields(fields).length > 0
+  const presentSources = Array.from(new Set(records.map((r) => r.source).filter(isRecordSource)))
+  const hasCustomers = records.some((r) => r.contact)
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const columnFields = fields.filter((f) => !NOT_A_COLUMN.has(f.field_type))
+  const hidden = new Set(prefs.hidden)
+  const shownFields = columnFields.filter((f) => !hidden.has(f.field_key))
+  const showCustomer = hasCustomers && !hidden.has(SYS.customer)
+  const showSource = !hidden.has(SYS.source)
+  const showAdded = !hidden.has(SYS.added)
+
+  function sortValue(r: DataRecord, key: string): string | number {
+    if (key === SYS.added) return Date.parse(r.created_at) || 0
+    if (key === SYS.source) return sourceLabel(r.source)
+    if (key === SYS.customer) return r.contact?.name || r.contact?.phone || ""
+    const field = fields.find((f) => f.field_key === key)
+    const raw = (r.data as Record<string, unknown>)[key]
+    if (field?.field_type === "number" && raw !== "" && raw !== null && raw !== undefined && Number.isFinite(Number(raw))) return Number(raw)
+    if ((field?.field_type === "date" || field?.field_type === "datetime") && raw) return Date.parse(String(raw)) || String(raw)
+    return field ? formatValue(field, raw) : ""
+  }
+
+  const sorted = sort
+    ? [...filtered].sort((a, b) => {
+        const x = sortValue(a, sort.key)
+        const y = sortValue(b, sort.key)
+        // Empty values last, whichever way.
+        if (x === "" && y !== "") return 1
+        if (y === "" && x !== "") return -1
+        const c = typeof x === "number" && typeof y === "number"
+          ? x - y
+          : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: "base" })
+        return sort.dir === "asc" ? c : -c
+      })
+    : filtered
+
+  const pageSize = prefs.pageSize
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize))
   const currentPage = Math.min(page, pageCount)
-  const pageRecords = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const pageRecords = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const firstShown = sorted.length ? (currentPage - 1) * pageSize + 1 : 0
+  const lastShown = Math.min(sorted.length, currentPage * pageSize)
 
-  // Reset to page 1 whenever the search or a filter narrows/widens the
-  // result set — otherwise a stale page number could point past the new
-  // last page.
-  useEffect(() => { setPage(1) }, [search, filters, sourceFilter])
+  // A narrower result starts again at page 1.
+  useEffect(() => { setPage(1) }, [search, filters, sourceFilter, sort, prefs.pageSize])
 
-  // "Select all" scopes to the current page, matching the visible rows.
   const allPageSelected = pageRecords.length > 0 && pageRecords.every((r) => selectedIds.has(r.id))
 
   function toggleSelectAll() {
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      if (allPageSelected) {
-        for (const r of pageRecords) next.delete(r.id)
-      } else {
-        for (const r of pageRecords) next.add(r.id)
+      for (const r of pageRecords) {
+        if (allPageSelected) next.delete(r.id)
+        else next.add(r.id)
       }
       return next
     })
@@ -268,151 +421,233 @@ export default function DataTablePage() {
     })
   }
 
-  // The table wrapper below already scrolls horizontally (overflow-x-auto),
-  // so every field can render as its own column instead of being capped.
-  const visibleFields = fields
+  function cycleSort(key: string) {
+    setSort((s) => (!s || s.key !== key ? { key, dir: "asc" } : s.dir === "asc" ? { key, dir: "desc" } : null))
+  }
+
+  function toggleColumn(key: string) {
+    const next = new Set(prefs.hidden)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    updatePrefs({ hidden: Array.from(next) })
+  }
+
+  const cellY = prefs.density === "compact" ? "py-1.5" : "py-2.5"
+
+  function headerCell(sortKey: string, label: string, Icon?: React.ComponentType<{ className?: string }>) {
+    const active = sort?.key === sortKey
+    const SortIcon = !active ? ArrowUpDown : sort?.dir === "asc" ? ArrowUp : ArrowDown
+    return (
+      <th
+        key={sortKey}
+        scope="col"
+        aria-sort={active ? (sort?.dir === "asc" ? "ascending" : "descending") : "none"}
+        className="sticky top-0 z-10 whitespace-nowrap border-b border-slate-200 bg-slate-50 px-3 py-0 text-left"
+      >
+        <button
+          type="button"
+          onClick={() => cycleSort(sortKey)}
+          className="group/h flex h-10 w-full items-center gap-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:text-slate-900"
+        >
+          {Icon && <Icon className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+          <span className="truncate">{label}</span>
+          <SortIcon className={cn("h-3 w-3 shrink-0", active ? "text-primary" : "text-transparent group-hover/h:text-slate-300")} />
+        </button>
+      </th>
+    )
+  }
 
   return (
-    <div className="flex flex-col h-full bg-[#F4F6FA]">
-
-      {/* Backdrop — closes any open row menu */}
-      {menuOpenId && (
-        <div
-          className="fixed inset-0 z-20"
-          onClick={() => setMenuOpenId(null)}
-        />
-      )}
-
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="flex items-center gap-2 px-4 h-14 flex-wrap">
+    <div className="flex h-full flex-col bg-slate-50">
+      {/* ── Title row ───────────────────────────────────────────────── */}
+      <header className="border-b border-slate-200 bg-white">
+        <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
           <button
             onClick={() => router.push("/data")}
-            className="flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors shrink-0"
+            aria-label="Back to Data Store"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
-
-          <div className="flex items-center gap-1.5 text-[13px] text-slate-400 min-w-0">
-            <Database className="h-3.5 w-3.5 shrink-0" />
-            <span className="hidden sm:inline">Data Store</span>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-            <span className="font-semibold text-slate-800 truncate">{table?.name ?? "…"}</span>
+          <span className="hidden h-9 w-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary sm:grid">
+            <Database className="h-4.5 w-4.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-[16px] font-semibold leading-tight text-slate-900">{table?.name ?? " "}</h1>
+            <p className="mt-0.5 truncate text-[12px] text-slate-500">
+              <button onClick={() => router.push("/data")} className="hover:text-slate-800 hover:underline">Data Store</button>
+              {!loading && (
+                <>
+                  <span className="mx-1.5 text-slate-300">·</span>
+                  <span className="tabular-nums">{total || records.length}</span> record{(total || records.length) === 1 ? "" : "s"}
+                  <span className="mx-1.5 text-slate-300">·</span>
+                  <span className="tabular-nums">{columnFields.length}</span> field{columnFields.length === 1 ? "" : "s"}
+                </>
+              )}
+            </p>
           </div>
 
-          {!loading && (
-            <div className="hidden md:flex items-center gap-3 text-[12px] text-slate-400 ml-1">
-              <span><span className="font-semibold text-slate-600">{total || records.length}</span> records</span>
-              <span><span className="font-semibold text-slate-600">{fields.length}</span> fields</span>
-            </div>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <div className="hidden md:block"><TableAiChip tableId={tableId} /></div>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => setFormPanelOpen(true)}
+                  title="Collect data with a public form"
+                  className="hidden h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 sm:flex"
+                >
+                  <Share2 className="h-3.5 w-3.5" /> Share form
+                </button>
+                <button
+                  onClick={() => setAlertsOpen(true)}
+                  title="Alerts for new records"
+                  aria-label="Alerts for new records"
+                  className="hidden h-8 w-8 place-items-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 sm:grid"
+                >
+                  <BellRing className="h-4 w-4" />
+                </button>
+              </>
+            )}
+            <Menu label="More" icon={<MoreHorizontal className="h-4 w-4" />} iconOnly align="right" width="w-64">
+              {(close) => (
+                <>
+                  <MenuItem icon={<Settings2 className="h-4 w-4" />} onClick={() => { close(); void openFieldPanel() }}>Fields &amp; AI registration</MenuItem>
+                  {isAdmin && (
+                    <div className="sm:hidden">
+                      <MenuItem icon={<Share2 className="h-4 w-4" />} onClick={() => { close(); setFormPanelOpen(true) }}>Share form</MenuItem>
+                      <MenuItem icon={<BellRing className="h-4 w-4" />} onClick={() => { close(); setAlertsOpen(true) }}>Alerts</MenuItem>
+                    </div>
+                  )}
+                  <div className="my-1 h-px bg-slate-100" />
+                  <MenuItem icon={importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} onClick={() => { close(); importRef.current?.click() }}>
+                    Import from Excel
+                  </MenuItem>
+                  <MenuItem icon={<Download className="h-4 w-4" />} onClick={() => { close(); void downloadTemplate() }}>Download Excel template</MenuItem>
+                  <div className="my-1 h-px bg-slate-100" />
+                  <MenuItem icon={<RefreshCw className="h-4 w-4" />} onClick={() => { close(); void load() }}>Refresh</MenuItem>
+                </>
+              )}
+            </Menu>
+            <input autoComplete="off" ref={importRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) { void handleImport(f); e.target.value = "" } }} />
+            <button
+              onClick={() => { setEditingRecord(null); setFormOpen(true) }}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.98]"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Add record</span>
+            </button>
+          </div>
+        </div>
 
-          <div className="flex-1" />
-
-          {/* Action strip */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input autoComplete="off"
+        {/* ── Tool row, or what to do with the selected rows ────────── */}
+        {selectedIds.size > 0 ? (
+          <div className="flex h-12 items-center gap-3 border-t border-slate-100 bg-primary/5 px-4 sm:px-6">
+            <span className="text-[13px] font-medium text-slate-800">{selectedIds.size} selected</span>
+            <button onClick={() => setSelectedIds(new Set())} className="text-[12.5px] text-slate-500 hover:text-slate-800">Clear</button>
+            <div className="flex-1" />
+            <button
+              onClick={() => setConfirmBulkDelete(true)}
+              disabled={bulkDeleting}
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-rose-600 px-3 text-[12.5px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+            >
+              {bulkDeleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+              Delete
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 sm:px-6">
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input
+                id="records-search"
+                autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search…"
-                className="h-8 w-36 sm:w-44 pl-8 pr-3 text-[13px] rounded-lg border border-slate-200 bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
+                placeholder="Search records…"
+                aria-label="Search records"
+                className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-8 text-[13px] outline-none transition focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/15"
               />
+              {search && (
+                <button onClick={() => setSearch("")} aria-label="Clear search"
+                  className="absolute right-2 top-1/2 grid h-5 w-5 -translate-y-1/2 place-items-center rounded text-slate-400 hover:text-slate-700">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
 
             {canFilter && (
               <button
                 onClick={() => setFiltersOpen((v) => !v)}
+                aria-expanded={filtersOpen}
                 className={cn(
-                  "flex items-center gap-1.5 h-8 px-2.5 rounded-lg border text-[12px] font-medium transition-colors",
-                  activeFilters > 0 || filtersOpen
-                    ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-                    : "border-slate-200 text-slate-600 hover:bg-slate-50",
+                  "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors",
+                  activeFilters > 0 || filtersOpen ? "bg-primary/10 text-primary" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
                 )}
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" />
                 Filter
                 {activeFilters > 0 && (
-                  <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white">
-                    {activeFilters}
-                  </span>
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">{activeFilters}</span>
                 )}
               </button>
             )}
 
             {presentSources.length > 1 && (
-              <select
-                id="source-filter"
-                value={sourceFilter}
-                onChange={(e) => setSourceFilter(e.target.value)}
-                aria-label="Filter by where records came from"
-                className={cn(
-                  "h-8 rounded-lg border px-2 text-[12px] font-medium outline-none transition-colors",
-                  sourceFilter ? "border-indigo-200 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:bg-slate-50",
+              <Menu label={sourceFilter ? sourceLabel(sourceFilter) : "Source"} icon={<ListChecks className="h-3.5 w-3.5" />} active={!!sourceFilter} width="w-52">
+                {(close) => (
+                  <>
+                    {[{ key: "", label: "All sources" }, ...presentSources.map((s) => ({ key: s, label: RECORD_SOURCE_LABELS[s] }))].map((o) => (
+                      <button key={o.key || "all"} type="button" onClick={() => { setSourceFilter(o.key); close() }}
+                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">
+                        {o.label}
+                        {sourceFilter === o.key && <Check className="h-3.5 w-3.5 text-primary" />}
+                      </button>
+                    ))}
+                  </>
                 )}
-              >
-                <option value="">All sources</option>
-                {presentSources.map((s) => (
-                  <option key={s} value={s}>{RECORD_SOURCE_LABELS[s]}</option>
-                ))}
-              </select>
+              </Menu>
             )}
 
-            <div className="h-5 w-px bg-slate-200" />
+            <div className="flex-1" />
 
-            <TableAiChip tableId={tableId} />
-
-            {isAdmin && (
-              <>
-                <button onClick={() => setAlertsOpen(true)} title="Alerts for new records"
-                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-                  <BellRing className="h-3.5 w-3.5" /> Alerts
-                </button>
-                <button onClick={() => setFormPanelOpen(true)} title="Collect data with a public form"
-                  className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-                  <Link2 className="h-3.5 w-3.5" /> Get Data
-                </button>
-              </>
-            )}
-
-            <div className="h-5 w-px bg-slate-200" />
-
-            <button onClick={load} title="Refresh"
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors">
-              <RefreshCw className="h-3.5 w-3.5" />
-            </button>
-
-            <button onClick={openFieldPanel}
-              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-              <Settings2 className="h-3.5 w-3.5" /> Fields
-            </button>
-
-            <button onClick={downloadTemplate} title="Download Excel template"
-              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 transition-colors">
-              <Download className="h-3.5 w-3.5" /> Template
-            </button>
-
-            <button onClick={() => importRef.current?.click()} disabled={importing}
-              className="flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors">
-              {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              Import
-            </button>
-            <input autoComplete="off" ref={importRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleImport(f); e.target.value = "" } }} />
-
-            <div className="h-5 w-px bg-slate-200" />
-
+            <Menu label="Columns" icon={<Columns3 className="h-3.5 w-3.5" />} badge={prefs.hidden.length || undefined} align="right" width="w-64">
+              {() => (
+                <div className="max-h-80 overflow-y-auto">
+                  <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">Show columns</p>
+                  {[
+                    ...columnFields.map((f) => ({ key: f.field_key, label: f.label })),
+                    ...(hasCustomers ? [{ key: SYS.customer, label: "Customer" }] : []),
+                    { key: SYS.source, label: "Source" },
+                    { key: SYS.added, label: "Added" },
+                  ].map((c) => (
+                    <label key={c.key} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50">
+                      <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} className="h-4 w-4 accent-[var(--primary)]" />
+                      <span className="truncate">{c.label}</span>
+                    </label>
+                  ))}
+                  {prefs.hidden.length > 0 && (
+                    <button type="button" onClick={() => updatePrefs({ hidden: [] })}
+                      className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium text-primary hover:bg-primary/5">
+                      Show all
+                    </button>
+                  )}
+                </div>
+              )}
+            </Menu>
             <button
-              onClick={() => { setEditingRecord(null); setFormOpen(true) }}
-              className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 active:scale-95 transition-all"
+              type="button"
+              onClick={() => updatePrefs({ density: prefs.density === "compact" ? "comfortable" : "compact" })}
+              title={prefs.density === "compact" ? "Roomier rows" : "Compact rows"}
+              aria-label={prefs.density === "compact" ? "Roomier rows" : "Compact rows"}
+              className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
             >
-              <Plus className="h-3.5 w-3.5" /> Add Record
+              {prefs.density === "compact" ? <Rows3 className="h-4 w-4" /> : <Rows4 className="h-4 w-4" />}
             </button>
           </div>
-        </div>
+        )}
 
-        {filtersOpen && canFilter && (
+        {filtersOpen && canFilter && selectedIds.size === 0 && (
           <RecordFilters
             fields={fields}
             records={searched}
@@ -422,273 +657,202 @@ export default function DataTablePage() {
             totalCount={searched.length}
           />
         )}
+      </header>
 
-        {/* Selection bar — its own row, never squeezed into the main
-            toolbar, so it can never force that fixed-height row to wrap
-            and overlap the table below it. */}
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 px-4 h-10 border-t border-indigo-100 bg-indigo-50">
-            <span className="text-[12px] font-medium text-indigo-700">{selectedIds.size} selected</span>
-            <button
-              onClick={() => setSelectedIds(new Set())}
-              className="text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors"
-            >
-              Clear
-            </button>
-            <div className="flex-1" />
-            <button
-              onClick={() => setConfirmBulkDelete(true)}
-              disabled={bulkDeleting}
-              className="flex items-center gap-1.5 text-[12px] font-medium text-rose-600 hover:text-rose-700 disabled:opacity-50 transition-colors"
-            >
-              {bulkDeleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-              Delete
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Table grid */}
-      <div className="flex-1 overflow-auto">
-        {loading ? (
-          <TableSkeleton />
-        ) : fields.length === 0 ? (
-          <NoFieldsState onFields={openFieldPanel} />
-        ) : filtered.length === 0 && records.length === 0 ? (
-          <NoRecordsState onAdd={() => { setEditingRecord(null); setFormOpen(true) }} />
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <Search className="h-8 w-8 mb-3 text-slate-300" />
-            <p className="text-[14px] font-medium text-slate-500">No records match</p>
-            {/* Named separately, because being told to "clear search"
-                when the search box is empty and a filter is the thing
-                hiding everything is a dead end. */}
-            <button
-              onClick={() => { setSearch(""); setFilters({}); setSourceFilter("") }}
-              className="mt-1.5 text-[12px] text-indigo-600 hover:underline"
-            >
-              {activeFilters > 0 && search ? "Clear search and filters" : activeFilters > 0 ? "Clear filters" : "Clear search"}
-            </button>
-          </div>
-        ) : (
-          <div className="flex h-full flex-col">
-            <div className="flex-1 overflow-auto">
-              <table className="w-full text-[13px]" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
-                <thead>
-                  <tr>
-                    <th className="sticky top-0 left-0 z-20 bg-indigo-50/70 backdrop-blur-sm px-3 py-2.5 text-left w-10 border-b-2 border-indigo-100">
-                      <input autoComplete="off"
-                        type="checkbox"
-                        checked={allPageSelected}
-                        onChange={toggleSelectAll}
-                        className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400 cursor-pointer"
-                        aria-label="Select all rows on this page"
-                      />
-                    </th>
-                    {visibleFields.map((f) => {
-                      const TypeIcon = FIELD_TYPE_ICONS[f.field_type] ?? Type
-                      return (
-                        <th key={f.id} title={f.field_type} className="sticky top-0 z-10 bg-indigo-50/70 backdrop-blur-sm px-4 py-2.5 text-left border-b-2 border-indigo-100 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5">
-                            <TypeIcon className="h-3 w-3 text-indigo-400 shrink-0" />
-                            <span className="text-[11px] font-semibold text-indigo-900/80 tracking-wide">{f.label}</span>
-                          </div>
-                        </th>
-                      )
-                    })}
-                    {hasCustomers && (
-                      <th className="sticky top-0 z-10 bg-slate-100/80 backdrop-blur-sm px-4 py-2.5 text-left border-b-2 border-indigo-100 whitespace-nowrap">
-                        <span className="text-[11px] font-semibold text-slate-600 tracking-wide">Customer</span>
+      {/* ── Grid ────────────────────────────────────────────────────── */}
+      <div className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {loading ? (
+            <TableSkeleton />
+          ) : columnFields.length === 0 ? (
+            <EmptyState
+              icon={<Settings2 className="h-6 w-6" />}
+              title="No fields yet"
+              text="Add the columns this table should hold — name, phone, course… — then add records or share a form."
+              action="Add fields"
+              onAction={() => void openFieldPanel()}
+            />
+          ) : records.length === 0 ? (
+            <EmptyState
+              icon={<Plus className="h-6 w-6" />}
+              title="No records yet"
+              text="Add one here, import an Excel sheet from the ⋯ menu, or share a form and let people fill it in."
+              action="Add record"
+              onAction={() => { setEditingRecord(null); setFormOpen(true) }}
+            />
+          ) : sorted.length === 0 ? (
+            <EmptyState
+              icon={<Search className="h-6 w-6" />}
+              title="Nothing matches"
+              text="No record fits this search and these filters."
+              action={activeFilters > 0 || sourceFilter ? "Clear search and filters" : "Clear search"}
+              onAction={() => { setSearch(""); setFilters({}); setSourceFilter("") }}
+            />
+          ) : (
+            <>
+              <div className="min-h-0 flex-1 overflow-auto">
+                <table className="w-full border-separate border-spacing-0 text-[13px]">
+                  <thead>
+                    <tr>
+                      <th scope="col" className="sticky left-0 top-0 z-20 w-11 border-b border-slate-200 bg-slate-50 pl-4 pr-2 text-left">
+                        <input
+                          autoComplete="off"
+                          type="checkbox"
+                          checked={allPageSelected}
+                          onChange={toggleSelectAll}
+                          className="h-4 w-4 cursor-pointer rounded accent-[var(--primary)] align-middle"
+                          aria-label="Select all rows on this page"
+                        />
                       </th>
-                    )}
-                    <th className="sticky top-0 z-10 bg-slate-100/80 backdrop-blur-sm px-4 py-2.5 text-left border-b-2 border-indigo-100 whitespace-nowrap">
-                      <span className="text-[11px] font-semibold text-slate-600 tracking-wide">Source</span>
-                    </th>
-                    <th className="sticky top-0 z-10 bg-slate-100/80 backdrop-blur-sm px-4 py-2.5 text-left border-b-2 border-indigo-100 whitespace-nowrap">
-                      <span className="text-[11px] font-semibold text-slate-600 tracking-wide">Added</span>
-                    </th>
-                    <th className="sticky top-0 right-0 z-20 bg-indigo-50/70 backdrop-blur-sm px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-indigo-400 w-14 border-b-2 border-indigo-100">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageRecords.map((rec, idx) => {
-                    const data = rec.data as Record<string, unknown>
-                    const isMenuOpen = menuOpenId === rec.id
-                    const isSelected = selectedIds.has(rec.id)
-                    const zebra = idx % 2 === 0 ? "bg-white" : "bg-slate-50/60"
-                    const rowBg = isSelected ? "bg-indigo-50" : zebra
-                    return (
-                      <tr key={rec.id} className={cn("group border-b border-slate-100 last:border-0 hover:bg-indigo-50/50 transition-colors", rowBg)}>
-                        <td className={cn("sticky left-0 z-10 px-3 py-2.5 border-r border-slate-100 w-10 transition-colors", isSelected ? "bg-indigo-50" : zebra, "group-hover:bg-indigo-50/50")}>
-                          <input autoComplete="off"
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelectOne(rec.id)}
-                            className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400 cursor-pointer"
-                            aria-label={`Select row ${(currentPage - 1) * PAGE_SIZE + idx + 1}`}
-                          />
-                          {/* Rows the assistant took on WhatsApp. Marked in
-                              the checkbox gutter rather than given a column,
-                              so the grid is unchanged for the tables — most
-                              of them — that never see one. */}
-                          {rec.contact && (
-                            <span
-                              className="mt-1 flex justify-center"
-                              title={`Registered on WhatsApp by ${rec.contact.name || rec.contact.phone}`}
-                            >
-                              <Bot className="h-3 w-3 text-indigo-400" aria-label="Registered through WhatsApp" />
-                            </span>
-                          )}
-                        </td>
-                        {visibleFields.map((f) => {
-                          const raw = data[f.field_key]
-                          return (
-                            <td
-                              key={f.id}
-                              onClick={() => setViewingRecord(rec)}
-                              className="px-4 py-2.5 text-slate-700 max-w-[220px] border-r border-slate-50/80 cursor-pointer"
-                              title="Click to view full details"
-                            >
-                              {f.field_type === "boolean" ? (
-                                <span className={cn(
-                                  "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-                                  raw ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500",
-                                )}>
-                                  {raw ? "Yes" : "No"}
+                      {shownFields.map((f) => headerCell(f.field_key, f.label, FIELD_TYPE_ICONS[f.field_type] ?? Type))}
+                      {showCustomer && headerCell(SYS.customer, "Customer")}
+                      {showSource && headerCell(SYS.source, "Source")}
+                      {showAdded && headerCell(SYS.added, "Added")}
+                      <th scope="col" className="sticky right-0 top-0 z-20 w-20 border-b border-slate-200 bg-slate-50 px-3">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRecords.map((rec) => {
+                      const data = rec.data as Record<string, unknown>
+                      const selected = selectedIds.has(rec.id)
+                      const solid = selected ? "bg-[color-mix(in_oklab,var(--primary)_6%,white)]" : "bg-white group-hover:bg-slate-50"
+                      return (
+                        <tr key={rec.id} className={cn("group", selected && "bg-[color-mix(in_oklab,var(--primary)_6%,white)]")}>
+                          <td className={cn("sticky left-0 z-10 w-11 border-b border-slate-100 pl-4 pr-2", cellY, solid)}>
+                            <input
+                              autoComplete="off"
+                              type="checkbox"
+                              checked={selected}
+                              onChange={() => toggleSelectOne(rec.id)}
+                              className="h-4 w-4 cursor-pointer rounded accent-[var(--primary)] align-middle"
+                              aria-label="Select this record"
+                            />
+                          </td>
+                          {shownFields.map((f) => {
+                            const text = formatValue(f, data[f.field_key])
+                            const mono = f.field_type === "phone" || f.field_type === "email" || f.field_type === "url"
+                            return (
+                              <td
+                                key={f.id}
+                                onClick={() => setViewingRecord(rec)}
+                                className={cn("max-w-[260px] cursor-pointer border-b border-slate-100 px-3 text-slate-700", cellY, selected ? "" : "group-hover:bg-slate-50")}
+                              >
+                                {f.field_type === "boolean" && text ? (
+                                  <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium", data[f.field_key] ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>
+                                    {text}
+                                  </span>
+                                ) : text ? (
+                                  <span title={text.length > 30 ? text : undefined} className={cn("block truncate", mono && "tabular-nums text-slate-600", f.field_type === "number" && "tabular-nums")}>
+                                    {text}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300">—</span>
+                                )}
+                              </td>
+                            )
+                          })}
+                          {showCustomer && (
+                            <td onClick={() => setViewingRecord(rec)} className={cn("cursor-pointer whitespace-nowrap border-b border-slate-100 px-3", cellY, selected ? "" : "group-hover:bg-slate-50")}>
+                              {rec.contact ? (
+                                <span className="flex max-w-[220px] items-center gap-2" title={rec.contact.phone}>
+                                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                                    {(rec.contact.name || rec.contact.phone).trim().charAt(0).toUpperCase()}
+                                  </span>
+                                  <span className="truncate text-slate-700">{rec.contact.name || rec.contact.phone}</span>
                                 </span>
                               ) : (
-                                <span className={cn(
-                                  "block truncate",
-                                  (f.field_type === "email" || f.field_type === "url" || f.field_type === "phone") && "font-mono text-[12px] text-slate-600",
-                                  f.field_type === "number" && "font-mono text-[12px] tabular-nums",
-                                  (raw === null || raw === undefined || raw === "") && "text-slate-300",
-                                )}>
-                                  {formatValue(f, raw)}
-                                </span>
+                                <span className="text-slate-300">—</span>
                               )}
                             </td>
-                          )
-                        })}
-                        {hasCustomers && (
-                          <td onClick={() => setViewingRecord(rec)} className="px-4 py-2.5 whitespace-nowrap cursor-pointer">
-                            {rec.contact ? (
-                              <span className="block max-w-[200px] truncate text-slate-700" title={rec.contact.phone}>
-                                {rec.contact.name || "—"}
-                                <span className="ml-1.5 font-mono text-[11.5px] text-slate-400">{rec.contact.phone}</span>
-                              </span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                        )}
-                        <td onClick={() => setViewingRecord(rec)} className="px-4 py-2.5 whitespace-nowrap cursor-pointer">
-                          {isRecordSource(rec.source) ? (
-                            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", SOURCE_STYLE[rec.source])}>
-                              {RECORD_SOURCE_LABELS[rec.source]}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300">—</span>
                           )}
-                        </td>
-                        <td
-                          onClick={() => setViewingRecord(rec)}
-                          className="px-4 py-2.5 whitespace-nowrap cursor-pointer text-[12px] tabular-nums text-slate-500"
-                          title={rec.updated_at !== rec.created_at ? `Updated ${stamp(rec.updated_at)}` : undefined}
-                        >
-                          {stamp(rec.created_at)}
-                        </td>
-                        <td className={cn(
-                          "sticky right-0 px-3 py-2.5 text-right border-l border-slate-100 transition-colors group-hover:bg-indigo-50/50",
-                          isSelected ? "bg-indigo-50" : zebra,
-                          // Boosted above every other row's sticky cell (which all sit at
-                          // z-10) only while its own menu is open — otherwise later rows
-                          // in the DOM win z-index ties and swallow clicks meant for this
-                          // row's open dropdown.
-                          isMenuOpen ? "z-40" : "z-10",
-                        )}>
-                          <div className="relative z-30 inline-flex justify-end">
-                            <button
-                              onClick={() => setMenuOpenId(isMenuOpen ? null : rec.id)}
-                              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-100 hover:text-indigo-600 transition-all"
+                          {showSource && (
+                            <td onClick={() => setViewingRecord(rec)} className={cn("cursor-pointer whitespace-nowrap border-b border-slate-100 px-3", cellY, selected ? "" : "group-hover:bg-slate-50")}>
+                              {isRecordSource(rec.source) ? (
+                                <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium", SOURCE_STYLE[rec.source])}>
+                                  {RECORD_SOURCE_LABELS[rec.source]}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300">—</span>
+                              )}
+                            </td>
+                          )}
+                          {showAdded && (
+                            <td
+                              onClick={() => setViewingRecord(rec)}
+                              title={rec.updated_at !== rec.created_at ? `Updated ${stamp(rec.updated_at)}` : undefined}
+                              className={cn("cursor-pointer whitespace-nowrap border-b border-slate-100 px-3 text-[12.5px] tabular-nums text-slate-500", cellY, selected ? "" : "group-hover:bg-slate-50")}
                             >
-                              <MoreVertical className="h-3.5 w-3.5" />
-                            </button>
+                              {stamp(rec.created_at)}
+                            </td>
+                          )}
+                          <td className={cn("sticky right-0 z-10 w-20 border-b border-slate-100 px-2 shadow-[-12px_0_12px_-12px_rgba(15,23,42,0.18)]", cellY, solid)}>
+                            <div className="flex items-center justify-end gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                              <button
+                                onClick={() => { setEditingRecord(rec); setFormOpen(true) }}
+                                aria-label="Edit record"
+                                title="Edit"
+                                className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setConfirmRecordId(rec.id)}
+                                aria-label="Delete record"
+                                title="Delete"
+                                className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-                            {isMenuOpen && (
-                              <div className="absolute right-0 top-8 w-40 rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
-                                <button
-                                  onClick={() => {
-                                    setMenuOpenId(null)
-                                    setEditingRecord(rec)
-                                    setFormOpen(true)
-                                  }}
-                                  className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
-                                >
-                                  <Edit2 className="h-3.5 w-3.5 text-slate-400" />
-                                  Edit record
-                                </button>
-                                <div className="mx-2 my-0.5 h-px bg-slate-100" />
-                                <button
-                                  onClick={() => {
-                                    setMenuOpenId(null)
-                                    setConfirmRecordId(rec.id)
-                                  }}
-                                  className="flex items-center gap-2 w-full px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination footer */}
-            <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-2.5 shrink-0">
-              <p className="text-[11px] text-slate-400">
-                {filtered.length === records.length
-                  ? `${records.length} record${records.length !== 1 ? "s" : ""}`
-                  : `${filtered.length} of ${records.length} records`}
-                {total > records.length && ` · showing the newest ${records.length} of ${total}`}
-                {pageCount > 1 && ` · Page ${currentPage} of ${pageCount}`}
-              </p>
-              {pageCount > 1 && (
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage <= 1}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    aria-label="Previous page"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="text-[11px] font-medium text-slate-600 px-1 tabular-nums">
-                    {currentPage} / {pageCount}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                    disabled={currentPage >= pageCount}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    aria-label="Next page"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+              {/* ── Footer ─────────────────────────────────────────── */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-2">
+                <p className="text-[12px] text-slate-500">
+                  <span className="tabular-nums">{firstShown}–{lastShown}</span> of <span className="tabular-nums">{sorted.length}</span>
+                  {sorted.length !== records.length && <span className="text-slate-400"> (filtered from {records.length})</span>}
+                  {total > records.length && <span className="text-slate-400"> · newest {records.length} of {total} loaded</span>}
+                </p>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-[12px] text-slate-500">
+                    Rows
+                    <select
+                      id="page-size"
+                      value={pageSize}
+                      onChange={(e) => updatePrefs({ pageSize: Number(e.target.value) })}
+                      className="h-7 rounded-md border border-slate-200 bg-white px-1.5 text-[12px] text-slate-700 outline-none focus:border-primary/50"
+                    >
+                      {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </label>
+                  {pageCount > 1 && (
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1} aria-label="Previous page"
+                        className="grid h-7 w-7 place-items-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent">
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="px-1 text-[12px] font-medium tabular-nums text-slate-600">{currentPage} / {pageCount}</span>
+                      <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount} aria-label="Next page"
+                        className="grid h-7 w-7 place-items-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent">
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
-        )}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Record form dialog */}
       {formOpen && (
         <RecordForm
           open={formOpen}
@@ -700,7 +864,6 @@ export default function DataTablePage() {
         />
       )}
 
-      {/* Record detail popup */}
       {viewingRecord && (
         <RecordDetailModal
           record={viewingRecord}
@@ -718,43 +881,28 @@ export default function DataTablePage() {
         />
       )}
 
-      {/* Fields slide-over */}
       {fieldPanelOpen && (
-        <div className="fixed inset-0 z-40 flex justify-end">
-          <div className="absolute inset-0 bg-black/25 backdrop-blur-[1px]" onClick={() => setFieldPanelOpen(false)} />
-          <div className="relative z-50 w-full max-w-[420px] bg-white flex flex-col h-full shadow-2xl">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <div>
-                <h2 className="text-[15px] font-semibold text-slate-900">Manage Fields</h2>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  {fields.length} field{fields.length !== 1 ? "s" : ""} · {table?.name}
-                </p>
-              </div>
-              <button
-                onClick={() => setFieldPanelOpen(false)}
-                className="flex items-center justify-center h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-5">
-              {table && (
-                <AiRegistrationToggle
-                  tableId={tableId}
-                  table={table}
-                  fields={fields}
-                  onChange={(patch) => setTable((t) => (t ? { ...t, ...patch } : t))}
-                />
-              )}
-              <FieldEditor
-                tableId={tableId}
-                fields={fields}
-                allTables={allTables}
-                onFieldsChange={(updated) => setFields(updated)}
-              />
-            </div>
-          </div>
-        </div>
+        <SidePanel
+          title="Fields & AI registration"
+          subtitle={`${columnFields.length} field${columnFields.length !== 1 ? "s" : ""} · ${table?.name ?? ""}`}
+          icon={<Settings2 className="h-4.5 w-4.5" />}
+          onClose={() => setFieldPanelOpen(false)}
+        >
+          {table && (
+            <AiRegistrationToggle
+              tableId={tableId}
+              table={table}
+              fields={fields}
+              onChange={(patch) => setTable((t) => (t ? { ...t, ...patch } : t))}
+            />
+          )}
+          <FieldEditor
+            tableId={tableId}
+            fields={fields}
+            allTables={allTables}
+            onFieldsChange={(updated) => setFields(updated)}
+          />
+        </SidePanel>
       )}
 
       {alertsOpen && table && (
@@ -765,7 +913,6 @@ export default function DataTablePage() {
         <PublicFormPanel tableId={tableId} tableName={table.name} fields={fields} onClose={() => setFormPanelOpen(false)} />
       )}
 
-      {/* Delete confirm */}
       <ConfirmDialog
         open={!!confirmRecordId}
         title="Delete record?"
@@ -775,7 +922,6 @@ export default function DataTablePage() {
         onCancel={() => setConfirmRecordId(null)}
       />
 
-      {/* Bulk delete confirm */}
       <ConfirmDialog
         open={confirmBulkDelete}
         title={`Delete ${selectedIds.size} record${selectedIds.size !== 1 ? "s" : ""}?`}
@@ -790,62 +936,33 @@ export default function DataTablePage() {
 
 function TableSkeleton() {
   return (
-    <div className="h-full">
-      <div className="h-10 bg-indigo-50/70 border-b-2 border-indigo-100" />
-      <div>
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className={cn("h-11 border-b border-slate-100 last:border-0", i % 2 !== 0 && "bg-slate-50/60")}>
-            <div className="flex items-center gap-4 px-4 h-full">
-              <div className="h-3 w-4 rounded bg-slate-100 animate-pulse" />
-              <div className="h-3 w-28 rounded bg-slate-100 animate-pulse" />
-              <div className="h-3 w-20 rounded bg-slate-100 animate-pulse" />
-              <div className="h-3 w-16 rounded bg-slate-100 animate-pulse" />
-            </div>
-          </div>
-        ))}
-      </div>
+    <div>
+      <div className="h-10 border-b border-slate-200 bg-slate-50" />
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex h-12 items-center gap-6 border-b border-slate-100 px-4">
+          <div className="h-3.5 w-3.5 animate-pulse rounded bg-slate-100" />
+          <div className="h-3 w-32 animate-pulse rounded bg-slate-100" />
+          <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
+          <div className="h-3 w-20 animate-pulse rounded bg-slate-100" />
+        </div>
+      ))}
     </div>
   )
 }
 
-function NoFieldsState({ onFields }: { onFields: () => void }) {
+function EmptyState({
+  icon, title, text, action, onAction,
+}: { icon: React.ReactNode; title: string; text: string; action: string; onAction: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full py-20">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 mb-4">
-        <Settings2 className="h-6 w-6 text-slate-400" />
-      </div>
-      <h3 className="text-[15px] font-semibold text-slate-700 mb-1">No fields defined</h3>
-      <p className="text-[13px] text-slate-400 text-center max-w-xs mb-5">
-        Add fields to define the structure of your table before adding records.
-      </p>
-      <button onClick={onFields}
-        className="flex items-center gap-1.5 h-8 px-4 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 transition-colors">
-        <Settings2 className="h-3.5 w-3.5" /> Add Fields
-      </button>
-    </div>
-  )
-}
-
-function NoRecordsState({ onAdd }: { onAdd: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center h-full py-20">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 mb-4">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-          <rect x="3" y="6" width="22" height="16" rx="2" stroke="#4F46E5" strokeWidth="1.5" fill="none" />
-          <line x1="3" y1="11" x2="25" y2="11" stroke="#4F46E5" strokeWidth="1.5" />
-          <line x1="10" y1="6" x2="10" y2="22" stroke="#4F46E5" strokeWidth="1.5" />
-          <circle cx="21" cy="21" r="4.5" fill="#4F46E5" />
-          <line x1="21" y1="19.2" x2="21" y2="22.8" stroke="white" strokeWidth="1.3" strokeLinecap="round" />
-          <line x1="19.2" y1="21" x2="22.8" y2="21" stroke="white" strokeWidth="1.3" strokeLinecap="round" />
-        </svg>
-      </div>
-      <h3 className="text-[15px] font-semibold text-slate-700 mb-1">No records yet</h3>
-      <p className="text-[13px] text-slate-400 text-center max-w-xs mb-5">
-        Add your first record manually, or import from an Excel file using the Import button above.
-      </p>
-      <button onClick={onAdd}
-        className="flex items-center gap-1.5 h-8 px-4 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 transition-colors">
-        <Plus className="h-3.5 w-3.5" /> Add Record
+    <div className="flex flex-1 flex-col items-center justify-center px-6 py-20 text-center">
+      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">{icon}</span>
+      <h3 className="mt-4 text-[15px] font-semibold text-slate-800">{title}</h3>
+      <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-slate-500">{text}</p>
+      <button
+        onClick={onAction}
+        className="mt-5 flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground transition hover:bg-primary/90"
+      >
+        {action}
       </button>
     </div>
   )

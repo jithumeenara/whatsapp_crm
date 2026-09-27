@@ -158,8 +158,9 @@ function KpiCard({
       {/* The last seven days, drawn small. No axis: it answers "rising
           or falling", and the number beside it answers "how many". */}
       <div className="pointer-events-none absolute bottom-3 right-3 h-12 w-28" aria-hidden="true">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+        {/* A fixed size, like its box. Measured instead, it drew once at
+            -1×-1 before the box existed and warned in the console. */}
+        <AreaChart width={112} height={48} data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
             <defs>
               <linearGradient id={`spark-${id}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={t.stroke} stopOpacity={0.25} />
@@ -168,7 +169,6 @@ function KpiCard({
             </defs>
             <Area type="monotone" dataKey="v" stroke={t.stroke} strokeWidth={2} fill={`url(#spark-${id})`} dot={false} isAnimationActive={false} />
           </AreaChart>
-        </ResponsiveContainer>
       </div>
     </div>
   )
@@ -496,7 +496,7 @@ export default function Dashboard() {
             ) : trend.every((p) => p.Incoming === 0 && p.Outgoing === 0) ? (
               <div className="flex h-[260px] items-center justify-center text-[13px] text-slate-400">No messages in this period</div>
             ) : (
-              <ResponsiveContainer width="100%" height={260}>
+              <ResponsiveContainer width="100%" height={260} initialDimension={{ width: 1, height: 260 }}>
                 <AreaChart data={trend} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
                   <defs>
                     <linearGradient id="trend-in" x1="0" y1="0" x2="0" y2="1">
@@ -563,7 +563,7 @@ export default function Dashboard() {
               {loading && !data ? (
                 <Skeleton className="h-[190px]" />
               ) : (
-                <ResponsiveContainer width="100%" height={190}>
+                <ResponsiveContainer width="100%" height={190} initialDimension={{ width: 1, height: 190 }}>
                   <BarChart data={rtData} margin={{ top: 6, right: 0, left: -22, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
                     <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />

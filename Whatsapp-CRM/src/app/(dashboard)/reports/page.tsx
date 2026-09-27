@@ -145,7 +145,7 @@ export default function ReportsV2() {
           ) : leadChartData.length === 0 ? (
             <div className="flex h-[200px] items-center justify-center text-[13px] text-slate-400">No lead data</div>
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={200} initialDimension={{ width: 1, height: 200 }}>
               <BarChart data={leadChartData} margin={{ top: 4, right: 0, left: -28, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="name" tick={{ fontSize: 10, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
@@ -172,7 +172,7 @@ export default function ReportsV2() {
           ) : fuPieData.length === 0 ? (
             <div className="flex h-[200px] items-center justify-center text-[13px] text-slate-400">No follow-up data</div>
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={200} initialDimension={{ width: 1, height: 200 }}>
               <PieChart>
                 <Pie data={fuPieData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} dataKey="value" paddingAngle={3}>
                   {fuPieData.map((_, idx) => (

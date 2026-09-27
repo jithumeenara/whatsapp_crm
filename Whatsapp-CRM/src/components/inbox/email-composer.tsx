@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  Bold, CalendarClock, CornerUpLeft, Forward, Italic, Languages, Link2, List, ListOrdered, Loader2, Mail, Paperclip,
-  PenSquare, ReplyAll, Send, ShoppingBag, Sparkles, Underline, X,
+  Bold, CalendarClock, CornerUpLeft, FolderOpen, Forward, Italic, Languages, Link2, List, ListOrdered, Loader2, Mail,
+  Maximize2, Minimize2, Paperclip, PenSquare, ReplyAll, Send, ShoppingBag, Sparkles, Underline, Unlink, Upload, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmojiPickerPopover } from "./emoji-picker-popover";
 import { FileManagerPicker } from "./file-manager-picker";
+import { NO_FORMAT, RichEmailEditor, type FormatState, type RichEmailEditorHandle } from "./rich-email-editor";
 
 export type EmailComposeMode = "reply" | "reply_all" | "new" | "forward";
 
@@ -43,6 +44,11 @@ const MAX_SUBJECT = 250;
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 3 * 1024 * 1024 - 1;
 const TRANSLATE_TARGETS = ["Malayalam", "English", "Tamil", "Hindi", "Kannada", "Telugu", "Arabic"];
+/** What the device picker offers — the same types the server accepts. */
+const ATTACH_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.gif,.mp4,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*";
+/** One tool in the bottom row: an icon, and its name where there is room. */
+const TOOL_TILE =
+  "flex h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-lg px-1 text-[12.5px] font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40";
 
 function stripRe(subject: string): string {
   let s = subject.trim();
@@ -77,21 +83,44 @@ function loadDraft(conversationId: string): SavedDraft | null {
 }
 
 function ToolButton({
-  label, onClick, children, active, disabled,
-}: { label: string; onClick: () => void; children: React.ReactNode; active?: boolean; disabled?: boolean }) {
+  label, onClick, children, active, disabled, pressed,
+}: { label: string; onClick: () => void; children: React.ReactNode; active?: boolean; disabled?: boolean; pressed?: boolean }) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
+      aria-pressed={pressed}
+      // Keeps the text selection in the editor while a button is clicked.
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       disabled={disabled}
       className={cn(
         "grid h-8 w-8 shrink-0 place-items-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 disabled:opacity-40",
         active && "bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200",
+        pressed && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary",
       )}
     >
       {children}
+    </button>
+  );
+}
+
+function ToolTile({
+  label, title, onClick, children, active, disabled,
+}: { label: string; title: string; onClick: () => void; children: React.ReactNode; active?: boolean; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(TOOL_TILE, active && "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary")}
+    >
+      {children}
+      <span className="hidden truncate lg:inline">{label}</span>
     </button>
   );
 }
@@ -102,7 +131,8 @@ function ToolButton({
  * separate one with a subject of its own — the choices HubSpot, Front
  * and respond.io all put side by side.
  *
- * Formatting is the light markup in lib/email/markup.ts, which is the
+ * The body is a real formatted editor (rich-email-editor.tsx). What it
+ * hands over is the light markup in lib/email/markup.ts, which is the
  * only thing that ever becomes tags: nothing typed or pasted here can
  * turn into markup in someone's mail client.
  */
@@ -130,20 +160,27 @@ export function EmailComposer({
   const [signature, setSignature] = useState(true);
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [menu, setMenu] = useState<null | "translate" | "catalog" | "schedule">(null);
+  const [menu, setMenu] = useState<null | "translate" | "catalog" | "schedule" | "attach">(null);
+  const [expanded, setExpanded] = useState(false);
+  const [uploading, setUploading] = useState<string[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [drafting, setDrafting] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [scheduleAt, setScheduleAt] = useState("");
   const [products, setProducts] = useState<Array<{ id: string; name: string; price: number | null; currency: string | null }>>([]);
   const [productQuery, setProductQuery] = useState("");
-  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<RichEmailEditorHandle>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [format, setFormat] = useState<FormatState>(NO_FORMAT);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkUrl, setLinkUrl] = useState("");
 
   // What the reply box is doing: an action picked on an email wins.
   const activeMode: EmailComposeMode = target ? target.action : mode;
 
   useEffect(() => {
-    if (target) bodyRef.current?.focus();
+    if (target) editorRef.current?.focus();
   }, [target]);
 
   // Keep the unsent draft, per conversation, in this browser.
@@ -158,14 +195,31 @@ export function EmailComposer({
     return () => clearTimeout(t);
   }, [conversationId, mode, newSubject, text, cc, bcc, showCc]);
 
+  // Escape leaves the large view (the draft stays as it is).
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !menu) setExpanded(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, menu]);
+
   // Click-away for the small menus.
   useEffect(() => {
     if (!menu) return;
     const onDown = (e: MouseEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) setMenu(null);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [menu]);
 
   // Products for the catalog menu, as the person types.
@@ -188,73 +242,73 @@ export function EmailComposer({
 
   const canSend =
     !sending &&
+    uploading.length === 0 &&
     text.trim().length > 0 &&
     !!contactEmail &&
     (activeMode !== "new" || newSubject.trim().length > 0) &&
     (activeMode !== "forward" || forwardTo.trim().length > 0);
 
   // ── Editing helpers ─────────────────────────────────────────────────
-  function replaceRange(start: number, end: number, insert: string, selectFrom: number, selectTo: number) {
-    const next = text.slice(0, start) + insert + text.slice(end);
-    setText(next);
-    requestAnimationFrame(() => {
-      const el = bodyRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(selectFrom, selectTo);
-    });
-  }
-
-  function wrap(marker: string) {
-    const el = bodyRef.current;
-    if (!el) return;
-    const { selectionStart: s, selectionEnd: e } = el;
-    const selected = text.slice(s, e);
-    replaceRange(s, e, `${marker}${selected}${marker}`, s + marker.length, e + marker.length);
-  }
-
-  /** Turns the selection into [words](https://…) with the cursor where
-   *  the address goes; a selected address is linked as it stands. */
-  function linkify() {
-    const el = bodyRef.current;
-    if (!el) return;
-    const { selectionStart: s, selectionEnd: e } = el;
-    const selected = text.slice(s, e).trim();
-    if (/^https?:\/\/\S+$/i.test(selected)) {
-      el.focus();
-      return;
-    }
-    const words = selected || "link text";
-    const snippet = `[${words}](https://)`;
-    const cursor = s + words.length + 3 + "https://".length;
-    // With nothing selected, "link text" is selected so typing replaces it.
-    if (selected) replaceRange(s, e, snippet, cursor, cursor);
-    else replaceRange(s, e, snippet, s + 1, s + 1 + words.length);
-  }
-
-  function listify(kind: "bullet" | "number") {
-    const el = bodyRef.current;
-    if (!el) return;
-    const s = text.lastIndexOf("\n", el.selectionStart - 1) + 1;
-    const endNl = text.indexOf("\n", el.selectionEnd);
-    const e = endNl === -1 ? text.length : endNl;
-    const lines = text.slice(s, e).split("\n");
-    const isBullet = (l: string) => /^\s*[-•]\s+/.test(l);
-    const isNumber = (l: string) => /^\s*\d{1,3}[.)]\s+/.test(l);
-    const already = lines.every(kind === "bullet" ? isBullet : isNumber);
-    const out = lines.map((l, i) => {
-      const bare = l.replace(/^\s*(?:[-•]|\d{1,3}[.)])\s+/, "");
-      if (already) return bare;
-      return kind === "bullet" ? `- ${bare}` : `${i + 1}. ${bare}`;
-    }).join("\n");
-    replaceRange(s, e, out, s, s + out.length);
+  /** Replaces the whole body, in the editor and in the draft. */
+  function setBody(markup: string) {
+    setText(markup);
+    editorRef.current?.setMarkup(markup);
   }
 
   function insertAtCursor(snippet: string) {
-    const el = bodyRef.current;
-    const s = el?.selectionStart ?? text.length;
-    const e = el?.selectionEnd ?? text.length;
-    replaceRange(s, e, snippet, s + snippet.length, s + snippet.length);
+    editorRef.current?.insertText(snippet);
+  }
+
+  function openLink() {
+    editorRef.current?.saveSelection();
+    setLinkUrl(format.link ?? "");
+    setLinkOpen(true);
+  }
+
+  function applyLink() {
+    if (!linkUrl.trim()) return;
+    if (!editorRef.current?.applyLink(linkUrl)) {
+      toast.error("Enter a web address, like https://example.com");
+      return;
+    }
+    setLinkOpen(false);
+    setLinkUrl("");
+  }
+
+  /** Files from this PC or phone — the picker, a drop or a paste. Each
+   *  is checked by the server (type, real content, 3 MB) before it is
+   *  kept, and lands in the File Manager too. */
+  async function uploadFiles(list: File[]) {
+    setDragging(false);
+    const room = MAX_FILES - files.length - uploading.length;
+    if (room <= 0) {
+      toast.error(`An email can carry ${MAX_FILES} files`);
+      return;
+    }
+    if (list.length > room) toast.error(`Only ${room} more file${room === 1 ? "" : "s"} fit in this email`);
+    for (const file of list.slice(0, room)) {
+      if (file.size > MAX_FILE_BYTES) {
+        toast.error(`${file.name} is over 3 MB — email attachments can be 3 MB each`);
+        continue;
+      }
+      setUploading((u) => [...u, file.name]);
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/email/attachments", { method: "POST", body: form });
+        const data = (await res.json().catch(() => ({}))) as { file?: EmailDraftFile; error?: string };
+        if (!res.ok || !data.file) throw new Error(data.error || "Could not attach that file");
+        const added = data.file;
+        setFiles((l) => (l.some((x) => x.id === added.id) || l.length >= MAX_FILES ? l : [...l, added]));
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not attach that file");
+      } finally {
+        setUploading((u) => {
+          const i = u.indexOf(file.name);
+          return i === -1 ? u : [...u.slice(0, i), ...u.slice(i + 1)];
+        });
+      }
+    }
   }
 
   // ── Tools ───────────────────────────────────────────────────────────
@@ -269,8 +323,8 @@ export function EmailComposer({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not draft a reply");
-      setText(String(data.draft ?? ""));
-      bodyRef.current?.focus();
+      setBody(String(data.draft ?? ""));
+      editorRef.current?.focus();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not draft a reply");
     } finally {
@@ -290,7 +344,7 @@ export function EmailComposer({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Translation failed");
-      setText(String(data.translated_text ?? text));
+      setBody(String(data.translated_text ?? text));
       toast.success(`Translated to ${language}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Translation failed");
@@ -314,7 +368,7 @@ export function EmailComposer({
   }
 
   function reset() {
-    setText("");
+    setBody("");
     setCc("");
     setBcc("");
     setForwardTo("");
@@ -377,8 +431,43 @@ export function EmailComposer({
   })();
 
   return (
-    <div className="shrink-0 border-t border-slate-200 bg-white px-3 py-3 sm:px-4">
-      <div className="mx-auto max-w-3xl overflow-visible rounded-xl border border-slate-200 shadow-sm focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15">
+    <div
+      className={cn(
+        expanded
+          ? "fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-2 backdrop-blur-[2px] sm:p-6"
+          : "shrink-0 border-t border-slate-200 bg-white px-3 py-3 sm:px-4",
+      )}
+      onMouseDown={(e) => {
+        if (expanded && e.target === e.currentTarget) setExpanded(false);
+      }}
+      onDragOver={(e) => {
+        if (Array.from(e.dataTransfer.types).includes("Files")) {
+          e.preventDefault();
+          if (!dragging) setDragging(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (e.dataTransfer.files.length) {
+          e.preventDefault();
+          void uploadFiles(Array.from(e.dataTransfer.files));
+        }
+      }}
+    >
+      <div
+        className={cn(
+          "relative mx-auto w-full overflow-visible rounded-xl border border-slate-200 bg-white shadow-sm focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/15",
+          expanded ? "flex h-full max-h-[920px] max-w-5xl flex-col shadow-2xl" : "max-w-3xl",
+          dragging && "border-primary ring-2 ring-primary/30",
+        )}
+      >
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-xl bg-primary/10 text-[14px] font-semibold text-primary backdrop-blur-[1px]">
+            <Paperclip className="mr-2 h-4 w-4" /> Drop files to attach
+          </div>
+        )}
         {/* Reply / New email, and who it goes to */}
         <div className="flex flex-wrap items-center gap-2 rounded-t-xl border-b border-slate-100 bg-slate-50/70 px-3 py-2">
           <div className="flex rounded-lg bg-slate-200/60 p-0.5" role="group" aria-label="Email type">
@@ -424,6 +513,19 @@ export function EmailComposer({
               Cc/Bcc
             </button>
           </span>
+          <button
+            type="button"
+            onClick={() => {
+              setExpanded((v) => !v);
+              requestAnimationFrame(() => editorRef.current?.focus());
+            }}
+            title={expanded ? "Back to the small box (Esc)" : "Write in a large window"}
+            aria-label={expanded ? "Exit large view" : "Expand editor"}
+            aria-pressed={expanded}
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-slate-800"
+          >
+            {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+          </button>
         </div>
 
         {activeMode === "forward" && (
@@ -485,39 +587,81 @@ export function EmailComposer({
 
         {/* Formatting */}
         <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-100 px-2 py-1">
-          <ToolButton label="Bold (Ctrl+B)" onClick={() => wrap("**")}><Bold className="h-4 w-4" /></ToolButton>
-          <ToolButton label="Italic (Ctrl+I)" onClick={() => wrap("*")}><Italic className="h-4 w-4" /></ToolButton>
-          <ToolButton label="Underline (Ctrl+U)" onClick={() => wrap("__")}><Underline className="h-4 w-4" /></ToolButton>
-          <ToolButton label="Link (Ctrl+K) — or just paste a web address" onClick={linkify}><Link2 className="h-4 w-4" /></ToolButton>
+          <ToolButton label="Bold (Ctrl+B)" pressed={format.bold} onClick={() => editorRef.current?.command("bold")}><Bold className="h-4 w-4" /></ToolButton>
+          <ToolButton label="Italic (Ctrl+I)" pressed={format.italic} onClick={() => editorRef.current?.command("italic")}><Italic className="h-4 w-4" /></ToolButton>
+          <ToolButton label="Underline (Ctrl+U)" pressed={format.underline} onClick={() => editorRef.current?.command("underline")}><Underline className="h-4 w-4" /></ToolButton>
+          <ToolButton label="Link (Ctrl+K)" pressed={!!format.link || linkOpen} onClick={openLink}><Link2 className="h-4 w-4" /></ToolButton>
           <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden="true" />
-          <ToolButton label="Bulleted list" onClick={() => listify("bullet")}><List className="h-4 w-4" /></ToolButton>
-          <ToolButton label="Numbered list" onClick={() => listify("number")}><ListOrdered className="h-4 w-4" /></ToolButton>
+          <ToolButton label="Bulleted list — or type “- ”" pressed={format.ul} onClick={() => editorRef.current?.command("ul")}><List className="h-4 w-4" /></ToolButton>
+          <ToolButton label="Numbered list — or type “1. ”" pressed={format.ol} onClick={() => editorRef.current?.command("ol")}><ListOrdered className="h-4 w-4" /></ToolButton>
         </div>
 
+        {linkOpen && (
+          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-1.5">
+            <Link2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+            <input
+              id="email-link-url"
+              value={linkUrl}
+              onChange={(e) => setLinkUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); applyLink(); }
+                if (e.key === "Escape") { e.preventDefault(); setLinkOpen(false); editorRef.current?.focus(); }
+              }}
+              placeholder="Paste or type a web address — select words first to link them"
+              autoFocus
+              autoComplete="off"
+              aria-label="Link address"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-800 outline-none placeholder:text-slate-400"
+            />
+            <button type="button" onClick={applyLink} disabled={!linkUrl.trim()}
+              className="rounded-md bg-primary px-2.5 py-1 text-[12px] font-semibold text-primary-foreground disabled:opacity-40">
+              {format.link ? "Update" : "Add link"}
+            </button>
+            {format.link && (
+              <button type="button" onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { editorRef.current?.removeLink(); setLinkOpen(false); }}
+                title="Remove link" aria-label="Remove link"
+                className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-rose-600">
+                <Unlink className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button type="button" onClick={() => { setLinkOpen(false); editorRef.current?.focus(); }} aria-label="Close"
+              className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Body */}
-        <label htmlFor="email-body" className="sr-only">Email</label>
-        <textarea
-          id="email-body"
-          ref={bodyRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            const mod = e.ctrlKey || e.metaKey;
-            if (mod && e.key === "Enter") { e.preventDefault(); void send(); }
-            else if (mod && e.key.toLowerCase() === "b") { e.preventDefault(); wrap("**"); }
-            else if (mod && e.key.toLowerCase() === "i") { e.preventDefault(); wrap("*"); }
-            else if (mod && e.key.toLowerCase() === "u") { e.preventDefault(); wrap("__"); }
-            else if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); linkify(); }
-          }}
-          rows={5}
-          maxLength={50_000}
-          placeholder={activeMode === "new" ? "Write your email…" : activeMode === "forward" ? "Add a note (optional)…" : "Write your reply…"}
-          className="block max-h-80 min-h-[120px] w-full resize-y px-3 py-2.5 text-[14px] leading-relaxed text-slate-800 outline-none placeholder:text-slate-400"
-        />
+        <div className={cn("relative", expanded && "min-h-0 flex-1")}>
+          {!text.trim() && (
+            <span aria-hidden="true" className="pointer-events-none absolute left-3 top-2.5 text-[14px] text-slate-400">
+              {activeMode === "new" ? "Write your email…" : activeMode === "forward" ? "Add a note (optional)…" : "Write your reply…"}
+            </span>
+          )}
+          <RichEmailEditor
+            ref={editorRef}
+            id="email-body"
+            initialMarkup={saved?.text ?? ""}
+            placeholder={activeMode === "new" ? "Write your email" : "Write your reply"}
+            onChange={setText}
+            onFormatChange={setFormat}
+            onSubmit={() => void send()}
+            onLinkShortcut={openLink}
+            onFiles={(list) => void uploadFiles(list)}
+            className={expanded ? "h-full max-h-none text-[15px]" : undefined}
+          />
+        </div>
 
         {/* Files */}
-        {files.length > 0 && (
+        {(files.length > 0 || uploading.length > 0) && (
           <div className="flex flex-wrap gap-2 px-3 pb-2">
+            {uploading.map((name, i) => (
+              <span key={`${name}-${i}`} className="inline-flex max-w-[240px] items-center gap-1.5 rounded-lg border border-dashed border-primary/40 bg-primary/5 px-2 py-1 text-[12px] text-slate-600">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                <span className="truncate">{name}</span>
+              </span>
+            ))}
             {files.map((f) => (
               <span key={f.id} className="inline-flex max-w-[240px] items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[12px] text-slate-700">
                 <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -530,39 +674,81 @@ export function EmailComposer({
         )}
 
         {/* Tools and send */}
-        <div ref={menuRef} className="relative flex flex-wrap items-center gap-0.5 rounded-b-xl border-t border-slate-100 px-2 py-1.5">
-          <EmojiPickerPopover onSelect={insertAtCursor} />
-          <ToolButton label="Attach a file (max 3 MB each)" onClick={() => setPickerOpen(true)} disabled={files.length >= MAX_FILES}>
-            <Paperclip className="h-4 w-4" />
-          </ToolButton>
-          <ToolButton label="Insert a product" onClick={() => setMenu(menu === "catalog" ? null : "catalog")} active={menu === "catalog"}>
-            <ShoppingBag className="h-4 w-4" />
-          </ToolButton>
-          <ToolButton label="Schedule" onClick={() => setMenu(menu === "schedule" ? null : "schedule")} active={menu === "schedule"}>
-            <CalendarClock className="h-4 w-4" />
-          </ToolButton>
-          <ToolButton label="Draft a reply with AI" onClick={() => void draftWithAi()} active disabled={drafting}>
-            {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          </ToolButton>
-          <ToolButton label="Translate" onClick={() => setMenu(menu === "translate" ? null : "translate")} disabled={!text.trim() || translating}>
-            {translating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Languages className="h-4 w-4" />}
-          </ToolButton>
+        <div ref={menuRef} className="relative flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded-b-xl border-t border-slate-100 px-2 py-1.5">
+          <div className="grid min-w-0 flex-1 basis-full grid-cols-6 gap-1 sm:basis-0">
+            <EmojiPickerPopover onSelect={insertAtCursor} label="Emoji" buttonClassName={TOOL_TILE} />
+            <ToolTile label="Attach" title="Attach files — from this device or the File Manager (3 MB each)"
+              onClick={() => setMenu(menu === "attach" ? null : "attach")} active={menu === "attach"}
+              disabled={files.length + uploading.length >= MAX_FILES}>
+              <Paperclip className="h-4 w-4 shrink-0" />
+            </ToolTile>
+            <ToolTile label="Product" title="Insert a product" onClick={() => setMenu(menu === "catalog" ? null : "catalog")} active={menu === "catalog"}>
+              <ShoppingBag className="h-4 w-4 shrink-0" />
+            </ToolTile>
+            <ToolTile label="Schedule" title="Send later" onClick={() => setMenu(menu === "schedule" ? null : "schedule")} active={menu === "schedule"}>
+              <CalendarClock className="h-4 w-4 shrink-0" />
+            </ToolTile>
+            <ToolTile label="AI draft" title="Draft a reply with AI" onClick={() => void draftWithAi()} disabled={drafting}>
+              {drafting ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Sparkles className="h-4 w-4 shrink-0 text-violet-500" />}
+            </ToolTile>
+            <ToolTile label="Translate" title="Translate what you wrote" onClick={() => setMenu(menu === "translate" ? null : "translate")}
+              active={menu === "translate"} disabled={!text.trim() || translating}>
+              {translating ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Languages className="h-4 w-4 shrink-0" />}
+            </ToolTile>
+          </div>
 
-          <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-[12px] text-slate-500">
-            <input type="checkbox" checked={signature} onChange={(e) => setSignature(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--primary)]" />
-            Signature
-          </label>
+          <div className="ml-auto flex shrink-0 items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-1.5 text-[12px] text-slate-500">
+              <input type="checkbox" checked={signature} onChange={(e) => setSignature(e.target.checked)} className="h-3.5 w-3.5 accent-[var(--primary)]" />
+              Signature
+            </label>
+            <button
+              type="button"
+              onClick={() => void send()}
+              disabled={!canSend}
+              title="Send (Ctrl + Enter)"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {activeMode === "new" ? "Send email" : activeMode === "forward" ? "Forward" : "Send reply"}
+            </button>
+          </div>
 
-          <span className="ml-auto hidden text-[11px] text-slate-400 lg:inline">Ctrl + Enter to send</span>
-          <button
-            type="button"
-            onClick={() => void send()}
-            disabled={!canSend}
-            className="ml-2 inline-flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {activeMode === "new" ? "Send email" : activeMode === "forward" ? "Forward" : "Send reply"}
-          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={ATTACH_ACCEPT}
+            className="hidden"
+            aria-hidden="true"
+            tabIndex={-1}
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              if (picked.length) void uploadFiles(picked);
+            }}
+          />
+
+          {menu === "attach" && (
+            <div className="absolute bottom-full left-2 z-20 mb-1 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+              <button type="button" onClick={() => { setMenu(null); fileInputRef.current?.click(); }}
+                className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-slate-50">
+                <Upload className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                <span>
+                  <span className="block text-[13px] font-medium text-slate-800">Upload from this device</span>
+                  <span className="block text-[11.5px] text-slate-500">PC or phone · 3 MB each · or drop files on the box</span>
+                </span>
+              </button>
+              <button type="button" onClick={() => { setMenu(null); setPickerOpen(true); }}
+                className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-slate-50">
+                <FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                <span>
+                  <span className="block text-[13px] font-medium text-slate-800">Choose from File Manager</span>
+                  <span className="block text-[11.5px] text-slate-500">Files already uploaded to the CRM</span>
+                </span>
+              </button>
+            </div>
+          )}
 
           {/* Menus open upward, above the tool row */}
           {menu === "translate" && (
@@ -585,7 +771,7 @@ export function EmailComposer({
                   <button key={p.id} type="button"
                     onClick={() => {
                       const price = p.price != null ? ` — ${p.currency === "INR" || !p.currency ? "₹" : `${p.currency} `}${p.price}` : "";
-                      insertAtCursor(`${text && !text.endsWith("\n") ? "\n" : ""}- **${p.name}**${price}\n`);
+                      editorRef.current?.insertMarkup(`- **${p.name}**${price}`);
                       setMenu(null);
                     }}
                     className="block w-full truncate rounded-md px-2 py-1.5 text-left text-[13px] text-slate-700 hover:bg-slate-50">

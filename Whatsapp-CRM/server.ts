@@ -12,6 +12,7 @@ import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { ensureDataStoreColumns } from "./src/lib/data-store/schema";
+import { ensureEmailColumns } from "./src/lib/email/schema";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 import { isClientGone } from "./src/lib/net/client-gone";
@@ -210,11 +211,16 @@ app.prepare().then(() => {
   setTimeout(microsoftUpkeep, 60_000);
   setInterval(microsoftUpkeep, 60 * 60_000);
 
-  // Every Data Store query names the columns migration 113 adds; make
-  // sure they exist before the first request needs them, on a server
-  // whose database has not had the migration run.
+  // Every Data Store query names the columns migration 113 adds, and
+  // every message and scheduled-message query the ones 112 adds (the
+  // scheduled-message sweep above fails each minute without them). Make
+  // sure they exist on a server whose database has not had the
+  // migrations run — nullable additions, applied once.
   ensureDataStoreColumns().catch((err) => {
     console.error("[data-store] could not add the tracking columns:", err);
+  });
+  ensureEmailColumns().catch((err) => {
+    console.error("[email] could not add the email columns:", err);
   });
 });
 
