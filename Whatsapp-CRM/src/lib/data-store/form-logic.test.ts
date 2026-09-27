@@ -7,6 +7,8 @@ import {
   fillValue,
   columnsNeeded,
   pipeAnswers,
+  sameName,
+  suggestRules,
   type FormLookups,
 } from './form-logic'
 
@@ -92,6 +94,63 @@ describe('form rules', () => {
     expect(pipeAnswers('Thanks {{name}}, see you on {{ from_date }}. {{missing}}', { name: 'Anu', from_date: '12 Oct' })).toBe(
       'Thanks Anu, see you on 12 Oct. ',
     )
+  })
+})
+
+describe('linking fields automatically', () => {
+  // The Training Registration table and its Training source, as named.
+  const questions = [
+    { key: 'month', label: 'month' },
+    { key: 'training_programe', label: 'Training Programe' },
+    { key: 'target_group', label: 'Target Group' },
+    { key: 'from_date', label: 'From Date' },
+    { key: 'to_date', label: 'To Date' },
+    { key: 'name_of_participant', label: 'Name of Participant' },
+  ]
+  const sources = [
+    {
+      field_key: 'training_programe',
+      table_name: 'Training',
+      option_column: 'name_of_programme',
+      columns: [
+        { key: 'name_of_programme', label: 'Name of programme' },
+        { key: 'target_group', label: 'Target group' },
+        { key: 'month', label: 'Month' },
+        { key: 'date_from', label: 'Date from' },
+        { key: 'date_to', label: 'Date To' },
+        { key: 'fee', label: 'Fee' },
+      ],
+    },
+  ]
+
+  it('matches names in any order and case', () => {
+    expect(sameName('From Date', 'Date from')).toBe(true)
+    expect(sameName('Target Group', 'target_group')).toBe(true)
+    expect(sameName('month', 'Month')).toBe(true)
+    expect(sameName('To Date', 'Date To')).toBe(true)
+    expect(sameName('From Date', 'Date To')).toBe(false)
+    expect(sameName('', '')).toBe(false)
+  })
+
+  it('links month → programme → group and dates, locked', () => {
+    const { rules, added } = suggestRules(questions, sources, {})
+    expect(rules.training_programe.filter).toEqual({ depends_on: 'month', match_column: 'month' })
+    expect(rules.target_group.fill).toEqual({ from_field: 'training_programe', column: 'target_group', locked: true })
+    expect(rules.from_date.fill).toEqual({ from_field: 'training_programe', column: 'date_from', locked: true })
+    expect(rules.to_date.fill).toEqual({ from_field: 'training_programe', column: 'date_to', locked: true })
+    expect(rules.name_of_participant).toBeUndefined()
+    expect(added).toHaveLength(4)
+  })
+
+  it('keeps what was already set', () => {
+    const existing = parseRules({ from_date: { fill: { from_field: 'training_programe', column: 'fee', locked: false } } }, questions.map((q) => q.key))
+    const { rules } = suggestRules(questions, sources, existing)
+    expect(rules.from_date.fill).toEqual({ from_field: 'training_programe', column: 'fee', locked: false })
+  })
+
+  it('never links a question to one after it', () => {
+    const reversed = [questions[1], questions[0], ...questions.slice(2)]
+    expect(suggestRules(reversed, sources, {}).rules.training_programe?.filter ?? null).toBeNull()
   })
 })
 

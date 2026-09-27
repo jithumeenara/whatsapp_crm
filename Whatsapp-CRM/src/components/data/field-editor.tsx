@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Plus, Trash2, GripVertical, ChevronDown, ChevronUp,
+  Plus, Trash2,
   Loader2, Check, X, Settings2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,8 @@ import {
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+import { SortableList, DragHandle } from './sortable-list';
 import type {
   DataField, DataTable, FieldType, SelectOption, FieldValidation,
 } from '@/lib/data-store/types';
@@ -214,24 +216,23 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
     }
   };
 
-  const moveField = async (fieldId: string, direction: 'up' | 'down') => {
-    const idx = fields.findIndex((f) => f.id === fieldId);
-    if (idx < 0) return;
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= fields.length) return;
-    const newFields = [...fields];
-    [newFields[idx], newFields[swapIdx]] = [newFields[swapIdx], newFields[idx]];
-    onFieldsChange(newFields);
-    await Promise.all([
-      fetch(`/api/data-tables/${tableId}/fields/${newFields[idx].id}`, {
+  /** Saves the whole order at once. Shown straight away; put back if
+   *  the server refuses it. */
+  const reorder = async (ids: string[]) => {
+    const before = fields;
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    const next = ids.map((id) => byId.get(id)).filter((f): f is DataField => !!f).map((f, i) => ({ ...f, sort_order: i }));
+    onFieldsChange(next);
+    try {
+      const res = await fetch(`/api/data-tables/${tableId}/fields`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sort_order: idx }),
-      }),
-      fetch(`/api/data-tables/${tableId}/fields/${newFields[swapIdx].id}`, {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sort_order: swapIdx }),
-      }),
-    ]);
+        body: JSON.stringify({ order: ids }),
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      onFieldsChange(before);
+      toast.error('Could not save the new order');
+    }
   };
 
   const addOption = () =>
@@ -269,16 +270,23 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
         </div>
       )}
 
-      <div className="space-y-2">
-        {fields.map((field, idx) => {
+      <SortableList
+        className="space-y-2"
+        items={fields}
+        getKey={(f) => f.id}
+        getLabel={(f) => f.label}
+        onReorder={(ids) => void reorder(ids)}
+        renderItem={(field, handle) => {
           const cfg = getFieldConfig(field.options);
+          const sourced = !!(cfg.source_table_id && cfg.source_field_key);
           return (
-            <div key={field.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-              <GripVertical className="size-3.5 text-slate-500/40 shrink-0" />
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2.5">
+              <DragHandle {...handle} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{field.label}</p>
-                <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
                   <span>{FIELD_TYPES.find((t) => t.value === field.field_type)?.label ?? field.field_type}</span>
+                  {sourced && <span className="text-primary">options from a table</span>}
                   {field.required && <span className="text-destructive">required</span>}
                   {cfg.field_width && cfg.field_width !== 'full' && (
                     <span className="text-primary/70">{cfg.field_width} width</span>
@@ -286,19 +294,11 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <button type="button" onClick={() => moveField(field.id, 'up')} disabled={idx === 0}
-                  className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 transition-colors">
-                  <ChevronUp className="size-3.5" />
-                </button>
-                <button type="button" onClick={() => moveField(field.id, 'down')} disabled={idx === fields.length - 1}
-                  className="p-1 text-slate-500 hover:text-slate-800 disabled:opacity-30 transition-colors">
-                  <ChevronDown className="size-3.5" />
-                </button>
-                <button type="button" onClick={() => openEdit(field)}
+                <button type="button" onClick={() => openEdit(field)} aria-label={`Edit ${field.label}`}
                   className="p-1 text-slate-500 hover:text-primary transition-colors">
                   <Settings2 className="size-3.5" />
                 </button>
-                <button type="button" onClick={() => deleteField(field.id)} disabled={deleting === field.id}
+                <button type="button" onClick={() => deleteField(field.id)} disabled={deleting === field.id} aria-label={`Delete ${field.label}`}
                   className="p-1 text-slate-500 hover:text-destructive transition-colors">
                   {deleting === field.id
                     ? <Loader2 className="size-3.5 animate-spin" />
@@ -307,8 +307,11 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
               </div>
             </div>
           );
-        })}
-      </div>
+        }}
+      />
+      {fields.length > 1 && (
+        <p className="text-[11.5px] text-slate-400">Drag ⋮⋮ to change the order — Add Record and the public form follow it.</p>
+      )}
 
       {/* Field dialog */}
       <Dialog open={editing !== null} onOpenChange={(v) => !v && cancel()}>

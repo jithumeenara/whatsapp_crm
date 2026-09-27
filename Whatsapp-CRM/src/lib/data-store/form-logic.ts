@@ -213,3 +213,124 @@ export function pipeAnswers(message: string, answers: Answers): string {
     return typeof v === 'string' ? v : v === true ? 'Yes' : ''
   })
 }
+
+// ── Linking fields automatically ────────────────────────────────────────
+
+/** A dropdown whose options come from another table, and the columns of
+ *  that table a rule may safely use (worked out on the server). */
+export interface FormSource {
+  /** The dropdown on this table whose options come from another table. */
+  field_key: string
+  table_name: string
+  /** The column its options are read from. */
+  option_column: string
+  /** Columns a rule may use: filter on, or fill from. */
+  columns: Array<{ key: string; label: string }>
+}
+
+const STOP = new Set(['of', 'the', 'a', 'an'])
+
+function nameTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && !STOP.has(w))
+    .map((w) => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w))
+    .sort()
+}
+
+/** "From Date" and "Date from", "Target Group" and "target_group",
+ *  "month" and "Month": the same words in any order and case. */
+export function sameName(a: string, b: string): boolean {
+  const x = nameTokens(a)
+  const y = nameTokens(b)
+  return x.length > 0 && x.length === y.length && x.every((w, i) => w === y[i])
+}
+
+function matchesColumn(q: { key: string; label: string }, c: { key: string; label: string }): boolean {
+  return sameName(q.label, c.label) || sameName(q.key, c.key) || sameName(q.label, c.key) || sameName(q.key, c.label)
+}
+
+export interface LinkSuggestion {
+  field: string
+  kind: 'filter' | 'fill'
+  text: string
+}
+
+/**
+ * The links a table's own names already imply. For each dropdown fed by
+ * another table: an EARLIER question named like one of that table's
+ * columns narrows it (month → Month), and a LATER question named like a
+ * column is filled from the chosen row, locked (From Date ← Date from).
+ * Existing rules are kept; only gaps are filled.
+ */
+export function suggestRules(
+  questions: ReadonlyArray<{ key: string; label: string }>,
+  sources: readonly FormSource[],
+  existing: FormRules,
+): { rules: FormRules; added: LinkSuggestion[] } {
+  const rules: FormRules = Object.fromEntries(Object.entries(existing).map(([k, r]) => [k, { ...r }]))
+  const added: LinkSuggestion[] = []
+  const labelOf = new Map(questions.map((q) => [q.key, q.label]))
+  const position = new Map(questions.map((q, i) => [q.key, i]))
+
+  for (const source of sources) {
+    const at = position.get(source.field_key)
+    if (at === undefined) continue
+    const columns = source.columns.filter((c) => c.key !== source.option_column)
+    const rule = (rules[source.field_key] ??= { filter: null, fill: null, show_if: null })
+
+    if (!rule.filter) {
+      for (const q of questions.slice(0, at)) {
+        const col = columns.find((c) => matchesColumn(q, c))
+        if (col) {
+          rule.filter = { depends_on: q.key, match_column: col.key }
+          added.push({
+            field: source.field_key,
+            kind: 'filter',
+            text: `“${labelOf.get(source.field_key)}” shows only the ${source.table_name} rows whose ${col.label} matches “${q.label}”`,
+          })
+          break
+        }
+      }
+    }
+
+    for (const q of questions.slice(at + 1)) {
+      const target = (rules[q.key] ??= { filter: null, fill: null, show_if: null })
+      if (target.fill) continue
+      const col = columns.find((c) => c.key !== rule.filter?.match_column && matchesColumn(q, c))
+      if (!col) continue
+      target.fill = { from_field: source.field_key, column: col.key, locked: true }
+      added.push({
+        field: q.key,
+        kind: 'fill',
+        text: `“${q.label}” fills in from the chosen “${labelOf.get(source.field_key)}” (${col.label}) and is locked`,
+      })
+    }
+  }
+
+  for (const [k, r] of Object.entries(rules)) {
+    if (!r.filter && !r.fill && !r.show_if) delete rules[k]
+  }
+  return { rules, added }
+}
+
+/** A rule in one line, for lists of what is set up. */
+export function describeRule(
+  key: string,
+  rule: FieldRule,
+  labelOf: (key: string) => string,
+  columnLabel: (sourceField: string, column: string) => string,
+): string[] {
+  const out: string[] = []
+  if (rule.filter) {
+    out.push(`“${labelOf(key)}” narrows by “${labelOf(rule.filter.depends_on)}” (${columnLabel(key, rule.filter.match_column)})`)
+  }
+  if (rule.fill) {
+    out.push(
+      `“${labelOf(key)}” fills from “${labelOf(rule.fill.from_field)}” (${columnLabel(rule.fill.from_field, rule.fill.column)})${rule.fill.locked ? ', locked' : ''}`,
+    )
+  }
+  if (rule.show_if) out.push(`“${labelOf(key)}” is asked only when “${labelOf(rule.show_if.field)}” is ${rule.show_if.equals}`)
+  return out
+}

@@ -196,3 +196,21 @@ describe("asComparableDate", () => {
     expect(asComparableDate("not a date")).toBeNull()
   })
 })
+
+describe('filtering plain text columns', () => {
+  const field = (key: string, type = 'text') => ({ id: key, table_id: 't', label: key, field_key: key, field_type: type, options: null, relation_table_id: null, relation_label_field: null, required: false, sort_order: 0, created_at: '' }) as unknown as DataField
+  const rec = (data: Record<string, unknown>) => ({ id: String(Math.random()), table_id: 't', data, created_at: '', updated_at: '' }) as DataRecord
+
+  it('offers a text column that repeats a few values, and not one of names', () => {
+    const records = [rec({ group: 'Clerks', name: 'Anu' }), rec({ group: 'Clerks ', name: 'Binu' }), rec({ group: 'Sub-staff', name: 'Cinu' })]
+    const keys = filterableFields([field('group'), field('name')], records).map((f) => f.field.field_key)
+    expect(keys).toEqual(['group'])
+  })
+
+  it('treats a value with a stray space as the same choice', () => {
+    const records = [rec({ group: 'Clerks' }), rec({ group: 'Clerks ' }), rec({ group: 'Sub-staff' })]
+    const opts = optionsFor(field('group'), records, [field('group')], {})
+    expect(opts.map((o) => [o.value, o.count])).toEqual([['Clerks', 2], ['Sub-staff', 1]])
+    expect(applyFilters(records, [field('group')], { group: { kind: 'choice', value: 'Clerks' } })).toHaveLength(2)
+  })
+})

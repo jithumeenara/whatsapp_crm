@@ -38,6 +38,7 @@ import {
   type Answers,
   type FormLookups,
   type FormRules,
+  type FormSource,
 } from './form-logic'
 import { isSensitiveField } from './record-alert'
 
@@ -145,15 +146,7 @@ function cellText(value: unknown): string {
   return String(value).trim().slice(0, 500)
 }
 
-export interface FormSource {
-  /** The dropdown on this table whose options come from another table. */
-  field_key: string
-  table_name: string
-  /** The column its options are read from. */
-  option_column: string
-  /** Columns a rule may use: filter on, or fill from. */
-  columns: Array<{ key: string; label: string }>
-}
+export type { FormSource } from './form-logic'
 
 /** For the settings panel: each dropdown fed by another table, and the
  *  columns of that table a rule may safely use. */

@@ -1,9 +1,9 @@
 'use client';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  Loader2, Paperclip, X, ImageIcon, PenLine, Eraser, FilePlus2, AlertTriangle,
+  Loader2, Paperclip, X, ImageIcon, PenLine, Eraser, FilePlus2, AlertTriangle, Sparkles,
 } from 'lucide-react';
 import DOMPurify from 'isomorphic-dompurify';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ import {
   getSelectItems, getFieldConfig, DATA_FIELD_TYPES,
 } from '@/lib/data-store/types';
 import { COUNTRIES, getStatesForCountry } from '@/lib/data-store/geo-data';
+import { fillValue, isShown, optionsFor, type Answers, type FormLookups, type FormRules } from '@/lib/data-store/form-logic';
 import { cn } from '@/lib/utils';
 
 // ─── File upload widget ───────────────────────────────────────
@@ -296,11 +297,24 @@ interface Props {
   fields: DataField[];
   record?: DataRecord | null;
   onSaved: (record: DataRecord) => void;
+  /** The table's linked fields (narrow / fill / show-if) — the same
+   *  rules the public form runs. */
+  rules?: FormRules;
+}
+
+function cellText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(cellText).filter(Boolean).join(', ');
+  if (typeof value === 'object') {
+    const v = value as { label?: unknown; name?: unknown; value?: unknown };
+    return cellText(v.label ?? v.name ?? v.value ?? '');
+  }
+  return String(value).trim();
 }
 
 // ─── Main form ────────────────────────────────────────────────
 
-export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: Props) {
+export function RecordForm({ open, onClose, tableId, fields, record, onSaved, rules = {} }: Props) {
   const [data, setData] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -335,6 +349,9 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
 
   // Load table-sourced options for choice fields
   const [tableSourceOptions, setTableSourceOptions] = useState<Record<string, SelectOption[]>>({});
+  // The source rows themselves, for linked fields: which programmes a
+  // month has, and what a chosen programme's dates are.
+  const [sourceRows, setSourceRows] = useState<Record<string, { option: string; rows: Record<string, unknown>[] }>>({});
 
   useEffect(() => {
     const sourceFields = dataFields.filter((f) => {
@@ -349,17 +366,22 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
         const d = await res.json();
         const seen = new Set<string>();
         const opts: SelectOption[] = [];
-        for (const r of (d.records ?? []) as DataRecord[]) {
-          const raw = (r.data as Record<string, unknown>)[cfg.source_field_key!];
-          const val = String(raw ?? '').trim();
+        const rows = ((d.records ?? []) as DataRecord[]).map((r) => (r.data ?? {}) as Record<string, unknown>);
+        for (const data of rows) {
+          const val = cellText(data[cfg.source_field_key!]);
           if (val && !seen.has(val)) { seen.add(val); opts.push({ label: val, value: val }); }
         }
-        return { key: f.field_key, opts };
+        return { key: f.field_key, opts, rows, option: cfg.source_field_key! };
       }),
     ).then((results) => {
       const map: Record<string, SelectOption[]> = {};
-      for (const { key, opts } of results) map[key] = opts;
+      const raw: Record<string, { option: string; rows: Record<string, unknown>[] }> = {};
+      for (const { key, opts, rows, option } of results) {
+        map[key] = opts;
+        raw[key] = { option, rows };
+      }
       setTableSourceOptions(map);
+      setSourceRows(raw);
     });
   }, [fields, open]);
 
@@ -386,12 +408,78 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
     });
   }, [fields, open]);
 
+  const lookups: FormLookups = useMemo(() => {
+    const out: FormLookups = {};
+    for (const [key, src] of Object.entries(sourceRows)) {
+      out[key] = {
+        option: src.option,
+        rows: src.rows.map((row) => Object.fromEntries(Object.entries(row).map(([k, v]) => [k, cellText(v)]))),
+      };
+    }
+    return out;
+  }, [sourceRows]);
+
+  const toAnswers = (d: Record<string, unknown>): Answers => {
+    const a: Answers = {};
+    for (const [k, v] of Object.entries(d)) {
+      if (typeof v === 'string' || typeof v === 'boolean') a[k] = v;
+      else if (typeof v === 'number') a[k] = String(v);
+    }
+    return a;
+  };
+  const answers = toAnswers(data);
+  const hasRules = Object.keys(rules).length > 0;
+  const shownHere = (f: DataField) => !hasRules || isShown(f.field_key, rules, answers);
+
+  /** Sets a value and settles what hangs off it: a narrowed dropdown
+   *  whose value no longer fits is cleared, and fields linked to the
+   *  changed one are filled from the chosen source row. Staff may still
+   *  correct a filled value by hand. */
   const set = (key: string, value: unknown) =>
-    setData((prev) => ({ ...prev, [key]: value }));
+    setData((prev) => {
+      const next: Record<string, unknown> = { ...prev, [key]: value };
+      if (!hasRules) return next;
+      const changed = new Set([key]);
+      for (let pass = 0; pass < 4; pass++) {
+        let moved = false;
+        const current = toAnswers(next);
+        for (const f of dataFields) {
+          const rule = rules[f.field_key];
+          if (!rule) continue;
+          if (rule.filter && changed.has(rule.filter.depends_on) && typeof next[f.field_key] === 'string' && next[f.field_key]) {
+            const allowed = optionsFor(f.field_key, rules, lookups, current);
+            if (allowed && !allowed.some((o) => o.toLowerCase() === String(next[f.field_key]).toLowerCase())) {
+              next[f.field_key] = '';
+              changed.add(f.field_key);
+              moved = true;
+            }
+          }
+          if (rule.fill && changed.has(rule.fill.from_field)) {
+            const filled = fillValue(f.field_key, rules, lookups, current) ?? '';
+            if (next[f.field_key] !== filled) {
+              next[f.field_key] = filled;
+              changed.add(f.field_key);
+              moved = true;
+            }
+          }
+        }
+        if (!moved) break;
+      }
+      return next;
+    });
+
+  /** A dropdown's options now: narrowed by an earlier answer when the
+   *  table links them. */
+  const optionsOf = (field: DataField): SelectOption[] => {
+    const narrowed = hasRules ? optionsFor(field.field_key, rules, lookups, answers) : null;
+    if (narrowed) return narrowed.map((v) => ({ label: v, value: v }));
+    return tableSourceOptions[field.field_key] ?? getSelectItems(field.options);
+  };
 
   const validate = () => {
     const errors: Record<string, string> = {};
     for (const f of dataFields) {
+      if (!shownHere(f)) continue;
       const cfg = getFieldConfig(f.options);
       const val = data[f.field_key];
       if (f.required && (val === undefined || val === null || val === '' || val === false)) {
@@ -533,9 +621,9 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
 
         {field.field_type === 'select' && (
           <Select value={strVal} onValueChange={(v) => v && set(field.field_key, v)}>
-            <SelectTrigger className={inputCls}><SelectValue placeholder={placeholder || 'Select an option…'} /></SelectTrigger>
+            <SelectTrigger className={cn(inputCls, 'w-full')}><SelectValue placeholder={placeholder || 'Select an option…'} /></SelectTrigger>
             <SelectContent>
-              {(tableSourceOptions[field.field_key] ?? getSelectItems(field.options)).map((opt) => (
+              {optionsOf(field).map((opt) => (
                 <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
               ))}
             </SelectContent>
@@ -569,7 +657,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
 
         {field.field_type === 'radio' && (
           <div className="flex flex-col gap-2">
-            {(tableSourceOptions[field.field_key] ?? getSelectItems(field.options)).map((opt) => (
+            {optionsOf(field).map((opt) => (
               <label key={opt.value} className="flex items-center gap-2 cursor-pointer text-[13px] text-slate-700">
                 <input autoComplete="off" type="radio" name={`radio-${field.field_key}`} value={opt.value}
                   checked={strVal === opt.value}
@@ -583,7 +671,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
 
         {field.field_type === 'country' && (
           <Select value={strVal} onValueChange={(v) => v && set(field.field_key, v)}>
-            <SelectTrigger className={inputCls}><SelectValue placeholder={placeholder} /></SelectTrigger>
+            <SelectTrigger className={cn(inputCls, 'w-full')}><SelectValue placeholder={placeholder} /></SelectTrigger>
             <SelectContent className="max-h-56">
               {COUNTRIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
             </SelectContent>
@@ -592,7 +680,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
 
         {field.field_type === 'state' && (
           <Select value={strVal} onValueChange={(v) => v && set(field.field_key, v)}>
-            <SelectTrigger className={inputCls}><SelectValue placeholder={placeholder} /></SelectTrigger>
+            <SelectTrigger className={cn(inputCls, 'w-full')}><SelectValue placeholder={placeholder} /></SelectTrigger>
             <SelectContent className="max-h-56">
               {/* Show states for the country field if linked, else all common states */}
               {(() => {
@@ -622,7 +710,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
 
         {field.field_type === 'relation' && (
           <Select value={strVal} onValueChange={(v) => v && set(field.field_key, v)}>
-            <SelectTrigger className={inputCls}><SelectValue placeholder="Select a record…" /></SelectTrigger>
+            <SelectTrigger className={cn(inputCls, 'w-full')}><SelectValue placeholder="Select a record…" /></SelectTrigger>
             <SelectContent>
               {(relationOptions[field.field_key] ?? []).map((opt) => (
                 <SelectItem key={opt.id} value={opt.id}>{opt.label}</SelectItem>
@@ -687,7 +775,9 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
         {/* Fields */}
         <div className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
           {fields.map((field) => {
+            if (!shownHere(field)) return null;
             const cfg = getFieldConfig(field.options);
+            const fill = rules[field.field_key]?.fill;
             const isDisplay = field.field_type === 'section_header' || field.field_type === 'html_block';
             const isHidden = field.field_type === 'hidden';
             const rendered = renderField(field);
@@ -708,6 +798,12 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved }: 
                   </label>
                 )}
                 {rendered}
+                {fill && !isHidden && (
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-primary">
+                    <Sparkles className="h-3 w-3" />
+                    Filled from “{fields.find((f) => f.field_key === fill.from_field)?.label ?? fill.from_field}” — you can still change it here
+                  </p>
+                )}
                 {cfg.help_text && !isHidden && (
                   <p className="mt-1 text-[11px] text-slate-400">{cfg.help_text}</p>
                 )}

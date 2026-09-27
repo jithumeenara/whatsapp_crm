@@ -15,7 +15,7 @@
  * them; every value is cut to one line with the full text on hover.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, BellRing, Check, ChevronLeft, ChevronRight, Columns3, Database,
@@ -37,6 +37,8 @@ import { TableAiChip } from "@/components/data/table-ai-chip"
 import { RecordAlertsPanel } from "@/components/data/record-alerts-panel"
 import { PublicFormPanel } from "@/components/data/public-form-panel"
 import { SidePanel } from "@/components/data/side-panel"
+import { LinkedFieldsCard } from "@/components/data/linked-fields-card"
+import { parseFormConfig } from "@/lib/data-store/public-form"
 import { RECORD_SOURCE_LABELS, isRecordSource, sourceLabel, type RecordSource } from "@/lib/data-store/sources"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
@@ -228,6 +230,12 @@ export default function DataTablePage() {
   const [allTables, setAllTables] = useState<DataTable[]>([])
   const [importing, setImporting] = useState(false)
   const importRef = useRef<HTMLInputElement>(null)
+  // The table's linked fields (month → programme → dates), which Add
+  // Record applies exactly as the public form does.
+  const linkRules = useMemo(
+    () => parseFormConfig(table?.form_config, fields.map((f) => f.field_key)).rules,
+    [table, fields],
+  )
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -353,7 +361,7 @@ export default function DataTablePage() {
   })
   const filtered = applyFilters(searched, fields, filters)
   const activeFilters = activeFilterCount(filters)
-  const canFilter = filterableFields(fields).length > 0
+  const canFilter = filterableFields(fields, records).length > 0
   const presentSources = Array.from(new Set(records.map((r) => r.source).filter(isRecordSource)))
   const hasCustomers = records.some((r) => r.contact)
 
@@ -651,6 +659,7 @@ export default function DataTablePage() {
           <RecordFilters
             fields={fields}
             records={searched}
+            allRecords={records}
             filters={filters}
             onChange={setFilters}
             matchCount={filtered.length}
@@ -859,6 +868,7 @@ export default function DataTablePage() {
           tableId={tableId}
           fields={fields}
           record={editingRecord}
+          rules={linkRules}
           onClose={() => { setFormOpen(false); setEditingRecord(null) }}
           onSaved={() => { setFormOpen(false); setEditingRecord(null); load() }}
         />
@@ -888,6 +898,11 @@ export default function DataTablePage() {
           icon={<Settings2 className="h-4.5 w-4.5" />}
           onClose={() => setFieldPanelOpen(false)}
         >
+          <LinkedFieldsCard
+            tableId={tableId}
+            fields={fields}
+            onRulesChange={(config) => setTable((t) => (t ? { ...t, form_config: config } : t))}
+          />
           {table && (
             <AiRegistrationToggle
               tableId={tableId}

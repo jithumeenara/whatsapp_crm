@@ -103,6 +103,9 @@ export interface DataTable {
    *  ceiling. Counted across every customer. */
   ai_capacity_by?: string[]
   ai_capacity_limit?: number | null
+  /** The public form's settings, including the linked-field rules Add
+   *  Record also applies. Parse with parseFormConfig. */
+  form_config?: unknown
   created_at: string
   updated_at: string
   fields?: DataField[]

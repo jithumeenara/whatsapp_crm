@@ -31,6 +31,9 @@ export interface RecordFiltersProps {
   fields: DataField[]
   /** Every record, unfiltered — the option lists are counted off these. */
   records: DataRecord[]
+  /** Every row of the table, so which columns can be filtered does not
+   *  change as the search box narrows `records`. */
+  allRecords?: DataRecord[]
   filters: FilterMap
   onChange: (next: FilterMap) => void
   /** How many rows survive, shown so the effect of a choice is visible
@@ -42,7 +45,8 @@ export interface RecordFiltersProps {
 export function RecordFilters(props: RecordFiltersProps) {
   const { fields, records, filters, onChange } = props
 
-  const filterable = useMemo(() => filterableFields(fields), [fields])
+  const scope = props.allRecords ?? records
+  const filterable = useMemo(() => filterableFields(fields, scope), [fields, scope])
   const activeCount = activeFilterCount(filters)
 
   if (filterable.length === 0) return null

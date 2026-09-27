@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
-  ArrowDown, ArrowUp, ChevronDown, Copy, ExternalLink, Link2, Loader2, QrCode, RefreshCw, Search, Send, ShieldCheck, UserRound, Wand2,
+  ChevronDown, Copy, ExternalLink, Link2, Loader2, QrCode, RefreshCw, Search, Send, ShieldCheck, Sparkles, UserRound, Wand2,
 } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -22,10 +22,11 @@ import {
   type TableFormConfig,
 } from "@/lib/data-store/public-form"
 import { getSelectItems, type DataField } from "@/lib/data-store/types"
-import { parseRules, type FieldRule, type FormBrand } from "@/lib/data-store/form-logic"
-import type { FormSource } from "@/lib/data-store/public-form-server"
+import { parseRules, suggestRules, type FieldRule, type FormBrand } from "@/lib/data-store/form-logic"
+import type { FormSource } from "@/lib/data-store/form-logic"
 import { FormBrandEditor, type LogoPreview } from "./form-brand-editor"
 import { FormRuleEditor, type EarlierQuestion } from "./form-rule-editor"
+import { SortableList, DragHandle } from "./sortable-list"
 
 const FIELD =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
@@ -259,13 +260,25 @@ export function PublicFormPanel({
     setOrder(shown.has(key) ? asked.filter((k) => k !== key) : [...asked, key])
   }
 
-  function move(key: string, by: -1 | 1) {
-    const i = asked.indexOf(key)
-    const j = i + by
-    if (i < 0 || j < 0 || j >= asked.length) return
-    const next = [...asked]
-    ;[next[i], next[j]] = [next[j], next[i]]
-    setOrder(next)
+  /** Links the fields the names already imply, and saves. */
+  function linkAutomatically() {
+    const questions = asked
+      .map((k) => formFields.find((f) => f.field_key === k))
+      .filter((f): f is DataField => !!f && !WEB_FORM_DISPLAY_TYPES.has(f.field_type))
+      .map((f) => ({ key: f.field_key, label: f.label }))
+    const { rules, added } = suggestRules(questions, sources, config.rules)
+    if (added.length === 0) {
+      toast.message(
+        sources.length === 0
+          ? "First make a dropdown take its options from another table (Fields → edit the field → Options from a table)."
+          : "Nothing more to link — no other question is named like a column of the linked table.",
+      )
+      return
+    }
+    const next = { ...config, rules }
+    setConfig(next)
+    void save(next)
+    toast.success(`Linked ${added.length} question${added.length === 1 ? "" : "s"}`)
   }
 
   return (
@@ -432,21 +445,34 @@ export function PublicFormPanel({
 
           <PanelSection
             title="Questions"
-            hint={<>Tick what the form asks, and use the arrows to set the order. <Wand2 className="inline h-3 w-3" /> Smart: narrow a dropdown by an earlier answer, fill a question from an earlier choice (locked), or ask it only when it applies. Required, hints and limits are set in Fields.</>}
+            hint={<>Tick what the form asks and drag ⋮⋮ to set the order. <Wand2 className="inline h-3 w-3" /> opens a question&apos;s smart settings. Required, hints and limits are set in Fields.</>}
           >
-            <div className="flex flex-col gap-1">
-              {listed.map((f) => {
+            <button
+              type="button"
+              onClick={linkAutomatically}
+              className="inline-flex h-9 items-center gap-1.5 self-start rounded-lg bg-primary/10 px-3 text-[12.5px] font-semibold text-primary transition hover:bg-primary/15"
+            >
+              <Sparkles className="h-3.5 w-3.5" /> Link fields automatically
+            </button>
+
+            <SortableList
+              className="flex flex-col gap-1"
+              items={listed.filter((f) => shown.has(f.field_key))}
+              getKey={(f) => f.field_key}
+              getLabel={(f) => f.label}
+              onReorder={(keys) => setOrder(keys)}
+              renderItem={(f, handle) => {
                 const heading = WEB_FORM_DISPLAY_TYPES.has(f.field_type)
-                const position = asked.indexOf(f.field_key)
                 const rule = config.rules[f.field_key]
                 const open = ruleOpen === f.field_key
                 const smart = [rule?.filter && "narrowed", rule?.fill && (rule.fill.locked ? "auto-filled, locked" : "auto-filled"), rule?.show_if && "conditional"].filter(Boolean)
                 return (
-                  <div key={f.id} className={open ? "rounded-xl ring-1 ring-primary/30" : undefined}>
-                    <div className={`flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] hover:bg-slate-50 ${heading ? "mt-1 font-semibold text-slate-800" : "text-slate-700"}`}>
+                  <div className={open ? "rounded-xl bg-white ring-1 ring-primary/30" : undefined}>
+                    <div className={`flex items-center gap-2 rounded-lg px-1 py-1.5 text-[13px] hover:bg-slate-50 ${heading ? "mt-1 font-semibold text-slate-800" : "text-slate-700"}`}>
+                      <DragHandle {...handle} />
                       <input
                         type="checkbox"
-                        checked={shown.has(f.field_key)}
+                        checked
                         onChange={() => toggleField(f.field_key)}
                         aria-label={`Ask “${f.label}”`}
                         className="h-4 w-4 accent-[var(--primary)]"
@@ -457,21 +483,7 @@ export function PublicFormPanel({
                       </span>
                       {heading && <span className="text-[11px] font-normal text-slate-400">section</span>}
                       {!heading && f.required && <span className="text-[11px] text-rose-500">required</span>}
-                      {position >= 0 && (
-                        <span className="flex shrink-0 items-center">
-                          <button type="button" onClick={() => move(f.field_key, -1)} disabled={position === 0}
-                            aria-label={`Move “${f.label}” up`} title="Move up"
-                            className="grid h-7 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-25 disabled:hover:bg-transparent">
-                            <ArrowUp className="h-3.5 w-3.5" />
-                          </button>
-                          <button type="button" onClick={() => move(f.field_key, 1)} disabled={position === asked.length - 1}
-                            aria-label={`Move “${f.label}” down`} title="Move down"
-                            className="grid h-7 w-6 place-items-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-25 disabled:hover:bg-transparent">
-                            <ArrowDown className="h-3.5 w-3.5" />
-                          </button>
-                        </span>
-                      )}
-                      {!heading && shown.has(f.field_key) && (
+                      {!heading && (
                         <button
                           type="button"
                           onClick={() => setRuleOpen(open ? null : f.field_key)}
@@ -489,6 +501,7 @@ export function PublicFormPanel({
                       <div className="px-2 pb-2">
                         <FormRuleEditor
                           fieldKey={f.field_key}
+                          fieldLabel={f.label}
                           rule={rule}
                           earlier={earlierThan(f.field_key)}
                           sources={sources}
@@ -498,8 +511,21 @@ export function PublicFormPanel({
                     )}
                   </div>
                 )
-              })}
-            </div>
+              }}
+            />
+
+            {listed.some((f) => !shown.has(f.field_key)) && (
+              <div className="flex flex-col gap-1 border-t border-slate-100 pt-2">
+                <p className="px-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">Not asked</p>
+                {listed.filter((f) => !shown.has(f.field_key)).map((f) => (
+                  <label key={f.id} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] text-slate-500 hover:bg-slate-50">
+                    <input type="checkbox" checked={false} onChange={() => toggleField(f.field_key)} aria-label={`Ask “${f.label}”`}
+                      className="h-4 w-4 accent-[var(--primary)]" />
+                    <span className="min-w-0 flex-1 truncate">{f.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
             <p className="text-[11.5px] leading-relaxed text-slate-400">
               Tip: fill answers in advance through the link — add <code className="rounded bg-slate-100 px-1">?field_key=value</code>.
               In the thank-you message, <code className="rounded bg-slate-100 px-1">{"{{field_key}}"}</code> repeats an answer.

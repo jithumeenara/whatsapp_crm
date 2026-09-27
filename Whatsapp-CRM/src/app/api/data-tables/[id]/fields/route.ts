@@ -19,6 +19,38 @@ async function requireTable(tableId: string) {
   return { ok: true as const, accountId: profile.account_id, table }
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * PUT { order: [fieldId, …] } — the whole order at once, as a drag and
+ * drop produces it. Every field gets its position; swapping two numbers
+ * at a time left fields that shared a number (any imported table) in
+ * no particular order. Only this table's own fields, all of them.
+ */
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id: tableId } = await params
+    const guard = await requireTable(tableId)
+    if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+
+    const body = (await req.json().catch(() => null)) as { order?: unknown } | null
+    const order = Array.isArray(body?.order) ? body.order.filter((id): id is string => typeof id === 'string' && UUID.test(id)) : []
+    const fields = await prisma.dataField.findMany({ where: { table_id: tableId, account_id: guard.accountId }, select: { id: true } })
+    const known = new Set(fields.map((f) => f.id))
+    if (order.length !== fields.length || new Set(order).size !== order.length || order.some((id) => !known.has(id))) {
+      return NextResponse.json({ error: 'The order must list every field of this table once.' }, { status: 400 })
+    }
+    await prisma.$transaction(
+      order.map((id, index) => prisma.dataField.update({ where: { id }, data: { sort_order: index } })),
+    )
+    invalidateRegistrationForms(guard.accountId)
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('[PUT /api/data-tables/[id]/fields]', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: tableId } = await params

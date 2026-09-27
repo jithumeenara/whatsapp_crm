@@ -11,8 +11,7 @@
  */
 
 import { Filter, Lock, Sparkles, SplitSquareVertical } from "lucide-react"
-import type { FieldRule } from "@/lib/data-store/form-logic"
-import type { FormSource } from "@/lib/data-store/public-form-server"
+import { sameName, type FieldRule, type FormSource } from "@/lib/data-store/form-logic"
 
 const SELECT =
   "h-9 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-[12.5px] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
@@ -23,14 +22,27 @@ export interface EarlierQuestion {
   options: string[]
 }
 
+/** The column whose name matches `name` — the right default, rather
+ *  than whichever column happens to come first. */
+function columnFor(source: FormSource, ...names: string[]): string {
+  const usable = source.columns.filter((c) => c.key !== source.option_column)
+  for (const n of names) {
+    const hit = usable.find((c) => sameName(c.label, n) || sameName(c.key, n))
+    if (hit) return hit.key
+  }
+  return usable[0]?.key ?? source.option_column
+}
+
 export function FormRuleEditor({
   fieldKey,
+  fieldLabel,
   rule,
   earlier,
   sources,
   onChange,
 }: {
   fieldKey: string
+  fieldLabel: string
   rule: FieldRule | undefined
   earlier: EarlierQuestion[]
   sources: FormSource[]
@@ -39,6 +51,16 @@ export function FormRuleEditor({
   const current: FieldRule = rule ?? { filter: null, fill: null, show_if: null }
   const ownSource = sources.find((s) => s.field_key === fieldKey)
   const earlierSources = sources.filter((s) => earlier.some((q) => q.key === s.field_key))
+  // Which earlier question narrows this one, by name — "month" for a
+  // source with a Month column — or else the nearest one.
+  const bestEarlier =
+    (ownSource && earlier.find((q) => ownSource.columns.some((c) => c.key !== ownSource.option_column && (sameName(c.label, q.label) || sameName(c.key, q.key))))) ??
+    earlier[earlier.length - 1]
+  // Which earlier dropdown this question fills from, by a column named
+  // like it; else the nearest dropdown fed by a table.
+  const bestFillSource =
+    earlierSources.find((s) => s.columns.some((c) => c.key !== s.option_column && (sameName(c.label, fieldLabel) || sameName(c.key, fieldKey)))) ??
+    earlierSources[earlierSources.length - 1]
   const fillSource = current.fill ? sources.find((s) => s.field_key === current.fill!.from_field) : earlierSources[0]
   const showField = current.show_if ? earlier.find((q) => q.key === current.show_if!.field) : undefined
 
@@ -54,8 +76,8 @@ export function FormRuleEditor({
               onChange={(e) =>
                 onChange({
                   ...current,
-                  filter: e.target.checked && earlier[0]
-                    ? { depends_on: earlier[0].key, match_column: ownSource.columns.find((c) => c.key !== ownSource.option_column)?.key ?? ownSource.option_column }
+                  filter: e.target.checked && bestEarlier
+                    ? { depends_on: bestEarlier.key, match_column: columnFor(ownSource, bestEarlier.label, bestEarlier.key) }
                     : null,
                 })
               }
@@ -72,7 +94,10 @@ export function FormRuleEditor({
               </select>
               <span className="text-slate-500">matches the answer to</span>
               <select value={current.filter.depends_on} aria-label="Earlier question"
-                onChange={(e) => onChange({ ...current, filter: { ...current.filter!, depends_on: e.target.value } })} className={SELECT}>
+                onChange={(e) => {
+                  const q = earlier.find((x) => x.key === e.target.value)
+                  onChange({ ...current, filter: { depends_on: e.target.value, match_column: q ? columnFor(ownSource, q.label, q.key) : current.filter!.match_column } })
+                }} className={SELECT}>
                 {earlier.map((q) => <option key={q.key} value={q.key}>{q.label}</option>)}
               </select>
             </div>
@@ -89,12 +114,8 @@ export function FormRuleEditor({
             onChange={(e) =>
               onChange({
                 ...current,
-                fill: e.target.checked && earlierSources[0]
-                  ? {
-                      from_field: earlierSources[0].field_key,
-                      column: earlierSources[0].columns.find((c) => c.key !== earlierSources[0].option_column)?.key ?? earlierSources[0].option_column,
-                      locked: true,
-                    }
+                fill: e.target.checked && bestFillSource
+                  ? { from_field: bestFillSource.field_key, column: columnFor(bestFillSource, fieldLabel, fieldKey), locked: true }
                   : null,
               })
             }
@@ -113,7 +134,7 @@ export function FormRuleEditor({
                 onChange={(e) => {
                   const src = sources.find((s) => s.field_key === e.target.value)
                   if (!src) return
-                  onChange({ ...current, fill: { ...current.fill!, from_field: src.field_key, column: src.columns.find((c) => c.key !== src.option_column)?.key ?? src.option_column } })
+                  onChange({ ...current, fill: { ...current.fill!, from_field: src.field_key, column: columnFor(src, fieldLabel, fieldKey) } })
                 }} className={SELECT}>
                 {earlierSources.map((s) => <option key={s.field_key} value={s.field_key}>{earlier.find((q) => q.key === s.field_key)?.label ?? s.field_key}</option>)}
               </select>

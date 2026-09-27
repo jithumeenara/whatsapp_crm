@@ -83,10 +83,30 @@ export interface FilterableField {
   kind: FilterKind
 }
 
-export function filterableFields(fields: DataField[]): FilterableField[] {
+/** A plain text column is offered as a choice when it repeats a small
+ *  set of values — Target group, Designation, District — which is how
+ *  most real tables use text. A column of names or notes is left to the
+ *  search box. */
+const TEXT_CHOICE_MAX = 40
+
+function repeatsFewValues(field: DataField, records: DataRecord[]): boolean {
+  if (field.field_type !== 'text') return false
+  const seen = new Set<string>()
+  let filled = 0
+  for (const r of records) {
+    for (const v of cellValues((r.data as Record<string, unknown>)[field.field_key])) {
+      filled++
+      seen.add(v.toLowerCase())
+      if (seen.size > TEXT_CHOICE_MAX) return false
+    }
+  }
+  return seen.size >= 1 && filled > seen.size
+}
+
+export function filterableFields(fields: DataField[], records: DataRecord[] = []): FilterableField[] {
   const out: FilterableField[] = []
   for (const field of fields) {
-    const kind = filterKindFor(field)
+    const kind = filterKindFor(field) ?? (repeatsFewValues(field, records) ? 'choice' : null)
     if (kind) out.push({ field, kind })
   }
   return out
@@ -96,8 +116,10 @@ export function filterableFields(fields: DataField[]): FilterableField[] {
  *  arrays; everything else holds a scalar. */
 function cellValues(raw: unknown): string[] {
   if (raw === null || raw === undefined || raw === '') return []
-  if (Array.isArray(raw)) return raw.map((v) => String(v)).filter((v) => v !== '')
-  return [String(raw)]
+  // Trimmed: "Clark" and "Clark " are one choice, not two that look alike.
+  if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter((v) => v !== '')
+  const one = String(raw).trim()
+  return one ? [one] : []
 }
 
 /**
