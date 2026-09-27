@@ -709,6 +709,10 @@ model Message {
   interactive_reply_id String?
   reply_to_message_id  String?   @db.Uuid
   email_subject        String? // Email channel only — subject/body split the other channels don't have
+  /// Email channel only: recipients, attachments and format —
+  /// { to?, cc?, bcc?, attachments?: [{ file_id, name, url, size, mime }],
+  ///   format?: "rich", kind?: "reply" | "reply_all" | "new" | "forward" }.
+  email_meta           Json?
   // Set only for a message a Broadcast campaign sent — previously broadcasts
   // never wrote a Message row at all (only broadcast_recipients), so a sent
   // campaign was completely invisible in that contact's Inbox thread. This
@@ -770,6 +774,9 @@ model ScheduledMessage {
   // became mandatory.
   media_url              String?
   media_type             String? // 'image' | 'video' | 'document' | 'audio'
+  /// Email conversations only: a scheduled email needs no template. Holds
+  /// { subject, kind, cc, bcc, file_ids, reply_to_message_id, signature }.
+  email_meta             Json?
   buttons                Json? // InteractiveButton[] ({id, title}), 1-3 entries -- legacy only
 
   schedule_type  String  @default("once") // 'once' | 'recurring'
@@ -1819,6 +1826,9 @@ model MicrosoftMailbox {
   /// Random per-mailbox value Graph echoes on every notification; checked
   /// so a forged notification is ignored.
   client_state            String
+  /// Added under every email sent from this mailbox. Same light
+  /// formatting as the composer; {{agent_name}} becomes the sender.
+  signature               String?
   status                  String    @default("not_connected")
   last_error              String?
   created_at              DateTime  @default(now()) @db.Timestamptz(6)

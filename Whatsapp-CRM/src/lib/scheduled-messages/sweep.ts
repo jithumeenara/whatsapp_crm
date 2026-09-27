@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { engineSendText, engineSendMedia, engineSendInteractiveButtons, engineSendTemplate } from '@/lib/flows/meta-send'
+import { sendAndRecordConversationEmail } from '@/lib/email/conversation-send'
 import type { MediaKind } from '@/lib/whatsapp/meta-api'
 
 const INTERVAL_MS: Record<string, number> = {
@@ -82,7 +83,42 @@ export async function sweepScheduledMessages(): Promise<SweepResult> {
         }
       }
 
-      if (sm.template_name) {
+      const emailMeta = (sm as { email_meta?: unknown }).email_meta as {
+        kind?: 'reply' | 'reply_all' | 'new' | 'forward'
+        subject?: string
+        cc?: string[]
+        bcc?: string[]
+        to?: string[]
+        file_ids?: string[]
+        reply_to_message_id?: string | null
+        signature?: boolean
+        format?: 'rich' | 'plain'
+      } | null | undefined
+
+      if (emailMeta) {
+        // A scheduled email: the composed email, sent now as its author.
+        const contact = await prisma.contact.findFirst({
+          where: { id: sm.contact_id, account_id: sm.account_id },
+          select: { email: true },
+        })
+        if (!contact?.email) throw new Error('Contact has no email address')
+        await sendAndRecordConversationEmail({
+          accountId: sm.account_id,
+          conversationId: sm.conversation_id,
+          to: contact.email,
+          text: sm.content_text ?? '',
+          mode: emailMeta.kind ?? 'reply',
+          subject: emailMeta.subject ?? null,
+          replyToMessageId: emailMeta.reply_to_message_id ?? null,
+          cc: emailMeta.cc ?? [],
+          bcc: emailMeta.bcc ?? [],
+          forwardTo: emailMeta.to ?? [],
+          fileIds: emailMeta.file_ids ?? [],
+          signature: emailMeta.signature !== false,
+          format: emailMeta.format === 'rich' ? 'rich' : 'plain',
+          senderUserId: sm.created_by,
+        })
+      } else if (sm.template_name) {
         // Standard path: approved template, the only kind guaranteed to
         // send outside the 24h customer-service window.
         // template_body_params holds EITHER an array (positional) or a

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { CALLBACK_PATH, accessTokenFor, deleteSubscription, isGuid, loadMailbox } from '@/lib/email/microsoft/graph'
 import { publicOrigin } from '@/lib/email/microsoft/origin'
+import { ensureEmailColumns } from '@/lib/email/schema'
 
 /**
  * The Microsoft app registration's details, kept per account and
@@ -17,6 +18,7 @@ import { publicOrigin } from '@/lib/email/microsoft/origin'
 export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRole('admin')
+    await ensureEmailColumns().catch(() => {})
     const box = await loadMailbox(ctx.accountId)
     return NextResponse.json({
       configured: Boolean(box),
@@ -28,6 +30,7 @@ export async function GET(req: NextRequest) {
       status: box?.status ?? 'not_connected',
       last_error: box?.last_error ?? null,
       subscription_expires_at: box?.subscription_expires_at ?? null,
+      signature: box?.signature ?? '',
       // What to register in Entra as the Redirect URI, from the address
       // the admin is using right now.
       redirect_uri: `${publicOrigin(req)}${CALLBACK_PATH}`,
@@ -40,6 +43,7 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const ctx = await requireRole('admin')
+    await ensureEmailColumns().catch(() => {})
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
     if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
@@ -55,6 +59,11 @@ export async function PUT(req: NextRequest) {
     const existing = await loadMailbox(ctx.accountId)
     if (!existing && !secret) return NextResponse.json({ error: 'Paste the client secret Value' }, { status: 400 })
 
+    // The signature: plain text in the composer's light markup, capped.
+    const signature = typeof body.signature === 'string'
+      ? body.signature.replace(/\r\n?/g, '\n').slice(0, 2000).trim()
+      : undefined
+
     // A different app or directory invalidates the sign-in made with the
     // old one: start over rather than keep tokens that no longer match.
     const appChanged = existing && (existing.tenant_id !== tenantId || existing.client_id !== clientId)
@@ -67,6 +76,7 @@ export async function PUT(req: NextRequest) {
       tenant_id: tenantId,
       client_id: clientId,
       ...(secret ? { client_secret: encrypt(secret) } : {}),
+      ...(signature !== undefined ? { signature: signature || null } : {}),
       ...(appChanged
         ? {
             refresh_token: null, access_token: null, access_expires_at: null,
@@ -86,6 +96,7 @@ export async function PUT(req: NextRequest) {
           client_id: clientId,
           client_secret: encrypt(secret),
           client_state: crypto.randomBytes(32).toString('base64url'),
+          signature: signature || null,
         },
       })
     }

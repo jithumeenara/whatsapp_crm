@@ -9,7 +9,8 @@
  */
 import { prisma } from "@/lib/db"
 import { encrypt, decrypt } from "@/lib/whatsapp/encryption"
-import { accessTokenFor, connectedMailbox, findByInternetMessageId, replyToMessage, sendMail as sendMicrosoftMail } from "@/lib/email/microsoft/graph"
+import { accessTokenFor, connectedMailbox, findByInternetMessageId, sendGraphEmail } from "@/lib/email/microsoft/graph"
+import { escapeHtml, markupToHtml, markupToPlain } from "@/lib/email/markup"
 
 const SENDGRID_SEND_URL = "https://api.sendgrid.com/v3/mail/send"
 const SENDGRID_ACCOUNT_URL = "https://api.sendgrid.com/v3/user/account"
@@ -67,35 +68,76 @@ export async function testEmailConnection(apiKey: string): Promise<{ ok: boolean
   }
 }
 
+/** Plain text as HTML: escaped, line breaks kept. */
+function plainToHtml(text: string): string {
+  return `<p style="margin:0 0 12px">${escapeHtml(text).replace(/\r?\n/g, "<br>")}</p>`
+}
+
+export interface EmailAttachment {
+  name: string
+  mime: string
+  bytes: Buffer
+}
+
 export async function sendEmail(args: {
   accountId: string
-  to: string
+  /** One address, or several (a forward). */
+  to: string | string[]
   subject: string
   text: string
   html?: string
-  /** The email this answers, as stored on the Inbox message: an Internet
-   *  Message-ID, or "graph:<id>". With a Microsoft mailbox the reply then
-   *  stays in that email's thread, for us and for the customer. */
+  cc?: string[]
+  bcc?: string[]
+  attachments?: EmailAttachment[]
+  /** reply / reply_all / forward act on the email named by `inReplyTo`
+   *  (an Internet Message-ID, or "graph:<id>"); with a Microsoft mailbox
+   *  they stay in its thread. "new" (the default without inReplyTo) is a
+   *  separate email. */
+  kind?: "new" | "reply" | "reply_all" | "forward"
   inReplyTo?: string | null
+  /** "rich": `text` is the composer's markup (bold, lists…). */
+  format?: "rich" | "plain"
 }): Promise<{ messageId: string }> {
-  // A mailbox connected with Microsoft sends as itself, and the reply
+  const toList = Array.isArray(args.to) ? args.to : [args.to]
+  if (toList.length === 0) throw new Error("No recipient")
+  const cc = args.cc ?? []
+  const bcc = args.bcc ?? []
+  const attachments = args.attachments ?? []
+  // Formatting is applied only to what the email composer wrote. A
+  // chatbot's or the assistant's text is sent as it is — its WhatsApp-
+  // style *asterisks* are not this composer's markup.
+  const html = args.html ?? (args.format === "rich" ? markupToHtml(args.text) : plainToHtml(args.text))
+
+  // A mailbox connected with Microsoft sends as itself, and what it sends
   // lands in its Sent Items like any other. SendGrid is the fallback.
   const microsoft = await connectedMailbox(args.accountId)
   if (microsoft) {
     const token = await accessTokenFor(microsoft)
-    if (args.inReplyTo) {
-      const graphId = args.inReplyTo.startsWith("graph:")
+    let kind = args.kind ?? (args.inReplyTo ? "reply" : "new")
+    let sourceId: string | null = null
+    if (kind !== "new" && args.inReplyTo) {
+      sourceId = args.inReplyTo.startsWith("graph:")
         ? args.inReplyTo.slice(6)
         : await findByInternetMessageId(token, args.inReplyTo).catch(() => null)
-      if (graphId) {
-        await replyToMessage(token, graphId, args.text)
-        return { messageId: "" }
-      }
-      // The original is gone from the mailbox: a new email with the
-      // same "Re:" subject is the closest thing to a reply left.
     }
-    await sendMicrosoftMail(token, { to: args.to, subject: args.subject, text: args.text })
-    // Graph's sendMail and reply return no message id.
+    // The original is gone from the mailbox: a new email with the same
+    // "Re:" subject is the closest thing to a reply left. A forward
+    // cannot happen without it.
+    if (!sourceId && kind !== "new") {
+      if (kind === "forward") throw new Error("The email to forward is no longer in the mailbox")
+      kind = "new"
+    }
+    await sendGraphEmail(token, {
+      kind,
+      sourceId,
+      to: toList,
+      cc,
+      bcc,
+      subject: args.subject,
+      html,
+      attachments,
+    })
+    // Graph's send returns no message id.
     return { messageId: "" }
   }
 
@@ -106,13 +148,27 @@ export async function sendEmail(args: {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({
-      personalizations: [{ to: [{ email: args.to }] }],
+      personalizations: [{
+        to: toList.map((email) => ({ email })),
+        ...(cc.length ? { cc: cc.map((email) => ({ email })) } : {}),
+        ...(bcc.length ? { bcc: bcc.map((email) => ({ email })) } : {}),
+      }],
       from: { email: config.fromEmail, name: config.fromName ?? undefined },
       subject: args.subject,
       content: [
-        { type: "text/plain", value: args.text },
-        ...(args.html ? [{ type: "text/html", value: args.html }] : []),
+        { type: "text/plain", value: args.format === "rich" ? markupToPlain(args.text) : args.text },
+        { type: "text/html", value: html },
       ],
+      ...(attachments.length
+        ? {
+            attachments: attachments.map((a) => ({
+              content: a.bytes.toString("base64"),
+              filename: a.name,
+              type: a.mime,
+              disposition: "attachment",
+            })),
+          }
+        : {}),
     }),
   })
   if (!res.ok) {

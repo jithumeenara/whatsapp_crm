@@ -24,7 +24,7 @@ import {
 import type { MessageTemplate } from '@/types'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
-import { sendConversationEmail, cleanSubject, type EmailMode } from '@/lib/email/conversation-send'
+import { sendAndRecordConversationEmail, cleanSubject, parseAddresses, type EmailMode } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads')
@@ -277,16 +277,7 @@ async function handlePhoneChannelSend({
 }
 
 // ── Email send helper ─────────────────────────────────────────────────────────
-async function handleEmailSend({
-  accountId,
-  userId,
-  conversationId,
-  contactEmail,
-  contentText,
-  mode,
-  subject: requestedSubject,
-  replyToMessageId,
-}: {
+async function handleEmailSend(args: {
   accountId:      string
   userId:         string
   conversationId: string
@@ -295,51 +286,39 @@ async function handleEmailSend({
   mode:           EmailMode
   subject:        string
   replyToMessageId: string | null
+  cc:             string[]
+  bcc:            string[]
+  forwardTo:      string[]
+  fileIds:        string[]
+  signature:      boolean
+  rich:           boolean
 }): Promise<NextResponse> {
-  if (mode === 'new' && !requestedSubject) {
+  if (args.mode === 'new' && !args.subject) {
     return NextResponse.json({ error: 'A new email needs a subject' }, { status: 400 })
   }
-  let messageId: string
-  let subject: string
   try {
-    const result = await sendConversationEmail({
-      accountId,
-      conversationId,
-      to: contactEmail,
-      text: contentText,
-      mode,
-      subject: requestedSubject,
-      replyToMessageId,
+    const savedMsg = await sendAndRecordConversationEmail({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      to: args.contactEmail,
+      text: args.contentText,
+      mode: args.mode,
+      subject: args.subject,
+      replyToMessageId: args.replyToMessageId,
+      cc: args.cc,
+      bcc: args.bcc,
+      forwardTo: args.forwardTo,
+      fileIds: args.fileIds,
+      signature: args.signature,
+      format: args.rich ? 'rich' : 'plain',
+      senderUserId: args.userId,
     })
-    messageId = result.messageId || `email_agent_${Date.now()}`
-    subject = result.subject
+    return NextResponse.json({ success: true, message_id: savedMsg.id })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Email send failed'
     console.error('[email/send] error:', msg)
     return NextResponse.json({ error: msg }, { status: 502 })
   }
-
-  const savedMsg = await prisma.message.create({
-    data: {
-      conversation_id: conversationId,
-      sender_type:     'agent',
-      sender_id:        userId,
-      content_type:     'text',
-      content_text:     contentText,
-      email_subject:    subject,
-      message_id:       messageId,
-      status:           'sent',
-    },
-  })
-  emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
-
-  const updatedConv = await prisma.conversation.update({
-    where: { id: conversationId },
-    data: { last_message_text: contentText, last_message_at: new Date() },
-  })
-  emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updatedConv, old: {} })
-
-  return NextResponse.json({ success: true, message_id: savedMsg.id })
 }
 
 export async function POST(request: Request) {
@@ -509,15 +488,36 @@ export async function POST(request: Request) {
         })
         replyTarget = owned?.id ?? null
       }
+      const EMAIL_MODES = ['reply', 'reply_all', 'new', 'forward'] as const
+      const mode: EmailMode = (EMAIL_MODES as readonly string[]).includes(body.email_mode)
+        ? (body.email_mode as EmailMode)
+        : 'reply'
+      let cc: string[], bcc: string[], forwardTo: string[]
+      try {
+        cc = parseAddresses(body.email_cc)
+        bcc = parseAddresses(body.email_bcc)
+        forwardTo = mode === 'forward' ? parseAddresses(body.email_to) : []
+      } catch (err) {
+        return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid address' }, { status: 400 })
+      }
+      const fileIds = Array.isArray(body.attachment_ids)
+        ? body.attachment_ids.filter((v: unknown): v is string => typeof v === 'string' && /^[0-9a-f-]{36}$/i.test(v))
+        : []
       return handleEmailSend({
         accountId,
         userId,
         conversationId: conversation_id,
         contactEmail: contact.email,
         contentText: content_text,
-        mode: body.email_mode === 'new' ? 'new' : 'reply',
+        mode,
         subject: cleanSubject(body.email_subject),
         replyToMessageId: replyTarget,
+        cc,
+        bcc,
+        forwardTo,
+        fileIds,
+        signature: body.email_signature !== false,
+        rich: body.email_format === 'rich',
       })
     }
 

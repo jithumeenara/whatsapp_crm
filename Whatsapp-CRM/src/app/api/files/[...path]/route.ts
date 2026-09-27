@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 import { join, resolve, relative, isAbsolute } from "path";
 import { lookup } from "mime-types";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/db";
 
 const UPLOADS_DIR = resolve(join(process.cwd(), "uploads"));
 
@@ -17,6 +18,20 @@ export async function GET(
   }
 
   const { path } = await params;
+
+  // A file in an account's folder is for that account only. Being signed
+  // in was enough before, so anyone who had another tenant's file URL —
+  // an email attachment, an ID card sent over WhatsApp — could open it.
+  // (Files from before per-account folders keep the old rule.)
+  if (path[0]?.startsWith("account-")) {
+    const profile = await prisma.profile.findUnique({
+      where: { user_id: session.user.id },
+      select: { account_id: true },
+    });
+    if (!profile?.account_id || path[0] !== `account-${profile.account_id}`) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  }
 
   // Resolve the full path and confirm it stays inside UPLOADS_DIR (blocks path traversal).
   // Use relative() so this works on both Windows (backslash) and Unix (forward slash).

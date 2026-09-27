@@ -214,41 +214,18 @@ export interface GraphMessage {
   from?: { emailAddress?: { address?: string; name?: string } } | null
   body?: { contentType?: string; content?: string } | null
   bodyPreview?: string | null
+  toRecipients?: Array<{ emailAddress?: { address?: string } }> | null
+  ccRecipients?: Array<{ emailAddress?: { address?: string } }> | null
+  hasAttachments?: boolean | null
 }
 
 export async function getMessage(token: string, messageId: string): Promise<GraphMessage> {
   return graph<GraphMessage>(
     token,
-    `/me/messages/${encodeURIComponent(messageId)}?$select=subject,from,body,bodyPreview,internetMessageId`,
+    `/me/messages/${encodeURIComponent(messageId)}?$select=subject,from,body,bodyPreview,internetMessageId,toRecipients,ccRecipients,hasAttachments`,
     // Plain text, so no HTML from an email ever reaches the Inbox.
     { prefer: 'outlook.body-content-type="text"' },
   )
-}
-
-export async function sendMail(token: string, args: { to: string; subject: string; text: string }) {
-  await graph(token, '/me/sendMail', {
-    method: 'POST',
-    body: JSON.stringify({
-      message: {
-        subject: args.subject,
-        body: { contentType: 'Text', content: args.text },
-        toRecipients: [{ emailAddress: { address: args.to } }],
-      },
-      saveToSentItems: true,
-    }),
-  })
-}
-
-/** Plain text as the HTML Graph expects in a reply's comment: escaped,
- *  with line breaks kept. */
-export function textToHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/\r?\n/g, '<br>')
 }
 
 /** The mailbox's own id for an email, from its Internet Message-ID (what
@@ -262,14 +239,140 @@ export async function findByInternetMessageId(token: string, internetMessageId: 
   return data?.value?.[0]?.id ?? null
 }
 
-/** Reply to one email, in its own thread. Graph quotes the original,
- *  keeps the thread headers, and saves the reply to Sent Items
- *  ("message: reply", Microsoft Graph v1.0). */
-export async function replyToMessage(token: string, graphMessageId: string, text: string) {
-  await graph(token, `/me/messages/${encodeURIComponent(graphMessageId)}/reply`, {
-    method: 'POST',
-    body: JSON.stringify({ comment: textToHtml(text) }),
-  })
+// ── Sending with formatting, copies and files ───────────────────────────
+
+export interface OutgoingAttachment {
+  name: string
+  mime: string
+  bytes: Buffer
+}
+
+/** Each file goes in its own request, and Graph takes a file in one
+ *  request only under 3 MB ("Attach large files to Outlook messages"). */
+export const GRAPH_ATTACHMENT_MAX = 3 * 1024 * 1024 - 1
+
+export interface GraphSend {
+  kind: 'new' | 'reply' | 'reply_all' | 'forward'
+  /** The mailbox's id of the email answered or forwarded. */
+  sourceId?: string | null
+  to: string[]
+  cc: string[]
+  bcc: string[]
+  subject: string
+  html: string
+  attachments: OutgoingAttachment[]
+}
+
+const recipients = (list: string[]) => list.map((address) => ({ emailAddress: { address } }))
+
+/** Our part goes at the top of the draft Graph builds for a reply or
+ *  forward, above the quoted original it already contains. */
+function prependToBody(existing: string, ours: string): string {
+  const open = existing.match(/<body[^>]*>/i)
+  if (!open || open.index === undefined) return `${ours}${existing}`
+  const at = open.index + open[0].length
+  return `${existing.slice(0, at)}${ours}${existing.slice(at)}`
+}
+
+/**
+ * One way to send every kind of email: make a draft (new, or Graph's
+ * own reply / reply-all / forward of the original, which carries the
+ * thread headers and the quoted text), put our body, copies and files on
+ * it, then send it. Graph saves it to Sent Items. A draft left behind by
+ * a failed send is deleted, so the mailbox's Drafts do not fill up.
+ */
+export async function sendGraphEmail(token: string, s: GraphSend): Promise<void> {
+  let draftId: string
+  if (s.kind === 'new' || !s.sourceId) {
+    const draft = await graph<{ id: string }>(token, '/me/messages', {
+      method: 'POST',
+      body: JSON.stringify({
+        subject: s.subject,
+        body: { contentType: 'HTML', content: s.html },
+        toRecipients: recipients(s.to),
+        ccRecipients: recipients(s.cc),
+        bccRecipients: recipients(s.bcc),
+      }),
+    })
+    draftId = draft.id
+  } else {
+    const action = s.kind === 'reply' ? 'createReply' : s.kind === 'reply_all' ? 'createReplyAll' : 'createForward'
+    const draft = await graph<{ id: string; body?: { content?: string } }>(
+      token,
+      `/me/messages/${encodeURIComponent(s.sourceId)}/${action}`,
+      { method: 'POST', body: JSON.stringify({}) },
+    )
+    draftId = draft.id
+    const patch: Record<string, unknown> = {
+      body: { contentType: 'HTML', content: prependToBody(draft.body?.content ?? '', s.html) },
+    }
+    // Reply all keeps everyone Graph copied unless the agent chose copies.
+    if (s.cc.length) patch.ccRecipients = recipients(s.cc)
+    if (s.bcc.length) patch.bccRecipients = recipients(s.bcc)
+    if (s.kind === 'forward') patch.toRecipients = recipients(s.to)
+    await graph(token, `/me/messages/${encodeURIComponent(draftId)}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  }
+
+  try {
+    for (const a of s.attachments) {
+      if (a.bytes.length > GRAPH_ATTACHMENT_MAX) throw new Error(`${a.name} is over 3 MB`)
+      await graph(token, `/me/messages/${encodeURIComponent(draftId)}/attachments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          name: a.name,
+          contentType: a.mime,
+          contentBytes: a.bytes.toString('base64'),
+        }),
+      })
+    }
+    await graph(token, `/me/messages/${encodeURIComponent(draftId)}/send`, { method: 'POST' })
+  } catch (err) {
+    await graph(token, `/me/messages/${encodeURIComponent(draftId)}`, { method: 'DELETE' }).catch(() => {})
+    throw err
+  }
+}
+
+export interface IncomingAttachment {
+  name: string
+  mime: string
+  bytes: Buffer
+}
+
+/** The files a customer attached, skipping inline pictures (signatures,
+ *  logos), anything over `maxEach`, and anything past `maxCount`. */
+export async function fetchFileAttachments(
+  token: string,
+  messageId: string,
+  opts: { maxEach: number; maxCount: number },
+): Promise<{ files: IncomingAttachment[]; skipped: string[] }> {
+  const list = await graph<{
+    value?: Array<{ id: string; name?: string; contentType?: string; size?: number; isInline?: boolean; '@odata.type'?: string }>
+  }>(token, `/me/messages/${encodeURIComponent(messageId)}/attachments?$select=id,name,contentType,size,isInline`)
+  const files: IncomingAttachment[] = []
+  const skipped: string[] = []
+  for (const a of list?.value ?? []) {
+    if (a['@odata.type'] !== '#microsoft.graph.fileAttachment' || a.isInline) continue
+    const name = (a.name || 'attachment').slice(0, 200)
+    if (files.length >= opts.maxCount || !a.size || a.size > opts.maxEach) {
+      skipped.push(name)
+      continue
+    }
+    const full = await graph<{ contentBytes?: string }>(
+      token,
+      `/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(a.id)}`,
+    )
+    if (!full?.contentBytes) {
+      skipped.push(name)
+      continue
+    }
+    files.push({
+      name,
+      mime: (a.contentType || 'application/octet-stream').toLowerCase().split(';')[0].trim(),
+      bytes: Buffer.from(full.contentBytes, 'base64'),
+    })
+  }
+  return { files, skipped }
 }
 
 // ── The account's mailbox ───────────────────────────────────────────────

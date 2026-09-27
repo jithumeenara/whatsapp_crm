@@ -554,6 +554,11 @@ export function MessageThread({
         content_type: "text",
         content_text: draft.text,
         email_subject: draft.mode === "new" ? draft.subject : null,
+        email_meta: {
+          kind: draft.mode,
+          format: "rich",
+          attachments: draft.files.map((f) => ({ file_id: f.id, name: f.name, url: f.url, size: f.size, mime: f.mime })),
+        },
         status: "sending",
         created_at: new Date().toISOString(),
       });
@@ -568,6 +573,12 @@ export function MessageThread({
             email_mode: draft.mode,
             email_subject: draft.subject || undefined,
             reply_to_message_id: draft.replyToId ?? undefined,
+            email_cc: draft.cc,
+            email_bcc: draft.bcc,
+            email_to: draft.forwardTo,
+            attachment_ids: draft.files.map((f) => f.id),
+            email_signature: draft.signature,
+            email_format: "rich",
           }),
         });
         const payload = await res.json().catch(() => ({}));
@@ -1052,9 +1063,10 @@ export function MessageThread({
         contactName={contactDisplayName}
         contactEmail={contact?.email ?? null}
         agentLabelFor={agentLabelFor}
-        onReply={(m) =>
+        onAction={(m, action) =>
           setEmailTarget({
             id: m.id,
+            action,
             subject: m.email_subject ?? null,
             preview: (m.email_subject || m.content_text || "their email").replace(/\s+/g, " ").slice(0, 90),
           })
@@ -1330,7 +1342,9 @@ export function MessageThread({
       {isEmailConversation ? (
         <EmailComposer
           key={conversation.id}
+          conversationId={conversation.id}
           contactEmail={contact?.email ?? null}
+          contactLanguage={contact?.detected_language ?? null}
           latestSubject={latestEmailSubject}
           target={emailTarget}
           onClearTarget={() => setEmailTarget(null)}

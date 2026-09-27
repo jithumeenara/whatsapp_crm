@@ -3,7 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { clientIpKey } from '@/lib/net/client-ip'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { accessTokenFor, getMessage, sweepMicrosoftSubscriptions } from '@/lib/email/microsoft/graph'
+import { accessTokenFor, fetchFileAttachments, getMessage, sweepMicrosoftSubscriptions } from '@/lib/email/microsoft/graph'
+import { contentMatchesType, isAllowedMime, saveAccountFile } from '@/lib/files/account-files'
+import { ensureEmailColumns } from '@/lib/email/schema'
 import { ensureMicrosoftMailboxTable } from '@/lib/email/microsoft/store'
 import { processInbound } from '@/lib/email/ingest'
 
@@ -68,6 +70,7 @@ export async function POST(req: NextRequest) {
 
 async function handle(items: Notification[]) {
   await ensureMicrosoftMailboxTable()
+  await ensureEmailColumns().catch(() => {})
   for (const n of items) {
     if (!n.subscriptionId || !n.clientState) continue
     const box = await prisma.microsoftMailbox.findFirst({ where: { subscription_id: n.subscriptionId } })
@@ -97,13 +100,41 @@ async function handle(items: Notification[]) {
       // Not a customer: something this mailbox sent to itself.
       if (!from || from === box.mailbox_email) continue
       const text = (msg.body?.content ?? msg.bodyPreview ?? '').trim().slice(0, 20_000)
-      if (!text) continue
+
+      // Files they sent: kept only when allowed, under 10 MB, and truly
+      // the type they claim (see contentMatchesType); the rest are named
+      // so the agent knows something did not come through.
+      const attachments: Array<Record<string, unknown>> = []
+      const skipped: string[] = []
+      if (msg.hasAttachments) {
+        const got = await fetchFileAttachments(token, messageId, { maxEach: 10 * 1024 * 1024, maxCount: 10 })
+          .catch(() => ({ files: [], skipped: ['(attachments could not be read)'] }))
+        skipped.push(...got.skipped)
+        for (const f of got.files) {
+          if (!isAllowedMime(f.mime) || !contentMatchesType(f.mime, f.bytes)) {
+            skipped.push(f.name)
+            continue
+          }
+          const saved = await saveAccountFile({ accountId: box.account_id, name: f.name, mime: f.mime, bytes: f.bytes })
+          attachments.push({ file_id: saved.id, name: saved.original_name, url: saved.url, size: saved.size, mime: saved.mime_type })
+        }
+      }
+      if (!text && attachments.length === 0) continue
+
+      const addresses = (list?: Array<{ emailAddress?: { address?: string } }> | null) =>
+        (list ?? []).map((r) => r.emailAddress?.address?.trim().toLowerCase()).filter((a): a is string => !!a).slice(0, 20)
       await processInbound(box.account_id, box.user_id, {
         fromEmail: from,
         subject: (msg.subject ?? '').slice(0, 300),
-        text,
+        text: text || '(no text — see attachments)',
         html: null,
         providerMessageId: msg.internetMessageId || `graph:${msg.id}`,
+        meta: {
+          to: addresses(msg.toRecipients),
+          cc: addresses(msg.ccRecipients),
+          ...(attachments.length ? { attachments } : {}),
+          ...(skipped.length ? { skipped_attachments: skipped.slice(0, 20) } : {}),
+        },
       })
     } catch (err) {
       console.error('[microsoft-mail] could not fetch a new message:', err instanceof Error ? err.message : err)

@@ -20,6 +20,7 @@ interface MsConfig {
   last_error: string | null
   subscription_expires_at: string | null
   redirect_uri: string
+  signature: string
 }
 
 function MicrosoftLogo({ className }: { className?: string }) {
@@ -51,6 +52,8 @@ export function MicrosoftMailCard() {
   const [tenantId, setTenantId] = useState('')
   const [clientId, setClientId] = useState('')
   const [secret, setSecret] = useState('')
+  const [signature, setSignature] = useState('')
+  const [savingSig, setSavingSig] = useState(false)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -61,6 +64,7 @@ export function MicrosoftMailCard() {
     setCfg(data)
     setTenantId(data.tenant_id)
     setClientId(data.client_id)
+    setSignature(data.signature ?? '')
   }, [])
 
   useEffect(() => { void load() }, [load])
@@ -179,6 +183,51 @@ export function MicrosoftMailCard() {
           <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>{cfg.last_error}</span>
+          </div>
+        )}
+
+        {/* ── Signature ───────────────────────────────────── */}
+        {connected && (
+          <div className="space-y-2 rounded-xl border border-slate-200 p-4">
+            <Label htmlFor="ms-signature" className="text-[12px] font-semibold text-slate-700">Email signature</Label>
+            <p className="text-[11px] text-slate-500">
+              Added under every email sent from this mailbox (the agent can switch it off per email).
+              <code className="mx-1 rounded bg-slate-100 px-1">{'{{agent_name}}'}</code> becomes the sender&apos;s name.
+              **bold** and *italic* work here too.
+            </p>
+            <textarea
+              id="ms-signature"
+              rows={4}
+              maxLength={2000}
+              value={signature}
+              onChange={(e) => setSignature(e.target.value)}
+              placeholder={'Regards,\n{{agent_name}}\nACSTI Kerala · +91 …'}
+              className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={savingSig || signature === (cfg.signature ?? '')}
+              onClick={async () => {
+                setSavingSig(true)
+                try {
+                  const res = await fetch('/api/email/microsoft/config', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tenant_id: cfg.tenant_id, client_id: cfg.client_id, signature }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok) { toast.error(data.error ?? 'Could not save the signature'); return }
+                  toast.success('Signature saved')
+                  await load()
+                } finally {
+                  setSavingSig(false)
+                }
+              }}
+            >
+              {savingSig && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Save signature
+            </Button>
           </div>
         )}
 

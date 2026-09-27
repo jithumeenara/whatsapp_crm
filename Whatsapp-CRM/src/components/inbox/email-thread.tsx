@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, MoreHorizontal } from "lucide-react";
+import { AlertCircle, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Forward, MoreHorizontal, ReplyAll } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { splitQuoted } from "@/lib/email/quote";
+import { EmailAttachments, RichEmailBody } from "./email-body";
 import type { Message } from "@/types";
 
 /**
@@ -15,6 +16,8 @@ import type { Message } from "@/types";
  * mail client appends is folded under "···", and all but the latest few
  * emails collapse to one line so a long thread stays readable.
  */
+
+export type EmailAction = "reply" | "reply_all" | "forward";
 
 const OPEN_BY_DEFAULT = 3;
 
@@ -35,21 +38,43 @@ function StatusIcon({ status }: { status: Message["status"] }) {
   return <Check className="h-3.5 w-3.5 text-slate-400" aria-label="Sent" />;
 }
 
+const KIND_LABEL: Record<string, string> = {
+  reply_all: "Replied to all",
+  forward: "Forwarded",
+  new: "New email",
+};
+
+function ActionButton({ onClick, icon: Icon, label }: { onClick: () => void; icon: typeof CornerUpLeft; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
+    >
+      <Icon className="h-3.5 w-3.5" /> {label}
+    </button>
+  );
+}
+
 function EmailCard({
-  message, fromLabel, fromDetail, open, onToggle, onReply,
+  message, fromLabel, fromDetail, open, onToggle, onAction,
 }: {
   message: Message;
   fromLabel: string;
   fromDetail: string;
   open: boolean;
   onToggle: () => void;
-  onReply?: () => void;
+  onAction?: (action: EmailAction) => void;
 }) {
   const [showQuoted, setShowQuoted] = useState(false);
   const outgoing = message.sender_type !== "customer";
+  const meta = message.email_meta ?? null;
+  const rich = outgoing && meta?.format === "rich";
   const text = message.content_text ?? "";
-  const { main, quoted } = useMemo(() => splitQuoted(text), [text]);
+  const { main, quoted } = useMemo(() => (rich ? { main: text, quoted: null } : splitQuoted(text)), [text, rich]);
   const initial = (fromLabel || "?").trim().charAt(0).toUpperCase();
+  const cc = meta?.cc ?? [];
+  const canReplyAll = !outgoing && ((meta?.to?.length ?? 0) > 1 || cc.length > 0);
 
   if (message.deleted_at) {
     return (
@@ -87,6 +112,9 @@ function EmailCard({
           <span className="flex flex-wrap items-baseline gap-x-2">
             <span className="text-[13px] font-semibold text-slate-900">{fromLabel}</span>
             <span className="truncate text-[12px] text-slate-500">{fromDetail}</span>
+            {outgoing && meta?.kind && KIND_LABEL[meta.kind] && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">{KIND_LABEL[meta.kind]}</span>
+            )}
           </span>
           {open ? (
             message.email_subject && (
@@ -95,19 +123,32 @@ function EmailCard({
           ) : (
             <span className="mt-0.5 block truncate text-[12px] text-slate-500">
               {message.email_subject ? <b className="font-medium text-slate-700">{message.email_subject} — </b> : null}
-              {main.replace(/\s+/g, " ").slice(0, 140)}
+              {main.replace(/[*_]{1,2}/g, "").replace(/\s+/g, " ").slice(0, 140)}
             </span>
           )}
         </span>
         <span className="flex shrink-0 items-center gap-1.5 pt-0.5 text-[11px] text-slate-400">
+          {(meta?.attachments?.length ?? 0) > 0 && <span aria-label="Has attachments">📎</span>}
           {outgoing && <StatusIcon status={message.status} />}
           {when(message.created_at)}
         </span>
       </button>
 
       {open && (
-        <div className="px-4 pb-4 pl-16">
-          <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-slate-800">{main}</div>
+        <div className="px-4 pb-4 sm:pl-16">
+          {(cc.length > 0 || (meta?.bcc?.length ?? 0) > 0) && (
+            <p className="mb-2 truncate text-[12px] text-slate-500">
+              {cc.length > 0 && <>Cc: {cc.join(", ")}</>}
+              {cc.length > 0 && (meta?.bcc?.length ?? 0) > 0 && " · "}
+              {(meta?.bcc?.length ?? 0) > 0 && <>Bcc: {meta?.bcc?.join(", ")}</>}
+            </p>
+          )}
+
+          {rich ? (
+            <RichEmailBody text={main} />
+          ) : (
+            <div className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-slate-800">{main}</div>
+          )}
 
           {quoted && (
             <div className="mt-3">
@@ -128,21 +169,19 @@ function EmailCard({
             </div>
           )}
 
+          <EmailAttachments message={message} />
+
           {message.status === "failed" && (
             <p className="mt-3 flex items-center gap-1.5 text-[12px] text-rose-600">
               <AlertCircle className="h-3.5 w-3.5" /> Not sent. Check the mailbox connection in Settings and try again.
             </p>
           )}
 
-          {!outgoing && onReply && (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={onReply}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12px] font-medium text-slate-700 hover:bg-slate-50"
-              >
-                <CornerUpLeft className="h-3.5 w-3.5" /> Reply
-              </button>
+          {!outgoing && onAction && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ActionButton onClick={() => onAction("reply")} icon={CornerUpLeft} label="Reply" />
+              {canReplyAll && <ActionButton onClick={() => onAction("reply_all")} icon={ReplyAll} label="Reply all" />}
+              <ActionButton onClick={() => onAction("forward")} icon={Forward} label="Forward" />
             </div>
           )}
         </div>
@@ -152,13 +191,13 @@ function EmailCard({
 }
 
 export function EmailThread({
-  messages, contactName, contactEmail, agentLabelFor, onReply,
+  messages, contactName, contactEmail, agentLabelFor, onAction,
 }: {
   messages: Message[];
   contactName: string;
   contactEmail: string | null;
   agentLabelFor: (m: Message) => string;
-  onReply: (m: Message) => void;
+  onAction: (m: Message, action: EmailAction) => void;
 }) {
   const ordered = useMemo(
     () => [...messages].sort((a, b) => a.created_at.localeCompare(b.created_at)),
@@ -191,8 +230,9 @@ export function EmailThread({
         const fromLabel = outgoing
           ? m.sender_type === "bot" ? "Chatbot" : agentLabelFor(m)
           : contactName;
+        const forwardedTo = m.email_meta?.kind === "forward" ? m.email_meta.to?.join(", ") : null;
         const fromDetail = outgoing
-          ? `to ${contactEmail ?? contactName}`
+          ? `to ${forwardedTo || contactEmail || contactName}`
           : contactEmail && contactEmail !== contactName ? `<${contactEmail}>` : "";
         return (
           <EmailCard
@@ -202,7 +242,7 @@ export function EmailThread({
             fromDetail={fromDetail}
             open={open}
             onToggle={() => setToggled((t) => ({ ...t, [m.id]: !open }))}
-            onReply={outgoing ? undefined : () => onReply(m)}
+            onAction={outgoing ? undefined : (action) => onAction(m, action)}
           />
         );
       })}

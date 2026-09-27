@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { cleanSubject, parseAddresses } from "@/lib/email/conversation-send"
+import { ensureEmailColumns } from "@/lib/email/schema"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
@@ -48,6 +50,73 @@ export async function POST(req: NextRequest) {
     if (!body?.conversation_id) {
       return NextResponse.json({ error: "conversation_id is required" }, { status: 400 })
     }
+
+    // ── An email, sent later ───────────────────────────────────────────
+    // Email has no 24-hour window and no templates, so a scheduled email
+    // is simply the composed email kept until its time. Once only.
+    const emailConv = await prisma.conversation.findFirst({
+      where: { id: body.conversation_id, account_id: ctx.accountId, channel: "email" },
+      select: { id: true, contact_id: true },
+    })
+    if (emailConv) {
+      const text = typeof body.content_text === "string" ? body.content_text.trim() : ""
+      if (!text || text.length > 50_000) {
+        return NextResponse.json({ error: "Write the email first" }, { status: 400 })
+      }
+      const at = new Date(body.scheduled_at)
+      if (Number.isNaN(at.getTime()) || at.getTime() < Date.now() + 60_000 || at.getTime() > Date.now() + 366 * 86_400_000) {
+        return NextResponse.json({ error: "Choose a time from a minute from now to a year ahead" }, { status: 400 })
+      }
+      const kinds = ["reply", "reply_all", "new", "forward"]
+      const kind = kinds.includes(body.email_mode) ? body.email_mode : "reply"
+      let cc: string[], bcc: string[], to: string[]
+      try {
+        cc = parseAddresses(body.email_cc)
+        bcc = parseAddresses(body.email_bcc)
+        to = kind === "forward" ? parseAddresses(body.email_to) : []
+      } catch (err) {
+        return NextResponse.json({ error: err instanceof Error ? err.message : "Invalid address" }, { status: 400 })
+      }
+      const subject = cleanSubject(body.email_subject)
+      if (kind === "new" && !subject) return NextResponse.json({ error: "A new email needs a subject" }, { status: 400 })
+      if (kind === "forward" && to.length === 0) return NextResponse.json({ error: "Forward to whom?" }, { status: 400 })
+      const fileIds = Array.isArray(body.attachment_ids)
+        ? body.attachment_ids.filter((v: unknown): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v)).slice(0, 5)
+        : []
+      // An answered email must be one of this conversation's.
+      let replyTo: string | null = null
+      if (typeof body.reply_to_message_id === "string" && body.reply_to_message_id) {
+        const own = await prisma.message.findFirst({
+          where: { id: body.reply_to_message_id, conversation_id: emailConv.id, sender_type: "customer" },
+          select: { id: true },
+        })
+        replyTo = own?.id ?? null
+      }
+      await ensureEmailColumns().catch(() => {})
+      const created = await prisma.scheduledMessage.create({
+        data: {
+          account_id: ctx.accountId,
+          conversation_id: emailConv.id,
+          contact_id: emailConv.contact_id,
+          created_by: ctx.userId,
+          content_text: text,
+          template_body_params: Prisma.JsonNull,
+          template_button_params: Prisma.JsonNull,
+          email_meta: {
+            kind, subject, cc, bcc, to,
+            file_ids: fileIds,
+            reply_to_message_id: replyTo,
+            signature: body.email_signature !== false,
+            format: body.email_format === "rich" ? "rich" : "plain",
+          },
+          schedule_type: "once",
+          max_sends: 1,
+          next_send_at: at,
+        },
+      })
+      return NextResponse.json({ item: created }, { status: 201 })
+    }
+
     if (!body.template_name || !body.template_language) {
       return NextResponse.json({ error: "A Meta-approved template is required" }, { status: 400 })
     }

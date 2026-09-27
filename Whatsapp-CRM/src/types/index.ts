@@ -322,6 +322,16 @@ export interface Message {
   deleted_at?: string | null;
   /** Subject line, only set for `channel === 'email'` messages. */
   email_subject?: string | null;
+  /** Email only: recipients, attachments and format (see EmailMeta). */
+  email_meta?: {
+    kind?: "reply" | "reply_all" | "new" | "forward";
+    to?: string[];
+    cc?: string[];
+    bcc?: string[];
+    attachments?: Array<{ file_id: string; name: string; url: string; size: number; mime: string }>;
+    skipped_attachments?: string[];
+    format?: "rich";
+  } | null;
   /**
    * Only set for `content_type === 'template'` — the sent template's own
    * button definitions (quick-reply/URL/phone/etc.), looked up by

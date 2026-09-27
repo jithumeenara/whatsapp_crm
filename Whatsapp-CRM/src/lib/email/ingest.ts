@@ -5,6 +5,7 @@
  * mailbox).
  */
 import { prisma } from "@/lib/db"
+import type { Prisma } from "@prisma/client"
 import { emitToAccount } from "@/lib/socket"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
@@ -22,6 +23,8 @@ export async function processInbound(
      *  When given, an email already stored is not stored twice — a
      *  notification delivered twice is common. */
     providerMessageId?: string | null
+    /** Who else it went to, and the files that came with it. */
+    meta?: Record<string, unknown> | null
   },
 ) {
   if (fields.providerMessageId) {
@@ -52,6 +55,7 @@ export async function processInbound(
         content_text: fields.text,
         email_subject: fields.subject || null,
         message_id: fields.providerMessageId ?? null,
+        ...(fields.meta ? { email_meta: fields.meta as Prisma.InputJsonValue } : {}),
         status: "delivered",
       },
     })
