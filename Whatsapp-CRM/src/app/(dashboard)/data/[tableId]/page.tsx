@@ -24,6 +24,7 @@ import {
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock, CalendarClock, ToggleLeft,
   ChevronDown, ListChecks, CircleDot, Globe, MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon,
   PenLine, EyeOff, Heading, Code2,
+  HeartPulse,
 } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
@@ -37,6 +38,7 @@ import { TableAiChip } from "@/components/data/table-ai-chip"
 import { RecordAlertsPanel } from "@/components/data/record-alerts-panel"
 import { PublicFormPanel } from "@/components/data/public-form-panel"
 import { SidePanel } from "@/components/data/side-panel"
+import { DataHealthPanel } from "@/components/data/data-health-panel"
 import { LinkedFieldsCard } from "@/components/data/linked-fields-card"
 import { parseFormConfig } from "@/lib/data-store/public-form"
 import { RECORD_SOURCE_LABELS, isRecordSource, sourceLabel, type RecordSource } from "@/lib/data-store/sources"
@@ -226,6 +228,7 @@ export default function DataTablePage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
+  const [healthOpen, setHealthOpen] = useState(false)
   const [formPanelOpen, setFormPanelOpen] = useState(false)
   const [allTables, setAllTables] = useState<DataTable[]>([])
   const [importing, setImporting] = useState(false)
@@ -520,6 +523,7 @@ export default function DataTablePage() {
               {(close) => (
                 <>
                   <MenuItem icon={<Settings2 className="h-4 w-4" />} onClick={() => { close(); void openFieldPanel() }}>Fields &amp; AI registration</MenuItem>
+                  <MenuItem icon={<HeartPulse className="h-4 w-4" />} onClick={() => { close(); setHealthOpen(true) }}>Data health</MenuItem>
                   {isAdmin && (
                     <div className="sm:hidden">
                       <MenuItem icon={<Share2 className="h-4 w-4" />} onClick={() => { close(); setFormPanelOpen(true) }}>Share form</MenuItem>
@@ -919,6 +923,10 @@ export default function DataTablePage() {
             onFieldsChange={(updated) => setFields(updated)}
           />
         </SidePanel>
+      )}
+
+      {healthOpen && table && (
+        <DataHealthPanel tableId={tableId} tableName={table.name} onClose={() => setHealthOpen(false)} onChanged={() => void load()} />
       )}
 
       {alertsOpen && table && (
