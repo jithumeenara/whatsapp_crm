@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
@@ -66,6 +67,7 @@ export async function PUT(
       where: { id: recordId },
       data: { data: checked.data as never },
     })
+    scheduleKnowledgeRefresh(guard.accountId, tableId)
 
     dispatchWebhooks(guard.accountId, 'record.updated', tableId, {
       id: record.id,
@@ -94,6 +96,7 @@ export async function DELETE(
     const record = await prisma.dataRecord.findUnique({ where: { id: recordId } })
 
     await prisma.dataRecord.delete({ where: { id: recordId } })
+    scheduleKnowledgeRefresh(guard.accountId, tableId)
 
     if (record) {
       dispatchWebhooks(guard.accountId, 'record.deleted', tableId, {

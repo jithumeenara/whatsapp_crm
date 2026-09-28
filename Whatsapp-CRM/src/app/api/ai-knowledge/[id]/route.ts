@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
@@ -140,6 +141,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         data: { status: 'failed', last_error: message, last_synced_at: new Date() },
       })
       invalidateKnowledge(existing.ai_config_id)
+      scheduleKnowledgeRefresh(accountId)
       return NextResponse.json({ error: message }, { status: 400 })
     }
   }
@@ -188,6 +190,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // seconds at a time; an edit somebody made on purpose should not have
   // to wait for that to lapse.
   invalidateKnowledge(item.ai_config_id)
+  scheduleKnowledgeRefresh(accountId)
   return NextResponse.json({ item })
 }
 
@@ -204,6 +207,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   await prisma.aiKnowledgeItem.delete({ where: { id } })
   invalidateKnowledge(existing.ai_config_id)
+  scheduleKnowledgeRefresh(accountId)
   // The orphaned embedding row is cleaned up by the next sync run, which
   // deletes every hash no longer present in the knowledge base — no need
   // to compute this one entry's hashes here just to delete them.

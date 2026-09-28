@@ -19,6 +19,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { dispatchWebhooks } from '@/lib/webhooks/deliver'
 import { sendPushToUser } from '@/lib/push'
 import { sendStaffAlert } from '@/lib/whatsapp/staff-alert'
@@ -59,6 +60,8 @@ function allowAlert(tableId: string): boolean {
 }
 
 export function afterRecordCreated(record: CreatedRecord): void {
+  // A connected table's knowledge is brought up to date within a minute.
+  scheduleKnowledgeRefresh(record.account_id, record.table_id)
   void (async () => {
     try {
       const table = await prisma.dataTable.findUnique({

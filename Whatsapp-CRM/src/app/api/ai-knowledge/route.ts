@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-tables'
@@ -237,6 +238,7 @@ export async function POST(req: Request) {
         },
       })
       invalidateKnowledge(configId)
+      scheduleKnowledgeRefresh(ctx.accountId)
       return NextResponse.json({ item }, { status: 201 })
     }
 
@@ -301,6 +303,7 @@ export async function POST(req: Request) {
     }
 
     invalidateKnowledge(configId)
+    scheduleKnowledgeRefresh(ctx.accountId)
     const item = await prisma.aiKnowledgeItem.create({
       data: {
         ai_config_id: configId,

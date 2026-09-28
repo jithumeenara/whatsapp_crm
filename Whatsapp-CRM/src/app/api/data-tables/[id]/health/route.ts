@@ -10,6 +10,7 @@ import {
   type HealthRow,
 } from '@/lib/data-store/data-health'
 import { invalidateSearchableTables } from '@/lib/ai/table-search-store'
+import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 
 /**
  * Data health for one table (lib/data-store/data-health.ts): what is
@@ -113,8 +114,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         ),
       )
     }
-    // The assistant's search reads the table fresh.
+    // The assistant's search reads the table fresh; its knowledge text
+    // catches up within a minute.
     invalidateSearchableTables(ctx.accountId)
+    if (changes.length > 0) scheduleKnowledgeRefresh(ctx.accountId, id)
 
     const fresh = await load(ctx.accountId, id)
     return NextResponse.json({

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import ExcelJS from 'exceljs'
@@ -183,6 +184,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         source: 'import',
       })),
     })
+    scheduleKnowledgeRefresh(accountId, tableId)
 
     return NextResponse.json({ count: rowsData.length }, { status: 201 })
   } catch (err) {

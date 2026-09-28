@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { extractFileText, SUPPORTED_UPLOAD_HINT } from '@/lib/ai/file-extract'
@@ -96,6 +97,7 @@ export async function POST(req: Request) {
   const effectiveUntil = parseDate(form?.get('effective_until') ?? null)
 
   invalidateKnowledge(config.id)
+  scheduleKnowledgeRefresh(ctx.accountId)
   const item = await prisma.aiKnowledgeItem.create({
     data: {
       ai_config_id: config.id,
