@@ -16,6 +16,7 @@ import { TtsCredentialsCard } from './tts-credentials-card';
 import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
+import { HandoverConsentSetting } from './handover-consent-setting';
 
 /**
  * The settings that shape *how* the AI answers, as opposed to *what* it
@@ -503,6 +504,9 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                   </div>
                 )}
               </div>
+
+              {/* Asking before connecting, and what happens then. */}
+              <HandoverConsentSetting />
             </div>
           </AccordionContent>
         </AccordionItem>

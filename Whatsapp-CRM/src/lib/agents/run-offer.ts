@@ -327,7 +327,7 @@ export async function acceptOffer(args: {
   // of it timed out.
   await cancelOpenOffers(offer.conversation_id, now)
 
-  return { ok: late ? true : true }
+  return { ok: late ? true : true, conversationId: offer.conversation_id }
 }
 
 /** An agent says no. Treated exactly as a timeout for rotation

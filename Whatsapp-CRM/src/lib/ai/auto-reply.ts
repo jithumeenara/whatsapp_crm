@@ -32,6 +32,8 @@ import { detectLead } from '@/lib/leads/ai-detect'
 import { runCustomerTurn, formatTurnTimings, type CustomerAiConfig } from './customer-pipeline'
 import { buildReplyMeta, recordReplyMeta } from './reply-sources'
 import { historyTurns } from './history'
+import { askForConsent } from './handover-consent'
+import { handoverSettingsFor } from './handover-settings'
 import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
 import { speak } from './speech'
@@ -430,6 +432,41 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
   if (turn.decision.action === 'handoff') {
     const reason = turn.decision.reason
 
+    // ── Ask first (handover-consent.ts) ──────────────────────────────
+    //
+    // When the account has switched it on, nothing is handed over until
+    // the customer says yes: they get "shall I connect you?" with Yes / No
+    // buttons, and the note staff would have had is written now, so the
+    // reason is on the thread whatever they answer. Not for the safety
+    // guard — a topic set to always go to a person, or a message the
+    // assistant must not answer, goes straight over as before. WhatsApp
+    // only: that is where a tapped answer comes back to (the webhook).
+    if (reason !== 'safety' && args.channel === 'whatsapp' && conversation?.status !== 'pending' && (await handoverSettingsFor(args.accountId)).ask_first) {
+      try {
+        await askForConsent({
+          accountId: args.accountId,
+          userId: args.userId,
+          conversationId: args.conversationId,
+          contactId: args.contactId,
+          reason,
+          customerMessage: text,
+          handoffNote: buildHandoffNote({
+            reason: HANDOFF_REASONS[reason],
+            customerMessage: text,
+            draftReply: turn.reply,
+            confidence: turn.confidence,
+            validation: turn.validation,
+            knowledgeUsed: turn.knowledgeUsed,
+            toolsUsed: turn.toolsUsed,
+          }),
+        })
+        return 'replied'
+      } catch (err) {
+        // Could not ask: hand over as before rather than leave them unanswered.
+        console.error('[auto-reply] could not ask before handing over:', err instanceof Error ? err.message : err)
+      }
+    }
+
     // The safety guard has its own line for the customer — a plain
     // holding message would leave "can I see another student's number?"
     // looking like it was merely misunderstood.
@@ -554,7 +591,32 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
   // for, the answer is already on its way — and the conversation is
   // flagged rather than reassigned, so the assistant can carry on if the
   // customer writes again before anyone picks it up.
-  if (turn.decision.notifyHuman) {
+  // Ask first, when the account wants it: the answer goes out as usual,
+  // and the question follows it (see the hand-off branch above).
+  const askAfterReply =
+    turn.decision.notifyHuman && args.channel === 'whatsapp' && conversation?.status !== 'pending' && (await handoverSettingsFor(args.accountId)).ask_first
+  const afterReply = async () => {
+    if (!askAfterReply) return
+    await askForConsent({
+      accountId: args.accountId,
+      userId: args.userId,
+      conversationId: args.conversationId,
+      contactId: args.contactId,
+      reason: 'model_requested',
+      customerMessage: text,
+      handoffNote: buildHandoffNote({
+        reason: 'assistant_requested',
+        customerMessage: text,
+        draftReply: reply,
+        confidence: turn.confidence,
+        validation: turn.validation,
+        knowledgeUsed: turn.knowledgeUsed,
+        toolsUsed: turn.toolsUsed,
+      }),
+    }).catch((err) => console.error('[auto-reply] could not ask:', err instanceof Error ? err.message : err))
+  }
+
+  if (turn.decision.notifyHuman && !askAfterReply) {
     void handOver({
       accountId: args.accountId,
       conversationId: args.conversationId,
@@ -645,6 +707,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
           )
       }
 
+      await afterReply()
       return 'replied'
     } catch (err) {
       console.error('[auto-reply] voice failed, sending text:', err instanceof Error ? err.message : err)
@@ -661,6 +724,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
     })
     await markAsAssistantReply(sent.whatsapp_message_id)
     explain(sent.whatsapp_message_id)
+    await afterReply()
     return 'replied'
   } catch (err) {
     console.error('[auto-reply] send failed:', err instanceof Error ? err.message : err)

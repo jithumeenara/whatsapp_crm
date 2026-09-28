@@ -59,6 +59,10 @@ export async function askForCallbackTime(args: {
   accountId: string
   conversationId: string
   now?: Date
+  /** What the customer is told before the times — by default that
+   *  everyone is busy; outside working hours, that the team is closed
+   *  and when it opens (handover-consent.ts). */
+  intro?: string
 }): Promise<AskCallbackResult> {
   const now = args.now ?? new Date()
 
@@ -126,6 +130,7 @@ export async function askForCallbackTime(args: {
       conversation.id,
       conversation.contact.phone,
       slots.map((s) => ({ ...s, id: `${s.id}_${followUp.id}` })),
+      args.intro,
     )
 
     return { asked: sent, followUpId: followUp.id }
@@ -181,6 +186,7 @@ async function sendAsk(
   conversationId: string,
   to: string,
   slots: CallbackSlot[],
+  intro?: string,
 ): Promise<boolean> {
   try {
     const { resolveWhatsAppConfig } = await import('@/lib/whatsapp/resolve-config')
@@ -196,9 +202,9 @@ async function sendAsk(
         phoneNumberId: config.phone_number_id,
         accessToken: decrypt(config.access_token),
         to,
-        text: 'Sorry for the wait — everyone is busy right now. We will get back to you as soon as somebody is free.',
+        text: intro ?? 'Sorry for the wait — everyone is busy right now. We will get back to you as soon as somebody is free.',
       })
-      await recordOutbound(conversationId, 'Sorry for the wait — we will get back to you.')
+      await recordOutbound(conversationId, intro ?? 'Sorry for the wait — we will get back to you.')
       return true
     }
 
@@ -208,7 +214,7 @@ async function sendAsk(
       accessToken: decrypt(config.access_token),
       to,
       bodyText:
-        'Sorry for the wait — everyone is busy right now. When would be a good time to call you back?',
+        intro ?? 'Sorry for the wait — everyone is busy right now. When would be a good time to call you back?',
       buttons: slots.map((s) => ({ id: s.id, title: s.label })),
     })
     await recordOutbound(

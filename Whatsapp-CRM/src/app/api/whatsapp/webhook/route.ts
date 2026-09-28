@@ -1066,6 +1066,24 @@ async function processMessage(
       // person can see what they asked for.
     }
 
+    // ── They answered "shall I connect you to our team?" ───────────
+    //
+    // lib/ai/handover-consent.ts. Handled before the chatbot, like a
+    // callback choice. A typed yes or no counts only while that question
+    // is actually waiting — answerConsent checks, and returns false for
+    // an ordinary "ok" in an ordinary conversation.
+    {
+      const { answerConsent, consentFromText, parseConsentButton } = await import('@/lib/ai/handover-consent')
+      const answer = interactiveReplyId ? parseConsentButton(interactiveReplyId) : consentFromText(text)
+      if (answer) {
+        const handled = await answerConsent({ accountId, conversationId: conversation.id, answer }).catch((err) => {
+          console.error('[handover] answer failed:', err instanceof Error ? err.message : err)
+          return false
+        })
+        if (handled) return
+      }
+    }
+
     const flowResult = await dispatchInboundToFlows({
       accountId,
       userId: configOwnerUserId,

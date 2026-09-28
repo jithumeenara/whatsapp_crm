@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { acceptOffer, declineOffer } from '@/lib/agents/run-offer'
 import { advanceConversation } from '@/lib/agents/advance-offers'
+import { notifyCustomerConnected } from '@/lib/ai/handover-consent'
 
 /**
  * PATCH /api/offers/[id]
@@ -59,6 +60,16 @@ export async function PATCH(
     // problem by definition.
     if (action === 'decline' && result.conversationId) {
       void advanceConversation(ctx.accountId, result.conversationId).catch(() => {})
+    }
+
+    // Accepted: now the customer is told who has them — not before, so
+    // "connected" is never said about a conversation nobody has taken.
+    if (action === 'accept' && result.conversationId) {
+      void notifyCustomerConnected({
+        accountId: ctx.accountId,
+        conversationId: result.conversationId,
+        agentUserId: ctx.userId,
+      })
     }
 
     return NextResponse.json({ ok: true })
