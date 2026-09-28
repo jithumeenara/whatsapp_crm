@@ -26,12 +26,18 @@ export type HandoffReason =
   | 'unsupported_details'
   | 'escalation_topic'
   | 'customer_requested'
+  | 'assistant_requested'
 
 const REASON_HEADLINES: Record<HandoffReason, string> = {
   low_confidence: 'The assistant was not confident enough to answer',
   unsupported_details: 'The assistant drafted an answer containing details it could not verify',
   escalation_topic: 'This topic is set to always go to a person',
   customer_requested: 'The customer asked to speak to someone',
+  // The assistant's own call — its reply carried a hand-over signal.
+  // It was labelled "the customer asked to speak to someone", which sent
+  // staff looking for a request the customer never made ("ബോർഡ്
+  // അംഗങ്ങൾ" — "board members" — was the whole message).
+  assistant_requested: 'The assistant asked for a colleague to follow up',
 }
 
 /** Long fields get cut rather than wrapped: this lands in a note field

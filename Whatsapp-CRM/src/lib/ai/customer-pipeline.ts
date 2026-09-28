@@ -263,14 +263,22 @@ export async function buildCustomerSystemPrompt(args: {
   // acknowledges and stops. It does not open a new subject, and it does
   // not ask a question, because a question invites a reply that nobody
   // is there to answer.
+  //
+  // A question they ask is still answered. "Acknowledge and nothing
+  // else" left a customer who asked "which trainings are in October?"
+  // with "a colleague will contact you" — on a thread handed over a day
+  // and a half earlier that nobody had picked up — while the answer sat
+  // in the knowledge. The model also broke that rule on most turns and
+  // kept it on some, so the same question got an answer one time and a
+  // brush-off the next. Answering what was asked, and offering nothing
+  // more, is both the better reply and the rule it actually follows.
   if (args.awaitingHuman) {
     parts.push(
       [
         'IMPORTANT — this conversation has already been passed to a colleague, and the customer has been told somebody will contact them.',
-        'Acknowledge what they just said, briefly, and confirm that a colleague will be in touch. Nothing else.',
-        'Do NOT ask a question. Do NOT introduce a new topic. Do NOT offer or suggest any service, product, course or programme, even if it seems relevant to what they wrote.',
-        'If they have given information — a phone number, a time, a detail about themselves — say it has been noted and passed on.',
-        'Two short sentences at most.',
+        'If they ask a question that the reference material answers, answer exactly that question, briefly, then add one short line that a colleague will be in touch.',
+        'Otherwise acknowledge what they said, briefly, and confirm that a colleague will be in touch. If they have given information — a phone number, a time, a detail about themselves — say it has been noted and passed on.',
+        'Do NOT ask a question. Do NOT introduce a new topic. Do NOT offer or suggest any service, product, course or programme they did not ask about, even if it seems relevant to what they wrote.',
       ].join(' '),
     )
   }

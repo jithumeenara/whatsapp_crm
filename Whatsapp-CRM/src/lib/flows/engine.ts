@@ -2302,7 +2302,7 @@ async function advanceFromNodeKey(
             {
               assign_to: aiConfig.low_confidence_assign_to ?? undefined,
               note: buildHandoffNote({
-                reason: "customer_requested",
+                reason: "assistant_requested",
                 customerMessage: lastUserMessage,
                 draftReply: reply,
                 confidence,

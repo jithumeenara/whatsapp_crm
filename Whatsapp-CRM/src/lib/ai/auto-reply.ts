@@ -558,7 +558,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
       accountId: args.accountId,
       conversationId: args.conversationId,
       note: buildHandoffNote({
-        reason: 'customer_requested',
+        reason: 'assistant_requested',
         customerMessage: text,
         draftReply: reply,
         confidence: turn.confidence,
@@ -672,7 +672,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
 const HANDOFF_REASONS: Record<string, HandoffReason> = {
   low_confidence: 'low_confidence',
   unsupported_details: 'unsupported_details',
-  model_requested: 'customer_requested',
+  model_requested: 'assistant_requested',
   safety: 'escalation_topic',
   generation_failed: 'low_confidence',
 }

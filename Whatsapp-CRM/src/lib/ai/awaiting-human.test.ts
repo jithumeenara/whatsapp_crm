@@ -40,7 +40,15 @@ describe('awaitingHuman', () => {
     // point is that it may not suggest a course to a retired person.
     expect(systemPrompt).toMatch(/passed to a colleague/i)
     expect(systemPrompt).toMatch(/Do NOT ask a question/i)
-    expect(systemPrompt).toMatch(/Do NOT offer or suggest any service, product, course or programme/i)
+    expect(systemPrompt).toMatch(/Do NOT offer or suggest any service, product, course or programme they did not ask about/i)
+  })
+
+  it('still answers a question the customer asks', async () => {
+    // "Which trainings are in October?" on a thread waiting for a person
+    // got "a colleague will contact you" while the answer was in the
+    // knowledge.
+    const { systemPrompt } = await buildCustomerSystemPrompt({ ...base, awaitingHuman: true })
+    expect(systemPrompt).toMatch(/If they ask a question that the reference material answers, answer exactly that question/i)
   })
 
   it('says why a question is wrong, not just that it is', async () => {
