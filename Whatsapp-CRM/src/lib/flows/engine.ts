@@ -39,8 +39,10 @@ import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
 import { getProviderKeys } from "@/lib/ai/providers/registry";
-import { generateCustomerReply } from "@/lib/ai/customer-agent";
-import { buildCustomerToolInstruction } from "@/lib/ai/customer-tools";
+import { customerToolsUsable, generateCustomerReply } from "@/lib/ai/customer-agent";
+import { buildCustomerToolInstruction, type CustomerToolContext } from "@/lib/ai/customer-tools";
+import { fillRecordPlaceholders, isSearchOutput, recordUnits } from "@/lib/ai/table-search";
+import { loadSearchableTables } from "@/lib/ai/table-search-store";
 import { buildLanguageBlock } from "@/lib/ai/language";
 import { assessConfidence } from "@/lib/ai/confidence";
 import { validateReply } from "@/lib/ai/validator";
@@ -1789,7 +1791,18 @@ async function advanceFromNodeKey(
         // touched, so the version comes from the items themselves. A
         // burst of messages against an unchanged knowledge base reuses
         // the chunked/tokenized form instead of rebuilding it every call.
-        const knowledgeCacheKey = `${aiConfig.id}:${knowledgeVersion}`;
+        // Tables it will search rather than read (lib/ai/table-search.ts):
+        // only when this reply runs with tools, which needs a contact.
+        // Otherwise they stay knowledge, exactly as before.
+        const searchTables =
+          aiConfig.knowledge_base_enabled &&
+          run.contact_id &&
+          customerToolsUsable(aiConfig, { accountId: run.account_id, contactId: run.contact_id })
+            ? await loadSearchableTables(run.account_id).catch(() => [])
+            : [];
+        const withheld = new Set(searchTables.map((t) => t.knowledgeId));
+        const readableDocuments = withheld.size > 0 ? documents.filter((d) => !withheld.has(d.id)) : documents;
+        const knowledgeCacheKey = `${aiConfig.id}:${knowledgeVersion}${withheld.size > 0 ? `:w:${[...withheld].sort().join(",")}` : ""}`;
         // Semantic (embeddings/pgvector) retrieval opts in automatically
         // whenever this account has a saved Gemini key — same BYO-key
         // model as chat replies, nothing extra to configure. No key (or
@@ -1813,7 +1826,7 @@ async function advanceFromNodeKey(
           lastUserMessage.trim().length <= 25 && conversationHistory.length > 0
             ? `${lastUserMessage.trim()} ${conversationHistory.slice(-2).map((h) => h.text).join(' ')}`.slice(0, 500)
             : lastUserMessage
-        const selected = await selectRelevantContext(retrievalQuery, qaPairs, documents, {
+        const selected = await selectRelevantContext(retrievalQuery, qaPairs, readableDocuments, {
           cacheKey: knowledgeCacheKey,
           // One account-level budget, split between the two kinds rather
           // than two independent caps the user can't see or reason about.
@@ -2012,11 +2025,15 @@ async function advanceFromNodeKey(
         // Lookups are only offered when there is a contact to scope them
         // to. Without one there is no "this customer" to be safe about,
         // and the tools must not run at all.
-        const customerToolContext = run.contact_id
-          ? { accountId: run.account_id, contactId: run.contact_id }
+        const customerToolContext: CustomerToolContext | null = run.contact_id
+          ? {
+              accountId: run.account_id,
+              contactId: run.contact_id,
+              ...(searchTables.length > 0 ? { canSearchTables: true } : {}),
+            }
           : null;
         if (customerToolContext) {
-          promptParts.push(await buildCustomerToolInstruction(run.account_id));
+          promptParts.push(await buildCustomerToolInstruction(run.account_id, { searchTables }));
         }
         // Appended last so it is the most recent instruction the model
         // reads, and applies regardless of what the account wrote above.
@@ -2064,7 +2081,8 @@ async function advanceFromNodeKey(
         // intended. Citation artifacts from pasted PDFs ([cite: 1]) are
         // removed at the same time.
         const scanned = scanActionTokens(rawReply);
-        let reply = markdownToWhatsApp(scanned.cleanedText);
+        // [[records]] becomes the exact rows the search returned.
+        let reply = fillRecordPlaceholders(markdownToWhatsApp(scanned.cleanedText), aiResult.toolOutputs);
         const modelAskedForHuman = scanned.actions.includes("handoff");
 
         // A list may only name what this turn's material has — not the
@@ -2074,13 +2092,17 @@ async function advanceFromNodeKey(
         if (reply && !aiResult.handedToChatbot) {
           const grounded = await enforceGroundedList({
             reply,
+            // One unit per Q&A, passage and returned row, so a figure in
+            // a listed item must come from the same row as its name.
             sources: [
-              knowledgeBlock,
+              ...selected.qaPairs.map((p) => `${p.question} ${p.answer}`),
+              ...selected.documentChunks.map((c) => c.text),
               customerContext,
               formatCompanyBlock(companyProfile, "customer"),
               aiConfig.system_prompt ?? "",
               cfg.system_prompt ?? "",
-              ...aiResult.toolOutputs,
+              ...aiResult.toolOutputs.filter((o) => !isSearchOutput(o)),
+              ...recordUnits(aiResult.toolOutputs),
               lastUserMessage,
               ...conversationHistory.filter((m) => m.role === "user").map((m) => m.text),
             ],
@@ -2103,7 +2125,10 @@ async function advanceFromNodeKey(
                 tokens: again.usage,
                 latencyMs: Date.now() - rewriteStartedAt,
               });
-              return markdownToWhatsApp(scanActionTokens(again.reply).cleanedText);
+              return fillRecordPlaceholders(
+                markdownToWhatsApp(scanActionTokens(again.reply).cleanedText),
+                aiResult.toolOutputs,
+              );
             },
           });
           reply = grounded.reply;

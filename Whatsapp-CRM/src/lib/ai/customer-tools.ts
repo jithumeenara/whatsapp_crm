@@ -44,6 +44,8 @@ import { prisma } from '@/lib/db'
 import { zonedInstant } from '@/lib/agents/zoned-time'
 import { anyOwner } from '@/lib/agents/ask-callback'
 import { recordContactHandover } from './handover-contact'
+import { MATCHES, type LoadedTable } from './table-search'
+import { describeTables, runTableSearch } from './table-search-store'
 
 export interface CustomerToolContext {
   accountId: string
@@ -58,6 +60,9 @@ export interface CustomerToolContext {
   /** Sender-of-record for the bot's own messages, same as every other
    *  engine send. Required alongside conversationId. */
   userId?: string
+  /** The account has tables the assistant may search (table-search.ts).
+   *  Without any, search_records is not offered at all. */
+  canSearchTables?: boolean
 }
 
 type ToolArgs = Record<string, unknown>
@@ -248,6 +253,51 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         })),
       }
     },
+  },
+
+  search_records: {
+    declaration: {
+      name: 'search_records',
+      description:
+        "Find rows in one of the business's own tables, listed under BUSINESS TABLES in your instructions — programmes, schedules, prices, doctors, branches and the like. The search is exact and reads the live table, so use it for any question those tables answer and answer only from what it returns.",
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          table: { type: SchemaType.STRING, description: 'The table name, as listed under BUSINESS TABLES.' },
+          filters: {
+            type: SchemaType.ARRAY,
+            description: 'Conditions every returned row must meet. Leave out for all rows.',
+            items: {
+              type: SchemaType.OBJECT,
+              properties: {
+                column: { type: SchemaType.STRING, description: 'A column of that table.' },
+                match: {
+                  type: SchemaType.STRING,
+                  format: 'enum',
+                  enum: [...MATCHES],
+                  description:
+                    'is: equals (a month written as a word counts). contains: has these words. in_month: a date or month in that month. before/after/from/until: dates. less_than/more_than/at_most/at_least: numbers.',
+                },
+                value: {
+                  type: SchemaType.STRING,
+                  description:
+                    'In the customer\'s terms: "October", "next_month", "2026-10-15", "today", "3000", "gold loan".',
+                },
+              },
+              required: ['column', 'match', 'value'],
+            },
+          },
+          words: { type: SchemaType.STRING, description: 'Words to find anywhere in a row, such as a name.' },
+          upcoming_only: { type: SchemaType.BOOLEAN, description: 'Only rows whose date is today or later.' },
+          limit: { type: SchemaType.INTEGER, description: 'Rows to return, at most 25. Default 10.' },
+        },
+        required: ['table'],
+      },
+    },
+    // Account-wide rather than per contact, and safely so: only tables
+    // that are not people's own submissions ever reach this (see
+    // table-search-store.ts), and only the columns knowledge would show.
+    run: (args, ctx) => runTableSearch(args, ctx.accountId),
   },
 
   start_chatbot: {
@@ -641,6 +691,7 @@ export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDecl
   const live = Boolean(ctx.conversationId && ctx.userId)
   return Object.entries(ALL_TOOLS)
     .filter(([name]) => live || !NEEDS_CONVERSATION.has(name))
+    .filter(([name]) => name !== 'search_records' || ctx.canSearchTables)
     .map(([, t]) => t.declaration)
 }
 
@@ -765,7 +816,17 @@ async function startableChatbots(accountId: string): Promise<Array<{ name: strin
   }))
 }
 
-export async function buildCustomerToolInstruction(accountId: string): Promise<string> {
+export async function buildCustomerToolInstruction(
+  accountId: string,
+  opts: { searchTables?: readonly LoadedTable[] } = {},
+): Promise<string> {
+  // The tables it will search, when it will. Given as their own block so
+  // it is clear these are looked up, not known.
+  const tablesBlock = opts.searchTables?.length ? `\n\n${describeTables(opts.searchTables)}` : ''
+  return (await buildToolInstructionBase(accountId)) + tablesBlock
+}
+
+async function buildToolInstructionBase(accountId: string): Promise<string> {
   const [forms, bots] = await Promise.all([
     listRegistrationForms(accountId).catch(() => []),
     startableChatbots(accountId).catch(() => []),

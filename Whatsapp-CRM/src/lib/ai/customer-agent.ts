@@ -62,6 +62,20 @@ export type CustomerReplyResult = AiReplyResult & {
   handedToChatbot: boolean
 }
 
+/** Whether a reply for this config and context will run with tools —
+ *  the one test, shared with callers that must shape the prompt to
+ *  match (a table the assistant will search is not also given as text). */
+export function customerToolsUsable(
+  aiConfig: { active_provider: string; provider_keys: unknown },
+  toolContext: CustomerToolContext | null | undefined,
+): boolean {
+  return (
+    Boolean(toolContext) &&
+    aiConfig.active_provider === 'gemini' &&
+    Boolean(getProviderKeys(aiConfig).gemini?.api_key)
+  )
+}
+
 export async function generateCustomerReply(args: {
   aiConfig: {
     active_provider: string
@@ -80,12 +94,7 @@ export async function generateCustomerReply(args: {
 }): Promise<CustomerReplyResult> {
   const geminiEntry = getProviderKeys(args.aiConfig).gemini
 
-  const canUseTools =
-    Boolean(args.toolContext) &&
-    args.aiConfig.active_provider === 'gemini' &&
-    Boolean(geminiEntry?.api_key)
-
-  if (!canUseTools) {
+  if (!customerToolsUsable(args.aiConfig, args.toolContext)) {
     const plain = await generateAiReplyWithFallback(
       args.aiConfig,
       args.systemPrompt,

@@ -40,8 +40,9 @@ const LIST_ITEM = /^\s*(?:[-•–▪◦]|\*(?=\s)|\d{1,2}[.)])\s+\S/
 
 /** The list items in a reply that name something no source contains. */
 export function ungroundedListItems(reply: string, sources: readonly string[]): string[] {
+  const units = sources.filter(Boolean).map((s) => new Set(distinctiveTokens(s)))
   const known = new Set<string>()
-  for (const s of sources) if (s) for (const t of distinctiveTokens(s)) known.add(t)
+  for (const u of units) for (const t of u) known.add(t)
 
   const out: string[] = []
   for (const line of reply.split('\n')) {
@@ -50,9 +51,35 @@ export function ungroundedListItems(reply: string, sources: readonly string[]): 
     if (tokens.length < 2) continue
     const missing = tokens.filter((t) => !known.has(t))
     // Most of its words, and at least two of them, appear nowhere.
-    if (missing.length >= 2 && (tokens.length - missing.length) / tokens.length < 0.6) out.push(line.trim())
+    if (missing.length >= 2 && (tokens.length - missing.length) / tokens.length < 0.6) {
+      out.push(line.trim())
+      continue
+    }
+    // Every figure from the one source the item is about: a programme's
+    // name beside another programme's fee or dates is wrong, although
+    // every word of it appears somewhere. Sources are passed one row or
+    // passage each for this.
+    const numbers = tokens.filter((t) => /^\d+$/.test(t))
+    if (numbers.length > 0 && !numbersFromOneSource(tokens, numbers, units)) out.push(line.trim())
   }
   return out
+}
+
+/** Whether a source that matches the item best — most of its words —
+ *  also holds all of its numbers. */
+function numbersFromOneSource(tokens: string[], numbers: string[], units: Array<Set<string>>): boolean {
+  let best = -1
+  let ok = false
+  for (const u of units) {
+    const hits = tokens.filter((t) => u.has(t)).length
+    if (hits > best) {
+      best = hits
+      ok = numbers.every((n) => u.has(n))
+    } else if (hits === best && !ok) {
+      ok = numbers.every((n) => u.has(n))
+    }
+  }
+  return ok
 }
 
 /** The reply without those lines. */

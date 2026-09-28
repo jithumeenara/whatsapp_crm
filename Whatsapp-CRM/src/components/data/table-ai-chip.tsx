@@ -14,7 +14,7 @@ import { toast } from "sonner"
 import { Bot, BrainCircuit, Loader2, Lock, RefreshCw, Sparkles } from "lucide-react"
 
 interface AiState {
-  ai: { configured: boolean; knowledge_enabled: boolean; semantic: boolean; auto_reply: boolean }
+  ai: { configured: boolean; knowledge_enabled: boolean; semantic: boolean; auto_reply: boolean; table_search: boolean }
   knowledge: {
     id: string
     status: string
@@ -24,6 +24,14 @@ interface AiState {
   } | null
   can_register: boolean
   personal_data: boolean
+  /** Customers really get this table (not held back as people's details). */
+  customer_facing: boolean
+  search: {
+    ask_first: string | null
+    upcoming_by: string | null
+    choice_fields: Array<{ key: string; label: string }>
+    date_fields: Array<{ key: string; label: string }>
+  }
   can_manage: boolean
 }
 
@@ -58,6 +66,7 @@ export function TableAiChip({ tableId }: { tableId: string }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [audience, setAudience] = useState<"customer" | "internal">("internal")
+  const [savingSearch, setSavingSearch] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +97,25 @@ export function TableAiChip({ tableId }: { tableId: string }) {
       toast.error(err instanceof Error ? err.message : "Could not train")
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function saveSearch(patch: { ask_first?: string | null; upcoming_by?: string | null }) {
+    setSavingSearch(true)
+    try {
+      const res = await fetch(`/api/data-tables/${tableId}/ai`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Could not save")
+      setState(data)
+      toast.success("Saved")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save")
+    } finally {
+      setSavingSearch(false)
     }
   }
 
@@ -174,7 +202,13 @@ export function TableAiChip({ tableId }: { tableId: string }) {
                   <dt className="text-slate-400">Rows read</dt>
                   <dd className="text-slate-700">{ago(k.last_synced_at)}</dd>
                   <dt className="text-slate-400">Answers</dt>
-                  <dd className="text-slate-700">{k.audience === "customer" ? "Customers and staff" : k.audience === "both" ? "Customers and staff" : "Staff only"}</dd>
+                  <dd className="text-slate-700">
+                    {state.customer_facing
+                      ? "Customers and staff"
+                      : k.audience !== "internal"
+                        ? "Staff only — holds people's details"
+                        : "Staff only"}
+                  </dd>
                   <dt className="text-slate-400">Search</dt>
                   <dd className="text-slate-700">{state.ai.semantic ? "By meaning" : "By keyword (add a Gemini key for meaning)"}</dd>
                 </dl>
@@ -201,6 +235,57 @@ export function TableAiChip({ tableId }: { tableId: string }) {
                 <p className="text-[11.5px] leading-relaxed text-slate-400">
                   Re-reads the rows and trains straight away. It also catches up by itself within the hour.
                 </p>
+
+                {state.customer_facing && (
+                  <div className="flex flex-col gap-2.5 border-t border-slate-100 pt-3">
+                    <p className="text-[12.5px] font-semibold text-slate-800">When customers ask</p>
+                    {state.ai.table_search ? (
+                      <p className="text-[11.5px] leading-relaxed text-slate-500">
+                        The assistant searches these rows one by one and shows them exactly as stored — every
+                        match, with the dates and amounts as you typed them.
+                      </p>
+                    ) : (
+                      <p className="rounded-xl bg-slate-50 px-3 py-2 text-[11.5px] leading-relaxed text-slate-500">
+                        Row-by-row search needs Google Gemini as the AI provider. Until then the assistant reads
+                        these rows as knowledge.
+                      </p>
+                    )}
+                    <label htmlFor={`ask-first-${tableId}`} className="flex flex-col gap-1 text-[12px] text-slate-500">
+                      Ask them first for
+                      <select
+                        id={`ask-first-${tableId}`}
+                        value={state.search.ask_first ?? ""}
+                        disabled={!state.can_manage || savingSearch}
+                        onChange={(e) => void saveSearch({ ask_first: e.target.value || null })}
+                        className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[12.5px] text-slate-800 disabled:opacity-60"
+                      >
+                        <option value="">Nothing — show the rows straight away</option>
+                        {state.search.choice_fields.map((f) => (
+                          <option key={f.key} value={f.key}>{f.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label htmlFor={`upcoming-${tableId}`} className="flex flex-col gap-1 text-[12px] text-slate-500">
+                      Hide rows that are over, by
+                      <select
+                        id={`upcoming-${tableId}`}
+                        value={state.search.upcoming_by ?? ""}
+                        disabled={!state.can_manage || savingSearch}
+                        onChange={(e) => void saveSearch({ upcoming_by: e.target.value || null })}
+                        className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[12.5px] text-slate-800 disabled:opacity-60"
+                      >
+                        <option value="">Don&apos;t hide — show every row</option>
+                        {state.search.date_fields.map((f) => (
+                          <option key={f.key} value={f.key}>{f.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="text-[11.5px] leading-relaxed text-slate-400">
+                      &ldquo;Ask first&rdquo; lists only the values the table has — say Month, and customers are
+                      offered the months with rows in them.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

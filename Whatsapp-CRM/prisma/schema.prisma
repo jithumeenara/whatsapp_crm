@@ -2326,6 +2326,10 @@ model DataTable {
   /// The unguessable part of the form's link; regenerating it shuts a
   /// leaked link. Null until a form is first switched on.
   form_token         String?  @unique
+  /// How the customer-facing assistant searches this table: the column
+  /// to ask for first, the date column that decides "upcoming".
+  /// See src/lib/ai/table-search.ts. Null: neither.
+  ai_search          Json?
   created_at         DateTime @default(now()) @db.Timestamptz(6)
   updated_at         DateTime @updatedAt @db.Timestamptz(6)
 

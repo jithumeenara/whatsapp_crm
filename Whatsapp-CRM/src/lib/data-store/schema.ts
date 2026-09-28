@@ -17,6 +17,8 @@ export function ensureDataStoreColumns(): Promise<void> {
     await prisma.$executeRawUnsafe('ALTER TABLE data_tables ADD COLUMN IF NOT EXISTS alert_config JSONB')
     await prisma.$executeRawUnsafe('ALTER TABLE data_tables ADD COLUMN IF NOT EXISTS form_config JSONB')
     await prisma.$executeRawUnsafe('ALTER TABLE data_tables ADD COLUMN IF NOT EXISTS form_token TEXT')
+    // Migration 115: how the assistant searches the table.
+    await prisma.$executeRawUnsafe('ALTER TABLE data_tables ADD COLUMN IF NOT EXISTS ai_search JSONB')
     await prisma.$executeRawUnsafe(
       'CREATE UNIQUE INDEX IF NOT EXISTS data_tables_form_token_key ON data_tables (form_token)',
     )

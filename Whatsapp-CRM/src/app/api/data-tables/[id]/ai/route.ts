@@ -9,7 +9,8 @@ import { trainKnowledgeConfig } from '@/lib/ai/train-pending'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { isSensitiveField } from '@/lib/data-store/record-alert'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
-import { peopleTableIds } from '@/lib/data-store/people-tables'
+import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-tables'
+import { invalidateSearchableTables, parseAiSearch } from '@/lib/ai/table-search-store'
 
 /**
  * This table and the assistant: is it something the AI answers from,
@@ -33,20 +34,35 @@ async function loadState(accountId: string, tableId: string) {
       id: true,
       name: true,
       ai_can_register: true,
-      fields: { select: { field_key: true, label: true, field_type: true } },
+      ai_search: true,
+      fields: { orderBy: { sort_order: 'asc' }, select: { field_key: true, label: true, field_type: true } },
     },
   })
   if (!table) return null
 
   const config = await prisma.aiConfig.findUnique({
     where: { account_id: accountId },
-    select: { id: true, provider_keys: true, knowledge_base_enabled: true, ai_auto_reply_enabled: true },
+    select: {
+      id: true,
+      provider_keys: true,
+      knowledge_base_enabled: true,
+      ai_auto_reply_enabled: true,
+      active_provider: true,
+    },
   })
   const knowledge = config
     ? await prisma.aiKnowledgeItem.findFirst({
         where: { ai_config_id: config.id, account_id: accountId, kind: 'database', source_ref: tableId },
         orderBy: { created_at: 'asc' },
-        select: { id: true, status: true, audience: true, last_synced_at: true, last_error: true, updated_at: true },
+        select: {
+          id: true,
+          status: true,
+          audience: true,
+          last_synced_at: true,
+          last_error: true,
+          updated_at: true,
+          content: true,
+        },
       })
     : null
 
@@ -61,17 +77,32 @@ async function loadState(accountId: string, tableId: string) {
     people.has(tableId) ||
     table.fields.some((f) => f.field_type === 'phone' || f.field_type === 'email' || isSensitiveField(f))
 
-  return { table, config, knowledge, personal }
+  // Whether customers really get it: connected for them, and not held
+  // back when knowledge is read (knowledge-store.ts applies the same two
+  // checks). The saved audience alone can say "both" for a table that
+  // is never given to a customer.
+  const customerFacing =
+    !!knowledge &&
+    knowledge.audience !== 'internal' &&
+    knowledge.status !== 'disabled' &&
+    !people.has(tableId) &&
+    !looksLikeContactList(knowledge.content)
+
+  return { table, config, knowledge, personal, customerFacing }
 }
 
 function view(state: NonNullable<Awaited<ReturnType<typeof loadState>>>, canManage: boolean) {
-  const { config, knowledge, table, personal } = state
+  const { config, knowledge, table, personal, customerFacing } = state
+  const search = parseAiSearch(table.ai_search, table.fields.map((f) => f.field_key))
   return {
     ai: {
       configured: !!config,
       knowledge_enabled: config?.knowledge_base_enabled ?? false,
       semantic: config ? !!geminiCredentials(config).apiKey : false,
       auto_reply: config?.ai_auto_reply_enabled ?? false,
+      // Row-by-row search needs tools, which run on Gemini only
+      // (customer-agent.ts customerToolsUsable).
+      table_search: config ? config.active_provider === 'gemini' && !!geminiCredentials(config).apiKey : false,
     },
     knowledge: knowledge
       ? {
@@ -84,7 +115,72 @@ function view(state: NonNullable<Awaited<ReturnType<typeof loadState>>>, canMana
       : null,
     can_register: table.ai_can_register,
     personal_data: personal,
+    customer_facing: customerFacing,
+    // How the assistant searches this table for customers
+    // (lib/ai/table-search.ts), and the columns each setting can use.
+    search: {
+      ask_first: search.ask_first,
+      upcoming_by: search.upcoming_by,
+      choice_fields: table.fields
+        .filter((f) => ASK_FIRST_TYPES.has(f.field_type))
+        .map((f) => ({ key: f.field_key, label: f.label })),
+      date_fields: table.fields
+        .filter((f) => UPCOMING_TYPES.has(f.field_type))
+        .map((f) => ({ key: f.field_key, label: f.label })),
+    },
     can_manage: canManage,
+  }
+}
+
+/** Columns a customer can be asked to choose from, and columns that
+ *  can say a row is over. */
+const ASK_FIRST_TYPES = new Set(['select', 'text'])
+const UPCOMING_TYPES = new Set(['date', 'datetime', 'text'])
+
+/** PUT — how the assistant searches this table: { ask_first, upcoming_by },
+ *  each a column key or null. Admin only, like connecting and training. */
+export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const ctx = await requireRole('admin')
+    const { id } = await params
+    if (!UUID.test(id)) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
+    await ensureDataStoreColumns().catch(() => {})
+
+    const body = (await req.json().catch(() => null)) as { ask_first?: unknown; upcoming_by?: unknown } | null
+    if (!body || typeof body !== 'object') return NextResponse.json({ error: 'Nothing to save.' }, { status: 400 })
+
+    const state = await loadState(ctx.accountId, id)
+    if (!state) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
+
+    const allowed = (types: Set<string>, value: unknown): string | null | undefined => {
+      if (value === undefined) return undefined
+      if (value === null || value === '') return null
+      if (typeof value !== 'string') return undefined
+      return state.table.fields.some((f) => f.field_key === value && types.has(f.field_type)) ? value : undefined
+    }
+    const current = parseAiSearch(state.table.ai_search, state.table.fields.map((f) => f.field_key))
+    const askFirst = allowed(ASK_FIRST_TYPES, body.ask_first)
+    const upcomingBy = allowed(UPCOMING_TYPES, body.upcoming_by)
+    if ((body.ask_first !== undefined && askFirst === undefined) || (body.upcoming_by !== undefined && upcomingBy === undefined)) {
+      return NextResponse.json({ error: 'That column cannot be used for this.' }, { status: 400 })
+    }
+
+    await prisma.dataTable.update({
+      where: { id: state.table.id },
+      data: {
+        ai_search: {
+          ask_first: askFirst === undefined ? current.ask_first : askFirst,
+          upcoming_by: upcomingBy === undefined ? current.upcoming_by : upcomingBy,
+        },
+      },
+    })
+    invalidateSearchableTables(ctx.accountId)
+
+    const fresh = await loadState(ctx.accountId, id)
+    if (!fresh) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
+    return NextResponse.json({ ...view(fresh, true), message: 'Saved.' })
+  } catch (err) {
+    return toErrorResponse(err)
   }
 }
 

@@ -18,6 +18,11 @@ import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-ta
 export interface LoadedKnowledge {
   qaPairs: QaPair[]
   documents: KnowledgeDocument[]
+  /** Data Store tables among the documents — the ones the assistant may
+   *  also search row by row (table-search.ts). Only tables that passed
+   *  the same checks as the documents: an entry held back from this
+   *  audience is not searchable either. */
+  tables: Array<{ knowledgeId: string; tableId: string; purpose: string | null }>
   /** Changes whenever any item in this account's knowledge base changes —
    *  safe to use as knowledge.ts's chunk/tokenize cacheKey, which must
    *  not go stale across an edit. Derived from the row count plus the
@@ -155,6 +160,7 @@ export async function loadKnowledge(
 
   const qaPairs: QaPair[] = []
   const documents: KnowledgeDocument[] = []
+  const tables: LoadedKnowledge['tables'] = []
   let newest = 0
 
   for (const item of items) {
@@ -169,6 +175,9 @@ export async function loadKnowledge(
     if (item.kind === 'qa') {
       if (item.question && item.answer) qaPairs.push({ question: item.question, answer: item.answer, id: item.id })
     } else if (item.content?.trim()) {
+      if (item.kind === 'database' && item.source_ref) {
+        tables.push({ knowledgeId: item.id, tableId: item.source_ref, purpose: item.description?.trim() || null })
+      }
       // The account's own "what this is for" note becomes the first
       // line of the document, so every chunk cut from it inherits that
       // context in its title. A fee table retrieved as a bare fragment
@@ -197,6 +206,7 @@ export async function loadKnowledge(
   const loaded: LoadedKnowledge = {
     qaPairs,
     documents,
+    tables,
     // The excluded tables too: a table becomes one of people's
     // submissions when its first registration lands, without any
     // knowledge entry changing.

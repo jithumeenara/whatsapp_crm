@@ -22,8 +22,10 @@ import { selectRelevantContext, formatKnowledgeBlock, type SelectedContext } fro
 import { buildLanguageBlock } from './language'
 import { assessConfidence, type ConfidenceAssessment } from './confidence'
 import { validateReply, type ValidationResult } from './validator'
-import { generateCustomerReply } from './customer-agent'
-import { buildCustomerToolInstruction } from './customer-tools'
+import { customerToolsUsable, generateCustomerReply } from './customer-agent'
+import { buildCustomerToolInstruction, type CustomerToolContext } from './customer-tools'
+import { fillRecordPlaceholders, isSearchOutput, recordUnits, type LoadedTable } from './table-search'
+import { loadSearchableTables } from './table-search-store'
 import { scanActionTokens } from './action-tokens'
 import { checkSafetyGuard } from './safety-guard'
 import { WHATSAPP_REPLY_STYLE } from '@/lib/whatsapp/markdown-to-whatsapp'
@@ -109,6 +111,9 @@ export async function loadPromptSources(args: {
   contactId: string | null
   currentChannel?: string
   toolsAvailable: boolean
+  /** Tables the assistant will search this turn, described in the tool
+   *  instruction. Empty when it will not search. */
+  searchTables?: readonly LoadedTable[]
 }): Promise<PromptSources> {
   const [companyProfile, customerContext, toolInstruction] = await Promise.all([
     loadCompanyProfile(args.accountId).catch(() => null),
@@ -120,7 +125,7 @@ export async function loadPromptSources(args: {
         }).catch(() => '')
       : Promise.resolve(''),
     args.toolsAvailable
-      ? buildCustomerToolInstruction(args.accountId).catch(() => '')
+      ? buildCustomerToolInstruction(args.accountId, { searchTables: args.searchTables }).catch(() => '')
       : Promise.resolve(''),
   ])
 
@@ -355,6 +360,10 @@ export async function retrieveForMessage(args: {
   /** What was said just before, newest last. Used only to give a short
    *  reply something to retrieve against. */
   conversationHistory?: { role: 'user' | 'model'; text: string }[]
+  /** Knowledge entries not to give as text — tables the assistant will
+   *  search instead (table-search.ts). Reading a table and searching it
+   *  are two answers to one question, and only the search is exact. */
+  withhold?: ReadonlySet<string>
 }): Promise<SelectedContext> {
   const { aiConfig } = args
   if (!aiConfig.knowledge_base_enabled) {
@@ -363,7 +372,10 @@ export async function retrieveForMessage(args: {
 
   // 'customer' explicitly: this is what a real person receives, so
   // staff-only entries must not even enter the prompt.
-  const { qaPairs, documents, version } = await loadKnowledge(aiConfig.id, 'customer')
+  const loaded = await loadKnowledge(aiConfig.id, 'customer')
+  const { qaPairs, version } = loaded
+  const withheld = args.withhold && args.withhold.size > 0 ? args.withhold : null
+  const documents = withheld ? loaded.documents.filter((d) => !withheld.has(d.id)) : loaded.documents
 
   // What to search for.
   //
@@ -386,7 +398,8 @@ export async function retrieveForMessage(args: {
   const contextLimit = Math.max(1, aiConfig.max_context_results)
 
   return selectRelevantContext(query, qaPairs, documents, {
-    cacheKey: `${aiConfig.id}:${version}`,
+    // A different set of documents is a different cache entry.
+    cacheKey: `${aiConfig.id}:${version}${withheld ? `:w:${[...withheld].sort().join(',')}` : ''}`,
     maxQaPairs: contextLimit,
     maxDocChunks: contextLimit,
     ...(useSemantic ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey: geminiApiKey! } } : {}),
@@ -616,7 +629,7 @@ export async function runCustomerTurn(args: {
     }
   }
 
-  const toolContext = args.contactId
+  const toolContext: CustomerToolContext | null = args.contactId
     ? {
         accountId: args.accountId,
         contactId: args.contactId,
@@ -625,6 +638,14 @@ export async function runCustomerTurn(args: {
           : {}),
       }
     : null
+
+  // Tables it will search rather than read (table-search.ts) — only when
+  // this reply runs with tools; otherwise they stay knowledge as before.
+  const searchTables =
+    toolContext && args.aiConfig.knowledge_base_enabled && customerToolsUsable(args.aiConfig, toolContext)
+      ? await loadSearchableTables(args.accountId).catch(() => [])
+      : []
+  if (toolContext && searchTables.length > 0) toolContext.canSearchTables = true
 
   // Started here, not after retrieval, and this is the point.
   //
@@ -646,6 +667,7 @@ export async function runCustomerTurn(args: {
     contactId: args.contactId,
     currentChannel: args.currentChannel,
     toolsAvailable: Boolean(toolContext),
+    searchTables,
   }).then((sources) => {
     timings.promptSources = Date.now() - sourcesStartedAt
     return sources
@@ -656,6 +678,7 @@ export async function runCustomerTurn(args: {
     aiConfig: args.aiConfig,
     customerMessage: args.customerMessage,
     conversationHistory: history,
+    withhold: new Set(searchTables.map((t) => t.knowledgeId)),
   })
   timings.retrieval = Date.now() - retrievalStartedAt
   timings.embedding = selected.embeddingMs ?? 0
@@ -769,7 +792,8 @@ export async function runCustomerTurn(args: {
   // like [ACTION: TRIGGER_HUMAN_ADMIN]. Stripped from what the customer
   // sees, and honoured as a real handoff rather than sent as text.
   const scanned = scanActionTokens(generated.reply)
-  let reply = markdownToWhatsApp(scanned.cleanedText)
+  // [[records]] becomes the exact rows the search returned.
+  let reply = fillRecordPlaceholders(markdownToWhatsApp(scanned.cleanedText), generated.toolOutputs)
   const modelAskedForHuman = scanned.actions.includes('handoff')
 
   // A list may only name what this turn's material has. Not the
@@ -780,9 +804,16 @@ export async function runCustomerTurn(args: {
     const groundingStartedAt = Date.now()
     const grounded = await enforceGroundedList({
       reply,
+      // One unit per Q&A, passage and returned row, so a figure in a
+      // listed item must come from the same row as the name beside it.
       sources: [
-        ...assembly.contextParts,
-        ...generated.toolOutputs,
+        ...selected.qaPairs.map((p) => `${p.question} ${p.answer}`),
+        ...selected.documentChunks.map((c) => c.text),
+        assembly.companyBlock,
+        assembly.customerContext,
+        args.aiConfig.system_prompt ?? '',
+        ...generated.toolOutputs.filter((o) => !isSearchOutput(o)),
+        ...recordUnits(generated.toolOutputs),
         args.customerMessage,
         ...history.filter((m) => m.role === 'user').map((m) => m.text),
       ],
@@ -804,7 +835,7 @@ export async function runCustomerTurn(args: {
             totalTokens: (usage?.totalTokens ?? 0) + again.usage.totalTokens,
           }
         }
-        return markdownToWhatsApp(scanActionTokens(again.reply).cleanedText)
+        return fillRecordPlaceholders(markdownToWhatsApp(scanActionTokens(again.reply).cleanedText), generated.toolOutputs)
       },
     })
     reply = grounded.reply
