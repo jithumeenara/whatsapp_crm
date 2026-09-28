@@ -57,6 +57,9 @@ export interface SelectedContext {
    *  methods, but both serve the same purpose for the caller: "how much
    *  of what was asked did we actually find?" 0 when nothing matched. */
   confidence: number
+  /** How many passages each source holds in all, by `sourceId` — so the
+   *  prompt can say whether a source was given complete or only in part. */
+  sourceTotals?: Record<string, number>
   /** How long the query embedding took, in milliseconds — a provider
    *  round trip that happens between the customer's message and their
    *  reply, and the one part of retrieval that is not this app's own
@@ -95,6 +98,12 @@ const OVERFETCH_FACTOR = 4
 /** Absolute ceiling, so a large max_context_results can't turn one reply
  *  into an unbounded scan. */
 const MAX_SEMANTIC_CANDIDATES = 100
+
+/** A source this short is given whole once any part of it matches —
+ *  roughly 60 table records. */
+const WHOLE_SOURCE_MAX_CHARS = 12_000
+/** Ceiling on the text added by giving sources whole, per reply. */
+const WHOLE_SOURCE_BUDGET_CHARS = 24_000
 
 const STOPWORDS = new Set([
   'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
@@ -309,6 +318,77 @@ async function selectBySemantic(
   }
 }
 
+type Chunk = { title: string; text: string; sourceId?: string }
+
+/**
+ * Gives a matched source whole when it is short, instead of the few
+ * passages that scored best.
+ *
+ * A Data Store table is one passage per record, and retrieval keeps the
+ * handful of records closest to the question. For "which programmes do
+ * you have?" that is the wrong cut: the records whose names repeat the
+ * question's words win, and a programme named differently ("Gold loan
+ * Appraisal…" beside three "Statutory Training Programme"s) is silently
+ * left out — the reply then reads as the complete list. Short sources
+ * are given in full, in their own order; longer ones keep their matched
+ * passages plus a table's header, and the prompt says they are partial.
+ *
+ * Only which passages are sent changes — chunking and hashes do not, so
+ * nothing needs retraining.
+ */
+export function widenToWholeSources(
+  selected: Chunk[],
+  allChunks: Chunk[],
+): { documentChunks: Chunk[]; sourceTotals: Record<string, number> } {
+  const bySource = new Map<string, Chunk[]>()
+  for (const c of allChunks) {
+    if (!c.sourceId) continue
+    const list = bySource.get(c.sourceId)
+    if (list) list.push(c)
+    else bySource.set(c.sourceId, [c])
+  }
+
+  // Sources in the order their best passage ranked.
+  const order: string[] = []
+  const matched = new Map<string, Chunk[]>()
+  const loose: Chunk[] = []
+  for (const c of selected) {
+    if (!c.sourceId || !bySource.has(c.sourceId)) {
+      loose.push(c)
+      continue
+    }
+    const list = matched.get(c.sourceId)
+    if (list) list.push(c)
+    else {
+      matched.set(c.sourceId, [c])
+      order.push(c.sourceId)
+    }
+  }
+
+  const out: Chunk[] = []
+  const sourceTotals: Record<string, number> = {}
+  let budget = WHOLE_SOURCE_BUDGET_CHARS
+  for (const id of order) {
+    const all = bySource.get(id)!
+    sourceTotals[id] = all.length
+    const size = all.reduce((n, c) => n + c.text.length, 0)
+    if (size <= WHOLE_SOURCE_MAX_CHARS && size <= budget) {
+      budget -= size
+      out.push(...all.map((c) => ({ title: c.title, text: c.text, sourceId: c.sourceId })))
+      continue
+    }
+    const picked = matched.get(id)!
+    // A table's header says what its records are; keep it with them.
+    const head = all[0]
+    if (head.text.startsWith('TABLE: ') && !picked.some((c) => c.text === head.text)) {
+      out.push({ title: head.title, text: head.text, sourceId: head.sourceId })
+    }
+    out.push(...picked)
+  }
+  out.push(...loose)
+  return { documentChunks: out, sourceTotals }
+}
+
 export async function selectRelevantContext(
   userMessage: string,
   qaPairs: QaPair[] = [],
@@ -318,18 +398,22 @@ export async function selectRelevantContext(
   const { maxQaPairs = 5, maxDocChunks = 3, minScore = 1, cacheKey, semantic } = opts
   const { chunks: allChunks, pairs: allPairs } = getOrBuildKnowledge(qaPairs, documents, cacheKey)
 
+  let result: SelectedContext | null = null
   if (semantic) {
-    const result = await selectBySemantic(userMessage, allPairs, allChunks, semantic, { maxQaPairs, maxDocChunks })
-    if (result) return result
+    result = await selectBySemantic(userMessage, allPairs, allChunks, semantic, { maxQaPairs, maxDocChunks })
   }
-
-  const queryTokens = tokenize(userMessage)
-  return selectByKeyword(queryTokens, allPairs, allChunks, { maxQaPairs, maxDocChunks, minScore })
+  if (!result) {
+    const queryTokens = tokenize(userMessage)
+    result = selectByKeyword(queryTokens, allPairs, allChunks, { maxQaPairs, maxDocChunks, minScore })
+  }
+  return { ...result, ...widenToWholeSources(result.documentChunks, allChunks) }
 }
 
 /** Builds the plain-text "Knowledge base" block appended to the system
  *  prompt — same framing style the old gemini-only implementation used,
- *  just fed a relevance-filtered subset instead of everything. */
+ *  just fed a relevance-filtered subset instead of everything. Passages
+ *  are grouped by source, each marked complete or partial, so a partial
+ *  table is never read as the whole list. */
 export function formatKnowledgeBlock(context: SelectedContext): string {
   const parts: string[] = []
   if (context.qaPairs.length > 0) {
@@ -339,10 +423,24 @@ export function formatKnowledgeBlock(context: SelectedContext): string {
     )
   }
   if (context.documentChunks.length > 0) {
-    parts.push(
-      'Reference material:',
-      ...context.documentChunks.map((c) => `From "${c.title}":\n${c.text}`),
-    )
+    parts.push('Reference material:')
+    const groups: Chunk[][] = []
+    for (const c of context.documentChunks) {
+      const last = groups[groups.length - 1]
+      if (last && c.sourceId && last[0].sourceId === c.sourceId) last.push(c)
+      else groups.push([c])
+    }
+    for (const group of groups) {
+      const { title, sourceId } = group[0]
+      const total = sourceId ? context.sourceTotals?.[sourceId] : undefined
+      const note =
+        total === undefined
+          ? ''
+          : group.length >= total
+            ? ' (complete — everything in this source is below)'
+            : ' (PARTIAL — only the parts that matched this question; it holds more. Do not present this as a complete list.)'
+      parts.push(`From "${title}"${note}:\n${group.map((c) => c.text).join('\n\n')}`)
+    }
   }
   return parts.join('\n\n')
 }

@@ -1930,7 +1930,7 @@ async function advanceFromNodeKey(
               confidence,
               knowledgeUsed: [
                 ...selected.qaPairs.map((q) => q.question),
-                ...selected.documentChunks.map((d) => d.title),
+                ...new Set(selected.documentChunks.map((d) => d.title)),
               ],
             }),
             "ai_reply_low_confidence",
@@ -2106,7 +2106,7 @@ async function advanceFromNodeKey(
                 toolsUsed: aiResult.toolsUsed,
                 knowledgeUsed: [
                   ...selected.qaPairs.map((q) => q.question),
-                  ...selected.documentChunks.map((d) => d.title),
+                  ...new Set(selected.documentChunks.map((d) => d.title)),
                 ],
               }),
               "ai_reply_unsupported_details",
@@ -2261,7 +2261,7 @@ async function advanceFromNodeKey(
                 toolsUsed: aiResult.toolsUsed,
                 knowledgeUsed: [
                   ...selected.qaPairs.map((q) => q.question),
-                  ...selected.documentChunks.map((d) => d.title),
+                  ...new Set(selected.documentChunks.map((d) => d.title)),
                 ],
               }),
             },

@@ -44,6 +44,10 @@ export interface AiReplySource {
   passages: string[]
   /** How many checked reply lines were found in this source. */
   used_lines: number
+  /** For a document or table: passages given, and how many it holds —
+   *  equal when it was given whole. */
+  given?: number
+  total?: number
 }
 
 export interface AiReplyMeta {
@@ -70,6 +74,9 @@ export function ensureAiMetaColumn(): Promise<void> {
 }
 
 const MAX_KNOWLEDGE_SOURCES = 8
+/** Enough to show every record of a short table that was given whole. */
+const MAX_PASSAGES_PER_SOURCE = 12
+const MAX_PASSAGES_TOTAL = 30
 const MAX_PASSAGE = 400
 const MAX_UNSUPPORTED = 8
 
@@ -171,6 +178,7 @@ export async function buildReplyMeta(args: {
   // Knowledge sources, each with its full retrieved text for the check.
   const sources: AiReplySource[] = []
   const fullText: string[] = []
+  let passagesLeft = MAX_PASSAGES_TOTAL
   for (const o of order) {
     const key = o.id ?? `name:${o.fallbackName}`
     let at = sources.findIndex((s) => (s.id ?? `name:${s.name}`) === key)
@@ -190,7 +198,15 @@ export async function buildReplyMeta(args: {
       at = sources.length - 1
     }
     fullText[at] += `\n${o.passage}`
-    if (sources[at].passages.length < 3) sources[at].passages.push(clip(o.passage))
+    if (sources[at].passages.length < MAX_PASSAGES_PER_SOURCE && passagesLeft > 0) {
+      sources[at].passages.push(clip(o.passage))
+      passagesLeft--
+    }
+    const total = o.kind === 'document' && o.id ? selected.sourceTotals?.[o.id] : undefined
+    if (total !== undefined) {
+      sources[at].given = (sources[at].given ?? 0) + 1
+      sources[at].total = total
+    }
   }
 
   // The rest of what the assistant had in front of it.

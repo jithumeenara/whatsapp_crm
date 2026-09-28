@@ -646,7 +646,8 @@ export async function runCustomerTurn(args: {
 
   const knowledgeUsed = [
     ...selected.qaPairs.map((q) => q.question),
-    ...selected.documentChunks.map((d) => d.title),
+    // One title per source, however many of its passages were given.
+    ...new Set(selected.documentChunks.map((d) => d.title)),
   ]
 
   const checksStartedAt = Date.now()
