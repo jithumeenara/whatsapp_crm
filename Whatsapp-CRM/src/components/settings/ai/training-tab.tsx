@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchModelSetting } from './search-model-setting';
 import {
   AiButton, AiCard, AiCardHeader, AiIconTile, AiBadge, AiInput, AiTextarea, AiLabel, AiHint, AiNotice,
   AiMenu, AiMenuTrigger, AiMenuContent, AiMenuItem, AiMenuSeparator,
@@ -684,6 +685,8 @@ export function TrainingTab(props: TrainingTabProps) {
             </div>
           </SettingBlock>
         </div>
+
+        <SearchModelSetting available={props.semanticSearchAvailable} />
       </AiCard>
 
       {props.rail}

@@ -26,6 +26,7 @@
 import {
   hasEmbeddings,
   embedQuery,
+  embeddingModelFor,
   findSimilarKnowledge,
   qaPairContentHash,
   chunkContentHash,
@@ -340,7 +341,7 @@ async function selectBySemantic(
 
   try {
     const embedStartedAt = Date.now()
-    const queryVector = await embedQuery(semantic.geminiApiKey, userMessage)
+    const queryVector = await embedQuery(semantic.geminiApiKey, userMessage, await embeddingModelFor(semantic.aiConfigId))
     const embeddingMs = Date.now() - embedStartedAt
     // Over-fetch, because a match can be dropped after ranking.
     //

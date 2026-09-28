@@ -34,6 +34,68 @@ import type { QaPair, KnowledgeDocument } from './knowledge'
  *  compared against vectors from the old model. */
 export const EMBEDDING_MODEL = 'gemini-embedding-001'
 
+/**
+ * The models an account can search by meaning with. gemini-embedding-2
+ * (GA April 2026) is offered, not imposed: its vectors cannot be compared
+ * with the old model's, so switching re-embeds the whole knowledge base,
+ * and whether it answers a given business better is for its accuracy
+ * tests to say — run them, switch, run them again, keep the better.
+ * Checked against ai.google.dev/gemini-api/docs/embeddings, Sept 2026:
+ * both default to 3072 dimensions (this table's column); the new model
+ * takes no task_type — the task goes in the text instead.
+ */
+export const EMBEDDING_MODELS = ['gemini-embedding-001', 'gemini-embedding-2'] as const
+export type EmbeddingModel = (typeof EMBEDDING_MODELS)[number]
+
+export function isEmbeddingModel(value: unknown): value is EmbeddingModel {
+  return typeof value === 'string' && (EMBEDDING_MODELS as readonly string[]).includes(value)
+}
+
+const MODEL_TTL_MS = 30_000
+const modelCache = new Map<string, { at: number; value: EmbeddingModel }>()
+
+/**
+ * The model this AI config searches with. Kept in ai_configs.embedding_model
+ * (migration 117) and read with plain SQL on purpose: the column is not in
+ * the Prisma model, so a server whose database lacks it still loads every
+ * config — and simply uses the original model.
+ */
+export async function embeddingModelFor(aiConfigId: string): Promise<EmbeddingModel> {
+  const hit = modelCache.get(aiConfigId)
+  if (hit && Date.now() - hit.at < MODEL_TTL_MS) return hit.value
+  let value: EmbeddingModel = EMBEDDING_MODEL
+  try {
+    const rows = await prisma.$queryRaw<Array<{ embedding_model: string | null }>>(
+      Prisma.sql`SELECT embedding_model FROM ai_configs WHERE id = ${aiConfigId}::uuid`,
+    )
+    if (isEmbeddingModel(rows[0]?.embedding_model)) value = rows[0].embedding_model as EmbeddingModel
+  } catch {
+    // No column yet: the original model.
+  }
+  modelCache.set(aiConfigId, { at: Date.now(), value })
+  return value
+}
+
+export async function setEmbeddingModel(aiConfigId: string, model: EmbeddingModel): Promise<void> {
+  await prisma.$executeRawUnsafe('ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS embedding_model TEXT')
+  await prisma.$executeRaw(Prisma.sql`UPDATE ai_configs SET embedding_model = ${model} WHERE id = ${aiConfigId}::uuid`)
+  modelCache.delete(aiConfigId)
+  invalidateHasEmbeddings(aiConfigId)
+}
+
+/** What is sent to the embedding API for one text. The new model is told
+ *  the task in the text itself, in Google's documented format. */
+export function embeddingRequest(
+  text: string,
+  kind: 'query' | 'document',
+  model: EmbeddingModel,
+): { text: string; taskType?: TaskType } {
+  if (model === 'gemini-embedding-2') {
+    return { text: kind === 'query' ? `task: search result | query: ${text}` : `title: none | text: ${text}` }
+  }
+  return { text, taskType: kind === 'query' ? TaskType.RETRIEVAL_QUERY : TaskType.RETRIEVAL_DOCUMENT }
+}
+
 function hashText(text: string): string {
   return createHash('sha256').update(text).digest('hex')
 }
@@ -65,12 +127,13 @@ export function chunkContentHash(chunk: { title: string; text: string }): string
 // call could add its full hang time on top of the actual reply call.
 const EMBED_TIMEOUT_MS = 10_000
 
-async function embed(apiKey: string, text: string, taskType: TaskType): Promise<number[]> {
+async function embed(apiKey: string, text: string, kind: 'query' | 'document', modelName: EmbeddingModel): Promise<number[]> {
   const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL }, { timeout: EMBED_TIMEOUT_MS })
+  const model = genAI.getGenerativeModel({ model: modelName }, { timeout: EMBED_TIMEOUT_MS })
+  const request = embeddingRequest(text, kind, modelName)
   const result = await model.embedContent({
-    content: { role: 'user', parts: [{ text }] },
-    taskType,
+    content: { role: 'user', parts: [{ text: request.text }] },
+    ...(request.taskType ? { taskType: request.taskType } : {}),
   })
   return result.embedding.values
 }
@@ -80,14 +143,14 @@ async function embed(apiKey: string, text: string, taskType: TaskType): Promise<
  *  asymmetric counterpart to embedDocument below. Using the same task
  *  type for both sides (the naive approach) measurably hurts retrieval
  *  quality for real RAG systems. */
-export function embedQuery(apiKey: string, text: string): Promise<number[]> {
-  return embed(apiKey, text, TaskType.RETRIEVAL_QUERY)
+export function embedQuery(apiKey: string, text: string, model: EmbeddingModel = EMBEDDING_MODEL): Promise<number[]> {
+  return embed(apiKey, text, 'query', model)
 }
 
 /** Embeds one knowledge item (a Q&A pair or document chunk) for storage —
  *  RETRIEVAL_DOCUMENT is the matching other half of the asymmetric pair. */
-export function embedDocument(apiKey: string, text: string): Promise<number[]> {
-  return embed(apiKey, text, TaskType.RETRIEVAL_DOCUMENT)
+export function embedDocument(apiKey: string, text: string, model: EmbeddingModel = EMBEDDING_MODEL): Promise<number[]> {
+  return embed(apiKey, text, 'document', model)
 }
 
 /** pgvector's text input format: "[0.1,0.2,...]". Passed as a plain
@@ -157,10 +220,11 @@ export async function hasEmbeddings(aiConfigId: string): Promise<boolean> {
   const cached = hasEmbeddingsCache.get(aiConfigId)
   if (cached && Date.now() - cached.at < HAS_EMBEDDINGS_TTL_MS) return cached.value
 
+  const model = await embeddingModelFor(aiConfigId)
   const rows = await prisma.$queryRaw<Array<{ exists: boolean }>>(
     Prisma.sql`SELECT EXISTS(
       SELECT 1 FROM ai_knowledge_embeddings
-      WHERE ai_config_id = ${aiConfigId}::uuid AND embedding_model = ${EMBEDDING_MODEL}
+      WHERE ai_config_id = ${aiConfigId}::uuid AND embedding_model = ${model}
     ) AS exists`,
   )
   const value = rows[0]?.exists ?? false
@@ -185,11 +249,12 @@ export async function findSimilarKnowledge(args: {
   limit: number
 }): Promise<EmbeddingMatch[]> {
   const literal = vectorLiteral(args.queryVector)
+  const model = await embeddingModelFor(args.aiConfigId)
   const rows = await prisma.$queryRaw<Array<{ content_hash: string; kind: string; similarity: number }>>(
     Prisma.sql`
       SELECT content_hash, kind, 1 - (embedding <=> ${literal}::vector) AS similarity
       FROM ai_knowledge_embeddings
-      WHERE ai_config_id = ${args.aiConfigId}::uuid AND embedding_model = ${EMBEDDING_MODEL}
+      WHERE ai_config_id = ${args.aiConfigId}::uuid AND embedding_model = ${model}
       ORDER BY embedding <=> ${literal}::vector
       LIMIT ${args.limit}
     `,
@@ -224,13 +289,15 @@ export async function syncKnowledgeEmbeddings(args: {
 }): Promise<{ embedded: number; deleted: number; failed: number; firstError?: string }> {
   const { aiConfigId, apiKey, items, accountId } = args
   const startedAt = Date.now()
+  // Rows of the other model are left alone: switching back reuses them.
+  const model = await embeddingModelFor(aiConfigId)
   let estimatedTokens = 0
   const currentHashes = new Set(items.map((i) => i.contentHash))
 
   const existing = await prisma.$queryRaw<Array<{ content_hash: string }>>(
     Prisma.sql`
       SELECT content_hash FROM ai_knowledge_embeddings
-      WHERE ai_config_id = ${aiConfigId}::uuid AND embedding_model = ${EMBEDDING_MODEL}
+      WHERE ai_config_id = ${aiConfigId}::uuid AND embedding_model = ${model}
     `,
   )
   const existingHashes = new Set(existing.map((r) => r.content_hash))
@@ -242,7 +309,7 @@ export async function syncKnowledgeEmbeddings(args: {
       Prisma.sql`
         DELETE FROM ai_knowledge_embeddings
         WHERE ai_config_id = ${aiConfigId}::uuid
-          AND embedding_model = ${EMBEDDING_MODEL}
+          AND embedding_model = ${model}
           AND content_hash IN (${Prisma.join(staleHashes)})
       `,
     )
@@ -258,12 +325,12 @@ export async function syncKnowledgeEmbeddings(args: {
   let firstError: string | undefined
   for (const item of missing) {
     try {
-      const vector = await embedDocument(apiKey, item.text)
+      const vector = await embedDocument(apiKey, item.text, model)
       estimatedTokens += estimateTokensFromText(item.text)
       embedded += await prisma.$executeRaw(
         Prisma.sql`
           INSERT INTO ai_knowledge_embeddings (id, ai_config_id, content_hash, kind, embedding_model, embedding)
-          VALUES (${randomUUID()}::uuid, ${aiConfigId}::uuid, ${item.contentHash}, ${item.kind}, ${EMBEDDING_MODEL}, ${vectorLiteral(vector)}::vector)
+          VALUES (${randomUUID()}::uuid, ${aiConfigId}::uuid, ${item.contentHash}, ${item.kind}, ${model}, ${vectorLiteral(vector)}::vector)
           ON CONFLICT (ai_config_id, content_hash, embedding_model) DO NOTHING
         `,
       )
@@ -282,7 +349,7 @@ export async function syncKnowledgeEmbeddings(args: {
   if (accountId && embedded > 0) {
     void recordAiUsage({
       accountId,
-      model: EMBEDDING_MODEL,
+      model,
       feature: 'embedding',
       // Estimated, not vendor-reported — embedContent returns no usage
       // metadata at all. See estimateTokensFromText.
