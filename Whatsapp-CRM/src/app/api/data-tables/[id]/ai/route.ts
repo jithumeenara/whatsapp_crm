@@ -9,6 +9,7 @@ import { trainKnowledgeConfig } from '@/lib/ai/train-pending'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { isSensitiveField } from '@/lib/data-store/record-alert'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
+import { peopleTableIds } from '@/lib/data-store/people-tables'
 
 /**
  * This table and the assistant: is it something the AI answers from,
@@ -53,13 +54,11 @@ async function loadState(accountId: string, tableId: string) {
   // it, or a column that holds a phone, an email or an identity number.
   // Connecting such a table for customers to be told would let anybody
   // ask the assistant about anybody else.
-  const withContact = await prisma.dataRecord.count({
-    where: { table_id: tableId, account_id: accountId, contact_id: { not: null } },
-    take: 1,
-  })
+  // The same test the assistant applies when it reads knowledge
+  // (people-tables.ts), plus the columns themselves.
+  const people = await peopleTableIds(accountId, [tableId])
   const personal =
-    table.ai_can_register ||
-    withContact > 0 ||
+    people.has(tableId) ||
     table.fields.some((f) => f.field_type === 'phone' || f.field_type === 'email' || isSensitiveField(f))
 
   return { table, config, knowledge, personal }

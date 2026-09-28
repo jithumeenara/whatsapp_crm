@@ -35,6 +35,8 @@ export interface KnowledgeItem {
   answer: string | null;
   source_url: string | null;
   source_ref: string | null;
+  /** A table of people's submissions: never given to customers. */
+  customer_blocked?: boolean;
   status: string;
   last_error: string | null;
   last_synced_at: string | null;
@@ -144,7 +146,17 @@ function ValidityPill({
   return null;
 }
 
-function AudiencePill({ audience }: { audience: string }) {
+function AudiencePill({ audience, blocked }: { audience: string; blocked?: boolean }) {
+  if (blocked) {
+    return (
+      <AiBadge tone="amber">
+        <Lock className="h-3 w-3" />
+        <span title="This holds people's own details — registrations, form entries or a list of phone numbers — so customers are never given it.">
+          Staff only · people&apos;s details
+        </span>
+      </AiBadge>
+    );
+  }
   if (audience === 'internal') {
     return (
       <AiBadge tone="amber">
@@ -501,7 +513,7 @@ export function TrainingTab(props: TrainingTabProps) {
                         {KIND_LABEL[item.kind] ?? item.kind}
                       </span>
                     </td>
-                    <td className="px-6 py-3"><AudiencePill audience={item.audience} /></td>
+                    <td className="px-6 py-3"><AudiencePill audience={item.audience} blocked={item.customer_blocked} /></td>
                     <td className="px-6 py-3 text-[12.5px] text-slate-500">{formatDate(item.last_synced_at ?? item.updated_at)}</td>
                     <td className="px-6 py-3">
                       <div className="flex flex-wrap items-center gap-1.5">

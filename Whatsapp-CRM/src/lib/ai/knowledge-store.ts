@@ -13,6 +13,7 @@
 
 import { prisma } from '@/lib/db'
 import type { QaPair, KnowledgeDocument } from './knowledge'
+import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-tables'
 
 export interface LoadedKnowledge {
   qaPairs: QaPair[]
@@ -129,9 +130,11 @@ export async function loadKnowledge(
       question: true,
       answer: true,
       content: true,
+      source_ref: true,
       updated_at: true,
       department: true,
       priority: true,
+      account_id: true,
     },
     // Priority first, so an entry marked important wins a tie against
     // one that merely embeds slightly closer. created_at breaks the
@@ -140,11 +143,28 @@ export async function loadKnowledge(
     orderBy: [{ priority: 'desc' }, { created_at: 'asc' }],
   })
 
+  // A table of people's own submissions never reaches a customer,
+  // whatever audience its entry was saved with (see people-tables.ts).
+  const people =
+    audience === 'customer'
+      ? await peopleTableIds(
+          items[0]?.account_id ?? '',
+          items.filter((i) => i.kind === 'database' && i.source_ref).map((i) => i.source_ref!),
+        )
+      : new Set<string>()
+
   const qaPairs: QaPair[] = []
   const documents: KnowledgeDocument[] = []
   let newest = 0
 
   for (const item of items) {
+    if (item.kind === 'database' && item.source_ref && people.has(item.source_ref)) continue
+    // A sheet or table that reads as a list of people — one phone number
+    // or email per row — is held back the same way.
+    if (audience === 'customer' && (item.kind === 'sheet' || item.kind === 'database') && looksLikeContactList(item.content)) {
+      people.add(item.id)
+      continue
+    }
     newest = Math.max(newest, item.updated_at.getTime())
     if (item.kind === 'qa') {
       if (item.question && item.answer) qaPairs.push({ question: item.question, answer: item.answer, id: item.id })
@@ -177,7 +197,10 @@ export async function loadKnowledge(
   const loaded: LoadedKnowledge = {
     qaPairs,
     documents,
-    version: `${audience}:${items.length}:${newest}:${hourBucket}`,
+    // The excluded tables too: a table becomes one of people's
+    // submissions when its first registration lands, without any
+    // knowledge entry changing.
+    version: `${audience}:${items.length}:${newest}:${hourBucket}:${[...people].sort().join(',')}`,
   }
 
   if (loadCache.size >= KNOWLEDGE_CACHE_MAX) {

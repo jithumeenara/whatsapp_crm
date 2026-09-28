@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-tables'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
@@ -93,8 +94,28 @@ export async function GET(req: Request) {
     }),
   ])
 
+  // Tables of people's submissions are held back from customers when
+  // the assistant reads knowledge, whatever audience they were saved
+  // with — said here too, so the list does not claim otherwise.
+  const structured = items.filter((i) => i.kind === 'database' || i.kind === 'sheet')
+  const [people, contents] = await Promise.all([
+    peopleTableIds(
+      accountId,
+      structured.filter((i) => i.kind === 'database' && i.source_ref).map((i) => i.source_ref!),
+    ),
+    structured.length
+      ? prisma.aiKnowledgeItem.findMany({
+          where: { account_id: accountId, id: { in: structured.map((i) => i.id) } },
+          select: { id: true, content: true },
+        })
+      : Promise.resolve([]),
+  ])
+  const contactLists = new Set(contents.filter((c) => looksLikeContactList(c.content)).map((c) => c.id))
+  const blocked = (i: (typeof items)[number]) =>
+    (i.kind === 'database' && i.source_ref !== null && people.has(i.source_ref)) || contactLists.has(i.id)
+
   return NextResponse.json({
-    items,
+    items: items.map((i) => (blocked(i) ? { ...i, customer_blocked: true } : i)),
     total,
     page,
     limit,
