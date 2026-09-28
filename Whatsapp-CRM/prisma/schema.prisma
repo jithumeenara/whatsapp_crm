@@ -713,6 +713,10 @@ model Message {
   /// { to?, cc?, bcc?, attachments?: [{ file_id, name, url, size, mime }],
   ///   format?: "rich", kind?: "reply" | "reply_all" | "new" | "forward" }.
   email_meta           Json?
+  /// AI-written replies only: the knowledge entries and passages the
+  /// assistant was given, how well they matched, and its look-ups. See
+  /// src/lib/ai/reply-sources.ts.
+  ai_meta              Json?
   // Set only for a message a Broadcast campaign sent — previously broadcasts
   // never wrote a Message row at all (only broadcast_recipients), so a sent
   // campaign was completely invisible in that contact's Inbox thread. This

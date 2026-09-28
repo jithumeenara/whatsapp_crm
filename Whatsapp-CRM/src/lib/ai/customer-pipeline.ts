@@ -519,6 +519,10 @@ export interface CustomerTurnResult {
    *  carried them out to the caller, so every customer reply was
    *  recorded as costing nothing. */
   usage: { inputTokens: number; outputTokens: number; totalTokens: number } | null
+  /** The context pieces the reply may have drawn on, kept apart so the
+   *  Inbox can say which one a line came from (see ai/reply-sources).
+   *  Present only when a reply was generated. */
+  sourceParts?: { companyBlock: string; instructions: string; toolOutputs: string[]; customerContext: string }
 }
 
 /**
@@ -781,5 +785,11 @@ export async function runCustomerTurn(args: {
     latencyMs: Date.now() - startedAt,
     timings: finish(),
     usage: generated.usage ?? null,
+    sourceParts: {
+      companyBlock: assembly.companyBlock,
+      instructions: args.aiConfig.system_prompt ?? '',
+      toolOutputs: generated.toolOutputs ?? [],
+      customerContext: assembly.customerContext,
+    },
   }
 }

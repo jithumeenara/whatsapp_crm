@@ -34,6 +34,9 @@ import {
 export interface QaPair {
   question: string
   answer: string
+  /** The knowledge entry it came from — carried so a reply can say where
+   *  its answer came from. Not part of any hash. */
+  id?: string
 }
 
 export interface KnowledgeDocument {
@@ -45,7 +48,8 @@ export interface KnowledgeDocument {
 
 export interface SelectedContext {
   qaPairs: QaPair[]
-  documentChunks: Array<{ title: string; text: string }>
+  /** `sourceId` is the knowledge entry the passage was cut from. */
+  documentChunks: Array<{ title: string; text: string; sourceId?: string }>
   /** Top retrieval score found, normalized to roughly 0-1. Semantic
    *  matches use real cosine similarity; keyword matches use the
    *  fraction of the customer's own words that were actually found in
@@ -136,7 +140,7 @@ function overlapScore(queryTokens: string[], targetTokens: string[]): number {
  * just paying the original per-call cost once more.
  */
 interface CachedKnowledge {
-  chunks: Array<{ title: string; text: string; tokens: string[] }>
+  chunks: Array<{ title: string; text: string; sourceId?: string; tokens: string[] }>
   pairs: Array<{ pair: QaPair; tokens: string[] }>
 }
 const KNOWLEDGE_CACHE_MAX_ENTRIES = 500
@@ -177,7 +181,7 @@ function getOrBuildKnowledge(qaPairs: QaPair[], documents: KnowledgeDocument[], 
  *  how this file does at retrieval time — a mismatched chunk boundary
  *  would mean the content hash computed at save time never matches the
  *  one computed here, and the embedding would silently never be found. */
-export function chunkDocument(doc: KnowledgeDocument, maxChunkChars = 800): Array<{ title: string; text: string }> {
+export function chunkDocument(doc: KnowledgeDocument, maxChunkChars = 800): Array<{ title: string; text: string; sourceId?: string }> {
   const paragraphs = doc.content.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)
   const source = paragraphs.length > 1 ? paragraphs : [doc.content]
 
@@ -191,7 +195,8 @@ export function chunkDocument(doc: KnowledgeDocument, maxChunkChars = 800): Arra
       chunks.push(para.slice(i, i + maxChunkChars))
     }
   }
-  return chunks.map((text) => ({ title: doc.title, text }))
+  // sourceId rides along for attribution only; hashes read title and text.
+  return chunks.map((text) => ({ title: doc.title, text, sourceId: doc.id }))
 }
 
 function selectByKeyword(
@@ -206,7 +211,7 @@ function selectByKeyword(
     .sort((a, b) => b.score - a.score)
 
   const scoredChunks = allChunks
-    .map((c) => ({ chunk: { title: c.title, text: c.text }, score: overlapScore(queryTokens, c.tokens) }))
+    .map((c) => ({ chunk: { title: c.title, text: c.text, sourceId: c.sourceId }, score: overlapScore(queryTokens, c.tokens) }))
     .filter((s) => s.score >= limits.minScore)
     .sort((a, b) => b.score - a.score)
 
@@ -263,10 +268,10 @@ async function selectBySemantic(
     })
 
     const pairsByHash = new Map(allPairs.map((p) => [qaPairContentHash(p.pair), p.pair]))
-    const chunksByHash = new Map(allChunks.map((c) => [chunkContentHash(c), { title: c.title, text: c.text }]))
+    const chunksByHash = new Map(allChunks.map((c) => [chunkContentHash(c), { title: c.title, text: c.text, sourceId: c.sourceId }]))
 
     const qaPairs: QaPair[] = []
-    const documentChunks: Array<{ title: string; text: string }> = []
+    const documentChunks: Array<{ title: string; text: string; sourceId?: string }> = []
     // The best score among matches this caller may actually use — not
     // simply the best score returned.
     let usableTopScore = 0

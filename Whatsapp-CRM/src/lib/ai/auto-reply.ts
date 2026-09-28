@@ -30,6 +30,7 @@
 import { prisma } from '@/lib/db'
 import { detectLead } from '@/lib/leads/ai-detect'
 import { runCustomerTurn, formatTurnTimings, type CustomerAiConfig } from './customer-pipeline'
+import { buildReplyMeta, recordReplyMeta } from './reply-sources'
 import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
 import { speak } from './speech'
@@ -515,6 +516,22 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
 
   const reply = turn.decision.reply
 
+  // Where this reply came from, for the Inbox — worked out while the
+  // reply is being sent, attached once it has gone.
+  const replyMeta = buildReplyMeta({
+    accountId: args.accountId,
+    origin: 'auto_reply',
+    reply,
+    selected: turn.selected,
+    toolsUsed: turn.toolsUsed,
+    toolOutputs: turn.sourceParts?.toolOutputs,
+    companyBlock: turn.sourceParts?.companyBlock,
+    instructions: turn.sourceParts?.instructions,
+    conversation: [text, turn.sourceParts?.customerContext ?? ''].join('\n'),
+  }).catch(() => null)
+  const explain = (providerMessageId: string | undefined) =>
+    void recordReplyMeta({ conversationId: args.conversationId, providerMessageId, meta: replyMeta })
+
   // The assistant handed this conversation to one of the business's own
   // chatbots, and that bot has already sent its first message. Sending
   // the assistant's text now would put two voices in the thread at once,
@@ -591,6 +608,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
         transcript: reply,
       })
       await markAsAssistantReply(sent.whatsapp_message_id)
+      explain(sent.whatsapp_message_id)
 
       // Some answers cannot be heard.
       //
@@ -613,7 +631,10 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
           contactId: args.contactId,
           text: reply,
         })
-          .then((textMsg) => markAsAssistantReply(textMsg.whatsapp_message_id))
+          .then((textMsg) => {
+            explain(textMsg.whatsapp_message_id)
+            return markAsAssistantReply(textMsg.whatsapp_message_id)
+          })
           .catch((err) =>
             console.error(
               '[auto-reply] voice sent but the written copy failed:',
@@ -637,6 +658,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
       text: reply,
     })
     await markAsAssistantReply(sent.whatsapp_message_id)
+    explain(sent.whatsapp_message_id)
     return 'replied'
   } catch (err) {
     console.error('[auto-reply] send failed:', err instanceof Error ? err.message : err)

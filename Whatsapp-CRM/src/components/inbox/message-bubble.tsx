@@ -40,6 +40,7 @@ import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
 import { formatCurrency } from "@/lib/currency";
 import { useAuth } from "@/hooks/use-auth";
+import { AiSourcesCard, AiSourcesToggle } from "./ai-sources-panel";
 
 /**
  * Applied as an inline `style` (not a Tailwind class) on every element that
@@ -1187,6 +1188,9 @@ export function MessageBubble({
   onToggleReaction,
   agentName,
 }: MessageBubbleProps) {
+  // Declared before the early return below — hooks run in the same order
+  // on every render.
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   // A note about the conversation, not a message in it. Rendered as its
   // own folded strip rather than as an inbound bubble, which is what it
   // used to be mistaken for — a wall of diagnostics arriving, to all
@@ -1199,6 +1203,7 @@ export function MessageBubble({
   // "You" = message sent by the currently logged-in user
   const isSelf = isAgent && (message.sender_id === currentUserId || agentName === "You");
   const time = format(new Date(message.created_at), "h:mm a");
+  const canExplain = isBot && !message.deleted_at && !message.id.startsWith("temp");
 
   return (
     <div
@@ -1226,12 +1231,17 @@ export function MessageBubble({
     >
       {/* Sender label above the bubble */}
       {(isBot || (isAgent && agentName) || message.channel || message.broadcast_id) && (
-        <span className="mb-0.5 flex items-center gap-1.5">
+        <span className="mb-0.5 flex flex-wrap items-center gap-1.5">
           {isBot && (
             <span className="flex items-center gap-1 text-[10px] text-teal-600">
               <Bot className="h-3 w-3" />
               Chatbot
             </span>
+          )}
+          {/* Where the reply came from — the knowledge the AI read and
+              which of it the reply really used. Opens under the message. */}
+          {canExplain && (
+            <AiSourcesToggle open={sourcesOpen} onToggle={() => setSourcesOpen((v) => !v)} />
           )}
           {isAgent && agentName && (
             <span
@@ -1306,6 +1316,9 @@ export function MessageBubble({
           currentUserId={currentUserId}
           onToggle={onToggleReaction}
         />
+      )}
+      {canExplain && sourcesOpen && (
+        <AiSourcesCard messageId={message.id} onClose={() => setSourcesOpen(false)} />
       )}
     </div>
   );

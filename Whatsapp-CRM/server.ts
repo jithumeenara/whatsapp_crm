@@ -13,6 +13,7 @@ import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { ensureDataStoreColumns } from "./src/lib/data-store/schema";
 import { ensureEmailColumns } from "./src/lib/email/schema";
+import { ensureAiMetaColumn } from "./src/lib/ai/reply-sources";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 import { isClientGone } from "./src/lib/net/client-gone";
@@ -221,6 +222,10 @@ app.prepare().then(() => {
   });
   ensureEmailColumns().catch((err) => {
     console.error("[email] could not add the email columns:", err);
+  });
+  // Where each AI reply came from (migration 114).
+  ensureAiMetaColumn().catch((err) => {
+    console.error("[ai-sources] could not add messages.ai_meta:", err);
   });
 });
 

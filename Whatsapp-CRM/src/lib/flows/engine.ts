@@ -53,6 +53,7 @@ import { hasUnspeakableDetail } from "@/lib/ai/tts";
 import { markdownToWhatsApp, WHATSAPP_REPLY_STYLE } from "@/lib/whatsapp/markdown-to-whatsapp";
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import { loadKnowledge } from "@/lib/ai/knowledge-store";
+import { buildReplyMeta, recordReplyMeta } from "@/lib/ai/reply-sources";
 import { recordAiUsage } from "@/lib/ai/usage";
 import { loadCompanyProfile, formatCompanyBlock } from "@/lib/ai/company-profile";
 import { buildCustomerContext } from "@/lib/ai/customer-context";
@@ -2122,6 +2123,22 @@ async function advanceFromNodeKey(
         // a spoken two-minute reply cannot be skimmed, searched or
         // screenshotted, which is exactly what someone does with fees
         // and dates.
+        // Where this reply came from, for the Inbox — worked out while it
+        // is being sent, attached to the message once it has gone.
+        const replyMeta = buildReplyMeta({
+          accountId: run.account_id,
+          origin: "chatbot",
+          reply,
+          selected,
+          toolsUsed: aiResult.toolsUsed,
+          toolOutputs: aiResult.toolOutputs,
+          companyBlock: formatCompanyBlock(companyProfile, "customer"),
+          instructions: [aiConfig.system_prompt ?? "", cfg.system_prompt ?? ""].join("\n"),
+          conversation: [lastUserMessage, customerContext ?? ""].join("\n"),
+        }).catch(() => null);
+        const explain = (providerMessageId: string | undefined) =>
+          void recordReplyMeta({ conversationId: run.conversation_id!, providerMessageId, meta: replyMeta });
+
         let voiceSent = false;
         if (
           inboundWasVoice &&
@@ -2149,6 +2166,7 @@ async function advanceFromNodeKey(
               mimeType: speech.mimeType,
               transcript: reply,
             });
+            explain(sent.whatsapp_message_id);
             await logEvent(run.id, "message_sent", node.node_key, {
               node_type: "ai_reply",
               whatsapp_message_id: sent.whatsapp_message_id,
@@ -2203,6 +2221,7 @@ async function advanceFromNodeKey(
             contactId: run.contact_id!,
             text: reply,
           });
+          explain(whatsapp_message_id);
           await logEvent(run.id, "message_sent", node.node_key, {
             node_type: "ai_reply",
             whatsapp_message_id,

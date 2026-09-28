@@ -147,7 +147,7 @@ export async function loadKnowledge(
   for (const item of items) {
     newest = Math.max(newest, item.updated_at.getTime())
     if (item.kind === 'qa') {
-      if (item.question && item.answer) qaPairs.push({ question: item.question, answer: item.answer })
+      if (item.question && item.answer) qaPairs.push({ question: item.question, answer: item.answer, id: item.id })
     } else if (item.content?.trim()) {
       // The account's own "what this is for" note becomes the first
       // line of the document, so every chunk cut from it inherits that
