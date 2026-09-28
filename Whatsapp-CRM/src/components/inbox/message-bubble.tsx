@@ -1191,6 +1191,9 @@ export function MessageBubble({
   // Declared before the early return below — hooks run in the same order
   // on every render.
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  // Sources are for owners and admins only (the route enforces the same).
+  const { accountRole } = useAuth();
+  const isAdminOrAbove = accountRole === "owner" || accountRole === "admin";
   // A note about the conversation, not a message in it. Rendered as its
   // own folded strip rather than as an inbound bubble, which is what it
   // used to be mistaken for — a wall of diagnostics arriving, to all
@@ -1203,7 +1206,7 @@ export function MessageBubble({
   // "You" = message sent by the currently logged-in user
   const isSelf = isAgent && (message.sender_id === currentUserId || agentName === "You");
   const time = format(new Date(message.created_at), "h:mm a");
-  const canExplain = isBot && !message.deleted_at && !message.id.startsWith("temp");
+  const canExplain = isAdminOrAbove && isBot && !message.deleted_at && !message.id.startsWith("temp");
 
   return (
     <div
