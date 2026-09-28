@@ -57,6 +57,7 @@ import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge"
 import { loadKnowledge } from "@/lib/ai/knowledge-store";
 import { buildReplyMeta, recordReplyMeta } from "@/lib/ai/reply-sources";
 import { GROUNDING_RULES, enforceGroundedList } from "@/lib/ai/list-grounding";
+import { historyTurns, type HistoryTurn } from "@/lib/ai/history";
 import { recordAiUsage } from "@/lib/ai/usage";
 import { loadCompanyProfile, formatCompanyBlock } from "@/lib/ai/company-profile";
 import { buildCustomerContext } from "@/lib/ai/customer-context";
@@ -1753,7 +1754,7 @@ async function advanceFromNodeKey(
         // persisted by the webhook handler before the flow engine runs)
         // by its provider message id, so it isn't duplicated against
         // lastUserMessage above.
-        let conversationHistory: Array<{ role: "user" | "model"; text: string }> = [];
+        let conversationHistory: HistoryTurn[] = [];
         if (cfg.include_history !== false && run.conversation_id) {
           const depth = cfg.history_depth ?? aiConfig.history_depth_default;
           const pastMessages = await prisma.message.findMany({
@@ -1763,15 +1764,11 @@ async function advanceFromNodeKey(
             },
             orderBy: { created_at: "desc" },
             take: depth,
-            select: { sender_type: true, content_text: true },
+            select: { sender_type: true, content_text: true, bot_source: true, ai_meta: true },
           });
-          conversationHistory = pastMessages
-            .reverse()
-            .filter((m): m is typeof m & { content_text: string } => Boolean(m.content_text))
-            .map((m) => ({
-              role: m.sender_type === "customer" ? ("user" as const) : ("model" as const),
-              text: m.content_text,
-            }));
+          // Its own replies marked, and their lines found in no source
+          // left out (lib/ai/history.ts).
+          conversationHistory = historyTurns(pastMessages.reverse());
         }
 
         // Relevance-ranked knowledge — only what's actually relevant to
@@ -2159,7 +2156,9 @@ async function advanceFromNodeKey(
               // quoting their own phone number or order number back to
               // them doesn't trip the check.
               lastUserMessage,
-              ...conversationHistory.map((m) => m.text),
+              // Not the assistant's own earlier replies: an invented
+              // figure must not vouch for itself (lib/ai/history.ts).
+              ...conversationHistory.filter((m) => !m.byAssistant).map((m) => m.text),
             ],
           });
           if (!validation.ok) {

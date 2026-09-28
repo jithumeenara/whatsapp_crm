@@ -31,6 +31,7 @@ import { prisma } from '@/lib/db'
 import { detectLead } from '@/lib/leads/ai-detect'
 import { runCustomerTurn, formatTurnTimings, type CustomerAiConfig } from './customer-pipeline'
 import { buildReplyMeta, recordReplyMeta } from './reply-sources'
+import { historyTurns } from './history'
 import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
 import { speak } from './speech'
@@ -682,15 +683,11 @@ async function loadHistory(conversationId: string, depth: number) {
     where: { conversation_id: conversationId },
     orderBy: { created_at: 'desc' },
     take: Math.max(2, depth),
-    select: { sender_type: true, content_text: true },
+    select: { sender_type: true, content_text: true, bot_source: true, ai_meta: true },
   })
-  return rows
-    .reverse()
-    .filter((m): m is typeof m & { content_text: string } => Boolean(m.content_text))
-    .map((m) => ({
-      role: m.sender_type === 'customer' ? ('user' as const) : ('model' as const),
-      text: m.content_text,
-    }))
+  // Its own replies marked, and their lines found in no source left out
+  // (history.ts) — an old mistake is not shown back to it as fact.
+  return historyTurns(rows.reverse())
 }
 
 /**

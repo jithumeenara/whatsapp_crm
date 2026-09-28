@@ -33,6 +33,7 @@ import { markdownToWhatsApp } from '@/lib/whatsapp/markdown-to-whatsapp'
 import { getProviderKeys } from './providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { GROUNDING_RULES, enforceGroundedList } from './list-grounding'
+import type { HistoryTurn } from './history'
 
 /** The subset of AiConfig this module reads. Declared structurally so
  *  callers can pass a Prisma row or a per-node override of one. */
@@ -865,7 +866,10 @@ export async function runCustomerTurn(args: {
         ...assembly.contextParts,
         ...generated.toolOutputs,
         args.customerMessage,
-        ...history.map((m) => m.text),
+        // The customer's and staff's words — not the assistant's own
+        // earlier replies, or a figure it once invented would vouch for
+        // itself (history.ts).
+        ...history.filter((m) => !(m as HistoryTurn).byAssistant).map((m) => m.text),
       ],
     })
   }
