@@ -30,6 +30,7 @@ import {
   qaPairContentHash,
   chunkContentHash,
 } from './embeddings'
+import { englishFor, normalizeMalayalam, wordStarts } from './term-bridge'
 
 export interface QaPair {
   question: string
@@ -112,20 +113,71 @@ const STOPWORDS = new Set([
   'will', 'would', 'should', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
   'my', 'your', 'his', 'her', 'its', 'our', 'their', 'this', 'that',
   'what', 'when', 'where', 'why', 'how', 'me', 'have', 'has', 'had',
+  'please', 'want', 'need', 'any', 'all', 'there', 'which', 'who',
+  // Malayalam question and filler words: in nearly every message, so a
+  // match on them says nothing about the entry.
+  'ആണ്', 'ആണോ', 'ഉണ്ട്', 'ഉണ്ടോ', 'ഉള്ളത്', 'ഉള്ള', 'എന്ത്', 'എന്താണ്', 'ഏത്', 'ഏതാണ്',
+  'ഏതൊക്കെ', 'എന്തൊക്കെ', 'എങ്ങനെ', 'എപ്പോൾ', 'എവിടെ', 'ഒരു', 'ഈ', 'ആ', 'ഞാൻ', 'എനിക്ക്',
+  'എന്റെ', 'നിങ്ങൾ', 'നിങ്ങളുടെ', 'ഞങ്ങൾ', 'ഞങ്ങളുടെ', 'അത്', 'ഇത്', 'അവിടെ', 'ഇവിടെ',
+  'ഒക്കെ', 'മാത്രം', 'കൂടി', 'വേണം', 'പറ്റുമോ', 'പറയാമോ', 'അറിയാൻ', 'പറയൂ', 'ഇല്ല',
+  'എന്ന്', 'കുറിച്ച്', 'പറ്റി', 'സാർ', 'മാഡം', 'ദയവായി',
+  // …and the same written in English letters.
+  'enthokke', 'ethokke', 'entha', 'enthanu', 'ethanu', 'undo', 'undu', 'aanu', 'ano',
+  'ulla', 'ullathu', 'enikku', 'ente', 'ningal', 'ningalude', 'evide', 'eppol', 'engane',
+  'onnu', 'parayamo', 'venam', 'ariyan', 'sir', 'madam',
 ])
 
+/**
+ * Words in any script, lower-cased.
+ *
+ * This used to keep only a–z and 0–9, which threw away every Malayalam
+ * word: a question written in Malayalam had no words left to match, and
+ * whenever the search by meaning was unavailable the assistant answered
+ * it with no knowledge at all. Letters, their combining marks (a
+ * Malayalam vowel sign is a mark — splitting on it cuts a word into
+ * letters) and digits now all count; the zero-width joiners of older
+ * Malayalam encodings are dropped so both spellings match.
+ */
 function tokenize(text: string): string[] {
-  return text
+  return normalizeMalayalam(text)
     .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((t) => t.length > 1 && !STOPWORDS.has(t))
+    .split(/[^\p{L}\p{M}\p{N}]+/u)
+    .filter((t) => Array.from(t).length > 1 && !STOPWORDS.has(t))
 }
 
-function overlapScore(queryTokens: string[], targetTokens: string[]): number {
-  if (queryTokens.length === 0 || targetTokens.length === 0) return 0
+/** A shorter word counts as found at the start of a longer one:
+ *  "programme" in "programmes", "ട്രെയിനിങ്" in "ട്രെയിനിങ്ങിൽ" —
+ *  Malayalam adds its endings to the word itself. Long enough that
+ *  "fee" is not found in "feedback". */
+const MIN_STEM = { latin: 5, other: 4 }
+
+function stemMatches(a: string, b: string): boolean {
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a]
+  const min = /^[a-z0-9]+$/.test(short) ? MIN_STEM.latin : MIN_STEM.other
+  // "ഡോക്ടർ" is found in "ഡോക്ടറെ": the final chillu becomes a full
+  // letter before the ending.
+  return Array.from(short).length >= min && wordStarts(short).some((s) => long.startsWith(s))
+}
+
+/** Each word of the question with the English words it can stand for
+ *  ("ഫീസ്" → fee, fees): the data is often English when the question is
+ *  not. A word counts once, whichever of its forms is found. */
+function queryTerms(text: string): string[][] {
+  return tokenize(text).map((t) => [t, ...englishFor(t)])
+}
+
+function overlapScore(queryTerms: string[][], targetTokens: string[]): number {
+  if (queryTerms.length === 0 || targetTokens.length === 0) return 0
   const targetSet = new Set(targetTokens)
   let hits = 0
-  for (const t of queryTokens) if (targetSet.has(t)) hits++
+  for (const forms of queryTerms) {
+    const found = forms.some((t) => {
+      if (targetSet.has(t)) return true
+      for (const u of targetSet) if (stemMatches(t, u)) return true
+      return false
+    })
+    if (found) hits++
+  }
   return hits
 }
 
@@ -209,7 +261,7 @@ export function chunkDocument(doc: KnowledgeDocument, maxChunkChars = 800): Arra
 }
 
 function selectByKeyword(
-  queryTokens: string[],
+  queryTokens: string[][],
   allPairs: CachedKnowledge['pairs'],
   allChunks: CachedKnowledge['chunks'],
   limits: { maxQaPairs: number; maxDocChunks: number; minScore: number },
@@ -403,7 +455,7 @@ export async function selectRelevantContext(
     result = await selectBySemantic(userMessage, allPairs, allChunks, semantic, { maxQaPairs, maxDocChunks })
   }
   if (!result) {
-    const queryTokens = tokenize(userMessage)
+    const queryTokens = queryTerms(userMessage)
     result = selectByKeyword(queryTokens, allPairs, allChunks, { maxQaPairs, maxDocChunks, minScore })
   }
   return { ...result, ...widenToWholeSources(result.documentChunks, allChunks) }
