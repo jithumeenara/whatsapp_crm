@@ -64,6 +64,9 @@ export interface AiReplyMeta {
   /** Reply lines that could be checked, and those found in no source. */
   checked_lines: number
   unsupported: string[]
+  /** List items the first draft named that no source had, caught and
+   *  taken out before sending (list-grounding.ts). */
+  corrected?: string[]
   at: string
 }
 
@@ -99,7 +102,8 @@ const STOP = new Set([
  *  2+ digits, lower-cased, without the commonest English words. */
 export function distinctiveTokens(text: string): string[] {
   const out = new Set<string>()
-  for (const m of text.toLowerCase().matchAll(/[a-z][a-z0-9]{2,}|\d{2,}/g)) {
+  // "2,360" and "2360" are the same fee.
+  for (const m of text.toLowerCase().replace(/(\d),(?=\d)/g, '$1').matchAll(/[a-z][a-z0-9]{2,}|\d{2,}/g)) {
     if (!STOP.has(m[0])) out.add(m[0])
   }
   return Array.from(out)
@@ -158,6 +162,8 @@ export async function buildReplyMeta(args: {
   instructions?: string
   /** The customer's own recent words — a line echoing them is theirs. */
   conversation?: string
+  /** List items caught in the first draft and kept out of the reply. */
+  corrected?: string[]
 }): Promise<AiReplyMeta> {
   const { selected } = args
   // Ranked: Q&A first (the most direct answers), then document passages.
@@ -260,6 +266,9 @@ export async function buildReplyMeta(args: {
     tools: Array.from(new Set(args.toolsUsed ?? [])),
     checked_lines: lines.length,
     unsupported: lines.filter((l) => l.source === null).slice(0, MAX_UNSUPPORTED).map((l) => clip(l.line, 200)),
+    ...(args.corrected?.length
+      ? { corrected: args.corrected.slice(0, MAX_UNSUPPORTED).map((l) => clip(l.replace(/^[\s\-•–▪◦*\d.)]+/, ''), 200)) }
+      : {}),
     at: new Date().toISOString(),
   }
 }

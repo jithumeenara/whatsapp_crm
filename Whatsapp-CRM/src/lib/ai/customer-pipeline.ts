@@ -30,6 +30,7 @@ import { WHATSAPP_REPLY_STYLE } from '@/lib/whatsapp/markdown-to-whatsapp'
 import { markdownToWhatsApp } from '@/lib/whatsapp/markdown-to-whatsapp'
 import { getProviderKeys } from './providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { GROUNDING_RULES, enforceGroundedList } from './list-grounding'
 
 /** The subset of AiConfig this module reads. Declared structurally so
  *  callers can pass a Prisma row or a per-node override of one. */
@@ -220,6 +221,10 @@ export async function buildCustomerSystemPrompt(args: {
       ].join('\n'),
     )
   }
+
+  // Its own earlier replies are not a source (see list-grounding.ts,
+  // which also checks the reply's list in code).
+  parts.push(GROUNDING_RULES)
 
   // Prompt-level guidance, not code-enforced — a model can ignore an
   // instruction. The validator below is the part that cannot be ignored.
@@ -523,6 +528,9 @@ export interface CustomerTurnResult {
    *  Inbox can say which one a line came from (see ai/reply-sources).
    *  Present only when a reply was generated. */
   sourceParts?: { companyBlock: string; instructions: string; toolOutputs: string[]; customerContext: string }
+  /** List items the first draft named that no source had — rewritten
+   *  or removed before sending. Empty when the draft was clean. */
+  groundingCaught?: string[]
 }
 
 /**
@@ -753,8 +761,48 @@ export async function runCustomerTurn(args: {
   // like [ACTION: TRIGGER_HUMAN_ADMIN]. Stripped from what the customer
   // sees, and honoured as a real handoff rather than sent as text.
   const scanned = scanActionTokens(generated.reply)
-  const reply = markdownToWhatsApp(scanned.cleanedText)
+  let reply = markdownToWhatsApp(scanned.cleanedText)
   const modelAskedForHuman = scanned.actions.includes('handoff')
+
+  // A list may only name what this turn's material has. Not the
+  // assistant's own earlier replies — those are what it was copying.
+  let groundingCaught: string[] = []
+  let usage = generated.usage ?? null
+  if (!generated.handedToChatbot && reply) {
+    const groundingStartedAt = Date.now()
+    const grounded = await enforceGroundedList({
+      reply,
+      sources: [
+        ...assembly.contextParts,
+        ...generated.toolOutputs,
+        args.customerMessage,
+        ...history.filter((m) => m.role === 'user').map((m) => m.text),
+      ],
+      lookups: generated.toolOutputs,
+      regenerate: async (correction) => {
+        // No tools the second time: nothing is looked up or registered
+        // twice. What the look-ups returned is in the correction.
+        const again = await generateCustomerReply({
+          aiConfig: args.aiConfig,
+          systemPrompt: `${assembly.systemPrompt}\n\n${correction}`,
+          userMessage: args.customerMessage,
+          conversationHistory: history,
+          toolContext: null,
+        })
+        if (again.usage) {
+          usage = {
+            inputTokens: (usage?.inputTokens ?? 0) + again.usage.inputTokens,
+            outputTokens: (usage?.outputTokens ?? 0) + again.usage.outputTokens,
+            totalTokens: (usage?.totalTokens ?? 0) + again.usage.totalTokens,
+          }
+        }
+        return markdownToWhatsApp(scanActionTokens(again.reply).cleanedText)
+      },
+    })
+    reply = grounded.reply
+    groundingCaught = grounded.caught
+    timings.generation += Date.now() - groundingStartedAt
+  }
 
   const validationStartedAt = Date.now()
   let validation: ValidationResult | null = null
@@ -785,7 +833,8 @@ export async function runCustomerTurn(args: {
     handedToChatbot: generated.handedToChatbot,
     latencyMs: Date.now() - startedAt,
     timings: finish(),
-    usage: generated.usage ?? null,
+    usage,
+    groundingCaught,
     sourceParts: {
       companyBlock: assembly.companyBlock,
       instructions: args.aiConfig.system_prompt ?? '',

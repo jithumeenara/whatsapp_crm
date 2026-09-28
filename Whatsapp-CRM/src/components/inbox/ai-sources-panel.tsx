@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle, BookOpen, Building2, ChevronDown, Database, ExternalLink, FileText, Globe, Loader2,
-  MessageSquareQuote, MessagesSquare, ScrollText, Search, Sheet, Workflow, X,
+  MessageSquareQuote, MessagesSquare, ScrollText, Search, Sheet, ShieldCheck, Workflow, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +37,7 @@ interface Meta {
   tools: string[];
   checked_lines: number;
   unsupported: string[];
+  corrected?: string[];
 }
 
 const KIND: Record<string, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
@@ -182,6 +183,20 @@ function MetaView({ meta }: { meta: Meta }) {
           <p className="mt-0.5 text-[11.5px] text-amber-800">The AI may have added these from its own general knowledge — check them.</p>
           <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
             {meta.unsupported.map((l, i) => <li key={i} className="break-words">{l}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {meta.corrected && meta.corrected.length > 0 && (
+        <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-900 ring-1 ring-emerald-200">
+          <p className="flex items-center gap-1.5 font-semibold">
+            <ShieldCheck className="h-3.5 w-3.5" /> Caught before sending
+          </p>
+          <p className="mt-0.5 text-[11.5px] text-emerald-800">
+            The first draft listed these, which are in none of the sources. They were kept out of the reply.
+          </p>
+          <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+            {meta.corrected.map((l, i) => <li key={i} className="break-words line-through decoration-emerald-400">{l}</li>)}
           </ul>
         </div>
       )}

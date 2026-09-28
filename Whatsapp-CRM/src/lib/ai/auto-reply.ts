@@ -528,6 +528,7 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
     companyBlock: turn.sourceParts?.companyBlock,
     instructions: turn.sourceParts?.instructions,
     conversation: [text, turn.sourceParts?.customerContext ?? ''].join('\n'),
+    corrected: turn.groundingCaught,
   }).catch(() => null)
   const explain = (providerMessageId: string | undefined) =>
     void recordReplyMeta({ conversationId: args.conversationId, providerMessageId, meta: replyMeta })

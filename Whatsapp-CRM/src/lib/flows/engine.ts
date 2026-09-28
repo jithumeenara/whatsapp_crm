@@ -54,6 +54,7 @@ import { markdownToWhatsApp, WHATSAPP_REPLY_STYLE } from "@/lib/whatsapp/markdow
 import { selectRelevantContext, formatKnowledgeBlock } from "@/lib/ai/knowledge";
 import { loadKnowledge } from "@/lib/ai/knowledge-store";
 import { buildReplyMeta, recordReplyMeta } from "@/lib/ai/reply-sources";
+import { GROUNDING_RULES, enforceGroundedList } from "@/lib/ai/list-grounding";
 import { recordAiUsage } from "@/lib/ai/usage";
 import { loadCompanyProfile, formatCompanyBlock } from "@/lib/ai/company-profile";
 import { buildCustomerContext } from "@/lib/ai/customer-context";
@@ -1968,6 +1969,9 @@ async function advanceFromNodeKey(
           aiConfig.system_prompt ?? undefined,
           knowledgeBlock || undefined,
         ].filter((p): p is string => Boolean(p));
+        // Its own earlier replies are not a source; the reply's list is
+        // also checked in code after generation.
+        promptParts.push(GROUNDING_RULES);
         // Guardrails — prompt-level guidance, not code-enforced (an LLM
         // can still ignore an instruction; there's no second verification
         // pass here). Stated as plainly in the Settings UI copy too.
@@ -2060,8 +2064,51 @@ async function advanceFromNodeKey(
         // intended. Citation artifacts from pasted PDFs ([cite: 1]) are
         // removed at the same time.
         const scanned = scanActionTokens(rawReply);
-        const reply = markdownToWhatsApp(scanned.cleanedText);
+        let reply = markdownToWhatsApp(scanned.cleanedText);
         const modelAskedForHuman = scanned.actions.includes("handoff");
+
+        // A list may only name what this turn's material has — not the
+        // assistant's own earlier replies, which is what it was copying
+        // (see lib/ai/list-grounding.ts).
+        let groundingCaught: string[] = [];
+        if (reply && !aiResult.handedToChatbot) {
+          const grounded = await enforceGroundedList({
+            reply,
+            sources: [
+              knowledgeBlock,
+              customerContext,
+              formatCompanyBlock(companyProfile, "customer"),
+              aiConfig.system_prompt ?? "",
+              cfg.system_prompt ?? "",
+              ...aiResult.toolOutputs,
+              lastUserMessage,
+              ...conversationHistory.filter((m) => m.role === "user").map((m) => m.text),
+            ],
+            lookups: aiResult.toolOutputs,
+            regenerate: async (correction) => {
+              // No tools the second time: nothing is looked up twice.
+              const rewriteStartedAt = Date.now();
+              const again = await generateCustomerReply({
+                aiConfig: { ...aiConfig, max_tokens: cfg.max_tokens ?? aiConfig.max_tokens },
+                systemPrompt: `${systemPrompt}\n\n${correction}`,
+                userMessage: lastUserMessage,
+                conversationHistory,
+                toolContext: null,
+              });
+              void recordAiUsage({
+                accountId: run.account_id,
+                provider: again.usedProvider,
+                model: again.usedModel ?? "unknown",
+                feature: "chat_customer",
+                tokens: again.usage,
+                latencyMs: Date.now() - rewriteStartedAt,
+              });
+              return markdownToWhatsApp(scanActionTokens(again.reply).cleanedText);
+            },
+          });
+          reply = grounded.reply;
+          groundingCaught = grounded.caught;
+        }
 
         // Last gate before a real person reads this.
         //
@@ -2135,6 +2182,7 @@ async function advanceFromNodeKey(
           companyBlock: formatCompanyBlock(companyProfile, "customer"),
           instructions: [aiConfig.system_prompt ?? "", cfg.system_prompt ?? ""].join("\n"),
           conversation: [lastUserMessage, customerContext ?? ""].join("\n"),
+          corrected: groundingCaught,
         }).catch(() => null);
         const explain = (providerMessageId: string | undefined) =>
           void recordReplyMeta({ conversationId: run.conversation_id!, providerMessageId, meta: replyMeta });
