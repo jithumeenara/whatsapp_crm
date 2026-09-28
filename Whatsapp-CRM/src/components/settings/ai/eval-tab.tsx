@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Play, Plus, Trash2, CheckCircle2, XCircle, Sparkles, FlaskConical,
-  UserCheck, Loader2, ChevronDown,
+  UserCheck, Loader2, ChevronDown, MessagesSquare, Pencil, ShieldCheck, AlertTriangle, Search, HelpCircle,
 } from 'lucide-react';
 import { AiButton, AiCard, AiCardHeader, AiIconTile, AiInput, AiLabel, AiHint, AiBadge, AiNotice } from './ui-kit';
 import { Switch } from '@/components/ui/switch';
@@ -29,7 +29,25 @@ type EvalCase = {
   category: string | null;
   notes: string | null;
   enabled: boolean;
+  must_include: string[] | null;
+  must_not_include: string[] | null;
 };
+
+type QualityReport = {
+  days: number;
+  ai_replies: number;
+  caught: number;
+  unsupported: number;
+  table_searches: number;
+  handovers: Array<{ reason: string; count: number }>;
+  caught_items: Array<{ text: string; count: number }>;
+  no_knowledge: Array<{ question: string; count: number }>;
+};
+
+type RealQuestion = { question: string; count: number; last_at: string };
+
+/** One phrase per line, as the exact checks store them. */
+const lines = (text: string) => text.split('\n').map((l) => l.trim()).filter(Boolean);
 
 type EvalRun = {
   id: string;
@@ -66,7 +84,16 @@ export function EvalTab({ configured }: { configured: boolean }) {
   const [newQuestion, setNewQuestion] = useState('');
   const [newExpected, setNewExpected] = useState('');
   const [newExpectHandoff, setNewExpectHandoff] = useState(false);
+  const [newMustInclude, setNewMustInclude] = useState('');
+  const [newMustNot, setNewMustNot] = useState('');
   const [adding, setAdding] = useState(false);
+
+  const [quality, setQuality] = useState<QualityReport | null>(null);
+  const [suggestions, setSuggestions] = useState<RealQuestion[] | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [suggesting, setSuggesting] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ expected: '', mustInclude: '', mustNot: '' });
 
   const load = useCallback(async () => {
     try {
@@ -82,6 +109,14 @@ export function EvalTab({ configured }: { configured: boolean }) {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!configured) return;
+    fetch('/api/ai-config/eval?view=quality')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data && typeof data.ai_replies === 'number') setQuality(data); })
+      .catch(() => {});
+  }, [configured]);
 
   const post = async (body: Record<string, unknown>) => {
     setError('');
@@ -117,15 +152,67 @@ export function EvalTab({ configured }: { configured: boolean }) {
         question: newQuestion,
         expected: newExpected || null,
         expect_handoff: newExpectHandoff,
+        must_include: lines(newMustInclude),
+        must_not_include: lines(newMustNot),
       });
       if (ok) {
         setNewQuestion('');
         setNewExpected('');
         setNewExpectHandoff(false);
+        setNewMustInclude('');
+        setNewMustNot('');
       }
     } finally {
       setAdding(false);
     }
+  };
+
+  const suggestFromChats = async () => {
+    setSuggesting(true);
+    setError('');
+    try {
+      const res = await fetch('/api/ai-config/eval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'suggest_from_chats' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? 'Could not read your chats.');
+      setSuggestions(data.questions ?? []);
+      setPicked(new Set());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not read your chats.');
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  const addPicked = async () => {
+    const ok = await post({ action: 'add_questions', questions: [...picked] });
+    if (ok) {
+      setSuggestions(null);
+      setPicked(new Set());
+    }
+  };
+
+  const startEdit = (c: EvalCase) => {
+    setEditing(c.id);
+    setDraft({
+      expected: c.expected ?? '',
+      mustInclude: (c.must_include ?? []).join('\n'),
+      mustNot: (c.must_not_include ?? []).join('\n'),
+    });
+  };
+
+  const saveEdit = async (id: string) => {
+    const ok = await post({
+      action: 'update_case',
+      id,
+      expected: draft.expected || null,
+      must_include: lines(draft.mustInclude),
+      must_not_include: lines(draft.mustNot),
+    });
+    if (ok) setEditing(null);
   };
 
   const latest = runs[0];
@@ -152,6 +239,87 @@ export function EvalTab({ configured }: { configured: boolean }) {
 
   return (
     <div className="space-y-4">
+      {/* ── Real conversations, last 7 days ── */}
+      {quality && quality.ai_replies > 0 && (
+        <AiCard>
+          <div className="p-5">
+            <AiCardHeader
+              title={`Real conversations · last ${quality.days} days`}
+              subtitle="What the assistant actually did with what customers sent — the tests below say how it does on questions you wrote."
+            />
+            <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <QualityTile icon={<MessagesSquare className="h-4 w-4" />} label="AI replies" value={quality.ai_replies} />
+              <QualityTile
+                icon={<ShieldCheck className="h-4 w-4" />}
+                label="Caught before sending"
+                value={quality.caught}
+                tone={quality.caught > 0 ? 'emerald' : 'slate'}
+              />
+              <QualityTile
+                icon={<AlertTriangle className="h-4 w-4" />}
+                label="Lines found in no source"
+                value={quality.unsupported}
+                tone={quality.unsupported > 0 ? 'amber' : 'slate'}
+              />
+              <QualityTile icon={<Search className="h-4 w-4" />} label="Table searches" value={quality.table_searches} />
+            </div>
+
+            {quality.handovers.length > 0 && (
+              <p className="mt-3 text-[12px] leading-relaxed text-slate-500">
+                Handed to a person:{' '}
+                {quality.handovers.map((h) => `${h.reason.toLowerCase()} (${h.count})`).join(' · ')}
+              </p>
+            )}
+
+            {quality.no_knowledge.length > 0 && (
+              <div className="mt-4">
+                <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
+                  <HelpCircle className="h-3.5 w-3.5 text-amber-600" />
+                  Asked, with nothing to answer from
+                </p>
+                <p className="mt-0.5 text-[11.5px] text-slate-500">
+                  Add the answer to the knowledge base, or make it a test so you know when it is fixed.
+                </p>
+                <ul className="mt-2 divide-y divide-slate-100 rounded-xl ring-1 ring-slate-200">
+                  {quality.no_knowledge.map((q) => (
+                    <li key={q.question} className="flex items-center gap-3 px-3 py-2">
+                      <span className="min-w-0 flex-1 break-words text-[12.5px] text-slate-700">{q.question}</span>
+                      {q.count > 1 && <AiBadge tone="slate">{q.count}×</AiBadge>}
+                      <button
+                        type="button"
+                        onClick={() => void post({ action: 'add_questions', questions: [q.question] })}
+                        className="shrink-0 text-[11.5px] font-medium text-[#4A5AE8] hover:underline"
+                      >
+                        Make it a test
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {quality.caught_items.length > 0 && (
+              <div className="mt-4">
+                <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  Kept out of replies
+                </p>
+                <p className="mt-0.5 text-[11.5px] text-slate-500">
+                  Listed by the assistant but in none of your data. If one of these is real, add it to your knowledge.
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-1.5">
+                  {quality.caught_items.map((c) => (
+                    <li key={c.text} className="rounded-lg bg-slate-50 px-2 py-1 text-[11.5px] text-slate-600 ring-1 ring-slate-200">
+                      {c.text}{c.count > 1 ? ` · ${c.count}×` : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </AiCard>
+      )}
+
       {/* ── Score + run ── */}
       <AiCard>
         <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -263,6 +431,38 @@ export function EvalTab({ configured }: { configured: boolean }) {
                 pass. Leave blank to only check that it answers without inventing anything.
               </AiHint>
             </div>
+            {!newExpectHandoff && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <AiLabel htmlFor="eval-must-include">Must include, word for word</AiLabel>
+                  <textarea
+                    id="eval-must-include"
+                    rows={3}
+                    placeholder={'Gold loan Appraisal\nStatutory Training Programme (STP) (M)'}
+                    value={newMustInclude}
+                    onChange={(e) => setNewMustInclude(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#5B6CF9] focus:ring-2 focus:ring-[#5B6CF9]/15"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <AiLabel htmlFor="eval-must-not">Must not include</AiLabel>
+                  <textarea
+                    id="eval-must-not"
+                    rows={3}
+                    placeholder={'Leadership and Good Governance'}
+                    value={newMustNot}
+                    onChange={(e) => setNewMustNot(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-[#5B6CF9] focus:ring-2 focus:ring-[#5B6CF9]/15"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <AiHint>
+                    One per line. Checked exactly, before any grading: every name on the left must be in the reply
+                    and none on the right — so a list that leaves one out, or adds one that does not exist, fails.
+                  </AiHint>
+                </div>
+              </div>
+            )}
             <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
               <div className="min-w-0">
                 <p className="text-[13px] font-medium text-slate-800">This should go to a person</p>
@@ -273,10 +473,63 @@ export function EvalTab({ configured }: { configured: boolean }) {
               </div>
               <Switch checked={newExpectHandoff} onCheckedChange={setNewExpectHandoff} />
             </div>
-            <AiButton onClick={() => void addCase()} disabled={adding || !newQuestion.trim()}>
-              <Plus className="h-3.5 w-3.5" />
-              Add test
-            </AiButton>
+            <div className="flex flex-wrap gap-2">
+              <AiButton onClick={() => void addCase()} disabled={adding || !newQuestion.trim()}>
+                <Plus className="h-3.5 w-3.5" />
+                Add test
+              </AiButton>
+              <AiButton tone="outline" onClick={() => void suggestFromChats()} disabled={suggesting}>
+                {suggesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessagesSquare className="h-3.5 w-3.5" />}
+                Add from real chats
+              </AiButton>
+            </div>
+
+            {suggestions && (
+              <div className="rounded-2xl ring-1 ring-slate-200">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5">
+                  <p className="text-[12.5px] font-semibold text-slate-800">
+                    {suggestions.length > 0 ? 'Asked by customers in the last 30 days' : 'No new questions in the last 30 days'}
+                  </p>
+                  <button type="button" onClick={() => setSuggestions(null)} className="text-[11.5px] text-slate-500 hover:text-slate-800">
+                    Close
+                  </button>
+                </div>
+                {suggestions.length > 0 && (
+                  <>
+                    <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
+                      {suggestions.map((q) => (
+                        <li key={q.question}>
+                          <label className="flex cursor-pointer items-start gap-3 px-4 py-2 hover:bg-slate-50">
+                            <input
+                              type="checkbox"
+                              checked={picked.has(q.question)}
+                              onChange={(e) =>
+                                setPicked((prev) => {
+                                  const next = new Set(prev);
+                                  if (e.target.checked) next.add(q.question);
+                                  else next.delete(q.question);
+                                  return next;
+                                })
+                              }
+                              className="mt-0.5 accent-[#5B6CF9]"
+                            />
+                            <span className="min-w-0 flex-1 break-words text-[12.5px] text-slate-700">{q.question}</span>
+                            {q.count > 1 && <AiBadge tone="slate">{q.count}×</AiBadge>}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5">
+                      <AiHint>Messages with a phone number, email or ID number are never offered.</AiHint>
+                      <AiButton onClick={() => void addPicked()} disabled={picked.size === 0}>
+                        <Plus className="h-3.5 w-3.5" />
+                        Add {picked.size || ''} as tests
+                      </AiButton>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </AiCard>
@@ -329,6 +582,52 @@ export function EvalTab({ configured }: { configured: boolean }) {
                       {c.expected && (
                         <p className="mt-0.5 truncate text-[11.5px] text-slate-500">Must say: {c.expected}</p>
                       )}
+                      {(c.must_include?.length ?? 0) > 0 && (
+                        <p className="mt-0.5 break-words text-[11.5px] text-slate-500">
+                          Must include: {c.must_include!.join(' · ')}
+                        </p>
+                      )}
+                      {(c.must_not_include?.length ?? 0) > 0 && (
+                        <p className="mt-0.5 break-words text-[11.5px] text-slate-500">
+                          Must not include: {c.must_not_include!.join(' · ')}
+                        </p>
+                      )}
+                      {!c.expect_handoff && !c.expected && !(c.must_include?.length) && c.category === 'from chats' && (
+                        <p className="mt-0.5 text-[11.5px] text-amber-700">Asked by a customer — add what a correct answer must say.</p>
+                      )}
+
+                      {editing === c.id && (
+                        <div className="mt-2 space-y-2 rounded-xl bg-[#F7F8FC] p-3 ring-1 ring-slate-200/70">
+                          <AiInput
+                            aria-label="Correct answer must say"
+                            placeholder="Correct answer must say…"
+                            value={draft.expected}
+                            onChange={(e) => setDraft((d) => ({ ...d, expected: e.target.value }))}
+                          />
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <textarea
+                              aria-label="Must include, one per line"
+                              rows={3}
+                              placeholder="Must include, one per line"
+                              value={draft.mustInclude}
+                              onChange={(e) => setDraft((d) => ({ ...d, mustInclude: e.target.value }))}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12.5px] outline-none focus:border-[#5B6CF9]"
+                            />
+                            <textarea
+                              aria-label="Must not include, one per line"
+                              rows={3}
+                              placeholder="Must not include, one per line"
+                              value={draft.mustNot}
+                              onChange={(e) => setDraft((d) => ({ ...d, mustNot: e.target.value }))}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12.5px] outline-none focus:border-[#5B6CF9]"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <AiButton onClick={() => void saveEdit(c.id)}>Save</AiButton>
+                            <AiButton tone="ghost" onClick={() => setEditing(null)}>Cancel</AiButton>
+                          </div>
+                        </div>
+                      )}
 
                       {result && !result.passed && result.verdict && (
                         <p className="mt-1 text-[12px] leading-relaxed text-rose-700">{result.verdict}</p>
@@ -359,6 +658,16 @@ export function EvalTab({ configured }: { configured: boolean }) {
                     </div>
 
                     <div className="flex shrink-0 items-center gap-2">
+                      {!c.expect_handoff && editing !== c.id && (
+                        <button
+                          type="button"
+                          aria-label={`Edit test: ${c.question}`}
+                          onClick={() => startEdit(c)}
+                          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <Switch
                         checked={c.enabled}
                         onCheckedChange={(v) => void post({ action: 'update_case', id: c.id, enabled: v })}
@@ -379,6 +688,28 @@ export function EvalTab({ configured }: { configured: boolean }) {
           </ul>
         )}
       </AiCard>
+    </div>
+  );
+}
+
+function QualityTile({
+  icon,
+  label,
+  value,
+  tone = 'slate',
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  tone?: 'slate' | 'emerald' | 'amber';
+}) {
+  const tint =
+    tone === 'emerald' ? 'text-emerald-700 bg-emerald-50' : tone === 'amber' ? 'text-amber-800 bg-amber-50' : 'text-slate-600 bg-slate-50';
+  return (
+    <div className="rounded-xl p-3 ring-1 ring-slate-200/80">
+      <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${tint}`}>{icon}</span>
+      <p className="mt-2 text-[20px] font-semibold leading-none tabular-nums text-slate-900">{value}</p>
+      <p className="mt-1 text-[11.5px] text-slate-500">{label}</p>
     </div>
   );
 }

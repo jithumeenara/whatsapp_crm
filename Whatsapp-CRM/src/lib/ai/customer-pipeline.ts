@@ -25,7 +25,7 @@ import { validateReply, type ValidationResult } from './validator'
 import { customerToolsUsable, generateCustomerReply } from './customer-agent'
 import { buildCustomerToolInstruction, type CustomerToolContext } from './customer-tools'
 import { fillRecordPlaceholders, isSearchOutput, recordUnits, type LoadedTable } from './table-search'
-import { loadSearchableTables } from './table-search-store'
+import { describeTables, loadSearchableTables } from './table-search-store'
 import { scanActionTokens } from './action-tokens'
 import { checkSafetyGuard } from './safety-guard'
 import { WHATSAPP_REPLY_STYLE } from '@/lib/whatsapp/markdown-to-whatsapp'
@@ -114,6 +114,9 @@ export async function loadPromptSources(args: {
   /** Tables the assistant will search this turn, described in the tool
    *  instruction. Empty when it will not search. */
   searchTables?: readonly LoadedTable[]
+  /** Read-only tools only (the accuracy tests): describe the tables and
+   *  nothing about records, registrations or call-backs it cannot use. */
+  readOnlyTools?: boolean
 }): Promise<PromptSources> {
   const [companyProfile, customerContext, toolInstruction] = await Promise.all([
     loadCompanyProfile(args.accountId).catch(() => null),
@@ -124,9 +127,11 @@ export async function loadPromptSources(args: {
           currentChannel: args.currentChannel ?? 'whatsapp',
         }).catch(() => '')
       : Promise.resolve(''),
-    args.toolsAvailable
-      ? buildCustomerToolInstruction(args.accountId, { searchTables: args.searchTables }).catch(() => '')
-      : Promise.resolve(''),
+    args.readOnlyTools
+      ? Promise.resolve(args.searchTables?.length ? describeTables(args.searchTables) : '')
+      : args.toolsAvailable
+        ? buildCustomerToolInstruction(args.accountId, { searchTables: args.searchTables }).catch(() => '')
+        : Promise.resolve(''),
   ])
 
   // ── What day it is, where the business is ──────────────────────
@@ -582,6 +587,10 @@ export async function runCustomerTurn(args: {
   awaitingHuman?: boolean
   /** A submitted WhatsApp Flow to confirm, not a question to answer. */
   formSubmission?: boolean
+  /** With no contact, still offer the tools that only read business
+   *  data — the accuracy tests, so they measure the path customers get
+   *  (table search included) rather than a toolless one. */
+  readOnlyTools?: boolean
 }): Promise<CustomerTurnResult> {
   const startedAt = Date.now()
   const history = args.conversationHistory ?? []
@@ -637,7 +646,10 @@ export async function runCustomerTurn(args: {
           ? { conversationId: args.conversationId, userId: args.userId }
           : {}),
       }
-    : null
+    : args.readOnlyTools
+      ? // Nobody's conversation: business lookups only (customer-tools.ts).
+        { accountId: args.accountId, contactId: '', readOnly: true }
+      : null
 
   // Tables it will search rather than read (table-search.ts) — only when
   // this reply runs with tools; otherwise they stay knowledge as before.
@@ -668,6 +680,7 @@ export async function runCustomerTurn(args: {
     currentChannel: args.currentChannel,
     toolsAvailable: Boolean(toolContext),
     searchTables,
+    readOnlyTools: Boolean(toolContext?.readOnly),
   }).then((sources) => {
     timings.promptSources = Date.now() - sourcesStartedAt
     return sources

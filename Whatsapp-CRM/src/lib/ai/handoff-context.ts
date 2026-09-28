@@ -40,6 +40,10 @@ const REASON_HEADLINES: Record<HandoffReason, string> = {
   assistant_requested: 'The assistant asked for a colleague to follow up',
 }
 
+/** Every headline a hand-over note opens with — how the quality report
+ *  recognises one. */
+export const REASON_HEADLINES_LIST: readonly string[] = Object.values(REASON_HEADLINES)
+
 /** Long fields get cut rather than wrapped: this lands in a note field
  *  and an inbox preview, and an agent scrolling a wall of text will skip
  *  it entirely, which defeats the point. */

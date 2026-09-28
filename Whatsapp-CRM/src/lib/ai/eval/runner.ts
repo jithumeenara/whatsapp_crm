@@ -28,6 +28,8 @@ import { runCustomerTurn, type CustomerAiConfig } from '../customer-pipeline'
 import { getProviderKeys } from '../providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { recordAiUsage } from '../usage'
+import { normalizeMalayalam } from '../term-bridge'
+import { cleanPhrases, ensureEvalColumns } from './schema'
 
 /**
  * The model that grades answers, resolved rather than hardcoded.
@@ -66,6 +68,7 @@ export async function runEvalSuite(args: {
     where: { id: args.aiConfigId, account_id: args.accountId },
   })
   if (!aiConfig) throw new Error('AI is not configured for this account.')
+  await ensureEvalColumns()
 
   const cases = await prisma.aiEvalCase.findMany({
     where: { ai_config_id: args.aiConfigId, account_id: args.accountId, enabled: true },
@@ -168,7 +171,14 @@ type CaseOutcome = {
 async function runOneCase(args: {
   aiConfig: CustomerAiConfig
   accountId: string
-  testCase: { id: string; question: string; expected: string | null; expect_handoff: boolean }
+  testCase: {
+    id: string
+    question: string
+    expected: string | null
+    expect_handoff: boolean
+    must_include?: unknown
+    must_not_include?: unknown
+  }
   graderKey: string | null
   graderModel: string
 }): Promise<CaseOutcome> {
@@ -186,6 +196,10 @@ async function runOneCase(args: {
       // and make the score meaningless.
       contactId: null,
       customerMessage: args.testCase.question,
+      // …but the business lookups customers get — searching the
+      // account's tables above all — so the score measures the path a
+      // real reply takes. Nothing that reads a customer or writes runs.
+      readOnlyTools: true,
     })
   } catch (err) {
     return {
@@ -230,6 +244,21 @@ async function runOneCase(args: {
   }
 
   const reply = turn.reply ?? ''
+
+  // Exact checks, by code and before any grader: all of these phrases,
+  // none of those. "All three October programmes and not the September
+  // one" is a fact about the reply, not a judgement.
+  const exact = checkPhrases(reply, cleanPhrases(args.testCase.must_include), cleanPhrases(args.testCase.must_not_include))
+  if (exact) {
+    return {
+      passed: false,
+      reply,
+      handedOff: false,
+      confidence: turn.effectiveConfidence,
+      verdict: exact,
+      latencyMs,
+    }
+  }
 
   // No expected answer recorded: the case only asserts "answers without
   // handing off or inventing anything", which it just did.
@@ -375,4 +404,30 @@ function describeHandoff(turn: Awaited<ReturnType<typeof runCustomerTurn>>): str
     default:
       return turn.confidence.explain
   }
+}
+
+/** Compared loosely: case, spacing, *bold*, and "2,360" as "2360". */
+function phraseForm(text: string): string {
+  return normalizeMalayalam(text)
+    .toLowerCase()
+    .replace(/[*_~`]/g, '')
+    .replace(/(\d),(?=\d)/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * The exact part of a test: every "must include" phrase is in the reply
+ * and no "must not include" phrase is. Null when both hold; otherwise
+ * what failed, in words an admin can act on.
+ */
+export function checkPhrases(reply: string, mustInclude: string[] | null, mustNotInclude: string[] | null): string | null {
+  const text = phraseForm(reply)
+  const missing = (mustInclude ?? []).filter((p) => !text.includes(phraseForm(p)))
+  const present = (mustNotInclude ?? []).filter((p) => text.includes(phraseForm(p)))
+  if (missing.length === 0 && present.length === 0) return null
+  const parts: string[] = []
+  if (missing.length) parts.push(`Missing: ${missing.map((m) => `"${m}"`).join(', ')}`)
+  if (present.length) parts.push(`Should not say: ${present.map((m) => `"${m}"`).join(', ')}`)
+  return `${parts.join('. ')}.`
 }

@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { runEvalSuite } from '@/lib/ai/eval/runner'
 import { STARTER_CASES } from '@/lib/ai/eval/starter-cases'
+import { cleanPhrases, ensureEvalColumns } from '@/lib/ai/eval/schema'
+import { realQuestions } from '@/lib/ai/eval/real-questions'
+import { qualityReport } from '@/lib/ai/eval/quality-report'
 
 /**
  * The evaluation suite: test cases, runs, and results.
@@ -30,6 +34,13 @@ export async function GET(req: Request) {
   if (!aiConfig) return NextResponse.json({ cases: [], runs: [], results: [] })
 
   const url = new URL(req.url)
+
+  // How it did on real conversations over the last week.
+  if (url.searchParams.get('view') === 'quality') {
+    return NextResponse.json(await qualityReport(accountId))
+  }
+
+  await ensureEvalColumns()
   const runId = url.searchParams.get('run_id')
 
   const [cases, runs] = await Promise.all([
@@ -59,9 +70,11 @@ export async function GET(req: Request) {
 type PostBody =
   | { action: 'run'; label?: string }
   | { action: 'seed' }
-  | { action: 'create_case'; question: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null }
-  | { action: 'update_case'; id: string; question?: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null; enabled?: boolean }
+  | { action: 'create_case'; question: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null; must_include?: unknown; must_not_include?: unknown }
+  | { action: 'update_case'; id: string; question?: string; expected?: string | null; expect_handoff?: boolean; category?: string | null; notes?: string | null; enabled?: boolean; must_include?: unknown; must_not_include?: unknown }
   | { action: 'delete_case'; id: string }
+  | { action: 'suggest_from_chats' }
+  | { action: 'add_questions'; questions: unknown }
 
 export async function POST(req: Request) {
   let accountId: string
@@ -81,6 +94,7 @@ export async function POST(req: Request) {
 
   const body = (await req.json().catch(() => null)) as PostBody | null
   if (!body?.action) return NextResponse.json({ error: 'Missing action.' }, { status: 400 })
+  await ensureEvalColumns()
 
   switch (body.action) {
     case 'seed': {
@@ -117,6 +131,8 @@ export async function POST(req: Request) {
           expect_handoff: body.expect_handoff ?? false,
           category: body.category?.trim() || null,
           notes: body.notes?.trim() || null,
+          must_include: cleanPhrases(body.must_include) ?? undefined,
+          must_not_include: cleanPhrases(body.must_not_include) ?? undefined,
         },
       })
       return NextResponse.json({ ok: true, case: created })
@@ -134,6 +150,10 @@ export async function POST(req: Request) {
           ...(body.category !== undefined ? { category: body.category?.trim() || null } : {}),
           ...(body.notes !== undefined ? { notes: body.notes?.trim() || null } : {}),
           ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+          ...(body.must_include !== undefined ? { must_include: cleanPhrases(body.must_include) ?? Prisma.DbNull } : {}),
+          ...(body.must_not_include !== undefined
+            ? { must_not_include: cleanPhrases(body.must_not_include) ?? Prisma.DbNull }
+            : {}),
         },
       })
       if (updated.count === 0) return NextResponse.json({ error: 'Test case not found.' }, { status: 404 })
@@ -146,6 +166,38 @@ export async function POST(req: Request) {
       })
       if (deleted.count === 0) return NextResponse.json({ error: 'Test case not found.' }, { status: 404 })
       return NextResponse.json({ ok: true })
+    }
+
+    // Questions customers really asked in the last month, not already
+    // tests — offered, never added without the admin choosing them.
+    case 'suggest_from_chats': {
+      const existing = await prisma.aiEvalCase.findMany({
+        where: { ai_config_id: aiConfig.id },
+        select: { question: true },
+      })
+      const questions = await realQuestions(accountId, existing.map((c) => c.question))
+      return NextResponse.json({ ok: true, questions })
+    }
+
+    case 'add_questions': {
+      const questions = Array.isArray(body.questions)
+        ? body.questions
+            .filter((q): q is string => typeof q === 'string')
+            .map((q) => q.trim().slice(0, 500))
+            .filter(Boolean)
+            .slice(0, 50)
+        : []
+      if (questions.length === 0) return NextResponse.json({ error: 'Choose at least one question.' }, { status: 400 })
+      await prisma.aiEvalCase.createMany({
+        data: questions.map((question) => ({
+          account_id: accountId,
+          ai_config_id: aiConfig.id,
+          question,
+          category: 'from chats',
+          notes: 'Asked by a customer. Write what a correct answer must say.',
+        })),
+      })
+      return NextResponse.json({ ok: true, added: questions.length })
     }
 
     case 'run': {

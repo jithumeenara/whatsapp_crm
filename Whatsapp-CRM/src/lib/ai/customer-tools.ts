@@ -63,6 +63,10 @@ export interface CustomerToolContext {
   /** The account has tables the assistant may search (table-search.ts).
    *  Without any, search_records is not offered at all. */
   canSearchTables?: boolean
+  /** Only tools that read business data, never a customer's records and
+   *  never anything that writes: for the accuracy tests, which ask
+   *  questions on nobody's behalf. contactId is empty then. */
+  readOnly?: boolean
 }
 
 type ToolArgs = Record<string, unknown>
@@ -687,11 +691,16 @@ const NEEDS_CONVERSATION = new Set(['start_chatbot'])
  * differs: the same assistant on the same account can hand a live
  * WhatsApp thread to a chatbot and cannot hand a preview to anything.
  */
+/** Tools that read the business's own data and nothing about any one
+ *  customer, and write nothing: all a read-only context is given. */
+const READ_ONLY_TOOLS = new Set(['search_records', 'product_catalog', 'registration_forms'])
+
 export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDeclaration[] {
   const live = Boolean(ctx.conversationId && ctx.userId)
   return Object.entries(ALL_TOOLS)
     .filter(([name]) => live || !NEEDS_CONVERSATION.has(name))
     .filter(([name]) => name !== 'search_records' || ctx.canSearchTables)
+    .filter(([name]) => !ctx.readOnly || READ_ONLY_TOOLS.has(name))
     .map(([, t]) => t.declaration)
 }
 
@@ -711,7 +720,13 @@ export async function runCustomerTool(
   ctx: CustomerToolContext,
 ): Promise<unknown> {
   const tool = ALL_TOOLS[name]
-  if (!tool) return { error: `No such tool: ${name}. Available: ${CUSTOMER_TOOL_NAMES.join(', ')}` }
+  // Only what this context was offered. A model can name a tool it was
+  // never given — a registration during a read-only test, a hand-over
+  // with no conversation — and the name alone must not be enough to run it.
+  const offered = customerToolDeclarations(ctx).map((d) => d.name)
+  if (!tool || !offered.includes(name)) {
+    return { error: `No such tool: ${name}. Available: ${offered.join(', ')}` }
+  }
   try {
     return await tool.run(args, ctx)
   } catch (err) {

@@ -2915,6 +2915,10 @@ model AiEvalCase {
   /// be read by area instead of as a single number.
   category       String?
   notes          String?
+  /// Phrases a correct reply must contain / must not contain, checked by
+  /// code before the grader (migration 116). JSON arrays of strings.
+  must_include     Json?
+  must_not_include Json?
   enabled        Boolean @default(true)
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
