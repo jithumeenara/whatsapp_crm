@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { IDLE_TIMEOUT_MS, HEARTBEAT_THROTTLE_MS } from '@/lib/auth/session-timing';
 import { newTabId, touchTab, releaseTab, TAB_TOUCH_MS } from '@/lib/agents/open-tabs';
+import { readSharedActivity, writeSharedActivity } from '@/lib/auth/shared-activity';
 
 // The idle timeout and the heartbeat throttle are imported, not written
 // here: src/proxy.ts enforces the first on every request and
@@ -11,13 +12,35 @@ import { newTabId, touchTab, releaseTab, TAB_TOUCH_MS } from '@/lib/agents/open-
 // a local copy would be a third opinion about the same fact. See
 // src/lib/auth/session-timing.ts.
 const WARNING_MS = 10_000; // show a live countdown for the last 10 seconds
-const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'wheel'] as const
+
+// What only a person can cause.
+//
+// Listened for in the capture phase, before anything on the page sees
+// it: a menu, a dialog or the flow canvas that stops an event from
+// bubbling used to hide it from a listener waiting at the top, and the
+// person using it read as idle. `input` is here because a phone keyboard
+// or a Malayalam input method can type a whole sentence without a single
+// keydown reaching the page.
+const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'input'] as const
+const CAPTURE = { capture: true, passive: true } as const
+
+// Scrolling the page itself. Deliberately not captured: a list that
+// scrolls itself — the Inbox following a new message — fires scroll
+// events too, and a capture listener would count every one of them as a
+// person, keeping an unattended screen signed in for ever.
+const SCROLL = { passive: true } as const
+
+// The shared clock (see src/lib/auth/shared-activity.ts) is written at
+// most this often: a moving mouse must not become a storage write per
+// frame, and ten minutes does not need a finer grain than this.
+const SHARED_WRITE_MS = 5_000
 
 export function useIdleTimeout() {
   const { status } = useSession()
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null)
   const lastActivityRef = useRef(0)
   const lastServerRefreshRef = useRef(0)
+  const lastSharedWriteRef = useRef(0)
 
   const beat = useCallback(() => {
     lastServerRefreshRef.current = Date.now()
@@ -32,13 +55,31 @@ export function useIdleTimeout() {
   }, [])
 
   const registerActivity = useCallback(() => {
-    lastActivityRef.current = Date.now()
+    const now = Date.now()
+    lastActivityRef.current = now
+    // Every other tab of the app learns of it too, so an untouched tab
+    // does not sign out somebody who is busy in this one.
+    if (now - lastSharedWriteRef.current > SHARED_WRITE_MS) {
+      lastSharedWriteRef.current = now
+      writeSharedActivity(now)
+    }
     setSecondsLeft(null) // any real activity dismisses an in-progress warning
     // Real activity refreshes the LOCAL idle clock immediately, but the
     // server is only told this often — otherwise a moving mouse would
     // fire a request continuously for no security benefit.
-    if (Date.now() - lastServerRefreshRef.current > HEARTBEAT_THROTTLE_MS) beat()
+    if (now - lastServerRefreshRef.current > HEARTBEAT_THROTTLE_MS) beat()
   }, [beat])
+
+  // Only events the browser itself raised from a real device. One made
+  // by a script (isTrusted false) is not a person, whatever it claims to
+  // be, and must not hold a session open.
+  const onActivityEvent = useCallback((e: Event) => {
+    if (!e.isTrusted) return
+    registerActivity()
+  }, [registerActivity])
+
+  // The "Stay signed in" button: a click, but through React.
+  const stayActive = useCallback(() => registerActivity(), [registerActivity])
 
   useEffect(() => {
     if (status !== 'authenticated') return
@@ -54,7 +95,8 @@ export function useIdleTimeout() {
     // a person is there.
     beat()
 
-    for (const evt of ACTIVITY_EVENTS) window.addEventListener(evt, registerActivity, { passive: true })
+    for (const evt of ACTIVITY_EVENTS) window.addEventListener(evt, onActivityEvent, CAPTURE)
+    window.addEventListener('scroll', onActivityEvent, SCROLL)
 
     // ── Telling the server this window is open, and then closing ──────
     //
@@ -97,7 +139,9 @@ export function useIdleTimeout() {
     document.addEventListener('visibilitychange', onReturn)
 
     const interval = setInterval(() => {
-      const elapsed = Date.now() - lastActivityRef.current
+      // The newer of this tab's clock and every tab's (see above).
+      const now = Date.now()
+      const elapsed = now - Math.max(lastActivityRef.current, readSharedActivity(now))
       const remaining = IDLE_TIMEOUT_MS - elapsed
       if (remaining <= 0) {
         // The session is over either way — the proxy would refuse the
@@ -112,14 +156,15 @@ export function useIdleTimeout() {
     }, 1000)
 
     return () => {
-      for (const evt of ACTIVITY_EVENTS) window.removeEventListener(evt, registerActivity)
+      for (const evt of ACTIVITY_EVENTS) window.removeEventListener(evt, onActivityEvent, CAPTURE)
+      window.removeEventListener('scroll', onActivityEvent)
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('pageshow', onReturn)
       document.removeEventListener('visibilitychange', onReturn)
       clearInterval(interval)
       clearInterval(tabTimer)
     }
-  }, [status, registerActivity, beat])
+  }, [status, onActivityEvent, beat])
 
-  return { secondsLeft, stayActive: registerActivity }
+  return { secondsLeft, stayActive }
 }
