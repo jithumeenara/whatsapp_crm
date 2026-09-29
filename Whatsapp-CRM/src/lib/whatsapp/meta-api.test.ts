@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   INTERACTIVE_LIMITS,
+  deleteMessageTemplate,
   sendInteractiveButtons,
   sendInteractiveList,
 } from "./meta-api";
@@ -265,5 +266,49 @@ describe("sendInteractiveList — validation", () => {
         },
       },
     });
+  });
+});
+
+describe("deleteMessageTemplate", () => {
+  const ARGS = { wabaId: "waba-1", accessToken: "test-token", name: "testing", metaTemplateId: "123" };
+  const metaError = (status: number, error: Record<string, unknown>) =>
+    vi.fn(async () => new Response(JSON.stringify({ error }), { status, headers: { "content-type": "application/json" } }));
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("succeeds when the template was already deleted on Meta (400, code 100, subcode 2593002)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      metaError(400, {
+        message: "Invalid parameter",
+        type: "OAuthException",
+        code: 100,
+        error_subcode: 2593002,
+        error_user_msg: "The message template testing wasn't found for this account.",
+      }),
+    );
+    await expect(deleteMessageTemplate(ARGS)).resolves.toBeUndefined();
+  });
+
+  it("succeeds on a plain 404", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 404 })));
+    await expect(deleteMessageTemplate(ARGS)).resolves.toBeUndefined();
+  });
+
+  it("still fails on any other code 100 error", async () => {
+    vi.stubGlobal("fetch", metaError(400, { message: "Invalid parameter", code: 100, error_subcode: 33 }));
+    await expect(deleteMessageTemplate(ARGS)).rejects.toThrow();
+  });
+
+  it("still fails on an expired token", async () => {
+    vi.stubGlobal("fetch", metaError(401, { message: "Error validating access token", code: 190 }));
+    await expect(deleteMessageTemplate(ARGS)).rejects.toThrow();
+  });
+
+  it("still fails when the error body is not JSON", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("Bad Gateway", { status: 502 })));
+    await expect(deleteMessageTemplate(ARGS)).rejects.toThrow();
   });
 });

@@ -961,12 +961,25 @@ export async function deleteMessageTemplate(
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  // Treat a 404 as a no-op — the template is already gone on Meta's
-  // side, and we still want the local row removed.
+  // Already gone on Meta's side — deleted in WhatsApp Manager, say — is
+  // a no-op: the local row should still be removed. Meta does not answer
+  // that with a 404 but with a 400, code 100 and subcode 2593002 ("The
+  // message template … wasn't found for this account"), so both are read.
   if (response.status === 404) return
   if (!response.ok) {
+    const body = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { error?: { code?: number; error_subcode?: number } } | null
+    if (isTemplateNotFound(body?.error)) return
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
+}
+
+/** Meta's "no such template" error, as it answers a delete of one that
+ *  has already gone. */
+export function isTemplateNotFound(error: { code?: number; error_subcode?: number } | null | undefined): boolean {
+  return error?.code === 100 && error?.error_subcode === 2593002
 }
 
 // ============================================================

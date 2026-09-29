@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/auth'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
@@ -104,24 +104,16 @@ async function upsertTemplateRow(
  */
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const userId = session.user.id
-
-    // Resolve the caller's account_id — whatsapp_config + the
-    // message_templates row are account-scoped.
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { account_id: true },
-    })
-    const accountId = profile?.account_id
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
+    // Supervisors and above, as the Templates page itself — not any
+    // signed-in member submitting to Meta in the business's name.
+    let accountId: string
+    let userId: string
+    try {
+      const ctx = await requireRole('supervisor')
+      accountId = ctx.accountId
+      userId = ctx.userId
+    } catch (err) {
+      return toErrorResponse(err)
     }
 
     let payload: TemplatePayload

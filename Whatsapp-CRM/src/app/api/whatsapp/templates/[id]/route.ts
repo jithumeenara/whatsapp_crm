@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/auth'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
@@ -57,24 +57,14 @@ export async function PATCH(
       )
     }
 
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const userId = session.user.id
-
-    // Resolve the caller's account_id so template + whatsapp_config
-    // lookups work for teammates who didn't author the row.
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { account_id: true },
-    })
-    const accountId = profile?.account_id
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
+    // Supervisors and above, as the Templates page itself: an edit goes
+    // back to Meta for approval in the business's name — not something
+    // an agent or a viewer should be able to do by calling this directly.
+    let accountId: string
+    try {
+      accountId = (await requireRole('supervisor')).accountId
+    } catch (err) {
+      return toErrorResponse(err)
     }
 
     let payload: TemplatePayload
@@ -226,23 +216,13 @@ export async function DELETE(
       )
     }
 
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const userId = session.user.id
-
-    // Same account-scoping rationale as the PATCH handler above.
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { account_id: true },
-    })
-    const accountId = profile?.account_id
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
+    // Deleting on Meta cannot be undone: supervisors and above only, as
+    // the Templates page itself — not any signed-in member.
+    let accountId: string
+    try {
+      accountId = (await requireRole('supervisor')).accountId
+    } catch (err) {
+      return toErrorResponse(err)
     }
 
     const existing = await prisma.messageTemplate.findFirst({
