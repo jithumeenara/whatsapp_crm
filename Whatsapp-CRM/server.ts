@@ -11,6 +11,7 @@ import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
+import { sweepPhonePePayments } from "./src/lib/payments/phonepe-reconcile";
 import { ensureDataStoreColumns } from "./src/lib/data-store/schema";
 import { ensureEmailColumns } from "./src/lib/email/schema";
 import { ensureAiMetaColumn } from "./src/lib/ai/reply-sources";
@@ -211,6 +212,16 @@ app.prepare().then(() => {
   };
   setTimeout(microsoftUpkeep, 60_000);
   setInterval(microsoftUpkeep, 60 * 60_000);
+
+  // PhonePe payment links: PhonePe says plainly that a webhook may never
+  // arrive, so open links are asked about on a schedule as well — often
+  // while fresh, rarely once old. The status answer, not the webhook, is
+  // what marks a payment paid (see src/lib/payments/phonepe-reconcile.ts).
+  setInterval(() => {
+    sweepPhonePePayments().catch((err) => {
+      console.error("[phonepe] sweep failed:", err);
+    });
+  }, 2 * 60_000);
 
   // Every Data Store query names the columns migration 113 adds, and
   // every message and scheduled-message query the ones 112 adds (the

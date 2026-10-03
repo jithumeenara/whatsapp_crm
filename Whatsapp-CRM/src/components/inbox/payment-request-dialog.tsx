@@ -14,9 +14,9 @@ interface PaymentRequestDialogProps {
   conversationId: string;
 }
 
-/** Finding #09's manual send trigger — gated end-to-end on Meta's own
- *  approval + a connected gateway; errors here are expected until both
- *  exist for the account, and say so plainly rather than looking broken. */
+/** The Inbox's payment request. With PhonePe connected it sends a payment
+ *  link (no Meta approval involved); with Razorpay, Meta's in-chat
+ *  order_details, which waits on Meta's approval. Errors say which. */
 export function PaymentRequestDialog({ open, onOpenChange, conversationId }: PaymentRequestDialogProps) {
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
@@ -54,8 +54,9 @@ export function PaymentRequestDialog({ open, onOpenChange, conversationId }: Pay
           </DialogTitle>
         </DialogHeader>
         <p className="text-[11.5px] text-slate-400">
-          Requires a connected gateway (Settings &gt; Payments) and Meta&apos;s approval for this number — sends will
-          fail cleanly until both are in place.
+          Uses the gateway connected in Settings &gt; Payments. PhonePe sends a secure payment link and works within
+          24 hours of the customer&apos;s last message; Razorpay&apos;s in-chat payment also needs Meta&apos;s approval
+          for this number.
         </p>
         <div className="space-y-3">
           <div>

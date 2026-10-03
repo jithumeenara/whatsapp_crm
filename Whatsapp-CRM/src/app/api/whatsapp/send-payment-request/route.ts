@@ -6,7 +6,13 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { sendOrderDetailsMessage, buildUpiIntentLink } from '@/lib/whatsapp/payments-api'
 import { createRazorpayPaymentLink } from '@/lib/whatsapp/payment-gateways/razorpay'
+import { sendCtaUrlButton } from '@/lib/whatsapp/meta-api'
+import { createPhonePePaymentLink, parsePhonePeCredentials, PhonePeError } from '@/lib/payments/phonepe'
 import { emitToAccount } from '@/lib/socket'
+
+/** How long a PhonePe link stays payable. PhonePe allows up to 45 days;
+ *  a week covers "I'll pay tonight" without leaving old links open. */
+const PHONEPE_LINK_LIFETIME_MS = 7 * 24 * 60 * 60_000
 
 /**
  * POST /api/whatsapp/send-payment-request
@@ -39,7 +45,7 @@ export async function POST(request: Request) {
         account_id: ctx.accountId,
         ...(ctx.role === 'agent' ? { assigned_agent_id: ctx.userId } : {}),
       },
-      include: { contact: { select: { id: true, phone: true } } },
+      include: { contact: { select: { id: true, phone: true, name: true } } },
     })
     if (!conversation) return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     if (!conversation.contact?.phone) return NextResponse.json({ error: 'Contact has no phone number' }, { status: 400 })
@@ -55,6 +61,18 @@ export async function POST(request: Request) {
     const gatewayConfig = await prisma.paymentGatewayConfig.findUnique({ where: { whatsapp_config_id: waConfig.id } })
     if (!gatewayConfig) {
       return NextResponse.json({ error: 'No payment gateway connected for this number. Connect one in Settings > Payments first.' }, { status: 400 })
+    }
+    if (gatewayConfig.gateway === 'phonepe') {
+      return sendPhonePeRequest({
+        accountId: ctx.accountId,
+        userId: ctx.userId,
+        conversationId,
+        contact: { id: conversation.contact.id, phone: conversation.contact.phone, name: conversation.contact.name },
+        waConfig: { id: waConfig.id, phoneNumberId: waConfig.phone_number_id, accessToken: waConfig.access_token },
+        credentialsJson: decrypt(gatewayConfig.credentials as string),
+        amount,
+        description,
+      })
     }
     if (gatewayConfig.gateway !== 'razorpay') {
       return NextResponse.json({ error: `No adapter built for ${gatewayConfig.gateway} yet — only Razorpay can send today.` }, { status: 400 })
@@ -156,4 +174,127 @@ export async function POST(request: Request) {
   } catch (err) {
     return toErrorResponse(err)
   }
+}
+
+/**
+ * PhonePe: a payment link in an ordinary WhatsApp message, with a "Pay"
+ * button. Meta does not take PhonePe for its own in-chat payments, and a
+ * link needs no approval from Meta at all — but, being an ordinary
+ * message, it can only go within 24 hours of the customer's last message.
+ *
+ * The link's merchantOrderId is the payment's reference_id, which is how
+ * PhonePe's webhook and the status sweep find it again
+ * (src/lib/payments/phonepe-reconcile.ts).
+ */
+async function sendPhonePeRequest(args: {
+  accountId: string
+  userId: string
+  conversationId: string
+  contact: { id: string; phone: string; name: string | null }
+  waConfig: { id: string; phoneNumberId: string; accessToken: string }
+  credentialsJson: string
+  amount: number
+  description: string
+}) {
+  const credentials = parsePhonePeCredentials(args.credentialsJson)
+  if (!credentials) {
+    return NextResponse.json({ error: 'The saved PhonePe keys are incomplete. Save them again in Settings > Payments.' }, { status: 400 })
+  }
+
+  const referenceId = `wa-${randomUUID().slice(0, 12)}`
+  const payment = await prisma.whatsAppPayment.create({
+    data: {
+      account_id: args.accountId,
+      whatsapp_config_id: args.waConfig.id,
+      conversation_id: args.conversationId,
+      contact_id: args.contact.id,
+      wa_order_message_id: `pending-${randomUUID()}`, // the real wamid replaces this once Meta accepts the message
+      reference_id: referenceId,
+      amount: args.amount,
+      currency: 'INR',
+      status: 'pending',
+    },
+  })
+
+  let link
+  try {
+    link = await createPhonePePaymentLink({
+      credentials,
+      merchantOrderId: referenceId,
+      amount: args.amount,
+      description: args.description,
+      customerPhone: args.contact.phone,
+      customerName: args.contact.name ?? undefined,
+      expireAt: Date.now() + PHONEPE_LINK_LIFETIME_MS,
+    })
+  } catch (err) {
+    await prisma.whatsAppPayment.update({ where: { id: payment.id }, data: { status: 'failed' } })
+    const message = err instanceof PhonePeError ? err.message : 'Could not reach PhonePe.'
+    return NextResponse.json({ error: message }, { status: 502 })
+  }
+
+  const rupees = `₹${args.amount.toFixed(2)}`
+  const what = args.description.slice(0, 200)
+  const bodyText =
+    `Payment request: ${rupees}${what ? ` — ${what}` : ''}\n\n` +
+    'Tap Pay to pay securely on PhonePe — UPI, card or net banking. The link is valid for 7 days.'
+  const button = `Pay ${rupees}`.length <= 20 ? `Pay ${rupees}` : 'Pay now'
+
+  let messageId: string
+  try {
+    const result = await sendCtaUrlButton({
+      phoneNumberId: args.waConfig.phoneNumberId,
+      accessToken: decrypt(args.waConfig.accessToken),
+      to: args.contact.phone,
+      bodyText,
+      displayText: button,
+      url: link.paylinkUrl,
+      footerText: 'Secured by PhonePe',
+    })
+    messageId = result.messageId
+  } catch (err) {
+    await prisma.whatsAppPayment.update({ where: { id: payment.id }, data: { status: 'failed' } })
+    const message = err instanceof Error ? err.message : 'WhatsApp did not accept the message.'
+    return NextResponse.json({
+      error: `${message} — a payment link is an ordinary message, so it can only be sent within 24 hours of the customer's last message.`,
+    }, { status: 502 })
+  }
+
+  const updated = await prisma.whatsAppPayment.update({
+    where: { id: payment.id },
+    data: {
+      wa_order_message_id: messageId,
+      raw_payload: { gateway: 'phonepe', paylink_order_id: link.orderId, expire_at: link.expireAt },
+    },
+  })
+  emitToAccount(args.accountId, 'whatsapp_payment', { eventType: 'INSERT', new: updated, old: {} })
+
+  // The link is in the thread for the agent too, so it can be read out or
+  // re-sent; it is the same link the customer was given, and grants
+  // nothing but paying this amount.
+  const preview = `Payment request: ${rupees}${what ? ` — ${what}` : ''}`
+  const savedMsg = await prisma.message.create({
+    data: {
+      conversation_id: args.conversationId,
+      sender_type: 'agent',
+      sender_id: args.userId,
+      content_type: 'interactive',
+      content_text: `${bodyText}\n${link.paylinkUrl}`,
+      message_id: messageId,
+      status: 'sent',
+    },
+  })
+  const lastMessageAt = new Date()
+  await prisma.conversation.update({
+    where: { id: args.conversationId },
+    data: { last_message_text: preview, last_message_at: lastMessageAt },
+  })
+  emitToAccount(args.accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
+  emitToAccount(args.accountId, 'conversation', {
+    eventType: 'UPDATE',
+    new: { id: args.conversationId, last_message_text: preview, last_message_at: lastMessageAt.toISOString() },
+    old: {},
+  })
+
+  return NextResponse.json({ success: true, whatsapp_message_id: messageId, reference_id: referenceId, gateway: 'phonepe' })
 }

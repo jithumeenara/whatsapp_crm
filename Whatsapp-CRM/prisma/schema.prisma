@@ -1088,7 +1088,7 @@ model PaymentGatewayConfig {
   account_id         String   @db.Uuid
   whatsapp_config_id String   @unique @db.Uuid
   user_id            String   @db.Uuid
-  gateway            String // 'razorpay' | 'payu' | 'billdesk' | 'zaakpay' — the only 4 Meta supports
+  gateway            String // 'razorpay' | 'payu' | 'billdesk' | 'zaakpay' (Meta's in-chat four) | 'phonepe' (a payment link in an ordinary message; status 'active', no Meta approval)
   /// AES-256-GCM encrypted key/secret pair, shape depends on `gateway`.
   credentials        Json
   // UPI Intent mode fields — VPA (Virtual Payment Address), Merchant

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  IndianRupee, AlertTriangle, Loader2, Trash2, Eye, EyeOff, ExternalLink, ShieldAlert, Copy, Check,
+  IndianRupee, AlertTriangle, Loader2, Trash2, Eye, EyeOff, ExternalLink, ShieldAlert, Copy, Check, KeyRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,14 +12,45 @@ import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
+/** A webhook password nobody has to think up: 24 characters from the
+ *  browser's own cryptographic random source. */
+function generatePassword(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  // Bytes at or above the largest multiple of the alphabet's length are
+  // dropped, so every character is equally likely.
+  const limit = 256 - (256 % alphabet.length);
+  let out = '';
+  while (out.length < 24) {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    for (const b of bytes) {
+      if (b < limit && out.length < 24) out += alphabet[b % alphabet.length];
+    }
+  }
+  return out;
+}
+
+/** Same guard the Razorpay key fields use: password managers must not
+ *  offer the signed-in user's own login for a gateway credential. */
+const NO_AUTOFILL = {
+  autoComplete: 'off',
+  'data-lpignore': 'true',
+  'data-1p-ignore': 'true',
+  'data-bwignore': 'true',
+  'data-form-type': 'other',
+} as const;
+
 interface NumberLite { id: string; label: string | null; phone_number_id: string; is_default: boolean }
 interface GatewayConfig {
   id: string; whatsapp_config_id: string; gateway: string;
   vpa: string | null; mcc: string | null; pc: string | null;
   status: string; created_at: string;
+  /** PhonePe only: which environment the saved keys are for. */
+  environment?: 'sandbox' | 'production' | null;
 }
 
 const GATEWAYS: { value: string; label: string; built: boolean }[] = [
+  { value: 'phonepe', label: 'PhonePe — payment link in the chat', built: true },
   { value: 'razorpay', label: 'Razorpay', built: true },
   { value: 'payu', label: 'PayU', built: false },
   { value: 'billdesk', label: 'Billdesk', built: false },
@@ -44,6 +75,18 @@ export function PaymentsTab() {
   const [disconnecting, setDisconnecting] = useState(false);
   const [copied, setCopied] = useState(false);
   const webhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/whatsapp/payments/webhook` : '/api/whatsapp/payments/webhook';
+
+  // PhonePe
+  const [ppEnvironment, setPpEnvironment] = useState<'sandbox' | 'production'>('sandbox');
+  const [ppClientId, setPpClientId] = useState('');
+  const [ppClientVersion, setPpClientVersion] = useState('');
+  const [ppClientSecret, setPpClientSecret] = useState('');
+  const [ppWebhookUser, setPpWebhookUser] = useState('');
+  const [ppWebhookPass, setPpWebhookPass] = useState('');
+  const [ppShowSecrets, setPpShowSecrets] = useState(false);
+  const [ppCopied, setPpCopied] = useState(false);
+  const ppWebhookUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/payments/phonepe/webhook` : '/api/payments/phonepe/webhook';
+  const isPhonePe = gateway === 'phonepe';
 
   async function load() {
     setLoading(true);
@@ -73,15 +116,23 @@ export function PaymentsTab() {
       setVpa(selectedConfig.vpa ?? '');
       setMcc(selectedConfig.mcc ?? '');
       setPc(selectedConfig.pc ?? '');
+      setPpEnvironment(selectedConfig.environment === 'production' ? 'production' : 'sandbox');
     } else {
-      setGateway('razorpay');
+      setGateway('phonepe');
       setVpa(''); setMcc(''); setPc('');
+      setPpEnvironment('sandbox');
     }
     setKeyId(''); setKeySecret('');
+    setPpClientId(''); setPpClientVersion(''); setPpClientSecret(''); setPpWebhookUser(''); setPpWebhookPass('');
   }, [selectedConfig]);
+
+  // Saved PhonePe keys can be kept by leaving a field blank — but only
+  // when what is saved is PhonePe's.
+  const ppSaved = selectedConfig?.gateway === 'phonepe';
 
   async function handleSave() {
     if (!selectedNumberId) { toast.error('Connect a WhatsApp number first.'); return; }
+    if (isPhonePe) { await savePhonePe(); return; }
     if (!selectedConfig && (!keyId.trim() || !keySecret.trim())) {
       toast.error('Key ID and Key Secret are required for the first save.');
       return;
@@ -99,6 +150,42 @@ export function PaymentsTab() {
           vpa: vpa.trim() || undefined,
           mcc: mcc.trim() || undefined,
           pc: pc.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error || 'Failed to save.'); return; }
+      toast.success(data.message || 'Saved.');
+      await load();
+    } catch {
+      toast.error('Failed to save — network error.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function savePhonePe() {
+    if (!ppSaved && (!ppClientId.trim() || !ppClientVersion.trim() || !ppClientSecret.trim() || !ppWebhookUser.trim() || !ppWebhookPass.trim())) {
+      toast.error('Fill in all five PhonePe fields for the first save.');
+      return;
+    }
+    if (ppWebhookPass.trim() && ppWebhookPass.trim().length < 12) {
+      toast.error('Use a webhook password of at least 12 characters — or press Generate.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/whatsapp/payments/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          whatsapp_config_id: selectedNumberId,
+          gateway: 'phonepe',
+          environment: ppEnvironment,
+          client_id: ppClientId.trim() || undefined,
+          client_version: ppClientVersion.trim() || undefined,
+          client_secret: ppClientSecret.trim() || undefined,
+          webhook_username: ppWebhookUser.trim() || undefined,
+          webhook_password: ppWebhookPass.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -141,11 +228,24 @@ export function PaymentsTab() {
           <IndianRupee className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-[15px] font-semibold text-slate-900">In-Chat Payments (India)</h2>
-          <p className="text-[12.5px] text-slate-500">Collect UPI payments directly inside WhatsApp via an order_details message.</p>
+          <h2 className="text-[15px] font-semibold text-slate-900">Payments in the chat (India)</h2>
+          <p className="text-[12.5px] text-slate-500">Ask for a payment from the Inbox; the customer pays from WhatsApp.</p>
         </div>
       </div>
 
+      {isPhonePe ? (
+        <div className="flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-[12.5px] text-emerald-800">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-semibold">Works without Meta&apos;s approval.</p>
+            <p className="mt-1">
+              A payment request sends a secure PhonePe link with a Pay button. The customer pays on PhonePe&apos;s page
+              by UPI, card or net banking, and the Inbox marks it paid once PhonePe confirms it. Like any ordinary
+              message, it can only go within 24 hours of the customer&apos;s last message.
+            </p>
+          </div>
+        </div>
+      ) : (
       <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-[12.5px] text-amber-800">
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
         <div>
@@ -157,6 +257,7 @@ export function PaymentsTab() {
           </p>
         </div>
       </div>
+      )}
 
       {numbers.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-center text-[13px] text-slate-500">
@@ -179,8 +280,41 @@ export function PaymentsTab() {
 
           {selectedConfig && (
             <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-slate-500">
-              <span className={cn('h-1.5 w-1.5 rounded-full', 'bg-amber-500')} />
+              <span className={cn('h-1.5 w-1.5 rounded-full', selectedConfig.status === 'active' ? 'bg-emerald-500' : 'bg-amber-500')} />
               Status: <span className="font-medium text-slate-700">{selectedConfig.status.replace(/_/g, ' ')}</span>
+              {selectedConfig.gateway === 'phonepe' && selectedConfig.environment && (
+                <span className="text-slate-400">· {selectedConfig.environment === 'sandbox' ? 'sandbox (test payments only)' : 'production'}</span>
+              )}
+            </div>
+          )}
+
+          {isPhonePe && (
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <Label className="mb-1 text-[12px] text-slate-600">PhonePe webhook URL</Label>
+              <p className="mb-2 text-[11px] text-slate-400">
+                In PhonePe Business Dashboard → Developer Settings → Webhook → Create Webhook: choose{' '}
+                <span className="font-medium text-slate-500">SHA (username &amp; password)</span>, paste this URL, type the same
+                username and password you enter below, and select{' '}
+                <code className="rounded bg-slate-100 px-1 py-0.5 font-mono">paylink.order.completed</code> and{' '}
+                <code className="rounded bg-slate-100 px-1 py-0.5 font-mono">paylink.order.failed</code>.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input readOnly value={ppWebhookUrl} className="h-9 w-full bg-slate-50 font-mono text-[11.5px] text-slate-600 sm:flex-1" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(ppWebhookUrl).catch(() => {});
+                    setPpCopied(true);
+                    setTimeout(() => setPpCopied(false), 1500);
+                  }}
+                  className="h-9 w-full shrink-0 gap-1.5 sm:w-auto"
+                >
+                  {ppCopied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  {ppCopied ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
             </div>
           )}
 
@@ -234,6 +368,84 @@ export function PaymentsTab() {
             )}
           </div>
 
+          {isPhonePe && (
+            <div className="space-y-3">
+              <div>
+                <Label className="mb-1 text-[12px] text-slate-600">Environment</Label>
+                <select
+                  value={ppEnvironment}
+                  onChange={(e) => setPpEnvironment(e.target.value === 'production' ? 'production' : 'sandbox')}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                >
+                  <option value="sandbox">Sandbox — test payments only</option>
+                  <option value="production">Production — real money</option>
+                </select>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                From PhonePe Business Dashboard → Developer Settings. The keys are checked with PhonePe before they are
+                saved, and stored encrypted. {ppSaved ? 'Leave a field blank to keep what is saved.' : ''}
+              </p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div>
+                  <Label className="mb-1 text-[12px] text-slate-600">Client ID</Label>
+                  <Input value={ppClientId} onChange={(e) => setPpClientId(e.target.value)} placeholder={ppSaved ? '••••••••' : ''} className="h-9 text-sm" {...NO_AUTOFILL} />
+                </div>
+                <div>
+                  <Label className="mb-1 text-[12px] text-slate-600">Client Version</Label>
+                  <Input value={ppClientVersion} onChange={(e) => setPpClientVersion(e.target.value)} placeholder={ppSaved ? '••••••••' : '1'} className="h-9 text-sm" {...NO_AUTOFILL} />
+                </div>
+              </div>
+              <div>
+                <Label className="mb-1 text-[12px] text-slate-600">Client Secret</Label>
+                <div className="relative">
+                  <Input
+                    type={ppShowSecrets ? 'text' : 'password'}
+                    value={ppClientSecret}
+                    onChange={(e) => setPpClientSecret(e.target.value)}
+                    placeholder={ppSaved ? '••••••••' : ''}
+                    className="h-9 pr-9 text-sm"
+                    {...NO_AUTOFILL}
+                    autoComplete="new-password"
+                  />
+                  <button type="button" aria-label={ppShowSecrets ? 'Hide secrets' : 'Show secrets'} onClick={() => setPpShowSecrets((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    {ppShowSecrets ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div>
+                  <Label className="mb-1 text-[12px] text-slate-600">Webhook username</Label>
+                  <Input value={ppWebhookUser} onChange={(e) => setPpWebhookUser(e.target.value)} placeholder={ppSaved ? '••••••••' : ''} className="h-9 text-sm" {...NO_AUTOFILL} />
+                </div>
+                <div>
+                  <Label className="mb-1 text-[12px] text-slate-600">Webhook password</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type={ppShowSecrets ? 'text' : 'password'}
+                      value={ppWebhookPass}
+                      onChange={(e) => setPpWebhookPass(e.target.value)}
+                      placeholder={ppSaved ? '••••••••' : 'at least 12 characters'}
+                      className="h-9 min-w-0 flex-1 text-sm"
+                      {...NO_AUTOFILL}
+                      autoComplete="new-password"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setPpWebhookPass(generatePassword()); setPpShowSecrets(true); }}
+                      className="h-9 shrink-0 gap-1"
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                      Generate
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!isPhonePe && (<>
           {/* Stacks on phones — two side-by-side credential fields left
               roughly 150px each, enough to clip a Razorpay key ID mid-word. */}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -294,6 +506,7 @@ export function PaymentsTab() {
               <Input value={pc} onChange={(e) => setPc(e.target.value)} className="h-9 text-sm" />
             </div>
           </div>
+          </>)}
 
           <div className="flex items-center justify-between pt-1">
             <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1.5">
@@ -309,13 +522,15 @@ export function PaymentsTab() {
           </div>
 
           <a
-            href="https://developers.facebook.com/documentation/business-messaging/whatsapp/payments/payments-in/overview/"
+            href={isPhonePe
+              ? 'https://developer.phonepe.com/payment-gateway'
+              : 'https://developers.facebook.com/documentation/business-messaging/whatsapp/payments/payments-in/overview/'}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 text-[11.5px] text-slate-400 hover:text-slate-600"
           >
             <ExternalLink className="h-3 w-3" />
-            Meta&apos;s WhatsApp Payments (India) docs
+            {isPhonePe ? 'PhonePe Payment Gateway docs' : 'Meta\u2019s WhatsApp Payments (India) docs'}
           </a>
         </div>
       )}

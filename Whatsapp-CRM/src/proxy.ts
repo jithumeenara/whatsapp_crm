@@ -30,6 +30,10 @@ const PUBLIC_PATHS = new Set([
   // whether the strict policy is safe. Rate limited below, and the
   // route stores nothing.
   '/api/csp-report',
+  // PhonePe's payment-link webhook — server to server, no session. The
+  // route checks the tenant's SHA256(username:password) header and then
+  // trusts only PhonePe's own status API, never the body; POST only.
+  '/api/payments/phonepe/webhook',
 ])
 
 // Paths whose prefix is always public (NextAuth internals, public API)
