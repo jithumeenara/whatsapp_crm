@@ -101,7 +101,7 @@ export interface AdvancedFeaturesProps {
  *  empty box. Written as rules rather than facts: company details are
  *  injected separately, and repeating them here only creates two places
  *  to keep in sync. */
-const STARTER_CUSTOMER_PROMPT = `You are the assistant for our business, replying to customers on WhatsApp and our other channels.
+export const STARTER_CUSTOMER_PROMPT = `You are the assistant for our business, replying to customers on WhatsApp and our other channels.
 
 How to reply:
 - Be warm, professional and brief. Two or three sentences is usually right.

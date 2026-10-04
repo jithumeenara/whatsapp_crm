@@ -5,6 +5,7 @@ import { encrypt } from '@/lib/whatsapp/encryption'
 import { parseServiceAccount, clearTokenCache } from '@/lib/ai/google-auth'
 import { synthesizeWithCloudTts } from '@/lib/ai/cloud-tts'
 import { resolveTtsCredentials } from '@/lib/ai/tts-credentials'
+import { recordAiUsage, estimateCloudTtsCostUsd } from '@/lib/ai/usage'
 
 /**
  * Upload, inspect and remove this account's Google Cloud key for
@@ -96,14 +97,26 @@ export async function POST(req: Request) {
   }
 
   // Proven before stored. A key that cannot speak is not a key.
+  const probeText = 'Voice check.'
+  const probeStartedAt = Date.now()
   try {
     const probe = await synthesizeWithCloudTts({
-      text: 'Voice check.',
+      text: probeText,
       languageCode: 'en-IN',
       encoding: 'MP3',
       account: parsed,
     })
     if (probe.buffer.length < 200) throw new Error('The test returned no usable audio.')
+    // Tiny, but billed like any other synthesis — and the Usage tab is
+    // meant to show every charge, not only the large ones.
+    void recordAiUsage({
+      accountId,
+      provider: 'google-cloud',
+      model: probe.voiceUsed ?? 'cloud-tts',
+      feature: 'tts_cloud',
+      costUsd: estimateCloudTtsCostUsd(probeText.length),
+      latencyMs: Date.now() - probeStartedAt,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return NextResponse.json(

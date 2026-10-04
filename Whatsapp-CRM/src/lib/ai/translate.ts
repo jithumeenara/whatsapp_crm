@@ -13,6 +13,7 @@
  */
 
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
+import { tokensFromGemini } from './pricing'
 
 /** Cheap, fast, and translation doesn't need the account's own configured
  *  chat model (which might be tuned/prompted for something else entirely)
@@ -112,14 +113,7 @@ export async function detectAndTranslate(args: {
     // Returned rather than recorded here: this module is a pure
     // Gemini wrapper with no account context, and the route that calls
     // it already has one. Keeps the usage write where the session is.
-    ...(usage
-      ? {
-          usage: {
-            inputTokens: usage.promptTokenCount ?? 0,
-            outputTokens: usage.candidatesTokenCount ?? 0,
-            totalTokens: usage.totalTokenCount ?? 0,
-          },
-        }
-      : {}),
+    // Thinking included: Google bills it as output (see pricing.ts).
+    ...(usage ? { usage: tokensFromGemini(usage) } : {}),
   }
 }

@@ -2,6 +2,7 @@ import { GoogleGenerativeAI, FinishReason, HarmCategory, HarmBlockThreshold } fr
 import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
 import { AI_REQUEST_TIMEOUT_MS } from './types'
 import { thinkingConfigFor, isThinkingRejection } from '../reasoning'
+import { tokensFromGemini } from '../pricing'
 
 /**
  * AiConfig.safety_filter -> Gemini's own HarmBlockThreshold, applied to
@@ -84,15 +85,8 @@ async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   return {
     text: result.response.text(),
     truncated: finishReason === FinishReason.MAX_TOKENS,
-    ...(usage
-      ? {
-          usage: {
-            inputTokens: usage.promptTokenCount ?? 0,
-            outputTokens: usage.candidatesTokenCount ?? 0,
-            totalTokens: usage.totalTokenCount ?? 0,
-          },
-        }
-      : {}),
+    // Thinking counted as output, as Google bills it (see pricing.ts).
+    ...(usage ? { usage: tokensFromGemini(usage) } : {}),
   }
 }
 

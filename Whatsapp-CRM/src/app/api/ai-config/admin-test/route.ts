@@ -7,6 +7,7 @@ import { AI_REQUEST_TIMEOUT_MS } from '@/lib/ai/providers/types'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { TOOL_DECLARATIONS, runTool } from '@/lib/ai/insights/tools'
 import { recordAiUsage } from '@/lib/ai/usage'
+import { tokensFromGemini, type GeminiUsageMetadata } from '@/lib/ai/pricing'
 import { loadCompanyProfile, formatCompanyBlock } from '@/lib/ai/company-profile'
 
 /**
@@ -91,9 +92,11 @@ export async function POST(req: Request) {
       systemInstruction,
       tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
       generationConfig: {
-        // Analytical answers over real numbers — near-deterministic is
-        // what's wanted here, unlike the customer-facing chat tone.
-        temperature: 0.2,
+        // Gemini 3's default temperature (1.0). It used to be 0.2 for
+        // "near-deterministic" figures, but the figures come from the
+        // tools, not the model's sampling, and Google warns that below
+        // 1.0 Gemini 3 can loop or degrade on exactly this kind of
+        // multi-step reasoning.
         maxOutputTokens: 2048,
       },
     },
@@ -109,9 +112,11 @@ export async function POST(req: Request) {
   // summed rather than only the final turn being counted.
   let inputTokens = 0
   let outputTokens = 0
-  const addUsage = (meta?: { promptTokenCount?: number; candidatesTokenCount?: number }) => {
-    inputTokens += meta?.promptTokenCount ?? 0
-    outputTokens += meta?.candidatesTokenCount ?? 0
+  const addUsage = (meta?: GeminiUsageMetadata) => {
+    // Thinking included: Google bills it as output (see pricing.ts).
+    const t = tokensFromGemini(meta)
+    inputTokens += t.inputTokens
+    outputTokens += t.outputTokens
   }
 
   try {

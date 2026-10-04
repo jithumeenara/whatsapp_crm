@@ -14,6 +14,32 @@ export interface TokenCounts {
   totalTokens: number
 }
 
+/** The fields of Gemini's `usageMetadata` that bear on the bill. */
+export interface GeminiUsageMetadata {
+  promptTokenCount?: number
+  candidatesTokenCount?: number
+  thoughtsTokenCount?: number
+  totalTokenCount?: number
+}
+
+/**
+ * Token counts from a Gemini response, as Google bills them.
+ *
+ * Thinking is output. Google's thinking guide: "When thinking is turned
+ * on, response pricing is the sum of output tokens and thinking tokens."
+ * Gemini 3 thinks on every reply by default, and its thoughts are
+ * reported in their own field, `thoughtsTokenCount` — so reading only
+ * `candidatesTokenCount`, as every call site here used to, left the
+ * thinking off every estimate. The one place this is computed, so it
+ * cannot be got wrong eleven different ways again.
+ */
+export function tokensFromGemini(meta?: GeminiUsageMetadata | null): TokenCounts {
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
+  const inputTokens = n(meta?.promptTokenCount)
+  const outputTokens = n(meta?.candidatesTokenCount) + n(meta?.thoughtsTokenCount)
+  return { inputTokens, outputTokens, totalTokens: Math.max(n(meta?.totalTokenCount), inputTokens + outputTokens) }
+}
+
 /**
  * What Google charges, and when it changes.
  *
@@ -53,7 +79,7 @@ export interface TokenCounts {
 /** When a person last read Google's pricing page and checked every row
  *  below against it. Shown beside the totals, because a number whose
  *  age is invisible gets trusted long after it stops being true. */
-export const PRICES_CHECKED_ON = '2026-09-20'
+export const PRICES_CHECKED_ON = '2026-10-04'
 
 /** Google's promotional Flash pricing ends at this instant and the
  *  rates double. Quoted from their own page; see the header. */
@@ -95,21 +121,51 @@ const PRICES: PriceRow[] = [
   // Not promotional -- flat, and dearer than the newer Flashes.
   { prefix: 'gemini-3.5-flash-lite', rates: [{ input: 0.3, output: 2.5 }] },
   { prefix: 'gemini-3.5-flash', rates: [{ input: 1.5, output: 9.0 }] },
+  // The alias the evaluation grader falls back to. It points at 3.5
+  // Flash today, so it is priced as that -- flagged, because an alias
+  // moves when Google says so.
+  { prefix: 'gemini-flash-latest', rates: [{ input: 1.5, output: 9.0 }], verified: false },
 
   // Audio in, text out. The row this replaces was named
   // "gemini-3.5-flash-transcribe", which is not a model.
   { prefix: 'gemini-3.5-transcribe', rates: [{ input: 2.0, output: 12.0 }] },
 
+  // "$0.25 (text/image/video), $0.50 (audio)" in, "$1.50" out. This app
+  // sends it text, so the text rate.
+  { prefix: 'gemini-3.1-flash-lite', rates: [{ input: 0.25, output: 1.5 }] },
+
   // Text in, audio out. Audio output is the expensive half, which is
   // why a voice reply costing nothing on this tab was so misleading.
-  { prefix: 'gemini-3.1-flash-tts', rates: [{ input: 1.0, output: 20.0 }] },
+  // The 3.8 voices are promotional too: "$0.50 (text) through December
+  // 31, 2026. $1.00 (text) starting January 1, 2027"; audio out $9.00 ->
+  // $18.00 (Flash) and $6.00 -> $12.00 (Flash-Lite).
+  {
+    prefix: 'gemini-3.8-flash-tts',
+    rates: [
+      { input: 0.5, output: 9.0, until: FLASH_PRICE_RISE },
+      { input: 1.0, output: 18.0, from: FLASH_PRICE_RISE },
+    ],
+  },
+  {
+    prefix: 'gemini-3.8-flash-lite-tts',
+    rates: [
+      { input: 0.5, output: 6.0, until: FLASH_PRICE_RISE },
+      { input: 1.0, output: 12.0, from: FLASH_PRICE_RISE },
+    ],
+  },
+  // The full id: the row used to read "gemini-3.1-flash-tts", which no
+  // model is called, so every call to the real one showed as a guess.
+  { prefix: 'gemini-3.1-flash-tts-preview', rates: [{ input: 1.0, output: 20.0 }] },
+  // Kept so voice replies made on it earlier are still priced; Google
+  // now limits the 2.5 family to accounts that already used it.
   { prefix: 'gemini-2.5-flash-preview-tts', rates: [{ input: 0.5, output: 10.0 }] },
 
-  // gemini-embedding-001 is what this app embeds with, and Google's
-  // pricing page no longer lists it -- only gemini-embedding-2. Priced
-  // at embedding-2's text rate and flagged, because the nearest
-  // documented number shown as uncertain is more use than a confident
-  // wrong one, and far more use than a silent zero.
+  { prefix: 'gemini-embedding-2', rates: [{ input: 0.2, output: 0 }] },
+  // gemini-embedding-001 is not on Google's pricing page -- only
+  // gemini-embedding-2 is. Priced at embedding-2's text rate and
+  // flagged, because the nearest documented number shown as uncertain
+  // is more use than a confident wrong one, and far more use than a
+  // silent zero.
   { prefix: 'gemini-embedding', rates: [{ input: 0.2, output: 0 }], verified: false },
 
   // Family fallbacks, reached only by a model this table has never
@@ -165,6 +221,58 @@ export function priceFor(model: string, at: Date = new Date()): ResolvedPrice | 
  *  rather than presenting the figure as fact. */
 export function isLooselyPriced(model: string, at: Date = new Date()): boolean {
   return priceFor(model, at)?.exact !== true
+}
+
+/**
+ * Live voice is priced by what kind of token it is, not just which way
+ * it went: on Gemini 3.8 Live, audio in is four times text in and audio
+ * out is almost three times text out. A single input/output rate would
+ * be wrong in one direction or the other on every session, so a live
+ * session is priced from the per-modality counts Google reports.
+ *
+ * Verbatim from the pricing page (paid tier, 2026-10-04): Gemini 3.8
+ * Live "$0.75 (text), $3.00 ... (audio), $1.00 ... (image/video)" in,
+ * "$4.50 (text), $12.00 ... (audio)" out; 3.1 Flash Live Preview is
+ * "included in 3.8 Live pricing"; 2.5 Flash Native Audio Preview $0.50
+ * text / $3.00 audio-video in, $2.00 text / $12.00 audio out.
+ */
+interface ModalityRates {
+  inText: number
+  inAudio: number
+  inVisual: number
+  outText: number
+  outAudio: number
+}
+
+const LIVE_PRICES: { prefix: string; rates: ModalityRates }[] = [
+  { prefix: 'gemini-3.8-live', rates: { inText: 0.75, inAudio: 3.0, inVisual: 1.0, outText: 4.5, outAudio: 12.0 } },
+  { prefix: 'gemini-3.1-flash-live', rates: { inText: 0.75, inAudio: 3.0, inVisual: 1.0, outText: 4.5, outAudio: 12.0 } },
+  { prefix: 'gemini-2.5-flash-native-audio', rates: { inText: 0.5, inAudio: 3.0, inVisual: 3.0, outText: 2.0, outAudio: 12.0 } },
+]
+
+export interface ModalityCount {
+  modality?: string
+  tokenCount?: number
+}
+
+/** A live session's cost from Google's per-modality token counts, or
+ *  null when the model has no row here (the caller then falls back to
+ *  the plain token estimate and the figure shows as a guess). */
+export function liveVoiceCostUsd(
+  model: string,
+  prompt: readonly ModalityCount[],
+  response: readonly ModalityCount[],
+): number | null {
+  const id = model.trim().toLowerCase().replace(/^models\//, '')
+  const row = LIVE_PRICES.find((p) => id.startsWith(p.prefix))
+  if (!row) return null
+  const r = row.rates
+  const sum = (list: readonly ModalityCount[], rate: (m: string) => number) =>
+    list.reduce((acc, d) => acc + (Math.max(0, d.tokenCount ?? 0) / 1_000_000) * rate((d.modality ?? 'TEXT').toUpperCase()), 0)
+  const cost =
+    sum(prompt, (m) => (m === 'AUDIO' ? r.inAudio : m === 'IMAGE' || m === 'VIDEO' ? r.inVisual : r.inText)) +
+    sum(response, (m) => (m === 'AUDIO' ? r.outAudio : r.outText))
+  return Number(cost.toFixed(6))
 }
 
 /** Google Cloud TTS is billed per character, not per token, and the

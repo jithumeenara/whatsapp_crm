@@ -40,6 +40,7 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { recordAiUsage } from './usage'
+import { tokensFromGemini } from './pricing'
 
 /** Same cap the other extractors use. Past this a document is an
  *  archive rather than one reference text. */
@@ -154,7 +155,10 @@ export async function ocrPdfWithGemini(
   const client = genAI.getGenerativeModel(
     {
       model: resolvedModel,
-      generationConfig: { temperature: 0, maxOutputTokens: OCR_MAX_TOKENS },
+      // No temperature: Gemini 3's default of 1.0. Google warns that lower
+      // values "may lead to unexpected behavior, such as looping" — and a
+      // scan read in a loop repeats lines and bills for every repeat.
+      generationConfig: { maxOutputTokens: OCR_MAX_TOKENS },
     },
     { timeout: OCR_TIMEOUT_MS },
   )
@@ -179,13 +183,7 @@ export async function ocrPdfWithGemini(
       provider: 'gemini',
       model: resolvedModel,
       feature: 'pdf_ocr',
-      tokens: usage
-        ? {
-            inputTokens: usage.promptTokenCount ?? 0,
-            outputTokens: usage.candidatesTokenCount ?? 0,
-            totalTokens: usage.totalTokenCount ?? 0,
-          }
-        : undefined,
+      tokens: usage ? tokensFromGemini(usage) : undefined,
       latencyMs: Date.now() - startedAt,
     })
   }

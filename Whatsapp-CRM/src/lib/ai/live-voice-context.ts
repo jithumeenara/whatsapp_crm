@@ -22,6 +22,9 @@ import { getProviderKeys } from './providers/registry'
 import { loadKnowledge } from './knowledge-store'
 import { loadCompanyProfile, formatCompanyBlock } from './company-profile'
 import { VOICE_NO_TOOLS_INSTRUCTION } from './customer-tools'
+import { currentLiveModel } from './live-model'
+import { recordAiUsage, liveVoiceCostUsd } from './usage'
+import type { LiveUsage } from './live-voice'
 
 /** A live session's instruction is sent once at setup and cannot be
  *  re-sent per turn, so it has to fit alongside the audio budget. */
@@ -67,6 +70,7 @@ export async function loadLiveVoiceContext(args: {
   model: string
   voiceName: string
   systemInstruction: string
+  recordUsage: (usage: LiveUsage, durationMs: number) => void
 } | null> {
   const aiConfig = await prisma.aiConfig.findUnique({ where: { account_id: args.accountId } })
   if (!aiConfig || !aiConfig.live_voice_enabled) return null
@@ -74,12 +78,38 @@ export async function loadLiveVoiceContext(args: {
   const geminiEntry = getProviderKeys(aiConfig).gemini
   if (!geminiEntry?.api_key) return null
 
+  const model = currentLiveModel(aiConfig.live_voice_model)
   return {
     apiKey: decrypt(geminiEntry.api_key),
-    model: aiConfig.live_voice_model,
+    model,
     voiceName: aiConfig.live_voice_name,
     systemInstruction: await composeInstruction(args.accountId, aiConfig, args.mode),
+    recordUsage: (usage, durationMs) => recordLiveVoiceUsage(args.accountId, model, usage, durationMs),
   }
+}
+
+/**
+ * One Usage row per session. Priced from Google's per-modality counts —
+ * audio is several times dearer than text on a live model — and only
+ * falls back to the plain token estimate (shown as a guess) when Google
+ * sent no breakdown.
+ *
+ * No latency: a session lasts minutes, and averaged in with replies that
+ * take a second it would make every chart of response time meaningless.
+ */
+function recordLiveVoiceUsage(accountId: string, model: string, usage: LiveUsage, durationMs: number): void {
+  const id = model.replace(/^models\//, '')
+  const list = (r: Record<string, number>) => Object.entries(r).map(([modality, tokenCount]) => ({ modality, tokenCount }))
+  const detailed = Object.values(usage.prompt).some((n) => n > 0) || Object.values(usage.response).some((n) => n > 0)
+  const cost = detailed ? liveVoiceCostUsd(id, list(usage.prompt), list(usage.response)) : null
+  void recordAiUsage({
+    accountId,
+    model: id,
+    feature: 'live_voice',
+    tokens: { inputTokens: usage.promptTokens, outputTokens: usage.responseTokens, totalTokens: usage.totalTokens },
+    ...(cost !== null ? { costUsd: cost } : {}),
+  })
+  console.info(`[live-voice] session ended after ${Math.round(durationMs / 1000)}s, ${usage.totalTokens} tokens`)
 }
 
 /**
@@ -108,7 +138,7 @@ export async function loadCallVoiceContext(args: {
   if (!aiConfig) return null
 
   return {
-    model: aiConfig.live_voice_model,
+    model: currentLiveModel(aiConfig.live_voice_model),
     voiceName: aiConfig.live_voice_name,
     systemInstruction: await composeInstruction(args.accountId, aiConfig, args.mode),
   }

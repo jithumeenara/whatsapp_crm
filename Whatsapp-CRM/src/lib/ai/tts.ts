@@ -21,6 +21,7 @@
  * which is what the customer actually needs.
  */
 import { TTS_VOICES } from './tts-voices'
+import { decodeTtsAudio } from './tts-audio'
 
 /**
  * The MP3 encoder, loaded on demand.
@@ -66,11 +67,14 @@ function loadMp3Encoder(): Promise<Mp3EncoderCtor> {
   return encoderPromise
 }
 
-/** The TTS-capable models this account may have access to, newest
- *  first. Confirmed present on the live models list (Sept 2026); the
- *  fallback matters because preview models are withdrawn without
- *  notice and a missing model must not take voice replies down. */
-const TTS_MODELS = ['gemini-3.1-flash-tts-preview', 'gemini-2.5-flash-preview-tts']
+/** The TTS-capable models, best first. Gemini 3.8 Flash TTS is stable
+ *  (studio-grade, Malayalam listed) and its Flash-Lite sibling is the
+ *  fallback; 3.1 Flash TTS Preview stays last for accounts whose key
+ *  cannot reach 3.8 yet. 2.5 Flash Preview TTS was removed: Google now
+ *  limits the 2.5 family to accounts that used it before, so a new
+ *  client's key gets nothing from it. Checked against the models and
+ *  deprecations pages, 4 October 2026. */
+const TTS_MODELS = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts', 'gemini-3.1-flash-tts-preview']
 
 /** What one synthesis actually consumed, so the caller can record it.
  *  Audio output tokens are the bulk of a voice reply's cost. */
@@ -144,7 +148,7 @@ function resolveVoice(requested?: string): string {
 }
 
 function isModelUnavailable(err: Error): boolean {
-  return /404|not found|not supported|unavailable/i.test(err.message)
+  return /404|not found|not supported|unavailable|not available/i.test(err.message)
 }
 
 async function requestPcm(args: {
@@ -188,9 +192,11 @@ async function requestPcm(args: {
   const inline = json.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)?.inlineData
   if (!inline?.data) throw new Error(`TTS ${args.model} returned no audio.`)
 
+  // WAV from the 3.8 voices, headerless PCM from the older ones.
+  const { pcm, sampleRate } = decodeTtsAudio(Buffer.from(inline.data, 'base64'), inline.mimeType)
   return {
-    pcm: bytesToInt16(Buffer.from(inline.data, 'base64')),
-    sampleRate: parseSampleRate(inline.mimeType),
+    pcm,
+    sampleRate,
     usage: {
       model: args.model,
       inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
@@ -200,22 +206,8 @@ async function requestPcm(args: {
   }
 }
 
-/** The rate is declared in the mime type ("audio/L16; rate=24000"), not
- *  fixed by the API contract. Reading it rather than hardcoding 24000
- *  means a model that returns 16 kHz plays at the right pitch instead of
- *  sounding like a chipmunk. */
-function parseSampleRate(mimeType: string | undefined): number {
-  const match = /rate=(\d+)/i.exec(mimeType ?? '')
-  return match ? Number(match[1]) : 24_000
-}
 
 /** Signed 16-bit little-endian, which is what L16 means. */
-function bytesToInt16(buf: Buffer): Int16Array {
-  const samples = new Int16Array(Math.floor(buf.length / 2))
-  for (let i = 0; i < samples.length; i++) samples[i] = buf.readInt16LE(i * 2)
-  return samples
-}
-
 async function pcmToMp3(pcm: Int16Array, sampleRate: number): Promise<Buffer> {
   const Encoder = await loadMp3Encoder()
   const encoder = new Encoder(1, sampleRate, MP3_BITRATE_KBPS)

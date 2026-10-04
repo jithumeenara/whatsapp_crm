@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { PROVIDERS, getProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { runCustomerTurn, type CustomerAiConfig } from '@/lib/ai/customer-pipeline'
 
@@ -47,13 +48,67 @@ export async function POST(req: Request) {
   // send a live request with a caller-supplied API key, so it needs the
   // same 'owner' gate the config-save route has.
   let accountId: string
+  let userId: string
   try {
-    accountId = (await requireRole('owner')).accountId
+    const ctx = await requireRole('owner')
+    accountId = ctx.accountId
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
 
-  const body = await req.json()
+  const body = await req.json().catch(() => ({}))
+
+  // The setup wizard's "is this key right?" check. It has to work before
+  // anything is saved: on a new account there is no AI configuration yet,
+  // and sending this through the customer pipeline below — which needs
+  // one — made the very first key impossible to check. One tiny call to
+  // the provider with the key as typed: no knowledge, no tools, no prompt,
+  // nothing stored.
+  if (body?.check_key === true) {
+    const limited = checkRateLimit(`ai-key-check:${userId}`, { limit: 10, windowMs: 60_000 })
+    if (!limited.success) return rateLimitResponse(limited)
+    const providerId = typeof body.provider === 'string' && body.provider ? body.provider : 'gemini'
+    const adapter = PROVIDERS[providerId]
+    if (!adapter) return NextResponse.json({ error: `Unknown AI provider: ${providerId}` }, { status: 400 })
+    const key = typeof body.api_key === 'string' ? body.api_key.trim() : ''
+    if (key.length < 10 || key.length > 512) return NextResponse.json({ error: 'Enter the API key to check.' }, { status: 400 })
+    const requested = typeof body.model === 'string' ? body.model : ''
+    const model = adapter.defaultModels.some((m) => m.id === requested) ? requested : adapter.defaultModels[0]?.id ?? ''
+    const startedAt = Date.now()
+    try {
+      const out = await adapter.generateReply({
+        apiKey: key,
+        model,
+        temperature: 1,
+        maxTokens: 64,
+        conversationHistory: [],
+        userMessage: 'Reply with the single word OK.',
+        reasoningEffort: 'minimal',
+      })
+      void recordAiUsage({
+        accountId,
+        provider: providerId,
+        model,
+        feature: 'validation',
+        tokens: out.usage,
+        latencyMs: Date.now() - startedAt,
+      })
+      // The call succeeding is the answer; what the model said is not.
+      return NextResponse.json({ reply: 'OK', provider: providerId, model })
+    } catch (err) {
+      void recordAiUsage({
+        accountId,
+        model,
+        feature: 'validation',
+        status: 'error',
+        error: err instanceof Error ? err.message : String(err),
+        latencyMs: Date.now() - startedAt,
+      })
+      const classified = adapter.classifyError(err)
+      return NextResponse.json({ error: classified.message }, { status: classified.retryable ? 429 : 400 })
+    }
+  }
   const {
     message,
     history,

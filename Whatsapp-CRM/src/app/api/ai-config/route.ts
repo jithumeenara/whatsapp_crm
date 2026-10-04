@@ -250,10 +250,14 @@ export async function PUT(req: Request) {
     // model from provider_keys — but it is what a person reads first
     // when asking which model is in use, and it had drifted to a model
     // Google has since retired. Kept in step rather than left to rot.
-    model: mergedKeys[resolvedActiveProvider]?.model ?? existing?.model ?? 'gemini-2.5-flash',
+    model: mergedKeys[resolvedActiveProvider]?.model ?? existing?.model ?? 'gemini-3.6-flash',
     fallback_provider: fallback_provider === undefined ? existing?.fallback_provider ?? null : fallback_provider,
     provider_keys: mergedKeys as unknown as Prisma.InputJsonValue,
-    temperature: temperature != null ? Number(temperature) : (existing?.temperature ?? 0.7),
+    // 1.0 for a new configuration: Google "strongly recommend[s] keeping
+    // the temperature parameter at its default value of 1.0" for every
+    // Gemini 3 model, warning that lower values can cause looping. An
+    // account's own saved choice is never changed.
+    temperature: temperature != null ? Number(temperature) : (existing?.temperature ?? 1),
     max_tokens: max_tokens != null ? Number(max_tokens) : (existing?.max_tokens ?? 2048),
     system_prompt: system_prompt !== undefined ? system_prompt : (existing?.system_prompt ?? null),
     training_data:

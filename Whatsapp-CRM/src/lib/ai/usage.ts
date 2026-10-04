@@ -57,6 +57,15 @@ export type UsageFeature =
   /// somebody weighing up whether the Suggested tab earns its keep
   /// needs to see what it costs beside what it found.
   | 'lead_detect'
+  /// Embedding a customer's message to search the knowledge base — once
+  /// per message that semantic search answers. Apart from 'embedding'
+  /// (training), which is paid once per knowledge item, because this one
+  /// grows with message volume and the two answer different questions.
+  | 'retrieval'
+  /// A live, spoken session in the voice console. Billed per turn for the
+  /// whole context so far, audio far dearer than text, and recorded once
+  /// per session when it ends.
+  | 'live_voice'
 
 import { estimateCostUsd, type TokenCounts } from './pricing'
 
@@ -66,6 +75,8 @@ import { estimateCostUsd, type TokenCounts } from './pricing'
 export {
   estimateCostUsd,
   estimateCloudTtsCostUsd,
+  liveVoiceCostUsd,
+  tokensFromGemini,
   priceFor,
   isLooselyPriced,
   PRICES_CHECKED_ON,
@@ -139,16 +150,3 @@ export function estimateTokensFromText(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4))
 }
 
-/** Pulls token counts out of a Gemini SDK response, whatever shape of
- *  result object the caller happens to be holding. */
-export function tokensFromGemini(usageMetadata?: {
-  promptTokenCount?: number
-  candidatesTokenCount?: number
-  totalTokenCount?: number
-}): TokenCounts {
-  return {
-    inputTokens: usageMetadata?.promptTokenCount ?? 0,
-    outputTokens: usageMetadata?.candidatesTokenCount ?? 0,
-    totalTokens: usageMetadata?.totalTokenCount ?? 0,
-  }
-}

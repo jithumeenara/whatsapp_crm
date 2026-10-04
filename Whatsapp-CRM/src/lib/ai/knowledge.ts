@@ -32,6 +32,7 @@ import {
   chunkContentHash,
 } from './embeddings'
 import { englishFor, normalizeMalayalam, wordStarts } from './term-bridge'
+import { recordAiUsage, estimateTokensFromText } from './usage'
 
 export interface QaPair {
   question: string
@@ -87,7 +88,14 @@ interface SelectOptions {
   /** Opt into semantic retrieval for this account. Omit entirely (e.g.
    *  no Gemini key saved) to always use keyword search — same as before
    *  this feature existed. */
-  semantic?: { aiConfigId: string; geminiApiKey: string }
+  semantic?: {
+    aiConfigId: string
+    geminiApiKey: string
+    /** When given, the query embedding is recorded on the Usage tab as
+     *  "Knowledge search" — one call per message that semantic search
+     *  answers, which used to cost money and show as nothing. */
+    accountId?: string
+  }
 }
 
 /** How many extra candidates to pull from the vector search relative to
@@ -333,7 +341,7 @@ async function selectBySemantic(
   userMessage: string,
   allPairs: CachedKnowledge['pairs'],
   allChunks: CachedKnowledge['chunks'],
-  semantic: { aiConfigId: string; geminiApiKey: string },
+  semantic: { aiConfigId: string; geminiApiKey: string; accountId?: string },
   limits: { maxQaPairs: number; maxDocChunks: number },
 ): Promise<SelectedContext | null> {
   const synced = await hasEmbeddings(semantic.aiConfigId)
@@ -341,8 +349,34 @@ async function selectBySemantic(
 
   try {
     const embedStartedAt = Date.now()
-    const queryVector = await embedQuery(semantic.geminiApiKey, userMessage, await embeddingModelFor(semantic.aiConfigId))
+    const embeddingModel = await embeddingModelFor(semantic.aiConfigId)
+    let queryVector: number[]
+    try {
+      queryVector = await embedQuery(semantic.geminiApiKey, userMessage, embeddingModel)
+    } catch (err) {
+      if (semantic.accountId) {
+        void recordAiUsage({
+          accountId: semantic.accountId,
+          model: embeddingModel,
+          feature: 'retrieval',
+          status: 'error',
+          error: err instanceof Error ? err.message : String(err),
+          latencyMs: Date.now() - embedStartedAt,
+        })
+      }
+      throw err
+    }
     const embeddingMs = Date.now() - embedStartedAt
+    if (semantic.accountId) {
+      // Estimated: embedContent reports no token count (see usage.ts).
+      void recordAiUsage({
+        accountId: semantic.accountId,
+        model: embeddingModel,
+        feature: 'retrieval',
+        tokens: { inputTokens: estimateTokensFromText(userMessage), outputTokens: 0 },
+        latencyMs: embeddingMs,
+      })
+    }
     // Over-fetch, because a match can be dropped after ranking.
     //
     // The vector search covers every embedding for this AI config, but

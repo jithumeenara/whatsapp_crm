@@ -3,8 +3,10 @@ import { describe, it, expect } from "vitest";
 import {
   estimateCostUsd,
   estimateCloudTtsCostUsd,
+  liveVoiceCostUsd,
   priceFor,
   isLooselyPriced,
+  tokensFromGemini,
   PRICES_CHECKED_ON,
 } from "./usage";
 
@@ -54,14 +56,28 @@ describe("estimateCostUsd", () => {
   });
 
   it("prices audio output well above text, which is the point of showing it", () => {
-    expect(estimateCostUsd("gemini-3.1-flash-tts", ONE_M_OUT, DECEMBER)).toBeCloseTo(20, 6);
+    expect(estimateCostUsd("gemini-3.1-flash-tts-preview", ONE_M_OUT, DECEMBER)).toBeCloseTo(20, 6);
     expect(estimateCostUsd("gemini-2.5-flash-preview-tts", ONE_M_OUT, DECEMBER)).toBeCloseTo(10, 6);
     expect(estimateCostUsd("gemini-3.6-flash", ONE_M_OUT, DECEMBER)).toBeCloseTo(3.75, 6);
   });
 
-  it("matches a model id that carries a suffix", () => {
-    // The app sends "gemini-3.1-flash-tts-preview"; the row is the stem.
+  it("prices the 3.1 TTS preview by its real name, as an exact rate", () => {
+    // The row used to read "gemini-3.1-flash-tts", which no model is
+    // called — so every call to the real one was flagged as a guess.
     expect(estimateCostUsd("gemini-3.1-flash-tts-preview", ONE_M_OUT, DECEMBER)).toBeCloseTo(20, 6);
+    expect(isLooselyPriced("gemini-3.1-flash-tts-preview", DECEMBER)).toBe(false);
+  });
+
+  it("prices the 3.8 voices, promotional now and double from January", () => {
+    // "$9.00 (audio) through December 31, 2026. $18.00 (audio) starting
+    // January 1, 2027"; Flash-Lite $6.00 -> $12.00; text in $0.50 -> $1.00.
+    expect(estimateCostUsd("gemini-3.8-flash-tts", ONE_M_OUT, DECEMBER)).toBeCloseTo(9, 6);
+    expect(estimateCostUsd("gemini-3.8-flash-tts", ONE_M_OUT, JANUARY)).toBeCloseTo(18, 6);
+    expect(estimateCostUsd("gemini-3.8-flash-lite-tts", ONE_M_OUT, DECEMBER)).toBeCloseTo(6, 6);
+    expect(estimateCostUsd("gemini-3.8-flash-lite-tts", ONE_M_OUT, JANUARY)).toBeCloseTo(12, 6);
+    expect(estimateCostUsd("gemini-3.8-flash-tts", ONE_M_IN, JANUARY)).toBeCloseTo(1, 6);
+    // The lite row must not be swallowed by the shorter Flash one.
+    expect(isLooselyPriced("gemini-3.8-flash-lite-tts", DECEMBER)).toBe(false);
   });
 
   it("falls back to a family rate rather than to zero", () => {
@@ -149,5 +165,39 @@ describe("estimateCloudTtsCostUsd", () => {
   it("is zero for nothing, not negative for nonsense", () => {
     expect(estimateCloudTtsCostUsd(0)).toBe(0);
     expect(estimateCloudTtsCostUsd(-5)).toBe(0);
+  });
+});
+
+describe("tokensFromGemini", () => {
+  it("counts thinking as output, because Google bills it as output", () => {
+    // "When thinking is turned on, response pricing is the sum of output
+    // tokens and thinking tokens." Gemini 3 thinks on every reply.
+    const t = tokensFromGemini({ promptTokenCount: 1000, candidatesTokenCount: 200, thoughtsTokenCount: 800, totalTokenCount: 2000 });
+    expect(t).toEqual({ inputTokens: 1000, outputTokens: 1000, totalTokens: 2000 });
+    // Same reply, priced: thinking is most of the output bill.
+    expect(estimateCostUsd("gemini-3.6-flash", t, DECEMBER)).toBeCloseTo((1000 * 0.75 + 1000 * 3.75) / 1_000_000, 9);
+  });
+
+  it("never reports a total smaller than its parts, and survives missing fields", () => {
+    expect(tokensFromGemini({ promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 5, totalTokenCount: 15 }).totalTokens).toBe(20);
+    expect(tokensFromGemini(undefined)).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+    expect(tokensFromGemini({ promptTokenCount: -3, candidatesTokenCount: Number.NaN })).toEqual({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+  });
+});
+
+describe("liveVoiceCostUsd", () => {
+  it("prices audio and text separately, as Gemini 3.8 Live is billed", () => {
+    // $3.00 audio in, $0.75 text in, $12.00 audio out, $4.50 text out.
+    const cost = liveVoiceCostUsd(
+      "models/gemini-3.8-live",
+      [{ modality: "AUDIO", tokenCount: 1_000_000 }, { modality: "TEXT", tokenCount: 1_000_000 }],
+      [{ modality: "AUDIO", tokenCount: 1_000_000 }, { modality: "TEXT", tokenCount: 1_000_000 }],
+    );
+    expect(cost).toBeCloseTo(3 + 0.75 + 12 + 4.5, 6);
+  });
+
+  it("knows the older live model, and admits when it does not know one", () => {
+    expect(liveVoiceCostUsd("gemini-2.5-flash-native-audio-preview-12-2025", [{ modality: "AUDIO", tokenCount: 1_000_000 }], [])).toBeCloseTo(3, 6);
+    expect(liveVoiceCostUsd("gemini-9-live", [{ modality: "AUDIO", tokenCount: 1 }], [])).toBeNull();
   });
 });

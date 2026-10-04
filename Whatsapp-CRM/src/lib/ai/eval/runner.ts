@@ -30,6 +30,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { recordAiUsage } from '../usage'
 import { normalizeMalayalam } from '../term-bridge'
 import { cleanPhrases, ensureEvalColumns } from './schema'
+import { tokensFromGemini } from '../pricing'
 
 /**
  * The model that grades answers, resolved rather than hardcoded.
@@ -336,7 +337,10 @@ async function gradeAnswer(args: {
         '',
         'Reply with exactly one line: PASS <short reason> or FAIL <short reason>. No other text.',
       ].join('\n'),
-      generationConfig: { temperature: 0, maxOutputTokens: 200 },
+      // Gemini 3's default temperature (1.0), as Google recommends for
+      // every Gemini 3 model; the strict one-line rubric does the work a
+      // low temperature used to.
+      generationConfig: { maxOutputTokens: 200 },
     },
     { timeout: GRADER_TIMEOUT_MS },
   )
@@ -356,11 +360,7 @@ async function gradeAnswer(args: {
       provider: 'gemini',
       model: args.model,
       feature: 'eval_grading',
-      tokens: {
-        inputTokens: result.response.usageMetadata?.promptTokenCount ?? 0,
-        outputTokens: result.response.usageMetadata?.candidatesTokenCount ?? 0,
-        totalTokens: result.response.usageMetadata?.totalTokenCount ?? 0,
-      },
+      tokens: tokensFromGemini(result.response.usageMetadata),
       latencyMs: 0,
     })
 

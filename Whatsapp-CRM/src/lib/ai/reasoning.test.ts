@@ -105,3 +105,25 @@ describe("isThinkingRejection", () => {
     expect(isThinkingRejection("some string")).toBe(false);
   });
 });
+
+describe("thinking levels a model does not have", () => {
+  it("asks 3.7 and 3.8 Flash for low, not the minimal they refuse", () => {
+    // Google's thinking table: 3.8 and 3.7 Flash support "low, medium,
+    // high" only. Sending minimal got refused, the retry dropped the
+    // level, and the model fell back to medium — slower than "Fast".
+    expect(thinkingConfigFor("gemini-3.8-flash", "minimal")).toEqual({ thinkingConfig: { thinkingLevel: "low" } });
+    expect(thinkingConfigFor("gemini-3.7-flash", "minimal")).toEqual({ thinkingConfig: { thinkingLevel: "low" } });
+    expect(thinkingConfigFor("models/gemini-3.8-flash", "minimal")).toEqual({ thinkingConfig: { thinkingLevel: "low" } });
+  });
+
+  it("still sends minimal where Google lists it", () => {
+    for (const model of ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.8-flash-lite"]) {
+      expect(thinkingConfigFor(model, "minimal")).toEqual({ thinkingConfig: { thinkingLevel: "minimal" } });
+    }
+  });
+
+  it("leaves the other levels alone on 3.8", () => {
+    expect(thinkingConfigFor("gemini-3.8-flash", "thorough")).toEqual({ thinkingConfig: { thinkingLevel: "high" } });
+    expect(thinkingConfigFor("gemini-3.8-flash", "low")).toEqual({ thinkingConfig: { thinkingLevel: "low" } });
+  });
+});

@@ -8,6 +8,7 @@
  */
 import { GoogleGenerativeAI, type EnhancedGenerateContentResponse } from '@google/generative-ai'
 import type { ProviderKeys, ProviderKeyEntry } from './providers/registry'
+import { tokensFromGemini } from './pricing'
 
 export type TranscriptionProvider = 'gemini' | 'openai'
 
@@ -25,12 +26,21 @@ export function pickTranscriptionProvider(
   return null
 }
 
+/** The transcript, and what producing it consumed — the caller records
+ *  it, so a voice note's cost shows on the Usage tab like everything
+ *  else. Tokens are absent when the provider reports none. */
+export interface Transcription {
+  text: string
+  model: string
+  usage?: { inputTokens: number; outputTokens: number; totalTokens: number }
+}
+
 export async function transcribeAudio(args: {
   provider: TranscriptionProvider
   apiKey: string
   audioBuffer: Buffer
   mimeType: string
-}): Promise<string> {
+}): Promise<Transcription> {
   return args.provider === 'gemini' ? transcribeWithGemini(args) : transcribeWithOpenAI(args)
 }
 
@@ -79,7 +89,7 @@ interface TranscriptPart {
  *  — an inline base64 audio Part alongside a text instruction. The
  *  `; codecs=opus` parameter WhatsApp puts on a voice note's MIME type is
  *  passed through untouched; it was verified not to bother the API. */
-async function transcribeWithGemini(args: { apiKey: string; audioBuffer: Buffer; mimeType: string }): Promise<string> {
+async function transcribeWithGemini(args: { apiKey: string; audioBuffer: Buffer; mimeType: string }): Promise<Transcription> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
   const data = args.audioBuffer.toString('base64')
   const failures: string[] = []
@@ -92,7 +102,14 @@ async function transcribeWithGemini(args: { apiKey: string; audioBuffer: Buffer;
         { text: 'Transcribe this audio accurately. Output only the transcript, nothing else.' },
       ])
       const text = extractTranscript(result.response)
-      if (text) return text
+      const meta = result.response.usageMetadata
+      if (text) {
+        return {
+          text,
+          model: modelName,
+          usage: meta ? tokensFromGemini(meta) : undefined,
+        }
+      }
       // Silence, or a model that has stopped answering in a shape we can
       // read. Either way the next model is worth a try.
       failures.push(`${modelName}: no transcript in the response`)
@@ -123,7 +140,7 @@ interface OpenAiTranscriptionErrorBody {
  *  shape via developers.openai.com/api/docs/guides/speech-to-text.
  *  Node's built-in FormData/Blob (Next.js 16 runtime) set the multipart
  *  boundary automatically; never set Content-Type by hand here. */
-async function transcribeWithOpenAI(args: { apiKey: string; audioBuffer: Buffer; mimeType: string }): Promise<string> {
+async function transcribeWithOpenAI(args: { apiKey: string; audioBuffer: Buffer; mimeType: string }): Promise<Transcription> {
   const form = new FormData()
   const blob = new Blob([new Uint8Array(args.audioBuffer)], { type: args.mimeType })
   form.append('file', blob, filenameForMimeType(args.mimeType))
@@ -143,5 +160,6 @@ async function transcribeWithOpenAI(args: { apiKey: string; audioBuffer: Buffer;
   // response_format: 'text' returns the plain transcript as the raw body.
   const text = (await res.text()).trim()
   if (!text) throw new Error('OpenAI returned an empty transcript.')
-  return text
+  // response_format 'text' carries no token counts; recorded without.
+  return { text, model: 'gpt-transcribe' }
 }

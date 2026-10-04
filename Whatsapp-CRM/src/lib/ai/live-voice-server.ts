@@ -15,7 +15,7 @@ import type { Server as HttpServer, IncomingMessage } from 'http'
 import type { Duplex } from 'stream'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { verifyLiveVoiceTicket } from './live-voice-ticket'
-import { openLiveVoiceSession, type LiveVoiceSession } from './live-voice'
+import { openLiveVoiceSession, type LiveUsage, type LiveVoiceSession } from './live-voice'
 
 export const LIVE_VOICE_PATH = '/api/ai/live-voice'
 
@@ -39,6 +39,8 @@ export type LiveVoiceContextLoader = (args: {
   model: string
   voiceName: string
   systemInstruction: string
+  /** Called once when the session ends, with what it consumed. */
+  recordUsage?: (usage: LiveUsage, durationMs: number) => void
 } | null>
 
 export function attachLiveVoiceServer(
@@ -110,6 +112,8 @@ async function handleConnection(
   }
 
   let session: LiveVoiceSession | null = null
+  const startedAt = Date.now()
+  const recordUsage = context.recordUsage
 
   session = openLiveVoiceSession({
     apiKey: context.apiKey,
@@ -131,6 +135,7 @@ async function handleConnection(
       onInterrupted: () => send({ type: 'interrupted' }),
       onTurnComplete: () => send({ type: 'turn_complete' }),
       onError: (message) => send({ type: 'error', message }),
+      onUsage: (usage) => recordUsage?.(usage, Date.now() - startedAt),
       onClose: (reason) => {
         send({ type: 'closed', reason })
         release()

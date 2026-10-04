@@ -34,6 +34,7 @@ import {
   type CustomerToolContext,
 } from './customer-tools'
 import { thinkingConfigFor, isThinkingRejection } from './reasoning'
+import { tokensFromGemini, type GeminiUsageMetadata } from './pricing'
 
 /** Enough rounds for "look up their enquiry, then check the catalog",
  *  which is the deepest real chain seen. Past this the model is looping
@@ -240,9 +241,11 @@ async function runToolLoop(args: {
   let inputTokens = 0
   let outputTokens = 0
 
-  const addUsage = (usage: { promptTokenCount?: number; candidatesTokenCount?: number } | undefined) => {
-    inputTokens += usage?.promptTokenCount ?? 0
-    outputTokens += usage?.candidatesTokenCount ?? 0
+  const addUsage = (usage: GeminiUsageMetadata | undefined) => {
+    // Thinking included: Google bills it as output (see pricing.ts).
+    const t = tokensFromGemini(usage)
+    inputTokens += t.inputTokens
+    outputTokens += t.outputTokens
   }
 
   let result = await generate(contents)

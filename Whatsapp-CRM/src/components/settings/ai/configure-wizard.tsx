@@ -9,6 +9,7 @@ import {
   AiButton, AiModal, AiModalHeader, AiModalBody, AiModalFooter,
   AiInput, AiLabel, AiHint, AiNotice, AiIconTile,
 } from './ui-kit';
+import { STARTER_CUSTOMER_PROMPT } from './advanced-features';
 
 /**
  * Screen 2 — the connect flow, as a three-step wizard instead of the old
@@ -48,6 +49,11 @@ export interface ConfigureWizardProps {
   onSafetyFilterChange: (v: string) => void;
   reasoningEffort: string;
   onReasoningEffortChange: (v: string) => void;
+  /** The customer prompt. Required to save, so it is written here too —
+   *  on a new account AI Training is not reachable until this wizard has
+   *  saved, and asking for it only there was a dead end. */
+  systemPrompt: string;
+  onSystemPromptChange: (v: string) => void;
 
   saving: boolean;
   saveError: string;
@@ -267,6 +273,26 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                       onChange={(e) => props.onTemperatureChange(Number(e.target.value))}
                       className="w-full accent-[#5B6CF9]"
                     />
+                    {/* Google, Gemini 3 developer guide: "strongly recommend keeping the
+                        temperature parameter at its default value of 1.0" — below it,
+                        "looping or degraded performance". */}
+                    <AiHint>
+                      {props.temperature < 1 ? (
+                        <>
+                          Google recommends <b>1.0</b> for Gemini 3 models — lower values can make replies repeat
+                          themselves or lose quality.{' '}
+                          <button
+                            type="button"
+                            onClick={() => props.onTemperatureChange(1)}
+                            className="font-semibold text-[#4A5AE8] underline-offset-2 hover:underline"
+                          >
+                            Use 1.0
+                          </button>
+                        </>
+                      ) : (
+                        'Google’s recommended setting for Gemini 3 models.'
+                      )}
+                    </AiHint>
                   </div>
                   <div className="space-y-1.5">
                     <AiLabel>Max Response Tokens</AiLabel>
@@ -356,6 +382,38 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                     </div>
                   ))}
                 </dl>
+
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <AiLabel htmlFor="wizard-customer-prompt">Customer prompt (required)</AiLabel>
+                    {!props.systemPrompt.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => props.onSystemPromptChange(STARTER_CUSTOMER_PROMPT)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5AE8] ring-1 ring-[#5B6CF9]/25 transition-colors hover:bg-[#EEF0FF]"
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Start from a template
+                      </button>
+                    )}
+                  </div>
+                  <textarea
+                    id="wizard-customer-prompt"
+                    value={props.systemPrompt}
+                    onChange={(e) => props.onSystemPromptChange(e.target.value)}
+                    rows={6}
+                    placeholder="You are the assistant for [Your Business]. Be warm, professional and brief. Answer only what you were asked."
+                    className={[
+                      'w-full resize-y rounded-xl bg-white px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-800 outline-none ring-1 transition-shadow placeholder:text-slate-400 focus:ring-2',
+                      props.saveError && !props.systemPrompt.trim() ? 'ring-rose-300 focus:ring-rose-300' : 'ring-slate-200 focus:ring-[#5B6CF9]/40',
+                    ].join(' ')}
+                  />
+                  <AiHint>
+                    How the assistant should talk to your customers — tone and rules. Your company details are added
+                    automatically. You can change this any time under AI Training → Advanced Features.
+                  </AiHint>
+                </div>
+
                 {props.saveError && (
                   <AiNotice tone="error" icon={<XCircle className="h-4 w-4" />}>{props.saveError}</AiNotice>
                 )}

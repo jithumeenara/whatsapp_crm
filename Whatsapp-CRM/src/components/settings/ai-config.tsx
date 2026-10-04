@@ -93,7 +93,8 @@ export function AiConfig() {
   const activeProvider = 'gemini';
   const [providerFields, setProviderFields] = useState<Record<string, ProviderFieldState>>(emptyProviderFields);
 
-  const [temperature, setTemperature] = useState(0.7);
+  // Google's recommendation for every Gemini 3 model; see the wizard.
+  const [temperature, setTemperature] = useState(1);
   const [maxTokens, setMaxTokens] = useState(2048);
   const [reasoningEffort, setReasoningEffort] = useState('low');
   // '' = auto-detect (reply in the customer's own language) — see the
@@ -185,7 +186,7 @@ export function AiConfig() {
           }
           return next;
         });
-        setTemperature(data.temperature ?? 0.7);
+        setTemperature(data.temperature ?? 1);
         setReasoningEffort(data.reasoning_effort ?? 'low');
         setMaxTokens(data.max_tokens ?? 2048);
         setReplyLanguage(data.reply_language ?? '');
@@ -277,11 +278,11 @@ export function AiConfig() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          check_key: true,
           provider: providerId,
           api_key: key.trim(),
           model,
           base_url: baseUrl.trim() || undefined,
-          message: 'Say "OK" in one word.',
         }),
       });
       const data = await res.json();
@@ -335,7 +336,7 @@ export function AiConfig() {
       // running is never cut off mid-conversation by a validation rule.
       if (!systemPrompt.trim()) {
         setSaveError(
-          'A customer prompt is required — open Advanced Features under AI Training to write one, or start from the template.',
+          'A customer prompt is required — write one in the box above, or press “Start from a template”.',
         );
         setSaving(false);
         return false;
@@ -466,6 +467,8 @@ export function AiConfig() {
       onSafetyFilterChange={setSafetyFilter}
       reasoningEffort={reasoningEffort}
       onReasoningEffortChange={setReasoningEffort}
+      systemPrompt={systemPrompt}
+      onSystemPromptChange={setSystemPrompt}
       saving={saving}
       saveError={saveError}
       onSave={save}

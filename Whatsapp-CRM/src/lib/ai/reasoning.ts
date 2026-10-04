@@ -69,7 +69,9 @@ export function normalizeEffort(value: unknown): ReasoningEffort {
  *  else — an older Gemini, or any other provider's model — is left
  *  exactly as it was before this file existed. */
 export function supportsThinkingLevel(model: string | null | undefined): boolean {
-  return typeof model === 'string' && /^gemini-3(\.|-)/.test(model.trim())
+  // "models/gemini-3.x" is the same model, in the long form the API also
+  // accepts.
+  return typeof model === 'string' && /^(models\/)?gemini-3(\.|-)/.test(model.trim())
 }
 
 /**
@@ -86,7 +88,22 @@ export function thinkingConfigFor(
   effort: unknown,
 ): { thinkingConfig: { thinkingLevel: string } } | undefined {
   if (!supportsThinkingLevel(model)) return undefined
-  return { thinkingConfig: { thinkingLevel: THINKING_LEVEL[normalizeEffort(effort)] } }
+  let level = THINKING_LEVEL[normalizeEffort(effort)]
+  // Not every Gemini 3 model has every level. Google's thinking page
+  // (October 2026) lists 3.8 and 3.7 Flash, and the Pro previews, as
+  // "low, medium, high" — no `minimal`. Sent anyway, the request is
+  // refused, the caller retries without any level, and the model falls
+  // back to its default of `medium`: "Fastest" would have been slower
+  // than "Fast". The nearest level it does have is used instead.
+  if (level === 'minimal' && !acceptsMinimal(model!)) level = 'low'
+  return { thinkingConfig: { thinkingLevel: level } }
+}
+
+/** Per Google's model table: minimal is on 3.6 Flash, 3.5 Flash and
+ *  Flash-Lite, 3 Flash Preview — and not on 3.7/3.8 Flash or any Pro. */
+function acceptsMinimal(model: string): boolean {
+  const id = model.trim().toLowerCase().replace(/^models\//, '')
+  return !/^gemini-3\.(7|8)-flash(?!-lite)|^gemini-3(\.\d)?-pro/.test(id)
 }
 
 /**

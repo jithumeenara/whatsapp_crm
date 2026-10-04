@@ -56,6 +56,59 @@ export interface LiveVoiceEvents {
   onReady: () => void
   onError: (message: string) => void
   onClose: (reason: string) => void
+  /** What the session consumed, once, when it ends — so it can be
+   *  recorded. Not called for a session that never produced a turn. */
+  onUsage?: (usage: LiveUsage) => void
+}
+
+/** A session's token use, summed over every report Google sent, split by
+ *  modality because audio and text are priced differently. */
+export interface LiveUsage {
+  promptTokens: number
+  responseTokens: number
+  totalTokens: number
+  prompt: Record<string, number>
+  response: Record<string, number>
+}
+
+export function emptyLiveUsage(): LiveUsage {
+  return { promptTokens: 0, responseTokens: 0, totalTokens: 0, prompt: {}, response: {} }
+}
+
+/**
+ * Adds one usage report to the running total.
+ *
+ * The Live API bills every turn for the whole context so far, and each
+ * report is that turn's bill — so reports are summed, not replaced. A
+ * report can arrive on any kind of server message, so every message is
+ * checked rather than only the one that ends a turn.
+ */
+export function addLiveUsage(total: LiveUsage, meta: LiveUsageMetadata | undefined): void {
+  if (!meta) return
+  const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : 0)
+  // Thinking is billed as output text, as on every Gemini model.
+  const thoughts = n(meta.thoughtsTokenCount)
+  total.promptTokens += n(meta.promptTokenCount)
+  total.responseTokens += n(meta.responseTokenCount) + thoughts
+  total.totalTokens += Math.max(n(meta.totalTokenCount), n(meta.promptTokenCount) + n(meta.responseTokenCount) + thoughts)
+  if (thoughts) total.response.TEXT = (total.response.TEXT ?? 0) + thoughts
+  for (const d of meta.promptTokensDetails ?? []) {
+    const m = String(d.modality ?? 'TEXT').toUpperCase()
+    total.prompt[m] = (total.prompt[m] ?? 0) + n(d.tokenCount)
+  }
+  for (const d of meta.responseTokensDetails ?? []) {
+    const m = String(d.modality ?? 'TEXT').toUpperCase()
+    total.response[m] = (total.response[m] ?? 0) + n(d.tokenCount)
+  }
+}
+
+export interface LiveUsageMetadata {
+  promptTokenCount?: number
+  responseTokenCount?: number
+  thoughtsTokenCount?: number
+  totalTokenCount?: number
+  promptTokensDetails?: { modality?: string; tokenCount?: number }[]
+  responseTokensDetails?: { modality?: string; tokenCount?: number }[]
 }
 
 export interface LiveVoiceSession {
@@ -88,6 +141,7 @@ export function openLiveVoiceSession(args: {
     idleTimer = setTimeout(() => shutdown('idle'), IDLE_TIMEOUT_MS)
   }
   const maxTimer = setTimeout(() => shutdown('session limit reached'), MAX_SESSION_MS)
+  const usage = emptyLiveUsage()
 
   function shutdown(reason: string) {
     if (closed) return
@@ -98,6 +152,13 @@ export function openLiveVoiceSession(args: {
       upstream.close()
     } catch {
       /* already gone */
+    }
+    if (usage.totalTokens > 0) {
+      try {
+        args.events.onUsage?.(usage)
+      } catch {
+        /* recording must never break closing */
+      }
     }
     args.events.onClose(reason)
   }
@@ -133,6 +194,8 @@ export function openLiveVoiceSession(args: {
     } catch {
       return
     }
+
+    addLiveUsage(usage, msg.usageMetadata)
 
     if (msg.setupComplete) {
       ready = true
@@ -230,6 +293,7 @@ export function openLiveVoiceSession(args: {
 interface LiveServerMessage {
   setupComplete?: unknown
   goAway?: unknown
+  usageMetadata?: LiveUsageMetadata
   serverContent?: {
     interrupted?: boolean
     turnComplete?: boolean

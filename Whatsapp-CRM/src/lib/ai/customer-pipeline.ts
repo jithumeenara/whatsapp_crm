@@ -362,6 +362,8 @@ const SHORT_REPLY_CHARS = 25
 
 export async function retrieveForMessage(args: {
   aiConfig: CustomerAiConfig
+  /** Whose usage the search embedding is recorded against. */
+  accountId?: string
   customerMessage: string
   /** What was said just before, newest last. Used only to give a short
    *  reply something to retrieve against. */
@@ -408,7 +410,7 @@ export async function retrieveForMessage(args: {
     cacheKey: `${aiConfig.id}:${version}${withheld ? `:w:${[...withheld].sort().join(',')}` : ''}`,
     maxQaPairs: contextLimit,
     maxDocChunks: contextLimit,
-    ...(useSemantic ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey: geminiApiKey! } } : {}),
+    ...(useSemantic ? { semantic: { aiConfigId: aiConfig.id, geminiApiKey: geminiApiKey!, accountId: args.accountId } } : {}),
   })
 }
 
@@ -690,6 +692,7 @@ export async function runCustomerTurn(args: {
   const retrievalStartedAt = Date.now()
   const selected = await retrieveForMessage({
     aiConfig: args.aiConfig,
+    accountId: args.accountId,
     customerMessage: args.customerMessage,
     conversationHistory: history,
     withhold: new Set(searchTables.map((t) => t.knowledgeId)),
