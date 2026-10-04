@@ -45,6 +45,44 @@ SELECT
           WHERE table_name = 'leads'         AND column_name = 'ai_verdict')           AS verdict_098;
 
 \echo ''
+\echo '=== Migrations 072 and 099 onward, one row each ==='
+-- One thing each migration creates, checked for existence. "NO" means
+-- that migration has not run here. Every file from 072 on is safe to run
+-- again, so scripts/apply-migrations.sh <first NO> 118 brings it up to
+-- date; 064–071 are not, and are covered by the sections above.
+--
+-- A few columns are also added by the app itself at start-up (the
+-- ensure* patches in server.ts), so a "yes" there can mean the app
+-- patched it rather than that the file ran — harmless, the file is
+-- still safe to run.
+SELECT m.migration,
+       CASE WHEN m.present THEN 'yes' ELSE 'NO' END AS applied
+FROM (VALUES
+  ('072_ai_accuracy_layer',             to_regclass('ai_eval_cases') IS NOT NULL),
+  ('099_semantic_search_catchup',       to_regclass('ai_knowledge_embeddings') IS NOT NULL),
+  ('100_agent_presence',                EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users'            AND column_name = 'last_seen_at')),
+  ('101_agent_went_offline',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users'            AND column_name = 'went_offline_at')),
+  ('102_agent_working_hours',           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles'         AND column_name = 'working_hours')),
+  ('103_business_timezone',             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'company_profiles' AND column_name = 'timezone')),
+  ('104_ai_judgements',                 to_regclass('ai_judgements') IS NOT NULL),
+  ('105_categories_and_scope',          to_regclass('service_categories') IS NOT NULL),
+  ('106_lead_last_customer_at',         EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads'            AND column_name = 'last_customer_at')),
+  ('107_conversation_offers',           to_regclass('conversation_offers') IS NOT NULL),
+  ('108_conversation_offers_one_pending', to_regclass('conversation_offers_one_pending_idx') IS NOT NULL),
+  ('109_page_access',                   EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'profiles'         AND column_name = 'page_access')),
+  ('110_lead_lost_at',                  EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads'            AND column_name = 'lost_at')),
+  ('111_microsoft_mailbox',             to_regclass('microsoft_mailboxes') IS NOT NULL),
+  ('112_email_rich',                    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'messages'         AND column_name = 'email_meta')),
+  ('113_data_store_tracking',           EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records'     AND column_name = 'source')),
+  ('114_ai_reply_meta',                 EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'messages'         AND column_name = 'ai_meta')),
+  ('115_data_table_ai_search',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_tables'      AND column_name = 'ai_search')),
+  ('116_eval_exact_checks',             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_eval_cases'    AND column_name = 'must_include')),
+  ('117_ai_embedding_model',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_configs'       AND column_name = 'embedding_model')),
+  ('118_ai_handover_settings',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_configs'       AND column_name = 'handover_settings'))
+) AS m(migration, present)
+ORDER BY m.migration;
+
+\echo ''
 \echo '=== How much is trained ==='
 -- Zero rows with the extension installed means nothing has been
 -- embedded yet: the assistant is answering from keyword overlap, which
