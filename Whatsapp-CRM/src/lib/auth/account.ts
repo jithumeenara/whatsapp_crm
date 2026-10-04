@@ -207,7 +207,7 @@ export async function requireRole(min: AccountRole): Promise<AccountContext> {
  * ── Why the page is named here and not inferred ─────────────────────
  *
  * Deriving it from the request path would be wrong exactly where it
- * matters: /api/reports serves the Reports page, and nothing in either
+ * matters: /api/reports/run serves the Reports page, and nothing in either
  * name says so. The route states which screen its data belongs to, and
  * a route that forgets is a route that is not protected — which is why
  * this is a distinct function rather than an optional argument to
