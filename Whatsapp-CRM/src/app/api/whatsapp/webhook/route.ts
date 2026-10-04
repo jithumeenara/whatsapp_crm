@@ -4,7 +4,9 @@ import { prisma } from '@/lib/db'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
-import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
+import { checkMetaWebhookSignature, logSignatureCheck } from '@/lib/whatsapp/webhook-signature'
+import { whatsappWebhookSecrets } from '@/lib/whatsapp/webhook-secrets'
+import { noteDelivered, noteRejected } from '@/lib/whatsapp/webhook-health'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { autoReplyToMessage } from '@/lib/ai/auto-reply'
 import { sendNewContactAlert } from '@/lib/contacts/new-contact-alert'
@@ -240,10 +242,16 @@ export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
 
-  if (!verifyMetaWebhookSignature(rawBody, signature)) {
+  const check = checkMetaWebhookSignature(rawBody, signature, await whatsappWebhookSecrets())
+  if (check !== 'ok') {
+    // Logged and remembered so Settings → WhatsApp can say "Meta is
+    // sending, but this server turns it away" instead of "connected".
+    logSignatureCheck(check, signature)
+    noteRejected(check)
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
-    // rather than silently eating events.
+    // rather than silently eating events. Meta retries for up to 7 days,
+    // so messages refused meanwhile still arrive once it is fixed.
     return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
@@ -253,6 +261,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+  noteDelivered(body)
 
   // Process asynchronously so we can ack Meta within their timeout.
   // The raw bytes travel with the parsed body: forwarding a call has to

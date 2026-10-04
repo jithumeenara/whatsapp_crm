@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { verifyMetaWebhookSignature } from "./webhook-signature";
+import { checkMetaWebhookSignature, verifyMetaWebhookSignature } from "./webhook-signature";
 
 const SECRET = process.env.META_APP_SECRET!;
 
@@ -47,6 +47,32 @@ describe("verifyMetaWebhookSignature", () => {
     // timingSafeEqual would throw on length mismatch — the guard inside
     // the verifier should catch this and return false instead.
     expect(verifyMetaWebhookSignature("{}", "sha256=tooshort")).toBe(false);
+  });
+
+  describe("with more than one of the operator's app secrets", () => {
+    const body = '{"entry":[]}';
+    const QUICK_CONNECT = "quick-connect-app-secret";
+
+    it("accepts a request signed by either app", () => {
+      expect(checkMetaWebhookSignature(body, signedHeader(body), [SECRET, QUICK_CONNECT])).toBe("ok");
+      expect(checkMetaWebhookSignature(body, signedHeader(body, QUICK_CONNECT), [SECRET, QUICK_CONNECT])).toBe("ok");
+    });
+
+    it("still refuses a request signed by an app it does not know", () => {
+      expect(checkMetaWebhookSignature(body, signedHeader(body, "someone-else"), [SECRET, QUICK_CONNECT])).toBe("mismatch");
+    });
+
+    it("says why a request was refused", () => {
+      expect(checkMetaWebhookSignature(body, signedHeader(body), [])).toBe("no_secret");
+      expect(checkMetaWebhookSignature(body, signedHeader(body), [""])).toBe("no_secret");
+      expect(checkMetaWebhookSignature(body, null, [SECRET])).toBe("no_signature");
+      expect(checkMetaWebhookSignature(body, "sha256=tooshort", [SECRET])).toBe("malformed");
+      expect(checkMetaWebhookSignature(body, "sha1=" + "a".repeat(64), [SECRET])).toBe("malformed");
+    });
+
+    it("accepts Meta's hex in either case", () => {
+      expect(checkMetaWebhookSignature(body, signedHeader(body).toUpperCase().replace("SHA256=", "sha256="), [SECRET])).toBe("ok");
+    });
   });
 
   describe("fail-closed when secret is missing", () => {

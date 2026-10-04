@@ -7,6 +7,10 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
+import { diagnoseDelivery, webhookUrlFor } from '@/lib/whatsapp/webhook-delivery'
+import { deliveryRecord } from '@/lib/whatsapp/webhook-health'
+import { whatsappWebhookSecrets } from '@/lib/whatsapp/webhook-secrets'
+import { publicOrigin } from '@/lib/email/microsoft/origin'
 
 /**
  * GET /api/whatsapp/config/verify-registration
@@ -25,6 +29,9 @@ import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/res
  *   3. registered_at — local timestamp set by POST /config when
  *                    /register last succeeded; NULL means the
  *                    number was saved but never actually subscribed
+ *   4. delivery    — where Meta sends this number's messages, whether
+ *                    this server can check their signature, and whether
+ *                    any have arrived (src/lib/whatsapp/webhook-delivery)
  *
  * Returns 200 in every case so the UI can render diagnostic detail
  * rather than a generic error toast. The combined `live` flag is
@@ -136,14 +143,28 @@ export async function GET(request: Request) {
     )
   }
 
+  // 4. Where Meta actually sends this number's customer messages, and
+  //    whether any have arrived — "connected" alone never proved that.
+  const origin = publicOrigin(request)
+  const delivery = await diagnoseDelivery({
+    phoneNumberId: config.phone_number_id,
+    wabaId: config.waba_id ?? null,
+    accessToken,
+    ourUrl: webhookUrlFor(origin) ?? `${origin}/api/whatsapp/webhook`,
+    secrets: await whatsappWebhookSecrets(),
+    record: deliveryRecord(config.phone_number_id),
+  })
+
   const live =
     checks.phone_metadata_ok &&
     (checks.waba_subscribed_to_app ?? false) &&
-    checks.locally_marked_registered
+    checks.locally_marked_registered &&
+    delivery.status === 'receiving'
 
   return NextResponse.json({
     live,
     checks,
+    delivery,
     errors,
     last_registration_error: config.last_registration_error ?? null,
     registered_at: config.registered_at ?? null,

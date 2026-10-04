@@ -22,6 +22,8 @@ import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 import { KeysDialog } from '@/components/flows/keys-dialog';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { Stepper } from '@/components/settings/settings-ui-kit';
+import { DeliveryPanel, deliveryTile } from '@/components/settings/whatsapp-delivery-panel';
+import type { DeliveryReport } from '@/lib/whatsapp/webhook-delivery';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -313,6 +315,7 @@ export function WhatsAppConfig(props: {
     last_registration_error?: string | null;
     registered_at?: string | null;
     subscribed_apps_at?: string | null;
+    delivery?: DeliveryReport;
   };
   const [registrationProbe, setRegistrationProbe] = useState<RegistrationProbe | null>(null);
 
@@ -344,10 +347,10 @@ export function WhatsAppConfig(props: {
       label: 'Webhook',
       ok: Boolean(config?.subscribed_apps_at) || (Boolean(config?.has_verify_token) && !isLocalhost),
       value: config?.subscribed_apps_at
-        ? 'Active'
+        ? 'Subscribed'
         : !config?.has_verify_token ? 'Not set' : isLocalhost ? 'Not public' : 'Ready',
       detail: config?.subscribed_apps_at
-        ? 'Meta is subscribed and delivering events'
+        ? 'Subscribed with Meta — Connection health confirms messages arrive here'
         : !config?.has_verify_token ? 'Set a Webhook Verify Token above'
         : isLocalhost ? 'Needs a public HTTPS URL' : 'Callback URL configured',
     },
@@ -452,6 +455,29 @@ export function WhatsAppConfig(props: {
     return () => { cancelled = true; };
   }, [connectionStatus]);
 
+  // Ask Meta where this number's customer messages go as soon as the
+  // connected view opens — "connected" alone never proved they arrive
+  // here. Quiet: no toasts; "Run test again" is the loud version.
+  const [probeFailed, setProbeFailed] = useState(false);
+  const [showProbeDetail, setShowProbeDetail] = useState(false);
+  const probedConfigId = config?.id;
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || !probedConfigId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/whatsapp/config/verify-registration?whatsapp_config_id=${encodeURIComponent(probedConfigId)}`);
+        const data = (await res.json()) as RegistrationProbe;
+        if (cancelled) return;
+        if (res.ok) setRegistrationProbe(data);
+        else setProbeFailed(true);
+      } catch {
+        if (!cancelled) setProbeFailed(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [connectionStatus, probedConfigId]);
+
   async function handleSave() {
     if (!phoneNumberId.trim()) { toast.error('Phone Number ID is required'); return; }
     if (!config && (!accessToken.trim() || !tokenEdited)) { toast.error('Access Token is required for initial setup'); return; }
@@ -537,12 +563,19 @@ export function WhatsAppConfig(props: {
   async function handleVerifyRegistration() {
     setVerifyingRegistration(true);
     setRegistrationProbe(null);
+    setProbeFailed(false);
+    setShowProbeDetail(true);
     try {
       const res = await fetch(`/api/whatsapp/config/verify-registration${configId ? `?whatsapp_config_id=${configId}` : ''}`, { method: 'GET' });
       const data = (await res.json()) as RegistrationProbe;
       setRegistrationProbe(data);
+      const status = data.delivery?.status;
       if (data.live) {
-        toast.success('Number is fully wired — Meta is delivering events.');
+        toast.success('Number is fully wired — customer messages are reaching this CRM.');
+      } else if (status === 'waiting') {
+        toast.message('Set up correctly. Send a test message to this number to confirm delivery.', { duration: 8000 });
+      } else if (status === 'blocked') {
+        toast.error('Customer messages are not reaching this CRM — see Connection health for why.', { duration: 8000 });
       } else {
         toast.error('Number is not fully registered. See the checks below for which step failed.', { duration: 8000 });
       }
@@ -703,9 +736,12 @@ export function WhatsAppConfig(props: {
         icon: CheckCheck,
       },
       {
+        // Where Meta actually sends this number's messages, and whether
+        // any have arrived — not just "subscribed once".
         label: 'Webhook',
-        value: config?.subscribed_apps_at ? 'Active' : 'Not subscribed',
-        ok: Boolean(config?.subscribed_apps_at),
+        ...(config?.subscribed_apps_at
+          ? deliveryTile(registrationProbe?.delivery, !probeFailed)
+          : { value: 'Not subscribed', ok: false }),
         icon: Globe,
       },
       {
@@ -717,7 +753,9 @@ export function WhatsAppConfig(props: {
         icon: Gauge,
       },
     ];
-    const allHealthy = health.every((h) => h.ok);
+    const allHealthy = health.every((h) => h.ok === true);
+    const anyFailing = health.some((h) => h.ok === false);
+    const delivery = registrationProbe?.delivery;
     const tierCap = phoneInfo?.messaging_limit_tier
       ? (phoneInfo.messaging_limit_tier === 'TIER_UNLIMITED' ? null : TIER_CAP[phoneInfo.messaging_limit_tier] ?? null)
       : null;
@@ -795,7 +833,11 @@ export function WhatsAppConfig(props: {
             <div>
               <h3 className="text-[14px] font-semibold text-slate-800">Connection health</h3>
               <p className="text-[12px] text-slate-500 mt-0.5">
-                {allHealthy ? 'Everything looks good — your connection is working properly.' : 'One or more checks need attention.'}
+                {allHealthy
+                  ? 'Everything looks good — customer messages are reaching this CRM.'
+                  : anyFailing
+                    ? 'One or more checks need attention.'
+                    : 'Checking that customer messages reach this CRM…'}
               </p>
             </div>
             <Button
@@ -815,27 +857,41 @@ export function WhatsAppConfig(props: {
               <div key={h.label} className="rounded-xl border border-slate-100 bg-white px-4 py-3.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-[11.5px] text-slate-400">{h.label}</p>
-                  {h.ok
+                  {h.ok === true
                     ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                    : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />}
+                    : h.ok === null
+                      ? <Loader2 className={cn('h-4 w-4 shrink-0 text-slate-400', !delivery && !probeFailed && 'animate-spin')} />
+                      : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />}
                 </div>
-                <p className={cn('mt-1 text-[13.5px] font-semibold', h.ok ? 'text-emerald-600' : 'text-amber-600')}>
+                <p className={cn('mt-1 text-[13.5px] font-semibold', h.ok === true ? 'text-emerald-600' : h.ok === null ? 'text-slate-600' : 'text-amber-600')}>
                   {h.value}
                 </p>
               </div>
             ))}
           </div>
 
-          <div className={cn(
-            'mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-[12.5px]',
-            allHealthy ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-amber-100 bg-amber-50 text-amber-700',
-          )}>
-            {allHealthy ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
-            {allHealthy ? 'All checks passed' : 'Some checks need attention — open Manage Connection for detail.'}
-          </div>
+          {/* Where customer messages actually go — the answer "connected"
+              alone never gave. */}
+          {delivery ? (
+            <div className="mt-4">
+              <DeliveryPanel report={delivery} configId={config?.id} onFixed={handleVerifyRegistration} />
+            </div>
+          ) : (
+            <div className={cn(
+              'mt-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-[12.5px]',
+              anyFailing ? 'border-amber-100 bg-amber-50 text-amber-700' : 'border-slate-100 bg-slate-50 text-slate-600',
+            )}>
+              {anyFailing ? <AlertTriangle className="h-4 w-4 shrink-0" /> : <Loader2 className={cn('h-4 w-4 shrink-0', !probeFailed && 'animate-spin')} />}
+              {anyFailing
+                ? 'Some checks need attention — open Manage Connection for detail.'
+                : probeFailed
+                  ? 'Could not check message delivery — press Run test again.'
+                  : 'Checking with Meta where this number’s messages go…'}
+            </div>
+          )}
 
           {/* Detailed probe output, only after an explicit "Run test again" */}
-          {registrationProbe && (
+          {registrationProbe && showProbeDetail && (
             <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 space-y-2">
               <p className="text-[12px] font-semibold text-slate-700">
                 Latest diagnostic —{' '}
@@ -1280,6 +1336,9 @@ export function WhatsAppConfig(props: {
             <ul className="space-y-0.5 text-[11px] text-red-500">
               {registrationProbe.errors?.map((e, i) => <li key={i}>• {e}</li>)}
             </ul>
+          )}
+          {registrationProbe.delivery && (
+            <DeliveryPanel report={registrationProbe.delivery} configId={config?.id} onFixed={handleVerifyRegistration} />
           )}
         </div>
       )}
