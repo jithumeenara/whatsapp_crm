@@ -25,9 +25,10 @@ import { bucketFor, bucketStarts, resolvePeriod, type PeriodSpec, type ResolvedP
 export const SHAPES = ['count', 'sum', 'from_to', 'again'] as const
 export type Shape = (typeof SHAPES)[number]
 
+/** "Where <detail> is any of these values". "(none)" stands for empty. */
 export interface ReportFilter {
   prop: string
-  value: string
+  values: string[]
 }
 
 export interface ReportSpec {
@@ -43,6 +44,17 @@ export interface ReportSpec {
   filters?: ReportFilter[]
   /** from_to: how long after the first moment the second still counts. */
   window_days?: number
+  /** A time chart's step; chosen from the period's length when absent. */
+  bucket?: 'day' | 'week' | 'month'
+  /** How the report is shown. Saved with it; the engine ignores it. */
+  display?: ReportDisplay
+}
+
+export const CHART_KINDS = ['auto', 'bar', 'line', 'area', 'pie', 'table'] as const
+export interface ReportDisplay {
+  chart?: (typeof CHART_KINDS)[number]
+  compare?: boolean
+  top?: 5 | 10 | 25
 }
 
 export interface GroupRow {
@@ -72,6 +84,8 @@ export interface ReportResult {
   previousTotal: number
   bucket?: 'day' | 'week' | 'month'
   series?: { t: string; value: number }[]
+  /** The period before, step by step, for a comparison line. */
+  previousSeries?: { t: string; value: number }[]
   groups?: GroupRow[]
   /** Everything outside the top groups, so the table still adds up. */
   other?: number
@@ -82,6 +96,8 @@ export interface ReportResult {
 export class ReportError extends Error {}
 
 const MAX_GROUPS = 25
+/** A year of days is the most a chart can usefully draw. */
+const MAX_BUCKETS = 366
 const DEFAULT_WINDOW = 90
 const NONE = '(none)'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -115,10 +131,20 @@ export function parseSpec(raw: unknown): ReportSpec {
     if (r.filters.length > 3) throw new ReportError('At most three filters.')
     for (const f of r.filters as Record<string, unknown>[]) {
       const prop = str(f?.prop)
-      const value = typeof f?.value === 'string' && f.value.length <= 200 ? f.value : undefined
-      if (!prop || value === undefined) throw new ReportError('A filter needs a detail and a value.')
-      filters.push({ prop, value })
+      // `value` is how a report saved before multi-value filters says it.
+      const raw: unknown[] = Array.isArray(f?.values) ? f.values : typeof f?.value === 'string' ? [f.value] : []
+      if (!prop || raw.length === 0) throw new ReportError('A filter needs a detail and at least one value.')
+      if (raw.length > 20) throw new ReportError('A filter can hold up to 20 values.')
+      if (!raw.every((v) => typeof v === 'string' && v.length > 0 && v.length <= 200)) {
+        throw new ReportError('A filter value must be text of up to 200 characters.')
+      }
+      filters.push({ prop, values: [...new Set(raw as string[])] })
     }
+  }
+
+  const bucket = r.bucket === undefined || r.bucket === null ? undefined : r.bucket
+  if (bucket !== undefined && bucket !== 'day' && bucket !== 'week' && bucket !== 'month') {
+    throw new ReportError('Show by day, week or month.')
   }
 
   const windowDays = r.window_days === undefined ? undefined : Number(r.window_days)
@@ -136,7 +162,19 @@ export function parseSpec(raw: unknown): ReportSpec {
     period,
     filters,
     window_days: windowDays,
+    bucket,
+    display: parseDisplay(r.display),
   }
+}
+
+function parseDisplay(raw: unknown): ReportDisplay | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const d = raw as Record<string, unknown>
+  const out: ReportDisplay = {}
+  if (CHART_KINDS.includes(d.chart as ReportDisplay['chart'] & string)) out.chart = d.chart as ReportDisplay['chart']
+  if (typeof d.compare === 'boolean') out.compare = d.compare
+  if (d.top === 5 || d.top === 10 || d.top === 25) out.top = d.top
+  return out
 }
 
 interface Checked {
@@ -262,11 +300,12 @@ function source(
     `${s.at} < (${p.add(toDay)}::date::timestamp AT TIME ZONE ${tz})`,
   ]
   for (const f of filters) {
-    where.push(
-      f.value === NONE
-        ? `nullif(btrim((${s.prop[f.prop]})::text), '') IS NULL`
-        : `btrim((${s.prop[f.prop]})::text) = ${p.add(f.value)}`,
-    )
+    const expr = `(${s.prop[f.prop]})::text`
+    const named = f.values.filter((v) => v !== NONE)
+    const parts: string[] = []
+    if (named.length) parts.push(`btrim(${expr}) = ANY(${p.add(named)}::text[])`)
+    if (named.length !== f.values.length) parts.push(`nullif(btrim(${expr}), '') IS NULL`)
+    where.push(`(${parts.join(' OR ')})`)
   }
   return `SELECT ${s.at} AS at, ${s.contact} AS contact_id, ${g} AS g, (${value})::numeric AS value FROM ${s.from} WHERE ${where.join(' AND ')}`
 }
@@ -344,19 +383,30 @@ async function runTotals(ctx: Ctx, c: Checked, period: ResolvedPeriod, base: Rep
   const result: ReportResult = { ...base, total: current, previousTotal: previous }
 
   if (!c.spec.by) {
-    const bucket = bucketFor(period.days)
-    const p = new Params()
-    const a = p.add(ctx.accountId)
-    const tz = p.add(ctx.timezone)
-    const src = source(c.from, p, a, tz, period.from, period.toExclusive, null, c.spec.value, filters)
-    // The bucket is one of three constants, never user text.
-    const rows = await read(
-      `SELECT to_char(date_trunc('${bucket}', s.at AT TIME ZONE ${tz}), 'YYYY-MM-DD') AS t, ${agg} AS v FROM (${src}) s GROUP BY 1 ORDER BY 1`,
-      p.values,
-    )
-    const byT = new Map(rows.map((r) => [String(r.t), num(r.v)]))
+    const bucket = c.spec.bucket ?? bucketFor(period.days)
+    const series = async (fromDay: string, toDay: string) => {
+      const p = new Params()
+      const a = p.add(ctx.accountId)
+      const tz = p.add(ctx.timezone)
+      const src = source(c.from, p, a, tz, fromDay, toDay, null, c.spec.value, filters)
+      // The bucket is one of three constants, never user text.
+      const rows = await read(
+        `SELECT to_char(date_trunc('${bucket}', s.at AT TIME ZONE ${tz}), 'YYYY-MM-DD') AS t, ${agg} AS v FROM (${src}) s GROUP BY 1 ORDER BY 1`,
+        p.values,
+      )
+      const byT = new Map(rows.map((r) => [String(r.t), num(r.v)]))
+      return bucketStarts(fromDay, toDay, bucket).map((t) => ({ t, value: byT.get(t) ?? 0 }))
+    }
+    if (bucketStarts(period.from, period.toExclusive, bucket).length > MAX_BUCKETS) {
+      throw new ReportError('Too many points to draw — show this period by week or month.')
+    }
+    const [now, before] = await Promise.all([
+      series(period.from, period.toExclusive),
+      series(period.prevFrom, period.prevToExclusive),
+    ])
     result.bucket = bucket
-    result.series = bucketStarts(period.from, period.toExclusive, bucket).map((t) => ({ t, value: byT.get(t) ?? 0 }))
+    result.series = now
+    result.previousSeries = before
     return result
   }
 

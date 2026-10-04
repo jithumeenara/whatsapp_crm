@@ -138,8 +138,50 @@ export async function reportWorkbook(
   return Buffer.from(buf as ArrayBuffer)
 }
 
+/** The Data sheet as plain rows — what the CSV export is made of. */
+export function reportRows(r: ReportResult): (string | number)[][] {
+  const by = r.byLabel ?? 'All'
+  const rate = (x: number) => `${Math.round(x * 1000) / 10}%`
+  if (r.series) {
+    return [
+      [r.bucket === 'day' ? 'Day' : r.bucket === 'week' ? 'Week starting' : 'Month', 'This period', 'Period before'],
+      ...r.series.map((p, i) => [p.t, p.value, r.previousSeries?.[i]?.value ?? '']),
+    ]
+  }
+  if (r.groups) {
+    return [
+      [by, 'This period', 'Period before'],
+      ...r.groups.map((g) => [safeText(g.label), g.value, g.previous]),
+      ...(r.other ? [['Everything else', r.other, '']] : []),
+      ['Total', r.total, r.previousTotal],
+    ]
+  }
+  if (r.funnel) {
+    return [
+      [by, 'Started', `Reached ${r.funnel.toLabel}`, 'Rate', 'Typical time (median)'],
+      ...r.funnel.groups.map((g) => [safeText(g.label), g.started, g.converted, rate(g.rate), formatDuration(g.medianSeconds)]),
+      ['All', r.funnel.all.started, r.funnel.all.converted, rate(r.funnel.all.rate), formatDuration(r.funnel.all.medianSeconds)],
+    ]
+  }
+  if (r.again) {
+    return [['Times', 'Customers'], ...r.again.distribution.map((d) => [d.times, d.customers])]
+  }
+  return []
+}
+
+/** CSV with a byte-order mark, so Excel opens Malayalam and ₹ correctly.
+ *  Text is already neutralised by safeText; this only quotes it. */
+export function reportCsv(r: ReportResult): Buffer {
+  const cell = (v: string | number) => {
+    const s = typeof v === 'number' ? String(v) : safeText(v)
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lines = [[safeText(r.title)], ...reportRows(r)].map((row) => row.map(cell).join(','))
+  return Buffer.from(`${String.fromCharCode(0xfeff)}${lines.join('\r\n')}\r\n`, 'utf8')
+}
+
 /** A filename safe on every system: letters, digits, spaces and dashes. */
-export function exportFilename(title: string, from: string): string {
+export function exportFilename(title: string, from: string, ext: 'xlsx' | 'csv' = 'xlsx'): string {
   const base = title.split(' — ')[0].replace(/[^\p{L}\p{N} -]+/gu, '').trim().slice(0, 60) || 'Report'
-  return `${base} ${from}.xlsx`
+  return `${base} ${from}.${ext}`
 }

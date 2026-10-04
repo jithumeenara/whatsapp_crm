@@ -1,12 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/db", () => ({ prisma: {} }));
+// Every query the engine sends is captured here instead of reaching a database.
+const db = vi.hoisted(() => {
+  const queries: { sql: string; params: unknown[] }[] = [];
+  const tx = {
+    $executeRawUnsafe: async () => 0,
+    $queryRawUnsafe: async (sql: string, ...params: unknown[]) => {
+      queries.push({ sql, params });
+      return [];
+    },
+  };
+  return { queries, prisma: { $transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) } };
+});
+vi.mock("@/lib/db", () => ({ prisma: db.prisma }));
 
 import { bucketStarts, bucketFor, resolvePeriod } from "./period";
-import { checkSpec, describe as say, parseSpec, ReportError, type ReportResult } from "./engine";
+import { checkSpec, describe as say, parseSpec, runReport, ReportError, type ReportResult } from "./engine";
 import { STATIC_MOMENTS, storeMoment, Params, type StoreTable } from "./moments";
 import { insightsFor } from "./insights";
-import { exportFilename, safeText } from "./excel";
+import { exportFilename, reportCsv, safeText } from "./excel";
 import { PRESET_REPORTS, dataStorePresets } from "./presets";
 
 const NOW = new Date("2026-10-04T20:30:00Z"); // 5 Oct, 02:00 in India
@@ -103,6 +115,43 @@ describe("a spec is checked before it runs", () => {
     expect(() => parseSpec({ shape: "from_to", moment: "lead.won", period: {}, window_days: 9999 })).toThrow(/365/);
   });
 
+  it("takes several values per filter, and still opens reports saved with one", () => {
+    const s = parseSpec({ shape: "count", moment: "lead.created", period: {}, filters: [{ prop: "source", values: ["Facebook", "Google", "Facebook"] }] });
+    expect(s.filters).toEqual([{ prop: "source", values: ["Facebook", "Google"] }]);
+    const old = parseSpec({ shape: "count", moment: "lead.created", period: {}, filters: [{ prop: "source", value: "Facebook" }] });
+    expect(old.filters).toEqual([{ prop: "source", values: ["Facebook"] }]);
+    const f = (values: unknown) => () => parseSpec({ shape: "count", moment: "lead.won", period: {}, filters: [{ prop: "source", values }] });
+    expect(f([])).toThrow(/at least one/);
+    expect(f(Array.from({ length: 21 }, (_, i) => `v${i}`))).toThrow(/20/);
+    expect(f(["ok", { evil: 1 }])).toThrow(/text/);
+    expect(f(["x".repeat(201)])).toThrow(/200/);
+  });
+
+  it("accepts only day, week or month as a step, and keeps only known display settings", () => {
+    expect(parseSpec({ shape: "count", moment: "lead.won", period: {}, bucket: "week" }).bucket).toBe("week");
+    expect(() => parseSpec({ shape: "count", moment: "lead.won", period: {}, bucket: "hour'; --" })).toThrow(/day, week or month/);
+    const d = parseSpec({ shape: "count", moment: "lead.won", period: {}, display: { chart: "pie", compare: true, top: 10, extra: "<script>" } }).display;
+    expect(d).toEqual({ chart: "pie", compare: true, top: 10 });
+    expect(parseSpec({ shape: "count", moment: "lead.won", period: {}, display: { chart: "3d", top: 7 } }).display).toEqual({});
+  });
+
+  it("sends filter values to the database as parameters, never as SQL", async () => {
+    db.queries.length = 0;
+    const evil = "x') OR 1=1; DROP TABLE leads; --";
+    await runReport(
+      { accountId: "00000000-0000-0000-0000-000000000001", timezone: "Asia/Kolkata", store: [] },
+      parseSpec({ shape: "count", moment: "lead.created", bucket: "week", period: { preset: "last_30_days" }, filters: [{ prop: "source", values: [evil, "(none)"] }] }),
+      NOW,
+    );
+    expect(db.queries.length).toBeGreaterThan(0);
+    for (const q of db.queries) {
+      expect(q.sql).not.toContain("DROP TABLE");
+      expect(q.sql).toContain("IS NULL"); // "(none)" means empty, not the text "(none)"
+      expect(q.params).toContainEqual([evil]);
+    }
+    expect(db.queries.some((q) => q.sql.includes("date_trunc('week'"))).toBe(true);
+  });
+
   it("says the report as a sentence", () => {
     const c = checkSpec(parseSpec({ shape: "from_to", moment: "lead.created", to: "lead.won", by: "agent", window_days: 90, period: {} }), []);
     expect(say(c, "in the last 90 days")).toBe("Leads created → leads won within 90 days, by team member — in the last 90 days");
@@ -159,8 +208,23 @@ describe("Excel export", () => {
     expect(safeText("കൊല്ലം")).toBe("കൊല്ലം");
   });
 
+  it("writes CSV that Excel opens in Malayalam, with formulas neutralised", () => {
+    const csv = reportCsv({
+      ...base, title: "How many leads, by source", byLabel: "Source", total: 3, previousTotal: 1,
+      groups: [
+        { key: "a", label: "=cmd|' /C calc'!A0", value: 2, previous: 1 },
+        { key: "b", label: 'കൊല്ലം, "Kerala"', value: 1, previous: 0 },
+      ],
+    }).toString("utf8");
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(csv).toContain("'=cmd|' /C calc'!A0,2,1");
+    expect(csv).toContain('"കൊല്ലം, ""Kerala""",1,0');
+    expect(csv).toContain("Total,3,1");
+  });
+
   it("names the file safely", () => {
     expect(exportFilename("How many leads won, by source — this month", "2026-10-01")).toBe("How many leads won by source 2026-10-01.xlsx");
     expect(exportFilename('../../etc/passwd" — x', "2026-10-01")).toBe("etcpasswd 2026-10-01.xlsx");
+    expect(exportFilename("Payments received — this month", "2026-10-01", "csv")).toBe("Payments received 2026-10-01.csv");
   });
 });

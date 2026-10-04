@@ -91,7 +91,7 @@ export async function deleteSaved(accountId: string, id: string): Promise<boolea
 export async function recordExport(
   accountId: string,
   userId: string,
-  format: 'xlsx',
+  format: 'xlsx' | 'csv',
   title: string,
   spec: ReportSpec,
 ): Promise<void> {
