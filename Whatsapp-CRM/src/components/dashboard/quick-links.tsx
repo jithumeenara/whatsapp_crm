@@ -49,6 +49,24 @@ interface QuickLinksProps {
   isAgent?: boolean
 }
 
+/**
+ * The bottom-right corner is shared: "calls to make", the new-lead alert
+ * and the offer alert all live there too, and they were drawn on top of
+ * this button. While it is on screen it says so through one CSS variable
+ * — the height the alerts should start at, clear of the button (bottom-6
+ * plus h-12, plus a gap) — and they read it. Gone with the button.
+ */
+function ReserveCorner() {
+  useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--floating-alerts-bottom', '5.25rem')
+    return () => {
+      root.style.removeProperty('--floating-alerts-bottom')
+    }
+  }, [])
+  return null
+}
+
 export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
   const [open, setOpen] = useState(false)
   const [live, setLive] = useState<{ links: string[]; enabled: boolean } | null>(null)
@@ -135,6 +153,7 @@ export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
 
   return (
     <div ref={rootRef} className="fixed bottom-6 right-6 z-40 print:hidden">
+      <ReserveCorner />
       {open && (
         <div
           className={cn(

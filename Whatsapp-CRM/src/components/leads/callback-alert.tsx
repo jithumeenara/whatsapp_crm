@@ -125,7 +125,12 @@ export function CallbackAlert() {
   const hidden = due.length - shown.length
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col items-end gap-2">
+    // Above the Quick Links button when it is showing — see ReserveCorner
+    // in src/components/dashboard/quick-links.tsx.
+    <div
+      style={{ bottom: 'var(--floating-alerts-bottom, 1rem)' }}
+      className="pointer-events-none fixed right-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col items-end gap-2"
+    >
       {shown.map((cb) => (
         // A div, not a button: the dismiss control below is itself a
         // button, and HTML does not allow one inside another. Nesting

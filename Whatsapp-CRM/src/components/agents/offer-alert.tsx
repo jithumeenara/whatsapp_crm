@@ -165,7 +165,12 @@ export function OfferAlert() {
   const urgent = left <= 15
 
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[90] flex justify-end">
+    // Above the Quick Links button when it is showing — see ReserveCorner
+    // in src/components/dashboard/quick-links.tsx.
+    <div
+      style={{ bottom: 'var(--floating-alerts-bottom, 1.25rem)' }}
+      className="pointer-events-none fixed right-5 z-[90] flex justify-end"
+    >
       <div
         className={cn(
           'pointer-events-auto w-[min(22rem,calc(100vw-2.5rem))] overflow-hidden rounded-2xl bg-white shadow-xl ring-2 transition-colors',
