@@ -272,7 +272,10 @@ function LoginContent() {
             </form>
           )}
 
-          {step === "credentials" && (
+          {/* Only where someone can actually sign up: on a server that
+              opens sign-up, or for an invited person. Elsewhere the link
+              led to a closed door. See src/lib/auth/signup-policy.ts. */}
+          {step === "credentials" && (process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true" || inviteToken) && (
             <p className="mt-6 text-center text-[12.5px] text-slate-500">
               Don&apos;t have an account?{" "}
               <Link href={inviteToken ? `/signup?invite=${encodeURIComponent(inviteToken)}` : "/signup"} className="font-semibold text-indigo-600 hover:text-indigo-700">

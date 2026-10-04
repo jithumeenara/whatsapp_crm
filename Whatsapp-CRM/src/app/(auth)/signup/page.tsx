@@ -8,6 +8,11 @@ import { MessageSquare, Eye, EyeOff, Lock, Mail, User, Phone } from "lucide-reac
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO } from "@/lib/country-codes"
 import { CountryCodeSelect } from "@/components/shared/country-code-select"
 
+/** Sign-up is closed unless this server opens it; an invitation always
+ *  gets through. The server decides — this only spares a closed door a
+ *  form that could never be submitted. See src/lib/auth/signup-policy.ts. */
+const SIGNUP_OPEN = process.env.NEXT_PUBLIC_ALLOW_SIGNUP === "true"
+
 function SignupContent() {
   const searchParams = useSearchParams()
   const inviteToken = searchParams.get("invite")
@@ -40,13 +45,32 @@ function SignupContent() {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, full_name: fullName, phone }),
+      body: JSON.stringify({ email, password, full_name: fullName, phone, invite: inviteToken ?? undefined }),
     })
     const data = await res.json()
     if (!res.ok) { setError(data.error ?? "Registration failed"); setLoading(false); return }
     const result = await signIn("credentials", { email, password, redirect: false })
     if (result?.error) { setError("Account created but sign-in failed. Please go to login."); setLoading(false); return }
     router.push(inviteToken ? `/join/${encodeURIComponent(inviteToken)}` : "/dashboard")
+  }
+
+  if (!SIGNUP_OPEN && !inviteToken) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-4 bg-slate-50">
+        <div className="w-full max-w-[420px] rounded-2xl bg-white border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.08)] px-8 py-8 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg">
+            <Lock className="h-6 w-6 text-white" />
+          </div>
+          <h1 className="text-[18px] font-bold text-slate-900">Sign-ups are closed</h1>
+          <p className="mt-2 text-[13px] text-slate-500">
+            New team members join by invitation. Ask your administrator to send you an invitation link.
+          </p>
+          <Link href="/login" className="mt-6 inline-block text-[13px] font-semibold text-indigo-600 hover:text-indigo-700">
+            Back to sign in
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   return (

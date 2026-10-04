@@ -2,10 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { isValidE164 } from "@/lib/whatsapp/phone-utils";
+import { isLiveInvitation, publicSignupOpen } from "@/lib/auth/signup-policy";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, full_name, phone } = await req.json();
+    const { email, password, full_name, phone, invite } = await req.json();
+
+    // Closed unless this server opens it — see src/lib/auth/signup-policy.ts.
+    // Hiding the link would not be enough: this endpoint is reachable
+    // directly. An invited team member still gets through.
+    if (!publicSignupOpen() && !(await isLiveInvitation(invite))) {
+      return NextResponse.json(
+        { error: "Sign-ups are closed on this workspace. Ask your administrator for an invitation link." },
+        { status: 403 }
+      );
+    }
 
     if (!email || !password) {
       return NextResponse.json(

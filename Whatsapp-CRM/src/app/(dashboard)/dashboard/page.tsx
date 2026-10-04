@@ -549,9 +549,9 @@ export default function Dashboard() {
             A full-width row of its own, above the team and response
             time. Squeezed into a third of the row, its tiles were narrow
             enough to break "Overdue follow-ups" one word to a line. */}
-        <div className={cn(CARD, "p-5")}>
+        <div className={cn(CARD, "mb-6 p-5")}>
           <h2 className="mb-3 text-[15px] font-semibold text-slate-900">Quick Stats</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <QuickTile
               href="/follow-ups" icon={CalendarClock} tile="text-amber-600" bg="bg-amber-50"
               value={loading && !data ? "—" : crm?.overdueFollowUps ?? 0}
