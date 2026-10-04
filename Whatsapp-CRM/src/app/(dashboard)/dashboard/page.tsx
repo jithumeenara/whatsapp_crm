@@ -545,63 +545,69 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Team, response time, quick stats ─────────────────────── */}
-        <div className="grid gap-6 lg:grid-cols-3">
-          {canWork && <TeamTable days={range > 30 ? 30 : range} isManager={isManager} />}
-
-          {isManager && (
-            <div className={cn(CARD, "p-5")}>
-              <div className="mb-3 flex items-start justify-between">
-                <div>
-                  <h2 className="text-[15px] font-semibold text-slate-900">Response Time</h2>
-                  <p className="text-[12px] text-slate-500">Avg first reply per day</p>
-                </div>
-                <span className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-[13px] font-semibold text-slate-700">
-                  <Clock className="h-3.5 w-3.5 text-slate-400" /> {fmtMinutes(rt?.thisWeekAvg)}
-                </span>
-              </div>
-              {loading && !data ? (
-                <Skeleton className="h-[190px]" />
-              ) : (
-                <ResponsiveContainer width="100%" height={190} initialDimension={{ width: 1, height: 190 }}>
-                  <BarChart data={rtData} margin={{ top: 6, right: 0, left: -22, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-                    <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                    <Tooltip {...TOOLTIP} formatter={(v) => [`${v} min`, "Avg first reply"]} cursor={{ fill: "#f8fafc" }} />
-                    <Bar dataKey="Minutes" fill="#6366f1" radius={[6, 6, 0, 0]} maxBarSize={30} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          )}
-
-          <div className={cn(CARD, "p-5", !isManager && canWork && "lg:col-span-2", !canWork && "lg:col-span-3")}>
-            <h2 className="mb-3 text-[15px] font-semibold text-slate-900">Quick Stats</h2>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <QuickTile
-                href="/follow-ups" icon={CalendarClock} tile="text-amber-600" bg="bg-amber-50"
-                value={loading && !data ? "—" : crm?.overdueFollowUps ?? 0}
-                label="Overdue follow-ups" sub={`${crm?.pendingFollowUps ?? 0} coming up`}
-              />
-              <QuickTile
-                href="/tasks" icon={CheckSquare} tile="text-violet-600" bg="bg-violet-50"
-                value={loading && !data ? "—" : crm?.pendingTasks ?? 0}
-                label="Tasks open" sub={`${crm?.overdueTasks ?? 0} overdue`}
-              />
-              <QuickTile
-                href="/settings" icon={Users} tile="text-primary" bg="bg-primary/10"
-                value={loading && !data ? "—" : crm?.teamMembers ?? 0}
-                label="Team members" sub="People who can reply"
-              />
-              <QuickTile
-                href="/leads" icon={TrendingUp} tile="text-orange-500" bg="bg-orange-50"
-                value={loading && !data ? "—" : crm?.totalLeads ?? 0}
-                label="Total leads" sub="In your pipeline"
-              />
-            </div>
+        {/* ── Quick stats ─────────────────────────────────────────────
+            A full-width row of its own, above the team and response
+            time. Squeezed into a third of the row, its tiles were narrow
+            enough to break "Overdue follow-ups" one word to a line. */}
+        <div className={cn(CARD, "p-5")}>
+          <h2 className="mb-3 text-[15px] font-semibold text-slate-900">Quick Stats</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <QuickTile
+              href="/follow-ups" icon={CalendarClock} tile="text-amber-600" bg="bg-amber-50"
+              value={loading && !data ? "—" : crm?.overdueFollowUps ?? 0}
+              label="Overdue follow-ups" sub={`${crm?.pendingFollowUps ?? 0} coming up`}
+            />
+            <QuickTile
+              href="/tasks" icon={CheckSquare} tile="text-violet-600" bg="bg-violet-50"
+              value={loading && !data ? "—" : crm?.pendingTasks ?? 0}
+              label="Tasks open" sub={`${crm?.overdueTasks ?? 0} overdue`}
+            />
+            <QuickTile
+              href="/settings" icon={Users} tile="text-primary" bg="bg-primary/10"
+              value={loading && !data ? "—" : crm?.teamMembers ?? 0}
+              label="Team members" sub="People who can reply"
+            />
+            <QuickTile
+              href="/leads" icon={TrendingUp} tile="text-orange-500" bg="bg-orange-50"
+              value={loading && !data ? "—" : crm?.totalLeads ?? 0}
+              label="Total leads" sub="In your pipeline"
+            />
           </div>
         </div>
+
+        {/* ── Team and response time ──────────────────────────────── */}
+        {canWork && (
+          <div className={cn("grid gap-6", isManager && "lg:grid-cols-2")}>
+            <TeamTable days={range > 30 ? 30 : range} isManager={isManager} />
+
+            {isManager && (
+              <div className={cn(CARD, "p-5")}>
+                <div className="mb-3 flex items-start justify-between">
+                  <div>
+                    <h2 className="text-[15px] font-semibold text-slate-900">Response Time</h2>
+                    <p className="text-[12px] text-slate-500">Avg first reply per day</p>
+                  </div>
+                  <span className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2 py-1 text-[13px] font-semibold text-slate-700">
+                    <Clock className="h-3.5 w-3.5 text-slate-400" /> {fmtMinutes(rt?.thisWeekAvg)}
+                  </span>
+                </div>
+                {loading && !data ? (
+                  <Skeleton className="h-[190px]" />
+                ) : (
+                  <ResponsiveContainer width="100%" height={190} initialDimension={{ width: 1, height: 190 }}>
+                    <BarChart data={rtData} margin={{ top: 6, right: 0, left: -22, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
+                      <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
+                      <Tooltip {...TOOLTIP} formatter={(v) => [`${v} min`, "Avg first reply"]} cursor={{ fill: "#f8fafc" }} />
+                      <Bar dataKey="Minutes" fill="#6366f1" radius={[6, 6, 0, 0]} maxBarSize={30} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Somebody's own shortcuts; positions itself. */}
