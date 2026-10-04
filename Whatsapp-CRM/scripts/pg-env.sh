@@ -26,6 +26,9 @@ if [[ $_pgenv_raw =~ $_pgenv_re ]]; then
   export PGHOST=${BASH_REMATCH[5]}
   export PGPORT=${BASH_REMATCH[7]:-5432}
   export PGDATABASE=$(_pgenv_decode "${BASH_REMATCH[8]}")
+  # No pager: a result taller than the screen otherwise stops in `less`
+  # at "(END)", which looks like a hang to whoever is following along.
+  export PSQL_PAGER=cat
   echo "pg-env: database ${PGDATABASE} on ${PGHOST}:${PGPORT}"
 else
   echo "pg-env: could not read DATABASE_URL from .env in $(pwd) — nothing set" >&2
