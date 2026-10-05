@@ -8,6 +8,13 @@ interface Props {
   value: string // ISO code, e.g. "IN"
   onChange: (iso: string) => void
   className?: string
+  /** "pill" (default): the wide rounded trigger with the country's name,
+   *  as on signup and Profile. "field": flag and dial code only, shaped
+   *  like an ordinary text box, to sit in a row beside one — the number
+   *  box in "Start a new chat". The list itself is the same in both. */
+  variant?: "pill" | "field"
+  /** For a <label htmlFor> on the trigger. */
+  id?: string
 }
 
 /** Real flag SVG (flag-icons' fi-xx classes) instead of emoji — Windows
@@ -27,8 +34,14 @@ function Flag({ iso }: { iso: string }) {
  * country name, both call sites (signup, Profile edit mode) stack this
  * above the phone digits field instead of placing them side by side.
  */
-export function CountryCodeSelect({ value, onChange, className }: Props) {
+export function CountryCodeSelect({ value, onChange, className, variant = "pill", id }: Props) {
   const [open, setOpen] = useState(false)
+  /** Opens upward when there is no room below — inside a centred dialog
+   *  on a short laptop screen, the list would otherwise run off the
+   *  bottom with no way to scroll to it. */
+  const [openUp, setOpenUp] = useState(false)
+  /** The list's height, shrunk to the room there is (it scrolls inside). */
+  const [listMax, setListMax] = useState(260)
   const [query, setQuery] = useState("")
   const rootRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -70,19 +83,43 @@ export function CountryCodeSelect({ value, onChange, className }: Props) {
   return (
     <div ref={rootRef} className={`relative ${className ?? ""}`}>
       <button
+        id={id}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open && rootRef.current) {
+            const rect = rootRef.current.getBoundingClientRect()
+            const below = window.innerHeight - rect.bottom
+            // Toward whichever side has more room once the list is too
+            // tall for below; then no taller than that room (less the
+            // search box), so none of it is ever off screen.
+            const up = below < 360 && rect.top > below
+            setOpenUp(up)
+            setListMax(Math.max(120, Math.min(260, (up ? rect.top : below) - 96)))
+          }
+          setOpen((o) => !o)
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex h-11 w-full items-center gap-2 rounded-full border border-slate-200 bg-white pl-4 pr-3.5 text-[13.5px] text-slate-900 outline-none transition-all hover:border-slate-300 focus:border-[#5B6CF9] focus:ring-2 focus:ring-[#5B6CF9]/15"
+        aria-label={`Country code: ${selected.name} ${selected.dial}`}
+        className={
+          variant === "field"
+            ? "flex h-10 w-full items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[13.5px] text-slate-900 outline-none transition-all hover:border-slate-300 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            : "flex h-11 w-full items-center gap-2 rounded-full border border-slate-200 bg-white pl-4 pr-3.5 text-[13.5px] text-slate-900 outline-none transition-all hover:border-slate-300 focus:border-[#5B6CF9] focus:ring-2 focus:ring-[#5B6CF9]/15"
+        }
       >
         <Flag iso={selected.iso} />
-        {/* The dial code is the part that actually matters, so it sits
-            outside the truncating span — when this control is narrow (a
-            phone-width form row) the country name shortens and the code
-            stays readable, instead of the whole label clipping to "Ind…". */}
-        <span className="min-w-0 flex-1 truncate text-left font-medium">{selected.name}</span>
-        <span className="shrink-0 tabular-nums text-slate-500">({selected.dial})</span>
+        {variant === "field" ? (
+          <span className="min-w-0 flex-1 text-left font-medium tabular-nums">{selected.dial}</span>
+        ) : (
+          <>
+            {/* The dial code is the part that actually matters, so it sits
+                outside the truncating span — when this control is narrow (a
+                phone-width form row) the country name shortens and the code
+                stays readable, instead of the whole label clipping to "Ind…". */}
+            <span className="min-w-0 flex-1 truncate text-left font-medium">{selected.name}</span>
+            <span className="shrink-0 tabular-nums text-slate-500">({selected.dial})</span>
+          </>
+        )}
         <ChevronDown
           className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
         />
@@ -91,7 +128,7 @@ export function CountryCodeSelect({ value, onChange, className }: Props) {
       {open && (
         <div
           role="listbox"
-          className="absolute left-0 top-[calc(100%+8px)] z-50 w-full min-w-[280px] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.14)]"
+          className={`absolute left-0 ${openUp ? "bottom-[calc(100%+8px)]" : "top-[calc(100%+8px)]"} z-50 w-full min-w-[280px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.14)]`}
         >
           <div className="relative p-3">
             <Search className="pointer-events-none absolute left-6 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -103,7 +140,7 @@ export function CountryCodeSelect({ value, onChange, className }: Props) {
               className="h-10 w-full rounded-full border border-slate-200 bg-slate-50 pl-9 pr-3 text-[13px] text-slate-900 outline-none transition-all focus:border-[#5B6CF9] focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/15"
             />
           </div>
-          <div className="max-h-[260px] overflow-y-auto scroll-styled pb-2">
+          <div className="overflow-y-auto scroll-styled pb-2" style={{ maxHeight: listMax }}>
             {filtered.length === 0 && (
               <div className="px-4 py-6 text-center text-[12.5px] text-slate-400">No matching country</div>
             )}

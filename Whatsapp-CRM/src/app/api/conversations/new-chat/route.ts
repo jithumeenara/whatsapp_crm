@@ -6,6 +6,7 @@ import { sanitizePhoneForMeta, isValidE164 } from "@/lib/whatsapp/phone-utils"
 import { emitToAccount } from "@/lib/socket"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
+import { DEFAULT_COUNTRY_ISO, splitE164 } from "@/lib/country-codes"
 
 /**
  * POST /api/conversations/new-chat
@@ -19,6 +20,41 @@ import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/res
  * Cloud API — the phone format is validated here, but the real proof
  * is the template send that follows this call actually succeeding.
  */
+/**
+ * GET /api/conversations/new-chat
+ *
+ * The country the "Start a new chat" box opens on: the country of the
+ * number the account's admin registered with, else India. Only the
+ * two-letter country is returned — never the admin's number.
+ */
+export async function GET() {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    const profile = await prisma.profile.findUnique({
+      where: { user_id: session.user.id },
+      select: { account_id: true },
+    })
+    if (!profile?.account_id) {
+      return NextResponse.json({ default_country_iso: DEFAULT_COUNTRY_ISO })
+    }
+    const account = await prisma.account.findUnique({
+      where: { id: profile.account_id },
+      select: { owner_user_id: true },
+    })
+    const owner = account
+      ? await prisma.profile.findUnique({ where: { user_id: account.owner_user_id }, select: { phone: true } })
+      : null
+    const digits = (owner?.phone ?? "").replace(/\D/g, "")
+    const iso = digits ? splitE164(`+${digits}`)?.iso : undefined
+    return NextResponse.json({ default_country_iso: iso ?? DEFAULT_COUNTRY_ISO })
+  } catch {
+    return NextResponse.json({ default_country_iso: DEFAULT_COUNTRY_ISO })
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const session = await auth()

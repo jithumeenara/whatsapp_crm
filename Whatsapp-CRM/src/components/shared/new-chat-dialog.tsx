@@ -1,11 +1,51 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { MessageSquarePlus, X, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/template-picker"
+import { CountryCodeSelect } from "@/components/shared/country-code-select"
+import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from "@/lib/country-codes"
 import type { MessageTemplate } from "@/types"
+
+/** The account's starting country — its admin's — fetched once per page
+ *  load, not on every open. A failed fetch is forgotten, so the next
+ *  open tries again; meanwhile India. */
+let defaultCountry: Promise<string> | null = null
+function loadDefaultCountry(): Promise<string> {
+  if (!defaultCountry) {
+    defaultCountry = fetch("/api/conversations/new-chat", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const iso = typeof d?.default_country_iso === "string" ? d.default_country_iso : ""
+        return COUNTRY_CODES.some((c) => c.iso === iso) ? iso : DEFAULT_COUNTRY_ISO
+      })
+      .catch(() => {
+        defaultCountry = null
+        return DEFAULT_COUNTRY_ISO
+      })
+  }
+  return defaultCountry
+}
+
+/** "+91 98765 43210" or "0091 98765…" typed or pasted into the number
+ *  box: a whole international number, so its country is taken from it. */
+function splitInternational(raw: string): { iso: string; local: string } | null {
+  const t = raw.trim()
+  const rest = t.startsWith("+") ? t.slice(1) : t.startsWith("00") ? t.slice(2) : null
+  if (rest === null) return null
+  const digits = rest.replace(/\D/g, "")
+  return digits ? splitE164(`+${digits}`) : null
+}
+
+/** A number handed in from elsewhere (the Lead page) is stored with its
+ *  country code. Ten digits or fewer has none, and is a local number. */
+function splitInitial(phone: string | undefined): { iso: string; local: string } | null {
+  const digits = (phone ?? "").replace(/\D/g, "")
+  if (digits.length <= 10) return null
+  return splitE164(`+${digits}`)
+}
 
 interface NewChatDialogProps {
   /** Called once the first template message has actually been sent —
@@ -38,15 +78,44 @@ interface NewChatDialogProps {
  */
 export function NewChatDialog({ onSent, className, initialPhone, initialName, label, onOpen }: NewChatDialogProps) {
   const [open, setOpen] = useState(false)
-  const [phone, setPhone] = useState(initialPhone ?? "")
+  const [iso, setIso] = useState(DEFAULT_COUNTRY_ISO)
+  const [local, setLocal] = useState("")
   const [name, setName] = useState(initialName ?? "")
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
+  /** Set once the person picks a country, so a default arriving late
+   *  never overrides their choice. */
+  const countryChosen = useRef(false)
+
+  /** The number as WhatsApp wants it: the country's code, then the
+   *  number without the leading 0 people dial at home. A whole
+   *  "+…" number typed into the box is taken as it is. */
+  const localDigits = local.replace(/\D/g, "").replace(/^0+/, "")
+  const typedInternational = /^\s*(\+|00)/.test(local)
+  const dial = COUNTRY_CODES.find((c) => c.iso === iso)?.dial ?? "+91"
+  const phone = typedInternational ? `+${local.trim().replace(/^00/, "").replace(/\D/g, "")}` : `${dial}${localDigits}`
+  const ready = (typedInternational ? phone.length - 1 : localDigits.length) >= 6
+
+  const startFrom = (initial: string | undefined) => {
+    countryChosen.current = false
+    const split = splitInitial(initial)
+    if (split) {
+      countryChosen.current = true
+      setIso(split.iso)
+      setLocal(split.local)
+      return
+    }
+    setLocal((initial ?? "").replace(/\D/g, ""))
+    setIso(DEFAULT_COUNTRY_ISO)
+    void loadDefaultCountry().then((def) => {
+      if (!countryChosen.current) setIso(def)
+    })
+  }
 
   const reset = () => {
-    setPhone(initialPhone ?? "")
+    startFrom(initialPhone)
     setName(initialName ?? "")
     setError(null)
     setChecking(false)
@@ -58,9 +127,25 @@ export function NewChatDialog({ onSent, className, initialPhone, initialName, la
     onOpen?.()
     // Re-sync to the latest initial values every time it's opened —
     // covers navigating to a different lead while this stays mounted.
-    setPhone(initialPhone ?? "")
+    startFrom(initialPhone)
     setName(initialName ?? "")
     setOpen(true)
+  }
+
+  const chooseCountry = (next: string) => {
+    countryChosen.current = true
+    setIso(next)
+  }
+
+  const typeNumber = (value: string) => {
+    // A pasted "+91 98765 43210" fills both boxes.
+    const split = splitInternational(value)
+    if (split && split.local.replace(/\D/g, "").length >= 6) {
+      chooseCountry(split.iso)
+      setLocal(split.local)
+      return
+    }
+    setLocal(value)
   }
 
   const closeAll = () => {
@@ -173,21 +258,49 @@ export function NewChatDialog({ onSent, className, initialPhone, initialName, la
               template as the first message to a new number — you&apos;ll pick one next.
             </p>
 
-            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
-              Phone number
+            <label
+              htmlFor="new-chat-number"
+              className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1"
+            >
+              WhatsApp number
             </label>
-            <input autoComplete="off"
-              autoFocus
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="e.g. 919876543210 (with country code)"
-              className="w-full h-10 rounded-xl border border-slate-200 px-3 text-[13.5px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 mb-3"
-            />
+            <div className="mb-3 flex gap-2">
+              <CountryCodeSelect
+                id="new-chat-country"
+                variant="field"
+                value={iso}
+                onChange={chooseCountry}
+                className="w-[112px] shrink-0"
+              />
+              <input
+                id="new-chat-number"
+                type="tel"
+                inputMode="tel"
+                autoComplete="off"
+                autoFocus
+                value={local}
+                onChange={(e) => typeNumber(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && ready && !checking) void handleContinue()
+                }}
+                placeholder="98765 43210"
+                className="min-w-0 flex-1 h-10 rounded-xl border border-slate-200 px-3 text-[13.5px] tabular-nums outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+            {typedInternational && (
+              <p className="-mt-2 mb-3 text-[11.5px] text-slate-500">
+                Using the number as typed, with its own country code.
+              </p>
+            )}
 
-            <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1">
+            <label
+              htmlFor="new-chat-name"
+              className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-1"
+            >
               Name (optional)
             </label>
             <input autoComplete="off"
+              id="new-chat-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Contact's name"
@@ -198,7 +311,7 @@ export function NewChatDialog({ onSent, className, initialPhone, initialName, la
 
             <button
               type="button"
-              disabled={!phone.trim() || checking}
+              disabled={!ready || checking}
               onClick={handleContinue}
               className="flex w-full items-center justify-center gap-1.5 h-10 rounded-xl bg-indigo-600 text-white text-[13px] font-semibold hover:bg-indigo-700 disabled:opacity-50"
             >
