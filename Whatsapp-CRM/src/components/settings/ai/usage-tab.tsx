@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   BarChart3, Loader2, MessageSquare, Database, Send, BookOpen, Languages,
   ShieldCheck, TrendingUp, TrendingDown, Minus, AlertTriangle, Download, Info,
-  Volume2, Mic, FileScan, Sparkles, Search, Headphones, Scale,
+  Volume2, Mic, FileScan, Sparkles, Search, Headphones, Scale, Image as ImageIcon,
 } from 'lucide-react';
 import { AiButton, AiCard, AiCardHeader, AiBadge, AiSegmented, AiNotice, AiHint, AiIconTile } from './ui-kit';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -86,6 +86,7 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   judgement: { label: 'Handover check', Icon: Scale },
   retrieval: { label: 'Knowledge search', Icon: Search },
   live_voice: { label: 'Live voice', Icon: Headphones },
+  image_reading: { label: 'Images in', Icon: ImageIcon },
 };
 
 /** How many calls the Recent list shows at once.

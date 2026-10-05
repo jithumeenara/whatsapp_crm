@@ -66,6 +66,10 @@ export type UsageFeature =
   /// whole context so far, audio far dearer than text, and recorded once
   /// per session when it ends.
   | 'live_voice'
+  /// Reading an image a customer sent — its text and what it shows
+  /// (image-reading.ts). Once per image, and only for accounts that
+  /// switched it on.
+  | 'image_reading'
 
 import { estimateCostUsd, type TokenCounts } from './pricing'
 

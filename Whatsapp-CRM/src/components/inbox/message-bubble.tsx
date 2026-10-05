@@ -643,6 +643,16 @@ function MessageContent({ message }: { message: Message }) {
               <WhatsAppText text={message.content_text} />
             </p>
           )}
+          {/* What the assistant read from the image (lib/ai/image-reading.ts). */}
+          {message.transcript && (
+            <div className="mt-1.5 rounded-lg bg-black/5 px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Read by AI</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+                {message.transcript}
+              </p>
+              <p className="mt-1 text-[10px] text-slate-400">AI-generated, may not be fully accurate</p>
+            </div>
+          )}
         </div>
       );
 

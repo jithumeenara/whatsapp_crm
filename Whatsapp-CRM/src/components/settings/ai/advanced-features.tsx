@@ -17,6 +17,7 @@ import {
   Accordion, AccordionItem, AccordionTrigger, AccordionContent,
 } from '@/components/ui/accordion';
 import { HandoverConsentSetting } from './handover-consent-setting';
+import { ImageReadingSetting } from './image-reading-setting';
 
 /**
  * The settings that shape *how* the AI answers, as opposed to *what* it
@@ -521,13 +522,16 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
               <span className="min-w-0 text-left">
                 <span className="block font-medium text-slate-800">Accuracy checks</span>
                 <span className="block text-[11.5px] font-normal text-slate-500">
-                  Checks before a reply is sent, and answering voice notes by voice.
+                  Checks before a reply is sent, reading images, and answering voice notes by voice.
                 </span>
               </span>
             </span>
           </AccordionTrigger>
           <AccordionContent>
             <div className="space-y-4 pb-4">
+
+              {/* Reading images customers send, and confirming the reading. */}
+              <ImageReadingSetting />
 
               <div className="flex items-start justify-between gap-4 rounded-2xl bg-[#F7F8FC] p-3.5 ring-1 ring-slate-200/70">
                 <div className="min-w-0">

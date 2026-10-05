@@ -23,6 +23,10 @@ import {
 import { emitToAccount } from '@/lib/socket'
 import { shouldReleaseOnReturn } from '@/lib/agents/presence'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
+import { readInboundImage, type InboundImageReading } from '@/lib/whatsapp/image-understanding'
+import { imageSettingsFor } from '@/lib/ai/image-settings'
+import { assistantMessageForImage } from '@/lib/ai/image-reading'
+import { checkRateLimit } from '@/lib/rate-limit'
 import { processInboundOrder } from '@/lib/whatsapp/order-processing'
 import { isCallWebhookField, parseCallWebhook } from '@/lib/whatsapp/calling-api'
 import {
@@ -696,6 +700,10 @@ async function processMessage(
   // back until its transcript exists rather than running against an
   // empty string. See the dispatch block at the end of this function.
   let pendingVoice: { messageId: string; mediaId: string } | null = null
+  let pendingImage: { messageId: string; mediaId: string; caption: string | null } | null = null
+  /** This message's own row, once stored — so an answer can tell itself
+   *  apart from anything the customer said before it. */
+  let savedMessageId: string | null = null
 
   // Resolve swipe-reply context if present.
   let replyToInternalId: string | null = null
@@ -778,6 +786,7 @@ async function processMessage(
       },
     })
     emitToAccount(accountId, 'message', { eventType: 'INSERT', new: savedMsg, old: {} })
+    savedMessageId = savedMsg.id
 
 
     // A voice note's transcription is started below rather than here,
@@ -785,6 +794,12 @@ async function processMessage(
     // `pendingVoice` handling further down.
     if (message.type === 'audio' && message.audio?.id) {
       pendingVoice = { messageId: savedMsg.id, mediaId: message.audio.id }
+    }
+    // An image is read below, before dispatch, when the account reads
+    // images — the same reason as a voice note: the assistant needs what
+    // it says. Stickers are not read.
+    if (message.type === 'image' && message.image?.id) {
+      pendingImage = { messageId: savedMsg.id, mediaId: message.image.id, caption: message.image.caption?.trim() || null }
     }
 
     // Best-effort, fire-and-forget — same idiom as the transcription call
@@ -1007,7 +1022,12 @@ async function processMessage(
   // finishes (a voice note). The behaviour is identical apart from
   // where the text comes from.
   // ============================================================
-  const dispatchAndRunAutomations = async (overrideText?: string, wasVoice = false) => {
+  const dispatchAndRunAutomations = async (
+    overrideText?: string,
+    wasVoice = false,
+    /** What was read from an image this message carried, when it was read. */
+    image?: InboundImageReading & { messageId: string; confirm: boolean },
+  ) => {
     // Nothing acts on a blocked contact.
     //
     // The message itself is already stored and still shows in the
@@ -1087,6 +1107,34 @@ async function processMessage(
       if (answer) {
         const handled = await answerConsent({ accountId, conversationId: conversation.id, answer }).catch((err) => {
           console.error('[handover] answer failed:', err instanceof Error ? err.message : err)
+          return false
+        })
+        if (handled) return
+      }
+    }
+
+    // ── They answered "is this what your image shows?" ─────────────
+    //
+    // lib/ai/image-confirm.ts. Same footing as the handover question: a
+    // tap, or a whole-message yes or no while that question is waiting.
+    // answerImageConfirmation returns false when nothing is waiting, and
+    // the message is then handled as any other.
+    {
+      const { answerImageConfirmation, parseImageButton, imageAnswerFromText } = await import('@/lib/ai/image-confirm')
+      const tapped = interactiveReplyId ? parseImageButton(interactiveReplyId) : null
+      const answer = interactiveReplyId ? tapped?.answer ?? null : imageAnswerFromText(text)
+      if (answer) {
+        const handled = await answerImageConfirmation({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId: conversation.id,
+          contactId: contactRecord.id,
+          answer,
+          askedAt: tapped?.askedAt,
+          currentMessageId: savedMessageId ?? undefined,
+          providerMessageId: message.id,
+        }).catch((err) => {
+          console.error('[image-confirm] answer failed:', err instanceof Error ? err.message : err)
           return false
         })
         if (handled) return
@@ -1189,9 +1237,31 @@ async function processMessage(
     // logged rather than surfaced: a customer who gets no auto-reply is
     // exactly where they were before this existed.
     if (!flowResult.consumed && automationsMatched === 0) {
-      const replyText = overrideText ?? contentText ?? message.text?.body ?? ''
+      // An image that was read is answered from its reading — and, unless
+      // the account turned confirming off, only after asking the customer
+      // whether it was read right. An unreadable one always gets the
+      // request for a clearer photo rather than an answer to nothing.
+      const replyText = image
+        ? assistantMessageForImage({ reading: image.stored, caption: contentText, confirmed: false })
+        : (overrideText ?? contentText ?? message.text?.body ?? '')
       if (replyText.trim()) {
         void autoReplyToMessage({
+          ...(image
+            ? {
+                image: {
+                  confirmed: false,
+                  languageSample: image.languageSample,
+                  ask:
+                    image.confirm || image.reading.unreadable
+                      ? {
+                          imageMessageId: image.messageId,
+                          question: image.reading.confirmQuestion,
+                          unreadable: image.reading.unreadable,
+                        }
+                      : undefined,
+                },
+              }
+            : {}),
           accountId,
           userId: configOwnerUserId,
           conversationId: conversation.id,
@@ -1215,7 +1285,7 @@ async function processMessage(
           // database. A customer waiting for an answer that is never
           // coming is worth one log line.
           .then((outcome) => {
-            if (outcome === 'replied' || outcome === 'handed_off') {
+            if (outcome === 'replied' || outcome === 'handed_off' || outcome === 'asked_to_confirm') {
               console.log(`[ai-auto-reply] ${outcome} on ${conversation.id}`)
             } else {
               console.warn(
@@ -1259,6 +1329,44 @@ async function processMessage(
       }
     })()
     return
+  }
+
+  if (pendingImage) {
+    const settings = await imageSettingsFor(accountId).catch(() => null)
+    // Five images per conversation per ten minutes are read; past that
+    // (an album, a flood) they wait in the Inbox like any image did
+    // before. Each read is a model call the account pays for.
+    const allowed =
+      settings?.read_images === true &&
+      checkRateLimit(`image-read:${conversation.id}`, { limit: 5, windowMs: 10 * 60_000 }).success
+    if (allowed) {
+      const img = pendingImage
+      // Detached like a voice note: the webhook still acks at once, and
+      // the reading — a few seconds — happens before the dispatch that
+      // needs it.
+      void (async () => {
+        try {
+          const read = await readInboundImage({
+            accountId,
+            messageId: img.messageId,
+            mediaId: img.mediaId,
+            accessToken,
+            caption: img.caption,
+            conversationId: conversation.id,
+          })
+          // Not read (no Gemini key, an odd format): handled exactly as
+          // an image always was.
+          await dispatchAndRunAutomations(
+            undefined,
+            false,
+            read ? { ...read, messageId: img.messageId, confirm: settings!.confirm } : undefined,
+          )
+        } catch (err) {
+          console.error('[image-dispatch] failed:', err instanceof Error ? err.message : err)
+        }
+      })()
+      return
+    }
   }
 
   await dispatchAndRunAutomations()
