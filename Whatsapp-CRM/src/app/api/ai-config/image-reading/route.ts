@@ -5,8 +5,8 @@ import { imageSettingsFor, setImageSettings } from '@/lib/ai/image-settings'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
 
 /**
- * Whether the assistant reads images customers send, and whether it asks
- * them to confirm what it read (lib/ai/image-settings.ts). Says too whether
+ * Whether the assistant reads images and files customers send, and whether
+ * it asks them to confirm what it read (lib/ai/image-settings.ts). Says too whether
  * it can — reading needs a Gemini key — so the screen never shows a switch
  * that is on and doing nothing.
  *
@@ -39,13 +39,20 @@ export async function GET() {
 export async function PUT(req: Request) {
   try {
     const ctx = await requireRole('admin')
-    const body = (await req.json().catch(() => null)) as { read_images?: unknown; confirm?: unknown } | null
-    if (typeof body?.read_images !== 'boolean' || typeof body?.confirm !== 'boolean') {
-      return NextResponse.json({ error: 'read_images and confirm must be true or false.' }, { status: 400 })
+    const body = (await req.json().catch(() => null)) as
+      | { read_images?: unknown; read_files?: unknown; confirm?: unknown }
+      | null
+    const flags = [body?.read_images, body?.read_files, body?.confirm]
+    if (!flags.every((f) => typeof f === 'boolean')) {
+      return NextResponse.json({ error: 'read_images, read_files and confirm must be true or false.' }, { status: 400 })
     }
     const exists = await prisma.aiConfig.findUnique({ where: { account_id: ctx.accountId }, select: { id: true } })
     if (!exists) return NextResponse.json({ error: 'Set up the AI assistant first.' }, { status: 400 })
-    await setImageSettings(ctx.accountId, { read_images: body.read_images, confirm: body.confirm })
+    await setImageSettings(ctx.accountId, {
+      read_images: body!.read_images as boolean,
+      read_files: body!.read_files as boolean,
+      confirm: body!.confirm as boolean,
+    })
     return NextResponse.json(await view(ctx.accountId))
   } catch (err) {
     return toErrorResponse(err)

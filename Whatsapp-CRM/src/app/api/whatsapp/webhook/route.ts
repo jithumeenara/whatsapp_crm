@@ -25,7 +25,7 @@ import { shouldReleaseOnReturn } from '@/lib/agents/presence'
 import { transcribeInboundAudio } from '@/lib/whatsapp/audio-transcription'
 import { readInboundImage, type InboundImageReading } from '@/lib/whatsapp/image-understanding'
 import { imageSettingsFor } from '@/lib/ai/image-settings'
-import { assistantMessageForImage } from '@/lib/ai/image-reading'
+import { assistantMessageForImage, isImageType } from '@/lib/ai/image-reading'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { processInboundOrder } from '@/lib/whatsapp/order-processing'
 import { isCallWebhookField, parseCallWebhook } from '@/lib/whatsapp/calling-api'
@@ -700,7 +700,13 @@ async function processMessage(
   // back until its transcript exists rather than running against an
   // empty string. See the dispatch block at the end of this function.
   let pendingVoice: { messageId: string; mediaId: string } | null = null
-  let pendingImage: { messageId: string; mediaId: string; caption: string | null } | null = null
+  let pendingImage: {
+    messageId: string
+    mediaId: string
+    caption: string | null
+    source: 'image' | 'file'
+    filename: string | null
+  } | null = null
   /** This message's own row, once stored — so an answer can tell itself
    *  apart from anything the customer said before it. */
   let savedMessageId: string | null = null
@@ -795,11 +801,27 @@ async function processMessage(
     if (message.type === 'audio' && message.audio?.id) {
       pendingVoice = { messageId: savedMsg.id, mediaId: message.audio.id }
     }
-    // An image is read below, before dispatch, when the account reads
-    // images — the same reason as a voice note: the assistant needs what
-    // it says. Stickers are not read.
+    // An image or a file is read below, before dispatch, when the account
+    // reads that kind — the same reason as a voice note: the assistant
+    // needs what it says. Stickers are not read. A photo sent as a file
+    // is still a photo, and is read under the images switch.
     if (message.type === 'image' && message.image?.id) {
-      pendingImage = { messageId: savedMsg.id, mediaId: message.image.id, caption: message.image.caption?.trim() || null }
+      pendingImage = {
+        messageId: savedMsg.id,
+        mediaId: message.image.id,
+        caption: message.image.caption?.trim() || null,
+        source: 'image',
+        filename: null,
+      }
+    }
+    if (message.type === 'document' && message.document?.id) {
+      pendingImage = {
+        messageId: savedMsg.id,
+        mediaId: message.document.id,
+        caption: message.document.caption?.trim() || null,
+        source: isImageType(message.document.mime_type) ? 'image' : 'file',
+        filename: message.document.filename?.trim() || null,
+      }
     }
 
     // Best-effort, fire-and-forget — same idiom as the transcription call
@@ -1242,7 +1264,13 @@ async function processMessage(
       // whether it was read right. An unreadable one always gets the
       // request for a clearer photo rather than an answer to nothing.
       const replyText = image
-        ? assistantMessageForImage({ reading: image.stored, caption: contentText, confirmed: false })
+        ? assistantMessageForImage({
+            reading: image.stored,
+            caption: contentText,
+            confirmed: false,
+            source: image.source,
+            filename: image.filename,
+          })
         : (overrideText ?? contentText ?? message.text?.body ?? '')
       if (replyText.trim()) {
         void autoReplyToMessage({
@@ -1333,12 +1361,12 @@ async function processMessage(
 
   if (pendingImage) {
     const settings = await imageSettingsFor(accountId).catch(() => null)
-    // Five images per conversation per ten minutes are read; past that
-    // (an album, a flood) they wait in the Inbox like any image did
-    // before. Each read is a model call the account pays for.
+    // Each kind has its own switch. Five per conversation per ten minutes
+    // are read; past that (an album, a flood) they wait in the Inbox as
+    // they always did. Each read is a model call the account pays for.
+    const switchedOn = pendingImage.source === 'file' ? settings?.read_files === true : settings?.read_images === true
     const allowed =
-      settings?.read_images === true &&
-      checkRateLimit(`image-read:${conversation.id}`, { limit: 5, windowMs: 10 * 60_000 }).success
+      switchedOn && checkRateLimit(`image-read:${conversation.id}`, { limit: 5, windowMs: 10 * 60_000 }).success
     if (allowed) {
       const img = pendingImage
       // Detached like a voice note: the webhook still acks at once, and
@@ -1353,6 +1381,8 @@ async function processMessage(
             accessToken,
             caption: img.caption,
             conversationId: conversation.id,
+            source: img.source,
+            filename: img.filename,
           })
           // Not read (no Gemini key, an odd format): handled exactly as
           // an image always was.

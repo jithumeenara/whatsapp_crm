@@ -70,6 +70,9 @@ export type UsageFeature =
   /// (image-reading.ts). Once per image, and only for accounts that
   /// switched it on.
   | 'image_reading'
+  /// Reading a file a customer sent — a PDF or text file. Its own line
+  /// because a long PDF costs far more than a photo (every page counts).
+  | 'file_reading'
 
 import { estimateCostUsd, type TokenCounts } from './pricing'
 

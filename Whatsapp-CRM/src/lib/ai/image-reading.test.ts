@@ -56,6 +56,8 @@ vi.mock("@google/generative-ai", () => ({
 import {
   assistantMessageForImage,
   formatReading,
+  isImageType,
+  isReadableFile,
   isReadableImage,
   maskSensitiveNumbers,
   readImage,
@@ -99,6 +101,51 @@ describe("what can be read", () => {
     expect(isReadableImage("image/svg+xml", 10)).toBe(false);
     expect(isReadableImage("image/jpeg", 6 * 1024 * 1024)).toBe(false);
     expect(isReadableImage("image/jpeg", 0)).toBe(false);
+  });
+});
+
+describe("which files can be read", () => {
+  it("reads PDFs and text up to 10 MB, never Word or Excel", () => {
+    expect(isReadableFile("application/pdf", 3 * 1024 * 1024)).toBe(true);
+    expect(isReadableFile("text/plain", 100)).toBe(true);
+    expect(isReadableFile("application/pdf", 11 * 1024 * 1024)).toBe(false);
+    expect(isReadableFile("application/vnd.openxmlformats-officedocument.wordprocessingml.document", 100)).toBe(false);
+    expect(isReadableFile("application/vnd.ms-excel", 100)).toBe(false);
+    expect(isReadableFile("application/zip", 100)).toBe(false);
+  });
+
+  it("knows a photo sent as a file is a photo", () => {
+    expect(isImageType("image/jpeg")).toBe(true);
+    expect(isImageType("application/pdf")).toBe(false);
+  });
+
+  it("reads a PDF as a file, and refuses a Word document before any model call", async () => {
+    h.state.modelJson = JSON.stringify({
+      kind: "invoice",
+      text: "Invoice 1042\nTotal ₹4,500",
+      summary: "An invoice.",
+      intent: "pay the invoice",
+      confirm_question: "This is invoice 1042 for ₹4,500 — is that right?",
+      unreadable: false,
+    });
+    const r = await readImage({ apiKey: "k", model: "gemini-3.6-flash", image: Buffer.alloc(500), mimeType: "application/pdf", source: "file", filename: "invoice.pdf" });
+    expect(r.kind).toBe("invoice");
+    await expect(
+      readImage({ apiKey: "k", model: "gemini-3.6-flash", image: Buffer.alloc(500), mimeType: "application/msword", source: "file" }),
+    ).rejects.toThrow(/cannot be read/);
+    // A PDF is not an image: sent down the image path, it is refused.
+    await expect(
+      readImage({ apiKey: "k", model: "gemini-3.6-flash", image: Buffer.alloc(500), mimeType: "application/pdf" }),
+    ).rejects.toThrow(/cannot be read/);
+  });
+
+  it("says 'file' to staff and to the assistant, and names it", () => {
+    const stored = formatReading({ kind: "invoice", summary: "An invoice.", intent: "pay", text: "Total 4500", unreadable: false }, "file");
+    expect(stored).toContain("Text in the file:");
+    const msg = assistantMessageForImage({ reading: stored, caption: "invoice.pdf", filename: "invoice.pdf", confirmed: false, source: "file" });
+    expect(msg).toMatch(/sent a file \(«invoice\.pdf»\)/);
+    // WhatsApp gives a file without a caption its name as the text; it is not repeated as a caption.
+    expect(msg).not.toContain("Their caption");
   });
 });
 
@@ -153,10 +200,15 @@ describe("handing the reading on", () => {
 });
 
 describe("settings", () => {
-  it("is off unless switched on, and confirms unless told not to", () => {
-    expect(parseImageSettings(null)).toEqual({ read_images: false, confirm: true });
-    expect(parseImageSettings({ read_images: true })).toEqual({ read_images: true, confirm: true });
-    expect(parseImageSettings({ read_images: "yes", confirm: false })).toEqual({ read_images: false, confirm: false });
+  it("is off unless switched on — images and files each on their own — and confirms unless told not to", () => {
+    expect(parseImageSettings(null)).toEqual({ read_images: false, read_files: false, confirm: true });
+    expect(parseImageSettings({ read_images: true })).toEqual({ read_images: true, read_files: false, confirm: true });
+    expect(parseImageSettings({ read_files: true })).toEqual({ read_images: false, read_files: true, confirm: true });
+    expect(parseImageSettings({ read_images: "yes", read_files: 1, confirm: false })).toEqual({
+      read_images: false,
+      read_files: false,
+      confirm: false,
+    });
   });
 });
 
@@ -203,7 +255,7 @@ describe("asking the customer to confirm", () => {
     expect(await answerImageConfirmation({ ...base, answer: "yes", currentMessageId: "m2" })).toBe(false);
     h.state.customerAfter = 0;
     expect(await answerImageConfirmation({ ...base, answer: "no", currentMessageId: "m2" })).toBe(true);
-    expect(h.state.sent.at(-1)?.body).toMatch(/clearer photo/);
+    expect(h.state.sent.at(-1)?.body).toMatch(/send it again/);
   });
 
   it("does not accept a button from long ago", () => {

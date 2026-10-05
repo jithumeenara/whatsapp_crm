@@ -697,11 +697,24 @@ function MessageContent({ message }: { message: Message }) {
       // which is only the customer's caption when they gave one — a
       // caption alone would hide the actual file's name and extension.
       const docLabel = message.media_filename || message.content_text || "Document";
-      if (!message.media_url) {
-        return <MediaUnavailable label={docLabel} />;
-      }
       return (
-        <MediaDocument url={message.media_url} label={docLabel} mimeType={message.media_mime_type} />
+        <div>
+          {message.media_url ? (
+            <MediaDocument url={message.media_url} label={docLabel} mimeType={message.media_mime_type} />
+          ) : (
+            <MediaUnavailable label={docLabel} />
+          )}
+          {/* What the assistant read from the file (lib/ai/image-reading.ts). */}
+          {message.transcript && (
+            <div className="mt-1.5 rounded-lg bg-black/5 px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Read by AI</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-[13px]" style={WRAP_STYLE}>
+                {message.transcript}
+              </p>
+              <p className="mt-1 text-[10px] text-slate-400">AI-generated, may not be fully accurate</p>
+            </div>
+          )}
+        </div>
       );
     }
 

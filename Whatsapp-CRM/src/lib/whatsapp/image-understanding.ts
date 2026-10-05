@@ -1,19 +1,28 @@
 /**
- * Reads an image a customer sent on WhatsApp, for the Inbox and for the
- * assistant. Called from the webhook only when the account has switched
- * "Read images customers send" on (lib/ai/image-settings.ts), and shaped
+ * Reads an image or a file a customer sent on WhatsApp, for the Inbox and
+ * for the assistant. Called from the webhook only when the account has
+ * switched reading on for that kind (lib/ai/image-settings.ts), and shaped
  * like audio-transcription.ts: never throws, returns null for anything it
- * cannot do, and the image stays in the Inbox for a person either way.
+ * cannot do, and the message stays in the Inbox for a person either way.
  *
  * Gemini only: it is the provider every account here has, and every
- * Gemini 3 model reads images. With no Gemini key there is nothing to do.
+ * Gemini 3 model reads images and PDFs. With no Gemini key there is
+ * nothing to do.
  */
 
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
-import { formatReading, isReadableImage, MAX_IMAGE_BYTES, readImage, type ImageReading } from '@/lib/ai/image-reading'
+import {
+  formatReading,
+  isReadableFile,
+  isReadableImage,
+  MAX_FILE_BYTES,
+  readImage,
+  type ImageReading,
+  type MediaSource,
+} from '@/lib/ai/image-reading'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { emitToAccount } from '@/lib/socket'
 
@@ -23,6 +32,8 @@ export interface InboundImageReading {
   stored: string
   /** The customer's own recent words — the language to answer in. */
   languageSample: string
+  source: MediaSource
+  filename: string | null
 }
 
 export async function readInboundImage(args: {
@@ -32,7 +43,12 @@ export async function readInboundImage(args: {
   accessToken: string
   caption: string | null
   conversationId: string
+  /** 'image' for a photo (also one sent as a file); 'file' for a PDF or text file. */
+  source?: MediaSource
+  filename?: string | null
 }): Promise<InboundImageReading | null> {
+  const source = args.source ?? 'image'
+  const feature = source === 'file' ? 'file_reading' : 'image_reading'
   const startedAt = Date.now()
   let model = 'gemini-3.6-flash'
   try {
@@ -43,10 +59,12 @@ export async function readInboundImage(args: {
 
     const { url, mimeType } = await getMediaUrl({ mediaId: args.mediaId, accessToken: args.accessToken })
     const { buffer } = await downloadMedia({ downloadUrl: url, accessToken: args.accessToken })
-    if (!isReadableImage(mimeType, buffer.length)) {
-      console.warn(
-        `[image-reading] skipped an image: ${mimeType}, ${buffer.length} bytes (limit ${MAX_IMAGE_BYTES})`,
-      )
+    const readable =
+      source === 'file'
+        ? isReadableFile(mimeType, buffer.length) || isReadableImage(mimeType, buffer.length, MAX_FILE_BYTES)
+        : isReadableImage(mimeType, buffer.length)
+    if (!readable) {
+      console.warn(`[media-reading] skipped a ${source}: ${mimeType}, ${buffer.length} bytes`)
       return null
     }
 
@@ -56,30 +74,32 @@ export async function readInboundImage(args: {
       model,
       image: buffer,
       mimeType,
+      source,
+      filename: args.filename,
       caption: args.caption,
       languageSample,
     })
     void recordAiUsage({
       accountId: args.accountId,
       model: reading.model,
-      feature: 'image_reading',
+      feature,
       tokens: reading.usage,
       latencyMs: Date.now() - startedAt,
     })
 
-    const stored = formatReading(reading)
+    const stored = formatReading(reading, source)
     // On `transcript`, beside the caption rather than over it: the
     // caption is what the customer wrote, and stays theirs.
     const updated = await prisma.message.update({ where: { id: args.messageId }, data: { transcript: stored } })
     emitToAccount(args.accountId, 'message', { eventType: 'UPDATE', new: updated, old: {} })
-    return { reading, stored, languageSample }
+    return { reading, stored, languageSample, source, filename: args.filename ?? null }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error('[image-reading] failed:', message)
+    console.error('[media-reading] failed:', message)
     void recordAiUsage({
       accountId: args.accountId,
       model,
-      feature: 'image_reading',
+      feature,
       status: 'error',
       error: message,
       latencyMs: Date.now() - startedAt,

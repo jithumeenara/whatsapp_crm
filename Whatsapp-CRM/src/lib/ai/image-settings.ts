@@ -16,17 +16,21 @@ import { prisma } from '@/lib/db'
 export interface ImageSettings {
   /** Read each image a customer sends: its text and what it shows. */
   read_images: boolean
+  /** Read each file a customer sends — PDFs and plain text, the formats
+   *  Gemini actually understands (a Word or Excel file is left for staff). */
+  read_files: boolean
   /** Before acting on it, say what was read and ask the customer to
    *  confirm — with Yes / No buttons. */
   confirm: boolean
 }
 
-export const DEFAULT_IMAGE_SETTINGS: ImageSettings = { read_images: false, confirm: true }
+export const DEFAULT_IMAGE_SETTINGS: ImageSettings = { read_images: false, read_files: false, confirm: true }
 
 export function parseImageSettings(raw: unknown): ImageSettings {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   return {
     read_images: o.read_images === true,
+    read_files: o.read_files === true,
     // Confirming is the safe default, so only an explicit false turns it off.
     confirm: o.confirm !== false,
   }

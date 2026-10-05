@@ -38,12 +38,12 @@ const TEXT = {
   ml: {
     yes: 'ശരിയാണ്',
     no: 'അല്ല',
-    retry: 'ക്ഷമിക്കണം. ശരിയായ വിവരങ്ങൾ ടൈപ്പ് ചെയ്യുകയോ കൂടുതൽ വ്യക്തമായ ഒരു ഫോട്ടോ അയക്കുകയോ ചെയ്യൂ.',
+    retry: 'ക്ഷമിക്കണം. ശരിയായ വിവരങ്ങൾ ടൈപ്പ് ചെയ്യുകയോ കൂടുതൽ വ്യക്തമായി വീണ്ടും അയക്കുകയോ ചെയ്യൂ.',
   },
   en: {
     yes: 'Yes, correct',
     no: 'No',
-    retry: 'Sorry about that. Please type the correct details, or send a clearer photo.',
+    retry: 'Sorry about that. Please type the correct details, or send it again more clearly.',
   },
 } as const
 
@@ -240,9 +240,10 @@ export async function answerImageConfirmation(args: {
   // is never followed.
   const image = await prisma.message.findFirst({
     where: { id: ask.imageMessageId, conversation_id: args.conversationId },
-    select: { transcript: true, content_text: true },
+    select: { transcript: true, content_text: true, content_type: true, media_filename: true },
   })
   if (!image?.transcript) return true
+  const isFile = image.content_type === 'document'
 
   const { autoReplyToMessage } = await import('./auto-reply')
   void autoReplyToMessage({
@@ -250,7 +251,13 @@ export async function answerImageConfirmation(args: {
     userId: args.userId,
     conversationId: args.conversationId,
     contactId: args.contactId,
-    message: assistantMessageForImage({ reading: image.transcript, caption: image.content_text, confirmed: true }),
+    message: assistantMessageForImage({
+      reading: image.transcript,
+      caption: image.content_text,
+      confirmed: true,
+      source: isFile ? 'file' : 'image',
+      filename: isFile ? image.media_filename : null,
+    }),
     channel: 'whatsapp',
     providerMessageId: args.providerMessageId,
     image: { confirmed: true, languageSample: await recentCustomerWords(args.conversationId) },
