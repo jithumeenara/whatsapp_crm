@@ -18,14 +18,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronRight,
-  ChevronDown,
   Image as ImageIcon,
   Film,
   File as FileIcon,
   FileText,
   LayoutTemplate,
   Loader2,
-  Eye,
   Send,
   PenLine,
   User,
@@ -64,7 +62,17 @@ interface TemplatePickerProps {
    *  values) so each variable can be mapped to a Contact Field or Custom
    *  Field instead of only ever typed by hand. */
   conversationId?: string;
+  /** "send" (the Inbox) sends on confirm; "choose" (scheduling) only
+   *  hands the template back, so the button must not promise a send. */
+  mode?: "send" | "choose";
 }
+
+/** The WhatsApp chat wallpaper, so the preview reads as the customer's
+ *  screen rather than a form. */
+const CHAT_WALLPAPER = {
+  backgroundColor: '#e5ddd5',
+  backgroundImage: 'radial-gradient(circle at 12% 22%, rgba(255,255,255,0.35) 0, transparent 40%), radial-gradient(circle at 82% 72%, rgba(255,255,255,0.3) 0, transparent 45%)',
+};
 
 function renderBodyPreview(body: string, isNamed: boolean, params: string[], namedValues: Record<string, string>): string {
   if (isNamed) {
@@ -254,6 +262,7 @@ export function TemplatePicker({
   onOpenChange,
   onSelect,
   conversationId,
+  mode = "send",
 }: TemplatePickerProps) {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -264,11 +273,6 @@ export function TemplatePicker({
   const [contact, setContact] = useState<Contact | null>(null);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [customValues, setCustomValues] = useState<Map<string, string>>(new Map());
-  // Collapsed by default — a long template's preview was pushing Header
-  // Media / variable inputs below the fold, making them easy to miss
-  // entirely. Still one click away, and height-capped with its own scroll
-  // even when open so it can never dominate the dialog again.
-  const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -355,23 +359,13 @@ export function TemplatePicker({
     onOpenChange(next);
   }
 
+  // Never sends from here, even when the template needs nothing filled
+  // in. A click on a list row is a choice to look, not to send: a
+  // template went to the customer the moment its name was clicked, with
+  // no chance to read it first. It opens full size; Send is the only
+  // thing that sends.
   function pickTemplate(template: MessageTemplate) {
     const slots = collectVariableSlots(template);
-    const templateNeedsMedia =
-      template.header_type === "image" ||
-      template.header_type === "video" ||
-      template.header_type === "document";
-    const noInputsNeeded =
-      slots.bodyVars.length === 0 &&
-      slots.bodyNamedKeys.length === 0 &&
-      slots.headerVarCount === 0 &&
-      slots.urlButtonSlots.length === 0 &&
-      !templateNeedsMedia;
-    if (noInputsNeeded) {
-      onSelect(template, { body: [] });
-      handleOpenChange(false);
-      return;
-    }
     setSelected(template);
     setHeaderMediaUrl("");
     // Seed every placeholder with an empty static mapping — done here
@@ -437,11 +431,19 @@ export function TemplatePicker({
     ? Object.fromEntries(slots.bodyNamedKeys.map((k) => [k, resolved[`body:${k}`] ?? ""]))
     : {};
 
+  const needsInputs = !!headerMediaType || rows.length > 0;
+  const confirmLabel = mode === "choose" ? "Use this template" : "Send";
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-lg">
+      <DialogContent className={cn(
+        "gap-0 overflow-hidden rounded-3xl bg-white p-0",
+        // Chosen: as big as the screen allows, so the whole message can be
+        // read before it goes. Choosing: the usual compact list.
+        selected ? "flex h-[92vh] flex-col sm:max-w-5xl" : "sm:max-w-lg",
+      )}>
         <DialogHeader className={cn(
-          "bg-gradient-to-br px-6 pb-4 pt-5",
+          "shrink-0 bg-gradient-to-br px-6 pb-4 pt-5",
           mediaMissing ? "from-amber-50 to-white" : "from-indigo-50 to-white",
         )}>
           <div className={cn(
@@ -454,9 +456,11 @@ export function TemplatePicker({
             {selected ? selected.name : "Send a template"}
           </DialogTitle>
           <p className="mt-0.5 text-[11.5px] text-slate-400">
-            {selected
-              ? "Fill in what this template needs before it can send."
-              : "Pick an approved WhatsApp template to send to this contact."}
+            {!selected
+              ? "Pick an approved WhatsApp template to send to this contact."
+              : needsInputs
+                ? `Fill in what this template needs, check the message, then press ${confirmLabel}.`
+                : `This is exactly what the customer will see. Check it, then press ${confirmLabel}.`}
           </p>
         </DialogHeader>
 
@@ -508,67 +512,55 @@ export function TemplatePicker({
             )}
           </div>
         ) : (
-          <div className="max-h-[68vh] space-y-3 overflow-y-auto px-6 pb-2 pt-1 scroll-styled">
-            {/* WhatsApp-style live preview — collapsed by default so it
-                never dominates the dialog; shows actual header media,
-                rendered body, footer, and buttons when opened. */}
-            <div>
-              <button
-                type="button"
-                onClick={() => setPreviewOpen((v) => !v)}
-                className="mb-1.5 flex w-full items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-600"
-              >
-                <Eye className="h-3 w-3" /> Preview
-                {previewOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              </button>
-              {previewOpen && (
-              <div className="max-h-44 overflow-y-auto rounded-2xl p-3 scroll-styled" style={{
-                backgroundColor: '#e5ddd5',
-                backgroundImage: 'radial-gradient(circle at 12% 22%, rgba(255,255,255,0.35) 0, transparent 40%), radial-gradient(circle at 82% 72%, rgba(255,255,255,0.3) 0, transparent 45%)',
-              }}>
-                <div className="ml-auto max-w-[92%] overflow-hidden rounded-lg rounded-tr-none bg-[#d9fdd3] shadow-sm">
+          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+            {/* The whole message, as the customer's phone will show it —
+                never folded and never height-capped, because reading it
+                in full is the point of this step. */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 scroll-styled sm:px-8" style={CHAT_WALLPAPER}>
+              <div className="mx-auto w-full max-w-md">
+                <div className="ml-auto overflow-hidden rounded-xl rounded-tr-none bg-[#d9fdd3] shadow-sm">
                   {headerMediaType === "image" && (
-                    <div className="flex h-24 items-center justify-center overflow-hidden bg-slate-200">
+                    <div className="flex min-h-40 items-center justify-center overflow-hidden bg-slate-200">
                       {previewMediaUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={previewMediaUrl} alt="" className="h-full w-full object-cover" />
+                        <img src={previewMediaUrl} alt="" className="max-h-80 w-full object-cover" />
                       ) : (
-                        <ImageIcon className="h-6 w-6 text-slate-400" />
+                        <ImageIcon className="h-8 w-8 text-slate-400" />
                       )}
                     </div>
                   )}
                   {headerMediaType === "video" && (
-                    <div className="flex h-20 items-center justify-center bg-black">
-                      <Film className="h-6 w-6 text-white/70" />
+                    <div className="flex h-40 items-center justify-center bg-black">
+                      <Film className="h-8 w-8 text-white/70" />
                     </div>
                   )}
                   {headerMediaType === "document" && (
-                    <div className="mx-2 mt-2 flex items-center gap-2 rounded-lg bg-black/5 p-2">
-                      <FileText className="h-4 w-4 shrink-0 text-rose-500" />
-                      <span className="truncate text-[12px] text-[#111b21]">
+                    <div className="mx-2 mt-2 flex items-center gap-2 rounded-lg bg-black/5 p-2.5">
+                      <FileText className="h-5 w-5 shrink-0 text-rose-500" />
+                      <span className="truncate text-[13px] text-[#111b21]">
                         {previewMediaUrl ? previewMediaUrl.split("/").pop() : "Document"}
                       </span>
                     </div>
                   )}
-                  <div className="px-3 pb-1.5 pt-2">
+                  <div className="px-3.5 pb-2 pt-2.5">
                     {selected.header_type === "text" && selected.header_content && (
-                      <p className="mb-1 whitespace-pre-wrap text-[14px] font-bold leading-snug text-[#111b21]">
+                      <p className="mb-1.5 whitespace-pre-wrap break-words text-[15px] font-bold leading-snug text-[#111b21]">
                         {renderHeaderPreview(selected.header_content, previewHeaderText)}
                       </p>
                     )}
-                    <p className="whitespace-pre-wrap text-[13.5px] leading-snug text-[#111b21]">
+                    <p className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed text-[#111b21]">
                       {renderBodyPreview(selected.body_text, slots?.isBodyNamed ?? false, previewParams, previewNamedValues)}
                     </p>
                     {selected.footer_text && (
-                      <p className="mt-1 text-[12px] text-[#667781]">{selected.footer_text}</p>
+                      <p className="mt-1.5 text-[12.5px] text-[#667781]">{selected.footer_text}</p>
                     )}
                   </div>
                 </div>
                 {selected.buttons && selected.buttons.length > 0 && (
-                  <div className="ml-auto mt-0.5 max-w-[92%] overflow-hidden rounded-lg bg-white shadow-sm">
+                  <div className="ml-auto mt-0.5 overflow-hidden rounded-xl bg-white shadow-sm">
                     {selected.buttons.map((b, i) => (
                       <div key={i} className={cn(
-                        "py-2 text-center text-[13px] font-medium text-[#00a5f4]",
+                        "py-2.5 text-center text-[14px] font-medium text-[#00a5f4]",
                         i > 0 && "border-t border-slate-100",
                       )}>
                         {b.text}
@@ -577,88 +569,97 @@ export function TemplatePicker({
                   </div>
                 )}
               </div>
-              )}
             </div>
 
-            {/* Header media — first among the "fill this in" controls when
-                it's a hard blocker, since that's the thing most likely to
-                stop the send outright. */}
-            {headerMediaType && (
-              <button
-                type="button"
-                onClick={() => setMediaPopupOpen(true)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all hover:shadow-sm",
-                  mediaRequired && !headerMediaUrl ? "border-amber-300 bg-amber-50/60 hover:border-amber-400" : "border-slate-200 bg-white hover:border-indigo-300",
-                )}
-              >
-                {headerMediaUrl ? (
-                  headerMediaType === "image" ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={headerMediaUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
-                  ) : (
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
-                      {HeaderMediaIcon && <HeaderMediaIcon className="h-4.5 w-4.5 text-indigo-500" />}
-                    </div>
-                  )
-                ) : (
-                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
-                    {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-4.5 w-4.5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <p className="text-[13px] font-semibold text-slate-800">Header Media</p>
-                    {mediaRequired && !headerMediaUrl && (
-                      <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">Required</span>
+            {needsInputs && (
+              <div className="max-h-[40%] min-h-0 shrink-0 space-y-3 overflow-y-auto border-t border-slate-100 p-4 scroll-styled md:max-h-none md:w-[360px] md:border-l md:border-t-0">
+                {/* Header media — first among the "fill this in" controls
+                    when it's a hard blocker, since that's the thing most
+                    likely to stop the send outright. */}
+                {headerMediaType && (
+                  <button
+                    type="button"
+                    onClick={() => setMediaPopupOpen(true)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all hover:shadow-sm",
+                      mediaRequired && !headerMediaUrl ? "border-amber-300 bg-amber-50/60 hover:border-amber-400" : "border-slate-200 bg-white hover:border-indigo-300",
                     )}
-                  </div>
-                  <p className="truncate text-[12px] text-slate-500">
-                    {headerMediaUrl ? headerMediaUrl.split("/").pop() : mediaRequired ? "Not attached — send will fail without one" : "Optional — uses the template's sample media"}
-                  </p>
-                </div>
-                {headerMediaUrl ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : mediaRequired ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
-              </button>
-            )}
+                  >
+                    {headerMediaUrl ? (
+                      headerMediaType === "image" ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={headerMediaUrl} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+                      ) : (
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50">
+                          {HeaderMediaIcon && <HeaderMediaIcon className="h-4.5 w-4.5 text-indigo-500" />}
+                        </div>
+                      )
+                    ) : (
+                      <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
+                        {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-4.5 w-4.5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-[13px] font-semibold text-slate-800">Header Media</p>
+                        {mediaRequired && !headerMediaUrl && (
+                          <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">Required</span>
+                        )}
+                      </div>
+                      <p className="truncate text-[12px] text-slate-500">
+                        {headerMediaUrl ? headerMediaUrl.split("/").pop() : mediaRequired ? "Not attached — send will fail without one" : "Optional — uses the template's sample media"}
+                      </p>
+                    </div>
+                    {headerMediaUrl ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" /> : mediaRequired ? <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+                  </button>
+                )}
 
-            {/* Variables — one uniform mapping row per placeholder (header,
-                body, URL buttons alike), same Static/Contact Field/Custom
-                Field source model as the broadcast composer. */}
-            {rows.length > 0 && (
-              <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5">
-                {rows.map((row) => (
-                  <VariableMappingRow
-                    key={row.id}
-                    row={row}
-                    mapping={mappings[row.id] ?? emptyMapping()}
-                    onChange={(next) => setMappings((prev) => ({ ...prev, [row.id]: next }))}
-                    customFields={customFields}
-                    hasContact={!!contact}
-                  />
-                ))}
+                {/* Variables — one uniform mapping row per placeholder
+                    (header, body, URL buttons alike), same Static/Contact
+                    Field/Custom Field source model as the broadcast
+                    composer. */}
+                {rows.length > 0 && (
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5">
+                    {rows.map((row) => (
+                      <VariableMappingRow
+                        key={row.id}
+                        row={row}
+                        mapping={mappings[row.id] ?? emptyMapping()}
+                        onChange={(next) => setMappings((prev) => ({ ...prev, [row.id]: next }))}
+                        customFields={customFields}
+                        hasContact={!!contact}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        <div className={cn("flex items-center gap-2 px-6 py-3.5", selected && "border-t border-slate-100")}>
+        <div className={cn("flex shrink-0 items-center gap-2 px-6 py-3.5", selected && "border-t border-slate-100")}>
           {selected ? (
             <>
               <Button
                 variant="outline"
                 onClick={resetSelection}
-                className="h-9 border-slate-200 text-slate-600 hover:bg-slate-50"
+                className="h-10 border-slate-200 text-slate-600 hover:bg-slate-50"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Back
               </Button>
+              {mode === "send" && (
+                <p className="hidden flex-1 text-[11.5px] text-slate-400 sm:block">
+                  Nothing is sent until you press Send.
+                </p>
+              )}
               <Button
                 disabled={!canConfirm}
                 onClick={confirm}
-                className="h-9 flex-1 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                className="ml-auto h-10 min-w-36 bg-indigo-600 px-5 text-white hover:bg-indigo-700 disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
-                Send Template
+                {confirmLabel}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </>

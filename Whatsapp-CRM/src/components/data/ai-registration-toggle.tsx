@@ -128,14 +128,19 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
           <p className="text-[11.5px] font-medium text-slate-600">
             One booking per person, per&hellip;
           </p>
-          {/* The check is already scoped to the one customer. Saying so
-              matters: an account that also ticks the name and phone
-              fields gets "one registration per person ever", which is
-              almost never what they meant and looks like a bug the first
-              time somebody returns next term. */}
+          {/* The check is scoped to one chat (one contact), not one
+              person. Usually the same thing — but a company, a bank, a
+              school or a parent writing in for several people is one
+              contact, and with only "what" ticked, the second person
+              they send for the same thing is refused as a repeat of the
+              first. The participant's name is what tells them apart.
+              Ticking it alone would still mean "one booking per name,
+              ever", so it is offered as an addition, not a replacement. */}
           <p className="text-[10.5px] leading-relaxed text-slate-400">
-            Pick what they are booking, not who they are &mdash; this
-            already only looks at their own bookings.
+            Pick what they are booking &mdash; the programme, the date. This only looks at
+            bookings from the same chat. If one contact books for several people (a company,
+            a bank, a parent), also tick the participant&rsquo;s name, or the second person
+            will be refused as a repeat of the first.
           </p>
           <div className="flex flex-wrap gap-1.5">
             {fillable.map((f) => {
@@ -165,7 +170,7 @@ export function AiRegistrationToggle({ tableId, table, fields, onChange }: Props
           <p className="text-[10.5px] leading-relaxed text-slate-400">
             {uniqueBy.length === 0
               ? "Nothing selected: the same person can book as many times as they like."
-              : `The assistant will refuse a second booking from the same person with the same ${uniqueBy
+              : `The assistant will refuse a second booking from the same chat with the same ${uniqueBy
                   .map((k) => fillable.find((f) => f.field_key === k)?.label)
                   .filter(Boolean)
                   .join(" and ")}, and tell them when the first one was made.`}

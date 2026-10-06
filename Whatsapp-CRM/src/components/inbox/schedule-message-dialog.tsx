@@ -310,6 +310,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
         onOpenChange={setTemplatePickerOpen}
         onSelect={handleTemplateSelect}
         conversationId={conversationId}
+        mode="choose"
       />
     </>
   )

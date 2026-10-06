@@ -13,13 +13,12 @@ import type { Message } from "@/types";
  * Each email is a full-width card with who, when and the subject, like
  * Gmail, Outlook, Front and HubSpot's inbox: long bodies and quoted
  * history are not what chat bubbles are for. The quoted history each
- * mail client appends is folded under "···", and all but the latest few
- * emails collapse to one line so a long thread stays readable.
+ * mail client appends is folded under "···", and every email starts
+ * collapsed to one line (sender, subject, first words), so the whole
+ * thread fits on screen and opening one is a choice.
  */
 
 export type EmailAction = "reply" | "reply_all" | "forward";
-
-const OPEN_BY_DEFAULT = 3;
 
 function when(iso: string) {
   const d = new Date(iso);
@@ -203,8 +202,7 @@ export function EmailThread({
     () => [...messages].sort((a, b) => a.created_at.localeCompare(b.created_at)),
     [messages],
   );
-  // Which cards the person opened or closed themselves; everything else
-  // follows the default (the latest few open).
+  // Which cards the person opened themselves; everything else stays shut.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const [showOlder, setShowOlder] = useState(false);
 
@@ -223,9 +221,8 @@ export function EmailThread({
           <ChevronDown className="h-3.5 w-3.5" /> {hiddenCount} earlier email{hiddenCount === 1 ? "" : "s"}
         </button>
       )}
-      {visible.map((m, i) => {
-        const defaultOpen = i >= visible.length - OPEN_BY_DEFAULT;
-        const open = toggled[m.id] ?? defaultOpen;
+      {visible.map((m) => {
+        const open = toggled[m.id] ?? false;
         const outgoing = m.sender_type !== "customer";
         const fromLabel = outgoing
           ? m.sender_type === "bot" ? "Chatbot" : agentLabelFor(m)
