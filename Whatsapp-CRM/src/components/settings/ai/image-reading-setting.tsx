@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { AlertTriangle, FileText, Image as ImageIcon, Loader2, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, ClipboardCheck, FileText, Image as ImageIcon, Loader2, ShieldCheck } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 
 type Settings = { read_images: boolean; read_files: boolean; confirm: boolean };
@@ -149,6 +149,13 @@ export function ImageReadingSetting() {
 
       {anyOn && (
         <ul className="mt-3 space-y-1.5 border-t border-slate-200/70 pt-3 text-[11.5px] leading-relaxed text-slate-600">
+          <li className="flex items-start gap-1.5">
+            <ClipboardCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-indigo-600" />
+            Registration by photo: when a photo or file holds somebody&rsquo;s details for one of your registration
+            forms (Data Store tables open to the assistant), the assistant asks only what the photo cannot say — the
+            month, the programme, the slot — shows every detail together with Yes / No, and saves on Yes. A list of
+            several people goes to your team.
+          </li>
           <li className="flex items-start gap-1.5">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
             Aadhaar, card and account numbers are hidden except the last four digits, before anything is stored or sent.

@@ -42,6 +42,7 @@ import { getProviderKeys } from './providers/registry'
 import { sendHandoffAlert } from './handoff-alert'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { engineSendText, engineSendVoiceNote } from '@/lib/flows/meta-send'
+import type { RegistrationExtract } from './image-reading'
 
 /** How long one exchange lasts without a human touching it. WhatsApp's
  *  own session window: past it, a returning customer is starting a new
@@ -145,6 +146,11 @@ export interface AutoReplyArgs {
      *  text is in whatever language the document was printed in. */
     languageSample: string
     ask?: { imageMessageId: string; question: string; unreadable: boolean }
+    /** The image is somebody's details for one of the account's forms:
+     *  register them from it (registration-draft.ts) instead of asking
+     *  the general "is this right?" — the closing summary confirms
+     *  everything at once. */
+    registration?: { extract: RegistrationExtract; sourceMessageId: string }
   }
 }
 
@@ -363,6 +369,29 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
   // or one out of turns, is not asked either — the same rules decide
   // whether the assistant speaks at all. The question counts as one of
   // its turns.
+  // ── A photo of somebody's registration details ───────────────────
+  //
+  // After the same guards. Falls through to the general question when
+  // the details cannot be used (no matching form, nothing valid read).
+  if (args.image?.registration && args.channel === 'whatsapp') {
+    try {
+      const { startRegistrationFromImage } = await import('./registration-draft')
+      const started = await startRegistrationFromImage({
+        accountId: args.accountId,
+        userId: args.userId,
+        conversationId: args.conversationId,
+        contactId: args.contactId,
+        sourceMessageId: args.image.registration.sourceMessageId,
+        extract: args.image.registration.extract,
+        languageSample: args.image.languageSample,
+      })
+      if (started === 'started') return 'asked_to_confirm'
+      if (started === 'group') return 'handed_off'
+    } catch (err) {
+      console.error('[auto-reply] could not start a registration from the image:', err instanceof Error ? err.message : err)
+    }
+  }
+
   if (args.image?.ask && args.channel === 'whatsapp') {
     try {
       const { askImageConfirmation } = await import('./image-confirm')
@@ -383,10 +412,21 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
     }
   }
 
+  // A registration from the customer's photo is half done: the assistant
+  // answers whatever they asked, and leaves the registration to it —
+  // starting a second one on top would save two half-records.
+  const waitingFor =
+    args.channel === 'whatsapp'
+      ? await import('./registration-draft').then((m) => m.activeDraftWaitingFor(args.accountId, args.conversationId)).catch(() => null)
+      : null
+
   const startedAt = Date.now()
   let turn: Awaited<ReturnType<typeof runCustomerTurn>>
   try {
     turn = await runCustomerTurn({
+      stepInstruction: waitingFor
+        ? `A registration from the customer's own photo is already under way and is waiting for ${waitingFor}. Answer what they asked in a sentence or two. Do not take, submit or change a registration yourself. Then ask them to carry on with the options or the summary already sent to them.`
+        : null,
       aiConfig: aiConfig as unknown as CustomerAiConfig,
       accountId: args.accountId,
       contactId: args.contactId,
@@ -820,7 +860,7 @@ async function loadHistory(conversationId: string, depth: number) {
  * outcome is the same — the conversation becomes pending, optionally
  * assigned, and carries a note somebody can act on.
  */
-async function handOver(args: {
+export async function handOver(args: {
   accountId: string
   conversationId: string
   note: string

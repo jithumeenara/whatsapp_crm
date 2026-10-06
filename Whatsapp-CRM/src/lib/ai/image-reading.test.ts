@@ -166,6 +166,50 @@ describe("reading an image", () => {
     expect(r.usage).toEqual({ inputTokens: 1300, outputTokens: 200, totalTokens: 1500 });
   });
 
+  it("maps registration details onto the form: the bank number whole for the record, masked everywhere it is shown", async () => {
+    h.state.modelJson = JSON.stringify({
+      kind: "form",
+      text: "Name: Asha\nA/c 001234567890123\nAadhaar 2345 6789 0123",
+      summary: "Registration details.",
+      intent: "register",
+      confirm_question: "Your account 001234567890123 — right?",
+      unreadable: false,
+      registration: {
+        table_id: "t1",
+        people: 1,
+        values: [
+          { key: "name", value: "Asha" },
+          { key: "account_no", value: "001234567890123" },
+          { key: "aadhaar", value: "2345 6789 0123" },
+        ],
+      },
+    });
+    const r = await readImage({
+      apiKey: "k",
+      model: "gemini-3.6-flash",
+      image: Buffer.alloc(100),
+      mimeType: "image/jpeg",
+      forms: [
+        {
+          table_id: "t1",
+          name: "Training",
+          fields: [
+            { key: "name", label: "Name", type: "text" },
+            { key: "account_no", label: "Account number", type: "text" },
+            { key: "aadhaar", label: "Aadhaar", type: "text" },
+          ],
+        },
+      ],
+    });
+    expect(r.registration).toEqual({
+      tableId: "t1",
+      people: 1,
+      values: { name: "Asha", account_no: "001234567890123", aadhaar: "XXXX XXXX 0123" },
+    });
+    expect(r.text).not.toContain("001234567890123");
+    expect(r.confirmQuestion).not.toContain("001234567890123");
+  });
+
   it("refuses a file that is not an image before any model call", async () => {
     await expect(
       readImage({ apiKey: "k", model: "gemini-3.6-flash", image: Buffer.alloc(10), mimeType: "application/pdf" }),

@@ -1135,6 +1135,30 @@ async function processMessage(
       }
     }
 
+    // ── A registration from their photo is under way ───────────────
+    //
+    // lib/ai/registration-draft.ts. A tapped month, option or Yes / No,
+    // or a typed detail it asked for. Anything else — a question — is
+    // not taken, and goes on to be answered as usual while it waits. A
+    // photo or file is never an answer here — its caption ("this is the
+    // back side") is not the detail that was asked for; a second photo is
+    // read and added to the registration on the image path instead.
+    if (message.type !== 'image' && message.type !== 'document') {
+      const { handleRegistrationReply } = await import('@/lib/ai/registration-draft')
+      const handled = await handleRegistrationReply({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        text,
+        interactiveReplyId,
+      }).catch((err) => {
+        console.error('[registration-draft] reply failed:', err instanceof Error ? err.message : err)
+        return false
+      })
+      if (handled) return
+    }
+
     // ── They answered "is this what your image shows?" ─────────────
     //
     // lib/ai/image-confirm.ts. Same footing as the handover question: a
@@ -1279,6 +1303,11 @@ async function processMessage(
                 image: {
                   confirmed: false,
                   languageSample: image.languageSample,
+                  // Somebody's details for one of the account's forms:
+                  // registered from them, with one summary to confirm.
+                  registration: image.reading.registration
+                    ? { extract: image.reading.registration, sourceMessageId: image.messageId }
+                    : undefined,
                   ask:
                     image.confirm || image.reading.unreadable
                       ? {

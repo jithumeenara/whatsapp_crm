@@ -20,9 +20,11 @@ import {
   isReadableImage,
   MAX_FILE_BYTES,
   readImage,
+  type FormHint,
   type ImageReading,
   type MediaSource,
 } from '@/lib/ai/image-reading'
+import { listRegistrationForms } from '@/lib/ai/registration'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { emitToAccount } from '@/lib/socket'
 
@@ -69,6 +71,18 @@ export async function readInboundImage(args: {
     }
 
     const languageSample = await customerWords(args.conversationId, args.caption)
+    // The forms the assistant may register people with, so details in the
+    // image can be mapped onto one in this same call (registration-draft.ts).
+    const forms: FormHint[] = (await listRegistrationForms(args.accountId).catch(() => [])).map((f) => ({
+      table_id: f.table_id,
+      name: f.name,
+      fields: [...f.required_fields, ...f.optional_fields].map((x) => ({
+        key: x.key,
+        label: x.label,
+        type: x.type,
+        ...(x.options?.length ? { options: x.options } : {}),
+      })),
+    }))
     const reading = await readImage({
       apiKey: decrypt(gemini.api_key),
       model,
@@ -78,6 +92,7 @@ export async function readInboundImage(args: {
       filename: args.filename,
       caption: args.caption,
       languageSample,
+      forms,
     })
     void recordAiUsage({
       accountId: args.accountId,

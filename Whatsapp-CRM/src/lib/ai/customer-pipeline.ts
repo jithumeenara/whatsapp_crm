@@ -629,6 +629,9 @@ export async function runCustomerTurn(args: {
   formSubmission?: boolean
   /** What was read from a customer's image, not words they typed. */
   image?: ImageTurn
+  /** One extra instruction for this turn only — e.g. that a registration
+   *  from a photo is under way. Same slot a flow node's step uses. */
+  stepInstruction?: string | null
   /** With no contact, still offer the tools that only read business
    *  data — the accuracy tests, so they measure the path customers get
    *  (table search included) rather than a toolless one. */
@@ -802,6 +805,7 @@ export async function runCustomerTurn(args: {
     awaitingHuman: args.awaitingHuman,
     formSubmission: args.formSubmission,
     image: args.image,
+    stepInstruction: args.stepInstruction ?? null,
   })
 
   // A provider refusal is a handoff, not an exception for the caller to
