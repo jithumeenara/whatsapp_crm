@@ -114,6 +114,9 @@ export type AutoReplyOutcome =
   | 'skipped_channel'
   | 'skipped_turn_limit'
   | 'skipped_agent_active'
+  /** The customer is answering a person on the team; the assistant waits
+   *  an hour for them first (staff-wait-sweep.ts answers after that). */
+  | 'skipped_staff_waiting'
   | 'skipped_no_message'
   /** Read an image and asked the customer whether the reading is right
    *  (image-confirm.ts); the assistant answers once they say yes. */
@@ -129,6 +132,9 @@ export interface AutoReplyArgs {
   channel: string
   /** True when the text is a voice note's transcript. */
   wasVoice?: boolean
+  /** Set by staff-wait-sweep.ts: the hour for a team member to answer has
+   *  passed with no reply, so the assistant answers now. */
+  afterStaffWait?: boolean
   /** The inbound message's wamid, used to mark it read and show the
    *  typing bubble while the model works. Optional: every other channel
    *  has no such thing, and a missing one costs only the indicator. */
@@ -285,6 +291,20 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
   // than answered.
   if (aiConfig.ai_auto_reply_pause_on_agent && conversation.assigned_agent_id) {
     return 'skipped_agent_active'
+  }
+
+  // The customer is answering a person, not the assistant.
+  //
+  // An admin asked "may I know your designation?" in a thread nobody was
+  // assigned to; the customer answered an hour later, and the assistant
+  // jumped in, took the answer for a registration step and asked which
+  // month. When the last thing said to the customer came from someone on
+  // the team, that person gets an hour to reply. If nobody has by then,
+  // staff-wait-sweep.ts brings the assistant in, with the team member's
+  // messages marked in its history so it continues their conversation.
+  if (aiConfig.ai_auto_reply_pause_on_agent && !args.afterStaffWait) {
+    const waiting = await staffAwaitingReply(args.conversationId)
+    if (waiting) return 'skipped_staff_waiting'
   }
 
   // The window this limit actually applies to.
@@ -821,6 +841,29 @@ const HANDOFF_REASONS: Record<string, HandoffReason> = {
   model_requested: 'assistant_requested',
   safety: 'escalation_topic',
   generation_failed: 'low_confidence',
+}
+
+/** How long a team member gets to answer before the assistant does. */
+export const STAFF_WAIT_MS = 60 * 60 * 1000
+
+/** Older than this, a team member's message is not a live exchange —
+ *  WhatsApp's own 24-hour session. */
+const STAFF_EXCHANGE_MS = 24 * 60 * 60 * 1000
+
+/**
+ * The team member's message the customer is answering, if any: the last
+ * thing said to the customer (system notes aside) was written by a person,
+ * within the last day.
+ */
+export async function staffAwaitingReply(conversationId: string, now: Date = new Date()): Promise<{ at: Date } | null> {
+  const lastOutgoing = await prisma.message.findFirst({
+    where: { conversation_id: conversationId, sender_type: { notIn: ['customer', 'system'] } },
+    orderBy: { created_at: 'desc' },
+    select: { sender_type: true, created_at: true },
+  })
+  if (!lastOutgoing || lastOutgoing.sender_type !== 'agent') return null
+  if (now.getTime() - lastOutgoing.created_at.getTime() > STAFF_EXCHANGE_MS) return null
+  return { at: lastOutgoing.created_at }
 }
 
 async function loadHistory(conversationId: string, depth: number) {

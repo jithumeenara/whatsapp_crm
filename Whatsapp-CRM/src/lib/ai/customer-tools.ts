@@ -68,6 +68,10 @@ export interface CustomerToolContext {
    *  never anything that writes: for the accuracy tests, which ask
    *  questions on nobody's behalf. contactId is empty then. */
   readOnly?: boolean
+  /** Everything that reads, nothing that changes anything: for a draft an
+   *  agent is only previewing. The customer's own records stay readable —
+   *  a draft about their registration should know it exists. */
+  noSideEffects?: boolean
 }
 
 type ToolArgs = Record<string, unknown>
@@ -694,12 +698,25 @@ const NEEDS_CONVERSATION = new Set(['start_chatbot'])
  *  customer, and write nothing: all a read-only context is given. */
 const READ_ONLY_TOOLS = new Set(['search_records', 'product_catalog', 'registration_forms'])
 
+/** Tools that change something: start a flow, write a call-back, record a
+ *  handover, save or edit a registration. A draft must not do any of them
+ *  — pressing "AI" in the composer saved a registration nobody sent, and
+ *  the next draft called it a duplicate. */
+const SIDE_EFFECT_TOOLS = new Set([
+  'start_chatbot',
+  'schedule_callback',
+  'contact_handed_over',
+  'submit_registration',
+  'add_registration_details',
+])
+
 export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDeclaration[] {
   const live = Boolean(ctx.conversationId && ctx.userId)
   return Object.entries(ALL_TOOLS)
     .filter(([name]) => live || !NEEDS_CONVERSATION.has(name))
     .filter(([name]) => name !== 'search_records' || ctx.canSearchTables)
     .filter(([name]) => !ctx.readOnly || READ_ONLY_TOOLS.has(name))
+    .filter(([name]) => !ctx.noSideEffects || !SIDE_EFFECT_TOOLS.has(name))
     .map(([, t]) => t.declaration)
 }
 

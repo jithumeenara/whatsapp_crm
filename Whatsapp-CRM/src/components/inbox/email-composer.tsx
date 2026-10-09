@@ -312,21 +312,34 @@ export function EmailComposer({
   }
 
   // ── Tools ───────────────────────────────────────────────────────────
+  // Something typed → "Improve" rewrites it (same language, same facts,
+  // markup kept); an empty body → a fresh draft. The agent's own text is
+  // one click away in the toast.
   async function draftWithAi() {
     if (drafting) return;
+    const original = text;
+    const typed = original.trim();
     setDrafting(true);
     try {
       const res = await fetch("/api/messages/ai-suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation_id: conversationId }),
+        body: JSON.stringify({ conversation_id: conversationId, ...(typed ? { text: original } : {}) }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Could not draft a reply");
+      if (!res.ok) throw new Error(data.error || (typed ? "Could not improve the email" : "Could not draft a reply"));
       setBody(String(data.draft ?? ""));
       editorRef.current?.focus();
+      const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
+      if (typed) {
+        toast.success("Improved. Check it before sending.", {
+          action: { label: "↶ Original", onClick: () => setBody(original) },
+          duration: 10000,
+        });
+      }
+      for (const w of warnings) toast.warning(w);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not draft a reply");
+      toast.error(err instanceof Error ? err.message : typed ? "Could not improve the email" : "Could not draft a reply");
     } finally {
       setDrafting(false);
     }
@@ -688,7 +701,7 @@ export function EmailComposer({
             <ToolTile label="Schedule" title="Send later" onClick={() => setMenu(menu === "schedule" ? null : "schedule")} active={menu === "schedule"}>
               <CalendarClock className="h-4 w-4 shrink-0" />
             </ToolTile>
-            <ToolTile label="AI draft" title="Draft a reply with AI" onClick={() => void draftWithAi()} disabled={drafting}>
+            <ToolTile label={text.trim() ? "Improve" : "AI draft"} title={text.trim() ? "Rewrite what you typed to read professional, in the same language" : "Draft a reply with AI"} onClick={() => void draftWithAi()} disabled={drafting}>
               {drafting ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Sparkles className="h-4 w-4 shrink-0 text-violet-500" />}
             </ToolTile>
             <ToolTile label="Translate" title="Translate what you wrote" onClick={() => setMenu(menu === "translate" ? null : "translate")}

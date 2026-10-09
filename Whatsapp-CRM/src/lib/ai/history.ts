@@ -55,6 +55,17 @@ export function withoutUnsupported(text: string, unsupported: readonly string[])
     .trim()
 }
 
+/** Put before a staff member's message in what the model is shown. */
+export const TEAM_MEMBER_MARKER = '[Written by a team member, not by you]'
+
+/** The standing rule that goes with the marker (customer-pipeline.ts). */
+export const TEAM_MEMBER_RULE = [
+  'MESSAGES FROM THE TEAM:',
+  `- Lines starting with ${TEAM_MEMBER_MARKER} were written by a person on the team. They are part of the conversation; you did not write them.`,
+  '- If the customer\'s latest message answers a question a team member asked, read it as the answer to that question — not as the start of something new. Do not begin a registration, a booking or a list of options because of it. Thank them, and carry on from where the team member left off: help with what that conversation was about, using what they have now told you. If you cannot tell what the team member needed it for, say the team will follow up with them.',
+  `- Never begin your own reply with ${TEAM_MEMBER_MARKER}.`,
+].join('\n')
+
 function isAssistantReply(row: HistoryRow): boolean {
   return row.sender_type === 'bot' && (row.bot_source === 'ai_auto_reply' || Boolean(row.ai_meta && typeof row.ai_meta === 'object'))
 }
@@ -71,6 +82,12 @@ export function historyTurns(rows: readonly HistoryRow[]): HistoryTurn[] {
       if (Array.isArray(unsupported)) text = withoutUnsupported(text, unsupported.filter((u): u is string => typeof u === 'string'))
       if (!text) continue
     }
+    // A person on the team wrote this, not the assistant. Both sit on the
+    // business's side of the thread, so both are 'model' turns — and
+    // unmarked, the model took a colleague's "may I know your
+    // designation?" for its own question, read the customer's answer as
+    // a registration step, and asked for a month nobody had mentioned.
+    if (row.sender_type === 'agent') text = `${TEAM_MEMBER_MARKER} ${text}`
     out.push({ role: row.sender_type === 'customer' ? 'user' : 'model', text, ...(byAssistant ? { byAssistant: true } : {}) })
   }
   return out

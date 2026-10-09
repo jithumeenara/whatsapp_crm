@@ -260,9 +260,12 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
             </span>
           )}
         </div>
-        <h3 className="mt-4 text-[16px] font-bold text-slate-900 text-center">{displayName}</h3>
+        {/* A long name with no spaces (an Exchange address, a phone-like
+            handle) cannot wrap on its own and ran out of the panel. It may
+            break anywhere, stays within two lines, and shows in full on hover. */}
+        <h3 title={displayName} className="mt-4 w-full line-clamp-2 px-2 text-center text-[16px] font-bold text-slate-900 [overflow-wrap:anywhere]">{displayName}</h3>
         {contact.company && (
-          <p className="mt-0.5 text-[12px] text-slate-500">{contact.company}</p>
+          <p title={contact.company} className="mt-0.5 w-full truncate px-2 text-center text-[12px] text-slate-500">{contact.company}</p>
         )}
 
         {/* Quick actions */}
@@ -313,7 +316,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
                         : <Copy className="h-3 w-3 shrink-0 text-slate-400" />}
                     </button>
                   ) : (
-                    <span className="text-[13px] font-medium text-slate-800 truncate">{row.value}</span>
+                    <span title={row.value} className="min-w-0 truncate text-[13px] font-medium text-slate-800">{row.value}</span>
                   )}
                 </div>
               ))}

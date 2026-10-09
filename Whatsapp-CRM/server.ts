@@ -9,6 +9,7 @@ import { sweepScheduledMessages } from "./src/lib/scheduled-messages/sweep";
 import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
+import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { sweepPhonePePayments } from "./src/lib/payments/phonepe-reconcile";
@@ -187,6 +188,15 @@ app.prepare().then(() => {
       console.error("[idle-close] sweep interval failed:", err);
     });
   }, 5 * 60_000);
+
+  // A customer answered a team member who has not replied for an hour:
+  // the assistant steps in (src/lib/ai/staff-wait-sweep.ts). Every
+  // minute, so the wait is an hour, not an hour and a quarter.
+  setInterval(() => {
+    sweepStaffWaits().catch((err) => {
+      console.error("[staff-wait] sweep interval failed:", err);
+    });
+  }, 60_000);
 
   // Embedding whatever the sweeps above left marked "Not trained".
   //

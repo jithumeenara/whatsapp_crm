@@ -4,7 +4,9 @@ import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
 import { runCustomerTurn, type CustomerAiConfig } from '@/lib/ai/customer-pipeline'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { getProviderKeys } from '@/lib/ai/providers/registry'
+import { getProviderKeys, generateAiReplyWithFallback } from '@/lib/ai/providers/registry'
+import { polishSystemPrompt, polishUserMessage, cleanPolished, missingFacts } from '@/lib/ai/polish-message'
+import { TEAM_MEMBER_MARKER } from '@/lib/ai/history'
 
 /**
  * Drafts a reply for an agent to look at before sending.
@@ -56,6 +58,9 @@ export async function POST(req: Request) {
     conversation_id?: string
     /** Optional steer: "shorter", "ask for their number", "apologise". */
     instruction?: string
+    /** What the agent has typed. Present → it is rewritten ("Improve"),
+     *  not replaced by a fresh draft. */
+    text?: string
   } | null
 
   const conversationId = body?.conversation_id
@@ -92,6 +97,55 @@ export async function POST(req: Request) {
     .reverse()
     .filter((m): m is typeof m & { content_text: string } => Boolean(m.content_text))
 
+  // ── Improve: the agent typed something; make it professional ──────
+  //
+  // The agent has already decided what to say, so this is a rewrite of
+  // their words — same language and script, same facts — not a new
+  // reply. One plain model call: no knowledge search, no tools, nothing
+  // saved. A blank box still gets a fresh draft below.
+  const typed = body?.text?.trim()
+  if (typed) {
+    const channel = conversation.channel === 'email' ? 'email' : 'whatsapp'
+    const thread = ordered
+      .slice(-6)
+      .map((m) => `${m.sender_type === 'customer' ? 'Customer' : 'Us'}: ${m.content_text.slice(0, 400)}`)
+      .join('\n')
+    const startedPolish = Date.now()
+    try {
+      const result = await generateAiReplyWithFallback(
+        // Low temperature: a rewrite should be faithful, not inventive.
+        { ...aiConfig, temperature: Math.min(aiConfig.temperature, 0.3) },
+        polishSystemPrompt(channel),
+        polishUserMessage(typed, thread),
+      )
+      void recordAiUsage({
+        accountId,
+        provider: result.usedProvider,
+        model: result.usedModel ?? 'unknown',
+        feature: 'message_polish',
+        tokens: result.usage,
+        latencyMs: Date.now() - startedPolish,
+      })
+      const improved = cleanPolished(result.reply ?? '')
+      if (!improved) {
+        return NextResponse.json({ error: 'The assistant could not improve this message.' }, { status: 400 })
+      }
+      const missing = missingFacts(typed, improved)
+      return NextResponse.json({
+        draft: improved,
+        mode: 'improved',
+        warnings: missing.length
+          ? [`Check before sending — the rewrite does not contain: ${missing.slice(0, 5).join(', ')}`]
+          : [],
+      })
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'Could not improve the message.' },
+        { status: 400 },
+      )
+    }
+  }
+
   // The last thing the customer said is what a reply answers. Falling
   // back to the newest message of any kind would have the assistant
   // replying to the agent's own last line.
@@ -103,9 +157,11 @@ export async function POST(req: Request) {
     )
   }
 
+  // A colleague's messages marked as theirs (history.ts), so a draft
+  // after "may I know your designation?" reads the answer as an answer.
   const conversationHistory = ordered.map((m) => ({
     role: m.sender_type === 'customer' ? ('user' as const) : ('model' as const),
-    text: m.content_text,
+    text: m.sender_type === 'agent' ? `${TEAM_MEMBER_MARKER} ${m.content_text}` : m.content_text,
   }))
 
   const startedAt = Date.now()
@@ -129,6 +185,9 @@ export async function POST(req: Request) {
       customerMessage: lastCustomer.content_text,
       conversationHistory,
       currentChannel: conversation.channel ?? 'whatsapp',
+      // A draft is only a preview: it may look things up, but it must not
+      // save a registration, write a call-back or start a flow.
+      noSideEffects: true,
     })
 
     void recordAiUsage({

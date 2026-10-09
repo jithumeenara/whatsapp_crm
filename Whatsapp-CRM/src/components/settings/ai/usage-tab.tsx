@@ -76,6 +76,7 @@ const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }
   test: { label: 'Test AI', Icon: Send },
   embedding: { label: 'Training', Icon: BookOpen },
   translation: { label: 'Translation', Icon: Languages },
+  message_polish: { label: 'Improve message', Icon: Languages },
   validation: { label: 'Key check', Icon: ShieldCheck },
   eval_grading: { label: 'Evaluation', Icon: ShieldCheck },
   tts: { label: 'Voice — Gemini', Icon: Volume2 },

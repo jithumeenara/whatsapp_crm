@@ -320,6 +320,7 @@ async function resolveLabelTemplate(
   formData: Record<string, unknown>,
   triggerName: string | null,
   triggerValue: string | null,
+  chainFor?: (tableId: string, parentName: string, formData: Record<string, unknown>, triggerName: string | null, triggerValue: string | null) => ChainFilter[],
 ): Promise<{ text: string; tokenValues: Record<string, string> }> {
   let result = template
   const tokenValues: Record<string, string> = {}
@@ -331,7 +332,7 @@ async function resolveLabelTemplate(
         const ownTriggerValue = (triggerName !== null && s.filter_form_name === triggerName)
           ? (triggerValue ?? '')
           : slugify(String(formData[s.filter_form_name!]))
-        value = await fetchLabelValue(s.table_id, s.field_key, s.filter_by_field, ownTriggerValue)
+        value = await fetchLabelValue(s.table_id, s.field_key, s.filter_by_field, ownTriggerValue, chainFor?.(s.table_id, s.filter_form_name!, formData, triggerName, triggerValue))
       }
       // else: parent not yet selected — token resolves to '' below.
     } else {
@@ -373,12 +374,92 @@ function hasFormValue(formData: Record<string, unknown>, key: string): boolean {
   return v != null && String(v).trim() !== '' && v !== UNSELECTED_OPTION_ID
 }
 
+/** One more condition a record must meet: the filters of the parent's own
+ *  parents. A Programme dropdown filtered by Month makes a label under it
+ *  filtered by Month too; without that, the first record carrying the
+ *  programme's name won, whichever month it belonged to. */
+export interface ChainFilter {
+  field: string
+  value: string
+}
+
+/** A filter field as configured (key or label, any spelling) → its key. */
+async function resolveFilterField(tableId: string, filterField: string): Promise<string> {
+  try {
+    const dbFields = await prisma.dataField.findMany({
+      where: { table_id: tableId },
+      select: { field_key: true, label: true },
+    })
+    if (dbFields.some((f) => f.field_key === filterField)) return filterField
+    const norm = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const byLabel = dbFields.find((f) => norm(f.label) === norm(filterField) || norm(f.field_key) === norm(filterField))
+    return byLabel ? byLabel.field_key : filterField
+  } catch {
+    return filterField
+  }
+}
+
+async function resolveChain(tableId: string, chain: ChainFilter[] | undefined): Promise<ChainFilter[]> {
+  if (!chain || chain.length === 0) return []
+  return Promise.all(chain.map(async (c) => ({ field: await resolveFilterField(tableId, c.field), value: c.value })))
+}
+
+function matchesChain(dataObj: Record<string, unknown>, chain: ChainFilter[]): boolean {
+  for (const c of chain) {
+    const raw = dataObj[c.field]
+    if (raw == null) return false
+    const vals = (Array.isArray(raw) ? raw : [raw]).map((v) => slugify(String(v).trim()))
+    if (!vals.includes(c.value)) return false
+  }
+  return true
+}
+
+/**
+ * The filters above a source's own parent, as far up as they have values.
+ *
+ * A label "Coordinator" filtered by the Programme dropdown, which is itself
+ * filtered by Month, gets [{ field: <month field>, value: <picked month> }],
+ * and so on up. Only parents reading the same table count — a filter field
+ * belongs to its own table. Stops at the first ancestor with no value yet,
+ * and at a loop.
+ */
+export function buildFilterChain(
+  allComps: Array<Record<string, unknown>>,
+  tableId: string,
+  parentName: string,
+  formData: Record<string, unknown>,
+  triggerName: string | null,
+  triggerValue: string | null,
+): ChainFilter[] {
+  const chain: ChainFilter[] = []
+  const seen = new Set<string>([parentName])
+  let current = allComps.find((c) => c.name === parentName)
+  while (current) {
+    const byField = current._filter_by_field as string | undefined
+    const grand = current._filter_form_name as string | undefined
+    if (!byField || !grand || current._source_table_id !== tableId || seen.has(grand)) break
+    const value =
+      grand === triggerName && triggerValue
+        ? triggerValue
+        : hasFormValue(formData, grand)
+          ? slugify(String(formData[grand]))
+          : ''
+    if (!value) break
+    chain.push({ field: byField, value })
+    seen.add(grand)
+    current = allComps.find((c) => c.name === grand)
+  }
+  return chain
+}
+
 async function fetchOptions(
   tableId: string,
   fieldKey: string,
   filterField?: string,
   filterValue?: string,
+  chain?: ChainFilter[],
 ): Promise<Array<{ id: string; title: string; enabled?: boolean }>> {
+  const resolvedChain = await resolveChain(tableId, chain)
   let resolvedFilterField = filterField
   if (filterField) {
     try {
@@ -435,6 +516,7 @@ async function fetchOptions(
         .map((v) => slugify(String(v).trim()))
       if (!filterVals.includes(filterValue)) continue
     }
+    if (!matchesChain(dataObj, resolvedChain)) continue
 
     const raw = dataObj[fieldKey]
     if (raw == null) continue
@@ -455,7 +537,9 @@ async function fetchOptions(
 /** Fetches a single text value from a DataStore table for TextLabel components. */
 async function fetchLabelValue(
   tableId: string, fieldKey: string, filterField?: string, filterValue?: string,
+  chain?: ChainFilter[],
 ): Promise<string> {
+  const resolvedChain = await resolveChain(tableId, chain)
   let resolvedFilterField = filterField
   if (filterField) {
     try {
@@ -498,6 +582,7 @@ async function fetchLabelValue(
         .map((v) => slugify(String(v).trim()))
       if (!filterVals.includes(filterValue)) continue
     }
+    if (!matchesChain(dataObj, resolvedChain)) continue
 
     const raw = dataObj[fieldKey]
     if (raw != null) {
@@ -722,6 +807,11 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     return out
   }
 
+  // Every component on every screen, for walking a filter's parents.
+  const allFlowComps = screens.flatMap((s) => flatComps((s as { components?: Array<Record<string, unknown>> }).components ?? []))
+  const chainFor = (tableId: string, parentName: string, formData: Record<string, unknown>, triggerName: string | null, triggerValue: string | null) =>
+    buildFilterChain(allFlowComps, tableId, parentName, formData, triggerName, triggerValue)
+
   // INIT — the Flow has just been opened with flow_action "data_exchange",
   // and WhatsApp is asking which screen to show and what to fill it with.
   //
@@ -893,9 +983,17 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
       return out
     }
 
-    const filterTrigger = submittedComps.find(
-      (c) => c._filter_trigger === true && c.name && (c.name as string) in formData,
-    )
+    // Flows published since the filter-chain fix name the field that was
+    // just picked (__trigger), because the payload now also carries the
+    // screen's other filter fields. Older ones carry only the trigger.
+    const namedTrigger = typeof formData.__trigger === 'string' ? formData.__trigger : null
+    const filterTrigger =
+      (namedTrigger
+        ? submittedComps.find((c) => c._filter_trigger === true && c.name === namedTrigger)
+        : undefined) ??
+      submittedComps.find(
+        (c) => c._filter_trigger === true && c.name && (c.name as string) in formData,
+      )
     const isFooterNavigation = !!formData.__target_screen
     // __filter_refresh is a marker we set on EVERY filter-trigger's own
     // on-select payload specifically so this request type is unambiguous —
@@ -925,7 +1023,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .flatMap((c) => flattenComponentSources(c))
           .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
             if (multi) {
-              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, triggerName, triggerValue)
+              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, triggerName, triggerValue, chainFor)
               freshData[varName] = text
               for (const [tokenId, val] of Object.entries(tokenValues)) {
                 freshData[makeMultiLabelVarName(multi.name, tokenId)] = val
@@ -944,7 +1042,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             if (isLabel) {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, ownTriggerValue)
+                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, ownTriggerValue, chainFor(tableId!, filterFormName!, formData, triggerName, triggerValue))
                 console.log('[data_exchange:filter]', varName, '→ label:', freshData[varName])
               } else if (isFiltered) {
                 freshData[varName] = ''
@@ -954,7 +1052,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             } else {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchOptions(tableId!, fieldKey!, filterByField, ownTriggerValue)
+                freshData[varName] = await fetchOptions(tableId!, fieldKey!, filterByField, ownTriggerValue, chainFor(tableId!, filterFormName!, formData, triggerName, triggerValue))
                 console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
               } else if (isFiltered) {
                 freshData[varName] = EMPTY_FILTERED_OPTIONS
@@ -1001,7 +1099,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .flatMap((c) => flattenComponentSources(c))
           .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
             if (multi) {
-              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, null, null)
+              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, null, null, chainFor)
               freshData[varName] = text
               for (const [tokenId, val] of Object.entries(tokenValues)) {
                 freshData[makeMultiLabelVarName(multi.name, tokenId)] = val
@@ -1019,7 +1117,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             if (isLabel) {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, triggerValue)
+                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, triggerValue, chainFor(tableId!, filterFormName!, formData, null, null))
                 console.log('[data_exchange:load] filtered label', varName, '=', freshData[varName])
               } else if (isFiltered) {
                 freshData[varName] = ''
@@ -1031,7 +1129,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             } else {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
-                const opts = await fetchOptions(tableId!, fieldKey!, filterByField, triggerValue)
+                const opts = await fetchOptions(tableId!, fieldKey!, filterByField, triggerValue, chainFor(tableId!, filterFormName!, formData, null, null))
                 freshData[varName] = opts
                 console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
               } else if (isFiltered) {

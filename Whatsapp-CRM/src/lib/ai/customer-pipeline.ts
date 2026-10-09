@@ -42,6 +42,7 @@ import { getProviderKeys } from './providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { GROUNDING_RULES, enforceGroundedList } from './list-grounding'
 import type { HistoryTurn } from './history'
+import { TEAM_MEMBER_RULE } from './history'
 
 /** The subset of AiConfig this module reads. Declared structurally so
  *  callers can pass a Prisma row or a per-node override of one. */
@@ -367,6 +368,8 @@ export async function buildCustomerSystemPrompt(args: {
   // registration is how one gets offered where none exists.
   if (toolInstruction) parts.push(toolInstruction)
 
+  parts.push(TEAM_MEMBER_RULE)
+
   parts.push(WHATSAPP_REPLY_STYLE)
 
   return {
@@ -636,6 +639,9 @@ export async function runCustomerTurn(args: {
    *  data — the accuracy tests, so they measure the path customers get
    *  (table search included) rather than a toolless one. */
   readOnlyTools?: boolean
+  /** A draft for an agent to read: tools that read stay, tools that
+   *  change anything (registrations, call-backs, flows) are not offered. */
+  noSideEffects?: boolean
 }): Promise<CustomerTurnResult> {
   const startedAt = Date.now()
   const history = args.conversationHistory ?? []
@@ -690,6 +696,7 @@ export async function runCustomerTurn(args: {
         ...(args.conversationId && args.userId
           ? { conversationId: args.conversationId, userId: args.userId }
           : {}),
+        ...(args.noSideEffects ? { noSideEffects: true } : {}),
       }
     : args.readOnlyTools
       ? // Nobody's conversation: business lookups only (customer-tools.ts).

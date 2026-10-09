@@ -591,11 +591,29 @@ function transformScreensForMeta(screens: InternalScreen[]): TransformResult {
       // __filter_refresh is a static marker so the webhook can distinguish this
       // on-select-action call from a footer data_exchange navigation.
       if (raw._filter_trigger === true && raw.name) {
+        // Every other filter trigger on this screen rides along too. Picking
+        // Programme used to send only Programme, so a label under it could
+        // not also be filtered by the Month that Programme itself was
+        // filtered by — and showed the first programme of that name, from
+        // whichever month came first.
+        const otherTriggers: Record<string, string> = {}
+        for (const other of screen.components) {
+          const o = other as Record<string, unknown>
+          const kids = o.type === 'Form' && Array.isArray(o.children) ? (o.children as Array<Record<string, unknown>>) : [o]
+          for (const k of kids) {
+            if (k._filter_trigger === true && typeof k.name === 'string' && k.name !== raw.name) {
+              otherTriggers[k.name] = `\${form.${k.name}}`
+            }
+          }
+        }
         raw['on-select-action'] = {
           name: 'data_exchange',
           payload: {
+            ...otherTriggers,
             [raw.name as string]: `\${form.${raw.name}}`,
             __filter_refresh: '1',
+            // Which of them was just picked — the others are only context.
+            __trigger: raw.name as string,
           },
         }
       }

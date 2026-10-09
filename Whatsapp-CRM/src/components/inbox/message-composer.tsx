@@ -115,6 +115,8 @@ export function MessageComposer({
   const [drafting, setDrafting] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
+  /** What the agent had typed before "Improve" — for the undo. */
+  const [beforeImprove, setBeforeImprove] = useState<string | null>(null);
   const translateRef = useRef<HTMLDivElement>(null);
   // The agent's own preferred language is no longer consulted: it used
   // to decide whether the translate button appeared at all, which hid it
@@ -167,27 +169,33 @@ export function MessageComposer({
 
   /** Drafts a reply from the thread. Nothing is sent — it lands in the
    *  box for the agent to approve, edit or throw away. */
+  // Something typed → "Improve" rewrites it, same language and facts.
+  // An empty box → a fresh draft from the thread. Either way the box only
+  // changes once the server has answered, and the agent's own words can
+  // be put back with one click.
   const handleDraftReply = useCallback(async () => {
     if (drafting || !conversationId) return;
+    const typed = text.trim();
     setDrafting(true);
     setDraftWarnings([]);
     try {
       const res = await fetch("/api/messages/ai-suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation_id: conversationId }),
+        body: JSON.stringify({ conversation_id: conversationId, ...(typed ? { text } : {}) }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not draft a reply");
+      if (!res.ok) throw new Error(data.error || (typed ? "Could not improve the message" : "Could not draft a reply"));
+      setBeforeImprove(typed ? text : null);
       setText(data.draft);
       setDraftWarnings(Array.isArray(data.warnings) ? data.warnings : []);
       textareaRef.current?.focus();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not draft a reply");
+      toast.error(err instanceof Error ? err.message : typed ? "Could not improve the message" : "Could not draft a reply");
     } finally {
       setDrafting(false);
     }
-  }, [conversationId, drafting]);
+  }, [conversationId, drafting, text]);
 
   // Click-away for the language menu. Registered only while it is open,
   // so the inbox is not carrying a document listener the whole time it
@@ -286,6 +294,7 @@ export function MessageComposer({
     try {
       onSend(trimmed, replyTo?.id);
       setText("");
+      setBeforeImprove(null);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
     } finally {
       setSending(false);
@@ -779,7 +788,11 @@ export function MessageComposer({
           )}
 
           <ComposerAction
-            label="Draft a reply from this conversation — you approve it before it sends"
+            label={
+              text.trim()
+                ? "Improve — rewrite what you typed to read professional, in the same language"
+                : "Draft a reply from this conversation — you approve it before it sends"
+            }
             onClick={() => void handleDraftReply()}
             disabled={drafting || readOnly || sessionExpired}
             tint="text-indigo-600"
@@ -903,6 +916,28 @@ export function MessageComposer({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {beforeImprove !== null && (
+        <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-indigo-50 px-2.5 py-1.5 text-[11px] text-indigo-700 ring-1 ring-indigo-500/15">
+          <Sparkles className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1">Improved. Check it before sending.</span>
+          <button
+            type="button"
+            onClick={() => { setText(beforeImprove); setBeforeImprove(null); setDraftWarnings([]); textareaRef.current?.focus(); }}
+            className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-indigo-100"
+          >
+            ↶ Original
+          </button>
+          <button
+            type="button"
+            onClick={() => setBeforeImprove(null)}
+            aria-label="Keep the improved text"
+            className="shrink-0 rounded p-0.5 hover:bg-indigo-100"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
 
