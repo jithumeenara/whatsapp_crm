@@ -206,7 +206,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                       </p>
                       <p className="mt-1 text-[13px] text-slate-700 line-clamp-3">{selected.preview}</p>
                       {selected.headerMediaUrl && (
-                        <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-indigo-600 ring-1 ring-indigo-200">
+                        <span className="mt-1.5 inline-flex max-w-full items-center gap-1 truncate rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-indigo-600 ring-1 ring-indigo-200">
                           📎 {selected.headerMediaUrl.split('/').pop()}
                         </span>
                       )}

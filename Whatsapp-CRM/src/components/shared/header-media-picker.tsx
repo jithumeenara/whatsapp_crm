@@ -105,7 +105,7 @@ export function HeaderMediaPicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-md">
+      <DialogContent className="gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-md [&>*]:min-w-0">
         <DialogHeader className={cn('bg-gradient-to-br px-6 pb-5 pt-6', required ? 'from-amber-50 to-white' : 'from-indigo-50 to-white')}>
           <div className={cn('mb-1 flex h-11 w-11 items-center justify-center rounded-2xl', required ? 'bg-amber-100' : 'bg-indigo-100')}>
             <MediaIcon className={cn('h-5 w-5', required ? 'text-amber-600' : 'text-indigo-600')} />
@@ -133,15 +133,15 @@ export function HeaderMediaPicker({
             <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
               {mediaType === 'image' ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={headerMediaUrl} alt="Header media" className="h-14 w-14 rounded-xl object-cover" />
+                <img src={headerMediaUrl} alt="Header media" className="h-14 w-14 shrink-0 rounded-xl object-cover" />
               ) : (
-                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-indigo-50">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
                   <MediaIcon className="h-6 w-6 text-indigo-500" />
                 </div>
               )}
-              <p className="flex-1 truncate text-[12.5px] text-slate-600">{headerMediaUrl.split('/').pop()}</p>
+              <p className="min-w-0 flex-1 truncate text-[12.5px] text-slate-600" title={headerMediaUrl.split('/').pop()}>{headerMediaUrl.split('/').pop()}</p>
               <button type="button" onClick={() => onHeaderMediaChange('')}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600">
                 <X className="h-4 w-4" />
               </button>
             </div>

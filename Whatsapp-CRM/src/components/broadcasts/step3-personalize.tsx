@@ -730,7 +730,7 @@ export function Step3Personalize({
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-100">
                       <FileText className="h-4.5 w-4.5 text-rose-500" />
                     </div>
-                    <p className="truncate text-[12px] text-[#111b21]">
+                    <p className="min-w-0 truncate text-[12px] text-[#111b21]">
                       {(headerMediaUrl || template.header_media_url)?.split('/').pop() ?? 'Document'}
                     </p>
                   </div>
