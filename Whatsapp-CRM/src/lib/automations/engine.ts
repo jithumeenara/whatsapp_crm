@@ -17,6 +17,7 @@ import type {
 } from '@/types'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { minutesNowIn } from '@/lib/agents/working-hours'
 import { createLeadFromAutomation } from '@/lib/leads/create-from-automation'
 import { engineSendText, engineSendTemplate, engineSendCatalogItem } from './meta-send'
 
@@ -490,8 +491,13 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
     case 'time_of_day': {
       const [from, to] = (cfg.operand ?? '').split('-')
       if (!from || !to) return false
-      const now = new Date()
-      const mins = now.getHours() * 60 + now.getMinutes()
+      // The business's own clock, not the server's: on a machine set to
+      // UTC, 09:00-18:00 ran from half two in the afternoon IST.
+      const profile = await prisma.companyProfile.findFirst({
+        where: { account_id: args.automation.account_id },
+        select: { timezone: true },
+      })
+      const mins = minutesNowIn(profile?.timezone)
       const parse = (s: string) => { const [h, m] = s.split(':').map(Number); return (h || 0) * 60 + (m || 0) }
       const f = parse(from), t = parse(to)
       return f <= t ? mins >= f && mins < t : mins >= f || mins < t

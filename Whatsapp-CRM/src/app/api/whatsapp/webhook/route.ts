@@ -652,6 +652,19 @@ async function handleReaction(
   }
 }
 
+/** Meta ids of inbound messages seen in the last few minutes, oldest
+ *  first. Bounded, so it can never grow with traffic. */
+const recentInboundIds = new Set<string>()
+const RECENT_INBOUND_MAX = 2000
+
+function rememberInboundId(id: string) {
+  recentInboundIds.add(id)
+  if (recentInboundIds.size > RECENT_INBOUND_MAX) {
+    const oldest = recentInboundIds.values().next().value
+    if (oldest !== undefined) recentInboundIds.delete(oldest)
+  }
+}
+
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
@@ -690,6 +703,24 @@ async function processMessage(
   if (message.type === 'reaction') {
     await handleReaction(message, conversation.id, contactRecord.id)
     return
+  }
+
+  // The same message delivered twice.
+  //
+  // Meta delivers webhooks at least once, and retries any it thinks we
+  // did not take in time. Each copy was stored as a new message and
+  // handed to flows and the assistant again: two rows in the Inbox, two
+  // replies to the customer, two charges for the model. Checked before
+  // anything is downloaded or answered. The in-process set covers two
+  // copies arriving together, before either row exists.
+  if (message.id) {
+    if (recentInboundIds.has(message.id)) return
+    rememberInboundId(message.id)
+    const already = await prisma.message.findFirst({
+      where: { conversation_id: conversation.id, message_id: message.id },
+      select: { id: true },
+    })
+    if (already) return
   }
 
   // Parse message content based on type

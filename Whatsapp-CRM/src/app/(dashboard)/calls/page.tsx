@@ -13,7 +13,7 @@
  * measurements and are never shown in the same column.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   PhoneIncoming,
@@ -141,18 +141,23 @@ export default function CallsPage() {
     [openCallId, transcripts],
   );
 
+  // Only the newest load may write to the screen — an older search that
+  // answers last must not replace the results for the newer one.
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({ filter, limit: "50" });
       if (query.trim()) params.set("q", query.trim());
       const res = await fetch(`/api/calls?${params}`);
-      if (!res.ok) return;
-      setData(await res.json());
+      if (!res.ok || seq !== loadSeq.current) return;
+      const body = await res.json();
+      if (seq === loadSeq.current) setData(body);
     } catch {
       /* the page renders empty rather than breaking */
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [filter, query]);
 

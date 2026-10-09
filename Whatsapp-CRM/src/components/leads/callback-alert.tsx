@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PhoneCall, X, ChevronRight, Clock } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
+import { everyWhileVisible } from '@/lib/visible-interval'
 
 /**
  * "You said you would ring these people back, and that time has passed."
@@ -97,11 +98,12 @@ export function CallbackAlert() {
   useEffect(() => {
     if (!userId) return
     void load()
-    const id = setInterval(() => {
+    // Rests while the tab is hidden: the card is only read on screen,
+    // and it reloads the moment the tab is shown again.
+    return everyWhileVisible(() => {
       void load()
       setNow(Date.now())
     }, POLL_MS)
-    return () => clearInterval(id)
   }, [userId, load])
 
   function open(cb: DueCallback) {

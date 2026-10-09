@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 const META_BLUE = '#0866FF';
 const META_BLUE_SOFT = '#EAF2FF';
@@ -198,12 +199,12 @@ export function CatalogTab() {
   async function handleDisconnect() {
     setDisconnecting(true);
     try {
-      await fetch('/api/catalog/config', { method: 'DELETE' });
+      await apiFetch('/api/catalog/config', { method: 'DELETE' });
       toast.success('Catalog disconnected.');
       setConfirmOpen(false);
       await fetchConfig();
-    } catch {
-      toast.error('Failed to disconnect.');
+    } catch (err) {
+      toast.error(errorText(err, 'Failed to disconnect.'));
     } finally {
       setDisconnecting(false);
     }

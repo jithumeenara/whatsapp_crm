@@ -9,6 +9,7 @@ import {
   ShoppingCart, CreditCard, MessageSquare, Star, Heart,
   Package, Cog, Globe, IndianRupee,
 } from "lucide-react"
+import { apiFetch } from "@/lib/api-fetch"
 type RazorpayConstructor = new (o: Record<string, unknown>) => { open(): void; on(e: string, h: (r: unknown) => void): void }
 function getRazorpay() { return (window as unknown as { Razorpay: RazorpayConstructor }).Razorpay }
 
@@ -205,7 +206,7 @@ export default function IntegrationsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("Delete this integration? Synced data in Data Store will remain.")) return
-    await fetch(`/api/integrations/${id}`, { method: "DELETE" })
+    await apiFetch(`/api/integrations/${id}`, { method: "DELETE" })
     toast.success("Integration deleted")
     setIntegrations((p) => p.filter((i) => i.id !== id))
   }
@@ -273,7 +274,7 @@ export default function IntegrationsPage() {
               setLastPayment((p) => ({ ...p, [intgId]: { payment_id: r.razorpay_payment_id, order_id: r.razorpay_order_id } }))
               setPayStep("verifying")
               // Save payment details to Data Store
-              await fetch("/api/razorpay/save-payment", {
+              await apiFetch("/api/razorpay/save-payment", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

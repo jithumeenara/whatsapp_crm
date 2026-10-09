@@ -43,6 +43,7 @@ import { SendOtpDialog } from "./send-otp-dialog";
 import { AssistantPausedNotice } from "./assistant-paused-notice";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
+import { everyWhileVisible } from "@/lib/visible-interval";
 
 interface ReplyDraft {
   id: string;
@@ -442,10 +443,11 @@ export function MessageThread({
       }
     };
 
-    const timer = setInterval(poll, POLL_MS);
+    // Rests while the tab is hidden; catches up when it is shown.
+    const stop = everyWhileVisible(() => void poll(), POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stop();
     };
   }, [conversationId]);
 

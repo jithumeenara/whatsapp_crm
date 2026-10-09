@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Workflow, Plus, Pencil, Trash2, Play, Pause, Eye, RefreshCw, CheckCircle2, AlertTriangle, Loader2, Clock } from "lucide-react"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
+import { apiFetch } from "@/lib/api-fetch"
 
 interface Flow { id: string; name: string; is_active: boolean; trigger_type: string; execution_count: number; created_at: string; last_executed_at?: string | null }
 
@@ -61,7 +62,7 @@ export default function FlowsV2() {
 
   async function toggle(id: string, active: boolean) {
     try {
-      await fetch(`/api/flows/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: active }) })
+      await apiFetch(`/api/flows/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: active }) })
       setFlows((prev) => prev.map((f) => f.id === id ? { ...f, is_active: active } : f))
       toast.success(active ? "Flow activated" : "Flow paused")
     } catch { toast.error("Failed") }
@@ -69,7 +70,7 @@ export default function FlowsV2() {
 
   async function del(id: string) {
     try {
-      await fetch(`/api/flows/${id}`, { method: "DELETE" })
+      await apiFetch(`/api/flows/${id}`, { method: "DELETE" })
       toast.success("Deleted"); setDeleteId(null); load()
     } catch { toast.error("Failed") }
   }

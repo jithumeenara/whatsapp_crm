@@ -55,7 +55,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             });
           }
         } else {
-          user = await prisma.user.findUnique({ where: { email: raw } });
+          // Case and stray spaces ignored: a phone keyboard capitalises the
+          // first letter, and autofill can leave a trailing space.
+          user = await prisma.user.findFirst({
+            where: { email: { equals: raw.trim(), mode: "insensitive" } },
+          });
         }
 
         if (!user || !user.password_hash) return null;

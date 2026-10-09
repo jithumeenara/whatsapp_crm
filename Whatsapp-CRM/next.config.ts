@@ -139,6 +139,12 @@ const nextConfig: NextConfig = {
     // per core ran it out of memory mid-build ("Killed"). Set
     // NEXT_BUILD_CPUS=1 for the build there; unset, nothing changes.
     ...(buildCpus() ? { cpus: buildCpus() } : {}),
+    // Every /api request passes through src/proxy.ts, and Next buffers a
+    // proxied body only up to 10 MB by default — past that the route
+    // gets a cut-off body. The upload routes accept 16 MB, so a 12 MB
+    // video failed with a parse error instead of uploading. Matched to
+    // the largest upload limit, plus room for the multipart wrapper.
+    proxyClientMaxBodySize: "17mb",
   },
   /**
    * Cache-Control policy.

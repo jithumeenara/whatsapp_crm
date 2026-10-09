@@ -12,6 +12,7 @@ import { FileManagerPicker } from "./file-manager-picker";
 import { EmojiPickerPopover } from "./emoji-picker-popover";
 import { useVoiceRecorder, formatElapsed } from "./use-voice-recorder";
 import { ScheduleMenuButton } from "./schedule-menu-button";
+import { shrinkImageForWhatsApp, WHATSAPP_IMAGE_MAX_BYTES } from "@/lib/media/shrink-image";
 
 interface ReplyDraft {
   id: string;
@@ -360,15 +361,22 @@ export function MessageComposer({
   }, []);
 
   const handleFileSelected = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const picked = e.target.files?.[0];
+    if (!picked) return;
     e.target.value = '';
 
     setUploading(true);
     setUploadProgress(0);
-    setUploadingFilename(file.name);
+    setUploadingFilename(picked.name);
 
     try {
+      // Sent as an image, it must be under WhatsApp's 5 MB — camera
+      // photos often are not. Sent as a document, it goes as it is.
+      const asImage = currentAttachType.current === 'image' && picked.type.startsWith('image/');
+      const file = asImage ? await shrinkImageForWhatsApp(picked) : picked;
+      if (asImage && file.size > WHATSAPP_IMAGE_MAX_BYTES) {
+        throw new Error('This photo is over 5 MB, the most WhatsApp accepts for an image. Send it as a document instead.');
+      }
       const fileUrl = await uploadFile(file);
       let mediaType: 'image' | 'document' | 'audio' | 'video' =
         currentAttachType.current === 'audio' ? 'audio' :

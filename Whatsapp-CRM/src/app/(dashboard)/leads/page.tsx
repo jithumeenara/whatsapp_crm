@@ -25,6 +25,7 @@ import { decayScore, describeDecay } from "@/lib/leads/score-decay"
 import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/duplicate-lead-dialog"
 import { NewFollowUpDialog } from "@/components/leads/new-follow-up-dialog"
 import { ContactPicker, type PickedContact } from "@/components/leads/contact-picker"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 // ---- types ----
 
@@ -1242,14 +1243,21 @@ function LeadsV2() {
 
   const effectiveTab = (!canViewAllLeads && tab === "all") ? "new_pool" : tab
 
+  // Each load is numbered, and only the newest may write to the screen:
+  // a search typed while an earlier one was still on its way could
+  // otherwise land last and leave results for the older words.
+  const loadSeq = useRef(0)
   const loadData = useCallback(async () => {
+    const seq = ++loadSeq.current
     setLoading(true)
     try {
       if (tab === "follow_ups") {
         const r = await fetch("/api/follow-ups?limit=100").then((x) => x.json())
+        if (seq !== loadSeq.current) return
         setFollowUps(r.followUps ?? r ?? [])
       } else if (tab === "tasks") {
         const r = await fetch("/api/tasks?limit=100").then((x) => x.json())
+        if (seq !== loadSeq.current) return
         setTasks(r.tasks ?? r ?? [])
       } else {
         const params = new URLSearchParams({ tab: effectiveTab })
@@ -1262,6 +1270,7 @@ function LeadsV2() {
           fetch("/api/tags").then((r) => r.json()),
           fetch("/api/leads/settings").then((r) => r.json()),
         ])
+        if (seq !== loadSeq.current) return
         setLeads(lr.leads ?? lr ?? [])
         setTags(tr?.tags ?? tr ?? [])
         setScoringMode(sr.scoring_mode ?? "score")
@@ -1283,9 +1292,9 @@ function LeadsV2() {
         }
       }
     } catch {
-      toast.error("Failed to load")
+      if (seq === loadSeq.current) toast.error("Failed to load")
     } finally {
-      setLoading(false)
+      if (seq === loadSeq.current) setLoading(false)
     }
   }, [tab, effectiveTab, activeTagId, searchQ, scoreFilter, districtFilter])
 
@@ -1320,15 +1329,15 @@ function LeadsV2() {
 
   async function handlePick(id: string) {
     try {
-      await fetch(`/api/leads/${id}`, {
+      await apiFetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ claim: true }),
       })
       toast.success("Lead claimed!")
       loadData()
-    } catch {
-      toast.error("Failed to claim lead")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to claim lead"))
     }
   }
 
@@ -1459,15 +1468,15 @@ function LeadsV2() {
 
   async function handleHide(id: string, hide: boolean) {
     try {
-      await fetch(`/api/leads/${id}`, {
+      await apiFetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_hidden: hide }),
       })
       toast.success(hide ? "Lead hidden from agents" : "Lead visible to agents")
       loadData()
-    } catch {
-      toast.error("Failed to update lead visibility")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to update lead visibility"))
     }
   }
 

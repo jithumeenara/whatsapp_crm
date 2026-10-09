@@ -653,14 +653,34 @@ export async function sendTemplateMessage(
   }
 
   if (template) {
+    // A media header that is this app's own upload (/api/files/...) is a
+    // path Meta cannot fetch — sent as a link it fails with "image.link is
+    // not a valid URI". Every sender reaches Meta through here (Inbox,
+    // chatbot, scheduled messages), so it is uploaded to Meta here and
+    // sent by id. Public https links and ids pass through untouched.
+    let headerMediaUrl = messageParams?.headerMediaUrl
+    let headerMediaId = messageParams?.headerMediaId
+    const mediaHeader =
+      template.header_type === 'image' || template.header_type === 'video' || template.header_type === 'document'
+    const headerLink = headerMediaUrl || template.header_media_url
+    if (mediaHeader && !headerMediaId && headerLink && !/^https?:\/\//i.test(headerLink)) {
+      const { resolveMediaRef } = await import('./media-ref')
+      const ref = await resolveMediaRef(headerLink, phoneNumberId, accessToken)
+      if (ref.id) {
+        headerMediaId = ref.id
+        headerMediaUrl = undefined
+      } else {
+        headerMediaUrl = ref.link
+      }
+    }
     const components = buildSendComponents(template, {
       // Legacy callers pass body values in `params`; fold them into
       // `messageParams.body` so the new path covers them too.
       body: messageParams?.body ?? params,
       bodyByName: messageParams?.bodyByName,
       headerText: messageParams?.headerText,
-      headerMediaUrl: messageParams?.headerMediaUrl,
-      headerMediaId: messageParams?.headerMediaId,
+      headerMediaUrl,
+      headerMediaId,
       buttonParams: messageParams?.buttonParams,
       recipient: to,
     })

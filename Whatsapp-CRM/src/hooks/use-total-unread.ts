@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { everyWhileVisible } from "@/lib/visible-interval";
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -43,12 +44,14 @@ export function useTotalUnread(): number {
     }
 
     void fetchUnread();
-    const timer = setInterval(fetchUnread, POLL_INTERVAL_MS);
+    // The badge is only seen on screen, so this rests while the tab is
+    // hidden and refreshes the moment it is shown again.
+    const stop = everyWhileVisible(() => void fetchUnread(), POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
       abortRef.current?.abort();
-      clearInterval(timer);
+      stop();
     };
   }, []);
 

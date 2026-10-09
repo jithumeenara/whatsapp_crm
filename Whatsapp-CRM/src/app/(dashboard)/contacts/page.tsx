@@ -16,6 +16,7 @@ import { MergeContactsDialog } from "@/components/contacts/merge-contacts-dialog
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
 import { formatDistanceToNow } from "date-fns"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 const PAGE_SIZE = 25
 
@@ -433,13 +434,13 @@ export default function ContactsV2() {
   async function handleBulkDelete() {
     setBulkDeleting(true)
     try {
-      await Promise.all([...checkedIds].map((id) => fetch(`/api/contacts/${id}`, { method: "DELETE" })))
+      await Promise.all([...checkedIds].map((id) => apiFetch(`/api/contacts/${id}`, { method: "DELETE" })))
       toast.success(`${checkedIds.size} contact${checkedIds.size !== 1 ? "s" : ""} deleted`)
       setCheckedIds(new Set())
       setBulkDeleteConfirm(false)
       loadContacts()
-    } catch {
-      toast.error("Failed to delete some contacts")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to delete some contacts"))
     } finally {
       setBulkDeleting(false)
     }

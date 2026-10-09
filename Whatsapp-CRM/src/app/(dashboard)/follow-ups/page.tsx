@@ -6,6 +6,7 @@ import {
   CalendarCheck, Plus, CheckCircle2, SkipForward, Clock,
   AlertTriangle, ChevronDown, ChevronUp, MoreHorizontal, X,
 } from "lucide-react"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 function FollowUpFormDialog({ open, onOpenChange, onSave }: { open: boolean; onOpenChange: (v: boolean) => void; onSave: () => void }) {
   const [saving, setSaving] = useState(false)
@@ -13,7 +14,7 @@ function FollowUpFormDialog({ open, onOpenChange, onSave }: { open: boolean; onO
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const res = await fetch("/api/follow-ups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) })
+      const res = await fetch("/api/follow-ups", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, due_at: new Date(form.due_at).toISOString() }) })
       if (!res.ok) throw new Error((await res.json() as { error?: string }).error ?? "Failed")
       toast.success("Follow-up scheduled")
       onOpenChange(false); onSave(); setForm({ title: "", note: "", due_at: "" })
@@ -125,25 +126,25 @@ export default function FollowUpsV2() {
 
   async function updateStatus(id: string, status: "done" | "skipped") {
     try {
-      await fetch(`/api/follow-ups/${id}`, {
+      await apiFetch(`/api/follow-ups/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       })
       toast.success(status === "done" ? "Marked as done!" : "Skipped")
       load()
-    } catch {
-      toast.error("Failed to update")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to update"))
     }
   }
 
   async function deleteFollowUp(id: string) {
     try {
-      await fetch(`/api/follow-ups/${id}`, { method: "DELETE" })
+      await apiFetch(`/api/follow-ups/${id}`, { method: "DELETE" })
       toast.success("Deleted")
       load()
-    } catch {
-      toast.error("Failed to delete")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to delete"))
     }
   }
 

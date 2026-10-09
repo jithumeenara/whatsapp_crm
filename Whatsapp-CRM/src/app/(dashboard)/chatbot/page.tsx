@@ -14,6 +14,7 @@ import { formatDistanceToNow, format } from "date-fns"
 import { useRealtime } from "@/hooks/use-realtime"
 import { Switch } from "@/components/ui/switch"
 import { AiFallbackBanner } from "@/components/chatbot/ai-fallback-banner"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 interface Chatbot {
   id: string
@@ -315,7 +316,7 @@ export default function ChatbotV2() {
       if (!createRes.ok) { toast.error("Failed to create chatbot"); return }
       const { chatbot: created } = await createRes.json()
       // Fill with imported data
-      await fetch(`/api/chatbot/${created.id}`, {
+      await apiFetch(`/api/chatbot/${created.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -330,8 +331,8 @@ export default function ChatbotV2() {
       })
       toast.success("Chatbot imported — opening editor")
       router.push(`/chatbot/${created.id}`)
-    } catch {
-      toast.error("Import failed — invalid file")
+    } catch (err) {
+      toast.error(errorText(err, "Import failed — invalid file"))
     } finally {
       setImporting(false)
     }

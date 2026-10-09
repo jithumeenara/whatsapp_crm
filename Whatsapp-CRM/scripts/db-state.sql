@@ -48,7 +48,7 @@ SELECT
 \echo '=== Migrations 072 and 099 onward, one row each ==='
 -- One thing each migration creates, checked for existence. "NO" means
 -- that migration has not run here. Every file from 072 on is safe to run
--- again, so scripts/apply-migrations.sh <first NO> 118 brings it up to
+-- again, so scripts/apply-migrations.sh <first NO> 122 brings it up to
 -- date; 064–071 are not, and are covered by the sections above.
 --
 -- A few columns are also added by the app itself at start-up (the
@@ -78,7 +78,11 @@ FROM (VALUES
   ('115_data_table_ai_search',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_tables'      AND column_name = 'ai_search')),
   ('116_eval_exact_checks',             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_eval_cases'    AND column_name = 'must_include')),
   ('117_ai_embedding_model',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_configs'       AND column_name = 'embedding_model')),
-  ('118_ai_handover_settings',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_configs'       AND column_name = 'handover_settings'))
+  ('118_ai_handover_settings',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_configs'       AND column_name = 'handover_settings')),
+  ('119_saved_reports',                 to_regclass('saved_reports') IS NOT NULL),
+  ('120_ai_image_settings',             EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ai_configs'       AND column_name = 'image_settings')),
+  ('121_registration_drafts',           to_regclass('registration_drafts') IS NOT NULL),
+  ('122_users_email_case_insensitive',  to_regclass('users_email_lower_key') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 

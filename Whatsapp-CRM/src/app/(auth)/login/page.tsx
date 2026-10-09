@@ -168,6 +168,9 @@ function LoginContent() {
                     id="email"
                     type="text"
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder="email@company.com"
                     required
                     value={email}

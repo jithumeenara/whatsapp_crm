@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import type { ExistingContact } from '@/lib/contacts/dedupe';
 import { Loader2, AlertTriangle, X, User, Phone, Mail, Building2, Tag as TagIcon, CheckCircle2 } from 'lucide-react';
+import { apiFetch } from "@/lib/api-fetch"
 
 interface ContactFormProps {
   open: boolean;
@@ -143,7 +144,7 @@ export function ContactForm({
       }
 
       if (contactId) {
-        await fetch(`/api/contacts/${contactId}/tags`, {
+        await apiFetch(`/api/contacts/${contactId}/tags`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tag_ids: selectedTagIds }),

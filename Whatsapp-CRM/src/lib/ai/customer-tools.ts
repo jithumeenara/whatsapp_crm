@@ -39,6 +39,7 @@ import {
   type FunctionDeclaration,
 } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
+import { businessTimezone, humanDate } from './human-date'
 // One implementation of "a wall clock in this zone is this moment",
 // shared with the callback slots the offer system sends.
 import { zonedInstant } from '@/lib/agents/zoned-time'
@@ -81,12 +82,6 @@ interface CustomerToolImpl {
  *  knowledge base needs. */
 const MAX_ROWS = 5
 
-/** Dates are rendered for a person to hear, not for a machine to parse —
- *  these answers get read aloud as often as they get read. */
-function humanDate(d: Date | null | undefined): string | null {
-  if (!d) return null
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-}
 
 /** Internal status slugs are not customer-facing language. "call_not_
  *  connected" is an operations term; a customer hears "we tried to reach
@@ -117,6 +112,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     async run(_args, ctx) {
+      const tz = await businessTimezone(ctx.accountId)
       const leads = await prisma.lead.findMany({
         where: { account_id: ctx.accountId, contact_id: ctx.contactId },
         select: {
@@ -134,8 +130,8 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         enquiries: leads.map((l) => ({
           about: l.title,
           status: leadStatusLabel(l.status),
-          submitted_on: humanDate(l.created_at),
-          last_updated: humanDate(l.updated_at),
+          submitted_on: humanDate(l.created_at, tz),
+          last_updated: humanDate(l.updated_at, tz),
           location: l.place || l.district || null,
           came_from: l.source,
         })),
@@ -151,6 +147,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     async run(_args, ctx) {
+      const tz = await businessTimezone(ctx.accountId)
       const followUps = await prisma.followUp.findMany({
         where: { account_id: ctx.accountId, contact_id: ctx.contactId, status: 'pending' },
         select: { title: true, due_at: true, note: true },
@@ -164,7 +161,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         found: true,
         scheduled: followUps.map((f) => ({
           what: f.title,
-          when: humanDate(f.due_at),
+          when: humanDate(f.due_at, tz),
           // The internal note is staff-facing and may say things like
           // "chase, went cold" — summarised away rather than quoted.
           has_note: Boolean(f.note),
@@ -181,6 +178,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     async run(_args, ctx) {
+      const tz = await businessTimezone(ctx.accountId)
       const orders = await prisma.order.findMany({
         where: { account_id: ctx.accountId, contact_id: ctx.contactId },
         select: { items: true, subtotal: true, currency: true, status: true, created_at: true },
@@ -191,7 +189,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       return {
         found: true,
         orders: orders.map((o) => ({
-          placed_on: humanDate(o.created_at),
+          placed_on: humanDate(o.created_at, tz),
           status: o.status,
           total: o.subtotal ? `${o.currency ?? ''} ${o.subtotal.toString()}`.trim() : null,
           items: Array.isArray(o.items)
@@ -643,6 +641,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     async run(_args, ctx) {
+      const tz = await businessTimezone(ctx.accountId)
       const conversations = await prisma.conversation.findMany({
         where: { account_id: ctx.accountId, contact_id: ctx.contactId },
         select: { channel: true, last_message_text: true, last_message_at: true, status: true },
@@ -655,7 +654,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         conversations: conversations.map((c) => ({
           channel: c.channel ?? 'whatsapp',
           status: c.status,
-          last_spoke: humanDate(c.last_message_at),
+          last_spoke: humanDate(c.last_message_at, tz),
           about: c.last_message_text?.slice(0, 120) ?? null,
         })),
       }

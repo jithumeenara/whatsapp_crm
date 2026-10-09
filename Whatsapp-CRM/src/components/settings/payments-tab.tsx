@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
 
@@ -202,12 +203,12 @@ export function PaymentsTab() {
   async function handleDisconnect() {
     setDisconnecting(true);
     try {
-      await fetch(`/api/whatsapp/payments/config?whatsapp_config_id=${selectedNumberId}`, { method: 'DELETE' });
+      await apiFetch(`/api/whatsapp/payments/config?whatsapp_config_id=${selectedNumberId}`, { method: 'DELETE' });
       toast.success('Gateway disconnected.');
       setConfirmOpen(false);
       await load();
-    } catch {
-      toast.error('Failed to disconnect.');
+    } catch (err) {
+      toast.error(errorText(err, 'Failed to disconnect.'));
     } finally {
       setDisconnecting(false);
     }

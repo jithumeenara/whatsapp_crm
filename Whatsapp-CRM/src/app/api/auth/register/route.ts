@@ -6,7 +6,11 @@ import { isLiveInvitation, publicSignupOpen } from "@/lib/auth/signup-policy";
 
 export async function POST(req: NextRequest) {
   try {
-    const { email, password, full_name, phone, invite } = await req.json();
+    const { email: rawEmail, password, full_name, phone, invite } = await req.json();
+    // Stored trimmed and lowercased, and checked without regard to case:
+    // a phone keyboard that capitalised the first letter made Anu@ and
+    // anu@ two different people.
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : rawEmail;
 
     // Closed unless this server opens it — see src/lib/auth/signup-policy.ts.
     // Hiding the link would not be enough: this endpoint is reachable
@@ -42,7 +46,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
     if (existing) {
       return NextResponse.json(
         { error: "An account with this email already exists" },

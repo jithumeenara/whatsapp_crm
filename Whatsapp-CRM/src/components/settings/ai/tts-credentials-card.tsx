@@ -24,6 +24,7 @@ import { Upload, Loader2, CheckCircle2, AlertTriangle, Trash2, Volume2, FileJson
 import { AiCard, AiNotice, AiButton, AiHint } from './ui-kit';
 import { TtsKeyGuideButton, TtsKeyGuideLink } from './tts-key-guide';
 import { toast } from 'sonner';
+import { apiFetch } from "@/lib/api-fetch"
 
 type Status = {
   uploaded: boolean;
@@ -95,7 +96,7 @@ export function TtsCredentialsCard() {
   const remove = useCallback(async () => {
     setBusy(true);
     try {
-      await fetch('/api/ai-config/tts-credentials', { method: 'DELETE' });
+      await apiFetch('/api/ai-config/tts-credentials', { method: 'DELETE' });
       toast.success('Voice key removed. Replies use the built-in voice again.');
       await load();
     } finally {

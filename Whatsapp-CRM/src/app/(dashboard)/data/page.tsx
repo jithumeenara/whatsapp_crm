@@ -10,6 +10,7 @@ import { CreateTableDialog } from "@/components/data/create-table-dialog"
 import type { DataTable } from "@/lib/data-store/types"
 import { getIconEmoji } from "@/lib/data-store/types"
 import { toast } from "sonner"
+import { apiFetch } from "@/lib/api-fetch"
 
 function cn(...c: (string | boolean | undefined | null)[]) {
   return c.filter(Boolean).join(" ")
@@ -83,7 +84,7 @@ export default function DataStorePage() {
     setConfirmId(null)
     setDeleting(id)
     try {
-      await fetch(`/api/data-tables/${id}`, { method: "DELETE" })
+      await apiFetch(`/api/data-tables/${id}`, { method: "DELETE" })
       setTables((prev) => prev.filter((t) => t.id !== id))
       toast.success("Table deleted")
     } catch { toast.error("Delete failed") }

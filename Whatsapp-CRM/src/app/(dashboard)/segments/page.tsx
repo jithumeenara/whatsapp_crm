@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { UsersRound, Plus, Pencil, Trash2, Tag } from "lucide-react"
 import type { Tag as TagType } from "@/types"
+import { apiFetch } from "@/lib/api-fetch"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -39,7 +40,7 @@ export default function SegmentsV2() {
     setSaving(true)
     try {
       if (editTag) {
-        await fetch(`/api/tags/${editTag.id}`, {
+        await apiFetch(`/api/tags/${editTag.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(form),
@@ -47,7 +48,7 @@ export default function SegmentsV2() {
         setEditTag(null)
         toast.success("Tag updated")
       } else {
-        await fetch("/api/tags", {
+        await apiFetch("/api/tags", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(form),
@@ -62,7 +63,7 @@ export default function SegmentsV2() {
 
   async function del(id: string) {
     try {
-      await fetch(`/api/tags/${id}`, { method: "DELETE" })
+      await apiFetch(`/api/tags/${id}`, { method: "DELETE" })
       toast.success("Tag deleted"); setDeleteId(null); load()
     } catch { toast.error("Failed") }
   }

@@ -214,6 +214,20 @@ const WEEKDAY_TO_KEY: Record<string, DayKey> = {
 }
 
 /**
+ * Minutes past midnight right now in a business's own time zone.
+ *
+ * For anything that compares against a clock time somebody typed
+ * ("09:00–18:00"): the server's own clock is only right by luck, on a
+ * machine that happens to be set to the same zone. Unknown or invalid
+ * zones fall back to Asia/Kolkata, as the rest of the app does.
+ */
+export function minutesNowIn(timezone: string | null | undefined, now: Date = new Date()): number {
+  const zone = timezone?.trim() || 'Asia/Kolkata'
+  const clock = localClock(zone, now) ?? localClock('Asia/Kolkata', now)
+  return clock ? clock.minutes : now.getHours() * 60 + now.getMinutes()
+}
+
+/**
  * The day and the time it is where this agent works.
  *
  * Intl does the whole job, including the parts that are easy to get

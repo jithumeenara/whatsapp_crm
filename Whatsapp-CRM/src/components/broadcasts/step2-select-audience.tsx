@@ -238,19 +238,24 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const [includeUnknown, setIncludeUnknown] = useState(false);
 
   /* ── Fetch WhatsApp contacts (paginated) ─────────────────────── */
+  // Only the newest load may write the list: an older search answering
+  // last would otherwise show contacts for words no longer in the box.
+  const loadSeq = useRef(0);
   const loadContacts = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoadingContacts(true);
     try {
       const params = new URLSearchParams({ limit: String(PAGE), page: String(page), realPhoneOnly: 'true' });
       if (query) params.set('search', query);
       if (mode === 'tags' && selectedTagIds.length > 0) params.set('tagIds', selectedTagIds.join(','));
       const res = await fetch(`/api/contacts?${params}`);
-      if (!res.ok) return;
+      if (!res.ok || seq !== loadSeq.current) return;
       const data = await res.json();
+      if (seq !== loadSeq.current) return;
       setAllContacts(data.contacts ?? []);
       setPageTotal(data.total ?? 0);
     } finally {
-      setLoadingContacts(false);
+      if (seq === loadSeq.current) setLoadingContacts(false);
     }
   }, [page, query, mode, selectedTagIds]);
 

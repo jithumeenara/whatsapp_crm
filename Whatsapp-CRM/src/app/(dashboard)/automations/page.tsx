@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { Zap, Plus, Play, Pause, Copy, Pencil, Trash2, FileText, MoreHorizontal, CheckCircle2, AlertTriangle, Loader2, Clock } from "lucide-react"
 import type { Automation } from "@/types"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 function cn(...c: (string | boolean | undefined | null)[]) {
   return c.filter(Boolean).join(" ")
@@ -62,15 +63,15 @@ export default function AutomationsV2() {
   async function toggle(id: string, active: boolean) {
     setToggling(id)
     try {
-      await fetch(`/api/automations/${id}`, {
+      await apiFetch(`/api/automations/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_active: active }),
       })
       setAutomations((prev) => prev.map((a) => a.id === id ? { ...a, is_active: active } : a))
       toast.success(active ? "Automation enabled" : "Automation paused")
-    } catch {
-      toast.error("Failed to update")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to update"))
     } finally {
       setToggling(null)
     }
@@ -78,22 +79,22 @@ export default function AutomationsV2() {
 
   async function duplicate(id: string) {
     try {
-      await fetch(`/api/automations/${id}/duplicate`, { method: "POST" })
+      await apiFetch(`/api/automations/${id}/duplicate`, { method: "POST" })
       toast.success("Duplicated!")
       load()
-    } catch {
-      toast.error("Failed to duplicate")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to duplicate"))
     }
   }
 
   async function deleteAutomation(id: string) {
     try {
-      await fetch(`/api/automations/${id}`, { method: "DELETE" })
+      await apiFetch(`/api/automations/${id}`, { method: "DELETE" })
       toast.success("Deleted")
       setDeleteId(null)
       load()
-    } catch {
-      toast.error("Failed to delete")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to delete"))
     }
   }
 

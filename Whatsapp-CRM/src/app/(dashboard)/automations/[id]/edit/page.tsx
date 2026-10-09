@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, Save, Play, Pause, AlertCircle, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { apiFetch } from "@/lib/api-fetch"
 
 interface Automation {
   id: string; name: string; description?: string; status: string; trigger_type?: string
@@ -50,7 +51,7 @@ export default function AutomationEditPage() {
   async function toggleStatus() {
     if (!automation) return
     const newStatus = automation.status === "active" ? "inactive" : "active"
-    await fetch(`/api/automations/${id}`, {
+    await apiFetch(`/api/automations/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: newStatus }),

@@ -20,6 +20,7 @@
 import { SchemaType, type FunctionDeclaration } from '@google/generative-ai'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { businessTimezone, humanDate } from './human-date'
 import { listRegistrationForms, validateValues } from './registration'
 import { afterRecordCreated } from '@/lib/data-store/record-events'
 
@@ -40,11 +41,6 @@ export interface RegistrationToolImpl {
  *  registrations, and an unbounded list would eat the prompt budget the
  *  knowledge base needs. */
 const MAX_ROWS = 5
-
-function humanDate(d: Date | null | undefined): string | null {
-  if (!d) return null
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-}
 
 /** One value, reduced to what a person would call "the same answer".
  *  Case and surrounding space are not a meaningful difference between
@@ -166,6 +162,7 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
       },
     },
     async run(args, ctx) {
+      const tz = await businessTimezone(ctx.accountId)
       const tableId = String(args.table_id ?? '')
       const forms = await listRegistrationForms(ctx.accountId)
       const form = forms.find((f) => f.table_id === tableId)
@@ -225,11 +222,11 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
             saved: false,
             already_registered: true,
             registration_id: clash.id,
-            registered_on: humanDate(clash.created_at),
+            registered_on: humanDate(clash.created_at, tz),
             // Written as a sentence, because it goes back to the model
             // and comes out as what the customer hears.
             say:
-              `They are already registered for this (${shown}), on ${humanDate(clash.created_at)}. ` +
+              `They are already registered for this (${shown}), on ${humanDate(clash.created_at, tz)}. ` +
               'Tell them so in your own words, do not register them again, and offer to change or ' +
               'cancel the existing one if that is what they want.',
           }
@@ -389,6 +386,7 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
       parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     async run(_args, ctx) {
+      const tz = await businessTimezone(ctx.accountId)
       const records = await prisma.dataRecord.findMany({
         where: { account_id: ctx.accountId, contact_id: ctx.contactId },
         orderBy: { created_at: 'desc' },
@@ -406,7 +404,7 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
           return {
             registration_id: r.id,
             form: form?.name ?? 'Registration',
-            registered_on: humanDate(r.created_at),
+            registered_on: humanDate(r.created_at, tz),
             details: data,
             still_missing: form ? blanksIn(data, form.optional_fields) : [],
           }

@@ -14,6 +14,7 @@ import { MarkdownAnswer } from './markdown-answer';
 import { ContactSyncPanel } from './contact-sync-panel';
 import { LiveVoicePanel } from './live-voice-panel';
 import type { VoiceTurn } from './use-live-voice';
+import { toast } from 'sonner';
 
 /**
  * Screen 5 — two genuinely different tests behind one screen.
@@ -363,12 +364,18 @@ export function TestTab(props: TestTabProps) {
     const answer = messages[index];
     const question = messages[index - 1];
     if (!answer || answer.role !== 'ai' || !question || question.role !== 'user') return;
-    setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, saved: true, feedback: 'up' } : m)));
-    await fetch('/api/ai-knowledge', {
+    // Marked saved only once the server has it: ticking first and
+    // swallowing the failure left an answer looking taught that never was.
+    const res = await fetch('/api/ai-knowledge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kind: 'qa', question: question.text, answer: answer.text }),
-    }).catch(() => {});
+    }).catch(() => null);
+    if (res?.ok) {
+      setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, saved: true, feedback: 'up' } : m)));
+    } else {
+      toast.error('That answer was not saved. Check your connection and try again.');
+    }
   }
 
   /** Folds a spoken conversation into the chat.

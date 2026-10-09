@@ -112,6 +112,23 @@ export async function PATCH(
       if (existing.assigned_to && existing.assigned_to !== ctx.userId && !isPrivileged) {
         return NextResponse.json({ error: 'Lead is already assigned to another agent' }, { status: 409 })
       }
+      // The check above read the lead a moment ago. Two agents pressing
+      // Claim together both passed it, both got "claimed", and the last
+      // write silently won. The claim itself carries the condition, so
+      // the database lets exactly one of them through.
+      if (!isPrivileged) {
+        const taken = await prisma.lead.updateMany({
+          where: {
+            id,
+            account_id: ctx.accountId,
+            OR: [{ assigned_to: null }, { assigned_to: ctx.userId }],
+          },
+          data: { assigned_to: ctx.userId, claimed_at: new Date() },
+        })
+        if (taken.count === 0) {
+          return NextResponse.json({ error: 'Lead is already assigned to another agent' }, { status: 409 })
+        }
+      }
       const lead = await prisma.lead.update({
         where: { id },
         data: {

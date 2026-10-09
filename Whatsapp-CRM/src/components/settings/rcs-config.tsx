@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { tileAccent } from '@/components/settings/settings-ui-kit';
+import { apiFetch } from "@/lib/api-fetch"
 
 const MASKED = '••••••••••••••••';
 
@@ -154,7 +155,7 @@ export function RcsConfig() {
     if (!ok) return;
     setResetting(true);
     try {
-      await fetch('/api/rcs/config', { method: 'DELETE' });
+      await apiFetch('/api/rcs/config', { method: 'DELETE' });
       toast.success('Configuration reset');
       setHasConfig(false);
       setAuthToken('');

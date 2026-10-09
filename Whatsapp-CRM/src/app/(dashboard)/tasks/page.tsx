@@ -6,6 +6,7 @@ import {
   CheckSquare, Plus, Check, Clock, AlertTriangle, MoreHorizontal,
   Flame, ArrowUp, ArrowRight, ArrowDown, X,
 } from "lucide-react"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 const TASK_PRIORITIES = ["urgent", "high", "medium", "low"] as const
 
@@ -15,7 +16,7 @@ function TaskFormDialog({ open, onOpenChange, onSave }: { open: boolean; onOpenC
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const res = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, due_at: form.due_at || undefined }) })
+      const res = await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...form, due_at: form.due_at ? new Date(form.due_at).toISOString() : undefined }) })
       if (!res.ok) throw new Error((await res.json() as { error?: string }).error ?? "Failed")
       toast.success("Task created")
       onOpenChange(false); onSave(); setForm({ title: "", description: "", priority: "medium", due_at: "" })
@@ -127,25 +128,25 @@ export default function TasksV2() {
 
   async function markDone(id: string) {
     try {
-      await fetch(`/api/tasks/${id}`, {
+      await apiFetch(`/api/tasks/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "done" }),
       })
       toast.success("Task completed!")
       load()
-    } catch {
-      toast.error("Failed to update")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to update"))
     }
   }
 
   async function deleteTask(id: string) {
     try {
-      await fetch(`/api/tasks/${id}`, { method: "DELETE" })
+      await apiFetch(`/api/tasks/${id}`, { method: "DELETE" })
       toast.success("Task deleted")
       load()
-    } catch {
-      toast.error("Failed to delete")
+    } catch (err) {
+      toast.error(errorText(err, "Failed to delete"))
     }
   }
 

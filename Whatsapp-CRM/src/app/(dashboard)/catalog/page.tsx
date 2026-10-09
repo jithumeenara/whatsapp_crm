@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmIconDialog } from "@/components/ui/confirm-icon-dialog";
 import { formatCurrency } from "@/lib/currency";
+import { apiFetch } from "@/lib/api-fetch"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" "); }
 
@@ -158,7 +159,7 @@ export default function CatalogPage() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/catalog/products/${deleteTarget.id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/catalog/products/${deleteTarget.id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       if (data?.warning) toast.warning(data.warning);
       else toast.success("Product removed.");

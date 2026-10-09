@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { tileAccent } from '@/components/settings/settings-ui-kit';
 import { MicrosoftMailCard } from '@/components/settings/microsoft-mail-card';
+import { apiFetch } from "@/lib/api-fetch"
 
 const MASKED = '••••••••••••••••';
 
@@ -154,7 +155,7 @@ export function EmailConfig() {
     if (!ok) return;
     setResetting(true);
     try {
-      await fetch('/api/email/config', { method: 'DELETE' });
+      await apiFetch('/api/email/config', { method: 'DELETE' });
       toast.success('Configuration reset');
       setHasConfig(false);
       setApiKey('');

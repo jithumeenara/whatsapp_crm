@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
         user = await prisma.user.findFirst({ where: { email: { endsWith: `${digits}@agent.local` } } })
       }
     } else {
-      user = await prisma.user.findUnique({ where: { email: emailOrPhone } })
+      user = await prisma.user.findFirst({ where: { email: { equals: emailOrPhone.trim(), mode: "insensitive" } } })
     }
 
     // Generic failure for both "no such user" and "wrong password" —
