@@ -75,7 +75,7 @@ const SECURITY_HEADERS = [
       // without it here the script silently fails to load and the
       // "Connect with Facebook" button is stuck disabled forever, with no
       // console error a non-technical user would notice.
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://*.razorpay.com https://connect.facebook.net`,
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""} https://*.razorpay.com https://connect.facebook.net https://apis.google.com`,
       // Tailwind + inline style attributes on lots of components.
       "style-src 'self' 'unsafe-inline'",
       // Supabase public-bucket avatars, contact avatars (arbitrary
@@ -94,11 +94,11 @@ const SECURITY_HEADERS = [
       // 'self' covers a same-origin WebSocket — CSP3 matches ws/wss
       // against an http/https origin of the same host and port, and
       // Chromium implements it — so no extra entry is needed here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com https://*.facebook.com",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com https://*.facebook.com https://*.googleapis.com",
       // Razorpay checkout modal renders as an iframe — wildcard covers all subdomains.
       // *.facebook.com: the Embedded Signup JS SDK opens its own login
       // dialog and a hidden cross-domain-communication iframe from here.
-      "frame-src https://*.razorpay.com https://*.facebook.com",
+      "frame-src https://*.razorpay.com https://*.facebook.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

@@ -10,6 +10,7 @@ import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
+import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { sweepPhonePePayments } from "./src/lib/payments/phonepe-reconcile";
@@ -197,6 +198,15 @@ app.prepare().then(() => {
       console.error("[staff-wait] sweep interval failed:", err);
     });
   }, 60_000);
+
+  // Google Sheets set to "keep in sync": new rows come into their Data
+  // Store tables (src/lib/google/sheet-sync.ts). A no-op for an account
+  // with no such link — the first query finds none.
+  setInterval(() => {
+    sweepGoogleSheetImports().catch((err) => {
+      console.error("[google-sheet] import sweep failed:", err);
+    });
+  }, 15 * 60_000);
 
   // Embedding whatever the sweeps above left marked "Not trained".
   //

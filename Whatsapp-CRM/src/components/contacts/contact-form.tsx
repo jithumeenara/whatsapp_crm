@@ -7,6 +7,7 @@ import type { Contact, Tag, ContactTag } from '@/types';
 import type { ExistingContact } from '@/lib/contacts/dedupe';
 import { Loader2, AlertTriangle, X, User, Phone, Mail, Building2, Tag as TagIcon, CheckCircle2 } from 'lucide-react';
 import { apiFetch } from "@/lib/api-fetch"
+import { checkEmail, checkPhone } from '@/lib/contacts/validate';
 
 interface ContactFormProps {
   open: boolean;
@@ -104,6 +105,16 @@ export function ContactForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!phone.trim()) { toast.error('Phone number is required'); return; }
+    // The server's own rules (validate.ts), checked here first so the
+    // message names the field. An unchanged stored value is not re-judged.
+    if (!isEdit || phone.trim() !== (contact?.phone ?? '')) {
+      const p = checkPhone(phone);
+      if (!p.ok) { toast.error(p.error); return; }
+    }
+    if (email.trim() && (!isEdit || email.trim() !== (contact?.email ?? ''))) {
+      const m = checkEmail(email);
+      if (!m.ok) { toast.error(m.error); return; }
+    }
     if (!isEdit && dupMatch?.exact) { toast.error('A contact with this phone number already exists'); return; }
 
     setSaving(true);

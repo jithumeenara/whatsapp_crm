@@ -10,6 +10,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchModelSetting } from './search-model-setting';
+import { GoogleDrivePick } from '@/components/shared/google-drive-pick';
 import {
   AiButton, AiCard, AiCardHeader, AiIconTile, AiBadge, AiInput, AiTextarea, AiLabel, AiHint, AiNotice,
   AiMenu, AiMenuTrigger, AiMenuContent, AiMenuItem, AiMenuSeparator,
@@ -913,6 +914,8 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
   const [bots, setBots] = useState<Array<{ id: string; name: string; status?: string }>>([]);
   const [canStart, setCanStart] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** Google's file picker is open over the dialog. */
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -984,7 +987,7 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
   const card = SOURCE_CARDS.find((c) => c.kind === kind);
 
   return (
-    <AiModal open onOpenChange={(v) => !v && onClose()} size="sm">
+    <AiModal open onOpenChange={(v) => !v && onClose()} size="sm" yieldToOverlay={picking}>
       <div>
         <AiModalHeader
           icon={
@@ -1063,12 +1066,20 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
                 placeholder="https://docs.google.com/spreadsheets/d/..."
                 className="font-mono"
               />
+              <GoogleDrivePick
+                onPickingChange={setPicking}
+                onPicked={(picked) => {
+                  setUrl(picked.url)
+                  if (!name.trim()) setName(picked.name)
+                }}
+              />
               {/* Said before they hit Save, because an unshared sheet is
                   the failure everyone hits first and Google returns its
                   sign-in page rather than an error. */}
               <AiHint>
-                The sheet must be shared: Share &rarr; General access &rarr; &ldquo;Anyone with the
-                link&rdquo; &rarr; Viewer. The first row is read as column names, and each row
+                Choose it from Google Drive (when Google is connected in Settings → Google) and it can stay
+                private. Or paste a link to a sheet shared as Share &rarr; General access &rarr; &ldquo;Anyone
+                with the link&rdquo; &rarr; Viewer. The first row is read as column names, and each row
                 becomes one labelled line the bot can quote.
               </AiHint>
             </div>

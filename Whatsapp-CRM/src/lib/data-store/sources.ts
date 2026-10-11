@@ -18,6 +18,7 @@ export const RECORD_SOURCES = [
   'web_form',
   'payment',
   'integration',
+  'google_sheet',
 ] as const
 
 export type RecordSource = (typeof RECORD_SOURCES)[number]
@@ -32,6 +33,7 @@ export const RECORD_SOURCE_LABELS: Record<RecordSource, string> = {
   web_form: 'Web form',
   payment: 'Payment',
   integration: 'Integration',
+  google_sheet: 'Google Sheet',
 }
 
 /** Sources that arrive one at a time from a person, which is what an

@@ -24,7 +24,7 @@ import {
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock, CalendarClock, ToggleLeft,
   ChevronDown, ListChecks, CircleDot, Globe, MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon,
   PenLine, EyeOff, Heading, Code2,
-  HeartPulse,
+  HeartPulse, Sheet,
 } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
@@ -39,6 +39,7 @@ import { RecordAlertsPanel } from "@/components/data/record-alerts-panel"
 import { PublicFormPanel } from "@/components/data/public-form-panel"
 import { SidePanel } from "@/components/data/side-panel"
 import { DataHealthPanel } from "@/components/data/data-health-panel"
+import { GoogleSheetPanel } from "@/components/data/google-sheet-panel"
 import { LinkedFieldsCard } from "@/components/data/linked-fields-card"
 import { parseFormConfig } from "@/lib/data-store/public-form"
 import { RECORD_SOURCE_LABELS, isRecordSource, sourceLabel, type RecordSource } from "@/lib/data-store/sources"
@@ -71,6 +72,7 @@ const SOURCE_STYLE: Record<RecordSource, string> = {
   web_form: "bg-sky-50 text-sky-700",
   payment: "bg-amber-50 text-amber-700",
   integration: "bg-violet-50 text-violet-700",
+  google_sheet: "bg-lime-50 text-lime-700",
 }
 
 /** The system columns, keyed so they can be hidden and sorted like fields. */
@@ -228,6 +230,7 @@ export default function DataTablePage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [healthOpen, setHealthOpen] = useState(false)
   const [formPanelOpen, setFormPanelOpen] = useState(false)
   const [allTables, setAllTables] = useState<DataTable[]>([])
@@ -524,6 +527,9 @@ export default function DataTablePage() {
                 <>
                   <MenuItem icon={<Settings2 className="h-4 w-4" />} onClick={() => { close(); void openFieldPanel() }}>Fields &amp; AI registration</MenuItem>
                   <MenuItem icon={<HeartPulse className="h-4 w-4" />} onClick={() => { close(); setHealthOpen(true) }}>Data health</MenuItem>
+                  {isAdmin && (
+                    <MenuItem icon={<Sheet className="h-4 w-4" />} onClick={() => { close(); setSheetOpen(true) }}>Google Sheet</MenuItem>
+                  )}
                   {isAdmin && (
                     <div className="sm:hidden">
                       <MenuItem icon={<Share2 className="h-4 w-4" />} onClick={() => { close(); setFormPanelOpen(true) }}>Share form</MenuItem>
@@ -927,6 +933,10 @@ export default function DataTablePage() {
 
       {healthOpen && table && (
         <DataHealthPanel tableId={tableId} tableName={table.name} onClose={() => setHealthOpen(false)} onChanged={() => void load()} />
+      )}
+
+      {sheetOpen && table && (
+        <GoogleSheetPanel tableId={tableId} tableName={table.name} onClose={() => setSheetOpen(false)} onImported={() => void load()} />
       )}
 
       {alertsOpen && table && (

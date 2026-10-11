@@ -11,6 +11,7 @@ import {
   ExternalLink, Clock,
 } from "lucide-react"
 import { format } from "date-fns"
+import { checkEmail, checkPhone, isEmailPlaceholderPhone } from "@/lib/contacts/validate"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -49,13 +50,16 @@ interface Props {
   onUpdated: () => void
 }
 
-function FieldInput({ label, value, onChange, required, type = "text", placeholder }: {
+function FieldInput({ label, value, onChange, required, type = "text", placeholder, error, hint }: {
   label: string
   value: string
   onChange: (v: string) => void
   required?: boolean
   type?: string
   placeholder?: string
+  /** Shown under the field, in red, when what was typed will not save. */
+  error?: string | null
+  hint?: string
 }) {
   return (
     <div className="space-y-1.5">
@@ -68,8 +72,17 @@ function FieldInput({ label, value, onChange, required, type = "text", placehold
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder ?? `Enter ${label.toLowerCase()}…`}
-        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[14px] text-slate-900 placeholder:text-slate-300 focus:border-indigo-400 focus:ring-3 focus:ring-indigo-100 outline-none transition-all shadow-sm"
+        aria-invalid={error ? true : undefined}
+        className={cn(
+          "w-full rounded-xl border bg-white px-3.5 py-2.5 text-[14px] text-slate-900 placeholder:text-slate-300 focus:ring-3 outline-none transition-all shadow-sm",
+          error ? "border-rose-300 focus:border-rose-400 focus:ring-rose-100" : "border-slate-200 focus:border-indigo-400 focus:ring-indigo-100",
+        )}
       />
+      {error ? (
+        <p className="text-[11.5px] text-rose-600">{error}</p>
+      ) : hint ? (
+        <p className="text-[11.5px] text-slate-400">{hint}</p>
+      ) : null}
     </div>
   )
 }
@@ -128,7 +141,8 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
       if (c) {
         setContact(c)
         setName(c.name ?? "")
-        setPhone(c.phone ?? "")
+        // An email-only contact's "email:…" is its identity, not a number.
+        setPhone(isEmailPlaceholderPhone(c.phone) ? "" : c.phone ?? "")
         setAlternatePhone(c.alternate_phone ?? "")
         setEmail(c.email ?? "")
         setCompany(c.company ?? "")
@@ -161,23 +175,57 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
     return () => document.removeEventListener("keydown", onKey)
   }, [open, onOpenChange])
 
+  // A contact that only ever wrote by email has no number: its phone is a
+  // placeholder, not something to show, call, copy or require.
+  const emailOnly = isEmailPlaceholderPhone(contact?.phone)
+  const realPhone = contact && !emailOnly ? contact.phone : null
+
+  // Checked as they are typed, with the server's own rules (validate.ts),
+  // and only once something differs from what is saved — a stored value
+  // that predates the checks must not turn red on its own.
+  const phoneError = phone.trim() && phone.trim() !== (realPhone ?? "")
+    ? (() => { const r = checkPhone(phone); return r.ok ? null : r.error })()
+    : null
+  const altPhoneError = alternatePhone.trim() && alternatePhone.trim() !== (contact?.alternate_phone ?? "")
+    ? (() => { const r = checkPhone(alternatePhone); return r.ok ? null : r.error })()
+    : null
+  const emailError = email.trim() && email.trim() !== (contact?.email ?? "")
+    ? (() => { const r = checkEmail(email); return r.ok ? null : r.error })()
+    : null
+
   async function copyPhone() {
-    if (!contact?.phone) return
-    await navigator.clipboard.writeText(contact.phone)
+    const value = realPhone || contact?.email
+    if (!value) return
+    await navigator.clipboard.writeText(value)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
   async function saveDetails() {
-    if (!contactId || !phone.trim()) { toast.error("Phone is required"); return }
+    if (!contactId) return
+    if (phoneError || altPhoneError || emailError) { toast.error("Fix the highlighted fields first."); return }
+    if (!emailOnly && !phone.trim()) { toast.error("Phone is required"); return }
     setSaving(true)
     try {
       const res = await fetch(`/api/contacts/${contactId}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), alternate_phone: alternatePhone.trim() || null, email: email.trim() || null, company: company.trim() || null, gender: gender || null, opt_in_status: optInStatus || null }),
+        body: JSON.stringify({
+          name: name.trim() || null,
+          // An email-only contact left without a number keeps its identity.
+          ...(emailOnly && !phone.trim() ? {} : { phone: phone.trim() }),
+          alternate_phone: alternatePhone.trim() || null,
+          email: email.trim() || null,
+          company: company.trim() || null,
+          gender: gender || null,
+          opt_in_status: optInStatus || null,
+        }),
       })
-      if (!res.ok) { toast.error("Failed to update"); return }
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        toast.error(typeof j.error === "string" ? j.error : "Failed to update")
+        return
+      }
       const j = await res.json()
       setContact(j.contact)
       toast.success("Contact saved")
@@ -271,7 +319,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
     if (id === "leads" && leads.length === 0) loadLeads()
   }
 
-  const displayName = contact?.name || contact?.phone || "Contact"
+  const displayName = contact?.name || (isEmailPlaceholderPhone(contact?.phone) ? contact?.email : contact?.phone) || "Contact"
   const ini = initials(contact?.name, contact?.phone ?? undefined)
   const grad = contact ? avatarGrad(contact.id) : "from-slate-400 to-slate-600"
 
@@ -315,27 +363,28 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                   {ini}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-[17px] font-bold text-slate-900 truncate leading-tight">{displayName}</h2>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    {contact.phone && (
+                  <h2 title={displayName} className="text-[17px] font-bold text-slate-900 truncate leading-tight">{displayName}</h2>
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                    {realPhone && (
                       <button
                         type="button"
                         onClick={copyPhone}
-                        className="flex items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[12px] font-medium text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-all"
+                        title={realPhone}
+                        className="flex max-w-full min-w-0 items-center gap-1 rounded-lg bg-slate-50 border border-slate-200 px-2 py-1 text-[12px] font-medium text-slate-600 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-all"
                       >
-                        {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                        {contact.phone}
+                        {copied ? <Check className="h-3 w-3 shrink-0 text-emerald-500" /> : <Copy className="h-3 w-3 shrink-0" />}
+                        <span className="truncate">{realPhone}</span>
                       </button>
                     )}
                     {contact.email && (
-                      <span className="flex items-center gap-1 text-[12px] text-slate-400">
-                        <Mail className="h-3 w-3" />{contact.email}
+                      <span title={contact.email} className="flex max-w-full min-w-0 items-center gap-1 text-[12px] text-slate-400">
+                        <Mail className="h-3 w-3 shrink-0" /><span className="truncate">{contact.email}</span>
                       </span>
                     )}
                   </div>
                   {contact.company && (
-                    <p className="mt-1 flex items-center gap-1 text-[12px] text-slate-400">
-                      <Building2 className="h-3 w-3" />{contact.company}
+                    <p title={contact.company} className="mt-1 flex min-w-0 items-center gap-1 text-[12px] text-slate-400">
+                      <Building2 className="h-3 w-3 shrink-0" /><span className="truncate">{contact.company}</span>
                     </p>
                   )}
                 </div>
@@ -343,10 +392,17 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
 
               {/* Quick actions */}
               <div className="flex border-t border-slate-100">
-                <a href={`tel:${contact.phone}`}
-                  className="flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors border-r border-slate-100">
-                  <Phone className="h-3.5 w-3.5" /> Call
-                </a>
+                {realPhone ? (
+                  <a href={`tel:${realPhone}`}
+                    className="flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors border-r border-slate-100">
+                    <Phone className="h-3.5 w-3.5" /> Call
+                  </a>
+                ) : (
+                  <span title="No phone number for this contact"
+                    className="flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-slate-300 border-r border-slate-100">
+                    <Phone className="h-3.5 w-3.5" /> Call
+                  </span>
+                )}
                 <a href="/inbox"
                   className="flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-indigo-600 hover:bg-indigo-50 transition-colors border-r border-slate-100">
                   <MessageSquare className="h-3.5 w-3.5" /> Message
@@ -385,9 +441,11 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
               {tab === "details" && (
                 <div className="p-5 space-y-4">
                   <FieldInput label="Full Name" value={name} onChange={setName} placeholder="e.g. John Doe" />
-                  <FieldInput label="Phone" value={phone} onChange={setPhone} required type="tel" placeholder="+91 98765 43210" />
-                  <FieldInput label="Alternate Phone" value={alternatePhone} onChange={setAlternatePhone} type="tel" placeholder="+91 98765 43210" />
-                  <FieldInput label="Email" value={email} onChange={setEmail} type="email" placeholder="john@example.com" />
+                  <FieldInput label="Phone" value={phone} onChange={setPhone} required={!emailOnly} type="tel" placeholder="+91 98765 43210"
+                    error={phoneError}
+                    hint={emailOnly ? "This contact wrote by email only. Add their number here if you have it." : "With the country code, e.g. +91 98765 43210."} />
+                  <FieldInput label="Alternate Phone" value={alternatePhone} onChange={setAlternatePhone} type="tel" placeholder="+91 98765 43210" error={altPhoneError} />
+                  <FieldInput label="Email" value={email} onChange={setEmail} type="email" placeholder="john@example.com" error={emailError} />
                   <FieldInput label="Company" value={company} onChange={setCompany} placeholder="Acme Corp" />
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Gender</label>

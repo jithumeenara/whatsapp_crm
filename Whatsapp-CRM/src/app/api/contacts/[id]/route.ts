@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
+import { checkEmail, checkPhone, isEmailPlaceholderPhone } from "@/lib/contacts/validate"
+import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { emitToAccount } from "@/lib/socket"
 
 /**
@@ -206,7 +208,7 @@ export async function PATCH(
 
     const contact = await prisma.contact.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true },
+      select: { id: true, phone: true, email: true, alternate_phone: true },
     })
     if (!contact) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
@@ -215,7 +217,33 @@ export async function PATCH(
     const allowed = ["phone", "name", "email", "company", "avatar_url", "alternate_phone", "gender", "opt_in_status"] as const
     const data: Record<string, string | null> = {}
     for (const k of allowed) {
-      if (k in body) data[k] = body[k] ?? null
+      if (k in body) data[k] = typeof body[k] === "string" ? body[k].trim() || null : body[k] ?? null
+    }
+
+    // Phone and email are checked only when they change. What is already
+    // stored stays saveable as it is — an Instagram contact's id, an
+    // email-only contact's "email:" placeholder — so editing a name never
+    // fails on a value nobody touched.
+    if ("phone" in data && data.phone !== contact.phone) {
+      if (!data.phone) {
+        // An email-only contact has no number to give; keep its identity.
+        if (isEmailPlaceholderPhone(contact.phone)) delete data.phone
+        else return NextResponse.json({ error: "Phone is required." }, { status: 400 })
+      } else {
+        const p = checkPhone(data.phone)
+        if (!p.ok) return NextResponse.json({ error: p.error }, { status: 400 })
+        data.phone = p.value
+      }
+    }
+    if ("alternate_phone" in data && data.alternate_phone && data.alternate_phone !== contact.alternate_phone) {
+      const p = checkPhone(data.alternate_phone)
+      if (!p.ok) return NextResponse.json({ error: `Alternate phone: ${p.error}` }, { status: 400 })
+      data.alternate_phone = p.value
+    }
+    if ("email" in data && data.email && data.email !== contact.email) {
+      const e = checkEmail(data.email)
+      if (!e.ok) return NextResponse.json({ error: e.error }, { status: 400 })
+      data.email = e.value
     }
     // Keep phone_normalized in sync so the unique index stays valid
     if ("phone" in data && data.phone) {
@@ -227,8 +255,15 @@ export async function PATCH(
       return NextResponse.json({ error: "Invalid opt_in_status" }, { status: 400 })
     }
 
-    const updated = await prisma.contact.update({ where: { id }, data })
-    return NextResponse.json({ contact: updated })
+    try {
+      const updated = await prisma.contact.update({ where: { id }, data })
+      return NextResponse.json({ contact: updated })
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        return NextResponse.json({ error: "Another contact already has this phone number." }, { status: 409 })
+      }
+      throw err
+    }
   } catch (err) {
     return toErrorResponse(err)
   }

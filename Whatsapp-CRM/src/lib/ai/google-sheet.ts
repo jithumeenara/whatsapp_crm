@@ -222,6 +222,56 @@ export async function fetchSheet(raw: string): Promise<SheetContent> {
   }
 }
 
+/**
+ * The same sheet, through the account's connected Google account when it
+ * has one — so a private sheet works without "Anyone with the link".
+ *
+ * Tried first when connected; a sheet the CRM was never given (not
+ * picked in the Google Picker) falls back to the public link, and if that
+ * fails too the message names both ways to fix it. Loaded lazily so this
+ * file's public-link path keeps no dependency on the database.
+ */
+export async function fetchSheetForAccount(raw: string, accountId: string): Promise<SheetContent> {
+  const ref = parseSheetUrl(raw)
+  const { isGoogleConnected, googleAccessToken } = await import('@/lib/google/oauth')
+  if (!(await isGoogleConnected(accountId))) return fetchSheet(raw)
+
+  let apiProblem: string | null = null
+  try {
+    const { getSpreadsheet, readTab, SHEET_MAX_ROWS } = await import('@/lib/google/sheets')
+    const token = await googleAccessToken(accountId)
+    const info = await getSpreadsheet(token, ref.spreadsheetId)
+    const tab = (ref.gid !== null ? info.tabs.find((t) => String(t.sheetId) === ref.gid) : undefined) ?? info.tabs[0]
+    if (!tab) throw new SheetError('That spreadsheet has no tabs.')
+    const all = (await readTab(token, ref.spreadsheetId, tab.title)).filter((r) => r.some((c) => c.trim() !== ''))
+    if (all.length === 0) throw new SheetError('That sheet is empty.')
+    const [headers, ...body] = all
+    const width = headers.length
+    const truncated = body.length > SHEET_MAX_ROWS
+    return {
+      title: info.tabs.length > 1 ? `${info.title} — ${tab.title}` : info.title,
+      headers: headers.map((h) => h.trim()),
+      // Google drops trailing empty cells; padded so columns stay aligned.
+      rows: (truncated ? body.slice(0, SHEET_MAX_ROWS) : body).map((r) =>
+        r.length >= width ? r : [...r, ...Array(width - r.length).fill('')],
+      ),
+      truncated,
+    }
+  } catch (err) {
+    if (err instanceof SheetError) throw err
+    apiProblem = err instanceof Error ? err.message : String(err)
+  }
+
+  try {
+    return await fetchSheet(raw)
+  } catch (err) {
+    const linkProblem = err instanceof Error ? err.message : String(err)
+    throw new SheetError(
+      `${apiProblem ?? 'The connected Google account could not open that sheet.'} Or share it as "Anyone with the link" (${linkProblem})`,
+    )
+  }
+}
+
 async function readCapped(response: Response): Promise<string> {
   if (!response.body) return ''
   const reader = response.body.getReader()

@@ -280,16 +280,25 @@ export function AiModal({
   children,
   className,
   size = 'md',
+  yieldToOverlay = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
   className?: string;
   size?: 'sm' | 'md' | 'lg';
+  /** While another window sits on top — Google's file picker — the
+   *  dialog must not trap focus or close when that window is clicked. */
+  yieldToOverlay?: boolean;
 }) {
   const widths = { sm: 'sm:max-w-lg', md: 'sm:max-w-2xl', lg: 'sm:max-w-3xl' };
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+    <DialogPrimitive.Root
+      open={open}
+      onOpenChange={onOpenChange}
+      modal={yieldToOverlay ? false : undefined}
+      disablePointerDismissal={yieldToOverlay || undefined}
+    >
       <DialogPrimitive.Portal>
         <DialogPrimitive.Backdrop
           className={cn(

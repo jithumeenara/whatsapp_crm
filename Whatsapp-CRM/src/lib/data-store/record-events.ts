@@ -62,6 +62,12 @@ function allowAlert(tableId: string): boolean {
 export function afterRecordCreated(record: CreatedRecord): void {
   // A connected table's knowledge is brought up to date within a minute.
   scheduleKnowledgeRefresh(record.account_id, record.table_id)
+  // A table linked to a Google Sheet gets the row appended there — from
+  // every channel, not only the alertable ones. Loaded lazily: most
+  // tables have no link, and this file is in server.ts's import graph.
+  void import('@/lib/google/sheet-sync')
+    .then((m) => m.exportNewRecord(record))
+    .catch((err) => console.error('[google-sheet] export hook failed:', err instanceof Error ? err.message : err))
   void (async () => {
     try {
       const table = await prisma.dataTable.findUnique({

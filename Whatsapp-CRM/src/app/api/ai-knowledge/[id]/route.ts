@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
-import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
+import { fetchSheetForAccount, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
 import { serializeChatbot } from '@/lib/ai/chatbot-source'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
@@ -79,7 +79,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         // Re-read with whatever purpose the entry carries now, same as
         // the database branch below — editing the purpose and re-syncing
         // should change the header the model reads.
-        const sheet = await fetchSheet(existing.source_url)
+        const sheet = await fetchSheetForAccount(existing.source_url, accountId)
         data.content = serializeSheet(
           sheet,
           typeof body.description === 'string' ? body.description : existing.description,

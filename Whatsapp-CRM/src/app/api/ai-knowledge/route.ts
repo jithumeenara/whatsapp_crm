@@ -6,7 +6,7 @@ import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-ta
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { fetchPageText } from '@/lib/ai/web-extract'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
-import { fetchSheet, serializeSheet } from '@/lib/ai/google-sheet'
+import { fetchSheetForAccount, serializeSheet } from '@/lib/ai/google-sheet'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
 import { serializeChatbot } from '@/lib/ai/chatbot-source'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
@@ -245,7 +245,7 @@ export async function POST(req: Request) {
     if (kind === 'sheet') {
       const rawUrl = body?.source_url?.trim()
       if (!rawUrl) return NextResponse.json({ error: 'A sheet entry needs a Google Sheets link.' }, { status: 400 })
-      const sheet = await fetchSheet(rawUrl)
+      const sheet = await fetchSheetForAccount(rawUrl, ctx.accountId)
       content = serializeSheet(sheet, resolvedDescription)
       name = name || sheet.title || 'Google Sheet'
       source = 'google_sheet'

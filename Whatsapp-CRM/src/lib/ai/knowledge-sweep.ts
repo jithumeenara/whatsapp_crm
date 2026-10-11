@@ -40,7 +40,7 @@
 
 import { prisma } from '@/lib/db'
 import { fetchPageText } from './web-extract'
-import { fetchSheet, serializeSheet } from './google-sheet'
+import { fetchSheetForAccount, serializeSheet } from './google-sheet'
 import { serializeDataTable } from './data-store-source'
 import { serializeChatbot } from './chatbot-source'
 import { invalidateKnowledge } from './knowledge-store'
@@ -152,7 +152,7 @@ export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
         fresh = (await serializeChatbot(item.account_id, item.source_ref, item.description)).text
       } else if (item.kind === 'sheet') {
         if (!item.source_url) continue
-        fresh = serializeSheet(await fetchSheet(item.source_url), item.description)
+        fresh = serializeSheet(await fetchSheetForAccount(item.source_url, item.account_id), item.description)
       } else {
         if (!item.source_url) continue
         const aiRow = await prisma.aiConfig.findUnique({

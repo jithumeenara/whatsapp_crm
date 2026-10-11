@@ -1841,6 +1841,56 @@ model MicrosoftMailbox {
   @@map("microsoft_mailboxes")
 }
 
+/// One Google account per CRM account, connected with the account's own
+/// Google Cloud OAuth app (drive.file — only files picked or created by
+/// the CRM are reachable). Migration 123.
+model GoogleConnection {
+  id                String    @id @default(uuid()) @db.Uuid
+  account_id        String    @unique @db.Uuid
+  user_id           String    @db.Uuid
+  /// OAuth client id ("<project number>-….apps.googleusercontent.com").
+  client_id         String
+  /// AES-256-GCM encrypted. Never returned to the browser.
+  client_secret     String
+  /// Browser API key for the Google Picker, encrypted at rest.
+  api_key           String?
+  google_email      String?
+  refresh_token     String?
+  access_token      String?
+  access_expires_at DateTime? @db.Timestamptz(6)
+  status            String    @default("not_connected")
+  last_error        String?
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@map("google_connections")
+}
+
+/// A Data Store table tied to a Google Sheet tab: "export" appends every
+/// new record, "import" brings the sheet's rows in. Migration 123.
+model GoogleSheetLink {
+  id               String    @id @default(uuid()) @db.Uuid
+  account_id       String    @db.Uuid
+  table_id         String    @db.Uuid
+  direction        String
+  spreadsheet_id   String
+  spreadsheet_name String?
+  sheet_title      String
+  /// import only: check the sheet for new rows every 15 minutes.
+  auto_sync        Boolean   @default(false)
+  /// import only: fingerprints of rows already brought in, so a row is
+  /// imported once however often the sheet is read.
+  imported_keys    String[]  @default([])
+  last_synced_at   DateTime? @db.Timestamptz(6)
+  last_error       String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@unique([table_id, direction])
+  @@index([account_id])
+  @@map("google_sheet_links")
+}
+
 model EmailConfig {
   id                 String    @id @default(uuid()) @db.Uuid
   account_id         String    @unique @db.Uuid

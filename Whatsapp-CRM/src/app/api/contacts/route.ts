@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { checkEmail, checkPhone } from "@/lib/contacts/validate"
 
 const PAGE_SIZE = 25
 
@@ -104,8 +105,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
 
-    const { phone, name, email, company, avatar_url } = body as Record<string, string | undefined>
-    if (!phone) return NextResponse.json({ error: "phone is required" }, { status: 400 })
+    const { phone: rawPhone, name, email: rawEmail, company, avatar_url } = body as Record<string, string | undefined>
+    // Checked here as well as on the form, so an API caller cannot store
+    // "abc" as a number or "x@y" as an address either.
+    const phoneCheck = checkPhone(rawPhone ?? "")
+    if (!phoneCheck.ok) return NextResponse.json({ error: phoneCheck.error }, { status: 400 })
+    const phone = phoneCheck.value
+    let email: string | null = null
+    if (rawEmail?.trim()) {
+      const emailCheck = checkEmail(rawEmail)
+      if (!emailCheck.ok) return NextResponse.json({ error: emailCheck.error }, { status: 400 })
+      email = emailCheck.value
+    }
 
     const contact = await prisma.contact.create({
       data: {
@@ -113,7 +124,7 @@ export async function POST(req: NextRequest) {
         account_id: ctx.accountId,
         phone,
         name: name ?? null,
-        email: email ?? null,
+        email,
         company: company ?? null,
         avatar_url: avatar_url ?? null,
         opt_in_source: "manual",

@@ -79,15 +79,15 @@ export function strictCsp(nonce: string, reportUri = '/api/csp-report'): string 
     // The one line under test. The host allowances stay — a script
     // loaded by src from Razorpay or Meta is still permitted; what is
     // withdrawn is permission for inline script text.
-    `script-src 'self' 'nonce-${nonce}' https://*.razorpay.com https://connect.facebook.net`,
+    `script-src 'self' 'nonce-${nonce}' https://*.razorpay.com https://connect.facebook.net https://apis.google.com`,
     // Styles keep 'unsafe-inline'. Tailwind and a great many components
     // set style attributes directly, and an injected style cannot run
     // code — the risk is not comparable and the churn would be.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com https://*.facebook.com",
-    "frame-src https://*.razorpay.com https://*.facebook.com",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com https://*.facebook.com https://*.googleapis.com",
+    "frame-src https://*.razorpay.com https://*.facebook.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

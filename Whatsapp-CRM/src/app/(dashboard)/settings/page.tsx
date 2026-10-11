@@ -10,6 +10,7 @@ import {
   Search, ShieldCheck, X, ChevronLeft, ChevronRight, Megaphone, ShoppingBag, IndianRupee,
   Phone,
   Layers,
+  Sheet,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -22,6 +23,7 @@ import { DatabasePanel } from "@/components/settings/database-panel"
 import { NotificationsPanel } from "@/components/settings/notifications-panel"
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel"
 import { WebhooksPanel } from "@/components/settings/webhooks-panel"
+import { GoogleSettings } from "@/components/settings/google-settings"
 import { ChannelsTab } from "@/components/settings/channels-tab"
 import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
 import { AdsTab } from "@/components/settings/ads-tab"
@@ -81,6 +83,9 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
     tabs: [
       { key: "members",      label: "Members",       icon: Users,    adminOnly: true },
       { key: "ai",           label: "AI Config",     icon: Bot,      adminOnly: true },
+      // Private sheets for the AI, and Data Store tables in and out of
+      // Google Sheets. Admin: the same people who manage AI knowledge.
+      { key: "google",       label: "Google",        icon: Sheet,    adminOnly: true, aliases: ["Google Sheets", "Google Drive", "Sheets", "Spreadsheet"] },
     ],
   },
   {
@@ -108,6 +113,7 @@ const TAB_TITLES: Record<string, string> = {
   notifications: "Notifications",
   "api-keys": "API Keys",
   webhooks: "Webhooks",
+  google: "Google",
 }
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
@@ -214,6 +220,7 @@ function SettingsContent() {
       case "leads":            return <LeadsSettingsV2 />
       case "members":          return isAdmin ? <MembersTab /> : null
       case "ai":               return isAdmin ? <AiConfig /> : null
+      case "google":           return isAdmin ? <GoogleSettings /> : null
       case "database":         return isAdmin ? <DatabasePanel /> : null
       case "notifications":    return <NotificationsPanel />
       case "api-keys":         return isOwner ? <ApiKeysPanel /> : null
