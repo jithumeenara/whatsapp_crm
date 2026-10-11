@@ -348,6 +348,38 @@ export async function googleAccessToken(accountId: string): Promise<string> {
   }
 }
 
+/**
+ * A token for the browser that can do less than the account's own.
+ *
+ * The connection's token carries every scope granted — Gmail and Calendar
+ * included — so it never leaves the server. Google lets a refresh ask for
+ * a subset of what was granted; the Picker gets drive.file and nothing
+ * else, which is why an agent may have one. Kept in memory a little under
+ * its hour; a failure here leaves the connection's status alone.
+ */
+const narrowTokens = new Map<string, { token: string; until: number }>()
+export async function googleNarrowToken(accountId: string, scopes: readonly string[]): Promise<string> {
+  const key = `${accountId}|${[...scopes].sort().join(' ')}`
+  const hit = narrowTokens.get(key)
+  if (hit && hit.until > Date.now()) return hit.token
+  const conn = await loadGoogleConnection(accountId)
+  if (!conn || conn.status !== 'connected' || !conn.refresh_token) throw new GoogleNotConnectedError()
+  if (!scopes.every((s) => conn.granted_scopes.includes(s))) throw new GoogleNotConnectedError('That Google permission was not granted.')
+  try {
+    const tokens = await tokenRequest({
+      client_id: conn.client_id,
+      client_secret: decrypt(conn.client_secret),
+      grant_type: 'refresh_token',
+      refresh_token: decrypt(conn.refresh_token),
+      scope: scopes.join(' '),
+    })
+    narrowTokens.set(key, { token: tokens.access_token, until: Date.now() + Math.max(60, tokens.expires_in - 600) * 1000 })
+    return tokens.access_token
+  } catch (err) {
+    throw new GoogleNotConnectedError(err instanceof Error ? err.message : String(err))
+  }
+}
+
 /** Whether the account can use Google right now — a cheap check for UI
  *  and for choosing between the API and the public-link path. */
 export async function isGoogleConnected(accountId: string): Promise<boolean> {

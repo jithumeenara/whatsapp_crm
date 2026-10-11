@@ -162,6 +162,7 @@ export async function DELETE(req: NextRequest) {
     if (existing.refresh_token) await revokeGoogleToken(decrypt(existing.refresh_token))
     if (what === 'all') {
       await prisma.googleSheetLink.deleteMany({ where: { account_id: ctx.accountId } })
+      await prisma.googleFormLink.deleteMany({ where: { account_id: ctx.accountId } })
       await prisma.googleConnection.delete({ where: { id: existing.id } })
       await logGoogleActivity(ctx.accountId, ctx.userId, 'app_removed')
     } else {

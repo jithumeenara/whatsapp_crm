@@ -1920,6 +1920,27 @@ model GoogleSheetLink {
   @@map("google_sheet_links")
 }
 
+/// A Google Form whose responses arrive in a Data Store table (migration 127).
+model GoogleFormLink {
+  id             String    @id @default(uuid()) @db.Uuid
+  account_id     String    @db.Uuid
+  table_id       String    @unique @db.Uuid
+  form_id        String
+  form_title     String?
+  responder_url  String?
+  /// question id → field key
+  question_map   Json      @default("{}")
+  auto_sync      Boolean   @default(true)
+  imported_ids   String[]  @default([])
+  last_synced_at DateTime? @db.Timestamptz(6)
+  last_error     String?
+  created_at     DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([account_id])
+  @@map("google_form_links")
+}
+
 model EmailConfig {
   id                 String    @id @default(uuid()) @db.Uuid
   account_id         String    @unique @db.Uuid

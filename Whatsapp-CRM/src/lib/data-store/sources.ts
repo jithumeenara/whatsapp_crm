@@ -19,6 +19,7 @@ export const RECORD_SOURCES = [
   'payment',
   'integration',
   'google_sheet',
+  'google_form',
 ] as const
 
 export type RecordSource = (typeof RECORD_SOURCES)[number]
@@ -34,6 +35,7 @@ export const RECORD_SOURCE_LABELS: Record<RecordSource, string> = {
   payment: 'Payment',
   integration: 'Integration',
   google_sheet: 'Google Sheet',
+  google_form: 'Google Form',
 }
 
 /** Sources that arrive one at a time from a person, which is what an
@@ -47,6 +49,8 @@ export const ALERTABLE_SOURCES: readonly RecordSource[] = [
   'whatsapp_flow',
   'web_form',
   'payment',
+  // A person filling in the form, one at a time — the same as a web form.
+  'google_form',
 ]
 
 export function isRecordSource(value: unknown): value is RecordSource {

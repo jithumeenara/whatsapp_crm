@@ -14,6 +14,7 @@ import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepGoogleHealth } from "./src/lib/google/oauth";
 import { sweepGmailInboxes } from "./src/lib/google/gmail";
 import { sweepGoogleCalendars } from "./src/lib/google/calendar";
+import { sweepGoogleForms } from "./src/lib/google/forms";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { sweepPhonePePayments } from "./src/lib/payments/phonepe-reconcile";
@@ -224,6 +225,10 @@ app.prepare().then(() => {
   setInterval(() => {
     sweepGoogleSheetImports().catch((err) => {
       console.error("[google-sheet] import sweep failed:", err);
+    });
+    // Linked Google Forms: new responses into their tables.
+    sweepGoogleForms().catch((err) => {
+      console.error("[google-forms] sweep failed:", err);
     });
     // The hub's health check: tokens still work, permissions still granted.
     sweepGoogleHealth().catch((err) => {

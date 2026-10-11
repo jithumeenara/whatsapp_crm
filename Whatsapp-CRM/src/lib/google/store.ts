@@ -82,6 +82,23 @@ export function ensureGoogleTables(): Promise<void> {
       `ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS google_synced_at TIMESTAMPTZ`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT`,
       `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_synced_at TIMESTAMPTZ`,
+      // Migration 127 — Forms.
+      `CREATE TABLE IF NOT EXISTS google_form_links (
+         id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         account_id     UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+         table_id       UUID NOT NULL UNIQUE REFERENCES data_tables(id) ON DELETE CASCADE,
+         form_id        TEXT NOT NULL,
+         form_title     TEXT,
+         responder_url  TEXT,
+         question_map   JSONB NOT NULL DEFAULT '{}',
+         auto_sync      BOOLEAN NOT NULL DEFAULT true,
+         imported_ids   TEXT[] NOT NULL DEFAULT '{}',
+         last_synced_at TIMESTAMPTZ,
+         last_error     TEXT,
+         created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+      `CREATE INDEX IF NOT EXISTS google_form_links_account_id_idx ON google_form_links (account_id)`,
     ]) {
       await prisma.$executeRawUnsafe(sql)
     }

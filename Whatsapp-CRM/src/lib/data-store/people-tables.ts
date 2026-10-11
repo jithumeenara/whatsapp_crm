@@ -51,7 +51,7 @@ export function looksLikeContactList(text: string | null | undefined): boolean {
 }
 
 /** Row sources that are a person sending in their own details. */
-export const SUBMITTED_SOURCES = ['whatsapp_ai', 'chatbot', 'whatsapp_flow', 'web_form', 'payment'] as const
+export const SUBMITTED_SOURCES = ['whatsapp_ai', 'chatbot', 'whatsapp_flow', 'web_form', 'payment', 'google_form'] as const
 
 /** Of these tables, the ones that hold people's submissions. */
 export async function peopleTableIds(accountId: string, tableIds: readonly string[]): Promise<Set<string>> {

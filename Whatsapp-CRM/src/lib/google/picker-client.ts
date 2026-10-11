@@ -81,4 +81,46 @@ export async function pickGoogleSpreadsheet(): Promise<PickedSheet | null> {
     builder.build().setVisible(true)
   })
 }
+
+export interface PickedDriveFile {
+  id: string
+  name: string
+  mimeType: string
+}
+
+/** Any one file, for attaching — or, with "form", one Google Form. Picking
+ *  it is what lets the CRM open it. */
+export async function pickGoogleDriveFile(kind: "any" | "form" = "any"): Promise<PickedDriveFile | null> {
+  const cfg = (await (await apiFetch("/api/google/picker")).json()) as PickerConfig
+  await loadGapi()
+  const w = window as unknown as GoogleGlobal
+  await new Promise<void>((resolve) => w.gapi.load("picker", { callback: () => resolve() }))
+  const g = w.google?.picker
+  if (!g) throw new Error("Google's file picker did not start. Reload the page and try again.")
+
+  return new Promise<PickedDriveFile | null>((resolve) => {
+    let builder = new g.PickerBuilder().setOAuthToken(cfg.accessToken).setDeveloperKey(cfg.apiKey)
+    if (kind === "form") {
+      builder = builder.addView(new g.DocsView(g.ViewId.FORMS).setMode(g.DocsViewMode.LIST)).setTitle("Choose a Google Form")
+    } else {
+      builder = builder
+        .addView(new g.DocsView(g.ViewId.DOCS).setIncludeFolders(true).setMode(g.DocsViewMode.LIST))
+        .addView(new g.DocsView(g.ViewId.DOCS).setEnableDrives(true).setIncludeFolders(true))
+        .addView(new g.DocsUploadView())
+        .setTitle("Attach from Google Drive")
+    }
+    builder = builder
+      .setOrigin(window.location.origin)
+      .setCallback((data: any) => {
+        if (data?.action === g.Action.PICKED) {
+          const doc = data.docs?.[0]
+          resolve(doc?.id ? { id: String(doc.id), name: String(doc.name ?? "File"), mimeType: String(doc.mimeType ?? "") } : null)
+        } else if (data?.action === g.Action.CANCEL) {
+          resolve(null)
+        }
+      })
+    if (cfg.appId) builder = builder.setAppId(cfg.appId)
+    builder.build().setVisible(true)
+  })
+}
 /* eslint-enable @typescript-eslint/no-explicit-any */

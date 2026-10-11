@@ -29,6 +29,8 @@ import { Label } from '@/components/ui/label'
 import { useConfirm } from '@/hooks/use-confirm'
 import { apiFetch, errorText } from '@/lib/api-fetch'
 import { GoogleCalendarSettings } from './google-calendar-settings'
+import { GoogleContactsImport } from './google-contacts-import'
+import { GoogleFormsLinks } from './google-forms-links'
 import { GOOGLE_SERVICES, LEVEL_TEXT, type GoogleServiceId, type ServiceState } from '@/lib/google/services'
 
 interface Check { id: string; label: string; ok: boolean | null; detail: string }
@@ -548,6 +550,8 @@ export function GoogleSettings() {
                   </p>
                 )}
                 {svc.id === 'calendar' && state === 'connected' && <GoogleCalendarSettings />}
+                {svc.id === 'contacts' && state === 'connected' && <GoogleContactsImport />}
+                {svc.id === 'forms' && state === 'connected' && <GoogleFormsLinks />}
                 {svc.level !== 'basic' && state !== 'coming' && (
                   <p className="mt-2 pl-[52px] text-[11px] leading-relaxed text-slate-400">{level.explain}</p>
                 )}

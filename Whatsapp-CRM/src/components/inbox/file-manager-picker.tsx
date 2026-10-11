@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { toast } from "sonner";
+import { apiFetch, errorText } from "@/lib/api-fetch";
+import { pickGoogleDriveFile } from "@/lib/google/picker-client";
 import {
   X, Search, Loader2, File, FileText, FileVideo, FileAudio, Image,
-  FolderOpen, Check,
+  FolderOpen, Check, HardDrive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -53,26 +56,67 @@ export function FileManagerPicker({ open, onClose, onSelect }: Props) {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string>("all");
   const [selected, setSelected] = useState<string | null>(null);
+  const [driveUsable, setDriveUsable] = useState(false);
+  const [driveBusy, setDriveBusy] = useState(false);
+  // Only the newest search may fill the grid (rule 4).
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({ pageSize: "60" });
       if (category !== "all") params.set("category", category);
       if (search) params.set("search", search);
-      const res = await fetch(`/api/file-manager?${params}`);
+      const res = await apiFetch(`/api/file-manager?${params}`);
       const data = await res.json();
-      setFiles(data.files ?? []);
-    } catch {
-      setFiles([]);
+      if (seq === loadSeq.current) setFiles(data.files ?? []);
+    } catch (err) {
+      console.error("[file-manager-picker] load failed:", err);
+      if (seq === loadSeq.current) setFiles([]);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [category, search]);
 
   useEffect(() => {
-    if (open) { load(); setSelected(null); }
-  }, [open, load]);
+    if (!open) return;
+    setSelected(null);
+    const t = setTimeout(() => void load(), search ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [open, load, search]);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    fetch("/api/google/drive", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { usable?: boolean } | null) => { if (live) setDriveUsable(Boolean(d?.usable)); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [open]);
+
+  async function fromDrive() {
+    if (driveBusy) return;
+    setDriveBusy(true);
+    try {
+      const picked = await pickGoogleDriveFile();
+      if (!picked) return;
+      const res = await apiFetch("/api/google/drive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileId: picked.id }),
+      });
+      const { file } = (await res.json()) as { file: FileItem };
+      onSelect(file);
+      onClose();
+    } catch (err) {
+      console.error("[file-manager-picker] drive failed:", err);
+      toast.error(errorText(err, "Could not attach that file from Google Drive"));
+    } finally {
+      setDriveBusy(false);
+    }
+  }
 
   if (!open) return null;
 
@@ -101,6 +145,17 @@ export function FileManagerPicker({ open, onClose, onSelect }: Props) {
             <p className="text-[14px] font-semibold text-slate-900">File Manager</p>
             <p className="text-[11px] text-slate-400">Select a file to send</p>
           </div>
+          {driveUsable && (
+            <button
+              type="button"
+              onClick={() => void fromDrive()}
+              disabled={driveBusy}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {driveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <HardDrive className="h-3.5 w-3.5 text-emerald-600" />}
+              Google Drive
+            </button>
+          )}
           <button
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
@@ -135,7 +190,7 @@ export function FileManagerPicker({ open, onClose, onSelect }: Props) {
             <input autoComplete="off"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && load()}
+              onKeyDown={(e) => e.key === "Enter" && void load()}
               placeholder="Search…"
               className="h-7 w-36 pl-8 pr-3 text-[12px] rounded-lg border border-slate-200 bg-slate-50 outline-none focus:border-indigo-400 transition-colors"
             />

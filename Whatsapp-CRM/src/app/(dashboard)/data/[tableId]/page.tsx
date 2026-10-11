@@ -73,6 +73,7 @@ const SOURCE_STYLE: Record<RecordSource, string> = {
   payment: "bg-amber-50 text-amber-700",
   integration: "bg-violet-50 text-violet-700",
   google_sheet: "bg-lime-50 text-lime-700",
+  google_form: "bg-purple-50 text-purple-700",
 }
 
 /** The system columns, keyed so they can be hidden and sorted like fields. */
