@@ -233,8 +233,8 @@ export async function fetchSheet(raw: string): Promise<SheetContent> {
  */
 export async function fetchSheetForAccount(raw: string, accountId: string): Promise<SheetContent> {
   const ref = parseSheetUrl(raw)
-  const { isGoogleConnected, googleAccessToken } = await import('@/lib/google/oauth')
-  if (!(await isGoogleConnected(accountId))) return fetchSheet(raw)
+  const { isGoogleServiceEnabled, googleAccessToken } = await import('@/lib/google/oauth')
+  if (!(await isGoogleServiceEnabled(accountId, 'sheets'))) return fetchSheet(raw)
 
   let apiProblem: string | null = null
   try {

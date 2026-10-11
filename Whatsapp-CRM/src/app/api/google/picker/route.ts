@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { GoogleNotConnectedError, googleAccessToken, loadGoogleConnection, projectNumberOf } from '@/lib/google/oauth'
+import { GoogleNotConnectedError, googleAccessToken, isGoogleServiceEnabled, loadGoogleConnection, projectNumberOf } from '@/lib/google/oauth'
 
 /**
  * What the browser needs to open the Google Picker: a short-lived access
@@ -18,6 +18,10 @@ export async function GET() {
     const conn = await loadGoogleConnection(ctx.accountId)
     if (!conn || conn.status !== 'connected') {
       return NextResponse.json({ error: 'Connect Google first, in Settings → Google.' }, { status: 400 })
+    }
+    // Picking is a Sheets or Drive action; with both switched off it is not offered.
+    if (!(await isGoogleServiceEnabled(ctx.accountId, 'sheets')) && !(await isGoogleServiceEnabled(ctx.accountId, 'drive'))) {
+      return NextResponse.json({ error: 'Connect Google Sheets or Drive in Settings → Google.' }, { status: 400 })
     }
     if (!conn.api_key) {
       return NextResponse.json({ error: 'Add the Picker API key in Settings → Google.' }, { status: 400 })

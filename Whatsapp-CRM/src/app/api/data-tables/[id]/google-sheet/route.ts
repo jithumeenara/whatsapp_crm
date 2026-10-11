@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
-import { GoogleNotConnectedError, googleAccessToken, isGoogleConnected, loadGoogleConnection } from '@/lib/google/oauth'
+import { GoogleNotConnectedError, googleAccessToken, isGoogleServiceEnabled, loadGoogleConnection } from '@/lib/google/oauth'
 import { SheetsApiError, createSpreadsheet, getSpreadsheet, spreadsheetUrl } from '@/lib/google/sheets'
 import { ensureGoogleTables } from '@/lib/google/store'
 import { exportAll, importFromSheet, writeExportHeader } from '@/lib/google/sheet-sync'
@@ -55,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       prisma.googleSheetLink.findMany({ where: { table_id: id, account_id: ctx.accountId } }),
     ])
     return NextResponse.json({
-      connected: conn?.status === 'connected' && Boolean(conn.refresh_token),
+      connected: await isGoogleServiceEnabled(ctx.accountId, 'sheets'),
       can_pick: Boolean(conn?.api_key),
       google_email: conn?.google_email ?? null,
       export: present(links.find((l) => l.direction === 'export') ?? null),
@@ -71,8 +71,8 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params
     const { ctx, table } = await guard(id)
     if (!table) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
-    if (!(await isGoogleConnected(ctx.accountId))) {
-      return NextResponse.json({ error: 'Connect Google first, in Settings → Google.' }, { status: 400 })
+    if (!(await isGoogleServiceEnabled(ctx.accountId, 'sheets'))) {
+      return NextResponse.json({ error: 'Connect Google Sheets first, in Settings → Google.' }, { status: 400 })
     }
     const body = (await req.json().catch(() => ({}))) as {
       direction?: unknown

@@ -16,7 +16,7 @@
 import crypto from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { googleAccessToken } from './oauth'
+import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
 import { appendRows, readTab, writeTab, SHEET_MAX_ROWS } from './sheets'
 import { ensureGoogleTables } from './store'
 
@@ -140,6 +140,8 @@ export async function exportNewRecord(record: {
     where: { table_id_direction: { table_id: record.table_id, direction: 'export' } },
   })
   if (!link || link.account_id !== record.account_id) return
+  // Sheets switched off in Settings → Google: the link stays, nothing is sent.
+  if (!(await isGoogleServiceEnabled(record.account_id, 'sheets'))) return
   try {
     const [fields, zone, token] = await Promise.all([
       tableFields(record.table_id),
@@ -219,6 +221,9 @@ export async function importFromSheet(linkId: string, accountId: string): Promis
   try {
     const link = await prisma.googleSheetLink.findFirst({ where: { id: linkId, account_id: accountId, direction: 'import' } })
     if (!link) throw new Error('That sheet link no longer exists.')
+    if (!(await isGoogleServiceEnabled(accountId, 'sheets'))) {
+      throw new Error('Google Sheets is switched off in Settings → Google.')
+    }
     try {
       const [fields, token] = await Promise.all([tableFields(link.table_id), googleAccessToken(accountId)])
       const all = (await readTab(token, link.spreadsheet_id, link.sheet_title)).filter((r) => r.some((c) => c.trim() !== ''))

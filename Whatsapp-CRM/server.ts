@@ -11,6 +11,7 @@ import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
+import { sweepGoogleHealth } from "./src/lib/google/oauth";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { sweepPhonePePayments } from "./src/lib/payments/phonepe-reconcile";
@@ -205,6 +206,10 @@ app.prepare().then(() => {
   setInterval(() => {
     sweepGoogleSheetImports().catch((err) => {
       console.error("[google-sheet] import sweep failed:", err);
+    });
+    // The hub's health check: tokens still work, permissions still granted.
+    sweepGoogleHealth().catch((err) => {
+      console.error("[google] health sweep failed:", err);
     });
   }, 15 * 60_000);
 

@@ -1860,10 +1860,34 @@ model GoogleConnection {
   access_expires_at DateTime? @db.Timestamptz(6)
   status            String    @default("not_connected")
   last_error        String?
+  /// Every scope Google granted, as it reported them (migration 124).
+  granted_scopes    String[]  @default([])
+  /// Services switched on (services.ts ids). A service needs its scopes
+  /// granted AND to be switched on — disconnecting one service only
+  /// switches it off, since Google cannot revoke a single scope.
+  enabled_services  String[]  @default([])
+  /// Result of "Verify" on the app details: one entry per check.
+  config_check      Json?
+  config_checked_at DateTime? @db.Timestamptz(6)
+  connected_at      DateTime? @db.Timestamptz(6)
+  last_health_at    DateTime? @db.Timestamptz(6)
   created_at        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at        DateTime  @updatedAt @db.Timestamptz(6)
 
   @@map("google_connections")
+}
+
+/// Who connected, verified or disconnected what, and when (migration 124).
+model GoogleActivity {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  user_id    String?  @db.Uuid
+  action     String
+  detail     String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([account_id, created_at(sort: Desc)])
+  @@map("google_activity")
 }
 
 /// A Data Store table tied to a Google Sheet tab: "export" appends every

@@ -32,9 +32,11 @@ export function GoogleDrivePick({
     let cancelled = false
     fetch("/api/google/config", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((cfg: { connected?: boolean; has_api_key?: boolean } | null) => {
+      .then((cfg: { connected?: boolean; has_api_key?: boolean; services?: Array<{ id: string; state: string }> } | null) => {
         if (cancelled) return
-        if (!cfg?.connected) setState("not-connected")
+        // Sheets or Drive switched on in the hub, not merely an account signed in.
+        const usable = cfg?.services?.some((s) => (s.id === "sheets" || s.id === "drive") && s.state === "connected")
+        if (!cfg?.connected || !usable) setState("not-connected")
         else setState(cfg.has_api_key ? "ready" : "no-key")
       })
       .catch(() => { if (!cancelled) setState("not-connected") })
@@ -60,7 +62,7 @@ export function GoogleDrivePick({
   if (state === "not-connected") {
     return (
       <p className="text-[11.5px] text-slate-400">
-        Connect Google in <a href="/settings?tab=google" className="font-medium text-indigo-600 hover:underline">Settings → Google</a> to choose private sheets.
+        Connect Google Sheets in <a href="/settings?tab=google" className="font-medium text-indigo-600 hover:underline">Settings → Google</a> to choose private sheets.
       </p>
     )
   }
