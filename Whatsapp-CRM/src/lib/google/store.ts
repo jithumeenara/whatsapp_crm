@@ -72,6 +72,16 @@ export function ensureGoogleTables(): Promise<void> {
          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
        )`,
       `CREATE INDEX IF NOT EXISTS google_activity_account_created_idx ON google_activity (account_id, created_at DESC)`,
+      // Migration 125 — Gmail inbox.
+      `ALTER TABLE google_connections ADD COLUMN IF NOT EXISTS gmail_history_id TEXT`,
+      `ALTER TABLE google_connections ADD COLUMN IF NOT EXISTS gmail_polled_at TIMESTAMPTZ`,
+      // Migration 126 — Calendar.
+      `ALTER TABLE google_connections ADD COLUMN IF NOT EXISTS calendar_settings JSONB`,
+      `ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS google_event_id TEXT`,
+      `ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS google_meet_link TEXT`,
+      `ALTER TABLE follow_ups ADD COLUMN IF NOT EXISTS google_synced_at TIMESTAMPTZ`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_event_id TEXT`,
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS google_synced_at TIMESTAMPTZ`,
     ]) {
       await prisma.$executeRawUnsafe(sql)
     }

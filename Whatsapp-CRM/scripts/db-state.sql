@@ -48,7 +48,7 @@ SELECT
 \echo '=== Migrations 072 and 099 onward, one row each ==='
 -- One thing each migration creates, checked for existence. "NO" means
 -- that migration has not run here. Every file from 072 on is safe to run
--- again, so scripts/apply-migrations.sh <first NO> 124 brings it up to
+-- again, so scripts/apply-migrations.sh <first NO> 126 brings it up to
 -- date; 064–071 are not, and are covered by the sections above.
 --
 -- A few columns are also added by the app itself at start-up (the
@@ -84,7 +84,9 @@ FROM (VALUES
   ('121_registration_drafts',           to_regclass('registration_drafts') IS NOT NULL),
   ('122_users_email_case_insensitive',  to_regclass('users_email_lower_key') IS NOT NULL),
   ('123_google_sheets',                 to_regclass('google_sheet_links') IS NOT NULL),
-  ('124_google_services',               to_regclass('google_activity') IS NOT NULL)
+  ('124_google_services',               to_regclass('google_activity') IS NOT NULL),
+  ('125_google_gmail',                  EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'google_connections' AND column_name = 'gmail_history_id')),
+  ('126_google_calendar',               EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'follow_ups'         AND column_name = 'google_event_id'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 

@@ -141,6 +141,38 @@ export async function sendEmail(args: {
     return { messageId: "" }
   }
 
+  // A Gmail connected in Settings → Google sends as itself, into its Sent
+  // folder; a reply carries the customer's Message-ID so it threads.
+  const { gmailSender, sendViaGmail } = await import("@/lib/google/gmail")
+  if (await gmailSender(args.accountId)) {
+    const kind = args.kind ?? (args.inReplyTo ? "reply" : "new")
+    let text = args.format === "rich" ? markupToPlain(args.text) : args.text
+    let mailHtml = html
+    // Gmail has no "forward this message" call: the original's text goes
+    // under the agent's note, as a mail app would put it.
+    if (kind === "forward" && args.inReplyTo) {
+      const original = await prisma.message.findFirst({
+        where: { message_id: args.inReplyTo },
+        select: { content_text: true, email_subject: true, created_at: true },
+      })
+      if (original?.content_text) {
+        const block = `---------- Forwarded message ----------\nDate: ${original.created_at.toUTCString()}\nSubject: ${original.email_subject ?? ""}\n\n${original.content_text}`
+        text = `${text}\n\n${block}`
+        mailHtml = `${html}<br><br>${plainToHtml(block)}`
+      }
+    }
+    return sendViaGmail(args.accountId, {
+      to: toList,
+      cc,
+      bcc,
+      subject: args.subject,
+      text,
+      html: mailHtml,
+      inReplyTo: kind === "reply" || kind === "reply_all" ? args.inReplyTo ?? null : null,
+      attachments,
+    })
+  }
+
   const config = await loadEmailConfig(args.accountId)
   if (!config) throw new Error("Email is not connected for this account")
 

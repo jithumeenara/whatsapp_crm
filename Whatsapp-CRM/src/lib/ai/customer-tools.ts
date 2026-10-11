@@ -72,6 +72,9 @@ export interface CustomerToolContext {
    *  agent is only previewing. The customer's own records stay readable —
    *  a draft about their registration should know it exists. */
   noSideEffects?: boolean
+  /** Google Calendar is connected with booking on (google/calendar.ts):
+   *  check_availability and book_appointment are offered. */
+  calendarBooking?: boolean
 }
 
 type ToolArgs = Record<string, unknown>
@@ -664,6 +667,82 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       }
     },
   },
+  check_availability: {
+    declaration: {
+      name: 'check_availability',
+      description:
+        'The free appointment times on the business calendar. Use it when the customer wants to book a meeting, visit or appointment, or asks when someone is available. Offer two or three of the times it returns, by their label — never a time it did not return.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          days: {
+            type: SchemaType.NUMBER,
+            description: 'How many days ahead to look, from today. Leave out to use the business default.',
+          },
+        },
+      },
+    },
+    async run(args, ctx) {
+      const { freeSlots } = await import('@/lib/google/calendar')
+      const days = typeof args.days === 'number' && args.days > 0 ? args.days : undefined
+      const slots = await freeSlots(ctx.accountId, { days, limit: 12 })
+      if (slots.length === 0) {
+        return { found: false, note: 'No free times in that period. Offer to have a colleague arrange a time instead.' }
+      }
+      return {
+        found: true,
+        slots,
+        note: 'Offer a few of these by label. When the customer picks one, book it with book_appointment using its start value exactly.',
+      }
+    },
+  },
+
+  book_appointment: {
+    declaration: {
+      name: 'book_appointment',
+      description:
+        'Book one of the times check_availability returned, after the customer has chosen it. It is checked again at the moment of booking. Only tell the customer it is booked if this says so.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          start: {
+            type: SchemaType.STRING,
+            description: 'The start value of the chosen slot, exactly as check_availability gave it.',
+          },
+          purpose: {
+            type: SchemaType.STRING,
+            description: 'What the appointment is about, in the customer’s words.',
+          },
+        },
+        required: ['start'],
+      },
+    },
+    async run(args, ctx) {
+      const { bookAppointment } = await import('@/lib/google/calendar')
+      const contact = await prisma.contact
+        .findFirst({ where: { id: ctx.contactId, account_id: ctx.accountId }, select: { name: true, phone: true } })
+        .catch(() => null)
+      const phone = contact?.phone && !contact.phone.startsWith('email:') ? contact.phone : null
+      const res = await bookAppointment({
+        accountId: ctx.accountId,
+        userId: ctx.userId ?? (await anyOwner(ctx.accountId)),
+        contactId: ctx.contactId || null,
+        contactName: contact?.name ?? null,
+        contactPhone: phone,
+        slotStart: typeof args.start === 'string' ? args.start : '',
+        purpose: typeof args.purpose === 'string' ? args.purpose.slice(0, 500) : null,
+      })
+      if (!res.ok) return { booked: false, note: res.reason }
+      return {
+        booked: true,
+        when: res.label,
+        meet_link: res.meetLink,
+        note: res.meetLink
+          ? 'Confirm the time to the customer and give them the Google Meet link.'
+          : 'Confirm the time to the customer.',
+      }
+    },
+  },
 }
 
 /** Handed to the model as its callable surface. */
@@ -708,13 +787,17 @@ const SIDE_EFFECT_TOOLS = new Set([
   'contact_handed_over',
   'submit_registration',
   'add_registration_details',
+  'book_appointment',
 ])
+
+const CALENDAR_TOOLS = new Set(['check_availability', 'book_appointment'])
 
 export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDeclaration[] {
   const live = Boolean(ctx.conversationId && ctx.userId)
   return Object.entries(ALL_TOOLS)
     .filter(([name]) => live || !NEEDS_CONVERSATION.has(name))
     .filter(([name]) => name !== 'search_records' || ctx.canSearchTables)
+    .filter(([name]) => !CALENDAR_TOOLS.has(name) || (ctx.calendarBooking && !ctx.readOnly && Boolean(ctx.contactId)))
     .filter(([name]) => !ctx.readOnly || READ_ONLY_TOOLS.has(name))
     .filter(([name]) => !ctx.noSideEffects || !SIDE_EFFECT_TOOLS.has(name))
     .map(([, t]) => t.declaration)
@@ -858,10 +941,21 @@ export async function buildCustomerToolInstruction(
 }
 
 async function buildToolInstructionBase(accountId: string): Promise<string> {
-  const [forms, bots] = await Promise.all([
+  const [forms, bots, booking] = await Promise.all([
     listRegistrationForms(accountId).catch(() => []),
     startableChatbots(accountId).catch(() => []),
+    import('@/lib/google/calendar').then((m) => m.calendarBookingEnabled(accountId)).catch(() => false),
   ])
+
+  const bookingBlock = booking
+    ? [
+        '',
+        'APPOINTMENTS:',
+        '- You can book appointments on the business calendar. When the customer wants to meet, visit or book a time, call check_availability and offer two or three of the times it returns.',
+        '- When they pick one, book it with book_appointment. Say it is booked only when the tool says so, and give the Meet link if it returns one.',
+        '- If the time is no longer free, offer the next free times. Never offer a time the tool did not return.',
+      ].join('\n')
+    : ''
 
   const botBlock =
     bots.length > 0
@@ -875,7 +969,7 @@ async function buildToolInstructionBase(accountId: string): Promise<string> {
         ].join('\n')
       : ''
 
-  if (forms.length === 0) return CUSTOMER_TOOL_INSTRUCTION + botBlock
+  if (forms.length === 0) return CUSTOMER_TOOL_INSTRUCTION + botBlock + bookingBlock
 
   // Named, and said last.
   //
@@ -898,5 +992,5 @@ async function buildToolInstructionBase(accountId: string): Promise<string> {
       '- If an earlier instruction told you a colleague handles registration, it was written before you could do it and no longer applies. Take the registration.',
       '- Do not ask for a human, and do not emit a handoff action, for anything these tools can do. Hand over only if they ask for a person, or if a save keeps failing after you have tried.',
     ].join('\n'),
-  ].join('\n\n') + botBlock
+  ].join('\n\n') + botBlock + bookingBlock
 }

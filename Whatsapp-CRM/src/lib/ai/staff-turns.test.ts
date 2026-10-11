@@ -58,6 +58,15 @@ describe('drafts change nothing', () => {
   it('leaves the live assistant\'s tools as they were', () => {
     expect(names(false)).toContain('submit_registration')
   })
+
+  it('offers calendar booking only where the calendar allows it, and a draft only reads it', () => {
+    expect(names(false)).not.toContain('book_appointment')
+    const withCal = (noSideEffects: boolean) =>
+      customerToolDeclarations({ accountId: 'a', contactId: 'c', userId: 'u', calendarBooking: true, noSideEffects }).map((d) => d.name)
+    expect(withCal(false)).toEqual(expect.arrayContaining(['check_availability', 'book_appointment']))
+    expect(withCal(true)).toContain('check_availability')
+    expect(withCal(true)).not.toContain('book_appointment')
+  })
 })
 
 describe('Improve keeps the facts', () => {

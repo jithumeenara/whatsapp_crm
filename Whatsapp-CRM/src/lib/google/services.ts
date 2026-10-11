@@ -73,7 +73,8 @@ export const GOOGLE_SERVICES: readonly GoogleService[] = [
     features: ['Inbox email replies sent from Gmail', 'Lands in Gmail’s Sent folder', 'No access to read mail'],
     scopes: ['https://www.googleapis.com/auth/gmail.send'],
     level: 'sensitive',
-    availability: 'coming',
+    availability: 'available',
+    openHref: '/inbox',
   },
   {
     id: 'gmail_inbox',
@@ -82,7 +83,8 @@ export const GOOGLE_SERVICES: readonly GoogleService[] = [
     features: ['New mail arrives in the Inbox', 'Replies keep Gmail’s threads', 'Attachments both ways', 'AI drafts and Improve'],
     scopes: ['https://www.googleapis.com/auth/gmail.modify'],
     level: 'restricted',
-    availability: 'coming',
+    availability: 'available',
+    openHref: '/inbox',
   },
   {
     id: 'calendar',
@@ -95,7 +97,8 @@ export const GOOGLE_SERVICES: readonly GoogleService[] = [
     ],
     scopes: ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/calendar.freebusy'],
     level: 'sensitive',
-    availability: 'coming',
+    availability: 'available',
+    openHref: '/follow-ups',
   },
   {
     id: 'contacts',

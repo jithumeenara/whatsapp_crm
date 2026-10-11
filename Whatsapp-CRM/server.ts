@@ -12,6 +12,8 @@ import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepGoogleHealth } from "./src/lib/google/oauth";
+import { sweepGmailInboxes } from "./src/lib/google/gmail";
+import { sweepGoogleCalendars } from "./src/lib/google/calendar";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { sweepPhonePePayments } from "./src/lib/payments/phonepe-reconcile";
@@ -199,6 +201,22 @@ app.prepare().then(() => {
       console.error("[staff-wait] sweep interval failed:", err);
     });
   }, 60_000);
+
+  // "Gmail — full inbox": new mail into the Inbox, read from Gmail's
+  // change history every minute (src/lib/google/gmail.ts).
+  setInterval(() => {
+    sweepGmailInboxes().catch((err) => {
+      console.error("[gmail] inbox sweep failed:", err);
+    });
+  }, 60_000);
+
+  // Google Calendar: follow-ups and tasks out to the calendar, and times
+  // changed or events cancelled there back in (src/lib/google/calendar.ts).
+  setInterval(() => {
+    sweepGoogleCalendars().catch((err) => {
+      console.error("[calendar] sweep failed:", err);
+    });
+  }, 5 * 60_000);
 
   // Google Sheets set to "keep in sync": new rows come into their Data
   // Store tables (src/lib/google/sheet-sync.ts). A no-op for an account

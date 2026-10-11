@@ -41,6 +41,7 @@ import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
 import { getProviderKeys } from "@/lib/ai/providers/registry";
 import { customerToolsUsable, generateCustomerReply } from "@/lib/ai/customer-agent";
 import { buildCustomerToolInstruction, type CustomerToolContext } from "@/lib/ai/customer-tools";
+import { calendarBookingEnabled } from "@/lib/google/calendar";
 import { fillRecordPlaceholders, isSearchOutput, recordUnits } from "@/lib/ai/table-search";
 import { loadSearchableTables } from "@/lib/ai/table-search-store";
 import { buildLanguageBlock } from "@/lib/ai/language";
@@ -2027,6 +2028,7 @@ async function advanceFromNodeKey(
               accountId: run.account_id,
               contactId: run.contact_id,
               ...(searchTables.length > 0 ? { canSearchTables: true } : {}),
+              ...((await calendarBookingEnabled(run.account_id)) ? { calendarBooking: true } : {}),
             }
           : null;
         if (customerToolContext) {

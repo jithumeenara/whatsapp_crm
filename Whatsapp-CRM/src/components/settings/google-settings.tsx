@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useConfirm } from '@/hooks/use-confirm'
 import { apiFetch, errorText } from '@/lib/api-fetch'
+import { GoogleCalendarSettings } from './google-calendar-settings'
 import { GOOGLE_SERVICES, LEVEL_TEXT, type GoogleServiceId, type ServiceState } from '@/lib/google/services'
 
 interface Check { id: string; label: string; ok: boolean | null; detail: string }
@@ -546,6 +547,7 @@ export function GoogleSettings() {
                     Google did not allow everything this needs. Connect again and keep every checkbox ticked on Google&apos;s screen.
                   </p>
                 )}
+                {svc.id === 'calendar' && state === 'connected' && <GoogleCalendarSettings />}
                 {svc.level !== 'basic' && state !== 'coming' && (
                   <p className="mt-2 pl-[52px] text-[11px] leading-relaxed text-slate-400">{level.explain}</p>
                 )}

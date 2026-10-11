@@ -18,7 +18,7 @@ describe('the services hub', () => {
   })
 
   it('never treats a coming-soon service as granted', () => {
-    expect(servicesGranted(['https://www.googleapis.com/auth/gmail.send'])).not.toContain('gmail_send')
+    expect(servicesGranted(['https://www.googleapis.com/auth/business.manage'])).not.toContain('business_profile')
   })
 
   it('shows a card as missing permission when a scope was taken away', () => {
@@ -27,7 +27,7 @@ describe('the services hub', () => {
     expect(serviceState(sheets, { connected: true, granted_scopes: ['openid'], enabled_services: ['sheets'] })).toBe('missing_permission')
     expect(serviceState(sheets, { connected: true, granted_scopes: [DRIVE_FILE], enabled_services: [] })).toBe('off')
     expect(serviceState(sheets, null)).toBe('off')
-    expect(serviceState(serviceById('calendar')!, null)).toBe('coming')
+    expect(serviceState(serviceById('business_profile')!, null)).toBe('coming')
   })
 
   it('gives every service at least one scope and a feature line', () => {

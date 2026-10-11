@@ -62,7 +62,9 @@ interface FollowUp {
   title: string
   due_at: string
   status: "pending" | "done" | "skipped"
-  notes?: string | null
+  note?: string | null
+  google_meet_link?: string | null
+  google_event_id?: string | null
   contact?: { name?: string | null; phone: string } | null
   assigned_to_user?: { profile?: { full_name: string } | null } | null
   lead?: { title: string } | null
@@ -290,8 +292,16 @@ export default function FollowUpsV2() {
                       )}
                     </div>
 
-                    {fu.notes && (
-                      <p className="mt-1.5 text-[12px] text-slate-500 italic">{fu.notes}</p>
+                    {fu.note && (
+                      <p className="mt-1.5 whitespace-pre-line text-[12px] text-slate-500 italic">{fu.note}</p>
+                    )}
+                    {(fu.google_meet_link || fu.google_event_id) && (
+                      <p className="mt-1 flex flex-wrap gap-2 text-[11.5px] text-slate-400">
+                        {fu.google_event_id && <span>On Google Calendar</span>}
+                        {fu.google_meet_link && (
+                          <a href={fu.google_meet_link} target="_blank" rel="noopener noreferrer" className="font-medium text-indigo-600 hover:underline">Join Google Meet</a>
+                        )}
+                      </p>
                     )}
                   </div>
 

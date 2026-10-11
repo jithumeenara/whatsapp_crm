@@ -33,7 +33,14 @@ export async function POST(req: NextRequest) {
     const enabled = body.enabled
       ? [...new Set([...conn.enabled_services, svc.id])]
       : conn.enabled_services.filter((id) => id !== svc.id)
-    await prisma.googleConnection.update({ where: { id: conn.id }, data: { enabled_services: enabled } })
+    await prisma.googleConnection.update({
+      where: { id: conn.id },
+      data: {
+        enabled_services: enabled,
+        // Full inbox switched back on: from now, not everything since it was off.
+        ...(svc.id === 'gmail_inbox' && body.enabled ? { gmail_history_id: null } : {}),
+      },
+    })
     await logGoogleActivity(ctx.accountId, ctx.userId, body.enabled ? 'service_on' : 'service_off', svc.name)
     return NextResponse.json({ ok: true, enabled_services: enabled })
   } catch (err) {

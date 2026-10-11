@@ -32,6 +32,7 @@ import { assessConfidence, type ConfidenceAssessment } from './confidence'
 import { validateReply, type ValidationResult } from './validator'
 import { customerToolsUsable, generateCustomerReply } from './customer-agent'
 import { buildCustomerToolInstruction, type CustomerToolContext } from './customer-tools'
+import { calendarBookingEnabled } from '@/lib/google/calendar'
 import { fillRecordPlaceholders, isSearchOutput, recordUnits, type LoadedTable } from './table-search'
 import { describeTables, loadSearchableTables } from './table-search-store'
 import { scanActionTokens } from './action-tokens'
@@ -710,6 +711,7 @@ export async function runCustomerTurn(args: {
       ? await loadSearchableTables(args.accountId).catch(() => [])
       : []
   if (toolContext && searchTables.length > 0) toolContext.canSearchTables = true
+  if (toolContext && !toolContext.readOnly && (await calendarBookingEnabled(args.accountId))) toolContext.calendarBooking = true
 
   // Started here, not after retrieval, and this is the point.
   //

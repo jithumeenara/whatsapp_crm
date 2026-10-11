@@ -119,6 +119,8 @@ export async function GET(req: NextRequest) {
         access_expires_at: new Date(Date.now() + tokens.expires_in * 1000),
         granted_scopes: granted,
         enabled_services: enabled,
+        // Full inbox newly on, or a different account: read mail from now on.
+        ...(!sameAccount || (enabled.includes('gmail_inbox') && !conn.enabled_services.includes('gmail_inbox')) ? { gmail_history_id: null } : {}),
         status: 'connected',
         last_error: null,
         ...(sameAccount ? {} : { connected_at: new Date() }),
