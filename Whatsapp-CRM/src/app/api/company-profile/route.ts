@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { COMPANY_CATEGORIES, COMPANY_SECTIONS } from '@/lib/ai/company-profile'
+import { COMPANY_CATEGORIES, COMPANY_SECTIONS, ensureCompanyProfileColumns } from '@/lib/ai/company-profile'
 import { isKnownTimezone } from '@/lib/agents/timezones'
 
 /**
@@ -16,6 +16,7 @@ const FIELDS = [
   'legal_name', 'display_name', 'category', 'category_other', 'section', 'section_other',
   'about', 'services', 'website', 'email', 'phone', 'address', 'city', 'state',
   'country', 'working_hours', 'languages', 'timezone',
+  'payment_methods', 'service_area', 'policies', 'not_offered',
 ] as const
 
 export async function GET() {
@@ -26,6 +27,7 @@ export async function GET() {
     return toErrorResponse(err)
   }
 
+  await ensureCompanyProfileColumns()
   const profile = await prisma.companyProfile.findUnique({ where: { account_id: accountId } })
   return NextResponse.json({
     profile,
@@ -71,9 +73,10 @@ export async function PUT(req: Request) {
     // Empty string means "clear this", which is different from omitting
     // the field (leave it alone) — so it is stored as null rather than
     // an empty string that would render as a blank line in the prompt.
-    data[field] = typeof value === 'string' && value.trim() ? value.trim().slice(0, 2000) : null
+    data[field] = typeof value === 'string' && value.trim() ? value.trim().slice(0, field === 'policies' ? 6000 : 2000) : null
   }
 
+  await ensureCompanyProfileColumns()
   const profile = await prisma.companyProfile.upsert({
     where: { account_id: accountId },
     update: data,

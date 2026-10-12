@@ -14,6 +14,7 @@ import { AdvancedFeatures } from './ai/advanced-features';
 import { TestTab } from './ai/test-tab';
 import { UsageTab } from './ai/usage-tab';
 import { EvalTab } from './ai/eval-tab';
+import { AccuracyRulesPanel } from './ai/accuracy-rules-panel';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
@@ -554,7 +555,8 @@ export function AiConfig() {
         {/* ── Usage tab ── not wired to anything yet: no AI call in this
             app records tokens or cost, so there is genuinely nothing to
             chart. Says so plainly instead of rendering empty axes. */}
-        <TabsContent value="accuracy" className="mt-4">
+        <TabsContent value="accuracy" className="mt-4 space-y-5">
+          <AccuracyRulesPanel />
           <EvalTab configured={anyKeyConfigured} />
         </TabsContent>
 

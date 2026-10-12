@@ -9,6 +9,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { onceSchemaPatch } from '@/lib/db/schema-patch'
 
 /** Broad industries, chosen to cover what this CRM's accounts actually
  *  are rather than to be an exhaustive taxonomy. Anything outside the
@@ -81,6 +82,12 @@ export interface CompanyProfileShape {
    *  of the description the model is given — it is what turns a time
    *  somebody names into a moment. See lib/agents/zoned-time.ts. */
   timezone?: string | null
+  /** Migration 128: what customers ask about most and the assistant
+   *  must never guess. */
+  payment_methods?: string | null
+  service_area?: string | null
+  policies?: string | null
+  not_offered?: string | null
 }
 
 /** 'Other' in the picker means the real answer is in the free-text box;
@@ -125,6 +132,11 @@ export function formatCompanyBlock(
   if (place) lines.push(`Location: ${place}`)
   if (profile.working_hours?.trim()) lines.push(`Working hours: ${profile.working_hours.trim()}`)
   if (profile.languages?.trim()) lines.push(`Serves customers in: ${profile.languages.trim()}`)
+  if (profile.service_area?.trim()) lines.push(`Areas served: ${profile.service_area.trim()}`)
+  if (profile.payment_methods?.trim()) lines.push(`Payment methods accepted: ${profile.payment_methods.trim()}`)
+  if (profile.policies?.trim()) lines.push(`Policies (refunds, cancellation, booking and the like — quote them, never improvise one): ${profile.policies.trim()}`)
+  // Said plainly, because a model asked "do you also do X?" leans to yes.
+  if (profile.not_offered?.trim()) lines.push(`NOT offered — say clearly the business does not do these: ${profile.not_offered.trim()}`)
 
   // Contact details are given to the customer-facing assistant only. The
   // admin assistant is talking to people who already work there.
@@ -144,6 +156,50 @@ export function formatCompanyBlock(
   return `${header}\n${lines.join('\n')}`
 }
 
+/** Adds migration 128's columns if it has not run, once per process —
+ *  Prisma reads every column, so a missing one would fail every reply. */
+export function ensureCompanyProfileColumns(): Promise<void> {
+  return onceSchemaPatch('company_profile_128', async () => {
+    for (const col of ['payment_methods', 'service_area', 'policies', 'not_offered']) {
+      await prisma.$executeRawUnsafe(`ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS ${col} TEXT`)
+    }
+  })
+}
+
 export async function loadCompanyProfile(accountId: string): Promise<CompanyProfileShape | null> {
+  await ensureCompanyProfileColumns().catch(() => {})
   return prisma.companyProfile.findUnique({ where: { account_id: accountId } })
+}
+
+export interface UnderstandingItem {
+  key: string
+  label: string
+  filled: boolean
+  /** What the assistant cannot do while this is empty. */
+  without: string
+}
+
+/**
+ * What the assistant knows about the business, field by field, and what
+ * each missing one costs. The Accuracy tab shows it beside the exact text
+ * the assistant reads, so "is it using our details?" has an answer.
+ */
+export function businessUnderstanding(p: CompanyProfileShape | null): { items: UnderstandingItem[]; score: number } {
+  const has = (v: string | null | undefined) => Boolean(v?.trim())
+  const items: UnderstandingItem[] = [
+    { key: 'display_name', label: 'Business name', filled: has(p?.display_name) || has(p?.legal_name), without: 'It cannot say who it speaks for.' },
+    { key: 'category', label: 'Industry', filled: Boolean(p && resolveCategory(p)), without: 'It guesses what kind of business this is.' },
+    { key: 'about', label: 'About the business', filled: has(p?.about), without: 'Questions like "what do you do?" get a vague answer.' },
+    { key: 'services', label: 'Services / products', filled: has(p?.services), without: 'It cannot list what you offer without the knowledge base.' },
+    { key: 'not_offered', label: 'What you do NOT offer', filled: has(p?.not_offered), without: 'Asked "do you also do…?", it may say yes.' },
+    { key: 'working_hours', label: 'Working hours', filled: has(p?.working_hours), without: '"Are you open now?" has to be handed over.' },
+    { key: 'address', label: 'Address / location', filled: has(p?.address) || has(p?.city), without: '"Where are you?" has to be handed over.' },
+    { key: 'service_area', label: 'Areas served', filled: has(p?.service_area), without: '"Do you deliver / come to my place?" has to be handed over.' },
+    { key: 'payment_methods', label: 'Payment methods', filled: has(p?.payment_methods), without: '"Can I pay by UPI / card?" has to be handed over.' },
+    { key: 'policies', label: 'Policies', filled: has(p?.policies), without: 'Refund, cancellation and booking questions have to be handed over.' },
+    { key: 'phone', label: 'Contact phone / email', filled: has(p?.phone) || has(p?.email), without: 'It cannot give a number or email to reach you.' },
+    { key: 'timezone', label: 'Time zone', filled: has(p?.timezone), without: 'Dates and "tomorrow" are worked out in India time by default.' },
+    { key: 'languages', label: 'Languages served', filled: has(p?.languages), without: 'It follows the customer\'s language with no list to check against.' },
+  ]
+  return { items, score: Math.round((items.filter((i) => i.filled).length / items.length) * 100) }
 }

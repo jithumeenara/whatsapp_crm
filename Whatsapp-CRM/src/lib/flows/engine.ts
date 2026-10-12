@@ -47,6 +47,7 @@ import { loadSearchableTables } from "@/lib/ai/table-search-store";
 import { buildLanguageBlock } from "@/lib/ai/language";
 import { assessConfidence } from "@/lib/ai/confidence";
 import { validateReply } from "@/lib/ai/validator";
+import { accuracyPromptBlock, accuracyRulesFor, checkAccuracyRules, correctionFor, DEFAULT_ACCURACY_RULES, mergeRuleBreaches } from "@/lib/ai/accuracy-rules";
 import { buildHandoffNote } from "@/lib/ai/handoff-context";
 import { scanActionTokens } from "@/lib/ai/action-tokens";
 import { checkSafetyGuard } from "@/lib/ai/safety-guard";
@@ -1983,6 +1984,9 @@ async function advanceFromNodeKey(
         // Its own earlier replies are not a source; the reply's list is
         // also checked in code after generation.
         promptParts.push(GROUNDING_RULES);
+        // The business's own accuracy rules — checked again in code below.
+        const accuracyRules = await accuracyRulesFor(run.account_id).catch(() => DEFAULT_ACCURACY_RULES);
+        promptParts.push(accuracyPromptBlock(accuracyRules));
         // Guardrails — prompt-level guidance, not code-enforced (an LLM
         // can still ignore an instruction; there's no second verification
         // pass here). Stated as plainly in the Settings UI copy too.
@@ -2087,26 +2091,7 @@ async function advanceFromNodeKey(
         // A list may only name what this turn's material has — not the
         // assistant's own earlier replies, which is what it was copying
         // (see lib/ai/list-grounding.ts).
-        let groundingCaught: string[] = [];
-        if (reply && !aiResult.handedToChatbot) {
-          const grounded = await enforceGroundedList({
-            reply,
-            // One unit per Q&A, passage and returned row, so a figure in
-            // a listed item must come from the same row as its name.
-            sources: [
-              ...selected.qaPairs.map((p) => `${p.question} ${p.answer}`),
-              ...selected.documentChunks.map((c) => c.text),
-              customerContext,
-              formatCompanyBlock(companyProfile, "customer"),
-              aiConfig.system_prompt ?? "",
-              cfg.system_prompt ?? "",
-              ...aiResult.toolOutputs.filter((o) => !isSearchOutput(o)),
-              ...recordUnits(aiResult.toolOutputs),
-              lastUserMessage,
-              ...conversationHistory.filter((m) => m.role === "user").map((m) => m.text),
-            ],
-            lookups: aiResult.toolOutputs,
-            regenerate: async (correction) => {
+        const regenerateReply = async (correction: string): Promise<string> => {
               // No tools the second time: nothing is looked up twice.
               const rewriteStartedAt = Date.now();
               const again = await generateCustomerReply({
@@ -2128,7 +2113,27 @@ async function advanceFromNodeKey(
                 markdownToWhatsApp(scanActionTokens(again.reply).cleanedText),
                 aiResult.toolOutputs,
               );
-            },
+        };
+        let groundingCaught: string[] = [];
+        if (reply && !aiResult.handedToChatbot) {
+          const grounded = await enforceGroundedList({
+            reply,
+            // One unit per Q&A, passage and returned row, so a figure in
+            // a listed item must come from the same row as its name.
+            sources: [
+              ...selected.qaPairs.map((p) => `${p.question} ${p.answer}`),
+              ...selected.documentChunks.map((c) => c.text),
+              customerContext,
+              formatCompanyBlock(companyProfile, "customer"),
+              aiConfig.system_prompt ?? "",
+              cfg.system_prompt ?? "",
+              ...aiResult.toolOutputs.filter((o) => !isSearchOutput(o)),
+              ...recordUnits(aiResult.toolOutputs),
+              lastUserMessage,
+              ...conversationHistory.filter((m) => m.role === "user").map((m) => m.text),
+            ],
+            lookups: aiResult.toolOutputs,
+            regenerate: regenerateReply,
           });
           reply = grounded.reply;
           groundingCaught = grounded.caught;
@@ -2143,10 +2148,8 @@ async function advanceFromNodeKey(
         // the reply is checked against the material it was supposed to
         // come from; anything unsupported is a reason to fetch a person
         // rather than something to send and hope about.
-        if (aiConfig.response_validation_enabled) {
-          const validation = validateReply({
-            reply,
-            contextParts: [
+        {
+          const validationContext = [
               knowledgeBlock,
               customerContext,
               formatCompanyBlock(companyProfile, "customer"),
@@ -2161,9 +2164,35 @@ async function advanceFromNodeKey(
               // Not the assistant's own earlier replies: an invented
               // figure must not vouch for itself (lib/ai/history.ts).
               ...conversationHistory.filter((m) => !m.byAssistant).map((m) => m.text),
-            ],
-          });
-          if (!validation.ok) {
+          ];
+          // The account's rules are checked even with the figure check off.
+          const checkReply = (text: string) =>
+            mergeRuleBreaches(
+              aiConfig.response_validation_enabled ? validateReply({ reply: text, contextParts: validationContext }) : null,
+              checkAccuracyRules(text, accuracyRules),
+            );
+          let validation = checkReply(reply);
+          // One more try, naming exactly what was wrong, before a person.
+          if (validation && !validation.ok && accuracyRules.on_unsupported === "retry" && reply && !aiResult.handedToChatbot) {
+            try {
+              const second = await regenerateReply(
+                correctionFor(
+                  validation.issues
+                    .filter((i) => i.kind === "blocked_phrase" || i.kind === "price")
+                    .map((i) => ({ kind: i.kind as "blocked_phrase" | "price", value: i.value })),
+                  validation.issues.filter((i) => i.kind !== "blocked_phrase" && i.kind !== "price").map((i) => i.value),
+                ),
+              );
+              const secondCheck = second.trim() ? checkReply(second) : null;
+              if (second.trim() && (!secondCheck || secondCheck.ok)) {
+                reply = second;
+                validation = secondCheck;
+              }
+            } catch (err) {
+              console.error("[flow-engine] rules retry failed:", err instanceof Error ? err.message : err);
+            }
+          }
+          if (validation && !validation.ok) {
             await logEvent(run.id, "error", node.node_key, {
               node_type: "ai_reply",
               reason: "ai_reply_blocked_unsupported_details",

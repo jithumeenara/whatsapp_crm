@@ -23,7 +23,7 @@
  */
 
 export type ValidationIssue = {
-  kind: 'number' | 'money' | 'date' | 'phone' | 'email' | 'url'
+  kind: 'number' | 'money' | 'date' | 'phone' | 'email' | 'url' | 'blocked_phrase' | 'price'
   value: string
   reason: string
 }

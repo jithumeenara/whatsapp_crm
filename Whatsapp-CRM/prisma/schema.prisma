@@ -1697,6 +1697,11 @@ model CompanyProfile {
   /// as the default an agent's shift schedule starts from. Null means
   /// nobody has chosen yet. See src/lib/agents/timezones.ts.
   timezone      String?
+  /// What customers ask and the assistant must not guess (migration 128).
+  payment_methods String?
+  service_area    String?
+  policies        String?
+  not_offered     String?
 
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)

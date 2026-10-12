@@ -43,6 +43,10 @@ interface CompanyProfile {
   working_hours: string | null;
   languages: string | null;
   timezone: string | null;
+  payment_methods: string | null;
+  service_area: string | null;
+  policies: string | null;
+  not_offered: string | null;
 }
 
 type Form = Record<keyof CompanyProfile, string>;
@@ -51,6 +55,7 @@ const EMPTY: Form = {
   legal_name: '', display_name: '', category: '', category_other: '', section: '', section_other: '',
   about: '', services: '', website: '', email: '', phone: '', address: '', city: '', state: '',
   country: '', working_hours: '', languages: '', timezone: '',
+  payment_methods: '', service_area: '', policies: '', not_offered: '',
 };
 
 export function CompanyProfilePanel() {
@@ -304,6 +309,53 @@ export function CompanyProfilePanel() {
             />
           </Field>
         </div>
+
+        {/* What customers ask most and the assistant must never guess.
+            Each one, left empty, is a question it can only hand over. */}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Payment methods" hint="How customers can pay.">
+            <Input
+              value={form.payment_methods}
+              onChange={(e) => set('payment_methods', e.target.value)}
+              placeholder="UPI, card, cash, bank transfer"
+              className="h-10 rounded-xl border-slate-200 text-[13px]"
+            />
+          </Field>
+          <Field label="Areas you serve" hint="Delivery, visits or service area.">
+            <Input
+              value={form.service_area}
+              onChange={(e) => set('service_area', e.target.value)}
+              placeholder="All of Kerala; online across India"
+              className="h-10 rounded-xl border-slate-200 text-[13px]"
+            />
+          </Field>
+        </div>
+
+        <Field
+          label="Policies"
+          hint="Refunds, cancellation, rescheduling, booking, warranty. The assistant quotes these and never makes one up."
+        >
+          <Textarea
+            value={form.policies}
+            onChange={(e) => set('policies', e.target.value)}
+            rows={4}
+            placeholder={'Full refund if cancelled 48 hours before.\nOne free reschedule per booking.'}
+            className="rounded-xl border-slate-200 text-[13px]"
+          />
+        </Field>
+
+        <Field
+          label="What you do NOT offer"
+          hint="Asked “do you also do…?”, a model leans to yes. List what you don’t do, so it says no."
+        >
+          <Textarea
+            value={form.not_offered}
+            onChange={(e) => set('not_offered', e.target.value)}
+            rows={2}
+            placeholder="No home visits. No EMI. No courses for under-18s."
+            className="rounded-xl border-slate-200 text-[13px]"
+          />
+        </Field>
 
         <div className="flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />

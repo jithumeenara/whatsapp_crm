@@ -42,6 +42,7 @@ import { markdownToWhatsApp } from '@/lib/whatsapp/markdown-to-whatsapp'
 import { getProviderKeys } from './providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { GROUNDING_RULES, enforceGroundedList } from './list-grounding'
+import { accuracyPromptBlock, accuracyRulesFor, checkAccuracyRules, correctionFor, DEFAULT_ACCURACY_RULES, mergeRuleBreaches, type AccuracyRules } from './accuracy-rules'
 import type { HistoryTurn } from './history'
 import { TEAM_MEMBER_RULE } from './history'
 
@@ -84,6 +85,7 @@ export interface PromptAssembly {
   customerContext: string
   /** The pieces the validator is allowed to treat as source material. */
   contextParts: string[]
+  accuracyRules: AccuracyRules
 }
 
 /** Everything the prompt needs that is *not* the retrieved knowledge —
@@ -100,6 +102,8 @@ export interface PromptSources {
   timezone: string
   customerContext: string
   toolInstruction: string
+  /** The account's accuracy rules (accuracy-rules.ts). */
+  accuracyRules: AccuracyRules
 }
 
 /**
@@ -129,7 +133,7 @@ export async function loadPromptSources(args: {
    *  nothing about records, registrations or call-backs it cannot use. */
   readOnlyTools?: boolean
 }): Promise<PromptSources> {
-  const [companyProfile, customerContext, toolInstruction] = await Promise.all([
+  const [companyProfile, customerContext, toolInstruction, accuracyRules] = await Promise.all([
     loadCompanyProfile(args.accountId).catch(() => null),
     args.aiConfig.customer_context_enabled && args.contactId
       ? buildCustomerContext({
@@ -143,6 +147,7 @@ export async function loadPromptSources(args: {
       : args.toolsAvailable
         ? buildCustomerToolInstruction(args.accountId, { searchTables: args.searchTables }).catch(() => '')
         : Promise.resolve(''),
+    accuracyRulesFor(args.accountId).catch(() => DEFAULT_ACCURACY_RULES),
   ])
 
   // ── What day it is, where the business is ──────────────────────
@@ -170,6 +175,7 @@ export async function loadPromptSources(args: {
     toolInstruction,
     nowBlock,
     timezone,
+    accuracyRules,
   }
 }
 
@@ -211,7 +217,7 @@ export async function buildCustomerSystemPrompt(args: {
   const { aiConfig } = args
   const knowledgeBlock = formatKnowledgeBlock(args.selected)
 
-  const { companyBlock, customerContext, toolInstruction, nowBlock, timezone } = await (args.sources ??
+  const { companyBlock, customerContext, toolInstruction, nowBlock, timezone, accuracyRules } = await (args.sources ??
     loadPromptSources({
       aiConfig,
       accountId: args.accountId,
@@ -249,6 +255,10 @@ export async function buildCustomerSystemPrompt(args: {
   // Its own earlier replies are not a source (see list-grounding.ts,
   // which also checks the reply's list in code).
   parts.push(GROUNDING_RULES)
+
+  // The business's own rules: prices, promises, regulated topics,
+  // phrases it never uses. Checked again in code on the reply.
+  parts.push(accuracyPromptBlock(accuracyRules ?? DEFAULT_ACCURACY_RULES))
 
   // Prompt-level guidance, not code-enforced — a model can ignore an
   // instruction. The validator below is the part that cannot be ignored.
@@ -380,6 +390,7 @@ export async function buildCustomerSystemPrompt(args: {
     nowBlock,
     timezone,
     customerContext,
+    accuracyRules: accuracyRules ?? DEFAULT_ACCURACY_RULES,
     // The account's own prompt counts as source material.
     //
     // Caught by the evaluation suite: "Where are you located?" was
@@ -870,6 +881,26 @@ export async function runCustomerTurn(args: {
   // assistant's own earlier replies — those are what it was copying.
   let groundingCaught: string[] = []
   let usage = generated.usage ?? null
+  // A second draft with a correction appended. No tools the second time:
+  // nothing is looked up or registered twice — what the look-ups
+  // returned is already in the conversation.
+  const regenerateReply = async (correction: string): Promise<string> => {
+    const again = await generateCustomerReply({
+      aiConfig: args.aiConfig,
+      systemPrompt: `${assembly.systemPrompt}\n\n${correction}`,
+      userMessage: args.customerMessage,
+      conversationHistory: history,
+      toolContext: null,
+    })
+    if (again.usage) {
+      usage = {
+        inputTokens: (usage?.inputTokens ?? 0) + again.usage.inputTokens,
+        outputTokens: (usage?.outputTokens ?? 0) + again.usage.outputTokens,
+        totalTokens: (usage?.totalTokens ?? 0) + again.usage.totalTokens,
+      }
+    }
+    return fillRecordPlaceholders(markdownToWhatsApp(scanActionTokens(again.reply).cleanedText), generated.toolOutputs)
+  }
   if (!generated.handedToChatbot && reply) {
     const groundingStartedAt = Date.now()
     const grounded = await enforceGroundedList({
@@ -888,25 +919,7 @@ export async function runCustomerTurn(args: {
         ...history.filter((m) => m.role === 'user').map((m) => m.text),
       ],
       lookups: generated.toolOutputs,
-      regenerate: async (correction) => {
-        // No tools the second time: nothing is looked up or registered
-        // twice. What the look-ups returned is in the correction.
-        const again = await generateCustomerReply({
-          aiConfig: args.aiConfig,
-          systemPrompt: `${assembly.systemPrompt}\n\n${correction}`,
-          userMessage: args.customerMessage,
-          conversationHistory: history,
-          toolContext: null,
-        })
-        if (again.usage) {
-          usage = {
-            inputTokens: (usage?.inputTokens ?? 0) + again.usage.inputTokens,
-            outputTokens: (usage?.outputTokens ?? 0) + again.usage.outputTokens,
-            totalTokens: (usage?.totalTokens ?? 0) + again.usage.totalTokens,
-          }
-        }
-        return fillRecordPlaceholders(markdownToWhatsApp(scanActionTokens(again.reply).cleanedText), generated.toolOutputs)
-      },
+      regenerate: regenerateReply,
     })
     reply = grounded.reply
     groundingCaught = grounded.caught
@@ -914,22 +927,46 @@ export async function runCustomerTurn(args: {
   }
 
   const validationStartedAt = Date.now()
-  let validation: ValidationResult | null = null
-  if (args.aiConfig.response_validation_enabled) {
-    validation = validateReply({
-      reply,
-      contextParts: [
-        ...assembly.contextParts,
-        ...generated.toolOutputs,
-        args.customerMessage,
-        // The customer's and staff's words — not the assistant's own
-        // earlier replies, or a figure it once invented would vouch for
-        // itself (history.ts).
-        ...history.filter((m) => !(m as HistoryTurn).byAssistant).map((m) => m.text),
-      ],
-    })
-  }
+  const validationContext = [
+    ...assembly.contextParts,
+    ...generated.toolOutputs,
+    args.customerMessage,
+    // The customer's and staff's words — not the assistant's own
+    // earlier replies, or a figure it once invented would vouch for
+    // itself (history.ts).
+    ...history.filter((m) => !(m as HistoryTurn).byAssistant).map((m) => m.text),
+  ]
+  // Unsupported details (when the check is on) and the account's own
+  // rules (always): a blocked phrase or a price under "never quote" is
+  // not something a setting elsewhere should be able to wave through.
+  const checkReply = (text: string): ValidationResult | null =>
+    mergeRuleBreaches(
+      args.aiConfig.response_validation_enabled ? validateReply({ reply: text, contextParts: validationContext }) : null,
+      checkAccuracyRules(text, assembly.accuracyRules),
+    )
+  let validation = checkReply(reply)
+  // One more try with exactly what was wrong named, before a person is
+  // asked to step in — most failures are one stray figure in an
+  // otherwise good answer. Still failing, it is handed over as before.
   timings.checks += Date.now() - validationStartedAt
+  if (validation && !validation.ok && assembly.accuracyRules.on_unsupported === 'retry' && !generated.handedToChatbot && reply) {
+    const retryStartedAt = Date.now()
+    try {
+      const unsupported = validation.issues.filter((i) => i.kind !== 'blocked_phrase' && i.kind !== 'price').map((i) => i.value)
+      const breaches = validation.issues
+        .filter((i) => i.kind === 'blocked_phrase' || i.kind === 'price')
+        .map((i) => ({ kind: i.kind as 'blocked_phrase' | 'price', value: i.value }))
+      const second = await regenerateReply(correctionFor(breaches, unsupported))
+      const secondCheck = second.trim() ? checkReply(second) : null
+      if (second.trim() && (!secondCheck || secondCheck.ok)) {
+        reply = second
+        validation = secondCheck
+      }
+    } catch (err) {
+      console.error('[customer-pipeline] rules retry failed:', err instanceof Error ? err.message : err)
+    }
+    timings.generation += Date.now() - retryStartedAt
+  }
 
   return {
     decision: decideTurn({ validation, modelAskedForHuman, reply }),
