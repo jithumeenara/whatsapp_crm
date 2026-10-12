@@ -506,7 +506,7 @@ export interface DispatchInboundInput {
   contactId: string;
   conversationId: string;
   message: ParsedInbound;
-  /** 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' — restricts flow matching to the same channel */
+  /** 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website' — restricts flow matching to the same channel */
   channel?: string;
 }
 

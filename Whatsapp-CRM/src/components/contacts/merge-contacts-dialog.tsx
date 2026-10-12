@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { GitMerge, Loader2, Search, ArrowRight, AlertTriangle } from "lucide-react"
+import { isPlaceholderPhone } from "@/lib/contacts/validate"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,7 +29,7 @@ const MERGEABLE_FIELDS: { key: keyof Contact; label: string }[] = [
 
 function channelChips(c: Contact) {
   const chips: string[] = []
-  if (c.phone && !c.phone.startsWith("email:")) chips.push("WhatsApp")
+  if (c.phone && !isPlaceholderPhone(c.phone)) chips.push("WhatsApp")
   if (c.instagram_id) chips.push("Instagram")
   if (c.facebook_id) chips.push("Facebook")
   return chips

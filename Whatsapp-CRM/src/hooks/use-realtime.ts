@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { io, type Socket } from "socket.io-client";
+import type { Socket } from "socket.io-client";
+import { connectAccountSocket } from "@/lib/realtime-client";
 import type { Message, Conversation, Lead } from "@/types";
 import { useAuth } from "./use-auth";
 
@@ -91,7 +92,7 @@ let sharedSocket: Socket | null = null;
 
 function getSocket(): Socket {
   if (!sharedSocket || !sharedSocket.connected) {
-    sharedSocket = io({ path: "/socket.io", transports: ["websocket", "polling"] });
+    sharedSocket = connectAccountSocket();
   }
   return sharedSocket;
 }

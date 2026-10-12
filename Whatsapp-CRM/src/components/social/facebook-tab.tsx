@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react"
 import { MessageCircle, Share2, Eye, TrendingUp, Users, MousePointer, X, ExternalLink, RefreshCw, ThumbsUp } from "lucide-react"
-import { io, type Socket } from "socket.io-client"
+import type { Socket } from "socket.io-client"
+import { connectAccountSocket } from "@/lib/realtime-client"
 import { useAuth } from "@/hooks/use-auth"
 
 interface FbPage {
@@ -95,7 +96,7 @@ export function FacebookTab() {
   // Listen for real-time feed updates (new likes/comments) via socket
   useEffect(() => {
     if (!accountId) return
-    const socket = io({ path: "/socket.io", transports: ["websocket", "polling"] })
+    const socket = connectAccountSocket()
     socketRef.current = socket
 
     const handleJoin = () => socket.emit("join_account", accountId)

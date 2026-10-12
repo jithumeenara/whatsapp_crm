@@ -31,6 +31,7 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { prisma } from '@/lib/db'
+import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
 
 interface SendTextEngineArgs {
   accountId: string
@@ -302,6 +303,32 @@ async function persistBotTextMessage(accountId: string, conversationId: string, 
   await notifyBotMessage(accountId, savedMsg, conversationId, { last_message_text: text, last_message_at: lastMessageAt.toISOString() })
 }
 
+/** The conversation's channel, read raw so a database whose Prisma
+ *  client predates a column still works — same as the senders below. */
+async function channelOf(conversationId: string): Promise<string | null> {
+  const rows = await prisma.$queryRaw<{ channel: string | null }[]>`
+    SELECT channel FROM conversations WHERE id = ${conversationId}::uuid LIMIT 1
+  `.catch(() => [] as { channel: string | null }[])
+  return rows[0]?.channel ?? null
+}
+
+// ── Website chat ──────────────────────────────────────────────────────
+// No provider: the message is recorded and pushed to the visitor's open
+// window (src/lib/webchat/outbound.ts). Buttons and list rows render as
+// real buttons there, so a chatbot built for WhatsApp works unchanged.
+
+async function websiteSend(
+  args: { accountId: string; conversationId: string },
+  content: Omit<Parameters<typeof sendToWebsiteVisitor>[0], 'accountId' | 'conversationId' | 'senderType'>,
+): Promise<{ whatsapp_message_id: string }> {
+  const row = await sendToWebsiteVisitor({ ...args, senderType: 'bot', ...content })
+  return { whatsapp_message_id: row.message_id ?? row.id }
+}
+
+function withHeaderFooter(body: string, header?: string, footer?: string): string {
+  return [header?.trim(), body?.trim(), footer?.trim()].filter(Boolean).join('\n\n')
+}
+
 async function engineSendTextSms(args: SendTextEngineArgs): Promise<{ whatsapp_message_id: string }> {
   const contact = await prisma.contact.findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { phone: true } })
   if (!contact?.phone) throw new Error('SMS contact has no phone number')
@@ -357,6 +384,7 @@ export async function engineSendText(
   if (channel === 'sms') return engineSendTextSms(args)
   if (channel === 'rcs') return engineSendTextRcs(args)
   if (channel === 'email') return engineSendTextEmail(args)
+  if (channel === 'website') return websiteSend(args, { text: args.text })
 
   // Safety net: if channel is NULL, check if contact phone looks like an IGSID
   // (pure numeric, no '+' prefix — won't collide with valid E.164 numbers)
@@ -397,6 +425,20 @@ export async function engineSendMedia(
     SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
   `.catch(() => [] as { channel: string | null }[])
   if (convRows[0]?.channel === 'instagram') return engineSendIgMedia(args)
+  if (convRows[0]?.channel === 'website') {
+    // Only a public https file can be shown to a visitor; an upload kept
+    // behind sign-in (/api/files/…) is sent as its caption alone rather
+    // than as a link that would open a login page.
+    const isPublic = args.link.startsWith('https://')
+    if (!isPublic) console.warn('[webchat] media is not a public https link; sending its caption only:', args.link)
+    return websiteSend(args, {
+      text: args.caption ?? '',
+      contentType: args.kind === 'image' ? 'image' : 'document',
+      media: isPublic
+        ? { url: args.link, mimeType: args.kind === 'image' ? 'image/*' : null, filename: args.filename ?? null }
+        : null,
+    })
+  }
 
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
@@ -528,6 +570,9 @@ async function engineSendIgMedia(
 export async function engineSendTemplate(
   args: SendTemplateEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
+  if ((await channelOf(args.conversationId)) === 'website') {
+    throw new Error('WhatsApp templates cannot be sent to a website chat. Use a text, buttons or list step instead.')
+  }
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
@@ -644,6 +689,9 @@ interface SendCatalogEngineArgs {
 export async function engineSendCatalog(
   args: SendCatalogEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
+  if ((await channelOf(args.conversationId)) === 'website') {
+    throw new Error('WhatsApp catalog messages cannot be sent to a website chat. Use a text, buttons or list step instead.')
+  }
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
@@ -766,6 +814,9 @@ async function flowNeedsEndpoint(accountId: string, metaFlowId: string): Promise
 export async function engineSendFlow(
   args: SendFlowEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
+  if ((await channelOf(args.conversationId)) === 'website') {
+    throw new Error('WhatsApp Flows forms cannot be sent to a website chat. Use a text, buttons or list step instead.')
+  }
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
   // An explicit answer beats a guess. A Flow authored in Meta's own Flow
@@ -865,6 +916,16 @@ export async function engineSendInteractiveButtons(
   if (convRows[0]?.channel === 'instagram') {
     return engineSendIgButtonTemplate(args)
   }
+  if (convRows[0]?.channel === 'website') {
+    return websiteSend(args, {
+      text: withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+      buttons: args.buttons.map((b) => ({ id: b.id, title: b.title })),
+      media:
+        args.headerMediaUrl?.startsWith('https://') && args.headerMediaType === 'image'
+          ? { url: args.headerMediaUrl, mimeType: 'image/*' }
+          : null,
+    })
+  }
   return sendInteractiveViaMeta({ ...args, kind: 'buttons' })
 }
 
@@ -950,6 +1011,12 @@ export async function engineSendInteractiveList(
     const fallbackText = `${args.bodyText ?? ''}\n\n${items}`.trim()
     return engineSendText({ ...args, text: fallbackText })
   }
+  if (convRows[0]?.channel === 'website') {
+    return websiteSend(args, {
+      text: withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+      buttons: args.sections.flatMap((section) => section.rows).map((r) => ({ id: r.id, title: r.title })),
+    })
+  }
   return sendInteractiveViaMeta({ ...args, kind: 'list' })
 }
 
@@ -995,6 +1062,12 @@ export async function engineSendCtaUrlButton(
   if (convRows[0]?.channel === 'instagram') {
     const fallbackText = `${args.bodyText ?? ''}\n\n${args.displayText}: ${args.url}`.trim()
     return engineSendText({ ...args, text: fallbackText })
+  }
+  if (convRows[0]?.channel === 'website') {
+    return websiteSend(args, {
+      text: withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+      link: { label: args.displayText, url: args.url },
+    })
   }
 
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
@@ -1049,6 +1122,10 @@ export async function engineSendVoiceNote(args: {
   /** The text that was spoken — stored, not sent. */
   transcript: string
 }): Promise<{ whatsapp_message_id: string }> {
+  // A website window plays no voice notes; the visitor reads the words.
+  if ((await channelOf(args.conversationId)) === 'website') {
+    return websiteSend(args, { text: args.transcript })
+  }
   const { contact, sanitized, config } = await resolveContactAndConfig(
     args.accountId,
     args.contactId,

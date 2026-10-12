@@ -524,7 +524,7 @@ export function MessageComposer({
         </div>
       )}
 
-      {sessionExpired && channel !== 'instagram' && channel !== 'facebook' && (
+      {sessionExpired && channel !== 'instagram' && channel !== 'facebook' && channel !== 'website' && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
             24-hour session expired. Use a template to re-engage.
@@ -745,7 +745,7 @@ export function MessageComposer({
             )}
           </div>
 
-          {channel !== 'instagram' && channel !== 'facebook' && (
+          {channel !== 'instagram' && channel !== 'facebook' && channel !== 'website' && (
             <>
               {/* Templates stay reachable while the session is expired —
                   they are the only way to reopen it. */}

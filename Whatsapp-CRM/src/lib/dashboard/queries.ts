@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { isPlaceholderPhone } from "@/lib/contacts/validate";
 import {
   daysAgoStart,
   DOW_SHORT_MON_FIRST,
@@ -183,7 +184,7 @@ export async function loadResponseTime(accountId: string): Promise<ResponseTimeS
 function contactLabel(contact: { name?: string | null; phone?: string | null; email?: string | null } | null | undefined, fallback: string): string {
   if (!contact) return fallback
   if (contact.name) return contact.name
-  if (contact.phone && !contact.phone.startsWith('email:')) return contact.phone
+  if (contact.phone && !isPlaceholderPhone(contact.phone)) return contact.phone
   if (contact.email) return contact.email
   return fallback
 }

@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react"
 import type { Contact, ContactNote, Tag } from "@/types"
-import { Phone, Copy, Check, Plus, ExternalLink, Tag as TagIcon, FileText, X, User, Mail, MessageSquare, Radio, Search } from "lucide-react"
+import { Phone, Copy, Check, Plus, ExternalLink, Tag as TagIcon, FileText, X, User, Mail, MessageSquare, Radio, Search, Globe } from "lucide-react"
+import { isPlaceholderPhone } from "@/lib/contacts/validate"
 import { format } from "date-fns"
 import { toast } from "sonner"
 
@@ -150,7 +151,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
   }, [contact])
 
   const handleCopyPhone = useCallback(async () => {
-    if (!contact?.phone || contact.phone.startsWith("email:")) return
+    if (!contact?.phone || isPlaceholderPhone(contact.phone)) return
     await navigator.clipboard.writeText(contact.phone)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -192,7 +193,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
   // get a "email:<address>" placeholder in contact.phone — Contact.phone has
   // no NULL option in the schema. Treat that placeholder as "no real phone"
   // everywhere in this component rather than showing it as if it were one.
-  const hasRealPhone = Boolean(contact.phone) && !contact.phone.startsWith("email:")
+  const hasRealPhone = Boolean(contact.phone) && !isPlaceholderPhone(contact.phone)
 
   const displayName = contact.name || (hasRealPhone ? contact.phone : contact.email) || "Unknown"
   const ini = (displayName || "?").split(" ").map((w: string) => w[0]).join("").toUpperCase().slice(0, 2)
@@ -253,6 +254,10 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
           ) : channel === "rcs" ? (
             <span className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-violet-500 shadow-md ring-2 ring-white">
               <Radio className="h-3.5 w-3.5 text-white" />
+            </span>
+          ) : channel === "website" ? (
+            <span title="Website chat" className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-teal-600 shadow-md ring-2 ring-white">
+              <Globe className="h-3.5 w-3.5 text-white" />
             </span>
           ) : (
             <span className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#25d366] shadow-md ring-2 ring-white">

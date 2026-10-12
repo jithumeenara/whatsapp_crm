@@ -58,7 +58,19 @@ const TEXT_ONLY_CHANNEL_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
   'send_catalog',
 ])
 
+/**
+ * Website chat: the window renders text, buttons, list rows (as buttons),
+ * link buttons and public images itself, so most nodes work. What has no
+ * equivalent is Meta's own machinery — approved templates, WhatsApp Flows
+ * forms, catalogs. send_to_number stays: it alerts a staff WhatsApp
+ * number, whatever channel the customer is on.
+ */
+const WEBSITE_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
+  'send_template', 'send_flow', 'wait_flow_submit', 'send_catalog',
+])
+
 export const CHANNEL_INCOMPATIBLE_NODES: Record<string, Set<ChatbotNodeType>> = {
+  website: WEBSITE_INCOMPATIBLE,
   instagram: INSTAGRAM_INCOMPATIBLE,
   sms: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
   email: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
@@ -72,6 +84,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   sms: 'SMS',
   email: 'Email',
   rcs: 'RCS',
+  website: 'Website',
 }
 
 // ─── Visual metadata per node type ─────────────────────────────

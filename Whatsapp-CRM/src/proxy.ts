@@ -84,6 +84,12 @@ const PUBLIC_PREFIXES = [
   // nothing but the form's own definition.
   '/f/',
   '/api/forms/',
+  // Website chat (src/lib/webchat). Visitors have no account here. The
+  // routes check the widget key, a bearer session token for anything
+  // about a conversation, the origin, and their own rate limits; the
+  // staff-facing settings routes live under /api/website-chat/, which is
+  // NOT public.
+  '/api/webchat/',
   '/_next/',
   '/favicon',
   '/icon',   // Next.js App Router favicon generator
@@ -142,6 +148,11 @@ export async function proxy(req: NextRequest) {
   // Report-only, never enforcing. The policy in next.config.ts is what
   // the browser actually obeys; this one it only checks and reports on,
   // so nothing that works today can stop working because of it.
+  //
+  // Not on the website chat frame: it is framed by other sites on
+  // purpose and sends its own enforcing policy, so the app's "never
+  // framed" report would fire on every visitor who opens a chat.
+  if (req.nextUrl.pathname.startsWith('/api/webchat/frame/')) return res
   res.headers.set('Content-Security-Policy-Report-Only', strictCsp(nonce))
   res.headers.set('Reporting-Endpoints', reportingEndpoints())
   return res
@@ -254,7 +265,10 @@ export const config = {
   // worklet module handed a redirect fails as an AbortError — surfacing
   // as "the microphone stopped responding", which points nowhere near an
   // auth matcher. The file carries no data and needs no session.
+  //
+  // `webchat/` is the website chat's install script and window assets,
+  // loaded by visitors on other websites — same reasoning, no data.
   matcher: [
-    '/((?!_next/static|_next/image|favicon\\.ico|audio/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon\\.ico|audio/|webchat/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

@@ -11,7 +11,7 @@ import {
   ExternalLink, Clock,
 } from "lucide-react"
 import { format } from "date-fns"
-import { checkEmail, checkPhone, isEmailPlaceholderPhone } from "@/lib/contacts/validate"
+import { checkEmail, checkPhone, isPlaceholderPhone } from "@/lib/contacts/validate"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -142,7 +142,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
         setContact(c)
         setName(c.name ?? "")
         // An email-only contact's "email:…" is its identity, not a number.
-        setPhone(isEmailPlaceholderPhone(c.phone) ? "" : c.phone ?? "")
+        setPhone(isPlaceholderPhone(c.phone) ? "" : c.phone ?? "")
         setAlternatePhone(c.alternate_phone ?? "")
         setEmail(c.email ?? "")
         setCompany(c.company ?? "")
@@ -177,7 +177,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
 
   // A contact that only ever wrote by email has no number: its phone is a
   // placeholder, not something to show, call, copy or require.
-  const emailOnly = isEmailPlaceholderPhone(contact?.phone)
+  const emailOnly = isPlaceholderPhone(contact?.phone)
   const realPhone = contact && !emailOnly ? contact.phone : null
 
   // Checked as they are typed, with the server's own rules (validate.ts),
@@ -319,7 +319,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
     if (id === "leads" && leads.length === 0) loadLeads()
   }
 
-  const displayName = contact?.name || (isEmailPlaceholderPhone(contact?.phone) ? contact?.email : contact?.phone) || "Contact"
+  const displayName = contact?.name || (isPlaceholderPhone(contact?.phone) ? contact?.email : contact?.phone) || "Contact"
   const ini = initials(contact?.name, contact?.phone ?? undefined)
   const grad = contact ? avatarGrad(contact.id) : "from-slate-400 to-slate-600"
 

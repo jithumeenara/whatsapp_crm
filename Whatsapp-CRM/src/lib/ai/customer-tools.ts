@@ -39,6 +39,7 @@ import {
   type FunctionDeclaration,
 } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
+import { isPlaceholderPhone } from '@/lib/contacts/validate'
 import { businessTimezone, humanDate } from './human-date'
 // One implementation of "a wall clock in this zone is this moment",
 // shared with the callback slots the offer system sends.
@@ -75,6 +76,12 @@ export interface CustomerToolContext {
   /** Google Calendar is connected with booking on (google/calendar.ts):
    *  check_availability and book_appointment are offered. */
   calendarBooking?: boolean
+  /** A website visitor: nobody has proved who they are — no phone number,
+   *  no account, only a browser. They may ask, start a chatbot, leave a
+   *  call-back or be handed over, but not file registrations or book
+   *  appointments under a name anybody could type. A flood of fake
+   *  visitors must not become a flood of fake records. */
+  anonymous?: boolean
 }
 
 type ToolArgs = Record<string, unknown>
@@ -722,7 +729,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       const contact = await prisma.contact
         .findFirst({ where: { id: ctx.contactId, account_id: ctx.accountId }, select: { name: true, phone: true } })
         .catch(() => null)
-      const phone = contact?.phone && !contact.phone.startsWith('email:') ? contact.phone : null
+      const phone = contact?.phone && !isPlaceholderPhone(contact.phone) ? contact.phone : null
       const res = await bookAppointment({
         accountId: ctx.accountId,
         userId: ctx.userId ?? (await anyOwner(ctx.accountId)),
@@ -792,6 +799,9 @@ const SIDE_EFFECT_TOOLS = new Set([
 
 const CALENDAR_TOOLS = new Set(['check_availability', 'book_appointment'])
 
+/** Writes an anonymous website visitor may not make. See `anonymous`. */
+const ANONYMOUS_BLOCKED_TOOLS = new Set(['submit_registration', 'add_registration_details', 'book_appointment'])
+
 export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDeclaration[] {
   const live = Boolean(ctx.conversationId && ctx.userId)
   return Object.entries(ALL_TOOLS)
@@ -800,6 +810,7 @@ export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDecl
     .filter(([name]) => !CALENDAR_TOOLS.has(name) || (ctx.calendarBooking && !ctx.readOnly && Boolean(ctx.contactId)))
     .filter(([name]) => !ctx.readOnly || READ_ONLY_TOOLS.has(name))
     .filter(([name]) => !ctx.noSideEffects || !SIDE_EFFECT_TOOLS.has(name))
+    .filter(([name]) => !ctx.anonymous || !ANONYMOUS_BLOCKED_TOOLS.has(name))
     .map(([, t]) => t.declaration)
 }
 

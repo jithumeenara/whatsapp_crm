@@ -11,6 +11,7 @@ import {
   Phone,
   Layers,
   Sheet,
+  Globe,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -24,6 +25,7 @@ import { NotificationsPanel } from "@/components/settings/notifications-panel"
 import { ApiKeysPanel } from "@/components/settings/api-keys-panel"
 import { WebhooksPanel } from "@/components/settings/webhooks-panel"
 import { GoogleSettings } from "@/components/settings/google-settings"
+import { WebsiteChatSettings } from "@/components/settings/website-chat-settings"
 import { ChannelsTab } from "@/components/settings/channels-tab"
 import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
 import { AdsTab } from "@/components/settings/ads-tab"
@@ -63,6 +65,9 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       { key: "ads",       label: "Ads",             icon: Megaphone,     ownerOnly: true, aliases: ["Meta Ads", "Google Ads", "Facebook Ads", "Advertising", "Pixel", "Conversions API", "Lead Ads"] },
       { key: "catalog",   label: "Catalog",         icon: ShoppingBag,   ownerOnly: true, aliases: ["Products", "Commerce", "Meta Catalog", "WhatsApp Shop", "Orders"] },
       { key: "payments",  label: "Payments",        icon: IndianRupee,   ownerOnly: true, aliases: ["UPI", "Razorpay", "In-chat Payments", "India"] },
+      // The chat window a business pastes onto its own website. Admin:
+      // it decides what strangers on the internet can reach.
+      { key: "website-chat", label: "Website Chat", icon: Globe,       adminOnly: true, aliases: ["Live chat", "Web chat", "Chat widget", "Website", "Embed"] },
       { key: "calls",     label: "Calls",           icon: Phone,         ownerOnly: false, aliases: ["Voice", "Call", "SIP", "Ring", "Missed calls"] },
       // Capture/Tags/Custom Fields used to be three separate sidebar
       // entries — collapsed into one "Contact" entry with an inner tab
@@ -114,6 +119,7 @@ const TAB_TITLES: Record<string, string> = {
   "api-keys": "API Keys",
   webhooks: "Webhooks",
   google: "Google",
+  "website-chat": "Website Chat",
 }
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
@@ -122,6 +128,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   ads: "Connect your ad platforms to track leads and ROI without leaving this CRM",
   catalog: "Connect a Meta product catalog to sell through WhatsApp — products, carts, and orders",
   payments: "Collect UPI payments in-chat — requires Meta's explicit per-number approval",
+  "website-chat": "A chat window on your website — visitors' messages arrive in the Inbox, answered by your chatbots, the assistant and your team",
   calls: "Who answers a call, how long it rings, and what the assistant does with it",
   platform: "One Meta App for the whole platform — set up once, every tenant gets one-click Facebook Connect",
   contact: "How contacts get captured, tagged, enriched with custom fields, and converted into leads",
@@ -221,6 +228,7 @@ function SettingsContent() {
       case "members":          return isAdmin ? <MembersTab /> : null
       case "ai":               return isAdmin ? <AiConfig /> : null
       case "google":           return isAdmin ? <GoogleSettings /> : null
+      case "website-chat":     return isAdmin ? <WebsiteChatSettings /> : null
       case "database":         return isAdmin ? <DatabasePanel /> : null
       case "notifications":    return <NotificationsPanel />
       case "api-keys":         return isOwner ? <ApiKeysPanel /> : null

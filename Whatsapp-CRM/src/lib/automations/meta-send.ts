@@ -11,6 +11,7 @@ import { prisma } from '@/lib/db'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
 import { sendConversationEmail } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
+import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
 
 interface SendTextArgs {
   accountId: string
@@ -99,6 +100,18 @@ export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_mes
     const finalId = messageId || `email_bot_${Date.now()}`
     await persistBotTextMessage(args.accountId, args.conversationId, args.text, finalId, subject)
     return { whatsapp_message_id: finalId }
+  }
+
+  if (channel === 'website') {
+    // Recorded and pushed to the visitor's open window — see
+    // src/lib/webchat/outbound.ts.
+    const row = await sendToWebsiteVisitor({
+      accountId: args.accountId,
+      conversationId: args.conversationId,
+      senderType: 'bot',
+      text: args.text,
+    })
+    return { whatsapp_message_id: row.message_id ?? row.id }
   }
 
   return sendViaMeta({ ...args, kind: 'text' })

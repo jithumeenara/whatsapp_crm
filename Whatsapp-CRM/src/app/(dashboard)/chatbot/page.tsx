@@ -8,7 +8,7 @@ import {
   Bot, Plus, Pencil, Trash2, Zap, MessagesSquare,
   AlertTriangle, Loader2,
   Radio, Hash, Play, LayoutGrid, List, X, Download, Upload,
-  MessageSquare, Mail, ChevronDown,
+  MessageSquare, Mail, ChevronDown, Globe,
 } from "lucide-react"
 import { formatDistanceToNow, format } from "date-fns"
 import { useRealtime } from "@/hooks/use-realtime"
@@ -25,7 +25,7 @@ interface Chatbot {
   status: string
   execution_count: number
   created_at: string
-  channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
+  channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
   /** Dead ends and unreachable steps, worst first. Computed server-side
    *  so the list can warn without loading every node's config. */
   issues?: { level: 'breaks' | 'warns'; nodeKey: string | null; message: string }[]
@@ -112,6 +112,7 @@ const CHANNEL_META: Record<string, { label: string; icon: React.ReactNode; badge
   sms:       { label: "SMS",       icon: <MessageSquare className="h-3 w-3" />, badgeIcon: <MessageSquare className="h-2.5 w-2.5" /> },
   email:     { label: "Email",     icon: <Mail className="h-3 w-3" />,          badgeIcon: <Mail className="h-2.5 w-2.5" /> },
   rcs:       { label: "RCS",       icon: <Radio className="h-3 w-3" />,         badgeIcon: <Radio className="h-2.5 w-2.5" /> },
+  website:   { label: "Website",   icon: <Globe className="h-3 w-3 text-teal-600" />, badgeIcon: <Globe className="h-2.5 w-2.5" /> },
 }
 
 function ChannelBadge({ channel }: Readonly<{ channel?: string }>) {
@@ -129,7 +130,7 @@ function getKeywords(bot: Chatbot): string[] {
   return bot.trigger_config?.keywords?.filter(Boolean) ?? []
 }
 
-type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs"
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website"
 
 /** Stable keys for fixed-length placeholder rows. Using the array index
  *  as a React key is fine only while a list never reorders; naming the
@@ -205,7 +206,7 @@ export default function ChatbotV2() {
     },
   })
 
-  async function createNew(channel: "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs") {
+  async function createNew(channel: "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website") {
     setShowPlatformPicker(false)
     setCreating(true)
     try {
@@ -599,9 +600,13 @@ export default function ChatbotV2() {
                       <span className="flex items-center gap-1 text-[11px] font-semibold text-pink-600">
                         <InstagramIcon className="h-3.5 w-3.5" /> Instagram
                       </span>
-                    ) : (
+                    ) : (bot.channel ?? "whatsapp") === "whatsapp" ? (
                       <span className="flex items-center gap-1 text-[11px] font-semibold text-green-600">
                         <WhatsAppIcon className="h-3.5 w-3.5" /> WhatsApp
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-slate-600">
+                        {CHANNEL_META[bot.channel ?? "whatsapp"]?.icon} {CHANNEL_META[bot.channel ?? "whatsapp"]?.label ?? bot.channel}
                       </span>
                     )}
                   </td>
@@ -735,7 +740,7 @@ export default function ChatbotV2() {
               </button>
               {channelFilterOpen && (
                 <div className="absolute right-0 top-9 z-20 w-44 rounded-xl border border-slate-100 bg-white shadow-xl py-1">
-                  {(["all", "whatsapp", "instagram", "facebook", "sms", "email", "rcs"] as ChannelFilter[]).map((ch) => (
+                  {(["all", "whatsapp", "instagram", "facebook", "sms", "email", "rcs", "website"] as ChannelFilter[]).map((ch) => (
                     <button
                       key={ch}
                       type="button"
@@ -930,6 +935,21 @@ export default function ChatbotV2() {
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">RCS</p>
                     <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />(rich cards soon)</p>
+                  </div>
+                </button>
+
+                {/* Website chat */}
+                <button
+                  type="button"
+                  onClick={() => createNew("website")}
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-teal-400 hover:bg-teal-50/40 transition-all"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-50 group-hover:bg-teal-100 transition-colors shadow-sm">
+                    <Globe className="h-6 w-6 text-teal-600" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-slate-800">Website</p>
+                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Text, buttons,<br />lists & links</p>
                   </div>
                 </button>
               </div>

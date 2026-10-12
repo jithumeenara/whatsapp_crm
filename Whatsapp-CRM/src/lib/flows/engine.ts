@@ -485,13 +485,19 @@ async function tryDigression(
   if (!asked) return "not_attempted";
 
   const { autoReplyToMessage } = await import("@/lib/ai/auto-reply");
+  // The conversation's own channel, not "whatsapp": the assistant's rules
+  // differ by channel (a website visitor is anonymous and may not file
+  // registrations), and the account chooses which channels it answers.
+  const conversation = await prisma.conversation
+    .findUnique({ where: { id: run.conversation_id }, select: { channel: true } })
+    .catch(() => null);
   const outcome = await autoReplyToMessage({
     accountId: run.account_id,
     userId: run.user_id,
     conversationId: run.conversation_id,
     contactId: run.contact_id,
     message: asked,
-    channel: "whatsapp",
+    channel: conversation?.channel ?? "whatsapp",
   }).catch((err: unknown) => {
     console.warn(
       "[flows] digression failed, falling back to the prompt:",

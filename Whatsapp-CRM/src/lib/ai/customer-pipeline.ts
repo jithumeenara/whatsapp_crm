@@ -709,6 +709,7 @@ export async function runCustomerTurn(args: {
           ? { conversationId: args.conversationId, userId: args.userId }
           : {}),
         ...(args.noSideEffects ? { noSideEffects: true } : {}),
+        ...(args.currentChannel === 'website' ? { anonymous: true } : {}),
       }
     : args.readOnlyTools
       ? // Nobody's conversation: business lookups only (customer-tools.ts).

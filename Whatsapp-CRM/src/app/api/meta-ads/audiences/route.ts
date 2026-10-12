@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { isPlaceholderPhone } from '@/lib/contacts/validate'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { createCustomAudience, addUsersToCustomAudience } from '@/lib/meta-ads/api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -88,7 +89,7 @@ export async function POST(req: NextRequest) {
         // The "email:..." placeholder (contacts with no real number) would
         // hash into meaningless noise — excluded the same way Broadcasts
         // excludes it from real send targeting.
-        phones: contacts.map((c) => c.phone).filter((p) => p && !p.startsWith('email:')),
+        phones: contacts.map((c) => c.phone).filter((p) => p && !isPlaceholderPhone(p)),
       })
 
       await prisma.metaCustomAudience.upsert({

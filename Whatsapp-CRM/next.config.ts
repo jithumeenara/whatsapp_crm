@@ -98,7 +98,9 @@ const SECURITY_HEADERS = [
       // Razorpay checkout modal renders as an iframe — wildcard covers all subdomains.
       // *.facebook.com: the Embedded Signup JS SDK opens its own login
       // dialog and a hidden cross-domain-communication iframe from here.
-      "frame-src https://*.razorpay.com https://*.facebook.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
+      // 'self': the live preview in Settings → Website Chat frames this
+      // app's own chat window (/api/webchat/frame/…).
+      "frame-src 'self' https://*.razorpay.com https://*.facebook.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -207,9 +209,28 @@ const nextConfig: NextConfig = {
       {
         // Security headers on every response, including /_next/static
         // assets (nosniff matters there) and /api/* (HSTS + referrer-
-        // policy don't hurt).
-        source: "/:path*",
+        // policy don't hurt) — except the website chat frame, below.
+        source: "/",
         headers: [...SECURITY_HEADERS],
+      },
+      {
+        source: "/:path((?!api/webchat/frame/).+)",
+        headers: [...SECURITY_HEADERS],
+      },
+      {
+        // The website chat window is the one page meant to be framed — on
+        // the business's own site. Its route sends its own CSP, with
+        // frame-ancestors listing that widget's allowed domains.
+        //
+        // It is left out of the entry above, not overridden after it:
+        // headers set here replace the same header from a route handler,
+        // so an app-wide CSP on this path silently discarded the route's
+        // per-widget frame-ancestors (found in testing — the frame was
+        // framable from anywhere). Everything else still applies.
+        source: "/api/webchat/frame/:key",
+        headers: SECURITY_HEADERS.filter(
+          (h) => h.key !== "X-Frame-Options" && h.key !== "Content-Security-Policy",
+        ),
       },
     ];
   },

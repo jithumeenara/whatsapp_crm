@@ -207,7 +207,7 @@ export interface Conversation {
   user_id: string;
   contact_id: string;
   status: ConversationStatus;
-  channel?: string; // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
+  channel?: string; // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;

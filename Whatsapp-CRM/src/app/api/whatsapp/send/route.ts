@@ -26,6 +26,7 @@ import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
 import { sendAndRecordConversationEmail, cleanSubject, parseAddresses, type EmailMode } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
+import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads')
 
@@ -467,6 +468,36 @@ export async function POST(request: Request) {
     // Resolved before the phone check below — Email contacts are identified
     // by email, not phone, so the phone requirement must not apply to them.
     const convChannel = (conversation as { channel?: string }).channel ?? 'whatsapp'
+
+    // Website chat: no provider and no 24-hour window. The reply is
+    // recorded and pushed to the visitor's open window; a closed window
+    // reads it when it next opens. Text, plus a public https file.
+    if (convChannel === 'website') {
+      const text = typeof content_text === 'string' ? content_text.trim() : ''
+      const isMedia = ['image', 'document', 'video', 'audio'].includes(message_type)
+      if (message_type !== 'text' && !isMedia) {
+        return NextResponse.json({ error: 'Website chat takes text and files only — no templates or catalogs.' }, { status: 400 })
+      }
+      if (isMedia && !(typeof media_url === 'string' && media_url.startsWith('https://'))) {
+        return NextResponse.json({ error: 'Only files at a public https link can be sent to a website chat.' }, { status: 400 })
+      }
+      if (!text && !isMedia) {
+        return NextResponse.json({ error: 'content_text is required for text messages' }, { status: 400 })
+      }
+      if (text.length > 4000) {
+        return NextResponse.json({ error: 'The message is too long for website chat (4000 characters).' }, { status: 400 })
+      }
+      const saved = await sendToWebsiteVisitor({
+        accountId,
+        conversationId: conversation_id,
+        senderType: 'agent',
+        senderId: userId,
+        text,
+        contentType: isMedia ? (message_type === 'image' ? 'image' : 'document') : 'text',
+        media: isMedia ? { url: media_url, mimeType: message_type === 'image' ? 'image/*' : null } : null,
+      })
+      return NextResponse.json({ success: true, message_id: saved.id })
+    }
 
     if (convChannel === 'email') {
       if (!contact?.email) {

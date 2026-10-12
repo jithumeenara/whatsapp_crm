@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
-import { checkEmail, checkPhone, isEmailPlaceholderPhone } from "@/lib/contacts/validate"
+import { checkEmail, checkPhone, isPlaceholderPhone } from "@/lib/contacts/validate"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { emitToAccount } from "@/lib/socket"
 
@@ -227,7 +227,7 @@ export async function PATCH(
     if ("phone" in data && data.phone !== contact.phone) {
       if (!data.phone) {
         // An email-only contact has no number to give; keep its identity.
-        if (isEmailPlaceholderPhone(contact.phone)) delete data.phone
+        if (isPlaceholderPhone(contact.phone)) delete data.phone
         else return NextResponse.json({ error: "Phone is required." }, { status: 400 })
       } else {
         const p = checkPhone(data.phone)

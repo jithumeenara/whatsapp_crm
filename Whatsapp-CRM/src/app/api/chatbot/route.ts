@@ -28,6 +28,10 @@ async function ensureChannelColumn() {
 }
 
 /** GET /api/chatbot — list all chatbots for the caller's account */
+/** The channels a chatbot can be built for — every inbound channel the
+ *  flow engine dispatches (flows.channel; see dispatchInboundToFlows). */
+const CHATBOT_CHANNELS: readonly string[] = ['whatsapp', 'instagram', 'facebook', 'sms', 'email', 'rcs', 'website']
+
 export async function GET() {
   try {
     const guard = await requireUser()
@@ -97,6 +101,9 @@ export async function POST(request: Request) {
     } | null
 
     if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    if (body.channel !== undefined && !CHATBOT_CHANNELS.includes(body.channel)) {
+      return NextResponse.json({ error: `Unknown channel "${String(body.channel).slice(0, 20)}"` }, { status: 400 })
+    }
 
     // ── Template clone path ──────────────────────────────────────
     if (body.template_slug) {

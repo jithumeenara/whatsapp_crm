@@ -87,7 +87,7 @@ export function strictCsp(nonce: string, reportUri = '/api/csp-report'): string 
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
     "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.razorpay.com https://*.facebook.com https://*.googleapis.com",
-    "frame-src https://*.razorpay.com https://*.facebook.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
+    "frame-src 'self' https://*.razorpay.com https://*.facebook.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

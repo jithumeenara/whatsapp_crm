@@ -24,6 +24,9 @@ import { ensureAiMetaColumn } from "./src/lib/ai/reply-sources";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 import { isClientGone } from "./src/lib/net/client-gone";
+import { verifyRealtimeTicket } from "./src/lib/realtime-ticket";
+import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
+import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -133,18 +136,38 @@ app.prepare().then(() => {
   // other upgrade, so socket.io's own handshake is untouched.
   attachLiveVoiceServer(httpServer, loadLiveVoiceContext);
 
-  io.on("connection", (socket) => {
-    // Client joins a room scoped to their account for targeted broadcasts
-    socket.on("join_account", (accountId: string) => {
-      if (typeof accountId === "string" && accountId.length > 0) {
-        socket.join(`account:${accountId}`);
-      }
-    });
+  // Every connection to the staff namespace presents a signed ticket from
+  // /api/realtime/ticket, and is placed in the one account room the
+  // ticket names. It used to join whichever room it asked for, which let
+  // anyone holding an account id listen to that business's messages —
+  // see src/lib/realtime-ticket.ts.
+  io.use((socket, nextFn) => {
+    const ticket = verifyRealtimeTicket(
+      (socket.handshake.auth as { ticket?: unknown } | undefined)?.ticket,
+    );
+    if (!ticket) return nextFn(new Error("unauthorized"));
+    (socket.data as { accountId?: string }).accountId = ticket.accountId;
+    nextFn();
+  });
 
-    socket.on("leave_account", (accountId: string) => {
-      socket.leave(`account:${accountId}`);
+  io.on("connection", (socket) => {
+    const accountId = (socket.data as { accountId?: string }).accountId;
+    if (accountId) socket.join(`account:${accountId}`);
+
+    // Kept for clients still running the old page: the room is already
+    // joined from the ticket, and a request for any other room is ignored.
+    socket.on("join_account", () => {
+      if (accountId) socket.join(`account:${accountId}`);
+    });
+    socket.on("leave_account", () => {
+      if (accountId) socket.leave(`account:${accountId}`);
     });
   });
+
+  // Visitors chatting from a business's website. A namespace of its own,
+  // with its own admission check, so a visitor can never reach a staff
+  // room — see src/lib/webchat/realtime.ts.
+  attachWebChatNamespace(io);
 
   httpServer.listen(port, bindHost, () => {
     // Says the interface, not just the port, so a deployment that has
@@ -270,6 +293,14 @@ app.prepare().then(() => {
       console.error("[phonepe] sweep failed:", err);
     });
   }, 2 * 60_000);
+
+  // Website chat visitors whose session ran out (30 days unused). Their
+  // conversations and contacts stay; only the dead credential goes.
+  setInterval(() => {
+    sweepExpiredWebChatSessions().catch((err) => {
+      console.error("[webchat] session sweep failed:", err);
+    });
+  }, 60 * 60_000);
 
   // Every Data Store query names the columns migration 113 adds, and
   // every message and scheduled-message query the ones 112 adds (the

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react"
 import type { Conversation, ConversationStatus } from "@/types"
-import { Search, X, MessageSquare, ChevronDown, Mail, Radio, CalendarClock, MoreVertical } from "lucide-react"
+import { Search, X, MessageSquare, ChevronDown, Mail, Radio, CalendarClock, MoreVertical, Globe } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 import { ScheduledContactsOverview } from "./scheduled-contacts-overview"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
@@ -44,7 +44,7 @@ function FacebookIcon({ className }: { className?: string }) {
   )
 }
 
-type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs"
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website"
 
 const CHANNEL_OPTIONS: { value: ChannelFilter; label: string; icon: React.ReactNode }[] = [
   { value: "all",       label: "All",       icon: <MessageSquare className="h-3.5 w-3.5" /> },
@@ -54,6 +54,7 @@ const CHANNEL_OPTIONS: { value: ChannelFilter; label: string; icon: React.ReactN
   { value: "sms",       label: "SMS",       icon: <MessageSquare className="h-3.5 w-3.5 text-indigo-500" /> },
   { value: "email",     label: "Email",     icon: <Mail className="h-3.5 w-3.5 text-sky-500" /> },
   { value: "rcs",       label: "RCS",       icon: <Radio className="h-3.5 w-3.5 text-violet-500" /> },
+  { value: "website",   label: "Website",   icon: <Globe className="h-3.5 w-3.5 text-teal-600" /> },
 ]
 
 /** Icon shown inside the small badge on a conversation's avatar — same set as CHANNEL_OPTIONS, minus "all". */
@@ -64,6 +65,7 @@ function channelIcon(channel: string, className: string) {
     case "sms":       return <MessageSquare className={cn(className, "text-indigo-500")} />
     case "email":     return <Mail className={cn(className, "text-sky-500")} />
     case "rcs":       return <Radio className={cn(className, "text-violet-500")} />
+    case "website":   return <Globe className={cn(className, "text-teal-600")} />
     default:          return <WhatsAppIcon className={className} />
   }
 }

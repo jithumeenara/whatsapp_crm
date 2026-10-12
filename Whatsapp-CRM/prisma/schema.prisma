@@ -393,6 +393,10 @@ model Contact {
   // collisions if reused here.
   instagram_id           String? // Instagram-scoped platform ID (IGSID)
   facebook_id            String? // Facebook Messenger-scoped platform ID (PSID)
+  /// A website chat visitor (migration 130). Letters only, so the
+  /// "web:<id>" placeholder in `phone` can never share trailing digits
+  /// with a real number in findExistingContact's suffix match.
+  web_visitor_id         String?
   /// Tri-state: "unknown" (default — most creation paths have no explicit
   /// consent signal), "opted_in" (an inbound message on any channel, or an
   /// explicit action like a Lead Ads form submission, is itself consent),
@@ -459,6 +463,7 @@ model Contact {
   @@unique([account_id, phone_normalized], name: "contacts_account_phone_normalized")
   @@unique([account_id, instagram_id], name: "contacts_account_instagram_id")
   @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
+  @@unique([account_id, web_visitor_id], name: "contacts_account_web_visitor_id")
   @@map("contacts")
 }
 
@@ -590,7 +595,7 @@ model Conversation {
   feedback           ConversationFeedback[]
 
   // Channel that originated this conversation
-  channel String @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
+  channel String @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
 
   /// When the assistant last read this thread to decide whether it was
   /// a lead — whichever way it answered. Here rather than on the lead,
@@ -717,6 +722,10 @@ model Message {
   /// assistant was given, how well they matched, and its look-ups. See
   /// src/lib/ai/reply-sources.ts.
   ai_meta              Json?
+  /// Website chat only (migration 130): the buttons, list rows or link
+  /// a chatbot step sent, so the visitor still sees them after a reload —
+  /// { buttons?: [{ id, title }], link?: { label, url } }.
+  web_meta             Json?
   // Set only for a message a Broadcast campaign sent — previously broadcasts
   // never wrote a Message row at all (only broadcast_recipients), so a sent
   // campaign was completely invisible in that contact's Inbox thread. This
@@ -1927,6 +1936,57 @@ model GoogleSheetLink {
   @@map("google_sheet_links")
 }
 
+/// A chat window installed on a business's website (migration 130).
+/// public_key is what the install snippet carries — not a secret.
+model WebChatWidget {
+  id               String    @id @default(uuid()) @db.Uuid
+  account_id       String    @db.Uuid
+  user_id          String    @db.Uuid
+  public_key       String    @unique
+  enabled          Boolean   @default(true)
+  name             String    @default("Website chat")
+  title            String    @default("Chat with us")
+  welcome_message  String    @default("Hi! How can we help you today?")
+  primary_color    String    @default("#4f46e5")
+  /// 'right' | 'left'
+  position         String    @default("right")
+  logo_url         String?
+  /// Hostnames the window may appear on; empty means anywhere.
+  allowed_domains  String[]  @default([])
+  allow_handoff    Boolean   @default(true)
+  daily_ai_limit   Int       @default(300)
+  last_seen_at     DateTime? @db.Timestamptz(6)
+  last_seen_origin String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([account_id])
+  @@map("web_chat_widgets")
+}
+
+/// One visitor's browser on a website chat. Only the token's hash is kept.
+model WebChatSession {
+  id              String    @id @default(uuid()) @db.Uuid
+  account_id      String    @db.Uuid
+  widget_id       String    @db.Uuid
+  token_hash      String    @unique
+  visitor_id      String
+  contact_id      String?   @db.Uuid
+  conversation_id String?   @db.Uuid
+  ip_hash         String?
+  user_agent      String?
+  page_url        String?
+  expires_at      DateTime  @db.Timestamptz(6)
+  last_seen_at    DateTime  @default(now()) @db.Timestamptz(6)
+  revoked_at      DateTime? @db.Timestamptz(6)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([conversation_id])
+  @@index([widget_id, created_at])
+  @@index([expires_at])
+  @@map("web_chat_sessions")
+}
+
 /// A Google Form whose responses arrive in a Data Store table (migration 127).
 model GoogleFormLink {
   id             String    @id @default(uuid()) @db.Uuid
@@ -2304,7 +2364,7 @@ model Flow {
   name             String
   description      String?
   flow_type        String    @default("flow") // "flow" | "chatbot"
-  channel          String    @default("whatsapp") // 'whatsapp' | 'instagram'
+  channel          String    @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
   status           String    @default("draft")
   trigger_type     String
   trigger_config   Json      @default("{}")
