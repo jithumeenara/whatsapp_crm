@@ -204,3 +204,37 @@ describe('the language a customer chose', () => {
     expect(typed).toContain('Malayalam script')
   })
 })
+
+describe('the welcome chatbot template', () => {
+  it('asks language first, then name and WhatsApp number in each language, all wired up', async () => {
+    const { getChatbotTemplate } = await import('@/lib/chatbot/templates')
+    const tpl = getChatbotTemplate('welcome_name_number_language')!
+    expect(tpl.trigger_type).toBe('first_inbound_message')
+    const byKey = new Map(tpl.nodes.map((n) => [n.node_key, n]))
+    const cfg = (key: string) => byKey.get(key)!.config as Record<string, unknown>
+
+    // Every step leads somewhere that exists.
+    for (const node of tpl.nodes) {
+      const c = node.config as { next_node_key?: string; buttons?: { next_node_key: string; title: string }[] }
+      if (c.next_node_key) expect(byKey.has(c.next_node_key), `${node.node_key} → ${c.next_node_key}`).toBe(true)
+      for (const b of c.buttons ?? []) {
+        expect(byKey.has(b.next_node_key)).toBe(true)
+        expect(b.title.length).toBeLessThanOrEqual(20)
+      }
+    }
+
+    // Language comes first, with three buttons.
+    expect(cfg('start').next_node_key).toBe('ask_language')
+    const buttons = cfg('ask_language').buttons as { title: string }[]
+    expect(buttons.map((b) => b.title)).toEqual(['മലയാളം', 'English', 'हिन्दी'])
+
+    // Each branch: language saved, then name, then WhatsApp number.
+    for (const [key, language] of [['ml', 'Malayalam'], ['en', 'English'], ['hi', 'Hindi']]) {
+      expect(cfg(`set_lang_${key}`)).toMatchObject({ field: 'language', value: language, next_node_key: `ask_name_${key}` })
+      expect(cfg(`ask_name_${key}`)).toMatchObject({ var_key: 'name', next_node_key: `save_name_${key}` })
+      expect(cfg(`ask_phone_${key}`)).toMatchObject({ input_type: 'phone', var_key: 'phone' })
+      expect(String(cfg(`ask_phone_${key}`).prompt_text)).toContain('WhatsApp')
+      expect(cfg(`save_phone_${key}`)).toMatchObject({ field: 'phone', value: '{{vars.phone}}' })
+    }
+  })
+})

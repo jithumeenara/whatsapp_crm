@@ -772,7 +772,7 @@ function WelcomeChatbotCard() {
         body: JSON.stringify({
           template_slug: 'welcome_name_number_language',
           channel: 'website',
-          name: 'Website welcome — name, number & language',
+          name: 'Website welcome — language, name & WhatsApp number',
         }),
       })
       const data = (await res.json()) as { chatbot?: { id?: string } }
@@ -793,11 +793,11 @@ function WelcomeChatbotCard() {
           <Workflow className="h-4 w-4 text-indigo-600" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-slate-800">Welcome chatbot: name, number & language</div>
+          <div className="text-[13px] font-semibold text-slate-800">Welcome chatbot: language, name & WhatsApp number</div>
           <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
-            Runs once for each new visitor: asks their name and mobile number, then offers language buttons (മലയാളം / English),
-            and saves all three to the contact. With a number on file, the assistant can take registrations and book
-            appointments for website visitors, just like on WhatsApp.
+            Runs once for each new visitor: language buttons first (മലയാളം / English / हिन्दी), then their name and WhatsApp
+            number — asked in the language they chose — and saves all three to the contact. With a number on file, the
+            assistant can take registrations and book appointments for website visitors, just like on WhatsApp.
           </p>
           <Button size="sm" className="mt-3" onClick={() => void create()} disabled={creating}>
             {creating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
