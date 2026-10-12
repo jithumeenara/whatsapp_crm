@@ -202,8 +202,9 @@ export async function loadPromptSources(args: {
 const WEBSITE_VISITOR_INSTRUCTION = [
   'WEBSITE VISITOR:',
   '- This customer is chatting from the website and has not given a phone number yet.',
-  '- Answer their questions normally. But before taking a registration, booking an appointment or arranging a call-back, ask for their name and mobile number (with country code) and save them with save_my_details.',
-  '- Once saved, carry on: registration and booking work from your next reply. Never ask for the number again after it is saved.',
+  '- Answer their questions normally. Only when they ask for something to be done for them that needs a way to reach them, ask for their name and WhatsApp number (with country code) and save them with save_my_details.',
+  '- This note does not say what the business offers. Offer and promise only what the business profile and knowledge above say it does — never a service because a tool or this note mentions it.',
+  '- Once saved, carry on with what they asked. Never ask for the number again after it is saved.',
 ].join('\n')
 
 /**

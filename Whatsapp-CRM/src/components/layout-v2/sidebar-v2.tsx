@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -206,9 +207,10 @@ export function SidebarV2({
 
                     return (
                       <li key={item.href}>
+                        <NavTip show={collapsed} label={showBadge ? `${item.label} · ${totalUnread} unread` : item.label}>
                         <Link
                           href={item.href}
-                          title={collapsed ? item.label : undefined}
+                          aria-label={collapsed ? item.label : undefined}
                           className={cn(
                             "flex items-center rounded-lg transition-all duration-100",
                             collapsed
@@ -244,7 +246,7 @@ export function SidebarV2({
                             </>
                           )}
                         </Link>
-
+                        </NavTip>
                       </li>
                     );
                   })}
@@ -266,9 +268,10 @@ export function SidebarV2({
                   {(() => {
                     const isActive = pathname.startsWith("/settings");
                     return (
+                      <NavTip show={collapsed} label="Settings">
                       <Link
                         href="/settings"
-                        title={collapsed ? "Settings" : undefined}
+                        aria-label={collapsed ? "Settings" : undefined}
                         className={cn(
                           "flex items-center rounded-lg transition-all duration-100",
                           collapsed
@@ -288,6 +291,7 @@ export function SidebarV2({
                         />
                         {!collapsed && <span>Settings</span>}
                       </Link>
+                      </NavTip>
                     );
                   })()}
                 </li>
@@ -364,5 +368,25 @@ export function SidebarV2({
         </div>
       </aside>
     </>
+  );
+}
+
+/**
+ * The page's name beside its icon while the menu is collapsed to icons —
+ * shown at once on hover or keyboard focus, to the right of the icon.
+ * The browser's own title tooltip took a second to appear and looked like
+ * a system hint, so on a row of bare icons nobody waited for it.
+ */
+function NavTip({ show, label, children }: { show: boolean; label: string; children: React.ReactElement }) {
+  if (!show) return children;
+  return (
+    <TooltipProvider delay={60}>
+      <Tooltip>
+        <TooltipTrigger render={children} />
+        <TooltipContent side="right" sideOffset={10} className="text-[12.5px] font-medium">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

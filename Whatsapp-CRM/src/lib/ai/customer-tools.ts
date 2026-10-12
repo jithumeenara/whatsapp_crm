@@ -393,7 +393,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
     declaration: {
       name: 'save_my_details',
       description:
-        'Save the name and mobile number a website visitor gave you. Use it as soon as they tell you both — before any registration, booking or call-back, which need a number to reach them on. Pass exactly what they typed; the number is checked and you are told if it is not valid.',
+        'Save the name and WhatsApp number a website visitor gave you, when something they asked for needs a way to reach them. Pass exactly what they typed; the number is checked and you are told if it is not valid. Saving it does not mean the business offers any particular service.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
@@ -416,7 +416,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       }
       return {
         saved: true,
-        note: 'Saved. Thank them, and carry on with what they wanted — registration and booking are available from your next reply.',
+        note: 'Saved. Thank them, and carry on with what they asked for.',
       }
     },
   },

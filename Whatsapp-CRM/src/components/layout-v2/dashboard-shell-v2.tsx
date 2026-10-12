@@ -41,6 +41,16 @@ const SidebarCollapseCtx = createContext<{ collapsed: boolean; toggle: () => voi
 });
 export function useSidebarCollapse() { return useContext(SidebarCollapseCtx); }
 
+/**
+ * Pages with a list of their own beside the menu — Settings' sections,
+ * the Inbox's conversations — where the full-width menu takes the space
+ * the work needs. The menu collapses to icons on entering one and opens
+ * again on leaving; a manual toggle in between is left alone.
+ */
+function isCompactPage(path: string): boolean {
+  return path.startsWith("/settings") || path.startsWith("/inbox");
+}
+
 // Force all shadcn CSS-var tokens to light values inside the V2 shell,
 // regardless of the global data-theme (which may be a dark palette).
 const LIGHT_VARS: React.CSSProperties = {
@@ -72,7 +82,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   // Starts pre-collapsed if the user's first load IS Settings (direct nav
   // or a refresh) — otherwise the auto-collapse effect below only fires on
   // an actual route change, so a fresh mount wouldn't catch it.
-  const [collapsed, setCollapsed] = useState(() => pathname.startsWith("/settings"));
+  const [collapsed, setCollapsed] = useState(() => isCompactPage(pathname));
   const [mobileBarHidden, setMobileBarHidden] = useState(false);
   const prevPathRef = useRef(pathname);
 
@@ -88,8 +98,8 @@ function ShellInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const prev = prevPathRef.current;
     if (prev !== pathname) {
-      const wasSettings = prev.startsWith("/settings");
-      const isSettings = pathname.startsWith("/settings");
+      const wasSettings = isCompactPage(prev);
+      const isSettings = isCompactPage(pathname);
       // These two setState calls react to an external route change (not
       // this component's own last render), and the boundary check above
       // already limits them to real Settings-in/out crossings — not every
