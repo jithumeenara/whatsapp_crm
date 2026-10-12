@@ -13,7 +13,7 @@
  */
 
 import { prisma } from '@/lib/db'
-import { isPlaceholderPhone } from '@/lib/contacts/validate'
+import { usablePhone } from '@/lib/contacts/validate'
 import { localDate, zonedInstant } from '@/lib/agents/zoned-time'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
 import { ensureGoogleTables } from './store'
@@ -295,12 +295,12 @@ async function syncFollowUps(accountId: string, settings: CalendarSettings, time
       google_event_id: null,
       due_at: { gte: new Date(now.getTime() - 3600_000), lte: new Date(now.getTime() + 60 * 86400_000) },
     },
-    include: { contact: { select: { name: true, phone: true } } },
+    include: { contact: { select: { name: true, phone: true, alternate_phone: true } } },
     orderBy: { due_at: 'asc' },
     take: BATCH,
   })
   for (const f of fresh) {
-    const phone = f.contact?.phone && !isPlaceholderPhone(f.contact.phone) ? f.contact.phone : null
+    const phone = usablePhone(f.contact)
     const ev = await cal<{ id?: string }>(token, `${base}?sendUpdates=none`, {
       method: 'POST',
       body: JSON.stringify(

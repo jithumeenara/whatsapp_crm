@@ -32,6 +32,7 @@
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
+import { usablePhone } from '@/lib/contacts/validate'
 import { onceSchemaPatch } from '@/lib/db/schema-patch'
 import { decrypt, encrypt } from '@/lib/whatsapp/encryption'
 import { engineSendInteractiveButtons, engineSendInteractiveList, engineSendText } from '@/lib/flows/meta-send'
@@ -379,8 +380,13 @@ async function fillOwnNumber(form: RegistrationForm, values: Record<string, stri
     (f) => f.type === 'phone' && isBlank(values[f.key]) && /whats\s*app|mobile|phone/i.test(`${f.key} ${f.label}`) && !/emergency|guardian|parent|alternat|office/i.test(`${f.key} ${f.label}`),
   )
   if (!field) return
-  const contact = await prisma.contact.findUnique({ where: { id: contactId }, select: { phone: true } }).catch(() => null)
-  if (contact?.phone) values[field.key] = contact.phone
+  const contact = await prisma.contact
+    .findUnique({ where: { id: contactId }, select: { phone: true, alternate_phone: true } })
+    .catch(() => null)
+  // Never a website visitor's "web:…" placeholder or an email-only
+  // contact's "email:…" — the number they gave, or nothing.
+  const phone = usablePhone(contact)
+  if (phone) values[field.key] = phone
 }
 
 /**

@@ -20,6 +20,8 @@ import { buildCustomerContext } from './customer-context'
 import { loadKnowledge } from './knowledge-store'
 import { selectRelevantContext, formatKnowledgeBlock, type SelectedContext } from './knowledge'
 import { buildLanguageBlock, LANGUAGE_INSTRUCTION } from './language'
+import { isAnonymousVisitor } from '@/lib/contacts/update-field'
+import { prisma } from '@/lib/db'
 
 /** A turn whose message is what was read from a customer's image. */
 export interface ImageTurn {
@@ -104,6 +106,9 @@ export interface PromptSources {
   toolInstruction: string
   /** The account's accuracy rules (accuracy-rules.ts). */
   accuracyRules: AccuracyRules
+  /** The language the customer chose (contacts.preferred_language —
+   *  a chatbot's language buttons). Null when they never chose. */
+  preferredLanguage?: string | null
 }
 
 /**
@@ -132,8 +137,11 @@ export async function loadPromptSources(args: {
   /** Read-only tools only (the accuracy tests): describe the tables and
    *  nothing about records, registrations or call-backs it cannot use. */
   readOnlyTools?: boolean
+  /** A website visitor with no number on file yet (isAnonymousVisitor):
+   *  told to take their name and number before registering anybody. */
+  anonymousVisitor?: boolean
 }): Promise<PromptSources> {
-  const [companyProfile, customerContext, toolInstruction, accuracyRules] = await Promise.all([
+  const [companyProfile, customerContext, toolInstruction, accuracyRules, chosen] = await Promise.all([
     loadCompanyProfile(args.accountId).catch(() => null),
     args.aiConfig.customer_context_enabled && args.contactId
       ? buildCustomerContext({
@@ -148,6 +156,11 @@ export async function loadPromptSources(args: {
         ? buildCustomerToolInstruction(args.accountId, { searchTables: args.searchTables }).catch(() => '')
         : Promise.resolve(''),
     accuracyRulesFor(args.accountId).catch(() => DEFAULT_ACCURACY_RULES),
+    args.contactId
+      ? prisma.contact
+          .findUnique({ where: { id: args.contactId }, select: { preferred_language: true } })
+          .catch(() => null)
+      : Promise.resolve(null),
   ])
 
   // ── What day it is, where the business is ──────────────────────
@@ -172,12 +185,26 @@ export async function loadPromptSources(args: {
   return {
     companyBlock: formatCompanyBlock(companyProfile, 'customer') || '',
     customerContext,
-    toolInstruction,
+    toolInstruction: args.anonymousVisitor && toolInstruction ? `${toolInstruction}\n\n${WEBSITE_VISITOR_INSTRUCTION}` : toolInstruction,
     nowBlock,
     timezone,
     accuracyRules,
+    preferredLanguage: chosen?.preferred_language?.trim() || null,
   }
 }
+
+/**
+ * For a website visitor who has not given a number yet. Registrations,
+ * bookings and call-backs need somebody to reach, and until then those
+ * tools are withheld (customer-tools.ts, `anonymous`) — so the assistant
+ * is told how to open them rather than left to promise what it cannot do.
+ */
+const WEBSITE_VISITOR_INSTRUCTION = [
+  'WEBSITE VISITOR:',
+  '- This customer is chatting from the website and has not given a phone number yet.',
+  '- Answer their questions normally. But before taking a registration, booking an appointment or arranging a call-back, ask for their name and mobile number (with country code) and save them with save_my_details.',
+  '- Once saved, carry on: registration and booking work from your next reply. Never ask for the number again after it is saved.',
+].join('\n')
 
 /**
  * Builds the system prompt for one customer message.
@@ -217,7 +244,7 @@ export async function buildCustomerSystemPrompt(args: {
   const { aiConfig } = args
   const knowledgeBlock = formatKnowledgeBlock(args.selected)
 
-  const { companyBlock, customerContext, toolInstruction, nowBlock, timezone, accuracyRules } = await (args.sources ??
+  const { companyBlock, customerContext, toolInstruction, nowBlock, timezone, accuracyRules, preferredLanguage } = await (args.sources ??
     loadPromptSources({
       aiConfig,
       accountId: args.accountId,
@@ -370,7 +397,7 @@ export async function buildCustomerSystemPrompt(args: {
   } else if (!args.formSubmission) {
     // A form is written in its own labels' language, which says nothing
     // about the customer's — the block above covers it instead.
-    parts.push(buildLanguageBlock(args.customerMessage))
+    parts.push(buildLanguageBlock(args.customerMessage, preferredLanguage))
   }
 
   // Built per account rather than pinned: the registration half of
@@ -701,6 +728,11 @@ export async function runCustomerTurn(args: {
     }
   }
 
+  // A website visitor is anonymous until they give a number; then the
+  // assistant can register and book for them, as on WhatsApp.
+  const anonymousVisitor =
+    args.currentChannel === 'website' && args.contactId ? await isAnonymousVisitor(args.contactId) : false
+
   const toolContext: CustomerToolContext | null = args.contactId
     ? {
         accountId: args.accountId,
@@ -709,7 +741,7 @@ export async function runCustomerTurn(args: {
           ? { conversationId: args.conversationId, userId: args.userId }
           : {}),
         ...(args.noSideEffects ? { noSideEffects: true } : {}),
-        ...(args.currentChannel === 'website' ? { anonymous: true } : {}),
+        ...(anonymousVisitor ? { anonymous: true } : {}),
       }
     : args.readOnlyTools
       ? // Nobody's conversation: business lookups only (customer-tools.ts).
@@ -747,6 +779,7 @@ export async function runCustomerTurn(args: {
     toolsAvailable: Boolean(toolContext),
     searchTables,
     readOnlyTools: Boolean(toolContext?.readOnly),
+    anonymousVisitor,
   }).then((sources) => {
     timings.promptSources = Date.now() - sourcesStartedAt
     return sources

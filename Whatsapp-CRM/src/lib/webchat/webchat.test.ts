@@ -6,7 +6,8 @@ import {
 import { cleanVisitorText, toVisitorMessage } from './public-message'
 import { parseWidgetPatch, installSnippet } from './settings'
 import { publicWidgetConfig } from './widget-config'
-import { isPlaceholderPhone } from '@/lib/contacts/validate'
+import { isPlaceholderPhone, usablePhone } from '@/lib/contacts/validate'
+import { buildLanguageBlock } from '@/lib/ai/language'
 import { customerToolDeclarations } from '@/lib/ai/customer-tools'
 
 describe('allowed domains', () => {
@@ -175,5 +176,31 @@ describe('assistant tools for an anonymous visitor', () => {
     expect(visitor).not.toContain('add_registration_details')
     expect(visitor).toContain('check_availability')
     expect(visitor).toContain('contact_handed_over')
+  })
+
+  it('offers save_my_details only until the visitor has given a number', () => {
+    expect(names(true)).toContain('save_my_details')
+    expect(names(false)).not.toContain('save_my_details')
+  })
+})
+
+describe('a website visitor with a number', () => {
+  it('uses their own phone, else the number they typed, never a placeholder', () => {
+    expect(usablePhone({ phone: '+919876543210', alternate_phone: '+911111111111' })).toBe('+919876543210')
+    expect(usablePhone({ phone: 'web:abcdefgh', alternate_phone: '+919876543210' })).toBe('+919876543210')
+    expect(usablePhone({ phone: 'web:abcdefgh', alternate_phone: null })).toBeNull()
+    expect(usablePhone({ phone: 'email:a@b.com', alternate_phone: '' })).toBeNull()
+    expect(usablePhone(null)).toBeNull()
+  })
+})
+
+describe('the language a customer chose', () => {
+  it('reaches the assistant, and their own script still wins', () => {
+    const chosen = buildLanguageBlock('ok', 'Malayalam')
+    expect(chosen).toContain('The customer chose Malayalam')
+    expect(buildLanguageBlock('ok')).not.toContain('chose')
+    const typed = buildLanguageBlock('നവംബറിലെ പരിശീലനം', 'English')
+    expect(typed).toContain('The customer chose English')
+    expect(typed).toContain('Malayalam script')
   })
 })

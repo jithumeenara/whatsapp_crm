@@ -402,21 +402,26 @@ function StartForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const keyword = String(cfg.trigger_keyword ?? "");
   const match = String(cfg.trigger_match ?? "exact");
   const onFlow = cfg.trigger_on === "flow_submitted";
+  // "first_message": once per customer, on the first thing they ever send —
+  // a welcome that takes their name and number. "message" with no keyword
+  // starts again on every message after the last run ended.
+  const trigger = onFlow ? "flow_submitted" : cfg.trigger_on === "first_message" ? "first_message" : "message";
 
   return (
     <div className="space-y-4">
       <Field label="Start this chatbot when">
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {([
+            ["first_message", "A customer's first message"],
             ["message", "A message arrives"],
             ["flow_submitted", "A WhatsApp Flow is submitted"],
           ] as const).map(([value, label]) => (
             <button
               key={value}
               type="button"
-              onClick={() => onChange({ ...cfg, trigger_on: value })}
+              onClick={() => onChange({ ...cfg, trigger_on: value, ...(value === "first_message" ? { trigger_keyword: "" } : {}) })}
               className={`rounded-md border px-2 py-1.5 text-[11px] font-medium leading-tight transition-colors ${
-                (value === "flow_submitted") === onFlow
+                trigger === value
                   ? "border-indigo-500 bg-indigo-50 text-indigo-600"
                   : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-slate-900"
               }`}
@@ -425,11 +430,17 @@ function StartForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             </button>
           ))}
         </div>
+        {trigger === "first_message" && (
+          <p className="mt-1.5 text-[10px] leading-relaxed text-slate-500">
+            Runs once for each new customer — the place for a welcome that asks their name, number and language.
+            After it ends, their messages go to your other chatbots and the assistant.
+          </p>
+        )}
       </Field>
 
       {onFlow ? (
         <FlowSubmittedTrigger cfg={cfg} onChange={onChange} />
-      ) : (
+      ) : trigger === "first_message" ? null : (
         <>
           {/* Trigger keyword */}
           <Field
@@ -1849,24 +1860,70 @@ function SetTagForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   );
 }
 
+/** What "Update contact" can write, as the engine names them
+ *  (src/lib/contacts/update-field.ts). Anything else is a custom field. */
+const CONTACT_FIELDS: { value: string; label: string; hint: string }[] = [
+  { value: "name", label: "Name", hint: "The contact's name in the Inbox." },
+  { value: "phone", label: "Phone", hint: "Checked (7–15 digits). Saved as their alternate number — a typed number never replaces the WhatsApp number it came from. On the Website channel this is what lets the assistant register and book for them." },
+  { value: "email", label: "Email", hint: "Checked and saved in lower case." },
+  { value: "company", label: "Company", hint: "Company or organisation." },
+  { value: "language", label: "Language", hint: "Their chosen language, e.g. Malayalam or English. The assistant answers in it from then on." },
+];
+
 function UpdateContactForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const vars = getFlowVars(allNodes, nodeKey);
+  const field = String(cfg.field ?? "");
+  const standard = CONTACT_FIELDS.find((f) => f.value === field);
+  const [custom, setCustom] = useState(Boolean(field) && !standard);
   return (
     <div className="space-y-4">
-      <Field label="Field" hint="Standard fields: name, email, phone. Or a custom field key.">
-        <Input
-          className="h-8 text-xs"
-          value={String(cfg.field ?? "")}
-          onChange={(e) => onChange({ ...cfg, field: e.target.value })}
-          placeholder="e.g. email or custom_field"
-        />
-      </Field>
-      <Field label="Value" hint="Supports {{vars.x}} interpolation.">
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-slate-700">Field to update</label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {CONTACT_FIELDS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => { setCustom(false); onChange({ ...cfg, field: f.value }); }}
+              className={cn(
+                "rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors",
+                !custom && field === f.value
+                  ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                  : "border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:text-slate-900",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => { setCustom(true); if (standard) onChange({ ...cfg, field: "" }); }}
+            className={cn(
+              "rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors",
+              custom
+                ? "border-indigo-500 bg-indigo-50 text-indigo-600"
+                : "border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:text-slate-900",
+            )}
+          >
+            Custom field…
+          </button>
+        </div>
+        {!custom && standard && <p className="text-[10px] leading-relaxed text-slate-500">{standard.hint}</p>}
+        {custom && (
+          <Input
+            className="h-8 text-xs"
+            value={field}
+            onChange={(e) => onChange({ ...cfg, field: e.target.value })}
+            placeholder="The custom field's name, e.g. District"
+          />
+        )}
+      </div>
+      <Field label="Value" hint="Usually the answer from a Collect input step, or a fixed value like Malayalam for a language button.">
         <Input
           className="h-8 text-xs"
           value={String(cfg.value ?? "")}
           onChange={(e) => onChange({ ...cfg, value: e.target.value })}
-          placeholder="{{vars.collected_email}}"
+          placeholder={field === "language" ? "Malayalam" : "{{vars.answer}}"}
         />
         <VarChips
           vars={vars}

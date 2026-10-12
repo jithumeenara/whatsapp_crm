@@ -5,7 +5,7 @@ export interface ChatbotTemplate {
   name: string
   description: string
   emoji: string
-  trigger_type: 'always' | 'keyword' | 'manual'
+  trigger_type: 'always' | 'keyword' | 'manual' | 'first_inbound_message'
   trigger_config: Record<string, unknown>
   entry_node_id: string
   nodes: ChatbotBuilderNode[]
@@ -309,6 +309,83 @@ const aiSupport: ChatbotTemplate = {
   ],
 }
 
+// ─── Template 5: Welcome — name, number, language ───────────────
+//
+// Runs once per customer, on their first message (Start → "A customer's
+// first message"). Built for the Website Bot: the number it saves is what
+// lets the assistant register and book for a website visitor, and the
+// language it saves is what the assistant answers in from then on. After
+// it ends, the customer's messages go to the assistant as usual.
+const welcomeNameNumberLanguage: ChatbotTemplate = {
+  slug: 'welcome_name_number_language',
+  name: 'Welcome: name, number & language',
+  description: 'Asks a new customer their name, mobile number and language, saves them to the contact, then hands over to the assistant.',
+  emoji: '🙏',
+  trigger_type: 'first_inbound_message',
+  trigger_config: {},
+  entry_node_id: 'start',
+  nodes: [
+    { node_key: 'start', node_type: 'start', config: { trigger_on: 'first_message', next_node_key: 'ask_name' }, ...pos(1, 0) },
+    {
+      node_key: 'ask_name',
+      node_type: 'collect_input',
+      config: { prompt_text: 'Hi 👋 Welcome! Before we start, may I have your name?', var_key: 'name', input_type: 'text', next_node_key: 'save_name' },
+      ...pos(1, 1),
+    },
+    {
+      node_key: 'save_name',
+      node_type: 'update_contact',
+      config: { field: 'name', value: '{{vars.name}}', next_node_key: 'ask_phone' },
+      ...pos(1, 2),
+    },
+    {
+      node_key: 'ask_phone',
+      node_type: 'collect_input',
+      config: {
+        prompt_text: 'Thank you, {{vars.name}}! Your mobile number, please (with country code, e.g. +91 98765 43210)?',
+        var_key: 'phone',
+        input_type: 'phone',
+        validation: { error_message: 'That does not look like a mobile number. Please type it with the country code, e.g. +91 98765 43210.' },
+        next_node_key: 'save_phone',
+      },
+      ...pos(1, 3),
+    },
+    {
+      node_key: 'save_phone',
+      node_type: 'update_contact',
+      config: { field: 'phone', value: '{{vars.phone}}', next_node_key: 'ask_language' },
+      ...pos(1, 4),
+    },
+    {
+      node_key: 'ask_language',
+      node_type: 'send_buttons',
+      config: {
+        text: 'Which language would you like to chat in?',
+        buttons: [
+          { reply_id: 'lang_ml', title: 'മലയാളം', next_node_key: 'set_ml' },
+          { reply_id: 'lang_en', title: 'English', next_node_key: 'set_en' },
+        ],
+      },
+      ...pos(1, 5),
+    },
+    { node_key: 'set_ml', node_type: 'update_contact', config: { field: 'language', value: 'Malayalam', next_node_key: 'done_ml' }, ...pos(0, 6) },
+    { node_key: 'set_en', node_type: 'update_contact', config: { field: 'language', value: 'English', next_node_key: 'done_en' }, ...pos(2, 6) },
+    {
+      node_key: 'done_ml',
+      node_type: 'send_text',
+      config: { text: 'നന്ദി, {{vars.name}}! 🙏 എന്താണ് അറിയേണ്ടത്? പരിശീലന പരിപാടികൾ, രജിസ്ട്രേഷൻ, അപ്പോയിന്റ്മെന്റ് — എന്തും ചോദിക്കാം.', next_node_key: 'end_node' },
+      ...pos(0, 7),
+    },
+    {
+      node_key: 'done_en',
+      node_type: 'send_text',
+      config: { text: 'Thank you, {{vars.name}}! 🙏 How can we help you today? Ask about programmes, registration or appointments.', next_node_key: 'end_node' },
+      ...pos(2, 7),
+    },
+    { node_key: 'end_node', node_type: 'end', config: { close_conversation: false }, ...pos(1, 8) },
+  ],
+}
+
 // ─── Registry ───────────────────────────────────────────────────
 
 export const CHATBOT_TEMPLATES: ChatbotTemplate[] = [
@@ -316,6 +393,7 @@ export const CHATBOT_TEMPLATES: ChatbotTemplate[] = [
   leadQualifier,
   orderTracking,
   aiSupport,
+  welcomeNameNumberLanguage,
 ]
 
 export function getChatbotTemplate(slug: string): ChatbotTemplate | undefined {

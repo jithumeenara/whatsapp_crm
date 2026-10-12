@@ -24,6 +24,17 @@ export function isPlaceholderPhone(phone: string | null | undefined): boolean {
   return typeof phone === 'string' && (phone.startsWith('email:') || phone.startsWith('web:'))
 }
 
+/**
+ * The number to call or put on a registration: the contact's own phone
+ * when it is one, otherwise the alternate a website visitor typed in
+ * (src/lib/contacts/update-field.ts). Null when there is neither.
+ */
+export function usablePhone(contact: { phone?: string | null; alternate_phone?: string | null } | null | undefined): string | null {
+  if (!contact) return null
+  if (contact.phone && !isPlaceholderPhone(contact.phone)) return contact.phone
+  return contact.alternate_phone?.trim() || null
+}
+
 export type Checked = { ok: true; value: string } | { ok: false; error: string }
 
 /**

@@ -49,6 +49,9 @@ const CONTACT_FOR_LIST = {
   company: true,
   created_at: true,
   detected_language: true,
+  // A website visitor's number and chosen language (contact panel).
+  alternate_phone: true,
+  preferred_language: true,
 } as const
 
 /**

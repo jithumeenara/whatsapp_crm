@@ -127,7 +127,18 @@ export const LANGUAGE_INSTRUCTION = [
  * Builds the language section for one specific message: the standing
  * rules, plus whatever the script check established for certain.
  */
-export function buildLanguageBlock(customerMessage: string): string {
+export function buildLanguageBlock(customerMessage: string, preferredLanguage?: string | null): string {
   const { hint } = detectLanguageSignal(customerMessage)
-  return hint ? `${LANGUAGE_INSTRUCTION}\n- ${hint}` : LANGUAGE_INSTRUCTION
+  const lines = [LANGUAGE_INSTRUCTION]
+  // A language the customer chose (a chatbot's language buttons). It
+  // decides whenever their message does not plainly say otherwise — a
+  // short "ok" or "1" after choosing Malayalam is answered in Malayalam,
+  // not in whatever the model would have guessed.
+  if (preferredLanguage) {
+    lines.push(
+      `- The customer chose ${preferredLanguage} as their language. Reply in ${preferredLanguage} (in its own script) unless their latest message is plainly written in a different language — then follow that.`,
+    )
+  }
+  if (hint) lines.push(`- ${hint}`)
+  return lines.join('\n')
 }

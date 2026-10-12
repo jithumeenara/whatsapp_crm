@@ -54,7 +54,7 @@ const CHANNEL_OPTIONS: { value: ChannelFilter; label: string; icon: React.ReactN
   { value: "sms",       label: "SMS",       icon: <MessageSquare className="h-3.5 w-3.5 text-indigo-500" /> },
   { value: "email",     label: "Email",     icon: <Mail className="h-3.5 w-3.5 text-sky-500" /> },
   { value: "rcs",       label: "RCS",       icon: <Radio className="h-3.5 w-3.5 text-violet-500" /> },
-  { value: "website",   label: "Website",   icon: <Globe className="h-3.5 w-3.5 text-teal-600" /> },
+  { value: "website",   label: "Website",   icon: <Globe className="h-3.5 w-3.5 text-orange-600" /> },
 ]
 
 /** Icon shown inside the small badge on a conversation's avatar — same set as CHANNEL_OPTIONS, minus "all". */
@@ -65,15 +65,44 @@ function channelIcon(channel: string, className: string) {
     case "sms":       return <MessageSquare className={cn(className, "text-indigo-500")} />
     case "email":     return <Mail className={cn(className, "text-sky-500")} />
     case "rcs":       return <Radio className={cn(className, "text-violet-500")} />
-    case "website":   return <Globe className={cn(className, "text-teal-600")} />
+    case "website":   return <Globe className={cn(className, "text-orange-600")} />
     default:          return <WhatsAppIcon className={className} />
   }
 }
 
 function ChannelBadge({ channel }: { channel?: string }) {
   return (
-    <span className="absolute -bottom-0.5 -left-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-white">
-      {channelIcon(channel || "whatsapp", "h-3 w-3")}
+    <span className="absolute -bottom-1 -left-1 flex h-5 w-5 items-center justify-center rounded-full bg-white shadow ring-2 ring-white">
+      {channelIcon(channel || "whatsapp", "h-3.5 w-3.5")}
+    </span>
+  )
+}
+
+/**
+ * How each channel looks in the list, so it can be told at a glance:
+ * the avatar takes the channel's colour (it used to be a random colour
+ * per contact, which said nothing), and a small pill names it.
+ */
+const CHANNEL_LOOK: Record<string, { label: string; avatar: string; pill: string }> = {
+  whatsapp:  { label: "WhatsApp",  avatar: "from-emerald-400 to-green-600",  pill: "bg-emerald-50 text-emerald-700 ring-emerald-100" },
+  instagram: { label: "Instagram", avatar: "from-pink-500 to-fuchsia-600",   pill: "bg-pink-50 text-pink-700 ring-pink-100" },
+  facebook:  { label: "Messenger", avatar: "from-blue-500 to-blue-700",      pill: "bg-blue-50 text-blue-700 ring-blue-100" },
+  sms:       { label: "SMS",       avatar: "from-indigo-400 to-indigo-600",  pill: "bg-indigo-50 text-indigo-700 ring-indigo-100" },
+  email:     { label: "Email",     avatar: "from-sky-400 to-sky-600",        pill: "bg-sky-50 text-sky-700 ring-sky-100" },
+  rcs:       { label: "RCS",       avatar: "from-violet-400 to-violet-600",  pill: "bg-violet-50 text-violet-700 ring-violet-100" },
+  website:   { label: "Website",   avatar: "from-amber-400 to-orange-600",   pill: "bg-orange-50 text-orange-700 ring-orange-100" },
+}
+
+function channelLook(channel?: string | null) {
+  return CHANNEL_LOOK[channel || "whatsapp"] ?? CHANNEL_LOOK.whatsapp
+}
+
+function ChannelPill({ channel }: { channel?: string | null }) {
+  const look = channelLook(channel)
+  return (
+    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-semibold ring-1", look.pill)}>
+      {channelIcon(channel || "whatsapp", "h-2.5 w-2.5")}
+      {look.label}
     </span>
   )
 }
@@ -125,19 +154,6 @@ function initials(name?: string | null, phone?: string | null) {
   if (name) return name.split(" ").map((w) => w[0]).join("").toUpperCase().slice(0, 2)
   if (phone) return phone.slice(-2)
   return "?"
-}
-
-const AVATAR_COLORS = [
-  "from-indigo-400 to-indigo-600",
-  "from-violet-400 to-violet-600",
-  "from-emerald-400 to-emerald-600",
-  "from-sky-400 to-sky-600",
-  "from-rose-400 to-rose-600",
-  "from-amber-400 to-amber-600",
-]
-function avatarGradient(id: string) {
-  const s = id.split("").reduce((a, c) => a + c.charCodeAt(0), 0)
-  return AVATAR_COLORS[s % AVATAR_COLORS.length]
 }
 
 export function ConversationListV2({ activeConversationId, onSelect, conversations, onConversationsLoaded, resyncToken = 0, onNewChatCreated }: Props) {
@@ -389,7 +405,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
               const isActive = conv.id === activeConversationId
               const name = conv.contact?.name || conv.contact?.phone || "Unknown"
               const ini = initials(conv.contact?.name, conv.contact?.phone)
-              const grad = avatarGradient(conv.contact?.id ?? conv.id)
+              const grad = channelLook(conv.channel).avatar
               const hasUnread = (conv.unread_count ?? 0) > 0
 
               return (
@@ -423,8 +439,11 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
                       <p className={cn("text-[13px] truncate", hasUnread ? "font-bold text-slate-900" : "font-semibold text-slate-700")}>
                         {name}
                       </p>
-                      <span className={cn("shrink-0 text-[11px]", hasUnread ? "font-semibold text-indigo-600" : "text-slate-400")}>
-                        {conv.last_message_at ? relTime(conv.last_message_at) : ""}
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        <ChannelPill channel={conv.channel} />
+                        <span className={cn("text-[11px]", hasUnread ? "font-semibold text-indigo-600" : "text-slate-400")}>
+                          {conv.last_message_at ? relTime(conv.last_message_at) : ""}
+                        </span>
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-1 mt-0.5">

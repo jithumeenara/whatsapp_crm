@@ -17,10 +17,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   AlertTriangle, Bot, Check, CheckCircle2, Copy, Globe, Loader2, MessageCircle, Palette,
-  Plus, ShieldCheck, Sparkles, Trash2, Users, Wand2, X, Code2, Clock,
+  Plus, ShieldCheck, Sparkles, Trash2, Users, Wand2, X, Code2, Clock, Workflow,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -192,8 +193,8 @@ export function WebsiteChatSettings() {
               </span>
             </div>
             <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-500">
-              Same assistant, knowledge and hand-over rules as WhatsApp. Website chatbots run first. Visitors are anonymous, so it
-              never saves registrations or books appointments for them.
+              Same assistant, knowledge and hand-over rules as WhatsApp. Website chatbots run first. Registrations and
+              appointments open once the visitor has given a mobile number — the welcome chatbot, or the assistant, asks for it.
             </p>
           </div>
           <div className="flex items-center gap-5 sm:pl-2">
@@ -663,6 +664,8 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
               </>
             )}
 
+            {tab === 'behaviour' && <WelcomeChatbotCard />}
+
             {tab === 'install' && (
               <InstallSteps widget={widget} hasDomains={form.domains.length > 0} onGoToDomains={() => setTab('behaviour')} />
             )}
@@ -748,6 +751,64 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * One click to the welcome chatbot every Website Bot wants: name, mobile
+ * number, language buttons. Created on the Website channel from the
+ * built-in template and opened in the builder, as a draft — the business
+ * reads the texts and switches it on there.
+ */
+function WelcomeChatbotCard() {
+  const router = useRouter()
+  const [creating, setCreating] = useState(false)
+
+  async function create() {
+    if (creating) return
+    setCreating(true)
+    try {
+      const res = await apiFetch('/api/chatbot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          template_slug: 'welcome_name_number_language',
+          channel: 'website',
+          name: 'Website welcome — name, number & language',
+        }),
+      })
+      const data = (await res.json()) as { chatbot?: { id?: string } }
+      if (!data.chatbot?.id) throw new Error('The chatbot was not created.')
+      toast.success('Welcome chatbot created — check the texts, then switch it on.')
+      router.push(`/chatbot/${data.chatbot.id}`)
+    } catch (err) {
+      console.error('[website-chat] welcome chatbot failed:', err)
+      toast.error(errorText(err, 'Could not create the welcome chatbot.'))
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 to-white p-4">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-100">
+          <Workflow className="h-4 w-4 text-indigo-600" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold text-slate-800">Welcome chatbot: name, number & language</div>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
+            Runs once for each new visitor: asks their name and mobile number, then offers language buttons (മലയാളം / English),
+            and saves all three to the contact. With a number on file, the assistant can take registrations and book
+            appointments for website visitors, just like on WhatsApp.
+          </p>
+          <Button size="sm" className="mt-3" onClick={() => void create()} disabled={creating}>
+            {creating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}
+            Create welcome chatbot
+          </Button>
+          <p className="mt-2 text-[11px] text-slate-400">Opens in the chatbot builder as a draft — edit any text or add languages, then switch it on.</p>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function DomainChips({ domains, onChange }: { domains: string[]; onChange: (d: string[]) => void }) {
   const [draft, setDraft] = useState('')

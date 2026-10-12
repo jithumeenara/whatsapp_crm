@@ -420,6 +420,9 @@ model Contact {
   /// outbound draft into their language without re-detecting it. Null
   /// until their first message is ever translated.
   detected_language      String?
+  /// The language they chose (a chatbot's language buttons, via Update
+  /// contact → Language; migration 131). The assistant answers in it.
+  preferred_language     String?
   created_at             DateTime  @default(now()) @db.Timestamptz(6)
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
 

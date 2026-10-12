@@ -35,6 +35,8 @@
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { updateContactField } from "@/lib/contacts/update-field";
+import { checkPhone, isPlaceholderPhone } from "@/lib/contacts/validate";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { resolveWhatsAppConfig } from "@/lib/whatsapp/resolve-config";
@@ -1150,8 +1152,11 @@ export function interpolateWithContact(
   } | null,
 ): string {
   if (!template) return "";
-  const name = contact?.name ?? contact?.phone ?? "";
-  const phone = contact?.phone ?? "";
+  // A website visitor's or email-only contact's `phone` is an internal
+  // placeholder ("web:…", "email:…") — never shown to anybody.
+  const realPhone = contact?.phone && !isPlaceholderPhone(contact.phone) ? contact.phone : "";
+  const name = contact?.name ?? realPhone;
+  const phone = realPhone;
   const email = contact?.email ?? "";
   const company = contact?.company ?? "";
   return template
@@ -1232,7 +1237,8 @@ function validateCollectInputValue(
     case "time":
       return /^\d{1,2}:\d{2}(:\d{2})?$/.test(v);
     case "phone":
-      return /^[\d\s+\-().]{6,}$/.test(v);
+      // The contact forms' own rule: 7–15 digits, country code optional.
+      return checkPhone(v).ok;
     default:
       // text, file, location — accept anything
       return true;
@@ -1674,19 +1680,29 @@ async function advanceFromNodeKey(
     }
 
     // update_contact — update a standard or custom contact field, then advance.
+    //
+    // Through updateContactField, which the assistant uses too: name,
+    // email (lower-cased), company, phone (kept as the alternate number —
+    // a typed number never becomes the contact's identity), language (the
+    // assistant answers in it) and any custom field by name. Phone, the
+    // language and custom fields were offered by the builder's hint and
+    // silently ignored here before.
     if (node.node_type === "update_contact") {
       const cfg = node.config as { field?: string; value?: string; next_node_key?: string };
       if (cfg.field && run.contact_id) {
-        const STANDARD = ["name", "email", "company"] as const;
         const val = interpolateWithContact(cfg.value ?? "", run.vars, await getContact());
-        if ((STANDARD as readonly string[]).includes(cfg.field)) {
-          await prisma.contact.update({
-            where: { id: run.contact_id },
-            data: { [cfg.field]: val },
-          }).catch(() => {/* non-fatal */});
+        const result = await updateContactField({
+          accountId: run.account_id,
+          contactId: run.contact_id,
+          field: cfg.field,
+          value: val,
+        }).catch((err: unknown) => ({ ok: false as const, error: err instanceof Error ? err.message : "failed" }));
+        if (result.ok) {
           // Keep the cached contact in sync so a later node in the same
           // pass that reads {{contact.x}} doesn't see a stale value.
-          contactGetter.patch({ [cfg.field]: val });
+          if (["name", "email", "company"].includes(cfg.field)) contactGetter.patch({ [cfg.field]: val });
+        } else {
+          await logEvent(run.id, "error", node.node_key, { reason: "update_contact_failed", field: cfg.field, error: result.error });
         }
       }
       currentKey = cfg.next_node_key ?? "";

@@ -39,7 +39,7 @@ import {
   type FunctionDeclaration,
 } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
-import { isPlaceholderPhone } from '@/lib/contacts/validate'
+import { usablePhone } from '@/lib/contacts/validate'
 import { businessTimezone, humanDate } from './human-date'
 // One implementation of "a wall clock in this zone is this moment",
 // shared with the callback slots the offer system sends.
@@ -76,11 +76,12 @@ export interface CustomerToolContext {
   /** Google Calendar is connected with booking on (google/calendar.ts):
    *  check_availability and book_appointment are offered. */
   calendarBooking?: boolean
-  /** A website visitor: nobody has proved who they are — no phone number,
-   *  no account, only a browser. They may ask, start a chatbot, leave a
-   *  call-back or be handed over, but not file registrations or book
-   *  appointments under a name anybody could type. A flood of fake
-   *  visitors must not become a flood of fake records. */
+  /** A website visitor who has not given a phone number yet (no phone of
+   *  their own, no alternate — isAnonymousVisitor). Until they do, they
+   *  may ask, start a chatbot or be handed over, but not file
+   *  registrations or book appointments: a flood of fake visitors must not
+   *  become a flood of fake records. save_my_details takes their name and
+   *  number; from the next reply on, everything WhatsApp has is open. */
   anonymous?: boolean
 }
 
@@ -384,6 +385,38 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       return {
         started: true,
         note: `The "${match.name}" chat has taken over and has already messaged the customer. Say nothing further — your reply would arrive on top of it. Reply with an empty message.`,
+      }
+    },
+  },
+
+  save_my_details: {
+    declaration: {
+      name: 'save_my_details',
+      description:
+        'Save the name and mobile number a website visitor gave you. Use it as soon as they tell you both — before any registration, booking or call-back, which need a number to reach them on. Pass exactly what they typed; the number is checked and you are told if it is not valid.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          name: { type: SchemaType.STRING, description: 'Their name, as they wrote it.' },
+          phone: {
+            type: SchemaType.STRING,
+            description: 'Their mobile number as they typed it, ideally with the country code (e.g. +91 98765 43210).',
+          },
+        },
+        required: ['phone'],
+      },
+    },
+    async run(args, ctx) {
+      const { updateContactField } = await import('@/lib/contacts/update-field')
+      const phone = typeof args.phone === 'string' ? args.phone : ''
+      const saved = await updateContactField({ accountId: ctx.accountId, contactId: ctx.contactId, field: 'phone', value: phone })
+      if (!saved.ok) return { saved: false, error: `${saved.error} Ask them to type it again.` }
+      if (typeof args.name === 'string' && args.name.trim()) {
+        await updateContactField({ accountId: ctx.accountId, contactId: ctx.contactId, field: 'name', value: args.name })
+      }
+      return {
+        saved: true,
+        note: 'Saved. Thank them, and carry on with what they wanted — registration and booking are available from your next reply.',
       }
     },
   },
@@ -727,9 +760,9 @@ const TOOLS: Record<string, CustomerToolImpl> = {
     async run(args, ctx) {
       const { bookAppointment } = await import('@/lib/google/calendar')
       const contact = await prisma.contact
-        .findFirst({ where: { id: ctx.contactId, account_id: ctx.accountId }, select: { name: true, phone: true } })
+        .findFirst({ where: { id: ctx.contactId, account_id: ctx.accountId }, select: { name: true, phone: true, alternate_phone: true } })
         .catch(() => null)
-      const phone = contact?.phone && !isPlaceholderPhone(contact.phone) ? contact.phone : null
+      const phone = usablePhone(contact)
       const res = await bookAppointment({
         accountId: ctx.accountId,
         userId: ctx.userId ?? (await anyOwner(ctx.accountId)),
@@ -795,6 +828,7 @@ const SIDE_EFFECT_TOOLS = new Set([
   'submit_registration',
   'add_registration_details',
   'book_appointment',
+  'save_my_details',
 ])
 
 const CALENDAR_TOOLS = new Set(['check_availability', 'book_appointment'])
@@ -811,6 +845,8 @@ export function customerToolDeclarations(ctx: CustomerToolContext): FunctionDecl
     .filter(([name]) => !ctx.readOnly || READ_ONLY_TOOLS.has(name))
     .filter(([name]) => !ctx.noSideEffects || !SIDE_EFFECT_TOOLS.has(name))
     .filter(([name]) => !ctx.anonymous || !ANONYMOUS_BLOCKED_TOOLS.has(name))
+    // Only a website visitor who has not given a number yet is asked for one.
+    .filter(([name]) => name !== 'save_my_details' || Boolean(ctx.anonymous))
     .map(([, t]) => t.declaration)
 }
 

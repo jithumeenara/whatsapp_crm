@@ -98,11 +98,18 @@ export function ChatbotShell({
       // as 'manual' so no ordinary message starts it — see
       // src/lib/flows/flow-submitted-trigger.ts.
       const onFlowSubmitted = startCfg?.trigger_on === "flow_submitted";
-      const keyword = onFlowSubmitted ? "" : startCfg?.trigger_keyword?.trim() ?? "";
+      // Once per customer, on their first message — the engine's
+      // first_inbound_message trigger, which the builder could not choose.
+      const onFirstMessage = startCfg?.trigger_on === "first_message";
+      const keyword = onFlowSubmitted || onFirstMessage ? "" : startCfg?.trigger_keyword?.trim() ?? "";
       const keywords = keyword
         ? keyword.split("|").map((k) => k.trim()).filter(Boolean)
         : [];
-      const triggerType = onFlowSubmitted ? "manual" : keywords.length > 0 ? "keyword" : "always";
+      const triggerType = onFlowSubmitted
+        ? "manual"
+        : onFirstMessage
+          ? "first_inbound_message"
+          : keywords.length > 0 ? "keyword" : "always";
       const triggerConfig = {
         ...(keywords.length > 0 ? { keywords, match_type: startCfg?.trigger_match ?? "exact" } : {}),
         ...(onFlowSubmitted

@@ -123,6 +123,8 @@ export interface Contact {
    *  and unique per account. Read-only. */
   phone_normalized?: string;
   alternate_phone?: string | null;
+  /** Chosen through a chatbot's language buttons (migration 131). */
+  preferred_language?: string | null;
   name?: string;
   email?: string;
   company?: string;
