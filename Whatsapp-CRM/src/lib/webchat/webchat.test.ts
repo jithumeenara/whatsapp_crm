@@ -249,3 +249,22 @@ describe('template wording', () => {
     }
   })
 })
+
+describe('lead screens get a callable number', () => {
+  it('replaces placeholders with the typed number, leaves real numbers and other fields alone', async () => {
+    const { withCallablePhones } = await import('@/lib/contacts/callable')
+    const created = new Date('2026-10-12T10:00:00Z')
+    const out = withCallablePhones({
+      leads: [
+        { id: 'a', title: 'Visitor', created_at: created, contact: { phone: 'web:abcdefgh', alternate_phone: '+919876543210' } },
+        { id: 'b', contact: { phone: 'web:zzzzzzzz', alternate_phone: null } },
+        { id: 'c', contact: { phone: '+911234567890', alternate_phone: '+919999999999' } },
+        { id: 'd', contact: { phone: 'email:x@y.com' } },
+      ],
+      total: 4,
+    })
+    expect(out.leads.map((l) => l.contact.phone)).toEqual(['+919876543210', '', '+911234567890', ''])
+    expect(out.leads[0].created_at).toBe(created)
+    expect(out.total).toBe(4)
+  })
+})

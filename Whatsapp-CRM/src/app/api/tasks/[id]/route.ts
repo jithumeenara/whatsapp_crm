@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,13 +30,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(status === 'done' && !existing.completed_at && { completed_at: new Date() }),
       },
       include: {
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
         lead: { select: { id: true, title: true } },
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
 
-    return NextResponse.json({ task })
+    return NextResponse.json(withCallablePhones({ task }))
   } catch (err) {
     return toErrorResponse(err)
   }

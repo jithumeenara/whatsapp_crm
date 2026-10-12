@@ -1,5 +1,6 @@
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { usablePhone } from '@/lib/contacts/validate'
 import { NextResponse } from 'next/server'
 
 /**
@@ -72,7 +73,7 @@ export async function GET() {
           due_at: true,
           lead_id: true,
           contact_id: true,
-          contact: { select: { id: true, name: true, phone: true } },
+          contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
           // Where the click should land. A follow-up may carry a lead
           // directly, or reach one through the contact.
           lead: { select: { id: true, status: true } },
@@ -102,7 +103,7 @@ export async function GET() {
         lead_id: f.lead?.id ?? f.lead_id ?? null,
         contact_id: f.contact?.id ?? f.contact_id ?? null,
         contact_name: f.contact?.name ?? null,
-        contact_phone: f.contact?.phone ?? null,
+        contact_phone: usablePhone(f.contact),
       })),
       unclaimed_count: unclaimed,
     })

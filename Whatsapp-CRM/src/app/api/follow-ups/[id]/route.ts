@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
+import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { checkOwnedRefs, FOLLOW_UP_STATUSES } from '@/lib/leads/owned-refs'
@@ -73,7 +74,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(isCompleting && { completed_at: new Date() }),
       },
       include: {
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
         lead: { select: { id: true, title: true } },
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
@@ -95,7 +96,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       })
     }
 
-    return NextResponse.json({ followUp })
+    return NextResponse.json(withCallablePhones({ followUp }))
   } catch (err) {
     return toErrorResponse(err)
   }

@@ -529,6 +529,12 @@ async function writeLead(args: {
     .catch(() => null)
   if (!contact) return null
 
+  // The channel this conversation is on — it was 'whatsapp' for every
+  // lead, so a website or Instagram enquiry was filed as WhatsApp.
+  const conversation = await prisma.conversation
+    .findUnique({ where: { id: args.conversationId }, select: { channel: true } })
+    .catch(() => null)
+
   try {
     const lead = await prisma.lead.create({
       data: {
@@ -536,7 +542,7 @@ async function writeLead(args: {
         user_id: contact.user_id,
         contact_id: args.contactId,
         title: contact.name || contact.phone,
-        source: 'whatsapp',
+        source: conversation?.channel || 'whatsapp',
         // In suggest mode the row exists but stays off the working
         // lists: the Suggested tab is the only place it shows until
         // somebody accepts it. In create mode it joins the New pool

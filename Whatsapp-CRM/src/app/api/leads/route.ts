@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
+import { withCallablePhones } from '@/lib/contacts/callable'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
@@ -181,7 +182,7 @@ export async function GET(req: NextRequest) {
         skip: page * limit,
         take: limit,
         include: {
-          contact: { select: { id: true, name: true, phone: true, avatar_url: true } },
+          contact: { select: { id: true, name: true, phone: true, alternate_phone: true, avatar_url: true } },
           assignee: { select: { id: true, email: true, profile: { select: { full_name: true, avatar_url: true } } } },
           _count: { select: { activities: true, follow_ups: true, tasks: true } },
         },
@@ -204,7 +205,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ leads: visibleLeads, total })
+    return NextResponse.json(withCallablePhones({ leads: visibleLeads, total }))
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -282,7 +283,7 @@ export async function POST(req: NextRequest) {
       if (existingLeads.length > 0) {
         const contact = await prisma.contact.findFirst({
           where: { id: contact_id as string, account_id: ctx.accountId },
-          select: { id: true, name: true, phone: true, email: true, avatar_url: true },
+          select: { id: true, name: true, phone: true, alternate_phone: true, email: true, avatar_url: true },
         })
 
         const total  = existingLeads.length
@@ -297,7 +298,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             duplicate: true,
-            contact,
+            contact: withCallablePhones(contact),
             leads: existingLeads,
             counts: { total, active, closed },
             activeLead,
@@ -325,7 +326,7 @@ export async function POST(req: NextRequest) {
         assigned_to: (assigned_to as string) ?? null,
       },
       include: {
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
@@ -343,7 +344,7 @@ export async function POST(req: NextRequest) {
     })
 
     emitToAccount(ctx.accountId, 'lead', { eventType: 'INSERT', new: lead, old: {} })
-    return NextResponse.json({ lead }, { status: 201 })
+    return NextResponse.json(withCallablePhones({ lead }), { status: 201 })
   } catch (err) {
     return toErrorResponse(err)
   }

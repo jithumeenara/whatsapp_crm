@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { onceSchemaPatch } from "@/lib/db/schema-patch"
+import { withCallablePhones } from '@/lib/contacts/callable'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
@@ -86,7 +87,7 @@ export async function GET(
     const prevId = idx > 0 ? allIds[idx - 1].id : null
     const nextId = idx < allIds.length - 1 ? allIds[idx + 1].id : null
 
-    return NextResponse.json({ lead, prevId, nextId })
+    return NextResponse.json(withCallablePhones({ lead, prevId, nextId }))
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -200,7 +201,7 @@ export async function PATCH(
           description: 'Lead was claimed from the pool',
         },
       })
-      return NextResponse.json({ lead })
+      return NextResponse.json(withCallablePhones({ lead }))
     }
 
     // Handle is_hidden toggle via raw SQL (column added on first use)
@@ -215,7 +216,7 @@ export async function PATCH(
         UPDATE leads SET is_hidden = ${body.is_hidden} WHERE id = ${id}::uuid
       `
       const lead = await getLead(id, ctx.accountId)
-      return NextResponse.json({ lead })
+      return NextResponse.json(withCallablePhones({ lead }))
     }
 
     const {
@@ -483,7 +484,7 @@ export async function PATCH(
     // Broadcast lead update to all connected clients in this account
     emitToAccount(ctx.accountId, 'lead', { eventType: 'UPDATE', new: lead })
 
-    return NextResponse.json({ lead })
+    return NextResponse.json(withCallablePhones({ lead }))
   } catch (err) {
     return toErrorResponse(err)
   }

@@ -28,6 +28,7 @@ import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
 import { shouldReleaseOnReturn } from '@/lib/agents/presence'
 import { autoReplyToMessage, handOver, AI_AUTO_REPLY_SOURCE } from '@/lib/ai/auto-reply'
 import { sendHandoffAlert } from '@/lib/ai/handoff-alert'
+import { autoCreateLead } from '@/lib/leads/auto-create'
 import { visitorPhone } from './tokens'
 import type { AuthenticatedSession } from './session'
 import { toVisitorMessage, type VisitorMessage } from './public-message'
@@ -239,6 +240,21 @@ async function react(args: {
     },
   })
   emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updated, old: {} })
+
+  // A brand-new visitor becomes a lead, as a new WhatsApp customer does
+  // (when the account has auto lead creation on). Named "Visitor ABCD"
+  // until the welcome chatbot or the assistant learns their name — the
+  // title follows it then (update-field.ts).
+  if (thread.contactCreated) {
+    const contact = await prisma.contact.findUnique({ where: { id: thread.contactId }, select: { name: true } }).catch(() => null)
+    await autoCreateLead({
+      accountId,
+      userId,
+      contactId: thread.contactId,
+      title: contact?.name || 'Website visitor',
+      source: WEBSITE_CHANNEL,
+    })
+  }
 
   // Blocked or flooding: stored for whoever reviews it, acted on by nothing.
   const block = await isContactBlocked(thread.contactId).catch(() => ({ blocked: false as const }))

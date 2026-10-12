@@ -35,6 +35,7 @@ import {
   forwardCallWebhook,
 } from '@/lib/whatsapp/call-handler'
 import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
+import { autoCreateLead } from '@/lib/leads/auto-create'
 import { refreshBroadcastCounts } from '@/lib/broadcasts/counts'
 
 /** Why nothing was sent, in words rather than a reason code. These are
@@ -997,55 +998,13 @@ async function processMessage(
   // up from the New Leads pool.
   // ============================================================
   if (contactOutcome.wasCreated) {
-    try {
-      const leadSettings = await prisma.leadSettings.findUnique({
-        where: { account_id: accountId },
-        select: { auto_lead_creation: true },
-      })
-      // Runs alongside AI lead detection rather than instead of it.
-      // This rule's job is that nobody is missed; the assistant's job
-      // is to read the ones it caught and mark the ones that were never
-      // an enquiry. See src/lib/leads/ai-detect.ts — finding a lead
-      // already here makes it review that lead instead of proposing a
-      // second one.
-      if (leadSettings?.auto_lead_creation) {
-        const existingLead = await prisma.lead.findFirst({
-          where: { contact_id: contactRecord.id, account_id: accountId },
-          select: { id: true },
-        })
-        if (!existingLead) {
-          const newLead = await prisma.lead.create({
-            data: {
-              account_id: accountId,
-              user_id: configOwnerUserId,
-              contact_id: contactRecord.id,
-              title: contactName || senderPhone,
-              source: 'whatsapp',
-              status: 'new',
-            },
-          })
-          await prisma.leadActivity.create({
-            data: {
-              account_id: accountId,
-              lead_id: newLead.id,
-              contact_id: contactRecord.id,
-              type: 'created',
-              title: 'Lead auto-created',
-              description: 'Lead created automatically from first WhatsApp message',
-            },
-          })
-
-          // Tell whoever is looking. Without this the lead appears in
-          // the pool silently and is found only by somebody who happens
-          // to refresh the Leads page — which is the whole reason a
-          // first enquiry could sit for an hour. Every other path that
-          // creates a lead already emits; this one never did.
-          emitToAccount(accountId, 'lead', { eventType: 'INSERT', new: newLead, old: {} })
-        }
-      }
-    } catch (err) {
-      console.error('[webhook] auto lead creation failed:', err instanceof Error ? err.message : err)
-    }
+    await autoCreateLead({
+      accountId,
+      userId: configOwnerUserId,
+      contactId: contactRecord.id,
+      title: contactName || senderPhone,
+      source: 'whatsapp',
+    })
   }
 
   // ============================================================

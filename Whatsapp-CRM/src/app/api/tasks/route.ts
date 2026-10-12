@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
 
 const PAGE_SIZE = 25
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
         skip: page * limit,
         take: limit,
         include: {
-          contact: { select: { id: true, name: true, phone: true, avatar_url: true } },
+          contact: { select: { id: true, name: true, phone: true, alternate_phone: true, avatar_url: true } },
           lead: { select: { id: true, title: true } },
           assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
         },
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
       prisma.task.count({ where }),
     ])
 
-    return NextResponse.json({ tasks, total })
+    return NextResponse.json(withCallablePhones({ tasks, total }))
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -63,13 +64,13 @@ export async function POST(req: NextRequest) {
         assigned_to: assigned_to ?? null,
       },
       include: {
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
         lead: { select: { id: true, title: true } },
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
 
-    return NextResponse.json({ task }, { status: 201 })
+    return NextResponse.json(withCallablePhones({ task }), { status: 201 })
   } catch (err) {
     return toErrorResponse(err)
   }

@@ -51,7 +51,7 @@ export async function updateContactField(args: {
 
   const contact = await prisma.contact.findFirst({
     where: { id: args.contactId, account_id: args.accountId },
-    select: { id: true, phone: true },
+    select: { id: true, phone: true, name: true },
   })
   if (!contact) return { ok: false, error: 'Contact not found.' }
 
@@ -59,7 +59,19 @@ export async function updateContactField(args: {
   switch (kind) {
     case 'name': {
       if (!value) return { ok: false, error: 'Name is empty.' }
-      await prisma.contact.update({ where: { id: contact.id }, data: { name: value.slice(0, 120) } })
+      const name = value.slice(0, 120)
+      await prisma.contact.update({ where: { id: contact.id }, data: { name } })
+      // A lead auto-created before the name was known ("Visitor ABCD")
+      // takes the real one. Only a title still equal to the old name — a
+      // title somebody wrote by hand is theirs.
+      if (contact.name && contact.name !== name) {
+        await prisma.lead
+          .updateMany({
+            where: { account_id: args.accountId, contact_id: contact.id, title: contact.name },
+            data: { title: name },
+          })
+          .catch(() => {})
+      }
       return { ok: true }
     }
     case 'email': {

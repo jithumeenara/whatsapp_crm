@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
+import { withCallablePhones } from '@/lib/contacts/callable'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 
@@ -65,7 +66,7 @@ export async function GET(_req: NextRequest) {
         created_at: true,
         updated_at: true,
         contact_id: true,
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
         assignee: {
           select: { id: true, email: true, profile: { select: { full_name: true } } },
         },
@@ -93,7 +94,7 @@ export async function GET(_req: NextRequest) {
         leads: g,
       }))
 
-    return NextResponse.json({ groups, total: groups.length })
+    return NextResponse.json(withCallablePhones({ groups, total: groups.length }))
   } catch (err) {
     console.error('[leads] duplicate scan failed:', err instanceof Error ? err.message : err)
     return NextResponse.json({ error: 'Could not look for duplicates.' }, { status: 500 })
