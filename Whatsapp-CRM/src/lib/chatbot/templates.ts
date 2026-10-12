@@ -320,6 +320,12 @@ const aiSupport: ChatbotTemplate = {
 //
 // One branch per language, so each question is asked in the visitor's
 // own language. Add a language by copying a branch in the builder.
+//
+// The texts name nothing the business offers. A template is used by
+// every kind of business; a line like "ask about appointments" told a
+// training institute's visitors it took appointments, which it does not.
+// What the business does is for the assistant to say, from its own
+// knowledge.
 
 interface WelcomeLanguage {
   key: string
@@ -340,7 +346,7 @@ const WELCOME_LANGUAGES: WelcomeLanguage[] = [
     askName: 'നന്ദി! നിങ്ങളുടെ പേര് എന്താണ്?',
     askPhone: 'നന്ദി, {{vars.name}}! നിങ്ങളുടെ WhatsApp നമ്പർ തരാമോ? (country code ഉൾപ്പെടെ, ഉദാ: +91 98765 43210)',
     badPhone: 'ഇത് ശരിയായ നമ്പർ അല്ലെന്ന് തോന്നുന്നു. country code ഉൾപ്പെടെ ടൈപ്പ് ചെയ്യൂ, ഉദാ: +91 98765 43210',
-    thanks: 'നന്ദി, {{vars.name}}! 🙏 എന്താണ് അറിയേണ്ടത്? പരിശീലന പരിപാടികൾ, രജിസ്ട്രേഷൻ, അപ്പോയിന്റ്മെന്റ് — എന്തും ചോദിക്കാം.',
+    thanks: 'നന്ദി, {{vars.name}}! 🙏 എങ്ങനെ സഹായിക്കാം? നിങ്ങളുടെ ചോദ്യം ടൈപ്പ് ചെയ്യൂ.',
   },
   {
     key: 'en',
@@ -349,7 +355,7 @@ const WELCOME_LANGUAGES: WelcomeLanguage[] = [
     askName: 'Thank you! May I have your name?',
     askPhone: 'Thank you, {{vars.name}}! Your WhatsApp number, please (with country code, e.g. +91 98765 43210)?',
     badPhone: 'That does not look like a WhatsApp number. Please type it with the country code, e.g. +91 98765 43210.',
-    thanks: 'Thank you, {{vars.name}}! 🙏 How can we help you today? Ask about programmes, registration or appointments.',
+    thanks: 'Thank you, {{vars.name}}! 🙏 How can we help you today? Type your question.',
   },
   {
     key: 'hi',
@@ -358,7 +364,7 @@ const WELCOME_LANGUAGES: WelcomeLanguage[] = [
     askName: 'धन्यवाद! आपका नाम क्या है?',
     askPhone: 'धन्यवाद, {{vars.name}}! कृपया अपना WhatsApp नंबर बताएँ (country code के साथ, जैसे +91 98765 43210)।',
     badPhone: 'यह सही नंबर नहीं लगता। कृपया country code के साथ लिखें, जैसे +91 98765 43210।',
-    thanks: 'धन्यवाद, {{vars.name}}! 🙏 हम आपकी क्या मदद कर सकते हैं? प्रशिक्षण कार्यक्रम, रजिस्ट्रेशन या अपॉइंटमेंट — कुछ भी पूछें।',
+    thanks: 'धन्यवाद, {{vars.name}}! 🙏 हम आपकी क्या मदद कर सकते हैं? अपना सवाल लिखें।',
   },
 ]
 

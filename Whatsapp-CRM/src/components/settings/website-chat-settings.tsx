@@ -193,8 +193,8 @@ export function WebsiteChatSettings() {
               </span>
             </div>
             <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-500">
-              Same assistant, knowledge and hand-over rules as WhatsApp. Website chatbots run first. Registrations and
-              appointments open once the visitor has given a mobile number — the welcome chatbot, or the assistant, asks for it.
+              Same assistant, knowledge and hand-over rules as WhatsApp. Website chatbots run first. Whatever the assistant does
+              for you on WhatsApp — registrations, bookings, if you have set them up — opens once the visitor has given a number.
             </p>
           </div>
           <div className="flex items-center gap-5 sm:pl-2">
@@ -797,7 +797,7 @@ function WelcomeChatbotCard() {
           <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
             Runs once for each new visitor: language buttons first (മലയാളം / English / हिन्दी), then their name and WhatsApp
             number — asked in the language they chose — and saves all three to the contact. With a number on file, the
-            assistant can take registrations and book appointments for website visitors, just like on WhatsApp.
+            assistant does for website visitors whatever it does on WhatsApp.
           </p>
           <Button size="sm" className="mt-3" onClick={() => void create()} disabled={creating}>
             {creating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1.5 h-3.5 w-3.5" />}

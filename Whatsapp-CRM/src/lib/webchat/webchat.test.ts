@@ -238,3 +238,14 @@ describe('the welcome chatbot template', () => {
     }
   })
 })
+
+describe('template wording', () => {
+  it('names nothing a business may not offer', async () => {
+    const { CHATBOT_TEMPLATES } = await import('@/lib/chatbot/templates')
+    const tpl = CHATBOT_TEMPLATES.find((t) => t.slug === 'welcome_name_number_language')!
+    const texts = JSON.stringify(tpl.nodes).toLowerCase()
+    for (const word of ['appointment', 'registration', 'programme', 'course', 'അപ്പോയിന്റ്', 'രജിസ്ട്രേഷൻ', 'പരിശീലന', 'अपॉइंटमेंट', 'प्रशिक्षण']) {
+      expect(texts, word).not.toContain(word)
+    }
+  })
+})
