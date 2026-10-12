@@ -101,9 +101,11 @@
     launcher.type = 'button';
     launcher.setAttribute('aria-label', 'Open chat');
     launcher.setAttribute('aria-expanded', 'false');
+    // A bot in a chat bubble — it is the Website Bot.
     var chatIcon =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-      '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+      '<path d="M12 6V2H8"/><path d="m8 18-4 4V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2Z"/>' +
+      '<path d="M2 12h2"/><path d="M9 11v2"/><path d="M15 11v2"/><path d="M20 12h2"/></svg>';
     var closeIcon =
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
       '<path d="M18 6 6 18M6 6l12 12"/></svg>';

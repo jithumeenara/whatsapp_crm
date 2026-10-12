@@ -345,13 +345,34 @@
   // only rows not seen before get the entrance animation.
   var shown = {};
 
-  function initial() {
-    var title = (state.widget && state.widget.title) || 'Chat';
-    var match = title.match(/[\p{L}\p{N}]/u);
-    return match ? match[0] : 'C';
+  /** A friendly bot, drawn from paths — no image request, no HTML. */
+  function botSvg() {
+    var ns = 'http://www.w3.org/2000/svg';
+    var s = document.createElementNS(ns, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('fill', 'none');
+    s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-linecap', 'round');
+    s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    s.setAttribute('class', 'bot');
+    ['M12 8V4H8', 'M2 14h2', 'M20 14h2', 'M15 13v2', 'M9 13v2'].forEach(function (d) {
+      var p = document.createElementNS(ns, 'path');
+      p.setAttribute('d', d);
+      s.appendChild(p);
+    });
+    var r = document.createElementNS(ns, 'rect');
+    r.setAttribute('width', '16');
+    r.setAttribute('height', '12');
+    r.setAttribute('x', '4');
+    r.setAttribute('y', '8');
+    r.setAttribute('rx', '2');
+    s.appendChild(r);
+    return s;
   }
 
-  /** The business's face: its logo, or the first letter of the title. */
+  /** The business's face: its logo, or the bot. */
   function avatarInto(node) {
     var logo = state.widget && state.widget.logo_url && safeUrl(state.widget.logo_url);
     if (logo) {
@@ -360,7 +381,7 @@
       img.src = logo;
       node.appendChild(img);
     } else {
-      node.appendChild(document.createTextNode(initial()));
+      node.appendChild(botSvg());
     }
   }
 
@@ -470,7 +491,12 @@
         if (msg.text) b.appendChild(document.createTextNode('\n'));
       }
     }
-    if (msg.text) textWithLinks(b, msg.text);
+    // WhatsApp-style *bold*, _italic_, lists (format.js); plain text
+    // with links if that file did not load.
+    if (msg.text) {
+      if (typeof window.wcFormat === 'function') window.wcFormat(b, msg.text);
+      else textWithLinks(b, msg.text);
+    }
     row.appendChild(b);
   }
 

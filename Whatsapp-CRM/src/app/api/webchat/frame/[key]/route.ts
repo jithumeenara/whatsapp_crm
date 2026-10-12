@@ -81,6 +81,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
 <body>
 <div id="app" data-key="${key}"></div>
 <script src="/socket.io/socket.io.min.js"></script>
+<script src="/webchat/format.js"></script>
 <script src="/webchat/frame.js"></script>
 </body>
 </html>`
