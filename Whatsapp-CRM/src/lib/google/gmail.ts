@@ -16,6 +16,7 @@
 import { prisma } from '@/lib/db'
 import { googleAccessToken, isGoogleServiceEnabled, logGoogleActivity } from './oauth'
 import { ensureGoogleTables } from './store'
+import { disabledApi, disabledApiMessage, isApiDisabled } from './api-disabled'
 
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me'
 const MAX_PER_POLL = 200
@@ -43,8 +44,8 @@ async function gmail<T>(token: string, path: string, init: RequestInit = {}): Pr
   if (res.ok) return (await res.json().catch(() => ({}))) as T
   const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
   const msg = body.error?.message ?? `Gmail returned ${res.status}`
-  if (/has not been used|is disabled/i.test(msg)) {
-    throw new GmailError('The Gmail API is not enabled in the Google Cloud project. APIs & Services → Library → Gmail API → Enable.', res.status)
+  if (isApiDisabled(msg)) {
+    throw new GmailError(disabledApiMessage(disabledApi(msg, 'Gmail API')), res.status)
   }
   throw new GmailError(msg, res.status)
 }

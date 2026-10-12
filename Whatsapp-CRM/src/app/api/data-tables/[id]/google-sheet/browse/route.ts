@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { GoogleNotConnectedError } from '@/lib/google/oauth'
-import { canBrowseSheets, listSpreadsheets, previewSpreadsheet } from '@/lib/google/sheet-browse'
+import { ApiDisabledError, canBrowseSheets, listSpreadsheets, previewSpreadsheet } from '@/lib/google/sheet-browse'
 import { suggestColumns } from '@/lib/google/sheet-sync'
 import { SheetsApiError } from '@/lib/google/sheets'
 
@@ -44,6 +44,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       columns: suggestColumns(preview.headers, preview.sample, fields),
     })
   } catch (err) {
+    if (err instanceof ApiDisabledError) {
+      return NextResponse.json({ api_disabled: { api: err.disabled.api, enable_url: err.disabled.enableUrl } })
+    }
     if (err instanceof SheetsApiError) return NextResponse.json({ error: err.message }, { status: err.status >= 400 && err.status < 600 ? err.status : 502 })
     if (err instanceof GoogleNotConnectedError) return NextResponse.json({ error: err.message }, { status: 400 })
     return toErrorResponse(err)

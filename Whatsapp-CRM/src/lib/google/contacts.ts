@@ -14,6 +14,7 @@
 import { prisma } from '@/lib/db'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
+import { disabledApi, disabledApiMessage, isApiDisabled } from './api-disabled'
 
 const API = 'https://people.googleapis.com/v1'
 const MAX_CONTACTS = 5000
@@ -35,8 +36,8 @@ async function people<T>(token: string, path: string): Promise<T> {
   if (res.ok) return (await res.json()) as T
   const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
   const msg = body.error?.message ?? `Google Contacts returned ${res.status}`
-  if (/has not been used|is disabled/i.test(msg)) {
-    throw new ContactsError('The People API is not enabled in the Google Cloud project. APIs & Services → Library → Google People API → Enable.', 400)
+  if (isApiDisabled(msg)) {
+    throw new ContactsError(disabledApiMessage(disabledApi(msg, 'Google People API')), 400)
   }
   throw new ContactsError(msg, res.status >= 400 && res.status < 500 ? res.status : 502)
 }

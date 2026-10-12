@@ -11,6 +11,7 @@
 
 import { contentMatchesType, isAllowedMime, saveAccountFile } from '@/lib/files/account-files'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
+import { disabledApi, disabledApiMessage, isApiDisabled } from './api-disabled'
 
 const API = 'https://www.googleapis.com/drive/v3'
 export const DRIVE_MAX_BYTES = 16 * 1024 * 1024
@@ -55,8 +56,8 @@ async function driveFetch(token: string, path: string): Promise<Response> {
   if (res.ok) return res
   const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
   const msg = body.error?.message ?? `Google Drive returned ${res.status}`
-  if (/has not been used|is disabled/i.test(msg)) {
-    throw new DriveError('The Google Drive API is not enabled in the Google Cloud project. APIs & Services → Library → Google Drive API → Enable.', 400)
+  if (isApiDisabled(msg)) {
+    throw new DriveError(disabledApiMessage(disabledApi(msg, 'Google Drive API')), 400)
   }
   if (res.status === 404) throw new DriveError('That file could not be opened. Choose it again in the Google window.', 404)
   if (/exportSizeLimitExceeded|too large/i.test(msg)) throw new DriveError('That Google file is too large to export.', 413)

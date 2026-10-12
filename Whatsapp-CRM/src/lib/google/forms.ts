@@ -19,6 +19,7 @@ import { prisma } from '@/lib/db'
 import { slugify } from '@/lib/data-store/slugify'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
 import { ensureGoogleTables } from './store'
+import { disabledApi, disabledApiMessage, isApiDisabled } from './api-disabled'
 
 const API = 'https://forms.googleapis.com/v1'
 const MAX_IMPORTED_IDS = 20_000
@@ -40,8 +41,8 @@ async function forms<T>(token: string, path: string): Promise<T> {
   if (res.ok) return (await res.json()) as T
   const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
   const msg = body.error?.message ?? `Google Forms returned ${res.status}`
-  if (/has not been used|is disabled/i.test(msg)) {
-    throw new FormsError('The Google Forms API is not enabled in the Google Cloud project. APIs & Services → Library → Google Forms API → Enable.', 400)
+  if (isApiDisabled(msg)) {
+    throw new FormsError(disabledApiMessage(disabledApi(msg, 'Google Forms API')), 400)
   }
   if (res.status === 404 || res.status === 403) throw new FormsError('That form could not be opened. Choose it again in the Google window.', 400)
   throw new FormsError(msg, res.status >= 400 && res.status < 500 ? res.status : 502)

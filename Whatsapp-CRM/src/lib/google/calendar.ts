@@ -16,6 +16,7 @@ import { prisma } from '@/lib/db'
 import { localDate, zonedInstant } from '@/lib/agents/zoned-time'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
 import { ensureGoogleTables } from './store'
+import { disabledApi, disabledApiMessage, isApiDisabled } from './api-disabled'
 
 const API = 'https://www.googleapis.com/calendar/v3'
 
@@ -100,8 +101,8 @@ async function cal<T>(token: string, path: string, init: RequestInit = {}): Prom
   if (res.ok) return (await res.json().catch(() => ({}))) as T
   const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
   const msg = body.error?.message ?? `Google Calendar returned ${res.status}`
-  if (/has not been used|is disabled/i.test(msg)) {
-    throw new CalendarError('The Google Calendar API is not enabled in the Google Cloud project. APIs & Services → Library → Google Calendar API → Enable.', res.status)
+  if (isApiDisabled(msg)) {
+    throw new CalendarError(disabledApiMessage(disabledApi(msg, 'Google Calendar API')), res.status)
   }
   throw new CalendarError(msg, res.status)
 }

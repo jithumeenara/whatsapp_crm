@@ -234,7 +234,10 @@ export async function fetchSheet(raw: string): Promise<SheetContent> {
 export async function fetchSheetForAccount(raw: string, accountId: string): Promise<SheetContent> {
   const ref = parseSheetUrl(raw)
   const { isGoogleServiceEnabled, googleAccessToken } = await import('@/lib/google/oauth')
-  if (!(await isGoogleServiceEnabled(accountId, 'sheets'))) return fetchSheet(raw)
+  // Either Sheets service reads through the account: picked files, or
+  // every sheet with "browse all".
+  const viaAccount = (await isGoogleServiceEnabled(accountId, 'sheets')) || (await isGoogleServiceEnabled(accountId, 'sheets_browse'))
+  if (!viaAccount) return fetchSheet(raw)
 
   let apiProblem: string | null = null
   try {

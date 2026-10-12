@@ -15,13 +15,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { ArrowLeft, ArrowRight, Check, Loader2, Search, Sparkles, X } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, Loader2, Sparkles, X } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
-import { GoogleDriveIcon, GoogleSheetsIcon } from "@/components/shared/google-icons"
+import { GoogleSheetsIcon } from "@/components/shared/google-icons"
+import { ApiDisabledCard, GoogleSheetList, type ApiDisabled } from "@/components/shared/google-sheet-chooser"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { pickGoogleSpreadsheet } from "@/lib/google/picker-client"
 
-interface SheetFile { id: string; name: string; modified_at: string | null; owner: string | null }
 interface Field { field_key: string; label: string; field_type: string }
 interface Column { header: string; target: string; type?: string; label?: string; options?: string[] }
 interface Preview {
@@ -47,15 +47,6 @@ const TYPES: Array<{ value: string; label: string }> = [
   { value: "select", label: "Dropdown" },
 ]
 
-function ago(iso: string | null): string {
-  if (!iso) return ""
-  const d = (Date.now() - new Date(iso).getTime()) / 86_400_000
-  if (d < 1) return "today"
-  if (d < 2) return "yesterday"
-  if (d < 30) return `${Math.floor(d)} days ago`
-  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
-}
-
 export function SheetImportWizard({
   tableId,
   tableName,
@@ -71,16 +62,9 @@ export function SheetImportWizard({
   onDone: () => void
 }) {
   const [step, setStep] = useState<1 | 2>(1)
-  const [search, setSearch] = useState("")
-  const [files, setFiles] = useState<SheetFile[] | null>(null)
-  const [next, setNext] = useState<string | null>(null)
-  const [needsPermission, setNeedsPermission] = useState(false)
-  const [listError, setListError] = useState("")
-  const [loadingList, setLoadingList] = useState(false)
-  const loadSeq = useRef(0)
-
   const [preview, setPreview] = useState<Preview | null>(null)
   const [previewError, setPreviewError] = useState("")
+  const [previewDisabled, setPreviewDisabled] = useState<ApiDisabled | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [columns, setColumns] = useState<Column[]>([])
   const [autoSync, setAutoSync] = useState(true)
@@ -92,41 +76,6 @@ export function SheetImportWizard({
     return () => window.removeEventListener("keydown", onKey)
   }, [onClose, importing])
 
-  // Step 1: the list, searched as you type — only the newest answer counts.
-  const loadList = useCallback(async (term: string, page?: string) => {
-    const seq = ++loadSeq.current
-    setLoadingList(true)
-    try {
-      const q = new URLSearchParams({ search: term })
-      if (page) q.set("page", page)
-      const d = (await (await apiFetch(`/api/data-tables/${tableId}/google-sheet/browse?${q}`, { cache: "no-store" })).json()) as {
-        needs_permission?: boolean
-        files?: SheetFile[]
-        next?: string | null
-      }
-      if (seq !== loadSeq.current) return
-      if (d.needs_permission) {
-        setNeedsPermission(true)
-        setFiles([])
-        return
-      }
-      setFiles((prev) => (page ? [...(prev ?? []), ...(d.files ?? [])] : d.files ?? []))
-      setNext(d.next ?? null)
-      setListError("")
-    } catch (err) {
-      console.error("[sheet import] list failed:", err)
-      if (seq === loadSeq.current) setListError(errorText(err, "Could not list your Google Sheets."))
-    } finally {
-      if (seq === loadSeq.current) setLoadingList(false)
-    }
-  }, [tableId])
-
-  useEffect(() => {
-    if (step !== 1) return
-    const t = setTimeout(() => void loadList(search), search ? 300 : 0)
-    return () => clearTimeout(t)
-  }, [search, step, loadList])
-
   // Step 2: tabs, rows and suggested columns.
   const previewSeq = useRef(0)
   const openSheet = useCallback(async (id: string, tab?: string) => {
@@ -137,8 +86,13 @@ export function SheetImportWizard({
     try {
       const q = new URLSearchParams({ spreadsheet: id })
       if (tab) q.set("tab", tab)
-      const d = (await (await apiFetch(`/api/data-tables/${tableId}/google-sheet/browse?${q}`, { cache: "no-store" })).json()) as Preview
+      const d = (await (await apiFetch(`/api/data-tables/${tableId}/google-sheet/browse?${q}`, { cache: "no-store" })).json()) as Preview & { api_disabled?: ApiDisabled }
       if (seq !== previewSeq.current) return
+      if (d.api_disabled) {
+        setPreviewDisabled(d.api_disabled)
+        return
+      }
+      setPreviewDisabled(null)
       setPreview(d)
       setColumns(d.columns)
     } catch (err) {
@@ -210,7 +164,6 @@ export function SheetImportWizard({
     }
   }
 
-  const connectHref = `/api/google/connect?services=sheets_browse&return=${encodeURIComponent(`/data/${tableId}`)}`
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="Import from Google Sheets">
@@ -248,81 +201,13 @@ export function SheetImportWizard({
 
         {/* Step 1 */}
         {step === 1 && (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {needsPermission ? (
-              <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
-                <div className="flex -space-x-2">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-md ring-1 ring-slate-100"><GoogleSheetsIcon className="h-8 w-8" /></span>
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-md ring-1 ring-slate-100"><GoogleDriveIcon className="h-7 w-7" /></span>
-                </div>
-                <h3 className="mt-5 text-[17px] font-semibold text-slate-900">See all your Google Sheets here</h3>
-                <p className="mt-2 max-w-md text-[13px] leading-relaxed text-slate-500">
-                  Allow the CRM to list and read your sheets once. It can only read — it never changes or deletes anything in Google.
-                </p>
-                <a href={connectHref} className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A73E8] px-5 text-[13.5px] font-semibold text-white shadow-sm hover:bg-[#1765CC]">
-                  Allow access to my sheets <ArrowRight className="h-4 w-4" />
-                </a>
-                {canPick && (
-                  <button type="button" onClick={() => void pickInGoogle()} disabled={importing} className="mt-3 text-[12.5px] font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50">
-                    {importing ? "Importing…" : "or choose one file in Google’s window"}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="px-6 pt-4">
-                  <div className="relative">
-                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      autoFocus
-                      autoComplete="off"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search your sheets"
-                      className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-[13.5px] outline-none transition-colors focus:border-[#1A73E8] focus:bg-white"
-                    />
-                    {loadingList && <Loader2 className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-slate-400" />}
-                  </div>
-                </div>
-                <div className="min-h-[320px] flex-1 overflow-y-auto px-4 py-3">
-                  {listError && <p className="mx-2 rounded-xl bg-rose-50 p-3 text-[12.5px] text-rose-700">{listError}</p>}
-                  {!files && !listError && (
-                    <div className="space-y-2 px-2">{Array.from({ length: 6 }, (_, i) => <div key={i} className="h-14 animate-pulse rounded-xl bg-slate-50" />)}</div>
-                  )}
-                  {files && files.length === 0 && !loadingList && !listError && (
-                    <p className="py-16 text-center text-[13px] text-slate-400">{search ? `No sheet named like “${search}”.` : "No Google Sheets in this account yet."}</p>
-                  )}
-                  <ul className="space-y-1">
-                    {files?.map((f) => (
-                      <li key={f.id}>
-                        <button
-                          type="button"
-                          onClick={() => void openSheet(f.id)}
-                          className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-slate-50"
-                        >
-                          <GoogleSheetsIcon className="h-8 w-8 shrink-0" />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[13.5px] font-medium text-slate-800">{f.name}</span>
-                            <span className="block truncate text-[11.5px] text-slate-400">
-                              {[f.owner === "me" ? "Yours" : f.owner, f.modified_at ? `edited ${ago(f.modified_at)}` : null].filter(Boolean).join(" · ")}
-                            </span>
-                          </span>
-                          <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-[#1A73E8]" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                  {next && (
-                    <div className="py-3 text-center">
-                      <button type="button" disabled={loadingList} onClick={() => void loadList(search, next)} className="text-[12.5px] font-medium text-[#1A73E8] hover:underline disabled:opacity-50">
-                        Show more
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          <GoogleSheetList
+            endpoint={`/api/data-tables/${tableId}/google-sheet/browse`}
+            returnTo={`/data/${tableId}`}
+            onChoose={(f) => void openSheet(f.id)}
+            onPickInGoogle={canPick ? () => void pickInGoogle() : undefined}
+            pickBusy={importing}
+          />
         )}
 
         {/* Step 2 */}
@@ -330,6 +215,9 @@ export function SheetImportWizard({
           <div className="flex min-h-0 flex-1 flex-col">
             {loadingPreview && !preview && (
               <div className="flex flex-1 items-center justify-center py-24"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div>
+            )}
+            {previewDisabled && preview === null && (
+              <ApiDisabledCard info={previewDisabled} onRetry={() => setStep(1)} />
             )}
             {previewError && (
               <div className="m-6 rounded-xl bg-rose-50 p-4 text-[13px] text-rose-700">

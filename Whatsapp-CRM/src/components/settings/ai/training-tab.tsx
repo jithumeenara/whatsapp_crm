@@ -10,7 +10,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SearchModelSetting } from './search-model-setting';
-import { GoogleDrivePick } from '@/components/shared/google-drive-pick';
+import { GoogleSheetChooser } from '@/components/shared/google-sheet-chooser';
+import { GoogleSheetsIcon } from '@/components/shared/google-icons';
+import { pickGoogleSpreadsheet } from '@/lib/google/picker-client';
 import {
   AiButton, AiCard, AiCardHeader, AiIconTile, AiBadge, AiInput, AiTextarea, AiLabel, AiHint, AiNotice,
   AiMenu, AiMenuTrigger, AiMenuContent, AiMenuItem, AiMenuSeparator,
@@ -916,6 +918,7 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
   const [busy, setBusy] = useState(false);
   /** Google's file picker is open over the dialog. */
   const [picking, setPicking] = useState(false);
+  const [pickedName, setPickedName] = useState('');
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -1058,29 +1061,72 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
           )}
 
           {kind === 'sheet' && (
-            <div className="space-y-1.5">
-              <AiLabel>Google Sheets link</AiLabel>
+            <div className="space-y-2">
+              {/* The CRM's own sheet list first; a pasted link still works. */}
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left transition-all hover:border-emerald-300 hover:shadow-sm"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+                  <GoogleSheetsIcon className="h-6 w-6" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold text-slate-800">
+                    {url && pickedName ? pickedName : 'Choose from my Google Sheets'}
+                  </span>
+                  <span className="block truncate text-[11.5px] text-slate-500">
+                    {url && pickedName ? 'Chosen — private sheets work, no sharing needed' : 'Private sheets work — no public link needed'}
+                  </span>
+                </span>
+                <span className="shrink-0 rounded-lg bg-slate-50 px-2.5 py-1 text-[11.5px] font-semibold text-slate-600">
+                  {url && pickedName ? 'Change' : 'Browse'}
+                </span>
+              </button>
+              {picking && (
+                <GoogleSheetChooser
+                  subtitle="Its rows become knowledge the assistant can quote"
+                  returnTo="/settings"
+                  onClose={() => setPicking(false)}
+                  onPickInGoogle={async () => {
+                    try {
+                      const picked = await pickGoogleSpreadsheet()
+                      if (picked) {
+                        setUrl(picked.url)
+                        setPickedName(picked.name)
+                        if (!name.trim()) setName(picked.name)
+                      }
+                    } catch (err) {
+                      console.error('[training] Google picker failed:', err)
+                    } finally {
+                      setPicking(false)
+                    }
+                  }}
+                  onChosen={(picked) => {
+                    setUrl(picked.url)
+                    setPickedName(picked.name)
+                    if (!name.trim()) setName(picked.name)
+                  }}
+                />
+              )}
+              <div className="flex items-center gap-3 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" /> or paste a link <span className="h-px flex-1 bg-slate-200" />
+              </div>
               <AiInput
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                  setUrl(e.target.value)
+                  setPickedName('')
+                }}
                 placeholder="https://docs.google.com/spreadsheets/d/..."
                 className="font-mono"
-              />
-              <GoogleDrivePick
-                onPickingChange={setPicking}
-                onPicked={(picked) => {
-                  setUrl(picked.url)
-                  if (!name.trim()) setName(picked.name)
-                }}
               />
               {/* Said before they hit Save, because an unshared sheet is
                   the failure everyone hits first and Google returns its
                   sign-in page rather than an error. */}
               <AiHint>
-                Choose it from Google Drive (when Google is connected in Settings → Google) and it can stay
-                private. Or paste a link to a sheet shared as Share &rarr; General access &rarr; &ldquo;Anyone
-                with the link&rdquo; &rarr; Viewer. The first row is read as column names, and each row
-                becomes one labelled line the bot can quote.
+                A pasted link needs Share &rarr; General access &rarr; &ldquo;Anyone with the link&rdquo; &rarr; Viewer.
+                The first row is read as column names; each row becomes one line the assistant can quote.
               </AiHint>
             </div>
           )}

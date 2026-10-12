@@ -13,8 +13,18 @@
 
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
 import { SheetsApiError } from './sheets'
+import { disabledApi, isApiDisabled, type DisabledApi } from './api-disabled'
 
 const DRIVE = 'https://www.googleapis.com/drive/v3/files'
+
+/** A Google API this needs is switched off in the Cloud project — kept
+ *  structured, so the import screen can show the Enable button. */
+export class ApiDisabledError extends SheetsApiError {
+  constructor(readonly disabled: DisabledApi) {
+    super(`The ${disabled.api} is switched off in your Google Cloud project.`, 400)
+    this.name = 'ApiDisabledError'
+  }
+}
 const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets'
 
 export interface SheetFile {
@@ -35,9 +45,8 @@ async function get<T>(token: string, url: string): Promise<T> {
   if (res.ok) return (await res.json()) as T
   const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } }
   const msg = body.error?.message ?? `Google returned ${res.status}`
-  if (/has not been used|is disabled/i.test(msg)) {
-    const api = url.includes('drive') ? 'Google Drive API' : 'Google Sheets API'
-    throw new SheetsApiError(`The ${api} is not enabled in the Google Cloud project. APIs & Services → Library → ${api} → Enable.`, 400)
+  if (isApiDisabled(msg)) {
+    throw new ApiDisabledError(disabledApi(msg, url.includes('drive') ? 'Google Drive API' : 'Google Sheets API'))
   }
   if (res.status === 403 || res.status === 404) throw new SheetsApiError('That sheet could not be opened — it may have been deleted or unshared.', 404)
   if (res.status === 429) throw new SheetsApiError('Google is busy (rate limit). Try again in a minute.', 429)
