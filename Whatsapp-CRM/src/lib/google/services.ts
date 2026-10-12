@@ -12,6 +12,7 @@
 
 export type GoogleServiceId =
   | 'sheets'
+  | 'sheets_browse'
   | 'drive'
   | 'gmail_send'
   | 'gmail_inbox'
@@ -54,6 +55,20 @@ export const GOOGLE_SERVICES: readonly GoogleService[] = [
     ],
     scopes: [DRIVE_FILE],
     level: 'basic',
+    availability: 'available',
+    openHref: '/data',
+  },
+  {
+    id: 'sheets_browse',
+    name: 'Google Sheets — browse all',
+    summary: 'See every sheet in the account inside the CRM, and import any of them — no Google file window.',
+    features: [
+      'Data Store import: a list of all your sheets, with search',
+      'Choose the tab, preview the rows, map the columns',
+      'Read-only: the CRM can read sheets, never change or delete them',
+    ],
+    scopes: ['https://www.googleapis.com/auth/drive.metadata.readonly', 'https://www.googleapis.com/auth/spreadsheets.readonly'],
+    level: 'restricted',
     availability: 'available',
     openHref: '/data',
   },

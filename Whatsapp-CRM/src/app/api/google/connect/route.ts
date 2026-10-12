@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${origin}/settings?tab=google&google=error&reason=${encodeURIComponent('Choose at least one service.')}`)
     }
     const switching = req.nextUrl.searchParams.get('switch') === '1'
+    // Started from a page (a Data Store table): Google sends them back there.
+    const back = req.nextUrl.searchParams.get('return')
+    const returnTo = back && /^\/(?!\/)[A-Za-z0-9/_-]{0,200}$/.test(back) ? back : null
 
     const state = crypto.randomBytes(32).toString('base64url')
     const { verifier, challenge } = newPkce()
@@ -56,7 +59,7 @@ export async function GET(req: NextRequest) {
     )
     res.cookies.set(
       GOOGLE_OAUTH_COOKIE,
-      encrypt(JSON.stringify({ state, verifier, redirectUri, origin, accountId: ctx.accountId, userId: ctx.userId, at: Date.now(), services: requested, switching })),
+      encrypt(JSON.stringify({ state, verifier, redirectUri, origin, accountId: ctx.accountId, userId: ctx.userId, at: Date.now(), services: requested, switching, returnTo })),
       {
         httpOnly: true,
         secure: origin.startsWith('https://'),

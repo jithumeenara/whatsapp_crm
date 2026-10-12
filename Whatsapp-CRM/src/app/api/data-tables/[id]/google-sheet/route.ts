@@ -4,7 +4,13 @@ import { prisma } from '@/lib/db'
 import { GoogleNotConnectedError, googleAccessToken, isGoogleServiceEnabled, loadGoogleConnection } from '@/lib/google/oauth'
 import { SheetsApiError, createSpreadsheet, getSpreadsheet, spreadsheetUrl } from '@/lib/google/sheets'
 import { ensureGoogleTables } from '@/lib/google/store'
-import { exportAll, importFromSheet, writeExportHeader } from '@/lib/google/sheet-sync'
+import { applyColumnChoices, exportAll, importFromSheet, suggestColumns, writeExportHeader, type ColumnChoice } from '@/lib/google/sheet-sync'
+import { canBrowseSheets, previewSpreadsheet } from '@/lib/google/sheet-browse'
+
+/** Sheets switched on in either form: picked files, or browse all. */
+async function sheetsUsable(accountId: string): Promise<boolean> {
+  return (await isGoogleServiceEnabled(accountId, 'sheets')) || (await canBrowseSheets(accountId))
+}
 
 /**
  * A Data Store table's Google Sheet links.
@@ -55,8 +61,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       prisma.googleSheetLink.findMany({ where: { table_id: id, account_id: ctx.accountId } }),
     ])
     return NextResponse.json({
-      connected: await isGoogleServiceEnabled(ctx.accountId, 'sheets'),
-      can_pick: Boolean(conn?.api_key),
+      connected: await sheetsUsable(ctx.accountId),
+      can_pick: Boolean(conn?.api_key) && (await isGoogleServiceEnabled(ctx.accountId, 'sheets')),
+      can_browse: await canBrowseSheets(ctx.accountId),
       google_email: conn?.google_email ?? null,
       export: present(links.find((l) => l.direction === 'export') ?? null),
       import: present(links.find((l) => l.direction === 'import') ?? null),
@@ -71,7 +78,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const { id } = await params
     const { ctx, table } = await guard(id)
     if (!table) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
-    if (!(await isGoogleServiceEnabled(ctx.accountId, 'sheets'))) {
+    if (!(await sheetsUsable(ctx.accountId))) {
       return NextResponse.json({ error: 'Connect Google Sheets first, in Settings → Google.' }, { status: 400 })
     }
     const body = (await req.json().catch(() => ({}))) as {
@@ -80,6 +87,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       sheet_title?: unknown
       create_new?: unknown
       auto_sync?: unknown
+      columns?: unknown
     }
     if (!isDirection(body.direction)) return NextResponse.json({ error: 'direction must be export or import.' }, { status: 400 })
     const direction = body.direction
@@ -99,7 +107,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     } else {
       const sid = typeof body.spreadsheet_id === 'string' ? body.spreadsheet_id.trim() : ''
       if (!/^[A-Za-z0-9_-]{20,100}$/.test(sid)) {
-        return NextResponse.json({ error: 'Choose a spreadsheet with "Choose from Google Drive".' }, { status: 400 })
+        return NextResponse.json({ error: 'Choose a spreadsheet first.' }, { status: 400 })
       }
       const info = await getSpreadsheet(token, sid)
       const wanted = typeof body.sheet_title === 'string' ? body.sheet_title.trim() : ''
@@ -121,6 +129,26 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       )
     }
 
+    // Import: each column into a field — chosen on the import screen, or
+    // matched by name with a new field for the rest — so a sheet can go
+    // into a table that has no fields yet.
+    let columnMap: Record<string, string> | null = null
+    if (direction === 'import') {
+      let choices: ColumnChoice[]
+      if (Array.isArray(body.columns)) {
+        choices = (body.columns as unknown[]).filter((c): c is ColumnChoice =>
+          Boolean(c) && typeof (c as ColumnChoice).header === 'string' && typeof (c as ColumnChoice).target === 'string')
+      } else {
+        const preview = await previewSpreadsheet(ctx.accountId, spreadsheetId, sheetTitle).catch(() => null)
+        const fields = await prisma.dataField.findMany({ where: { table_id: id }, select: { field_key: true, label: true, field_type: true } })
+        choices = preview ? suggestColumns(preview.headers, preview.sample, fields) : []
+      }
+      if (choices.length && choices.every((c) => c.target === 'skip')) {
+        return NextResponse.json({ error: 'Choose at least one column to import.' }, { status: 400 })
+      }
+      if (choices.length) columnMap = await applyColumnChoices(ctx.accountId, id, choices)
+    }
+
     const link = await prisma.googleSheetLink.upsert({
       where: { table_id_direction: { table_id: id, direction } },
       create: {
@@ -131,6 +159,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         spreadsheet_name: spreadsheetName,
         sheet_title: sheetTitle,
         auto_sync: direction === 'import' && body.auto_sync === true,
+        ...(columnMap ? { column_map: columnMap } : {}),
       },
       update: {
         spreadsheet_id: spreadsheetId,
@@ -139,11 +168,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         last_error: null,
         // A different sheet is a fresh start: nothing from it imported yet.
         imported_keys: [],
+        ...(columnMap ? { column_map: columnMap } : {}),
         ...(direction === 'import' && typeof body.auto_sync === 'boolean' ? { auto_sync: body.auto_sync } : {}),
       },
     })
     if (direction === 'export') await writeExportHeader(link.id, ctx.accountId)
-    return NextResponse.json({ link: present(link) })
+    // The rows come in now, not on a second click.
+    const imported = direction === 'import' ? await importFromSheet(link.id, ctx.accountId).catch((err) => ({ error: err instanceof Error ? err.message : String(err) })) : null
+    return NextResponse.json({ link: present(link), imported })
   } catch (err) {
     // Google's own refusals, said in words the panel can show.
     if (err instanceof SheetsApiError || err instanceof GoogleNotConnectedError) {

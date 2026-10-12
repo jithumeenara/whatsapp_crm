@@ -232,6 +232,17 @@ export default function DataTablePage() {
   const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  // Back from Google's permission screen (Import → "Allow access"):
+  // reopen the sheet panel and say how it went, then tidy the URL.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const outcome = q.get("google")
+    if (!outcome) return
+    if (outcome === "connected") toast.success("Google Sheets access allowed — choose a sheet to import.")
+    else toast.error(q.get("reason") || "Google access was not completed.")
+    setSheetOpen(true)
+    window.history.replaceState(null, "", window.location.pathname)
+  }, [])
   const [healthOpen, setHealthOpen] = useState(false)
   const [formPanelOpen, setFormPanelOpen] = useState(false)
   const [allTables, setAllTables] = useState<DataTable[]>([])

@@ -19,6 +19,8 @@ import { prisma } from '@/lib/db'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
 import { appendRows, readTab, writeTab, SHEET_MAX_ROWS } from './sheets'
 import { ensureGoogleTables } from './store'
+import { slugify } from '@/lib/data-store/slugify'
+import { guessFieldType } from './sheet-browse'
 
 /** Fields that hold no value of their own (layout) or no text (a drawn
  *  signature) — never a column. */
@@ -221,7 +223,7 @@ export async function importFromSheet(linkId: string, accountId: string): Promis
   try {
     const link = await prisma.googleSheetLink.findFirst({ where: { id: linkId, account_id: accountId, direction: 'import' } })
     if (!link) throw new Error('That sheet link no longer exists.')
-    if (!(await isGoogleServiceEnabled(accountId, 'sheets'))) {
+    if (!(await isGoogleServiceEnabled(accountId, 'sheets')) && !(await isGoogleServiceEnabled(accountId, 'sheets_browse'))) {
       throw new Error('Google Sheets is switched off in Settings → Google.')
     }
     try {
@@ -232,7 +234,18 @@ export async function importFromSheet(linkId: string, accountId: string): Promis
         return { imported: 0, skipped: 0, unmatchedHeaders: [], matchedColumns: 0 }
       }
       const [headers, ...body] = all
-      const columnKeys = mapHeaders(headers, fields)
+      // The mapping chosen in the import screen when there is one; a column
+      // added to the sheet since then is matched by name, or left out.
+      const saved = columnMapOf(link.column_map)
+      const byName = mapHeaders(headers, fields)
+      const known = new Set(fields.map((f) => f.field_key))
+      const columnKeys = saved
+        ? headers.map((h, i) => {
+            const k = saved[h.trim()]
+            if (k === undefined) return byName[i]
+            return k && known.has(k) ? k : null
+          })
+        : byName
       const matchedColumns = columnKeys.filter(Boolean).length
       const unmatchedHeaders = headers.filter((h, i) => h.trim() && !columnKeys[i] && h.trim() !== ADDED_ON_HEADER)
       if (matchedColumns === 0) {
@@ -291,4 +304,89 @@ export async function sweepGoogleSheetImports(): Promise<void> {
       console.error('[google-sheet] scheduled import failed:', err instanceof Error ? err.message : err),
     )
   }
+}
+
+
+// ── A sheet straight into a table ─────────────────────────────────────
+
+/** One column of the import screen: into an existing field, a new one, or skipped. */
+export interface ColumnChoice {
+  header: string
+  /** A field key, "new", or "skip". */
+  target: string
+  /** For "new": the field type and label. */
+  type?: string
+  label?: string
+  options?: string[]
+}
+
+const NEW_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'email', 'phone', 'date', 'url', 'select'])
+
+export function columnMapOf(raw: unknown): Record<string, string> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) if (typeof v === 'string') out[k] = v
+  return out
+}
+
+/**
+ * What the import screen suggests for each column: the field with the
+ * same name if there is one, otherwise a new field of the guessed type.
+ */
+export function suggestColumns(headers: readonly string[], sample: readonly string[][], fields: readonly FieldLite[]): ColumnChoice[] {
+  const matched = mapHeaders(headers, fields)
+  const taken = new Set<string>()
+  return headers.map((header, i) => {
+    const key = matched[i]
+    if (key && !taken.has(key)) {
+      taken.add(key)
+      return { header, target: key }
+    }
+    const guess = guessFieldType(header, sample.map((r) => r[i] ?? ''))
+    return { header, target: 'new', type: guess.type, label: header.slice(0, 80), options: guess.options }
+  })
+}
+
+/**
+ * Creates the new fields the import screen asked for and returns the
+ * header → field key map the link keeps. Existing fields are only
+ * accepted when they belong to this table.
+ */
+export async function applyColumnChoices(accountId: string, tableId: string, choices: readonly ColumnChoice[]): Promise<Record<string, string>> {
+  const fields = await prisma.dataField.findMany({ where: { table_id: tableId }, select: { field_key: true, sort_order: true } })
+  const keys = new Set(fields.map((f) => f.field_key))
+  let order = fields.reduce((m, f) => Math.max(m, f.sort_order), -1) + 1
+  const map: Record<string, string> = {}
+  const toCreate: Prisma.DataFieldCreateManyInput[] = []
+  for (const c of choices.slice(0, 200)) {
+    const header = String(c.header ?? '').trim()
+    if (!header || header in map) continue
+    if (c.target === 'skip') {
+      map[header] = ''
+      continue
+    }
+    if (c.target !== 'new') {
+      map[header] = keys.has(c.target) ? c.target : ''
+      continue
+    }
+    const label = (c.label?.trim() || header).slice(0, 120)
+    const base = (slugify(label).replace(/-/g, '_') || 'field').slice(0, 50)
+    let key = base === 'table' ? 'field' : base
+    for (let i = 2; keys.has(key); i++) key = `${base}_${i}`
+    keys.add(key)
+    const type = NEW_FIELD_TYPES.has(c.type ?? '') ? c.type! : 'text'
+    const options = type === 'select' ? (c.options ?? []).filter((o) => typeof o === 'string' && o.trim()).slice(0, 50) : []
+    toCreate.push({
+      table_id: tableId,
+      account_id: accountId,
+      label,
+      field_key: key,
+      field_type: type,
+      ...(options.length ? { options: { select_items: options.map((o) => ({ label: o, value: o })) } as Prisma.InputJsonValue } : {}),
+      sort_order: order++,
+    })
+    map[header] = key
+  }
+  if (toCreate.length) await prisma.dataField.createMany({ data: toCreate, skipDuplicates: true })
+  return map
 }

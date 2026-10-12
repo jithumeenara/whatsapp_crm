@@ -99,6 +99,8 @@ export function ensureGoogleTables(): Promise<void> {
          updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
        )`,
       `CREATE INDEX IF NOT EXISTS google_form_links_account_id_idx ON google_form_links (account_id)`,
+      // Migration 129 — a sheet's column mapping.
+      `ALTER TABLE google_sheet_links ADD COLUMN IF NOT EXISTS column_map JSONB`,
     ]) {
       await prisma.$executeRawUnsafe(sql)
     }

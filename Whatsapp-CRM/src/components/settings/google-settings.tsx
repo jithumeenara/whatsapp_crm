@@ -19,9 +19,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import {
-  AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, CircleHelp, ClipboardList, Copy, ExternalLink, FileSpreadsheet,
-  HardDrive, History, KeyRound, Loader2, LogOut, Mail, RefreshCw, Send, ShieldCheck, Store, Users, XCircle,
-  type LucideIcon,
+  AlertTriangle, CheckCircle2, ChevronDown, CircleHelp, Copy, ExternalLink,
+  History, KeyRound, Loader2, LogOut, RefreshCw, ShieldCheck, XCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +28,7 @@ import { Label } from '@/components/ui/label'
 import { useConfirm } from '@/hooks/use-confirm'
 import { apiFetch, errorText } from '@/lib/api-fetch'
 import { GoogleCalendarSettings } from './google-calendar-settings'
+import { GmailIcon, GoogleBusinessIcon, GoogleCalendarIcon, GoogleContactsIcon, GoogleDriveIcon, GoogleFormsIcon, GoogleSheetsIcon } from '@/components/shared/google-icons'
 import { GoogleContactsImport } from './google-contacts-import'
 import { GoogleFormsLinks } from './google-forms-links'
 import { GOOGLE_SERVICES, LEVEL_TEXT, type GoogleServiceId, type ServiceState } from '@/lib/google/services'
@@ -56,22 +56,24 @@ interface GoogleConfig {
   activity: Array<{ id: string; action: string; detail: string | null; at: string }>
 }
 
-const ICONS: Record<GoogleServiceId, LucideIcon> = {
-  sheets: FileSpreadsheet,
-  drive: HardDrive,
-  gmail_send: Send,
-  gmail_inbox: Mail,
-  calendar: CalendarDays,
-  contacts: Users,
-  forms: ClipboardList,
-  business_profile: Store,
+/** Each service's own Google mark, in Google's colours. */
+const ICONS: Record<GoogleServiceId, (p: { className?: string }) => React.ReactNode> = {
+  sheets: GoogleSheetsIcon,
+  sheets_browse: GoogleSheetsIcon,
+  drive: GoogleDriveIcon,
+  gmail_send: GmailIcon,
+  gmail_inbox: GmailIcon,
+  calendar: GoogleCalendarIcon,
+  contacts: GoogleContactsIcon,
+  forms: GoogleFormsIcon,
+  business_profile: GoogleBusinessIcon,
 }
 
-const STATE_PILL: Record<ServiceState, { label: string; cls: string }> = {
-  connected: { label: 'Connected', cls: 'bg-emerald-50 text-emerald-700' },
-  missing_permission: { label: 'Missing permission', cls: 'bg-amber-50 text-amber-700' },
-  off: { label: 'Not connected', cls: 'bg-slate-100 text-slate-500' },
-  coming: { label: 'Coming soon', cls: 'bg-indigo-50 text-indigo-600' },
+const STATE_PILL: Record<ServiceState, { label: string; cls: string; dot: string }> = {
+  connected: { label: 'Connected', cls: 'bg-emerald-50 text-emerald-700', dot: 'bg-emerald-500' },
+  missing_permission: { label: 'Needs permission', cls: 'bg-amber-50 text-amber-700', dot: 'bg-amber-500' },
+  off: { label: 'Not connected', cls: 'bg-slate-100 text-slate-500', dot: 'bg-slate-400' },
+  coming: { label: 'Coming soon', cls: 'bg-indigo-50 text-indigo-600', dot: 'bg-indigo-400' },
 }
 
 const LEVEL_CLS = {
@@ -468,93 +470,134 @@ export function GoogleSettings() {
 
       {/* ── 3 · Services ───────────────────────────────────────── */}
       <Step n={3} title="Services" done={cfg.services.some((s) => s.state === 'connected')}>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {GOOGLE_SERVICES.map((svc) => {
             const info = serviceInfo.get(svc.id)
             const state = info?.state ?? 'off'
             const Icon = ICONS[svc.id]
             const canSelect = cfg.configured && selectable(svc.id)
+            const isSelected = selected.has(svc.id)
             const pill = STATE_PILL[state]
             const level = LEVEL_TEXT[svc.level]
+            const toggleSelect = () =>
+              setSelected((prev) => {
+                const next = new Set(prev)
+                if (next.has(svc.id)) next.delete(svc.id)
+                else next.add(svc.id)
+                return next
+              })
             return (
               <article
                 key={svc.id}
-                className={`flex flex-col rounded-2xl border p-4 transition-colors ${state === 'coming' ? 'border-dashed border-slate-200 bg-slate-50/50' : selected.has(svc.id) ? 'border-indigo-300 bg-indigo-50/40' : 'border-slate-200 bg-white'}`}
+                className={`group relative flex flex-col rounded-2xl border bg-white p-5 transition-all ${
+                  state === 'coming'
+                    ? 'border-dashed border-slate-200 bg-slate-50/60'
+                    : isSelected
+                      ? 'border-[#1A73E8] shadow-[0_0_0_3px_rgba(26,115,232,0.12)]'
+                      : state === 'connected'
+                        ? 'border-emerald-200 hover:shadow-md'
+                        : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
+                }`}
               >
-                <div className="flex items-start gap-3">
-                  {canSelect ? (
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${svc.name}`}
-                      checked={selected.has(svc.id)}
-                      onChange={(e) =>
-                        setSelected((prev) => {
-                          const next = new Set(prev)
-                          if (e.target.checked) next.add(svc.id)
-                          else next.delete(svc.id)
-                          return next
-                        })
-                      }
-                      className="mt-2.5 h-4 w-4 shrink-0 accent-indigo-600"
-                    />
-                  ) : (
-                    <span className="w-4 shrink-0" />
-                  )}
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${state === 'coming' ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-slate-700'}`}>
-                    <Icon className="h-4.5 w-4.5" />
+                {canSelect && (
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    aria-label={`Select ${svc.name}`}
+                    onClick={toggleSelect}
+                    className={`absolute right-4 top-4 flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${
+                      isSelected ? 'border-[#1A73E8] bg-[#1A73E8] text-white' : 'border-slate-300 bg-white hover:border-[#1A73E8]'
+                    }`}
+                  >
+                    {isSelected && <CheckCircle2 className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+
+                <div className="flex items-start gap-3.5 pr-7">
+                  <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80 ${state === 'coming' ? 'opacity-60 grayscale' : ''}`}>
+                    <Icon className="h-7 w-7" />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <h4 className="text-[13.5px] font-semibold text-slate-800">{svc.name}</h4>
-                      <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${pill.cls}`}>{pill.label}</span>
-                    </div>
-                    <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{svc.summary}</p>
+                    <h4 className="text-[14.5px] font-semibold leading-tight text-slate-900">{svc.name}</h4>
+                    <span className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${pill.cls}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${pill.dot}`} />
+                      {pill.label}
+                    </span>
                   </div>
                 </div>
 
-                <ul className="mt-2.5 space-y-1 pl-[52px] text-[11.5px] text-slate-600">
+                <p className="mt-3 text-[12.5px] leading-relaxed text-slate-600">{svc.summary}</p>
+
+                <ul className="mt-3 space-y-1.5">
                   {svc.features.map((f) => (
-                    <li key={f} className="flex gap-1.5"><span className="text-slate-300">•</span><span>{f}</span></li>
+                    <li key={f} className="flex gap-2 text-[12px] leading-snug text-slate-600">
+                      <CheckCircle2 className={`mt-[1px] h-3.5 w-3.5 shrink-0 ${state === 'connected' ? 'text-emerald-500' : 'text-slate-300'}`} />
+                      <span>{f}</span>
+                    </li>
                   ))}
                 </ul>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2 pl-[52px]">
-                  <span title={level.explain} className={`rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${LEVEL_CLS[svc.level]}`}>{level.label}</span>
+                {state === 'missing_permission' && (
+                  <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[11.5px] leading-relaxed text-amber-800">
+                    Google did not allow everything this needs. Connect again and keep every box ticked on Google&apos;s screen.
+                  </p>
+                )}
+
+                <div className="mt-auto flex items-center gap-2 pt-4">
+                  <span
+                    title={level.explain}
+                    className={`inline-flex cursor-help items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ${LEVEL_CLS[svc.level]}`}
+                  >
+                    <ShieldCheck className="h-3 w-3" /> {level.label}
+                  </span>
                   <span className="flex-1" />
                   {state === 'connected' && (
                     <>
+                      <button
+                        type="button"
+                        disabled={!!busy}
+                        onClick={() => void toggleService(svc.id, false)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
+                      >
+                        {busy === `svc-${svc.id}` && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Turn off
+                      </button>
                       {svc.openHref && (
-                        <a href={svc.openHref} className="text-[12px] font-medium text-indigo-600 hover:underline">Open</a>
+                        <a
+                          href={svc.openHref}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-emerald-700"
+                        >
+                          Open <ExternalLink className="h-3 w-3" />
+                        </a>
                       )}
-                      <Button type="button" size="sm" variant="ghost" disabled={!!busy} onClick={() => void toggleService(svc.id, false)}>
-                        {busy === `svc-${svc.id}` && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Turn off
-                      </Button>
                     </>
                   )}
                   {state === 'missing_permission' && (
-                    <Button type="button" size="sm" variant="outline" disabled={!!busy} onClick={() => connect([svc.id])}>Fix permission</Button>
+                    <button
+                      type="button"
+                      disabled={!!busy}
+                      onClick={() => connect([svc.id])}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-amber-500 px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-amber-600 disabled:opacity-50"
+                    >
+                      Fix permission
+                    </button>
                   )}
                   {state === 'off' && cfg.configured && (
-                    info?.granted ? (
-                      <Button type="button" size="sm" variant="outline" disabled={!!busy} onClick={() => void toggleService(svc.id, true)}>
-                        {busy === `svc-${svc.id}` && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Turn on
-                      </Button>
-                    ) : (
-                      <Button type="button" size="sm" variant="outline" disabled={!!busy} onClick={() => connect([svc.id])}>Connect</Button>
-                    )
+                    <button
+                      type="button"
+                      disabled={!!busy}
+                      onClick={() => (info?.granted ? void toggleService(svc.id, true) : connect([svc.id]))}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#1A73E8] px-3.5 text-[12px] font-semibold text-white shadow-sm hover:bg-[#1765CC] disabled:opacity-50"
+                    >
+                      {busy === `svc-${svc.id}` && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {info?.granted ? 'Turn on' : 'Connect'}
+                    </button>
                   )}
                 </div>
-                {state === 'missing_permission' && (
-                  <p className="mt-2 pl-[52px] text-[11.5px] text-amber-700">
-                    Google did not allow everything this needs. Connect again and keep every checkbox ticked on Google&apos;s screen.
-                  </p>
-                )}
+
                 {svc.id === 'calendar' && state === 'connected' && <GoogleCalendarSettings />}
                 {svc.id === 'contacts' && state === 'connected' && <GoogleContactsImport />}
                 {svc.id === 'forms' && state === 'connected' && <GoogleFormsLinks />}
-                {svc.level !== 'basic' && state !== 'coming' && (
-                  <p className="mt-2 pl-[52px] text-[11px] leading-relaxed text-slate-400">{level.explain}</p>
-                )}
               </article>
             )
           })}

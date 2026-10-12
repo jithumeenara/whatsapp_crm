@@ -24,10 +24,15 @@ import { isServiceId, serviceById, servicesGranted, type GoogleServiceId } from 
  * are there, and the ones that are not are named on the way back.
  */
 
-function back(origin: string, outcome: string, detail?: string) {
-  const q = new URLSearchParams({ tab: 'google', google: outcome })
+/** A page inside the app to come back to, never anywhere else. */
+function safeReturnTo(v: unknown): string | null {
+  return typeof v === 'string' && /^\/(?!\/)[A-Za-z0-9/_-]{0,200}$/.test(v) ? v : null
+}
+
+function back(origin: string, outcome: string, detail?: string, returnTo?: string | null) {
+  const q = new URLSearchParams(returnTo ? { google: outcome } : { tab: 'google', google: outcome })
   if (detail) q.set('reason', detail.slice(0, 300))
-  const res = NextResponse.redirect(`${origin}/settings?${q}`)
+  const res = NextResponse.redirect(`${origin}${returnTo ?? '/settings'}?${q}`)
   res.cookies.set(GOOGLE_OAUTH_COOKIE, '', { path: '/api/google', maxAge: 0 })
   return res
 }
@@ -48,6 +53,8 @@ interface Pending {
   at: number
   services?: string[]
   switching?: boolean
+  /** Started from a page (a Data Store table): go back there. */
+  returnTo?: string | null
 }
 
 export async function GET(req: NextRequest) {
@@ -61,6 +68,7 @@ export async function GET(req: NextRequest) {
     return back(fallbackOrigin, 'error', 'The sign-in could not be verified. Try again.')
   }
   const origin = pending.origin || fallbackOrigin
+  const returnTo = safeReturnTo(pending.returnTo)
 
   try {
     const ctx = await requireRole('admin')
@@ -71,16 +79,16 @@ export async function GET(req: NextRequest) {
       pending.userId !== ctx.userId ||
       Date.now() - pending.at > 10 * 60_000
     ) {
-      return back(origin, 'error', 'The sign-in could not be verified. Try again.')
+      return back(origin, 'error', 'The sign-in could not be verified. Try again.', returnTo)
     }
 
     const googleError = params.get('error')
-    if (googleError) return back(origin, 'error', googleError === 'access_denied' ? 'Google access was not allowed.' : googleError)
+    if (googleError) return back(origin, 'error', googleError === 'access_denied' ? 'Google access was not allowed.' : googleError, returnTo)
     const code = params.get('code')
-    if (!code) return back(origin, 'error', 'Google did not return a sign-in code.')
+    if (!code) return back(origin, 'error', 'Google did not return a sign-in code.', returnTo)
 
     const conn = await loadGoogleConnection(ctx.accountId)
-    if (!conn) return back(origin, 'error', 'Save the Google app details first.')
+    if (!conn) return back(origin, 'error', 'Save the Google app details first.', returnTo)
 
     const tokens = await exchangeGoogleCode({
       clientId: conn.client_id,
@@ -90,7 +98,7 @@ export async function GET(req: NextRequest) {
       verifier: pending.verifier,
     })
     if (!tokens.refresh_token && !conn.refresh_token) {
-      return back(origin, 'error', 'Google did not allow offline access. Remove the app at myaccount.google.com/permissions and connect again.')
+      return back(origin, 'error', 'Google did not allow offline access. Remove the app at myaccount.google.com/permissions and connect again.', returnTo)
     }
 
     const email = await googleEmail(tokens.access_token)
@@ -139,10 +147,11 @@ export async function GET(req: NextRequest) {
         origin,
         nowOn.length > 0 ? 'partial' : 'error',
         `Google did not allow everything for: ${names(missing)}. Connect again and keep every checkbox ticked on Google's screen.`,
+        returnTo,
       )
     }
-    return back(origin, 'connected', names(nowOn))
+    return back(origin, 'connected', names(nowOn), returnTo)
   } catch (err) {
-    return back(origin, 'error', err instanceof Error ? err.message : 'Could not connect Google.')
+    return back(origin, 'error', err instanceof Error ? err.message : 'Could not connect Google.', returnTo)
   }
 }
