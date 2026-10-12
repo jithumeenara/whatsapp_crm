@@ -242,6 +242,23 @@
   window.addEventListener('message', function (event) {
     if (event.source !== window.parent) return;
     var data = event.data || {};
+    // Settings → Website Chat previews unsaved edits. Accepted only from
+    // a page on this app's own origin — a business's website cannot
+    // restyle or retitle the window this way.
+    if (data.type === 'wc:preview') {
+      if (event.origin !== location.origin || !state.widget) return;
+      if (typeof data.title === 'string') state.widget.title = data.title.slice(0, 60);
+      if (typeof data.welcome_message === 'string') state.widget.welcome_message = data.welcome_message.slice(0, 500);
+      if (typeof data.primary_color === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.primary_color)) state.widget.primary_color = data.primary_color;
+      state.widget.logo_url = data.logo_url && safeUrl(data.logo_url) && /^https:/.test(data.logo_url) ? data.logo_url : null;
+      if (typeof data.allow_handoff === 'boolean') state.widget.allow_handoff = data.allow_handoff;
+      applyBrand();
+      var typed = dom && dom.input ? dom.input.value : '';
+      dom = null;
+      render();
+      if (typed) { dom.input.value = typed; }
+      return;
+    }
     if (data.type === 'wc:open') {
       state.visible = true;
       state.unread = 0;
@@ -324,17 +341,38 @@
   }
 
   var dom = null;
+  // Rows already on screen once. The log is redrawn on every change, so
+  // only rows not seen before get the entrance animation.
+  var shown = {};
+
+  function initial() {
+    var title = (state.widget && state.widget.title) || 'Chat';
+    var match = title.match(/[\p{L}\p{N}]/u);
+    return match ? match[0] : 'C';
+  }
+
+  /** The business's face: its logo, or the first letter of the title. */
+  function avatarInto(node) {
+    var logo = state.widget && state.widget.logo_url && safeUrl(state.widget.logo_url);
+    if (logo) {
+      var img = el('img');
+      img.alt = '';
+      img.src = logo;
+      node.appendChild(img);
+    } else {
+      node.appendChild(document.createTextNode(initial()));
+    }
+  }
 
   function build() {
     app.textContent = '';
     var head = el('header', 'head');
-    var logo = null;
-    if (state.widget && safeUrl(state.widget.logo_url)) {
-      logo = el('img');
-      logo.alt = '';
-      logo.src = state.widget.logo_url;
-      head.appendChild(logo);
-    }
+    var avatar = el('div', 'avatar');
+    avatar.setAttribute('aria-hidden', 'true');
+    avatarInto(avatar);
+    var dot = el('span', 'dot');
+    avatar.appendChild(dot);
+    head.appendChild(avatar);
     var titles = el('div', 'titles');
     var h1 = el('h1', null, (state.widget && state.widget.title) || 'Chat');
     var status = el('div', 'state');
@@ -358,11 +396,12 @@
     notice.setAttribute('role', 'alert');
     notice.hidden = true;
 
-    var handoff = el('button', 'handoff', 'Talk to a person');
+    var handoff = el('button', 'handoff');
     handoff.type = 'button';
     handoff.addEventListener('click', askForPerson);
 
     var form = el('form', 'composer');
+    var field = el('div', 'field');
     var label = el('label', 'sr-only', 'Type your message');
     label.htmlFor = 'wc-input';
     var input = el('textarea');
@@ -388,8 +427,9 @@
     sendBtn.disabled = true;
     sendBtn.appendChild(svg('M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z'));
     form.appendChild(label);
-    form.appendChild(input);
-    form.appendChild(sendBtn);
+    field.appendChild(input);
+    field.appendChild(sendBtn);
+    form.appendChild(field);
     form.addEventListener('submit', function (event) {
       event.preventDefault();
       submit();
@@ -409,7 +449,7 @@
     app.appendChild(notice);
     app.appendChild(handoff);
     app.appendChild(form);
-    dom = { status: status, log: log, notice: notice, handoff: handoff, input: input, send: sendBtn };
+    dom = { status: status, dot: dot, log: log, notice: notice, handoff: handoff, input: input, send: sendBtn };
   }
 
   function bubble(row, msg) {
@@ -441,18 +481,46 @@
     var nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
     log.textContent = '';
 
-    if (state.widget && state.widget.welcome_message) {
-      var welcome = el('div', 'row them');
-      bubble(welcome, { text: state.widget.welcome_message });
-      log.appendChild(welcome);
-    }
+    var items = [];
+    if (state.widget && state.widget.welcome_message) items.push({ welcome: true, sender: 'bot', text: state.widget.welcome_message });
 
     // Buttons are live only on the newest message, and only until the
     // visitor answers — the same as a WhatsApp chatbot menu.
     var lastIndex = state.messages.length - 1;
-    state.messages.forEach(function (msg, index) {
-      var mine = msg.sender === 'visitor';
-      var row = el('div', 'row ' + (mine ? 'me' : 'them'));
+    state.messages.forEach(function (msg, index) { items.push({ msg: msg, index: index, sender: msg.sender }); });
+    Object.keys(state.pending).forEach(function (clientId) { items.push({ pendingId: clientId, sender: 'visitor' }); });
+
+    function side(item) { return item && (item.sender === 'visitor' ? 'me' : 'them'); }
+
+    items.forEach(function (item, i) {
+      var prev = items[i - 1];
+      var next = items[i + 1];
+      var mine = side(item) === 'me';
+      var key = item.welcome ? 'welcome' : item.pendingId ? 'p:' + item.pendingId : item.msg.id;
+      var row = el('div', 'row ' + (mine ? 'me' : 'them') + (prev && side(prev) !== side(item) ? ' gap' : '') + (shown[key] ? '' : ' new'));
+      shown[key] = true;
+      // A delivered message replaces its "Sending…" copy without
+      // animating in a second time.
+      if (item.msg && item.msg.sender === 'visitor') row.className = row.className.replace(' new', '');
+      var lastOfRun = !next || side(next) !== side(item);
+      if (!mine && lastOfRun) {
+        var mini = el('span', 'mini');
+        mini.setAttribute('aria-hidden', 'true');
+        avatarInto(mini);
+        row.appendChild(mini);
+      }
+      if (item.welcome) {
+        bubble(row, { text: item.text });
+        log.appendChild(row);
+        return;
+      }
+      if (item.pendingId) {
+        renderPending(row, item.pendingId);
+        log.appendChild(row);
+        return;
+      }
+      var msg = item.msg;
+      var index = item.index;
       bubble(row, msg);
       if (!mine && msg.buttons && msg.buttons.length) {
         var choices = el('div', 'choices');
@@ -472,22 +540,32 @@
       if (!mine && msg.link && safeUrl(msg.link.url)) {
         var linkWrap = el('div', 'choices');
         var a = el('a', 'link-btn', msg.link.label || 'Open link');
+        a.appendChild(svg('M7 17 17 7M8 7h9v9'));
         a.href = msg.link.url;
         a.target = '_blank';
         a.rel = 'noopener noreferrer nofollow';
         linkWrap.appendChild(a);
         row.appendChild(linkWrap);
       }
-      row.appendChild(el('div', 'meta', (msg.sender === 'agent' ? 'Team · ' : '') + timeOf(msg.created_at)));
+      if (lastOfRun || (msg.buttons && msg.buttons.length) || msg.link) {
+        row.className += ' has-meta';
+        var meta = el('div', 'meta');
+        if (msg.sender === 'agent') {
+          meta.appendChild(el('span', 'who', 'Team'));
+          meta.appendChild(document.createTextNode(' · '));
+        }
+        meta.appendChild(document.createTextNode(timeOf(msg.created_at)));
+        row.appendChild(meta);
+      }
       log.appendChild(row);
     });
 
-    Object.keys(state.pending).forEach(function (clientId) {
-      var item = state.pending[clientId];
-      var row = el('div', 'row me');
-      bubble(row, { text: item.text });
-      var meta = el('div', 'meta' + (item.failed ? ' failed' : ''));
-      if (item.failed) {
+    function renderPending(row, clientId) {
+      var pending = state.pending[clientId];
+      bubble(row, { text: pending.text });
+      row.className += ' has-meta';
+      var meta = el('div', 'meta' + (pending.failed ? ' failed' : ''));
+      if (pending.failed) {
         meta.appendChild(document.createTextNode('Not sent. '));
         var retry = el('button', null, 'Retry');
         retry.type = 'button';
@@ -497,8 +575,7 @@
         meta.textContent = 'Sending…';
       }
       row.appendChild(meta);
-      log.appendChild(row);
-    });
+    }
 
     if (state.typing) {
       var typing = el('div', 'typing');
@@ -514,18 +591,22 @@
 
   function render() {
     if (!dom) build();
+    var online = state.connected || typeof window.io !== 'function';
     var status = state.withTeam
       ? 'Connecting you with the team'
-      : state.connected || typeof window.io !== 'function'
-        ? 'We usually reply in a few minutes'
+      : online
+        ? 'Online · we reply in a few minutes'
         : 'Reconnecting…';
     dom.status.textContent = status;
+    dom.dot.className = 'dot' + (online ? '' : ' off');
     dom.notice.hidden = !state.error;
     dom.notice.textContent = state.error || '';
     var canHandoff = state.widget && state.widget.allow_handoff;
     dom.handoff.hidden = !canHandoff || !state.messages.length;
     dom.handoff.disabled = state.withTeam || state.sending;
-    dom.handoff.textContent = state.withTeam ? 'The team has been told — someone will reply here' : 'Talk to a person';
+    dom.handoff.textContent = '';
+    dom.handoff.appendChild(svg(state.withTeam ? 'M20 6 9 17l-5-5' : 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75'));
+    dom.handoff.appendChild(document.createTextNode(state.withTeam ? 'The team has been told — someone will reply here' : 'Talk to a person'));
     dom.send.disabled = state.sending || !dom.input.value.trim();
     renderLog();
   }

@@ -7,7 +7,7 @@ import { installSnippet, parseWidgetPatch } from '@/lib/webchat/settings'
 import { AI_AUTO_REPLY_SOURCE } from '@/lib/ai/auto-reply'
 
 /**
- * Settings → Website chat. Admins only; not under the public /api/webchat/.
+ * Settings → Channels → Website Bot. Admins only; not under the public /api/webchat/.
  *
  * GET   every widget with its install snippet and the last 30 days, plus
  *       whether the assistant answers website chats.
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
     if (count >= 20) return NextResponse.json({ error: 'An account can have up to 20 chat widgets.' }, { status: 400 })
 
     const widget = await prisma.webChatWidget.create({
-      data: { account_id: ctx.accountId, user_id: ctx.userId, public_key: newPublicKey(), ...parsed.patch },
+      data: { account_id: ctx.accountId, user_id: ctx.userId, public_key: newPublicKey(), name: 'Website Bot', ...parsed.patch },
     })
     return NextResponse.json({ id: widget.id }, { status: 201 })
   } catch (err) {

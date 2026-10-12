@@ -11,6 +11,7 @@ import {
   ChartNoAxesCombined,
   Check,
   CircleHelp,
+  Globe,
   CircleUserRound,
   IdCard,
   Lightbulb,
@@ -39,7 +40,8 @@ type ChannelKey =
   | 'facebook'
   | 'sms'
   | 'email'
-  | 'rcs';
+  | 'rcs'
+  | 'website';
 type IconComponent = ComponentType<{ className?: string }>;
 
 const WhatsAppConfig = dynamic(
@@ -110,6 +112,14 @@ const InstagramGatedFeatures = dynamic(
     ),
   { ssr: false, loading: () => <PanelLoader /> }
 );
+
+// Website Bot is not "connected" to a provider — it is configured here,
+// and its own screen handles the empty state — so it takes no
+// defaultConnectMethod and always opens straight to its settings.
+const WebsiteBotConfig = dynamic(
+  () => import('@/components/settings/website-chat-settings').then((m) => m.WebsiteChatSettings),
+  { loading: () => <PanelLoader /> },
+) as ComponentType<{ defaultConnectMethod?: 'quick' | 'manual' }>;
 
 const CHANNELS: Record<
   ChannelKey,
@@ -194,6 +204,17 @@ const CHANNELS: Record<
     hasProfile: false,
     Config: RcsConfig,
   },
+  website: {
+    label: 'Website Bot',
+    icon: Globe,
+    accent: '#0F766E',
+    pale: '#ECFDF8',
+    provider: 'your website',
+    description:
+      'A chat window on your own website — answered by your chatbots, the AI assistant and your team, in the same Inbox.',
+    hasProfile: false,
+    Config: WebsiteBotConfig,
+  },
 };
 const CHANNEL_KEYS = Object.keys(CHANNELS) as ChannelKey[];
 
@@ -237,6 +258,8 @@ async function checkChannelConnected(key: ChannelKey): Promise<boolean> {
         const r = await fetch('/api/rcs/config').then((x) => x.json());
         return !!r.connected;
       }
+      case 'website':
+        return true;
     }
   } catch {
     return false;
