@@ -436,12 +436,9 @@
       input.style.height = Math.min(120, input.scrollHeight) + 'px';
       sendBtn.disabled = state.sending || !input.value.trim();
     });
-    input.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-        event.preventDefault();
-        submit();
-      }
-    });
+    // Enter is a new line, never a send: people write addresses and
+    // lists here, and a message sent half-typed cannot be taken back.
+    // Only the send button sends.
     var sendBtn = el('button', 'send');
     sendBtn.type = 'submit';
     sendBtn.setAttribute('aria-label', 'Send message');
