@@ -359,7 +359,7 @@ export function SidebarV2({
                   onClick={signOut}
                   title="Sign out"
                   className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                >
+                 aria-label="Sign out">
                   <LogOut className="h-3.5 w-3.5" />
                 </button>
               </>

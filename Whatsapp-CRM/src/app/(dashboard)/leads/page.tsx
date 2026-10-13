@@ -1520,7 +1520,7 @@ function LeadsV2() {
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={loadData}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Refresh">
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Refresh" aria-label="Refresh">
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </button>
             {/* Only when there is something to fix. A button that
@@ -2044,7 +2044,7 @@ function AddToPipelineModal({ lead, onClose }: { lead: Lead; onClose: () => void
             <h3 className="text-[15px] font-bold text-slate-900">Add to Pipeline</h3>
             <p className="text-[12px] text-slate-500 mt-0.5 truncate max-w-[280px]">{lead.title}</p>
           </div>
-          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

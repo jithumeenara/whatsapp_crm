@@ -110,7 +110,7 @@ export function ContactEditModal({
             <p className="text-[11px] text-slate-500">Update contact information</p>
           </div>
           <button type="button" onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 transition-colors">
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 transition-colors" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

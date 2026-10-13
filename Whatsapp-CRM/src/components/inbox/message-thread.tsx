@@ -1265,7 +1265,7 @@ export function MessageThread({
               disabled={isRefreshing}
               title="Refresh"
               className="hidden lg:flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 disabled:opacity-50"
-            >
+             aria-label="Refresh">
               <RefreshCw className={cn("h-[17px] w-[17px]", isRefreshing && "animate-spin")} />
             </button>
           )}

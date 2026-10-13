@@ -832,7 +832,7 @@ export function MessageComposer({
                         >
                           <span className="min-w-0 flex-1 truncate">{language}</span>
                           {index === 0 && contactDetectedLanguage && (
-                            <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-semibold text-emerald-700">
+                            <span className="shrink-0 rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
                               Theirs
                             </span>
                           )}

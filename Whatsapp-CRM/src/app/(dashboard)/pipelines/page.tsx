@@ -319,7 +319,7 @@ function DealModal({
       <div className="relative z-10 w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-100">
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
           <h3 className="text-[15px] font-bold text-slate-900">{deal ? "Edit Deal" : "New Deal"}</h3>
-          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -478,7 +478,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
       <div className="relative z-10 w-full max-w-2xl rounded-2xl bg-white shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-slate-100">
           <h3 className="text-[15px] font-bold text-slate-900">New Pipeline</h3>
-          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

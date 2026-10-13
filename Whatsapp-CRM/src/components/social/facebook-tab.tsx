@@ -364,7 +364,7 @@ function FbPostDetailPanel({ post, onClose }: { post: FbPost; onClose: () => voi
         className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <button onClick={onClose} className="absolute top-4 right-4 z-10 h-7 w-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors">
+        <button onClick={onClose} className="absolute top-4 right-4 z-10 h-7 w-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors" aria-label="Close">
           <X className="h-4 w-4 text-slate-600" />
         </button>
 

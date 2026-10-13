@@ -143,7 +143,7 @@ export function DragHandle(props: HandleProps & { className?: string }) {
       data-sort-handle=""
       {...rest}
       className={`grid h-7 w-6 shrink-0 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${className ?? ""}`}
-    >
+     aria-label="Drag to reorder">
       <GripVertical className="h-4 w-4" />
     </button>
   )

@@ -288,7 +288,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
                       <button
                         type="button"
                         onClick={() => void post({ action: 'add_questions', questions: [q.question] })}
-                        className="shrink-0 text-[11.5px] font-medium text-[#4A5AE8] hover:underline"
+                        className="shrink-0 text-[11.5px] font-medium text-[#4A5CE8] hover:underline"
                       >
                         Make it a test
                       </button>
@@ -637,7 +637,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
                         <button
                           type="button"
                           onClick={() => setExpanded(isOpen ? null : c.id)}
-                          className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-medium text-[#4A5AE8] hover:underline"
+                          className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-medium text-[#4A5CE8] hover:underline"
                         >
                           <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                           {isOpen ? 'Hide the reply' : 'See what it replied'}

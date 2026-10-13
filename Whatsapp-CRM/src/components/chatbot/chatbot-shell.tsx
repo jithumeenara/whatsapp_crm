@@ -311,12 +311,12 @@ export function ChatbotShell({
         <div className="flex items-center gap-0.5">
           <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)"
             className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-              canUndo ? "text-slate-600 hover:bg-slate-100" : "text-slate-300 cursor-not-allowed")}>
+              canUndo ? "text-slate-600 hover:bg-slate-100" : "text-slate-300 cursor-not-allowed")} aria-label="Undo (Ctrl+Z)">
             <Undo2 className="h-3.5 w-3.5" />
           </button>
           <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)"
             className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-colors",
-              canRedo ? "text-slate-600 hover:bg-slate-100" : "text-slate-300 cursor-not-allowed")}>
+              canRedo ? "text-slate-600 hover:bg-slate-100" : "text-slate-300 cursor-not-allowed")} aria-label="Redo (Ctrl+Y)">
             <Redo2 className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -471,7 +471,7 @@ export function ChatbotShell({
         <button
           className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
           title="Settings"
-        >
+         aria-label="Settings">
           <Settings2 className="h-4 w-4" />
         </button>
       </header>

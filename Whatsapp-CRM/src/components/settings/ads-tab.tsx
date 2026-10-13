@@ -301,7 +301,7 @@ function MetaAdsOverview() {
             >
               Quick Connect
               <span className={cn(
-                'rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold',
+                'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
                 connectMethod === 'quick' ? 'bg-[#0866FF]/10 text-[#0866FF]' : 'bg-slate-200 text-slate-500',
               )}>
                 Recommended
@@ -529,7 +529,7 @@ function PlatformBreakdown({ counts }: { counts?: Record<string, number> }) {
         <span
           key={o.key}
           title={o.key === 'mixed' ? "Ad set targets multiple platforms — Meta doesn't report which one this lead came from" : undefined}
-          className={cn('rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold', o.className)}
+          className={cn('rounded-full px-1.5 py-0.5 text-[10px] font-semibold', o.className)}
         >
           {o.label} {counts[o.key]}
         </span>

@@ -352,7 +352,7 @@ function PostDetailPanel({ item, onClose }: { item: IgMedia; onClose: () => void
         <button
           onClick={onClose}
           className="absolute top-3 right-3 z-20 h-8 w-8 rounded-full bg-black/25 hover:bg-black/45 flex items-center justify-center text-white transition-colors"
-        >
+         aria-label="Close">
           <X className="h-4 w-4" />
         </button>
 

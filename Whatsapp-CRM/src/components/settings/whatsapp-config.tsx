@@ -1688,7 +1688,7 @@ export function WhatsAppConfig(props: {
               onClick={handleCopyWebhookUrl}
               className="h-9 w-9 shrink-0 border-slate-200"
               title="Copy URL"
-            >
+             aria-label="Copy URL">
               <Copy className="h-4 w-4" />
             </Button>
           </div>

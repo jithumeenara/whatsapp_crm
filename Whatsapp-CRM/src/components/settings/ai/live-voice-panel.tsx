@@ -78,7 +78,7 @@ export function LiveVoicePanel(props: LiveVoicePanelProps) {
                 'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold text-white transition-all',
                 live
                   ? 'bg-emerald-600'
-                  : 'bg-gradient-to-b from-[#6B7BFF] to-[#4A5AE8] shadow-[0_2px_8px_-2px_rgba(74,90,232,.55)]',
+                  : 'bg-gradient-to-b from-[#6B7BFF] to-[#4A5CE8] shadow-[0_2px_8px_-2px_rgba(74,90,232,.55)]',
               ].join(' ')}
             >
               <Mic className="h-3.5 w-3.5" />

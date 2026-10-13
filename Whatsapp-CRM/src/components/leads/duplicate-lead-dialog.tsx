@@ -121,7 +121,7 @@ export function DuplicateLeadDialog({
           <button
             type="button" onClick={onCancel}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
-          >
+           aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

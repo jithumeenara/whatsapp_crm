@@ -210,7 +210,7 @@ function MobilePreviewOverlay({ onClose, ...previewProps }: Parameters<typeof WA
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-white lg:hidden">
       <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3 shrink-0">
-        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Close">
           <X className="h-4 w-4" />
         </button>
         <p className="text-[14px] font-semibold text-slate-900">Message Preview</p>
@@ -303,7 +303,7 @@ function ButtonRow({ btn, onChange, onRemove }: {
           {btn.type === "COPY_CODE"  && <Copy             className="h-3.5 w-3.5 text-orange-400" />}
           <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{LABEL[btn.type]}</span>
         </div>
-        <button type="button" onClick={onRemove} className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors">
+        <button type="button" onClick={onRemove} className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors" aria-label="Delete">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -722,7 +722,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                           <p className="text-[10px] text-emerald-600 truncate">{headerMediaUrl}</p>
                         </div>
                         <button type="button" onClick={clearMedia}
-                          className="shrink-0 rounded-md p-1 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 transition-colors">
+                          className="shrink-0 rounded-md p-1 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 transition-colors" aria-label="Close">
                           <X className="h-3.5 w-3.5" />
                         </button>
                       </div>

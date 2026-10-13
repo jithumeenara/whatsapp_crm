@@ -496,7 +496,7 @@ export default function ChatbotV2() {
                       <li
                         key={`${issue.nodeKey ?? 'flow'}-${issue.message}`}
                         className={cn(
-                          "flex items-start gap-1 text-[9.5px] leading-relaxed",
+                          "flex items-start gap-1 text-[10px] leading-relaxed",
                           issue.level === 'breaks' ? "text-rose-700" : "text-amber-800",
                         )}
                       >
@@ -505,7 +505,7 @@ export default function ChatbotV2() {
                       </li>
                     ))}
                     {bot.issues!.length > 3 && (
-                      <li className="text-[9.5px] text-amber-700/80">
+                      <li className="text-[10px] text-amber-700/80">
                         +{bot.issues!.length - 3} more — open the flow to see them
                       </li>
                     )}

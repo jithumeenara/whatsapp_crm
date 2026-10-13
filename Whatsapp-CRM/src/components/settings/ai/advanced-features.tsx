@@ -173,7 +173,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                     <button
                       type="button"
                       onClick={() => props.onSystemPromptChange(STARTER_CUSTOMER_PROMPT)}
-                      className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5AE8] ring-1 ring-[#5B6CF9]/25 transition-colors hover:bg-[#EEF0FF]"
+                      className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5CE8] ring-1 ring-[#5B6CF9]/25 transition-colors hover:bg-[#EEF0FF]"
                     >
                       <Sparkles className="h-3 w-3" />
                       Start from a template

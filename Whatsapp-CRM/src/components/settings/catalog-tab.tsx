@@ -248,7 +248,7 @@ export function CatalogTab() {
               >
                 Quick Connect
                 <span className={cn(
-                  'rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold',
+                  'rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
                   connectMethod === 'quick' ? 'bg-[#0866FF]/10 text-[#0866FF]' : 'bg-slate-200 text-slate-500',
                 )}>
                   Recommended

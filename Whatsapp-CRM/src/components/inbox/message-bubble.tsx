@@ -168,7 +168,7 @@ function ImageLightbox({ src, alt, onClose }: { src: string; alt: string; onClos
         type="button"
         onClick={onClose}
         className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-      >
+       aria-label="Close">
         <X className="h-5 w-5" />
       </button>
       {/* eslint-disable-next-line @next/next/no-img-element */}

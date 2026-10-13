@@ -567,9 +567,9 @@ export default function BroadcastDetailPage() {
 
                     <div className="px-3 pb-1.5 pt-2">
                       {template?.header_type === "text" && template.header_content && (
-                        <p className="mb-1 text-[14.2px] font-bold leading-snug text-[#111b21]">{template.header_content}</p>
+                        <p className="mb-1 text-[14px] font-bold leading-snug text-[#111b21]">{template.header_content}</p>
                       )}
-                      <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] text-[#111b21]">
+                      <p className="whitespace-pre-wrap text-[14px] leading-[19px] text-[#111b21]">
                         {previewRecipient.rendered_body}
                       </p>
                       {template?.footer_text && (

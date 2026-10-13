@@ -94,7 +94,7 @@ export function ChatbotPlayground({ nodes, entryNodeKey }: ChatbotPlaygroundProp
             onClick={reset}
             title="Reset"
             className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-          >
+           aria-label="Reset">
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
           {!state && (
@@ -104,7 +104,7 @@ export function ChatbotPlayground({ nodes, entryNodeKey }: ChatbotPlaygroundProp
               disabled={running || nodes.length === 0}
               title="Start preview"
               className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-            >
+             aria-label="Start preview">
               <Play className="h-3.5 w-3.5" />
             </button>
           )}
@@ -194,7 +194,7 @@ export function ChatbotPlayground({ nodes, entryNodeKey }: ChatbotPlaygroundProp
                   onClick={handleTextSend}
                   disabled={!inputText.trim()}
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#25D366] text-white shadow-sm hover:bg-[#20bd5a] disabled:opacity-40 transition-colors"
-                >
+                 aria-label="Send">
                   <Send className="h-4 w-4" />
                 </button>
               </div>

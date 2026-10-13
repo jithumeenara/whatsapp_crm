@@ -423,3 +423,55 @@ html[data-theme="rose"] {
 .animate-delay-400      { animation-delay: 0.40s; }
 .animate-delay-500      { animation-delay: 0.50s; }
 .animate-delay-600      { animation-delay: 0.60s; }
+/* ── Accessibility baseline (UI audit, 2026-10-13) ───────────────────────
+ *
+ * One layer under every screen instead of a fix per button. Each rule is
+ * the smallest that closes a finding, so screens that already style
+ * their own state keep it.
+ */
+
+/* Keyboard focus is visible on every control. 957 hand-made <button>s,
+ * and most had no focus style: a keyboard user could not see where they
+ * were. :where() has no specificity, so a control's own focus ring (or
+ * outline-none plus a ring) still wins. */
+@layer base {
+  :where(button, a[href], [role="button"], [role="tab"], [role="menuitem"], [role="option"], [role="checkbox"], [role="switch"], summary, select, input[type="checkbox"], input[type="radio"]):focus-visible {
+    outline: 2px solid #5b6cf9;
+    outline-offset: 2px;
+  }
+
+  /* No 300 ms double-tap zoom wait on controls, no grey flash on tap. */
+  :where(button, a[href], [role="button"], label, summary, input[type="checkbox"], input[type="radio"]) {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Windows dark mode paints native selects dark on a light page. */
+  :where(select) {
+    background-color: inherit;
+    color: inherit;
+  }
+}
+
+/* Phones zoom into any field under 16px and do not zoom back out. Many
+ * screens set their own 12–13px on inputs; on a touch screen they are
+ * 16px. Unlayered on purpose: it must beat the utility classes. */
+@media (max-width: 767px) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+/* People who ask their device for less motion get almost none. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

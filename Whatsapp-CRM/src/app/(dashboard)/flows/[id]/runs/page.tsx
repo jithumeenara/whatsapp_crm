@@ -51,7 +51,7 @@ export default function FlowRunsPage() {
           <h1 className="text-[16px] font-bold text-slate-800">{flowName} — Runs</h1>
           <p className="text-[12px] text-slate-400">{runs.length} executions</p>
         </div>
-        <button onClick={load} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
+        <button onClick={load} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100" aria-label="Refresh">
           <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
         </button>
       </div>

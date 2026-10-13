@@ -453,7 +453,7 @@ export function TestTab(props: TestTabProps) {
               onClick={() => setContactsOpen(true)}
               aria-label="Contact save and sync"
               title="Contact save & sync"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#F5F6FA] text-slate-500 ring-1 ring-slate-200/80 transition-colors hover:bg-[#EEF0FF] hover:text-[#4A5AE8]"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#F5F6FA] text-slate-500 ring-1 ring-slate-200/80 transition-colors hover:bg-[#EEF0FF] hover:text-[#4A5CE8]"
             >
               <Users className="h-4 w-4" />
             </button>
@@ -550,7 +550,7 @@ export function TestTab(props: TestTabProps) {
                 onClick={() => void send()}
                 disabled={loading || !input.trim()}
                 aria-label="Send message"
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[#6B7BFF] to-[#4A5AE8] text-white shadow-[0_2px_8px_-2px_rgba(74,90,232,.6)] transition-opacity disabled:opacity-40"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-b from-[#6B7BFF] to-[#4A5CE8] text-white shadow-[0_2px_8px_-2px_rgba(74,90,232,.6)] transition-opacity disabled:opacity-40"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </button>
@@ -563,7 +563,7 @@ export function TestTab(props: TestTabProps) {
                   type="button"
                   onClick={() => void send(q)}
                   disabled={loading}
-                  className="truncate rounded-full bg-white px-3 py-1.5 text-[11.5px] text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-[#EEF0FF] hover:text-[#4A5AE8] disabled:opacity-50"
+                  className="truncate rounded-full bg-white px-3 py-1.5 text-[11.5px] text-slate-600 ring-1 ring-slate-200/80 transition-colors hover:bg-[#EEF0FF] hover:text-[#4A5CE8] disabled:opacity-50"
                 >
                   {q}
                 </button>
@@ -759,7 +759,7 @@ function ModeRadio({ value, onChange }: { value: 'admin' | 'customer'; onChange:
             className={[
               'inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-all duration-150',
               active
-                ? 'bg-white text-[#4A5AE8] shadow-[0_1px_2px_rgba(15,23,42,.08)]'
+                ? 'bg-white text-[#4A5CE8] shadow-[0_1px_2px_rgba(15,23,42,.08)]'
                 : 'text-slate-500 hover:text-slate-700',
             ].join(' ')}
           >
@@ -782,7 +782,7 @@ function ModeRadio({ value, onChange }: { value: 'admin' | 'customer'; onChange:
 
 function Avatar() {
   return (
-    <span className="grid h-8 w-8 shrink-0 place-items-center self-end rounded-full bg-gradient-to-b from-[#6B7BFF] to-[#4A5AE8] text-white shadow-[0_2px_6px_-2px_rgba(74,90,232,.6)]">
+    <span className="grid h-8 w-8 shrink-0 place-items-center self-end rounded-full bg-gradient-to-b from-[#6B7BFF] to-[#4A5CE8] text-white shadow-[0_2px_6px_-2px_rgba(74,90,232,.6)]">
       <Bot className="h-4 w-4" />
     </span>
   );
@@ -871,7 +871,7 @@ function BotBubble(props: {
                   <button
                     type="button"
                     onClick={() => props.onRaiseMaxTokens?.(Math.min(8192, props.maxTokens * 2))}
-                    className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5AE8] ring-1 ring-[#5B6CF9]/25 hover:bg-[#EEF0FF]"
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5CE8] ring-1 ring-[#5B6CF9]/25 hover:bg-[#EEF0FF]"
                   >
                     Raise to {Math.min(8192, props.maxTokens * 2)} and save
                   </button>
@@ -907,7 +907,7 @@ function BotBubble(props: {
                 <button
                   type="button"
                   onClick={props.onToggleSources}
-                  className="inline-flex items-center gap-1 rounded-md bg-[#F5F6FA] px-2 py-0.5 text-[10.5px] font-medium text-slate-600 ring-1 ring-slate-200/70 transition-colors hover:text-[#4A5AE8]"
+                  className="inline-flex items-center gap-1 rounded-md bg-[#F5F6FA] px-2 py-0.5 text-[10.5px] font-medium text-slate-600 ring-1 ring-slate-200/70 transition-colors hover:text-[#4A5CE8]"
                 >
                   {m.mode === 'admin'
                     ? `Data used (${m.toolsUsed?.length ?? 0})`

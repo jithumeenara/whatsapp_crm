@@ -39,7 +39,7 @@ const TONE: Record<ButtonTone, string> = {
   // rather than as a flat filled rectangle.
   primary:
     'bg-gradient-to-b from-[#6B7BFF] to-[#5B6CF9] text-white shadow-[0_1px_2px_rgba(15,23,42,0.08),0_6px_16px_-6px_rgba(91,108,249,0.65)] hover:from-[#5F70FB] hover:to-[#4E5FEE] hover:shadow-[0_2px_4px_rgba(15,23,42,0.1),0_10px_22px_-8px_rgba(91,108,249,0.75)]',
-  soft: 'bg-[#EEF0FF] text-[#4A5AE8] hover:bg-[#E4E7FF]',
+  soft: 'bg-[#EEF0FF] text-[#4A5CE8] hover:bg-[#E4E7FF]',
   outline:
     'bg-white text-slate-700 ring-1 ring-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:bg-slate-50 hover:ring-slate-300',
   ghost: 'text-slate-500 hover:bg-slate-100/80 hover:text-slate-700',
@@ -159,7 +159,7 @@ export function AiBadge({
   children: ReactNode;
 }) {
   const tones: Record<string, string> = {
-    indigo: 'bg-[#EEF0FF] text-[#4A5AE8] ring-[#5B6CF9]/15',
+    indigo: 'bg-[#EEF0FF] text-[#4A5CE8] ring-[#5B6CF9]/15',
     emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-500/20',
     amber: 'bg-amber-50 text-amber-700 ring-amber-500/20',
     rose: 'bg-rose-50 text-rose-700 ring-rose-500/20',
@@ -583,7 +583,7 @@ export function AiSelectItem({
         'flex cursor-default select-none items-center justify-between gap-2 rounded-xl px-2.5 py-2',
         'text-[13px] text-slate-700 outline-none transition-colors duration-100',
         'data-highlighted:bg-slate-100/90',
-        'data-selected:bg-[#5B6CF9]/[0.07] data-selected:font-medium data-selected:text-[#4A5AE8]',
+        'data-selected:bg-[#5B6CF9]/[0.07] data-selected:font-medium data-selected:text-[#4A5CE8]',
         'data-disabled:pointer-events-none data-disabled:opacity-50',
         className,
       )}

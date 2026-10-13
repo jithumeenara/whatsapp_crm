@@ -107,7 +107,7 @@ function ChatbotEdge({
             onClick={onDisconnect}
             title="Disconnect"
             className="flex h-4 w-4 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 shadow-sm transition-colors hover:bg-rose-50 hover:border-rose-300"
-          >
+           aria-label="Disconnect">
             <X className="h-2.5 w-2.5" />
           </button>
         </div>

@@ -246,7 +246,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
             >
               {props.turns.map((t, i) => (
                 <p key={`${t.who}-${i}`} className="text-[12.5px] leading-relaxed">
-                  <span className={t.who === 'you' ? 'font-semibold text-slate-700' : 'font-semibold text-[#4A5AE8]'}>
+                  <span className={t.who === 'you' ? 'font-semibold text-slate-700' : 'font-semibold text-[#4A5CE8]'}>
                     {t.who === 'you' ? 'You: ' : 'AI: '}
                   </span>
                   <span className="text-slate-600">{t.text}</span>
@@ -285,7 +285,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
                 'grid h-[68px] w-[68px] place-items-center rounded-full text-white transition-transform motion-safe:active:scale-95',
                 live
                   ? 'bg-gradient-to-b from-[#FF6B5A] to-[#E8453A] shadow-[0_10px_26px_-8px_rgba(232,69,58,.75)]'
-                  : 'bg-gradient-to-b from-[#6B7BFF] to-[#4A5AE8] shadow-[0_10px_26px_-8px_rgba(74,90,232,.75)]',
+                  : 'bg-gradient-to-b from-[#6B7BFF] to-[#4A5CE8] shadow-[0_10px_26px_-8px_rgba(74,90,232,.75)]',
               ].join(' ')}
             >
               {status === 'connecting' ? (

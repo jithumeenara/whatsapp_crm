@@ -308,7 +308,7 @@ function ExpandModal({
           <button
             onClick={onClose}
             className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-          >
+           aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

@@ -872,7 +872,7 @@ export default function LeadDetailPage() {
               <p className="text-[13px] font-semibold text-slate-800 truncate">{displayName}</p>
               <p className="text-[11px] text-slate-400">WhatsApp</p>
             </div>
-            <button onClick={loadChat} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-100 shrink-0" title="Refresh">
+            <button onClick={loadChat} className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-100 shrink-0" title="Refresh" aria-label="Refresh">
               <RefreshCw className={cn("h-3.5 w-3.5 text-slate-400", chatLoading && "animate-spin")} />
             </button>
             <button onClick={() => router.push(conversationId ? `/inbox?c=${conversationId}` : "/inbox")}

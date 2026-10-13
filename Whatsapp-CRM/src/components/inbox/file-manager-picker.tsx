@@ -159,7 +159,7 @@ export function FileManagerPicker({ open, onClose, onSelect }: Props) {
           <button
             onClick={onClose}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-          >
+           aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>

@@ -512,7 +512,7 @@ export function Step3Personalize({
                               )}
                             >
                               <TileIcon className={cn('h-3.5 w-3.5', selected ? 'text-indigo-600' : 'text-slate-400')} />
-                              <span className={cn('text-[9.5px] font-semibold leading-tight text-center', selected ? 'text-indigo-700' : 'text-slate-500')}>{tile.label}</span>
+                              <span className={cn('text-[10px] font-semibold leading-tight text-center', selected ? 'text-indigo-700' : 'text-slate-500')}>{tile.label}</span>
                             </button>
                           );
                         })}
@@ -738,11 +738,11 @@ export function Step3Personalize({
 
                 <div className="px-3 pb-1.5 pt-2">
                   {template.header_type === 'text' && template.header_content && (
-                    <p className="mb-1 text-[14.2px] font-bold leading-snug text-[#111b21]">
+                    <p className="mb-1 text-[14px] font-bold leading-snug text-[#111b21]">
                       {template.header_content}
                     </p>
                   )}
-                  <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] text-[#111b21]">
+                  <p className="whitespace-pre-wrap text-[14px] leading-[19px] text-[#111b21]">
                     {previewText}
                   </p>
                   {template.footer_text && (

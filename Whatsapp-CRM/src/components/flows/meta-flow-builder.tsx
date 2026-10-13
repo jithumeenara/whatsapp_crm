@@ -238,7 +238,7 @@ export function MetaFlowBuilder({
             onClick={addScreen}
             className="flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:text-primary transition-colors"
             title="Add screen"
-          >
+           aria-label="Add screen">
             <Plus className="h-4 w-4" />
           </button>
         </div>
@@ -439,11 +439,11 @@ function SortableScreenItem({
         </span>
         <span className="flex-1 truncate text-xs font-medium">{screen.title}</span>
         <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onDuplicate} className="rounded p-0.5 text-slate-500 hover:text-slate-800" title="Duplicate">
+          <button onClick={onDuplicate} className="rounded p-0.5 text-slate-500 hover:text-slate-800" title="Duplicate" aria-label="Duplicate">
             <Copy className="h-3 w-3" />
           </button>
           {canRemove && (
-            <button onClick={onRemove} className="rounded p-0.5 text-slate-500 hover:text-destructive" title="Remove">
+            <button onClick={onRemove} className="rounded p-0.5 text-slate-500 hover:text-destructive" title="Remove" aria-label="Remove">
               <X className="h-3 w-3" />
             </button>
           )}
@@ -690,7 +690,7 @@ function SortableComponentItem({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-          <button onClick={onRemove} className="rounded p-0.5 text-slate-500 hover:text-destructive">
+          <button onClick={onRemove} className="rounded p-0.5 text-slate-500 hover:text-destructive" aria-label="Delete">
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
@@ -2586,7 +2586,7 @@ function LivePreviewPanel({
       {simMode && !completed && (
         <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-4 py-1.5">
           {history.length > 0 && (
-            <button onClick={handleBack} className="rounded p-0.5 text-slate-500 hover:text-slate-800">
+            <button onClick={handleBack} aria-label="Back to the previous screen" className="rounded p-0.5 text-slate-500 hover:text-slate-800">
               <ChevronLeftIcon className="h-3.5 w-3.5" />
             </button>
           )}

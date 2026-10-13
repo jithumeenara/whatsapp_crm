@@ -352,7 +352,7 @@ export default function IntegrationsPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={load} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+            <button type="button" onClick={load} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Refresh">
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </button>
             <button type="button" onClick={() => { setShowForm((v) => !v); setTestResult(null) }}

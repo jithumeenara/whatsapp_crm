@@ -284,7 +284,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                           <button
                             type="button"
                             onClick={() => props.onTemperatureChange(1)}
-                            className="font-semibold text-[#4A5AE8] underline-offset-2 hover:underline"
+                            className="font-semibold text-[#4A5CE8] underline-offset-2 hover:underline"
                           >
                             Use 1.0
                           </button>
@@ -390,7 +390,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                       <button
                         type="button"
                         onClick={() => props.onSystemPromptChange(STARTER_CUSTOMER_PROMPT)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5AE8] ring-1 ring-[#5B6CF9]/25 transition-colors hover:bg-[#EEF0FF]"
+                        className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1 text-[11.5px] font-semibold text-[#4A5CE8] ring-1 ring-[#5B6CF9]/25 transition-colors hover:bg-[#EEF0FF]"
                       >
                         <Sparkles className="h-3 w-3" />
                         Start from a template

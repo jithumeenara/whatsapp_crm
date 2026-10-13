@@ -48,7 +48,7 @@ export function ConnectChannelScreen({ icon: Icon, channelName, method, onMethod
           Quick Connect
           <span
             style={method === 'quick' ? { background: `${accentColor}1A`, color: accentColor } : undefined}
-            className={`rounded-full px-1.5 py-0.5 text-[9.5px] font-semibold ${
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
               method === 'quick' ? '' : 'bg-slate-200 text-slate-500'
             }`}
           >

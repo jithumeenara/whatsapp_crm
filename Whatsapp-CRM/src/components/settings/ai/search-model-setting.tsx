@@ -112,7 +112,7 @@ export function SearchModelSetting({ available }: { available: boolean }) {
               type="button"
               onClick={() => void confirmSwitch()}
               disabled={saving}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-[#5B6CF9] px-3 text-[12px] font-semibold text-white hover:bg-[#4A5AE8] disabled:opacity-60"
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-[#5B6CF9] px-3 text-[12px] font-semibold text-white hover:bg-[#4A5CE8] disabled:opacity-60"
             >
               {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Switch
