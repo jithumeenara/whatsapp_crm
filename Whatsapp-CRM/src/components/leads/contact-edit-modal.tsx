@@ -174,7 +174,7 @@ export function ContactEditModal({
           </div>
 
           {error && (
-            <p className="text-[12px] text-rose-600 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">{error}</p>
+            <p className="text-[12px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg px-3 py-2">{error}</p>
           )}
         </div>
 

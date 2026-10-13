@@ -664,13 +664,13 @@ export function AiConfig() {
       <div className="flex items-center justify-between">
         <div className="text-[12.5px]">
           {saveError && (
-            <span className="flex items-center gap-1.5 text-rose-600">
+            <span className="flex items-center gap-1.5 text-rose-700">
               <XCircle className="h-4 w-4" />
               {saveError}
             </span>
           )}
           {saveOk && (
-            <span className="flex items-center gap-1.5 text-emerald-600">
+            <span className="flex items-center gap-1.5 text-emerald-700">
               <CheckCircle2 className="h-4 w-4" />
               Settings saved.
             </span>

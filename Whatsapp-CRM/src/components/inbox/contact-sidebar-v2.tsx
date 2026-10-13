@@ -6,6 +6,7 @@ import { Phone, Copy, Check, Plus, ExternalLink, Tag as TagIcon, FileText, X, Us
 import { isPlaceholderPhone, usablePhone } from "@/lib/contacts/validate"
 import { format } from "date-fns"
 import { toast } from "sonner"
+import { readableTextColor } from "@/lib/readable-color"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -356,7 +357,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
               {tags.map((t) => (
                 <span key={t.contact_tag_id}
                   className="group/tag flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-1 text-[11px] font-semibold"
-                  style={{ background: t.color + "20", color: t.color }}>
+                  style={{ background: t.color + "20", color: readableTextColor(t.color) }}>
                   {t.name}
                   <button type="button" onClick={() => handleRemoveTag(t.id)} disabled={tagBusyId === t.id}
                     aria-label={`Remove ${t.name} tag`}
@@ -448,7 +449,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
               {notes.map((note) => (
                 <div key={note.id} className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2.5">
                   <p className="text-[12px] text-slate-700 leading-relaxed">{note.note_text}</p>
-                  <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-amber-600">
+                  <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-amber-700">
                     {note.created_by_name && (
                       <span className="font-semibold text-amber-700">{note.created_by_name}</span>
                     )}

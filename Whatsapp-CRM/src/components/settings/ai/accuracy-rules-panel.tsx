@@ -137,7 +137,7 @@ export function AccuracyRulesPanel() {
   if (loadError) {
     return (
       <AiCard>
-        <p className="p-4 text-[12.5px] text-rose-600">{loadError}</p>
+        <p className="p-4 text-[12.5px] text-rose-700">{loadError}</p>
       </AiCard>
     );
   }

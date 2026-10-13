@@ -117,7 +117,7 @@ export function WhatsAppNumbersManager(props: { defaultConnectMethod?: 'quick' |
                       type="button"
                       onClick={() => handleSetDefault(n.id)}
                       disabled={settingDefault === n.id}
-                      className="absolute -bottom-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap text-[10.5px] text-slate-400 hover:text-emerald-600 group-hover:block"
+                      className="absolute -bottom-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap text-[10.5px] text-slate-400 hover:text-emerald-700 group-hover:block"
                     >
                       {settingDefault === n.id ? 'Setting…' : 'Set as default'}
                     </button>

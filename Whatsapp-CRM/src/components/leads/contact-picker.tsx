@@ -90,7 +90,7 @@ export function ContactPicker({
       </label>
       {value?.kind !== "new" && (
         <button type="button" onClick={() => startNew(query)}
-          className="flex items-center gap-1 text-[12px] font-medium text-emerald-600 hover:text-emerald-700">
+          className="flex items-center gap-1 text-[12px] font-medium text-emerald-700 hover:text-emerald-800">
           <UserPlus className="h-3.5 w-3.5" /> New contact
         </button>
       )}
@@ -197,7 +197,7 @@ export function ContactPicker({
               className="w-full flex items-center gap-2.5 px-3 py-2.5 border-t border-slate-100 hover:bg-emerald-50 text-left transition-colors"
               onMouseDown={() => startNew(query)}>
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-                {canAddTyped ? <Phone className="h-3.5 w-3.5 text-emerald-600" /> : <UserPlus className="h-3.5 w-3.5 text-emerald-600" />}
+                {canAddTyped ? <Phone className="h-3.5 w-3.5 text-emerald-700" /> : <UserPlus className="h-3.5 w-3.5 text-emerald-700" />}
               </div>
               <p className="text-[13px] font-medium text-emerald-700">
                 {canAddTyped ? `Add ${query.trim()} as a new contact` : "Add a new contact"}

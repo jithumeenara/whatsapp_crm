@@ -107,7 +107,7 @@ export function IssueLine({
   onJump?: (key: string) => void;
 }) {
   const tone =
-    issue.severity === "error" ? "text-rose-600" : "text-amber-600";
+    issue.severity === "error" ? "text-rose-700" : "text-amber-700";
   const iconTone =
     issue.severity === "error" ? "text-rose-400" : "text-amber-400";
 

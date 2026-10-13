@@ -76,11 +76,11 @@ function InfoRow({ icon: Icon, iconBg, iconColor, label, right, children, expand
 /** Small verified/not-verified pill for the right side of a row. */
 function VerifiedPill({ verified }: { verified: boolean }) {
   return verified ? (
-    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600">
+    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
       <CheckCircle2 className="h-3 w-3" /> Verified
     </span>
   ) : (
-    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
       <CircleAlert className="h-3 w-3" /> Not verified
     </span>
   );
@@ -583,7 +583,7 @@ export function ProfileForm() {
                   </div>
                 </div>
                 {phoneDirty && (
-                  <p className="text-[11px] text-amber-600">Save changes to update your number, then verify it.</p>
+                  <p className="text-[11px] text-amber-700">Save changes to update your number, then verify it.</p>
                 )}
                 <p className="text-[11px] text-slate-400">Select your country, then enter the number without the country code.</p>
               </div>
@@ -596,7 +596,7 @@ export function ProfileForm() {
                 profile.email_verified ? (
                   <VerifiedPill verified />
                 ) : emailSent ? (
-                  <span className="text-[11px] font-medium text-emerald-600">Link sent</span>
+                  <span className="text-[11px] font-medium text-emerald-700">Link sent</span>
                 ) : (
                   <Button type="button" size="sm" onClick={sendVerificationEmail} disabled={emailSending}
                     className="h-7 px-3 text-[11.5px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">

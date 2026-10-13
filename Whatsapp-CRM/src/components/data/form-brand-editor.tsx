@@ -91,7 +91,7 @@ export function FormBrandEditor({
             </button>
             {logo && (
               <button type="button" onClick={() => onChange({ logo_file_id: null }, null)} aria-label="Remove logo"
-                className="inline-flex items-center rounded-lg px-2 py-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                className="inline-flex items-center rounded-lg px-2 py-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-700">
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             )}

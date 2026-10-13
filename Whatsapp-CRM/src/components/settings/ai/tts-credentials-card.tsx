@@ -115,7 +115,7 @@ export function TtsCredentialsCard() {
         <span
           className={[
             'grid h-8 w-8 shrink-0 place-items-center rounded-xl',
-            usingAccountKey || usingServerKey ? 'bg-emerald-50 text-emerald-600' : 'bg-[#F5F6FA] text-slate-400',
+            usingAccountKey || usingServerKey ? 'bg-emerald-50 text-emerald-700' : 'bg-[#F5F6FA] text-slate-400',
           ].join(' ')}
         >
           <Volume2 className="h-4 w-4" />

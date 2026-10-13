@@ -284,7 +284,7 @@ export default function TasksV2() {
 
                     <div className="mt-2 flex flex-wrap items-center gap-3">
                       {task.due_at && (
-                        <span className={cn("flex items-center gap-1 text-[11px] font-medium", overdue ? "text-rose-600" : "text-slate-500")}>
+                        <span className={cn("flex items-center gap-1 text-[11px] font-medium", overdue ? "text-rose-700" : "text-slate-500")}>
                           {overdue && <AlertTriangle className="h-3 w-3" />}
                           <Clock className="h-3 w-3" />
                           {fmtDate(task.due_at)}
@@ -314,7 +314,7 @@ export default function TasksV2() {
                     </button>
                     {openMenuId === task.id && (
                       <div className="absolute right-0 top-full mt-1 z-10 w-36 rounded-xl border border-slate-200 bg-white shadow-lg py-1">
-                        <button type="button" onClick={() => { deleteTask(task.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50">
+                        <button type="button" onClick={() => { deleteTask(task.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-700 hover:bg-rose-50">
                           <X className="h-3.5 w-3.5" /> Delete
                         </button>
                       </div>

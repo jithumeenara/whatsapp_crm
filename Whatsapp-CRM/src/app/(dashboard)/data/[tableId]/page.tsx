@@ -195,7 +195,7 @@ function MenuItem({ icon, children, onClick, danger }: { icon: React.ReactNode; 
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] transition-colors",
-        danger ? "text-rose-600 hover:bg-rose-50" : "text-slate-700 hover:bg-slate-50",
+        danger ? "text-rose-700 hover:bg-rose-50" : "text-slate-700 hover:bg-slate-50",
       )}
     >
       <span className="text-slate-400">{icon}</span>
@@ -832,7 +832,7 @@ export default function DataTablePage() {
                                 onClick={() => setConfirmRecordId(rec.id)}
                                 aria-label="Delete record"
                                 title="Delete"
-                                className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                                className="grid h-7 w-7 place-items-center rounded-md text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-700"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>

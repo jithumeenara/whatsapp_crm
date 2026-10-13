@@ -179,11 +179,11 @@ export function InstagramTab() {
       {/* ── Analytics overview ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: "Total Reach",    value: n(totalReach),    icon: Eye,           color: "text-sky-600",   bg: "bg-sky-50",   border: "border-sky-100" },
+          { label: "Total Reach",    value: n(totalReach),    icon: Eye,           color: "text-sky-700",   bg: "bg-sky-50",   border: "border-sky-100" },
           { label: "Total Likes",    value: n(totalLikes),    icon: Heart,         color: "text-rose-500",  bg: "bg-rose-50",  border: "border-rose-100" },
           { label: "Total Comments", value: n(totalComments), icon: MessageCircle, color: "text-blue-600",  bg: "bg-blue-50",  border: "border-blue-100" },
-          { label: "Total Shares",   value: n(totalShares),   icon: TrendingUp,    color: "text-green-600", bg: "bg-green-50", border: "border-green-100" },
-          { label: "Total Saved",        value: n(totalSaved),       icon: Bookmark,     color: "text-amber-600",  bg: "bg-amber-50",  border: "border-amber-100" },
+          { label: "Total Shares",   value: n(totalShares),   icon: TrendingUp,    color: "text-green-700", bg: "bg-green-50", border: "border-green-100" },
+          { label: "Total Saved",        value: n(totalSaved),       icon: Bookmark,     color: "text-amber-700",  bg: "bg-amber-50",  border: "border-amber-100" },
         ].map(({ label, value, icon: Icon, color, bg, border }) => (
           <div key={label} className={`bg-white rounded-xl border ${border} shadow-sm px-4 py-3.5 flex items-center gap-3`}>
             <div className={`h-9 w-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
@@ -202,7 +202,7 @@ export function InstagramTab() {
         {[
           { label: "Photos",    count: photos.length,    icon: ImageLucide, color: "text-pink-600",   bg: "bg-pink-50" },
           { label: "Reels",     count: reels.length,     icon: Film,        color: "text-purple-600", bg: "bg-purple-50" },
-          { label: "Carousels", count: carousels.length, icon: Layers,      color: "text-orange-600", bg: "bg-orange-50" },
+          { label: "Carousels", count: carousels.length, icon: Layers,      color: "text-orange-700", bg: "bg-orange-50" },
         ].map(({ label, count, icon: Icon, color, bg }) => (
           <div key={label} className="bg-white rounded-xl border border-slate-100 shadow-sm px-4 py-3 flex items-center gap-3">
             <div className={`h-8 w-8 rounded-lg ${bg} flex items-center justify-center shrink-0`}>

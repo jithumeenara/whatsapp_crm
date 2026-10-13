@@ -131,7 +131,7 @@ function SourcesCard({
   return (
     <div className="mt-1.5 w-full min-w-[260px] max-w-[440px] rounded-xl border border-slate-200 bg-white p-3 text-left text-[12px] text-slate-700 shadow-sm">
       <div className="mb-2 flex items-center gap-2">
-        <BookOpen className="h-3.5 w-3.5 text-teal-600" />
+        <BookOpen className="h-3.5 w-3.5 text-teal-700" />
         <p className="flex-1 text-[12.5px] font-semibold text-slate-800">Where this reply came from</p>
         <button type="button" onClick={onClose} aria-label="Close" className="grid h-5 w-5 place-items-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-700">
           <X className="h-3.5 w-3.5" />

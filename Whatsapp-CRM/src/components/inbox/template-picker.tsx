@@ -450,7 +450,7 @@ export function TemplatePicker({
             "mb-1 flex h-9 w-9 items-center justify-center rounded-xl",
             mediaMissing ? "bg-amber-100" : "bg-indigo-100",
           )}>
-            <LayoutTemplate className={cn("h-4.5 w-4.5", mediaMissing ? "text-amber-600" : "text-indigo-600")} />
+            <LayoutTemplate className={cn("h-4.5 w-4.5", mediaMissing ? "text-amber-700" : "text-indigo-600")} />
           </div>
           <DialogTitle className="truncate text-[16px] font-bold text-slate-800">
             {selected ? selected.name : "Send a template"}
@@ -596,7 +596,7 @@ export function TemplatePicker({
                       )
                     ) : (
                       <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", mediaRequired ? "bg-amber-100" : "bg-indigo-50")}>
-                        {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-4.5 w-4.5", mediaRequired ? "text-amber-600" : "text-indigo-500")} />}
+                        {HeaderMediaIcon && <HeaderMediaIcon className={cn("h-4.5 w-4.5", mediaRequired ? "text-amber-700" : "text-indigo-500")} />}
                       </div>
                     )}
                     <div className="min-w-0 flex-1">

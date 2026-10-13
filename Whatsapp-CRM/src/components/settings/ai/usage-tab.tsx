@@ -169,7 +169,7 @@ function DeltaChip({ value, invert = false }: { value: number | null; invert?: b
   const good = invert ? !rising : rising;
   return (
     <span
-      className={`inline-flex items-center gap-1 text-[11px] font-medium ${good ? 'text-emerald-600' : 'text-rose-600'}`}
+      className={`inline-flex items-center gap-1 text-[11px] font-medium ${good ? 'text-emerald-700' : 'text-rose-700'}`}
     >
       {rising ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
       {Math.abs(rounded)}%
@@ -368,7 +368,7 @@ export function UsageTab() {
             </AiNotice>
           )}
 
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0 space-y-5">
               <AiCard className="p-5">
                 <AiCardHeader title="Requests per day" subtitle={`Last ${data.days} days.`} />

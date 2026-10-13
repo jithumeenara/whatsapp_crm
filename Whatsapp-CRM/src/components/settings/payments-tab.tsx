@@ -225,7 +225,7 @@ export function PaymentsTab() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
           <IndianRupee className="h-5 w-5" />
         </div>
         <div>
@@ -312,7 +312,7 @@ export function PaymentsTab() {
                   }}
                   className="h-9 w-full shrink-0 gap-1.5 sm:w-auto"
                 >
-                  {ppCopied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  {ppCopied ? <Check className="h-3.5 w-3.5 text-emerald-700" /> : <Copy className="h-3.5 w-3.5" />}
                   {ppCopied ? 'Copied' : 'Copy'}
                 </Button>
               </div>
@@ -343,7 +343,7 @@ export function PaymentsTab() {
                   }}
                   className="h-9 w-full shrink-0 gap-1.5 sm:w-auto"
                 >
-                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-700" /> : <Copy className="h-3.5 w-3.5" />}
                   {copied ? 'Copied' : 'Copy'}
                 </Button>
               </div>
@@ -362,7 +362,7 @@ export function PaymentsTab() {
               ))}
             </select>
             {!GATEWAYS.find((g) => g.value === gateway)?.built && (
-              <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600">
+              <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-700">
                 <AlertTriangle className="h-3 w-3" />
                 Saves fine, but only Razorpay can actually send a payment request today.
               </p>

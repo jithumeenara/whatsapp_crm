@@ -18,6 +18,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import type { Tag } from '@/types';
+import { readableTextColor } from "@/lib/readable-color"
 
 const PRESET_COLORS = [
   { name: 'Red', value: '#ef4444' },
@@ -164,7 +165,7 @@ export function TagManager() {
                 className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors"
                 style={{
                   backgroundColor: `${tag.color}18`,
-                  color: tag.color,
+                  color: readableTextColor(tag.color),
                   border: `1px solid ${tag.color}40`,
                 }}
                 initial={reduceMotion ? undefined : { opacity: 0, scale: 0.9 }}

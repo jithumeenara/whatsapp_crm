@@ -112,7 +112,7 @@ const CHANNEL_META: Record<string, { label: string; icon: React.ReactNode; badge
   sms:       { label: "SMS",       icon: <MessageSquare className="h-3 w-3" />, badgeIcon: <MessageSquare className="h-2.5 w-2.5" /> },
   email:     { label: "Email",     icon: <Mail className="h-3 w-3" />,          badgeIcon: <Mail className="h-2.5 w-2.5" /> },
   rcs:       { label: "RCS",       icon: <Radio className="h-3 w-3" />,         badgeIcon: <Radio className="h-2.5 w-2.5" /> },
-  website:   { label: "Website",   icon: <Globe className="h-3 w-3 text-teal-600" />, badgeIcon: <Globe className="h-2.5 w-2.5" /> },
+  website:   { label: "Website",   icon: <Globe className="h-3 w-3 text-teal-700" />, badgeIcon: <Globe className="h-2.5 w-2.5" /> },
 }
 
 function ChannelBadge({ channel }: Readonly<{ channel?: string }>) {
@@ -601,7 +601,7 @@ export default function ChatbotV2() {
                         <InstagramIcon className="h-3.5 w-3.5" /> Instagram
                       </span>
                     ) : (bot.channel ?? "whatsapp") === "whatsapp" ? (
-                      <span className="flex items-center gap-1 text-[11px] font-semibold text-green-600">
+                      <span className="flex items-center gap-1 text-[11px] font-semibold text-green-700">
                         <WhatsAppIcon className="h-3.5 w-3.5" /> WhatsApp
                       </span>
                     ) : (
@@ -707,8 +707,8 @@ export default function ChatbotV2() {
     <div className="flex flex-col h-full bg-[#F4F6FA]">
 
       {/* Header */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-6 py-3.5 shadow-sm">
-        <div className="flex items-center justify-between">
+      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3.5 sm:px-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 shadow-sm">
               <Bot className="h-4.5 w-4.5 text-white" />
@@ -721,7 +721,7 @@ export default function ChatbotV2() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Channel filter */}
             <div ref={channelFilterRef} className="relative">
               <button
@@ -798,10 +798,11 @@ export default function ChatbotV2() {
               type="button"
               onClick={() => importRef.current?.click()}
               disabled={importing}
+              aria-label="Import a chatbot"
               className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-[13px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60 transition-colors"
             >
               {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              {importing ? "Importing…" : "Import"}
+              <span className="hidden sm:inline">{importing ? "Importing…" : "Import"}</span>
             </button>
 
             <button
@@ -811,7 +812,7 @@ export default function ChatbotV2() {
               className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 transition-colors"
             >
               {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-              {creating ? "Creating…" : "New Chatbot"}
+              <span className="hidden sm:inline">{creating ? "Creating…" : "New Chatbot"}</span><span className="sm:hidden">New</span>
             </button>
           </div>
         </div>
@@ -947,7 +948,7 @@ export default function ChatbotV2() {
                   className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-teal-400 hover:bg-teal-50/40 transition-all"
                 >
                   <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-teal-50 group-hover:bg-teal-100 transition-colors shadow-sm">
-                    <Globe className="h-6 w-6 text-teal-600" />
+                    <Globe className="h-6 w-6 text-teal-700" />
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">Website</p>

@@ -223,7 +223,7 @@ function LeadHistoryCard({
               </div>
               {isClosed && lead.lost_reason && (
                 <div className="mt-1.5 flex items-center gap-1">
-                  <XCircle className="h-3 w-3 text-emerald-600 shrink-0" />
+                  <XCircle className="h-3 w-3 text-emerald-700 shrink-0" />
                   <span className="text-[11px] font-semibold text-emerald-700">{lead.lost_reason}</span>
                 </div>
               )}

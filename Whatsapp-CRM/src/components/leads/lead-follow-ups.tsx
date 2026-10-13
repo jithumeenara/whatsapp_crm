@@ -154,7 +154,7 @@ export function LeadFollowUps({
                     <CalendarClock className="h-3.5 w-3.5" /> Reschedule
                   </button>
                   <button type="button" onClick={() => start(f, "not_reached")}
-                    className="flex items-center gap-1 h-8 px-3 rounded-lg border border-rose-200 text-[12px] font-semibold text-rose-600 hover:bg-rose-50">
+                    className="flex items-center gap-1 h-8 px-3 rounded-lg border border-rose-200 text-[12px] font-semibold text-rose-700 hover:bg-rose-50">
                     <PhoneOff className="h-3.5 w-3.5" /> Couldn&apos;t reach
                   </button>
                 </div>

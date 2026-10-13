@@ -26,6 +26,7 @@ import { DuplicateLeadDialog, type DuplicateInfo } from "@/components/leads/dupl
 import { NewFollowUpDialog } from "@/components/leads/new-follow-up-dialog"
 import { ContactPicker, type PickedContact } from "@/components/leads/contact-picker"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { readableTextColor } from "@/lib/readable-color"
 
 // ---- types ----
 
@@ -58,11 +59,11 @@ interface TabDef { key: string; label: string; color: string; icon?: React.React
 // looked — see the GET handler in /api/leads for the whole story.
 const TABS: TabDef[] = [
   { key: "mine",      label: "Mine",       color: "text-indigo-600" },
-  { key: "new_pool",  label: "New Pool",   color: "text-sky-600"    },
-  { key: "follow_up", label: "Follow-up",  color: "text-orange-600" },
-  { key: "overdue",   label: "Overdue",    color: "text-rose-600"   },
+  { key: "new_pool",  label: "New Pool",   color: "text-sky-700"    },
+  { key: "follow_up", label: "Follow-up",  color: "text-orange-700" },
+  { key: "overdue",   label: "Overdue",    color: "text-rose-700"   },
   { key: "all",       label: "All Open",   color: "text-slate-600"  },
-  { key: "closed",    label: "Closed",     color: "text-emerald-600"},
+  { key: "closed",    label: "Closed",     color: "text-emerald-700"},
   // Open and closed together. "All Open" answers "what needs doing" and
   // is the right default; this answers "where is that person", which
   // otherwise means searching twice and getting an empty result the
@@ -70,13 +71,13 @@ const TABS: TabDef[] = [
   // closed lead reads Won or Lost rather than just Closed.
   { key: "everything", label: "Everything", color: "text-slate-500"  },
   { key: "tasks",     label: "Tasks",      color: "text-violet-600" },
-  { key: "funnel",    label: "Funnel",     color: "text-teal-600"   },
+  { key: "funnel",    label: "Funnel",     color: "text-teal-700"   },
   // One tab, not two. "Suggested" held what the assistant thought were
   // leads and "Not enquiries" held what it thought were not — the same
   // question asked in two places, of which the second was the one
   // nobody formed a habit of checking.
   { key: "to_review", label: "To review",  color: "text-violet-600" },
-  { key: "not_enquiry", label: "Flagged leads", color: "text-amber-600" },
+  { key: "not_enquiry", label: "Flagged leads", color: "text-amber-700" },
 ]
 
 const TAB_DOT: Record<string, string> = {
@@ -554,7 +555,7 @@ function ConfirmDialog({
         <div className={cn("px-5 pt-5 pb-4", danger ? "bg-rose-50/60" : "bg-slate-50/60")}>
           <div className={cn("mb-3 flex h-10 w-10 items-center justify-center rounded-xl",
             danger ? "bg-rose-100" : "bg-indigo-100")}>
-            <AlertTriangle className={cn("h-5 w-5", danger ? "text-rose-600" : "text-indigo-600")} />
+            <AlertTriangle className={cn("h-5 w-5", danger ? "text-rose-700" : "text-indigo-600")} />
           </div>
           <h3 className="text-[15px] font-bold text-slate-900">{title}</h3>
           <p className="mt-1 text-[13px] text-slate-500 leading-relaxed">{description}</p>
@@ -610,7 +611,7 @@ function LeadMenu({ lead, menuOpenId, onMenuToggle, onDelete, onHide, onAddToPip
           <div className="mx-3 my-1 border-t border-slate-100" />
           <button type="button"
             onClick={() => { onDelete(lead.id); onMenuToggle(lead.id) }}
-            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors">
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-[13px] text-rose-700 hover:bg-rose-50 transition-colors">
             <Trash2 className="h-3.5 w-3.5" /> Delete Lead
           </button>
         </div>
@@ -984,7 +985,7 @@ function FollowUpRow({ item, index, onNavigate }: {
       </td>
       <td className="px-4 py-3.5">
         <span className={cn("flex items-center gap-1 text-[12px]",
-          overdue ? "font-semibold text-rose-600" : "text-slate-600")}>
+          overdue ? "font-semibold text-rose-700" : "text-slate-600")}>
           <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
           {fmtDate(item.due_at)}
           {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">OVERDUE</span>}
@@ -1047,7 +1048,7 @@ function TaskRow({ item, index, onNavigate }: {
       <td className="px-4 py-3.5">
         {item.due_date ? (
           <span className={cn("flex items-center gap-1 text-[12px]",
-            overdue ? "font-semibold text-rose-600" : "text-slate-600")}>
+            overdue ? "font-semibold text-rose-700" : "text-slate-600")}>
             <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
             {fmtDate(item.due_date)}
             {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">OVERDUE</span>}
@@ -1648,7 +1649,7 @@ function LeadsV2() {
                         ? "bg-slate-800 text-white border-slate-800"
                         : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50",
                     )}
-                    style={activeTagId !== tag.id ? { borderColor: tag.color + "40", color: tag.color } : {}}>
+                    style={activeTagId !== tag.id ? { borderColor: tag.color + "40", color: readableTextColor(tag.color) } : {}}>
                     {tag.name}
                   </button>
                 ))}

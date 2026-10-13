@@ -152,7 +152,7 @@ export function FileManagerPicker({ open, onClose, onSelect }: Props) {
               disabled={driveBusy}
               className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
-              {driveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <HardDrive className="h-3.5 w-3.5 text-emerald-600" />}
+              {driveBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <HardDrive className="h-3.5 w-3.5 text-emerald-700" />}
               Google Drive
             </button>
           )}

@@ -111,7 +111,7 @@ export function WhatsAppQrButton({ className, label, onOpen }: WhatsAppQrButtonP
 
             {!loading && error && (
               <div className="flex h-[200px] flex-col items-center justify-center gap-2 text-center px-2">
-                <p className="text-[13px] text-rose-600">{error}</p>
+                <p className="text-[13px] text-rose-700">{error}</p>
               </div>
             )}
 
@@ -132,7 +132,7 @@ export function WhatsAppQrButton({ className, label, onOpen }: WhatsAppQrButtonP
                   className="mt-3 flex w-full items-center justify-center gap-1.5 h-9 rounded-xl border border-slate-200 text-[12.5px] font-medium text-slate-600 hover:bg-slate-50"
                 >
                   {copied ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    <Check className="h-3.5 w-3.5 text-emerald-700" />
                   ) : (
                     <Copy className="h-3.5 w-3.5" />
                   )}

@@ -526,7 +526,7 @@ export function MembersTab() {
                         <p
                           className={`truncate text-[11px] ${
                             describeShift(member.working_hours, now).onShift
-                              ? 'text-emerald-600'
+                              ? 'text-emerald-700'
                               : 'text-slate-400'
                           }`}
                         >
@@ -701,7 +701,7 @@ export function MembersTab() {
                         size="sm"
                         onClick={() => setRemovingMember(member)}
                         disabled={isBusy}
-                        className="border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300 hover:text-rose-700"
+                        className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-300 hover:text-rose-800"
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -789,7 +789,7 @@ export function MembersTab() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleRevoke(inv)}
-                        className="border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300 hover:text-rose-700"
+                        className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-300 hover:text-rose-800"
                       >
                         <MailX className="size-4" />
                         Revoke

@@ -112,8 +112,8 @@ function GoogleLogo({ className }: { className?: string }) {
 }
 
 function CheckIcon({ ok }: { ok: boolean | null }) {
-  if (ok === true) return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-  if (ok === false) return <XCircle className="h-4 w-4 shrink-0 text-rose-600" />
+  if (ok === true) return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" />
+  if (ok === false) return <XCircle className="h-4 w-4 shrink-0 text-rose-700" />
   return <CircleHelp className="h-4 w-4 shrink-0 text-amber-500" />
 }
 
@@ -441,7 +441,7 @@ export function GoogleSettings() {
                 <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Switch account
               </Button>
               <Button type="button" variant="outline" size="sm" disabled={!!busy} onClick={() => void disconnect('account')}
-                className="border-rose-200 text-rose-600 hover:bg-rose-50">
+                className="border-rose-200 text-rose-700 hover:bg-rose-50">
                 {busy === 'disconnect-account' ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <LogOut className="mr-1.5 h-3.5 w-3.5" />}
                 Disconnect
               </Button>
@@ -646,7 +646,7 @@ export function GoogleSettings() {
       {cfg.configured && (
         <div className="flex justify-end">
           <button type="button" onClick={() => void disconnect('all')} disabled={!!busy}
-            className="text-[12px] font-medium text-rose-600 hover:underline disabled:opacity-50">
+            className="text-[12px] font-medium text-rose-700 hover:underline disabled:opacity-50">
             Remove the Google app from this CRM
           </button>
         </div>

@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { checkEmail, checkPhone, isPlaceholderPhone } from "@/lib/contacts/validate"
+import { readableTextColor } from "@/lib/readable-color"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -79,7 +80,7 @@ function FieldInput({ label, value, onChange, required, type = "text", placehold
         )}
       />
       {error ? (
-        <p className="text-[11.5px] text-rose-600">{error}</p>
+        <p className="text-[11.5px] text-rose-700">{error}</p>
       ) : hint ? (
         <p className="text-[11.5px] text-slate-400">{hint}</p>
       ) : null}
@@ -394,7 +395,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
               <div className="flex border-t border-slate-100">
                 {realPhone ? (
                   <a href={`tel:${realPhone}`}
-                    className="flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-emerald-600 hover:bg-emerald-50 transition-colors border-r border-slate-100">
+                    className="flex flex-1 items-center justify-center gap-1.5 py-2.5 text-[12px] font-semibold text-emerald-700 hover:bg-emerald-50 transition-colors border-r border-slate-100">
                     <Phone className="h-3.5 w-3.5" /> Call
                   </a>
                 ) : (
@@ -618,7 +619,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                               )}
                               style={on
                                 ? { background: tag.color, color: "#fff", borderColor: tag.color }
-                                : { background: tag.color + "15", color: tag.color, borderColor: tag.color + "40" }
+                                : { background: tag.color + "15", color: readableTextColor(tag.color), borderColor: tag.color + "40" }
                               }
                             >
                               {on && <Check className="h-3 w-3" />}

@@ -33,7 +33,7 @@ export function InstagramGatedFeatures() {
     <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-50">
-          <ShieldAlert className="h-4.5 w-4.5 text-amber-600" />
+          <ShieldAlert className="h-4.5 w-4.5 text-amber-700" />
         </span>
         <div className="flex-1 min-w-0">
           <h3 className="text-[14px] font-semibold text-slate-800">Comment-to-DM &amp; Story Mentions</h3>

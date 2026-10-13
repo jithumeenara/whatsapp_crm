@@ -166,7 +166,7 @@ export default function FollowUpsV2() {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50">
-              <CalendarCheck className="h-4 w-4 text-amber-600" />
+              <CalendarCheck className="h-4 w-4 text-amber-700" />
             </div>
             <div>
               <h1 className="text-[15px] font-semibold text-slate-900">Follow-ups</h1>
@@ -205,7 +205,7 @@ export default function FollowUpsV2() {
       {/* Overdue alert */}
       {filterStatus !== "done" && filterStatus !== "skipped" && overdue.length > 0 && (
         <div className="mx-6 mt-4 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+          <AlertTriangle className="h-4 w-4 text-rose-700 shrink-0" />
           <p className="text-[13px] text-rose-700 font-medium">
             {overdue.length} overdue follow-up{overdue.length !== 1 ? "s" : ""} need your attention
           </p>
@@ -261,12 +261,12 @@ export default function FollowUpsV2() {
                     fu.status === "done" ? "bg-emerald-100" : overdueFu ? "bg-rose-100" : "bg-amber-50",
                   )}>
                     {fu.status === "done"
-                      ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      ? <CheckCircle2 className="h-4 w-4 text-emerald-700" />
                       : fu.status === "skipped"
                       ? <SkipForward className="h-4 w-4 text-slate-400" />
                       : overdueFu
-                      ? <AlertTriangle className="h-4 w-4 text-rose-600" />
-                      : <Clock className="h-4 w-4 text-amber-600" />}
+                      ? <AlertTriangle className="h-4 w-4 text-rose-700" />
+                      : <Clock className="h-4 w-4 text-amber-700" />}
                   </div>
 
                   {/* Content */}
@@ -279,7 +279,7 @@ export default function FollowUpsV2() {
                     </div>
 
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className={cn("text-[12px] font-medium", overdueFu ? "text-rose-600" : "text-slate-500")}>
+                      <span className={cn("text-[12px] font-medium", overdueFu ? "text-rose-700" : "text-slate-500")}>
                         {fmtDate(fu.due_at)} · {new Date(fu.due_at).toLocaleTimeString("en", { hour: "2-digit", minute: "2-digit" })}
                       </span>
                       {fu.contact && (
@@ -328,7 +328,7 @@ export default function FollowUpsV2() {
                             <button type="button" onClick={() => { updateStatus(fu.id, "skipped"); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-slate-600 hover:bg-slate-50">
                               <SkipForward className="h-3.5 w-3.5 text-slate-400" /> Skip
                             </button>
-                            <button type="button" onClick={() => { deleteFollowUp(fu.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50">
+                            <button type="button" onClick={() => { deleteFollowUp(fu.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-700 hover:bg-rose-50">
                               <X className="h-3.5 w-3.5" /> Delete
                             </button>
                           </div>

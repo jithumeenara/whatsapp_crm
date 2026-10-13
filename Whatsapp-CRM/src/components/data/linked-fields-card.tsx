@@ -135,7 +135,7 @@ export function LinkedFieldsCard({
                 <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10.5px] font-semibold text-primary">auto</span>
               ) : (
                 <button type="button" onClick={() => remove(l.key, l.part)} disabled={busy} aria-label="Remove this link"
-                  className="grid h-5 w-5 shrink-0 place-items-center rounded text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40">
+                  className="grid h-5 w-5 shrink-0 place-items-center rounded text-slate-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-40">
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}

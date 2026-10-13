@@ -157,7 +157,7 @@ export function MicrosoftMailCard() {
         {connected && (
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
             <p className="flex items-center gap-2 text-[13px] font-semibold text-slate-800">
-              <Mail className="h-4 w-4 text-emerald-600" /> {cfg.mailbox_email}
+              <Mail className="h-4 w-4 text-emerald-700" /> {cfg.mailbox_email}
               {cfg.mailbox_name && <span className="font-normal text-slate-500">· {cfg.mailbox_name}</span>}
             </p>
             {cfg.subscription_expires_at && cfg.status === 'connected' && (
@@ -171,7 +171,7 @@ export function MicrosoftMailCard() {
                 <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Reconnect / change mailbox
               </Button>
               <Button type="button" variant="outline" size="sm" onClick={disconnect} disabled={busy}
-                className="border-rose-200 text-rose-600 hover:bg-rose-50">
+                className="border-rose-200 text-rose-700 hover:bg-rose-50">
                 {busy ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <LogOut className="mr-1.5 h-3.5 w-3.5" />}
                 Disconnect
               </Button>

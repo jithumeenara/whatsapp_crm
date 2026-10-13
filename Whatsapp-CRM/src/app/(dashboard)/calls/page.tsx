@@ -287,10 +287,10 @@ export default function CallsPage() {
                     className={cn(
                       "grid h-9 w-9 shrink-0 place-items-center rounded-xl",
                       missed
-                        ? "bg-rose-50 text-rose-600"
+                        ? "bg-rose-50 text-rose-700"
                         : outbound
-                          ? "bg-sky-50 text-sky-600"
-                          : "bg-emerald-50 text-emerald-600",
+                          ? "bg-sky-50 text-sky-700"
+                          : "bg-emerald-50 text-emerald-700",
                     )}
                   >
                     <Icon className="h-4 w-4" />

@@ -975,7 +975,7 @@ function NodeContextMenu({
         <button
           type="button"
           onClick={() => void handleDelete()}
-          className="flex w-full items-center gap-2.5 border-t border-slate-100 px-3 py-2.5 text-left text-[12px] font-medium text-rose-600 hover:bg-rose-50"
+          className="flex w-full items-center gap-2.5 border-t border-slate-100 px-3 py-2.5 text-left text-[12px] font-medium text-rose-700 hover:bg-rose-50"
         >
           <Trash2 className="h-3.5 w-3.5 shrink-0" />
           Delete node

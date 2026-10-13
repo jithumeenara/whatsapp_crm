@@ -113,6 +113,7 @@ export function AiLeadSettings({
           type="button"
           role="switch"
           aria-checked={on}
+          aria-label="Find leads with AI"
           onClick={() => onChange({ ai_lead_enabled: !on })}
           className={`relative mt-0.5 h-6 w-10 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:ring-offset-2 ${
             on ? "bg-violet-600" : "bg-slate-200"

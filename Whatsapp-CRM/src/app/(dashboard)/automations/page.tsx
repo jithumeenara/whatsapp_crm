@@ -170,7 +170,7 @@ export default function AutomationsV2() {
                       title={auto.is_active ? "Pause" : "Activate"}
                     >
                       {auto.is_active
-                        ? <Play className="h-4 w-4 text-emerald-600" />
+                        ? <Play className="h-4 w-4 text-emerald-700" />
                         : <Pause className="h-4 w-4 text-slate-400" />}
                     </button>
 
@@ -223,7 +223,7 @@ export default function AutomationsV2() {
                             <button type="button" onClick={() => { duplicate(auto.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-slate-600 hover:bg-slate-50">
                               <Copy className="h-3.5 w-3.5 text-slate-400" /> Duplicate
                             </button>
-                            <button type="button" onClick={() => { setDeleteId(auto.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50">
+                            <button type="button" onClick={() => { setDeleteId(auto.id); setOpenMenuId(null) }} className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-700 hover:bg-rose-50">
                               <Trash2 className="h-3.5 w-3.5" /> Delete
                             </button>
                           </div>
@@ -254,7 +254,7 @@ export default function AutomationsV2() {
                             <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                           )}
                         </div>
-                        <p className={cn("mt-1 text-[13px] font-semibold", lastError ? "text-amber-600" : "text-emerald-600")}>
+                        <p className={cn("mt-1 text-[13px] font-semibold", lastError ? "text-amber-700" : "text-emerald-700")}>
                           {lastError === "loading" ? "Checking…" : lastError ? (lastError.reason ?? "Failed") : "No errors"}
                         </p>
                       </div>

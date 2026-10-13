@@ -109,7 +109,7 @@ export function DuplicateLeadDialog({
         <div className="flex items-start justify-between px-5 py-4 border-b border-slate-100 bg-amber-50">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100">
-              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <AlertTriangle className="h-5 w-5 text-amber-700" />
             </div>
             <div>
               <p className="text-[14px] font-bold text-slate-900">Existing Customer Found</p>
@@ -159,11 +159,11 @@ export function DuplicateLeadDialog({
             </div>
             <div className="rounded-lg border border-orange-100 bg-orange-50 p-2.5 text-center">
               <p className="text-[18px] font-bold text-orange-700">{counts.active}</p>
-              <p className="text-[10px] text-orange-600 font-medium uppercase tracking-wide">Active</p>
+              <p className="text-[10px] text-orange-700 font-medium uppercase tracking-wide">Active</p>
             </div>
             <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-2.5 text-center">
               <p className="text-[18px] font-bold text-emerald-700">{counts.closed}</p>
-              <p className="text-[10px] text-emerald-600 font-medium uppercase tracking-wide">Closed</p>
+              <p className="text-[10px] text-emerald-700 font-medium uppercase tracking-wide">Closed</p>
             </div>
           </div>
 
@@ -222,11 +222,11 @@ export function DuplicateLeadDialog({
               className="w-full flex items-center gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-left hover:bg-orange-100 transition-colors group"
             >
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100 group-hover:bg-orange-200 transition-colors">
-                <RefreshCw className="h-4 w-4 text-orange-600" />
+                <RefreshCw className="h-4 w-4 text-orange-700" />
               </div>
               <div>
                 <p className="text-[13px] font-semibold text-orange-900">Continue Active Lead</p>
-                <p className="text-[11px] text-orange-600 truncate">Open &ldquo;{activeLead.title}&rdquo;</p>
+                <p className="text-[11px] text-orange-700 truncate">Open &ldquo;{activeLead.title}&rdquo;</p>
               </div>
             </button>
           )}

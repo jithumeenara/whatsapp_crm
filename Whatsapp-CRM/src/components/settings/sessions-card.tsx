@@ -307,7 +307,7 @@ export function SessionsCard() {
                     </p>
                     <p className="text-[11.5px] text-slate-400 mt-0.5 flex items-center gap-1.5">
                       {status.live ? (
-                        <span className="flex items-center gap-1 font-medium text-emerald-600">
+                        <span className="flex items-center gap-1 font-medium text-emerald-700">
                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           Live
                         </span>
@@ -354,7 +354,7 @@ export function SessionsCard() {
             Sign out
           </Button>
           <Button type="button" variant="outline" onClick={() => setEverywhereOpen(true)}
-            className="h-9 text-[13px] text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700">
+            className="h-9 text-[13px] text-rose-700 border-rose-200 hover:bg-rose-50 hover:text-rose-800">
             <ShieldAlert className="h-4 w-4" />
             Sign out everywhere
           </Button>

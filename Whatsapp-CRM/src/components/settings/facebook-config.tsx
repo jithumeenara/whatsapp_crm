@@ -170,11 +170,11 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
 
       {isConnected && cfg?.page_name && (
         <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 flex items-center gap-3">
-          <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+          <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0" />
           <div>
             <p className="text-[13px] font-semibold text-emerald-800">{cfg.page_name}</p>
             {cfg.last_tested_at && (
-              <p className="text-[11px] text-emerald-600">Tested {new Date(cfg.last_tested_at).toLocaleString()}</p>
+              <p className="text-[11px] text-emerald-700">Tested {new Date(cfg.last_tested_at).toLocaleString()}</p>
             )}
           </div>
         </div>
@@ -183,7 +183,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       {hasError && cfg?.test_error && (
         <div className="rounded-xl bg-rose-50 border border-rose-100 px-4 py-3">
           <p className="text-[12px] font-semibold text-rose-700">Connection error</p>
-          <p className="text-[12px] text-rose-600 mt-1">{cfg.test_error}</p>
+          <p className="text-[12px] text-rose-700 mt-1">{cfg.test_error}</p>
         </div>
       )}
 
@@ -203,7 +203,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">
               Page Access Token
               {!tokenEdited && accessToken === MASKED && (
-                <span className="ml-2 text-[10px] text-amber-600 font-normal">(saved — click Clear to replace)</span>
+                <span className="ml-2 text-[10px] text-amber-700 font-normal">(saved — click Clear to replace)</span>
               )}
             </label>
             <div className="flex gap-2">
@@ -223,7 +223,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               </div>
               {accessToken && !tokenEdited && (
                 <button type="button" onClick={() => { setAccessToken(""); setTokenEdited(true) }}
-                  className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[12px] font-medium text-rose-600 hover:bg-rose-50 transition-colors whitespace-nowrap">
+                  className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[12px] font-medium text-rose-700 hover:bg-rose-50 transition-colors whitespace-nowrap">
                   <XCircle className="h-3.5 w-3.5" /> Clear
                 </button>
               )}
@@ -234,7 +234,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
             <label className="block text-[12px] font-medium text-slate-600 mb-1.5">
               App Secret <span className="text-slate-400 font-normal text-[10px]">(optional — for webhook signature verification)</span>
               {!secretEdited && appSecret === MASKED && (
-                <span className="ml-2 text-[10px] text-amber-600 font-normal">(saved)</span>
+                <span className="ml-2 text-[10px] text-amber-700 font-normal">(saved)</span>
               )}
             </label>
             <div className="flex gap-2">
@@ -254,7 +254,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
               </div>
               {appSecret && !secretEdited && (
                 <button type="button" onClick={() => { setAppSecret(""); setSecretEdited(true) }}
-                  className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[12px] font-medium text-rose-600 hover:bg-rose-50 transition-colors whitespace-nowrap">
+                  className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[12px] font-medium text-rose-700 hover:bg-rose-50 transition-colors whitespace-nowrap">
                   <XCircle className="h-3.5 w-3.5" /> Clear
                 </button>
               )}

@@ -307,7 +307,7 @@ export function NewChatDialog({ onSent, className, initialPhone, initialName, la
               className="w-full h-10 rounded-xl border border-slate-200 px-3 text-[13.5px] outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 mb-3"
             />
 
-            {error && <p className="text-[12.5px] text-rose-600 mb-3">{error}</p>}
+            {error && <p className="text-[12.5px] text-rose-700 mb-3">{error}</p>}
 
             <button
               type="button"

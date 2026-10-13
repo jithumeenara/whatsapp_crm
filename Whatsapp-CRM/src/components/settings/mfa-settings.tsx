@@ -179,7 +179,7 @@ export function MfaSettings() {
             isEnabled ? 'bg-emerald-50' : 'bg-[#EEF0FF]',
           )}>
             {isEnabled
-              ? <ShieldCheck className="h-6 w-6 text-emerald-600" />
+              ? <ShieldCheck className="h-6 w-6 text-emerald-700" />
               : <ShieldOff className="h-6 w-6 text-[#4A5CE8]" />}
           </span>
         </div>
@@ -196,7 +196,7 @@ export function MfaSettings() {
               {isEnabled ? `Enabled — ${METHOD_META[currentMethod as Exclude<MfaMethod, 'disabled'>].label}` : 'Not enabled'}
             </p>
             {isEnabled && maskedPhone && currentMethod !== 'totp' && (
-              <p className="text-[11px] text-emerald-600 mt-0.5">Codes sent to {maskedPhone}</p>
+              <p className="text-[11px] text-emerald-700 mt-0.5">Codes sent to {maskedPhone}</p>
             )}
             {!isEnabled && (
               <p className="text-[11px] text-slate-400 mt-0.5">Off by default — nothing changes until you set it up.</p>
@@ -206,7 +206,7 @@ export function MfaSettings() {
       )}
 
       {isEnabled && !disabling && (
-        <Button variant="outline" onClick={() => setDisabling(true)} className="w-full h-9 text-[12.5px] border-rose-200 text-rose-600 hover:bg-rose-50">
+        <Button variant="outline" onClick={() => setDisabling(true)} className="w-full h-9 text-[12.5px] border-rose-200 text-rose-700 hover:bg-rose-50">
           Disable two-factor authentication
         </Button>
       )}
@@ -278,7 +278,7 @@ export function MfaSettings() {
                     </Button>
                   </div>
                 ) : (
-                  <p className="text-emerald-600">Code sent to {codeSentTo}</p>
+                  <p className="text-emerald-700">Code sent to {codeSentTo}</p>
                 ),
               },
               {

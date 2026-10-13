@@ -114,7 +114,7 @@ function Skeleton({ className }: { className?: string }) {
 const TONES = {
   indigo: { tile: "bg-indigo-100 text-indigo-600", stroke: "#6366f1" },
   green: { tile: "bg-primary/15 text-primary", stroke: "var(--primary)" },
-  amber: { tile: "bg-amber-100 text-amber-600", stroke: "#f59e0b" },
+  amber: { tile: "bg-amber-100 text-amber-700", stroke: "#f59e0b" },
   rose: { tile: "bg-rose-100 text-rose-500", stroke: "#f43f5e" },
 } as const
 
@@ -146,7 +146,7 @@ function KpiCard({
             <span className="text-slate-400">No change data yet</span>
           ) : (
             <>
-              <span className={cn("inline-flex items-center gap-0.5 font-semibold", delta >= 0 ? "text-emerald-600" : "text-rose-500")}>
+              <span className={cn("inline-flex items-center gap-0.5 font-semibold", delta >= 0 ? "text-emerald-700" : "text-rose-500")}>
                 {delta >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
                 {Math.abs(delta)}%
               </span>
@@ -179,7 +179,7 @@ function KpiCard({
 
 const KIND = {
   message: { tile: "bg-indigo-50 text-indigo-600", icon: MessageSquare },
-  broadcast: { tile: "bg-amber-50 text-amber-600", icon: Megaphone },
+  broadcast: { tile: "bg-amber-50 text-amber-700", icon: Megaphone },
   automation: { tile: "bg-violet-50 text-violet-600", icon: Zap },
   contact: { tile: "bg-primary/10 text-primary", icon: UserPlus },
 } as const
@@ -553,7 +553,7 @@ export default function Dashboard() {
           <h2 className="mb-3 text-[15px] font-semibold text-slate-900">Quick Stats</h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <QuickTile
-              href="/follow-ups" icon={CalendarClock} tile="text-amber-600" bg="bg-amber-50"
+              href="/follow-ups" icon={CalendarClock} tile="text-amber-700" bg="bg-amber-50"
               value={loading && !data ? "—" : crm?.overdueFollowUps ?? 0}
               label="Overdue follow-ups" sub={`${crm?.pendingFollowUps ?? 0} coming up`}
             />

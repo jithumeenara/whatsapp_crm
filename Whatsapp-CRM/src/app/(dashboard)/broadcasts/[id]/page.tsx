@@ -56,9 +56,9 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   pending:   { label: "Pending",   color: "text-slate-500",   bg: "bg-slate-100",   icon: Clock },
   sent:      { label: "Sent",      color: "text-blue-600",    bg: "bg-blue-50",     icon: Send },
   delivered: { label: "Delivered", color: "text-indigo-600",  bg: "bg-indigo-50",   icon: CheckCircle2 },
-  read:      { label: "Read",      color: "text-emerald-600", bg: "bg-emerald-50",  icon: Eye },
+  read:      { label: "Read",      color: "text-emerald-700", bg: "bg-emerald-50",  icon: Eye },
   replied:   { label: "Replied",   color: "text-violet-600",  bg: "bg-violet-50",   icon: MessageCircle },
-  failed:    { label: "Failed",    color: "text-rose-600",    bg: "bg-rose-50",     icon: XCircle },
+  failed:    { label: "Failed",    color: "text-rose-700",    bg: "bg-rose-50",     icon: XCircle },
 }
 
 const BROADCAST_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -308,7 +308,7 @@ export default function BroadcastDetailPage() {
               <button
                 onClick={handleRetryFailed}
                 disabled={retrying}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[12.5px] font-medium text-rose-600 hover:bg-rose-100 transition-colors disabled:opacity-40"
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[12.5px] font-medium text-rose-700 hover:bg-rose-100 transition-colors disabled:opacity-40"
               >
                 <RotateCcw className={cn("h-3.5 w-3.5", retrying && "animate-spin")} />
                 Retry Failed ({broadcast.failed_count})
@@ -340,9 +340,9 @@ export default function BroadcastDetailPage() {
           <StatCard icon={Users}        label="Recipients" value={broadcast.total_recipients} color="text-indigo-600 bg-indigo-50" />
           <StatCard icon={Send}         label="Sent"       value={broadcast.sent_count}       color="text-blue-600 bg-blue-50" />
           <StatCard icon={CheckCircle2} label="Delivered"  value={broadcast.delivered_count}  color="text-indigo-600 bg-indigo-50" />
-          <StatCard icon={Eye}          label="Read"       value={broadcast.read_count}        color="text-emerald-600 bg-emerald-50" />
+          <StatCard icon={Eye}          label="Read"       value={broadcast.read_count}        color="text-emerald-700 bg-emerald-50" />
           <StatCard icon={MessageCircle}label="Replied"    value={broadcast.replied_count}     color="text-violet-600 bg-violet-50" />
-          <StatCard icon={XCircle}      label="Failed"     value={broadcast.failed_count}      color="text-rose-600 bg-rose-50" />
+          <StatCard icon={XCircle}      label="Failed"     value={broadcast.failed_count}      color="text-rose-700 bg-rose-50" />
         </div>
 
         {/* ── Delivery Funnel ── */}
@@ -613,7 +613,7 @@ export default function BroadcastDetailPage() {
               {previewRecipient.status === "failed" && previewRecipient.error_message && (
                 <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
                   <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-rose-500" />
-                  <p className="text-[11.5px] text-rose-600">{previewRecipient.error_message}</p>
+                  <p className="text-[11.5px] text-rose-700">{previewRecipient.error_message}</p>
                 </div>
               )}
             </div>

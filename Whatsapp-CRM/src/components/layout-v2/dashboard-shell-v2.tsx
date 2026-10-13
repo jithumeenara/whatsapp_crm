@@ -165,7 +165,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           {/* Mobile top bar — hidden when a page requests it (e.g. inbox thread) */}
           {!mobileBarHidden && (
-            <div className="flex h-[48px] shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
+            <header className="flex h-[48px] shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
@@ -175,7 +175,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
                 <Menu className="h-5 w-5" />
               </button>
               <span className="text-[14px] font-semibold text-slate-900">WhatsApp CRM</span>
-            </div>
+            </header>
           )}
 
           <main className="flex-1 overflow-y-auto scroll-styled">{children}</main>

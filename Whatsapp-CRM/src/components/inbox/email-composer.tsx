@@ -634,7 +634,7 @@ export function EmailComposer({
               <button type="button" onMouseDown={(e) => e.preventDefault()}
                 onClick={() => { editorRef.current?.removeLink(); setLinkOpen(false); }}
                 title="Remove link" aria-label="Remove link"
-                className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-rose-600">
+                className="grid h-7 w-7 place-items-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-rose-700">
                 <Unlink className="h-3.5 w-3.5" />
               </button>
             )}

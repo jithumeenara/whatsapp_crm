@@ -171,23 +171,23 @@ export function FacebookTab() {
             <p className="text-[12px] font-bold text-amber-900 uppercase tracking-wide">How to fix</p>
             <ol className="space-y-2 text-[13px] text-amber-800">
               <li className="flex gap-2">
-                <span className="shrink-0 font-bold text-amber-600">1.</span>
+                <span className="shrink-0 font-bold text-amber-700">1.</span>
                 Go to <strong>Meta Developers Console</strong> → your app → <strong>App Review → Permissions and Features</strong>
               </li>
               <li className="flex gap-2">
-                <span className="shrink-0 font-bold text-amber-600">2.</span>
+                <span className="shrink-0 font-bold text-amber-700">2.</span>
                 Find <strong>pages_read_engagement</strong> → click <strong>Request Advanced Access</strong> (or Add for Development)
               </li>
               <li className="flex gap-2">
-                <span className="shrink-0 font-bold text-amber-600">3.</span>
+                <span className="shrink-0 font-bold text-amber-700">3.</span>
                 If your app is in <strong>Development mode</strong>: the permission activates immediately for you as app admin
               </li>
               <li className="flex gap-2">
-                <span className="shrink-0 font-bold text-amber-600">4.</span>
+                <span className="shrink-0 font-bold text-amber-700">4.</span>
                 Regenerate your <strong>Page Access Token</strong> from Messenger → API Settings → Access Tokens (so it includes the new permission)
               </li>
               <li className="flex gap-2">
-                <span className="shrink-0 font-bold text-amber-600">5.</span>
+                <span className="shrink-0 font-bold text-amber-700">5.</span>
                 Update the token in <strong>Settings → Facebook</strong>, then click Retry below
               </li>
             </ol>
@@ -274,7 +274,7 @@ export function FacebookTab() {
           { label: "Total Reach",       value: formatNum(totalReach),       icon: Eye,         color: "text-blue-600",   bg: "bg-blue-50" },
           { label: "Total Impressions", value: formatNum(totalImpressions),  icon: TrendingUp,  color: "text-purple-600", bg: "bg-purple-50" },
           { label: "Total Likes",       value: formatNum(totalLikes),        icon: ThumbsUp,    color: "text-[#1877F2]",  bg: "bg-blue-50" },
-          { label: "Engaged Users",     value: formatNum(totalEngaged),      icon: Users,       color: "text-green-600",  bg: "bg-green-50" },
+          { label: "Engaged Users",     value: formatNum(totalEngaged),      icon: Users,       color: "text-green-700",  bg: "bg-green-50" },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex items-center gap-3">
             <div className={`h-9 w-9 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
@@ -307,7 +307,7 @@ export function FacebookTab() {
           {postsError && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
               <span className="font-semibold">Could not load posts: </span>{postsError}
-              <span className="block mt-1 text-amber-600">
+              <span className="block mt-1 text-amber-700">
                 Add <strong>pages_read_user_content</strong> in Meta Developer Console → Permissions and Features, then regenerate your Page Access Token.
               </span>
             </div>
@@ -397,8 +397,8 @@ function FbPostDetailPanel({ post, onClose }: { post: FbPost; onClose: () => voi
               {[
                 { label: "Likes",         value: post.likes,        icon: ThumbsUp,      color: "text-[#1877F2]", bg: "bg-blue-50" },
                 { label: "Comments",      value: post.comments,     icon: MessageCircle, color: "text-slate-600",  bg: "bg-slate-50" },
-                { label: "Shares",        value: post.shares,       icon: Share2,        color: "text-green-600",  bg: "bg-green-50" },
-                { label: "Clicks",        value: post.clicks,       icon: MousePointer,  color: "text-amber-600",  bg: "bg-amber-50" },
+                { label: "Shares",        value: post.shares,       icon: Share2,        color: "text-green-700",  bg: "bg-green-50" },
+                { label: "Clicks",        value: post.clicks,       icon: MousePointer,  color: "text-amber-700",  bg: "bg-amber-50" },
                 { label: "Reach",         value: post.reach,        icon: Eye,           color: "text-blue-600",   bg: "bg-blue-50" },
                 { label: "Engaged Users", value: post.engaged_users, icon: Users,         color: "text-purple-600", bg: "bg-purple-50" },
               ].map(({ label, value, icon: Icon, color, bg }) => (

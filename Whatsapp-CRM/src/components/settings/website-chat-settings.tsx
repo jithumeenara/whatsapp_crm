@@ -613,7 +613,7 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                     />
                   </div>
                   {form.logo_url && !form.logo_url.startsWith('https://') && (
-                    <p className="mt-1 text-[11.5px] text-rose-600">Use an https:// image link.</p>
+                    <p className="mt-1 text-[11.5px] text-rose-700">Use an https:// image link.</p>
                   )}
                 </div>
               </>
@@ -627,7 +627,7 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                   <label className="flex cursor-pointer items-center justify-between gap-4 p-4">
                     <span className="flex items-start gap-3">
                       <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50">
-                        <Users className="h-4 w-4 text-sky-600" />
+                        <Users className="h-4 w-4 text-sky-700" />
                       </span>
                       <span>
                         <span className="block text-[13px] font-semibold text-slate-800">“Talk to a person” button</span>
@@ -676,7 +676,7 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
               type="button"
               onClick={() => void remove()}
               disabled={deleting}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12.5px] font-medium text-slate-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
@@ -874,7 +874,7 @@ function DomainChips({ domains, onChange }: { domains: string[]; onChange: (d: s
         />
       </div>
       {error ? (
-        <p className="mt-1.5 text-[12px] text-rose-600">{error}</p>
+        <p className="mt-1.5 text-[12px] text-rose-700">{error}</p>
       ) : domains.length === 0 ? (
         <p className="mt-1.5 flex items-center gap-1.5 text-[12px] text-amber-700">
           <AlertTriangle className="h-3.5 w-3.5" /> Empty means any website can show this chat. Add your site’s address.

@@ -23,9 +23,9 @@ function TypeBadge({ type }: { type: string }) {
   const colors: Record<string, string> = {
     text:     "bg-slate-100 text-slate-600",
     textarea: "bg-violet-50 text-violet-600",
-    number:   "bg-sky-50 text-sky-600",
-    date:     "bg-amber-50 text-amber-600",
-    url:      "bg-emerald-50 text-emerald-600",
+    number:   "bg-sky-50 text-sky-700",
+    date:     "bg-amber-50 text-amber-700",
+    url:      "bg-emerald-50 text-emerald-700",
   }
   return (
     <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize ${colors[type] ?? "bg-slate-100 text-slate-600"}`}>

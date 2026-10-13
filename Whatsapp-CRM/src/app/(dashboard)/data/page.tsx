@@ -45,10 +45,10 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel }: {
 const ICON_COLORS = [
   "bg-indigo-50 text-indigo-600",
   "bg-violet-50 text-violet-600",
-  "bg-sky-50 text-sky-600",
-  "bg-emerald-50 text-emerald-600",
+  "bg-sky-50 text-sky-700",
+  "bg-emerald-50 text-emerald-700",
   "bg-amber-50 text-amber-700",
-  "bg-rose-50 text-rose-600",
+  "bg-rose-50 text-rose-700",
 ]
 
 export default function DataStorePage() {
@@ -108,8 +108,8 @@ export default function DataStorePage() {
       )}
 
       {/* Top bar */}
-      <div className="bg-white border-b border-slate-200 px-6">
-        <div className="flex items-center justify-between h-14">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6">
+        <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 py-2">
           <div className="flex items-center gap-2.5">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white">
               <Database className="h-3.5 w-3.5" />
@@ -129,15 +129,17 @@ export default function DataStorePage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Find table…"
-                className="h-8 w-48 pl-8 pr-3 text-[13px] rounded-lg border border-slate-200 bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
+                aria-label="Find a table"
+                className="h-8 w-36 sm:w-48 pl-8 pr-3 text-[13px] rounded-lg border border-slate-200 bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
               />
             </div>
             <button
               onClick={() => setCreateOpen(true)}
+              aria-label="New table"
               className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 active:scale-95 transition-all"
             >
               <Plus className="h-3.5 w-3.5" />
-              New Table
+              <span className="hidden sm:inline">New Table</span>
             </button>
           </div>
         </div>
@@ -210,7 +212,7 @@ export default function DataStorePage() {
                           <button
                             onClick={(e) => { e.stopPropagation(); askDelete(table.id) }}
                             disabled={deleting === table.id}
-                            className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition-colors"
+                            className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-700 hover:bg-rose-50 disabled:opacity-50 transition-colors"
                           >
                             {deleting === table.id
                               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />

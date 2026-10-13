@@ -142,7 +142,7 @@ function FieldValue({ field, value }: { field: DataField; value: unknown }) {
       <span
         className={cn(
           'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium',
-          value ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500',
+          value ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500',
         )}
       >
         <span className={cn('h-1.5 w-1.5 rounded-full', value ? 'bg-emerald-500' : 'bg-slate-400')} />
@@ -372,7 +372,7 @@ export function RecordDetailModal({
         <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-3.5">
           <button
             onClick={onDelete}
-            className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-rose-600 transition-colors hover:bg-rose-50"
+            className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-rose-700 transition-colors hover:bg-rose-50"
           >
             <Trash2 className="h-3.5 w-3.5" />
             Delete

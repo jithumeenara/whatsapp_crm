@@ -156,7 +156,7 @@ export function CatalogPicker({ open, onOpenChange, onSend }: CatalogPickerProps
       <DialogContent className="max-w-lg p-0 gap-0 overflow-hidden">
         <DialogHeader className="border-b border-slate-100 px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <ShoppingBag className="h-4 w-4 text-sky-600" />
+            <ShoppingBag className="h-4 w-4 text-sky-700" />
             Send from Catalog
           </DialogTitle>
         </DialogHeader>

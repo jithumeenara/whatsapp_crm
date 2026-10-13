@@ -177,7 +177,7 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
         id="confirm-password" label="Confirm new password" value={confirm} onChange={setConfirm}
         autoComplete="new-password" disabled={saving}
         hint={confirm.length > 0 && (
-          <p className={`flex items-center gap-1 text-[11px] ${match ? 'text-emerald-600' : 'text-rose-500'}`}>
+          <p className={`flex items-center gap-1 text-[11px] ${match ? 'text-emerald-700' : 'text-rose-500'}`}>
             {match ? <Check className="h-3 w-3" /> : null}
             {match ? 'Passwords match' : 'Passwords do not match yet'}
           </p>
@@ -185,7 +185,7 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
       />
 
       {confirmError && (
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-600">
+        <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
           {confirmError}
         </p>
       )}

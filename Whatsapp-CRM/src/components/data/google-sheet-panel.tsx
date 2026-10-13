@@ -62,7 +62,7 @@ function SheetChip({ link }: { link: LinkView }) {
         <span className="block truncate text-[13px] font-semibold text-slate-800">{link.spreadsheet_name ?? "Spreadsheet"}</span>
         <span className="block truncate text-[11.5px] text-slate-500">Tab: {link.sheet_title}</span>
       </span>
-      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-emerald-600" />
+      <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-emerald-700" />
     </a>
   )
 }
@@ -85,7 +85,7 @@ function Card({ icon, title, hint, children }: { icon: React.ReactNode; title: s
 const btn = {
   primary: "inline-flex h-9 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[13px] font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-60",
   soft: "inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60",
-  danger: "inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-3 text-[12.5px] font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-60",
+  danger: "inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-3 text-[12.5px] font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60",
 }
 
 export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {

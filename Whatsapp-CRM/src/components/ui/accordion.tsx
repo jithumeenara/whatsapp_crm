@@ -23,13 +23,17 @@ function AccordionItem({ className, ...props }: AccordionPrimitive.Item.Props) {
   )
 }
 
+// headingLevel: the header is an h3 by default; a page whose only heading
+// above it is the h1 passes 2 so the outline doesn't skip a level.
 function AccordionTrigger({
   className,
   children,
+  headingLevel = 3,
   ...props
-}: AccordionPrimitive.Trigger.Props) {
+}: AccordionPrimitive.Trigger.Props & { headingLevel?: 2 | 3 | 4 }) {
+  const Heading = `h${headingLevel}` as "h2" | "h3" | "h4"
   return (
-    <AccordionPrimitive.Header className="flex">
+    <AccordionPrimitive.Header className="flex" render={<Heading />}>
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(

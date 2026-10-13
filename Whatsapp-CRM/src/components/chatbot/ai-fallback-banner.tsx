@@ -161,6 +161,7 @@ export function AiFallbackBanner() {
         <div className="flex shrink-0 items-center gap-2">
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
           <Switch
+            aria-label="Answer messages no chatbot matched"
             checked={config.enabled}
             disabled={!config.configured || saving}
             onCheckedChange={(v) => void save({ enabled: v })}
@@ -225,6 +226,7 @@ export function AiFallbackBanner() {
                     of what it does. */}
                 <div className="flex items-center gap-2 text-[11.5px] text-slate-700">
                   <Switch
+                    aria-label="Limit how many replies the assistant sends"
                     checked={config.maxTurns > 0}
                     onCheckedChange={(v) => void save({ maxTurns: v ? 8 : 0 })}
                   />
@@ -260,6 +262,7 @@ export function AiFallbackBanner() {
                   title="Assignment is what counts. A conversation marked Pending that nobody has picked up still gets answered."
                 >
                   <Switch
+                    aria-label="Stop once a person takes over"
                     checked={config.pauseOnAgent}
                     onCheckedChange={(v) => void save({ pauseOnAgent: v })}
                   />
@@ -273,6 +276,7 @@ export function AiFallbackBanner() {
                 <div className="flex w-full flex-col gap-1 border-t border-slate-200/70 pt-3">
                   <div className="flex items-center gap-2 text-[11.5px] text-slate-700">
                     <Switch
+                      aria-label="Close quiet chats automatically"
                       checked={config.idleClose}
                       onCheckedChange={(v) => void save({ idleClose: v })}
                     />

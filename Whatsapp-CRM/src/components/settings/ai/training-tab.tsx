@@ -74,12 +74,12 @@ type AddKind = 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet' | '
 
 const SOURCE_CARDS: Array<{ kind: AddKind; label: string; blurb: string; Icon: typeof FileText; tint: string }> = [
   { kind: 'document', label: 'Documents', blurb: 'Upload files, PDFs, policies, etc.', Icon: FileText, tint: 'bg-[#EEF0FF] text-[#4A5CE8]' },
-  { kind: 'qa', label: 'Q&A Pairs', blurb: 'Add common questions and answers.', Icon: MessageSquare, tint: 'bg-emerald-50 text-emerald-600' },
+  { kind: 'qa', label: 'Q&A Pairs', blurb: 'Add common questions and answers.', Icon: MessageSquare, tint: 'bg-emerald-50 text-emerald-700' },
   { kind: 'website', label: 'Website', blurb: 'Sync from your website URLs.', Icon: Link2, tint: 'bg-violet-50 text-violet-600' },
-  { kind: 'text', label: 'Text / Notes', blurb: 'Add custom instructions and context.', Icon: StickyNote, tint: 'bg-amber-50 text-amber-600' },
-  { kind: 'database', label: 'Database', blurb: 'Connect to your data (optional).', Icon: Database, tint: 'bg-rose-50 text-rose-600' },
-  { kind: 'sheet', label: 'Google Sheet', blurb: 'Keep the sheet; the bot re-reads it.', Icon: Sheet, tint: 'bg-sky-50 text-sky-600' },
-  { kind: 'chatbot', label: 'Chatbot', blurb: 'Let the assistant answer from a bot you built.', Icon: Bot, tint: 'bg-teal-50 text-teal-600' },
+  { kind: 'text', label: 'Text / Notes', blurb: 'Add custom instructions and context.', Icon: StickyNote, tint: 'bg-amber-50 text-amber-700' },
+  { kind: 'database', label: 'Database', blurb: 'Connect to your data (optional).', Icon: Database, tint: 'bg-rose-50 text-rose-700' },
+  { kind: 'sheet', label: 'Google Sheet', blurb: 'Keep the sheet; the bot re-reads it.', Icon: Sheet, tint: 'bg-sky-50 text-sky-700' },
+  { kind: 'chatbot', label: 'Chatbot', blurb: 'Let the assistant answer from a bot you built.', Icon: Bot, tint: 'bg-teal-50 text-teal-700' },
 ];
 
 const KIND_LABEL: Record<string, string> = {

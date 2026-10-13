@@ -154,7 +154,7 @@ export function CallbackAlert() {
         >
           <div className="flex items-start gap-2.5">
             <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-amber-50">
-              <PhoneCall className="h-4 w-4 text-amber-600" />
+              <PhoneCall className="h-4 w-4 text-amber-700" />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13.5px] font-semibold text-slate-800">

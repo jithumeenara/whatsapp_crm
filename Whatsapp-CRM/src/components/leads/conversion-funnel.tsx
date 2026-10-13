@@ -151,7 +151,7 @@ export function ConversionFunnel() {
         <>
           {worst && worst.dropFromPrevious > 0 && (
             <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-              <TrendingDown className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <TrendingDown className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
               <p className="text-[12.5px] leading-relaxed text-amber-900">
                 Most are lost at <strong>{worst.label.toLowerCase()}</strong> —{' '}
                 {worst.dropFromPrevious} of them never got that far.
@@ -239,7 +239,7 @@ export function ConversionFunnel() {
                     <span
                       className={cn(
                         'text-right text-[11.5px] tabular-nums',
-                        row.medianDaysUntouched >= 3 ? 'font-medium text-rose-600' : 'text-slate-400',
+                        row.medianDaysUntouched >= 3 ? 'font-medium text-rose-700' : 'text-slate-400',
                       )}
                     >
                       {row.medianDaysUntouched}d
@@ -278,7 +278,7 @@ export function ConversionFunnel() {
                       <span
                         className={cn(
                           'text-right text-[12px] font-semibold tabular-nums',
-                          row.rate >= 20 ? 'text-emerald-600' : 'text-slate-400',
+                          row.rate >= 20 ? 'text-emerald-700' : 'text-slate-400',
                         )}
                       >
                         {row.rate}%

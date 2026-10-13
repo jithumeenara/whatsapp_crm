@@ -625,7 +625,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 ) : (
                   <div className="flex flex-col items-center gap-3">
                     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
-                      <FileSpreadsheet className="h-6 w-6 text-emerald-600" />
+                      <FileSpreadsheet className="h-6 w-6 text-emerald-700" />
                     </div>
                     <div>
                       <p className="text-[14px] font-semibold text-slate-700">Drop your Excel file here</p>
@@ -674,7 +674,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
             <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-700" />
                   <span className="text-[13px] font-semibold text-slate-700">{excelFileName}</span>
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
                     {excelContacts.length} contacts
@@ -757,10 +757,10 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
               {/* Summary */}
               <div className={cn('grid gap-3', unknownCount > 0 ? 'grid-cols-3' : 'grid-cols-2')}>
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <CheckCircle2 className="h-5 w-5 text-emerald-700 shrink-0" />
                   <div>
                     <p className="text-[15px] font-bold text-emerald-800">{validCount}</p>
-                    <p className="text-[11px] text-emerald-600">On WhatsApp</p>
+                    <p className="text-[11px] text-emerald-700">On WhatsApp</p>
                   </div>
                 </div>
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 flex items-center gap-3">
@@ -786,7 +786,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                     type="checkbox"
                     checked={includeUnknown}
                     onChange={(e) => toggleIncludeUnknown(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-300 text-amber-600 focus:ring-amber-400"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-amber-300 text-amber-700 focus:ring-amber-400"
                   />
                   <span className="text-[12.5px] text-amber-800 leading-relaxed">
                     Also send to the <b>{unknownCount}</b> number{unknownCount !== 1 ? 's' : ''} we couldn&apos;t confirm either way — Meta&apos;s WhatsApp check didn&apos;t return a result for these, so they&apos;re excluded by default. They may or may not actually be on WhatsApp.
@@ -1065,7 +1065,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       )}>
         <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
           isValid ? 'bg-emerald-100' : 'bg-slate-100')}>
-          <Users className={cn('h-4 w-4', isValid ? 'text-emerald-600' : 'text-slate-400')} />
+          <Users className={cn('h-4 w-4', isValid ? 'text-emerald-700' : 'text-slate-400')} />
         </div>
         <div>
           <p className={cn('text-[13px] font-semibold', isValid ? 'text-emerald-800' : 'text-slate-600')}>

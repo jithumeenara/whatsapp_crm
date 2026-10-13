@@ -59,9 +59,9 @@ const SCORE_ACTIVE: Record<string, string> = {
   cold: "bg-sky-500 text-white border-sky-500",
 }
 const SCORE_INACTIVE: Record<string, string> = {
-  hot: "bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100",
-  warm: "bg-amber-50 text-amber-600 border-amber-100 hover:bg-amber-100",
-  cold: "bg-sky-50 text-sky-600 border-sky-100 hover:bg-sky-100",
+  hot: "bg-rose-50 text-rose-700 border-rose-100 hover:bg-rose-100",
+  warm: "bg-amber-50 text-amber-700 border-amber-100 hover:bg-amber-100",
+  cold: "bg-sky-50 text-sky-700 border-sky-100 hover:bg-sky-100",
 }
 
 const NOT_CONNECTED_REASONS = [
@@ -605,7 +605,7 @@ export default function LeadDetailPage() {
         />
 
         <button onClick={() => setCloseDialogOpen(true)}
-          className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-rose-50 text-rose-600 text-[12px] font-semibold hover:bg-rose-100 shrink-0">
+          className="flex items-center gap-1.5 h-8 px-3.5 rounded-xl bg-rose-50 text-rose-700 text-[12px] font-semibold hover:bg-rose-100 shrink-0">
           Close Lead
         </button>
 
@@ -763,7 +763,7 @@ export default function LeadDetailPage() {
                                 <Trash2 className="h-3 w-3" />
                               </button>
                             </div>
-                            <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-amber-600">
+                            <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-amber-700">
                               {note.created_by_name && <span className="font-semibold text-amber-700">{note.created_by_name}</span>}
                               {note.created_by_role && (
                                 <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-700">
@@ -813,7 +813,7 @@ export default function LeadDetailPage() {
                 )}>
                   <input autoComplete="off" type="radio" name="call-mode" checked={callMode === "not_connected"}
                     onChange={() => setCallMode("not_connected")} className="accent-rose-500" />
-                  <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-600" : "text-slate-500")}>Call Not Connected</span>
+                  <span className={cn("text-[12.5px] font-bold", callMode === "not_connected" ? "text-rose-700" : "text-slate-500")}>Call Not Connected</span>
                 </label>
               </div>
 
@@ -834,7 +834,7 @@ export default function LeadDetailPage() {
                 </div>
               ) : (
                 <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 space-y-2.5">
-                  <p className="flex items-center gap-2 text-[13px] font-bold text-rose-600">
+                  <p className="flex items-center gap-2 text-[13px] font-bold text-rose-700">
                     <PhoneOff className="h-4 w-4" /> Call Not Connected
                   </p>
                   <select value={notConnectedChoice} onChange={(e) => setNotConnectedChoice(e.target.value)}
@@ -961,11 +961,11 @@ export default function LeadDetailPage() {
 
             {sessionExpired && (
               <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-amber-700">
                   24-hour session expired. Use a template to re-engage.
                 </p>
                 <button type="button" onClick={() => setTemplatePickerOpen(true)}
-                  className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-amber-600 hover:bg-amber-500/10 hover:text-amber-700">
+                  className="flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-amber-700 hover:bg-amber-500/10 hover:text-amber-800">
                   <LayoutTemplate className="h-3 w-3" />
                   Templates
                 </button>

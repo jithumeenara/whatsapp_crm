@@ -133,7 +133,7 @@ function DealCard({
                 <Edit2 className="h-3 w-3" /> Edit
               </button>
               <button onClick={() => { setMenuOpen(false); onDelete(deal.id) }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-rose-600 hover:bg-rose-50">
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-rose-700 hover:bg-rose-50">
                 <Trash2 className="h-3 w-3" /> Delete
               </button>
             </div>
@@ -142,7 +142,7 @@ function DealCard({
       </div>
 
       {deal.value > 0 && (
-        <div className="mt-1.5 flex items-center gap-1 text-[12px] font-semibold text-emerald-600">
+        <div className="mt-1.5 flex items-center gap-1 text-[12px] font-semibold text-emerald-700">
           {formatCurrency(deal.value, deal.currency)}
         </div>
       )}
@@ -249,7 +249,7 @@ function StageColumn({
               </button>
               {stage.stage_type === "open" && (
                 <button onClick={() => { setMenuOpen(false); onDeleteStage(stage) }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-rose-600 hover:bg-rose-50">
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-[12px] text-rose-700 hover:bg-rose-50">
                   <Trash2 className="h-3 w-3" /> Delete Stage
                 </button>
               )}
@@ -865,9 +865,11 @@ export default function PipelinesPage() {
   )
 
   return (
-    <div className="flex h-full bg-[#F4F6FA]">
+    // Phones: the list sits above the board (short, scrollable) instead of
+    // taking half the screen beside it.
+    <div className="flex h-full flex-col bg-[#F4F6FA] md:flex-row">
       {/* ── Left Sidebar: Pipeline list ── */}
-      <div className="flex w-[220px] shrink-0 flex-col border-r border-slate-200 bg-white">
+      <div className="flex max-h-48 w-full shrink-0 flex-col border-b border-slate-200 bg-white md:max-h-none md:w-[220px] md:border-b-0 md:border-r">
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <span className="text-[12px] font-bold uppercase tracking-widest text-slate-400">Pipelines</span>
           <button onClick={() => setShowNewPipeline(true)}
@@ -902,7 +904,7 @@ export default function PipelinesPage() {
                       className="flex-1 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
                     />
                     <button onClick={() => handleRenamePipeline(p.id, renamePipelineName)}
-                      className="flex h-5 w-5 items-center justify-center rounded text-emerald-600 hover:bg-emerald-50" aria-label="Confirm">
+                      className="flex h-5 w-5 items-center justify-center rounded text-emerald-700 hover:bg-emerald-50" aria-label="Confirm">
                       <Check className="h-3 w-3" />
                     </button>
                     <button onClick={() => setRenamingPipelineId(null)}
@@ -974,12 +976,12 @@ export default function PipelinesPage() {
         ) : (
           <>
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3 shrink-0">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 shrink-0 sm:px-6">
+              <div className="flex min-w-0 items-center gap-3">
                 <Kanban className="h-5 w-5 text-indigo-600" />
                 <div>
                   <h1 className="text-[15px] font-bold text-slate-900">{activePipeline.name}</h1>
-                  <div className="flex items-center gap-3 text-[12px] text-slate-500">
+                  <div className="flex flex-wrap items-center gap-x-3 text-[12px] text-slate-500">
                     <span className="flex items-center gap-1"><CheckCircle2 className="h-3 w-3 text-emerald-500" />{openCount} open deals</span>
                     {totalValue > 0 && <span className="flex items-center gap-1"><TrendingUp className="h-3 w-3 text-indigo-500" />{formatCurrency(totalValue, defaultCurrency)} pipeline value</span>}
                   </div>

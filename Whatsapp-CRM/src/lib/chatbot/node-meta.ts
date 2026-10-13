@@ -219,7 +219,7 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     label: 'CRM Action',
     description: 'Create a lead, add to segment, create a follow-up, or add a task for this contact',
     icon: Briefcase,
-    color: 'text-emerald-600',
+    color: 'text-emerald-700',
     bg: 'bg-emerald-50',
     group: 'CRM Actions',
   },
@@ -243,7 +243,7 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     label: 'Link Chatbot',
     description: 'Jump to another chatbot template',
     icon: ExternalLink,
-    color: 'text-sky-600',
+    color: 'text-sky-700',
     bg: 'bg-sky-50',
     group: 'Control',
   },
@@ -267,7 +267,7 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     label: 'Send Template',
     description: 'Send a pre-approved WhatsApp message template',
     icon: FileText,
-    color: 'text-amber-600',
+    color: 'text-amber-700',
     bg: 'bg-amber-50',
     group: 'Messaging',
   },
@@ -291,7 +291,7 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     label: 'Send to Number',
     description: 'Send a WhatsApp message to a specific phone number (admin notification)',
     icon: PhoneCall,
-    color: 'text-green-600',
+    color: 'text-green-700',
     bg: 'bg-green-50',
     group: 'Messaging',
   },
@@ -299,7 +299,7 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     label: 'Send Catalog',
     description: 'Send the connected catalog, one product, or a curated pick of products',
     icon: ShoppingBag,
-    color: 'text-sky-600',
+    color: 'text-sky-700',
     bg: 'bg-sky-50',
     group: 'Messaging',
   },
@@ -327,12 +327,12 @@ export const PALETTE_GROUPS: PaletteGroup[] = [
 ]
 
 export const PALETTE_GROUP_COLORS: Record<PaletteGroup, string> = {
-  Messaging:           'text-sky-600',
+  Messaging:           'text-sky-700',
   Interactive:         'text-primary',
   Logic:               'text-fuchsia-600',
   'AI & Integrations': 'text-violet-600',
   'CRM Actions':       'text-blue-600',
-  Control:             'text-emerald-600',
+  Control:             'text-emerald-700',
 }
 
 /** All node types that can be dragged from the palette (excludes 'start'). */

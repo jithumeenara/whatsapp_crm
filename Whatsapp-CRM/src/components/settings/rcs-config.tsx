@@ -188,13 +188,13 @@ export function RcsConfig() {
         isConnected ? 'bg-emerald-50 border-emerald-200' : resetReason === 'token_corrupted' ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'
       )}>
         <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', isConnected ? 'bg-emerald-100' : 'bg-slate-200')}>
-          {isConnected ? <Wifi className="h-5 w-5 text-emerald-600" /> : <WifiOff className="h-5 w-5 text-slate-500" />}
+          {isConnected ? <Wifi className="h-5 w-5 text-emerald-700" /> : <WifiOff className="h-5 w-5 text-slate-500" />}
         </div>
         <div className="flex-1 min-w-0">
           <p className={cn('text-[14px] font-semibold', isConnected ? 'text-emerald-800' : 'text-slate-700')}>
             {isConnected ? 'RCS Connected (Twilio)' : 'Not Connected'}
           </p>
-          <p className={cn('text-[12px] mt-0.5', isConnected ? 'text-emerald-600' : 'text-slate-500')}>
+          <p className={cn('text-[12px] mt-0.5', isConnected ? 'text-emerald-700' : 'text-slate-500')}>
             {statusMessage || 'Configure your Twilio credentials below to get started.'}
           </p>
         </div>
@@ -285,7 +285,7 @@ export function RcsConfig() {
             </div>
             <div className="rounded-lg border border-amber-200 bg-white p-3 space-y-2">
               <div className="flex items-center gap-1.5">
-                <Terminal className="h-3.5 w-3.5 text-amber-600" />
+                <Terminal className="h-3.5 w-3.5 text-amber-700" />
                 <p className="text-[12px] font-semibold text-amber-700">Quick setup with ngrok</p>
               </div>
               <ol className="space-y-1.5 text-[12px] text-slate-700">
@@ -303,7 +303,7 @@ export function RcsConfig() {
           <Label className="text-[13px] font-medium text-slate-700 flex items-center gap-1.5">
             <Globe className="h-3.5 w-3.5 text-slate-400" />
             Webhook URL
-            {isLocalhost && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-600">Not public</span>}
+            {isLocalhost && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Not public</span>}
           </Label>
           <div className="flex gap-2">
             <Input readOnly value={webhookUrl} className="h-9 text-[13px] bg-slate-50 border-slate-200 font-mono text-slate-600" />
@@ -312,7 +312,7 @@ export function RcsConfig() {
             </Button>
           </div>
           {!isLocalhost && (
-            <p className="text-[11px] text-emerald-600 flex items-center gap-1.5">
+            <p className="text-[11px] text-emerald-700 flex items-center gap-1.5">
               <CheckCircle2 className="h-3 w-3 shrink-0" />Public HTTPS URL — Twilio can reach it.
             </p>
           )}

@@ -370,7 +370,7 @@ export function CompanyProfilePanel() {
 
         <div className="flex items-center justify-between gap-3">
           {saved ? (
-            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-600">
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-emerald-700">
               <CheckCircle2 className="h-4 w-4" />
               Saved
             </span>

@@ -462,7 +462,7 @@ export function TestTab(props: TestTabProps) {
       </AiCard>
 
       {/* ── Conversation + working column ───────────────────────── */}
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_308px]">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_308px]">
         {/* Chat */}
         <AiCard className="flex min-h-[560px] flex-col overflow-hidden">
           <div
@@ -572,7 +572,7 @@ export function TestTab(props: TestTabProps) {
                 <button
                   type="button"
                   onClick={() => { setMessages([]); setError(''); window.speechSynthesis?.cancel(); }}
-                  className="ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11.5px] font-medium text-rose-600 transition-colors hover:bg-rose-50"
+                  className="ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[11.5px] font-medium text-rose-700 transition-colors hover:bg-rose-50"
                 >
                   <Trash2 className="h-3 w-3" />
                   Clear chat
@@ -638,7 +638,7 @@ export function TestTab(props: TestTabProps) {
           <AiCard className="p-3.5">
             <div className="mb-2.5 flex items-center gap-2.5">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-emerald-50">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                <CheckCircle2 className="h-4 w-4 text-emerald-700" />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block text-[13px] font-semibold text-slate-900">AI Status</span>
@@ -888,7 +888,7 @@ function BotBubble(props: {
               <ThumbsDown className="h-3.5 w-3.5" />
             </IconAction>
             <IconAction label={props.copied ? 'Copied' : 'Copy reply'} onClick={props.onCopy}>
-              {props.copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+              {props.copied ? <Check className="h-3.5 w-3.5 text-emerald-700" /> : <Copy className="h-3.5 w-3.5" />}
             </IconAction>
             {props.speechSupported && (
               <IconAction label={props.speaking ? 'Stop reading' : 'Read out loud'} onClick={props.onSpeak} active={props.speaking}>
@@ -964,7 +964,7 @@ function IconAction({
 }) {
   const tone = active
     ? danger
-      ? 'bg-rose-50 text-rose-600'
+      ? 'bg-rose-50 text-rose-700'
       : 'bg-emerald-50 text-emerald-700'
     : 'text-slate-400 hover:bg-[#F5F6FA] hover:text-slate-600';
   return (
@@ -991,7 +991,7 @@ function StatTile({
 }) {
   return (
     <div className={`rounded-xl p-2 text-center ring-1 ${warn ? 'bg-amber-50/60 ring-amber-500/20' : 'bg-[#F7F8FC] ring-slate-200/70'}`}>
-      <span className={`mx-auto mb-1 grid h-6 w-6 place-items-center rounded-lg ${warn ? 'text-amber-600' : 'text-slate-400'}`}>
+      <span className={`mx-auto mb-1 grid h-6 w-6 place-items-center rounded-lg ${warn ? 'text-amber-700' : 'text-slate-400'}`}>
         {icon}
       </span>
       <p className={`truncate text-[13px] font-semibold tabular-nums ${warn ? 'text-amber-800' : 'text-slate-800'}`} title={value}>
@@ -1005,7 +1005,7 @@ function StatTile({
 
 function SummaryTile({ value, label, tone = 'plain' }: { value: string; label: string; tone?: 'plain' | 'good' | 'bad' }) {
   const colour =
-    tone === 'good' ? 'text-emerald-700' : tone === 'bad' ? 'text-rose-600' : 'text-slate-800';
+    tone === 'good' ? 'text-emerald-700' : tone === 'bad' ? 'text-rose-700' : 'text-slate-800';
   return (
     <div className="rounded-xl bg-[#F7F8FC] p-2 text-center ring-1 ring-slate-200/70">
       <p className={`text-[15px] font-semibold tabular-nums ${colour}`}>{value}</p>

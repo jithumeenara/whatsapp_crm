@@ -260,7 +260,7 @@ export function QuickLinksPanel() {
                     persistLinks([...chosen, v]);
                   }}
                 >
-                  <SelectTrigger className="h-10 w-full rounded-xl border-dashed border-slate-300 bg-white text-[13px] text-slate-500">
+                  <SelectTrigger aria-label="Add a quick link" className="h-10 w-full rounded-xl border-dashed border-slate-300 bg-white text-[13px] text-slate-500">
                     <span className="flex items-center gap-2">
                       <Plus className="h-3.5 w-3.5" />
                       <SelectValue placeholder="Add a link" />

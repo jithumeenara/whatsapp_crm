@@ -47,7 +47,7 @@ export default function ForgotPasswordV2() {
           {sent ? (
             <div className="flex flex-col items-center text-center gap-3 py-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-                <CheckCircle className="h-6 w-6 text-emerald-600" />
+                <CheckCircle className="h-6 w-6 text-emerald-700" />
               </div>
               <p className="text-[14px] font-semibold text-slate-900">Check your inbox</p>
               <p className="text-[13px] text-slate-500">A reset link was sent to <strong>{email}</strong></p>

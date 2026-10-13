@@ -106,7 +106,7 @@ export function CallActionPanel({ leadId, currentStatus, onAction }: CallActionP
 
       {/* Call Connected */}
       <div className="space-y-2">
-        <div className="flex items-center gap-2 text-sm font-medium text-emerald-600">
+        <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
           <Phone className="size-4" />
           Call Connected
         </div>

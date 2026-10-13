@@ -59,12 +59,12 @@ const CATEGORY_OF_GROUP: Record<string, Category> = {
 }
 
 const CATEGORY: Record<Category, { label: string; icon: React.ComponentType<{ className?: string }>; tile: string }> = {
-  leads: { label: 'Leads & sales', icon: Target, tile: 'bg-emerald-50 text-emerald-600' },
+  leads: { label: 'Leads & sales', icon: Target, tile: 'bg-emerald-50 text-emerald-700' },
   conversations: { label: 'Conversations', icon: MessageSquare, tile: 'bg-indigo-50 text-indigo-600' },
-  calls: { label: 'Calls', icon: Phone, tile: 'bg-sky-50 text-sky-600' },
+  calls: { label: 'Calls', icon: Phone, tile: 'bg-sky-50 text-sky-700' },
   tasks: { label: 'Follow-ups', icon: CheckSquare, tile: 'bg-violet-50 text-violet-600' },
-  payments: { label: 'Payments', icon: IndianRupee, tile: 'bg-amber-50 text-amber-600' },
-  data: { label: 'Your data', icon: Database, tile: 'bg-teal-50 text-teal-600' },
+  payments: { label: 'Payments', icon: IndianRupee, tile: 'bg-amber-50 text-amber-700' },
+  data: { label: 'Your data', icon: Database, tile: 'bg-teal-50 text-teal-700' },
 }
 
 const MOMENT_HELP: Record<string, string> = {
@@ -213,7 +213,7 @@ export function ReportsWorkspace() {
         <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-800">{catalogError}</div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[288px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[288px_minmax(0,1fr)]">
         <Library catalog={catalog} activeId={activeId} onOpen={open} onChanged={loadCatalog} />
 
         <section aria-label="Report" className="min-w-0 space-y-5">
@@ -415,8 +415,8 @@ function Header({ spec, hasResult, onPresent, onSaved, defaultName }: {
           </button>
           {exportOpen && (
             <div className="absolute right-0 top-full z-50 mt-2 w-64 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-              <ExportItem icon={<FileSpreadsheet className="h-4 w-4 text-emerald-600" />} title="Excel" hint="Summary and data sheets" onClick={() => download('xlsx')} />
-              <ExportItem icon={<FileText className="h-4 w-4 text-sky-600" />} title="CSV" hint="Plain data for any tool" onClick={() => download('csv')} />
+              <ExportItem icon={<FileSpreadsheet className="h-4 w-4 text-emerald-700" />} title="Excel" hint="Summary and data sheets" onClick={() => download('xlsx')} />
+              <ExportItem icon={<FileText className="h-4 w-4 text-sky-700" />} title="CSV" hint="Plain data for any tool" onClick={() => download('csv')} />
               <ExportItem icon={<Printer className="h-4 w-4 text-slate-600" />} title="Print or save as PDF" hint="Just the report, on A4" onClick={() => { setExportOpen(false); setTimeout(() => window.print(), 50) }} />
             </div>
           )}

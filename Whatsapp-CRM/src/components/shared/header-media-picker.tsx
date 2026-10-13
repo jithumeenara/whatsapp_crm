@@ -108,7 +108,7 @@ export function HeaderMediaPicker({
       <DialogContent className="gap-0 overflow-hidden rounded-3xl bg-white p-0 sm:max-w-md [&>*]:min-w-0">
         <DialogHeader className={cn('bg-gradient-to-br px-6 pb-5 pt-6', required ? 'from-amber-50 to-white' : 'from-indigo-50 to-white')}>
           <div className={cn('mb-1 flex h-11 w-11 items-center justify-center rounded-2xl', required ? 'bg-amber-100' : 'bg-indigo-100')}>
-            <MediaIcon className={cn('h-5 w-5', required ? 'text-amber-600' : 'text-indigo-600')} />
+            <MediaIcon className={cn('h-5 w-5', required ? 'text-amber-700' : 'text-indigo-600')} />
           </div>
           <DialogTitle className="text-[17px] font-bold text-slate-800">
             {mediaType === 'image' ? 'Header Image' : mediaType === 'video' ? 'Header Video' : 'Header Document'}
@@ -141,7 +141,7 @@ export function HeaderMediaPicker({
               )}
               <p className="min-w-0 flex-1 truncate text-[12.5px] text-slate-600" title={headerMediaUrl.split('/').pop()}>{headerMediaUrl.split('/').pop()}</p>
               <button type="button" onClick={() => onHeaderMediaChange('')}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label="Close">
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-700" aria-label="Close">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -162,7 +162,7 @@ export function HeaderMediaPicker({
               {mediaSource === 'upload' ? (
                 <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading}
                   className={cn('flex h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed bg-white text-[12.5px] font-medium disabled:opacity-50',
-                    required ? 'border-amber-300 text-amber-600 hover:border-amber-400 hover:bg-amber-50/50' : 'border-indigo-200 text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50')}>
+                    required ? 'border-amber-300 text-amber-700 hover:border-amber-400 hover:bg-amber-50/50' : 'border-indigo-200 text-indigo-500 hover:border-indigo-300 hover:bg-indigo-50/50')}>
                   {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
                   {uploading ? 'Uploading…' : 'Click to upload'}
                 </button>

@@ -192,7 +192,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
           <span
             className={[
               'grid h-9 w-9 place-items-center rounded-full ring-1 transition-colors',
-              live ? 'bg-emerald-50 text-emerald-600 ring-emerald-600/15' : 'bg-white/80 text-slate-400 ring-slate-900/5',
+              live ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/15' : 'bg-white/80 text-slate-400 ring-slate-900/5',
             ].join(' ')}
             aria-hidden="true"
           >
@@ -304,7 +304,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
               type="button"
               onClick={props.onClose}
               aria-label="Discard this conversation"
-              className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-500 ring-1 ring-slate-900/5 transition-colors hover:text-rose-600"
+              className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-500 ring-1 ring-slate-900/5 transition-colors hover:text-rose-700"
             >
               <X className="h-4 w-4" />
             </button>
@@ -320,7 +320,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
               disabled={props.turns.length === 0}
               aria-label="Keep this conversation in the chat"
               title="Add the transcript to the chat"
-              className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-500 ring-1 ring-slate-900/5 transition-colors hover:text-emerald-600 disabled:opacity-40"
+              className="grid h-11 w-11 place-items-center rounded-full bg-white text-slate-500 ring-1 ring-slate-900/5 transition-colors hover:text-emerald-700 disabled:opacity-40"
             >
               <Check className="h-4 w-4" />
             </button>

@@ -386,7 +386,7 @@ export function PublicFormPanel({
                   <button
                     type="button"
                     onClick={() => setConfirmNewLink(true)}
-                    className="flex items-center gap-1 text-left text-slate-500 hover:text-rose-600"
+                    className="flex items-center gap-1 text-left text-slate-500 hover:text-rose-700"
                   >
                     <RefreshCw className="h-3 w-3" /> Replace the link
                   </button>
@@ -666,7 +666,7 @@ export function PublicFormPanel({
           )}
 
           <p className="flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-[12px] leading-relaxed text-slate-500">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
             The form only adds rows — it never shows anyone else&apos;s answers. Bots are kept out by a hidden trap
             field, a minimum fill time and a limit per connection, with no third-party CAPTCHA.
           </p>

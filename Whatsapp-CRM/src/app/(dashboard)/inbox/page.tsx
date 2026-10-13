@@ -262,9 +262,9 @@ function InboxV2Content() {
       {/* WhatsApp disconnected banner */}
       {whatsappConnected === false && (
         <div className="flex shrink-0 items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2">
-          <WifiOff className="h-3.5 w-3.5 text-amber-600" />
+          <WifiOff className="h-3.5 w-3.5 text-amber-700" />
           <p className="text-[12px] text-amber-700 font-medium">
-            WhatsAppÂ® is not connected.{" "}
+            WhatsApp® is not connected.{" "}
             <a href="/settings?tab=whatsapp" className="underline">Connect in Settings</a>
           </p>
         </div>

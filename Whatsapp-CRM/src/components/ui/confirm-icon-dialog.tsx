@@ -8,9 +8,9 @@ import type { ReactNode } from 'react';
 type Tone = 'danger' | 'success' | 'warning' | 'info';
 
 const TONE: Record<Tone, { iconBg: string; iconColor: string; button: string }> = {
-  danger: { iconBg: 'bg-rose-50', iconColor: 'text-rose-600', button: 'bg-rose-600 hover:bg-rose-700' },
-  success: { iconBg: 'bg-emerald-50', iconColor: 'text-emerald-600', button: 'bg-emerald-600 hover:bg-emerald-700' },
-  warning: { iconBg: 'bg-amber-50', iconColor: 'text-amber-600', button: 'bg-amber-600 hover:bg-amber-700' },
+  danger: { iconBg: 'bg-rose-50', iconColor: 'text-rose-700', button: 'bg-rose-600 hover:bg-rose-700' },
+  success: { iconBg: 'bg-emerald-50', iconColor: 'text-emerald-700', button: 'bg-emerald-600 hover:bg-emerald-700' },
+  warning: { iconBg: 'bg-amber-50', iconColor: 'text-amber-700', button: 'bg-amber-600 hover:bg-amber-700' },
   info: { iconBg: 'bg-indigo-50', iconColor: 'text-[#4A5CE8]', button: 'bg-[#4A5CE8] hover:bg-[#3D4FD6]' },
 };
 

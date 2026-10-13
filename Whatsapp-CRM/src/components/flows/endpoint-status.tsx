@@ -108,7 +108,7 @@ export function EndpointStatus({
     return (
       <span
         title={info.current}
-        className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600"
+        className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
       >
         <Check className="h-3 w-3" /> Endpoint here
       </span>
@@ -119,7 +119,7 @@ export function EndpointStatus({
     <span className="flex flex-wrap items-center gap-1.5">
       <span
         title={`Meta sends this Flow's data requests to ${info.current}`}
-        className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600"
+        className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700"
       >
         <AlertTriangle className="h-3 w-3" /> Endpoint elsewhere
       </span>
@@ -129,7 +129,7 @@ export function EndpointStatus({
         onClick={fix}
         disabled={fixing}
         title={`Change it to ${info.expected}`}
-        className="h-7 gap-1.5 border-amber-500/40 text-xs text-amber-600 hover:bg-amber-500/10"
+        className="h-7 gap-1.5 border-amber-500/40 text-xs text-amber-700 hover:bg-amber-500/10"
       >
         {fixing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
         Point it here

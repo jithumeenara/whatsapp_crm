@@ -157,15 +157,15 @@ export function ImageReadingSetting() {
             several people goes to your team.
           </li>
           <li className="flex items-start gap-1.5">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
             Aadhaar, card and account numbers are hidden except the last four digits, before anything is stored or sent.
           </li>
           <li className="flex items-start gap-1.5">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
             Text inside an image or file is treated as the customer&rsquo;s data, never as instructions to the assistant.
           </li>
           <li className="flex items-start gap-1.5">
-            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
             It describes; it does not diagnose or give medical, legal or financial advice — that goes to your team.
           </li>
           <li className="flex items-start gap-1.5">

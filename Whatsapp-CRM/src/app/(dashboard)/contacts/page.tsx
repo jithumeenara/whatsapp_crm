@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
 import { formatDistanceToNow } from "date-fns"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { readableTextColor } from "@/lib/readable-color"
 
 const PAGE_SIZE = 25
 
@@ -511,7 +512,7 @@ export default function ContactsV2() {
               <button
                 type="button"
                 onClick={() => setBulkDeleteConfirm(true)}
-                className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] font-medium text-rose-600 shadow-sm hover:bg-rose-100 transition-colors"
+                className="flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[13px] font-medium text-rose-700 shadow-sm hover:bg-rose-100 transition-colors"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete {checkedIds.size}
@@ -520,6 +521,7 @@ export default function ContactsV2() {
             <button
               type="button"
               onClick={() => setImportOpen(true)}
+              aria-label="Import"
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
             >
               <Upload className="h-3.5 w-3.5" />
@@ -618,6 +620,8 @@ export default function ContactsV2() {
             <button
               type="button"
               onClick={() => setSortOpen((v) => !v)}
+              aria-label={`Sort: ${SORT_LABELS[sortKey]}`}
+              aria-expanded={sortOpen}
               className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
             >
               <SortAsc className="h-3.5 w-3.5" />
@@ -815,7 +819,7 @@ export default function ContactsV2() {
                         <span
                           key={tag.id}
                           className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
-                          style={{ background: tag.color + "20", color: tag.color }}
+                          style={{ background: tag.color + "20", color: readableTextColor(tag.color) }}
                         >
                           {tag.name}
                         </span>
@@ -888,7 +892,7 @@ export default function ContactsV2() {
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setDeleteId(contact.id); setOpenMenuId(null) }}
-                                className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors"
+                                className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-rose-700 hover:bg-rose-50 transition-colors"
                               >
                                 <Trash2 className="h-3.5 w-3.5" /> Delete
                               </button>
@@ -947,6 +951,7 @@ export default function ContactsV2() {
                 type="button"
                 onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
                 disabled={page >= totalPages - 1}
+                aria-label="Next"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 <ChevronRight className="h-4 w-4" />

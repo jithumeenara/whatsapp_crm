@@ -445,7 +445,7 @@ export function PublicFormView(props: Props) {
             {done ? (
               <div className="flex flex-col items-center py-6 text-center">
                 <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500">
-                  <CheckCircle2 className="h-9 w-9 text-emerald-600" />
+                  <CheckCircle2 className="h-9 w-9 text-emerald-700" />
                 </span>
                 <h2 className="mt-4 text-[20px] font-bold text-slate-900">{t.submitted}</h2>
                 <p className="mt-1.5 max-w-md whitespace-pre-line text-[15px] leading-relaxed text-slate-600">{done.message}</p>
@@ -459,7 +459,7 @@ export function PublicFormView(props: Props) {
                       aria-label={t.reference}
                       className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800"
                     >
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-700" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 )}
@@ -585,7 +585,7 @@ export function PublicFormView(props: Props) {
         )}
 
         <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-[12.5px] text-slate-500">
-          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+          <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
           {t.secure(business)}
         </p>
       </main>

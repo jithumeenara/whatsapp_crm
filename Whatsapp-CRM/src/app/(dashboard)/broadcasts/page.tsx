@@ -157,7 +157,7 @@ export default function BroadcastsV2() {
                             <p className="text-[14px] font-semibold text-slate-900 truncate leading-snug">{b.name}</p>
                             <p className="text-[12px] text-slate-400 truncate mt-0.5">{b.template_name}</p>
                             {b.status === "scheduled" && b.next_send_at && (
-                              <p className="mt-0.5 flex items-center gap-1 text-[11px] text-sky-600">
+                              <p className="mt-0.5 flex items-center gap-1 text-[11px] text-sky-700">
                                 <CalendarClock className="h-3 w-3" />
                                 {new Date(b.next_send_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
                               </p>
@@ -213,12 +213,12 @@ export default function BroadcastsV2() {
                           </span>
                           <span className="flex items-center gap-1 text-slate-500">
                             <CheckCircle2 className="h-3.5 w-3.5 text-teal-300" />
-                            <span className="font-semibold text-teal-600">{b.delivered_count.toLocaleString()}</span>
+                            <span className="font-semibold text-teal-700">{b.delivered_count.toLocaleString()}</span>
                             <span>delivered</span>
                           </span>
                           <span className="flex items-center gap-1 text-slate-500">
                             <Eye className="h-3.5 w-3.5 text-sky-300" />
-                            <span className="font-semibold text-sky-600">{b.read_count.toLocaleString()}</span>
+                            <span className="font-semibold text-sky-700">{b.read_count.toLocaleString()}</span>
                             <span>read</span>
                           </span>
                           {b.replied_count > 0 && (
@@ -231,7 +231,7 @@ export default function BroadcastsV2() {
                           {b.failed_count > 0 && (
                             <span className="flex items-center gap-1 text-slate-500">
                               <XCircle className="h-3.5 w-3.5 text-rose-300" />
-                              <span className="font-semibold text-rose-600">{b.failed_count.toLocaleString()}</span>
+                              <span className="font-semibold text-rose-700">{b.failed_count.toLocaleString()}</span>
                               <span>failed</span>
                             </span>
                           )}

@@ -221,7 +221,7 @@ export function CatalogTab() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
           <ShoppingBag className="h-5 w-5" />
         </div>
         <div>
@@ -368,7 +368,7 @@ export function CatalogTab() {
               </Button>
             </div>
             {message && !message.startsWith('Connected') && (
-              <p className="mb-2 text-[12px] text-amber-600">{message}</p>
+              <p className="mb-2 text-[12px] text-amber-700">{message}</p>
             )}
             <div className="divide-y divide-slate-100">
               <InfoRow label="Catalog ID" value={config.catalog_id} mono />

@@ -43,7 +43,7 @@ const TONE: Record<ButtonTone, string> = {
   outline:
     'bg-white text-slate-700 ring-1 ring-slate-200/90 shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:bg-slate-50 hover:ring-slate-300',
   ghost: 'text-slate-500 hover:bg-slate-100/80 hover:text-slate-700',
-  danger: 'bg-rose-50 text-rose-600 ring-1 ring-rose-200/70 hover:bg-rose-100',
+  danger: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200/70 hover:bg-rose-100',
 };
 
 const SIZE: Record<ButtonSize, string> = {
@@ -135,10 +135,10 @@ export function AiIconTile({
 }) {
   const tints: Record<string, string> = {
     indigo: 'bg-[#EEF0FF] text-[#4A5CE8] ring-[#5B6CF9]/10',
-    emerald: 'bg-emerald-50 text-emerald-600 ring-emerald-500/10',
-    amber: 'bg-amber-50 text-amber-600 ring-amber-500/10',
+    emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-500/10',
+    amber: 'bg-amber-50 text-amber-700 ring-amber-500/10',
     violet: 'bg-violet-50 text-violet-600 ring-violet-500/10',
-    rose: 'bg-rose-50 text-rose-600 ring-rose-500/10',
+    rose: 'bg-rose-50 text-rose-700 ring-rose-500/10',
     slate: 'bg-slate-100 text-slate-500 ring-slate-400/10',
   };
   const sizes = { sm: 'h-8 w-8 rounded-[10px]', md: 'h-9 w-9 rounded-xl', lg: 'h-11 w-11 rounded-2xl' };
@@ -243,7 +243,7 @@ export function AiMenuItem({
         'flex cursor-default select-none items-start gap-2.5 rounded-xl px-2.5 py-2 outline-none',
         'transition-colors duration-100',
         tone === 'danger'
-          ? 'text-rose-600 data-highlighted:bg-rose-50'
+          ? 'text-rose-700 data-highlighted:bg-rose-50'
           : 'text-slate-700 data-highlighted:bg-slate-100/90',
         className,
       )}
@@ -710,7 +710,7 @@ export function AiPromptEditor({
             <span className="text-[11.5px] tabular-nums text-slate-400">
               {draft.split('\n').length.toLocaleString()} lines · {draft.length.toLocaleString()} characters
               {required && !draft.trim() && (
-                <span className="ml-2 font-medium text-rose-600">Required — this cannot be empty.</span>
+                <span className="ml-2 font-medium text-rose-700">Required — this cannot be empty.</span>
               )}
             </span>
             <span className="flex items-center gap-2">

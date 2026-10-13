@@ -36,9 +36,9 @@ interface Step4Props {
 const AUDIENCE_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
   all:          { label: 'All WhatsApp Contacts', icon: Users,     color: 'text-indigo-600 bg-indigo-50' },
   tags:         { label: 'Filtered by Tags',       icon: Tag,       color: 'text-violet-600 bg-violet-50' },
-  contacts:     { label: 'Picked Contacts',         icon: CheckCheck, color: 'text-emerald-600 bg-emerald-50' },
-  custom_field: { label: 'Custom Field Filter',    icon: Table2,    color: 'text-sky-600 bg-sky-50' },
-  csv:          { label: 'CSV Upload',              icon: Upload,    color: 'text-amber-600 bg-amber-50' },
+  contacts:     { label: 'Picked Contacts',         icon: CheckCheck, color: 'text-emerald-700 bg-emerald-50' },
+  custom_field: { label: 'Custom Field Filter',    icon: Table2,    color: 'text-sky-700 bg-sky-50' },
+  csv:          { label: 'CSV Upload',              icon: Upload,    color: 'text-amber-700 bg-amber-50' },
 };
 
 function toLocalDateInput(iso: string): string {
@@ -242,7 +242,7 @@ export function Step4ScheduleSend({
               </>
             )}
             {schedule.type === 'once' && !date && (
-              <p className="text-[11px] text-amber-600">Pick a date and time to schedule this broadcast.</p>
+              <p className="text-[11px] text-amber-700">Pick a date and time to schedule this broadcast.</p>
             )}
           </div>
         )}
@@ -362,7 +362,7 @@ export function Step4ScheduleSend({
             </div>
 
             <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
-              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
               <p className="text-[11.5px] text-amber-700">
                 {schedule.type === 'now' ? 'Once sent, this broadcast cannot be recalled or edited.'
                   : schedule.type === 'once' ? 'Once scheduled, this broadcast will send automatically — even if you close this tab.'

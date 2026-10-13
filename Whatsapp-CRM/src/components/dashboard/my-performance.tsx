@@ -77,14 +77,14 @@ export function MyPerformance() {
       label: 'Leads picked',
       value: data?.picked ?? 0,
       icon: Inbox,
-      tint: 'bg-sky-50 text-sky-600',
+      tint: 'bg-sky-50 text-sky-700',
       foot: data ? `${data.leadsWorked} rung` : null,
     },
     {
       label: 'Got through',
       value: data?.reached ?? 0,
       icon: PhoneCall,
-      tint: 'bg-emerald-50 text-emerald-600',
+      tint: 'bg-emerald-50 text-emerald-700',
       foot: data?.reachedPct !== null && data?.reachedPct !== undefined
         ? `${data.reachedPct}% of ${data.attempted} calls`
         : 'No calls yet',
@@ -93,7 +93,7 @@ export function MyPerformance() {
       label: 'No answer',
       value: data?.missed ?? 0,
       icon: PhoneOff,
-      tint: 'bg-amber-50 text-amber-600',
+      tint: 'bg-amber-50 text-amber-700',
       foot: null,
     },
     {

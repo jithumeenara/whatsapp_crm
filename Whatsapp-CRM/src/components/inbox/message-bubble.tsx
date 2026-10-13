@@ -532,11 +532,11 @@ function MediaDocument({ url, label, mimeType }: { url: string; label: string; m
  * single-conversation fetches never set it, since every message in that
  * view already shares the open conversation's one channel. */
 const CHANNEL_TAG: Record<string, { label: string; className: string }> = {
-  whatsapp: { label: "WhatsApp", className: "bg-emerald-50 text-emerald-600" },
+  whatsapp: { label: "WhatsApp", className: "bg-emerald-50 text-emerald-700" },
   instagram: { label: "Instagram", className: "bg-pink-50 text-pink-600" },
   facebook: { label: "Messenger", className: "bg-blue-50 text-blue-600" },
   sms: { label: "SMS", className: "bg-indigo-50 text-indigo-600" },
-  email: { label: "Email", className: "bg-sky-50 text-sky-600" },
+  email: { label: "Email", className: "bg-sky-50 text-sky-700" },
   rcs: { label: "RCS", className: "bg-violet-50 text-violet-600" },
 };
 
@@ -872,7 +872,7 @@ function MessageContent({ message }: { message: Message }) {
     case "payment_order_status":
       return (
         <div className="flex items-center gap-2 text-[13px]">
-          <IndianRupee className="h-4 w-4 shrink-0 text-amber-600" />
+          <IndianRupee className="h-4 w-4 shrink-0 text-amber-700" />
           <span>{message.content_text || "Payment status update"}</span>
         </div>
       );
@@ -1169,7 +1169,7 @@ function SystemNote({ message }: { message: Message }) {
           )}
           aria-expanded={hasMore ? open : undefined}
         >
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
           <span className="min-w-0 flex-1">
             <span className="block text-[12px] font-medium leading-snug text-amber-900" style={WRAP_STYLE}>
               {summary}
@@ -1180,11 +1180,11 @@ function SystemNote({ message }: { message: Message }) {
               </span>
             )}
           </span>
-          <span className="shrink-0 text-[10.5px] tabular-nums text-amber-700/70">{time}</span>
+          <span className="shrink-0 text-[10.5px] tabular-nums text-amber-800">{time}</span>
           {hasMore && (
             <ChevronDown
               className={cn(
-                "mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 transition-transform duration-150",
+                "mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700 transition-transform duration-150",
                 open && "rotate-180",
               )}
             />
@@ -1259,7 +1259,7 @@ export function MessageBubble({
       {(isBot || (isAgent && agentName) || message.channel || message.broadcast_id) && (
         <span className="mb-0.5 flex flex-wrap items-center gap-1.5">
           {isBot && (
-            <span className="flex items-center gap-1 text-[10px] text-teal-600">
+            <span className="flex items-center gap-1 text-[10px] text-teal-700">
               <Bot className="h-3 w-3" />
               Chatbot
             </span>
@@ -1273,7 +1273,7 @@ export function MessageBubble({
             <span
               className={cn(
                 "flex items-center gap-1 text-[10px]",
-                agentName === "You" ? "text-emerald-600" : "text-amber-600",
+                agentName === "You" ? "text-emerald-700" : "text-amber-700",
               )}
             >
               <UserRound className="h-3 w-3" />

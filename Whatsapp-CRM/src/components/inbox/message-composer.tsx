@@ -780,7 +780,7 @@ export function MessageComposer({
                 label="Request payment"
                 onClick={onRequestPayment}
                 disabled={readOnly}
-                tint="text-emerald-600"
+                tint="text-emerald-700"
               >
                 <IndianRupee className="h-4 w-4" />
               </ComposerAction>

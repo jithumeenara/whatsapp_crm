@@ -95,7 +95,7 @@ export function SecurityCard() {
             </div>
             <div className="flex items-center gap-2.5 shrink-0">
               {isEnabled && (
-                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600">
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                   Enabled
                 </span>
               )}

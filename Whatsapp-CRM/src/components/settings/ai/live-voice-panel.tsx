@@ -58,7 +58,7 @@ export function LiveVoicePanel(props: LiveVoicePanelProps) {
           <span
             className={[
               'grid h-8 w-8 shrink-0 place-items-center rounded-xl transition-colors',
-              live ? 'bg-emerald-50 text-emerald-600' : 'bg-[#EEF0FF] text-[#4A5CE8]',
+              live ? 'bg-emerald-50 text-emerald-700' : 'bg-[#EEF0FF] text-[#4A5CE8]',
             ].join(' ')}
           >
             {live ? <Radio className="h-4 w-4" /> : <Mic className="h-4 w-4" />}

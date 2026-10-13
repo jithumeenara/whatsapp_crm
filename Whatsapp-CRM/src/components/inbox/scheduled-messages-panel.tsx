@@ -128,7 +128,7 @@ export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: S
                           </p>
                         )}
                         {sm.status === 'expired' && (
-                          <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-600">
+                          <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-700">
                             <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" /> Never sent — too long overdue
                           </p>
                         )}
@@ -142,7 +142,7 @@ export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: S
                           </button>
                         )}
                         <button type="button" onClick={() => handleDelete(sm.id)} disabled={deletingId === sm.id} title="Delete"
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-rose-600 disabled:opacity-50">
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-rose-700 disabled:opacity-50">
                           {deletingId === sm.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                         </button>
                       </div>

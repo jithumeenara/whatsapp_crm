@@ -76,7 +76,7 @@ export default function SegmentsV2() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-50">
-              <UsersRound className="h-4 w-4 text-teal-600" />
+              <UsersRound className="h-4 w-4 text-teal-700" />
             </div>
             <div>
               <h1 className="text-[15px] font-semibold text-slate-900">Segments & Tags</h1>

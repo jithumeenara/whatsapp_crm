@@ -139,7 +139,7 @@ export function SendOtpDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2.5">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-500/15">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-emerald-700 ring-1 ring-emerald-500/15">
                   <ShieldCheck className="h-4 w-4" />
                 </span>
                 Code sent to {displayName}

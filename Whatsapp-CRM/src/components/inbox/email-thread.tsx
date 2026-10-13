@@ -171,7 +171,7 @@ function EmailCard({
           <EmailAttachments message={message} />
 
           {message.status === "failed" && (
-            <p className="mt-3 flex items-center gap-1.5 text-[12px] text-rose-600">
+            <p className="mt-3 flex items-center gap-1.5 text-[12px] text-rose-700">
               <AlertCircle className="h-3.5 w-3.5" /> Not sent. Check the mailbox connection in Settings and try again.
             </p>
           )}

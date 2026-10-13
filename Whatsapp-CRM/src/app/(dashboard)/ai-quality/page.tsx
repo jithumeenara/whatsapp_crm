@@ -210,7 +210,7 @@ export default function AiQualityPage() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Tile
-              icon={<ShieldCheck className="h-5 w-5 text-emerald-600" />}
+              icon={<ShieldCheck className="h-5 w-5 text-emerald-700" />}
               accent="bg-emerald-50"
               label="Handled without a person"
               value={`${Math.round(s.containment_rate * 100)}%`}
@@ -218,7 +218,7 @@ export default function AiQualityPage() {
               badge={band ?? undefined}
             />
             <Tile
-              icon={<Smile className="h-5 w-5 text-sky-600" />}
+              icon={<Smile className="h-5 w-5 text-sky-700" />}
               accent="bg-sky-50"
               label="Customer satisfaction"
               value={s.csat_average === null ? "—" : `${s.csat_average.toFixed(1)} / 5`}
@@ -231,7 +231,7 @@ export default function AiQualityPage() {
               }
             />
             <Tile
-              icon={<UserRoundSearch className="h-5 w-5 text-amber-600" />}
+              icon={<UserRoundSearch className="h-5 w-5 text-amber-700" />}
               accent="bg-amber-50"
               label="Asked for a person"
               value={String(s.escapes)}
@@ -253,7 +253,7 @@ export default function AiQualityPage() {
 
           {abandonedRate >= 0.3 && s.flows_started >= MIN_SAMPLE_FOR_A_VERDICT && (
             <div className="mt-6 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
               <div className="text-[13px] leading-relaxed text-amber-900">
                 <strong className="font-semibold">
                   {Math.round(abandonedRate * 100)}% of chatbot runs go nowhere.

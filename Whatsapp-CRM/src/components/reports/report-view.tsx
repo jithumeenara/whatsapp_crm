@@ -177,7 +177,7 @@ export function ReportView({
               </li>
             ))}
           </ul>
-          {!presenting && <p className="mt-2.5 text-[11px] text-amber-700/70">Written automatically from these numbers — no AI.</p>}
+          {!presenting && <p className="mt-2.5 text-[11px] text-amber-800">Written automatically from these numbers — no AI.</p>}
         </div>
       )}
 

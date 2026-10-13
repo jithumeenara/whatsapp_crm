@@ -80,7 +80,7 @@ export function GoogleDrivePick({
       disabled={busy}
       className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
     >
-      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5 text-emerald-600" />}
+      {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sheet className="h-3.5 w-3.5 text-emerald-700" />}
       {label}
     </button>
   )

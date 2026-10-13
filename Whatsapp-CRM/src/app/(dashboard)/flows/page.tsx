@@ -86,8 +86,8 @@ export default function FlowsV2() {
 
   return (
     <div className="min-h-full">
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between">
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-4 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
               <Workflow className="h-4 w-4 text-violet-600" />
@@ -99,7 +99,7 @@ export default function FlowsV2() {
           </div>
           <div className="flex items-center gap-2">
             <button type="button" onClick={sync} disabled={syncing} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors">
-              <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} /> Sync from Meta
+              <RefreshCw className={cn("h-3.5 w-3.5", syncing && "animate-spin")} /> Sync<span className="hidden sm:inline"> from Meta</span>
             </button>
             <Link href="/flows/new" className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-indigo-700 transition-colors">
               <Plus className="h-3.5 w-3.5" /> New Flow
@@ -134,10 +134,10 @@ export default function FlowsV2() {
                   className="bg-white rounded-xl border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden"
                 >
                   <div className="flex items-center gap-4 p-4">
-                    <button type="button" onClick={() => toggle(flow.id, !flow.is_active)} className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors", flow.is_active ? "bg-emerald-50 hover:bg-emerald-100" : "bg-slate-100 hover:bg-slate-200")}>
-                      {flow.is_active ? <Play className="h-4 w-4 text-emerald-600" /> : <Pause className="h-4 w-4 text-slate-400" />}
+                    <button type="button" onClick={() => toggle(flow.id, !flow.is_active)} aria-label={flow.is_active ? `Pause ${flow.name}` : `Start ${flow.name}`} className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-colors", flow.is_active ? "bg-emerald-50 hover:bg-emerald-100" : "bg-slate-100 hover:bg-slate-200")}>
+                      {flow.is_active ? <Play className="h-4 w-4 text-emerald-700" /> : <Pause className="h-4 w-4 text-slate-400" />}
                     </button>
-                    <AccordionTrigger className="min-w-0 flex-1 rounded-lg border-none p-0 text-left hover:no-underline hover:bg-transparent focus-visible:ring-0 focus-visible:after:border-none">
+                    <AccordionTrigger headingLevel={2} className="min-w-0 flex-1 rounded-lg border-none p-0 text-left hover:no-underline hover:bg-transparent focus-visible:ring-0 focus-visible:after:border-none">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <p className="text-[14px] font-semibold text-slate-900 truncate">{flow.name}</p>
@@ -180,7 +180,7 @@ export default function FlowsV2() {
                             <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
                           )}
                         </div>
-                        <p className={cn("mt-1 text-[13px] font-semibold", lastError ? "text-amber-600" : "text-emerald-600")}>
+                        <p className={cn("mt-1 text-[13px] font-semibold", lastError ? "text-amber-700" : "text-emerald-700")}>
                           {lastError === "loading" ? "Checking…" : lastError ? (lastError.reason ?? "Failed") : "No errors"}
                         </p>
                       </div>

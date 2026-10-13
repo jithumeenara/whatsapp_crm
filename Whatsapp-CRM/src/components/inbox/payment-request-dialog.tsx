@@ -49,7 +49,7 @@ export function PaymentRequestDialog({ open, onOpenChange, conversationId }: Pay
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <IndianRupee className="h-4 w-4 text-amber-600" />
+            <IndianRupee className="h-4 w-4 text-amber-700" />
             Request Payment
           </DialogTitle>
         </DialogHeader>

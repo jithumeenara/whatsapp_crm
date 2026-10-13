@@ -101,7 +101,7 @@ function VarChips({
           key={v}
           type="button"
           onClick={() => onInsert(`{{vars.${v}}}`)}
-          className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-600 hover:bg-teal-500/20 transition-colors"
+          className="rounded bg-teal-500/10 px-1.5 py-0.5 font-mono text-[10px] text-teal-700 hover:bg-teal-500/20 transition-colors"
           title={`Insert {{vars.${v}}}`}
         >
           {`{{vars.${v}}}`}
@@ -233,7 +233,7 @@ function MediaPreview({ url, mediaType }: { url: string; mediaType: string }) {
     return <audio src={url} controls className="w-full" onError={() => setFailed(true)} />;
   }
   return (
-    <div className="flex items-center gap-1.5 text-[10px] text-emerald-600">
+    <div className="flex items-center gap-1.5 text-[10px] text-emerald-700">
       <ImageIcon className="h-3 w-3" />
       <span className="max-w-[240px] truncate font-mono">{url}</span>
     </div>
@@ -566,7 +566,7 @@ function FlowSubmittedTrigger({ cfg, onChange }: { cfg: Record<string, unknown>;
         </Select>
       </Field>
       {loaded && flows.length === 0 && (
-        <p className="text-[10px] text-amber-600">
+        <p className="text-[10px] text-amber-700">
           No published Flows yet. Publish one under WhatsApp Flows, or use Sync from Meta on a Send Flow node.
         </p>
       )}
@@ -585,7 +585,7 @@ function SendTextForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       {vars.length > 0 && (
         <div className="rounded-lg border border-teal-500/30 bg-teal-500/5 p-3 space-y-1">
           <p className="text-[10px] font-semibold text-teal-700">Collected variables available</p>
-          <p className="text-[10px] text-teal-600 leading-relaxed">
+          <p className="text-[10px] text-teal-700 leading-relaxed">
             Use <span className="font-mono bg-teal-100 px-1 rounded">{"{{name}}"}</span> or <span className="font-mono bg-teal-100 px-1 rounded">{"{{vars.name}}"}</span> in your message to insert a collected value.
           </p>
           <p className="text-[10px] text-teal-500 italic">e.g. &quot;Hello {"{{name}}"}, how can I help?&quot; → &quot;Hello Jithu, how can I help?&quot;</p>
@@ -1096,7 +1096,7 @@ function CollectInputForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       {String(cfg.var_key ?? "").length > 0 && (
         <div className="rounded-lg border border-teal-500/30 bg-teal-500/5 p-3 space-y-1">
           <p className="text-[10px] font-semibold text-teal-700">How to use this answer in other nodes</p>
-          <p className="text-[10px] text-teal-600 leading-relaxed">
+          <p className="text-[10px] text-teal-700 leading-relaxed">
             In any Send Text, Send Buttons, or other message node, type:
           </p>
           <code className="block text-[11px] font-mono bg-teal-100 text-teal-800 rounded px-2 py-1">
@@ -2536,7 +2536,7 @@ function LinkChatbotForm({ cfg, onChange }: FormProps) {
         </Select>
       </Field>
       <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-3">
-        <p className="text-[10px] text-sky-600">
+        <p className="text-[10px] text-sky-700">
           The conversation context and collected variables are not transferred to the linked chatbot — it starts fresh.
         </p>
       </div>
@@ -2653,7 +2653,7 @@ function WaitFlowSubmitForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         </Select>
       </Field>
       {loaded && flows.length === 0 && (
-        <p className="text-[10px] text-amber-600">No published Flows found — Any Flow will still work.</p>
+        <p className="text-[10px] text-amber-700">No published Flows found — Any Flow will still work.</p>
       )}
 
       <Field label="How long to wait">
@@ -2979,7 +2979,7 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         ) : templates.length === 0 ? (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-1">
             <p className="text-[10px] font-semibold text-amber-700">No templates yet</p>
-            <p className="text-[10px] text-amber-600 leading-relaxed">
+            <p className="text-[10px] text-amber-700 leading-relaxed">
               Go to <span className="font-semibold">Templates</span> in the sidebar and click{" "}
               <span className="font-semibold">Sync from Meta</span> to import your approved templates.
             </p>
@@ -3115,7 +3115,7 @@ function SendCatalogForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       {products.length === 0 && !loadingProducts && mode !== "catalog" && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-1">
           <p className="text-[10px] font-semibold text-amber-700">No products yet</p>
-          <p className="text-[10px] text-amber-600 leading-relaxed">
+          <p className="text-[10px] text-amber-700 leading-relaxed">
             Go to <span className="font-semibold">Catalog</span> in the sidebar and add products first.
           </p>
         </div>

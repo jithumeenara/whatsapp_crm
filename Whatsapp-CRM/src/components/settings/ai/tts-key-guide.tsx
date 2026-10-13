@@ -209,7 +209,7 @@ function GuideDialog({
                       list nobody reads before they are stuck. */}
                   {step.title === 'Create the key' && (
                     <div className="mt-2.5 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-                      <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                      <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
                       <p className="text-[11.5px] leading-relaxed text-amber-900">
                         <strong>If Create fails with a policy error</strong>, that is Google, not
                         you. Projects made after May 2024 have key creation switched off by

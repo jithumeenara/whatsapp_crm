@@ -90,7 +90,7 @@ export function ApiKeysPanel() {
       {newRawKey && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <AlertTriangle className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
             <p className="text-[13px] font-medium text-amber-800">
               Copy this key now — it will never be shown again.
             </p>
@@ -124,7 +124,7 @@ export function ApiKeysPanel() {
             placeholder="e.g. My Integration"
             className="w-full h-9 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] outline-none transition-all focus:border-[#5B6CF9]/40 focus:bg-white focus:ring-2 focus:ring-[#5B6CF9]/10"
           />
-          {error && <p className="text-[12px] text-rose-600">{error}</p>}
+          {error && <p className="text-[12px] text-rose-700">{error}</p>}
           <div className="flex gap-2">
             <Button onClick={create} disabled={creating} className="h-9 px-4 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
               {creating ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Key'}
@@ -181,7 +181,7 @@ export function ApiKeysPanel() {
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => setRevokeTarget(k)}
-                        className="rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        className="rounded-lg p-1.5 text-slate-400 hover:text-rose-700 hover:bg-rose-50 transition-colors"
                         title="Revoke"
                        aria-label="Revoke">
                         <Trash2 className="h-4 w-4" />

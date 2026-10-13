@@ -13,7 +13,7 @@ import type { MessageTemplate, TemplateButton } from "@/types"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
-// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type TCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION"
 type TSubtype  = "default" | "flows" | "catalogue" | "order_status" | "order_details" | "calling" | "otp"
@@ -30,7 +30,7 @@ function fromApiCategory(c?: string): TCategory {
   return "MARKETING"
 }
 
-// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const LANGUAGES = [
   { code: "en_US", label: "English (US)" }, { code: "en_GB", label: "English (UK)" },
@@ -102,7 +102,7 @@ const BUTTON_OPTS: { type: TemplateButton["type"]; label: string; desc: string }
   { type: "FLOW",         label: "Complete Flow",     desc: "Launches a WhatsApp Flow" },
 ]
 
-// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function extractVars(text: string): number[] {
   const set = new Set<number>()
@@ -123,7 +123,7 @@ function makeButton(type: TemplateButton["type"]): TemplateButton {
 const INPUT    = "w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 placeholder-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
 const INPUT_SM = "w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-[12px] text-slate-800 placeholder-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-1 focus:ring-indigo-100"
 
-// â”€â”€â”€ Step progress bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Step progress bar ────────────────────────────────────────────────────────
 
 function StepBar({ step }: { step: 1 | 2 | 3 }) {
   const STEPS = ["Set up", "Edit", "Review"]
@@ -136,10 +136,10 @@ function StepBar({ step }: { step: 1 | 2 | 3 }) {
           <div key={n} className="flex items-center">
             {i > 0 && <ChevronRight className="h-3 w-3 text-slate-300 mx-0.5" />}
             <div className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
-              active ? "bg-indigo-50 text-indigo-700" : done ? "text-emerald-600" : "text-slate-400")}>
+              active ? "bg-indigo-50 text-indigo-700" : done ? "text-emerald-700" : "text-slate-400")}>
               <div className={cn("flex h-4.5 w-4.5 h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-bold shrink-0",
                 active ? "bg-indigo-600 text-white" : done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-500")}>
-                {done ? "âœ“" : n}
+                {done ? "✓" : n}
               </div>
               <span className="hidden sm:inline">{label}</span>
             </div>
@@ -150,7 +150,7 @@ function StepBar({ step }: { step: 1 | 2 | 3 }) {
   )
 }
 
-// â”€â”€â”€ WhatsApp preview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── WhatsApp preview ─────────────────────────────────────────────────────────
 
 function WAPreview({ headerType, headerContent, bodyText, footerText, buttons, bodySamples, headerSamples }: {
   headerType: string; headerContent: string; bodyText: string; footerText: string
@@ -176,7 +176,7 @@ function WAPreview({ headerType, headerContent, bodyText, footerText, buttons, b
               {headerType === "document" && <div className="flex items-center gap-2 bg-slate-100 px-2.5 py-2"><FileIcon className="h-4 w-4 text-rose-400" /><span className="text-[10px] text-slate-500">Document</span></div>}
               {bodyText && <div className={cn("px-2.5 py-2", !headerType && "pt-2.5")}><p className="text-[10px] text-[#111] whitespace-pre-wrap break-words leading-relaxed">{body}</p></div>}
               {footerText && <div className="px-2.5 pb-1.5"><p className="text-[10px] text-[#999]">{footerText}</p></div>}
-              <div className="flex justify-end px-2.5 pb-2"><span className="text-[10px] text-[#999]">10:30 AM âœ“âœ“</span></div>
+              <div className="flex justify-end px-2.5 pb-2"><span className="text-[10px] text-[#999]">10:30 AM ✓✓</span></div>
               {buttons.length > 0 && (
                 <div className="border-t border-slate-100">
                   {buttons.map((btn, i) => (
@@ -205,7 +205,7 @@ function WAPreview({ headerType, headerContent, bodyText, footerText, buttons, b
   )
 }
 
-// â”€â”€â”€ Mobile preview overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Mobile preview overlay ───────────────────────────────────────────────────
 
 function MobilePreviewOverlay({ onClose, ...previewProps }: Parameters<typeof WAPreview>[0] & { onClose: () => void }) {
   return (
@@ -223,7 +223,7 @@ function MobilePreviewOverlay({ onClose, ...previewProps }: Parameters<typeof WA
   )
 }
 
-// â”€â”€â”€ Flow button fields â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Flow button fields ───────────────────────────────────────────────────────
 
 function FlowButtonFields({ btn, onChange }: {
   btn: Extract<TemplateButton, { type: "FLOW" }>
@@ -248,7 +248,7 @@ function FlowButtonFields({ btn, onChange }: {
           {flows.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
         {!loading && flows.length === 0 && (
-          <p className="mt-1 text-[10px] text-amber-600">No flows found. <Link href="/flows" className="underline font-medium">Create flows first →</Link></p>
+          <p className="mt-1 text-[10px] text-amber-700">No flows found. <Link href="/flows" className="underline font-medium">Create flows first →</Link></p>
         )}
       </div>
       <div>
@@ -280,7 +280,7 @@ function FlowButtonFields({ btn, onChange }: {
   )
 }
 
-// â”€â”€â”€ Button row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Button row ───────────────────────────────────────────────────────────────
 
 function ButtonRow({ btn, onChange, onRemove }: {
   btn: TemplateButton; onChange: (b: TemplateButton) => void; onRemove: () => void
@@ -348,7 +348,7 @@ function ButtonRow({ btn, onChange, onRemove }: {
   )
 }
 
-// â”€â”€â”€ Template canvas (3-step wizard, edit-mode aware) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Template canvas (3-step wizard, edit-mode aware) ─────────────────────────
 
 function TemplateCanvas({ onBack, onCreated, editTemplate }: {
   onBack: () => void
@@ -491,7 +491,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
 
   const isFlowsType = subtype === "flows"
 
-  // â”€â”€ Top bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Top bar ──────────────────────────────────────────────────────────────────
   const topBar = (
     <div className="shrink-0 flex items-center justify-between border-b border-slate-200 bg-white px-3 sm:px-6 py-3 gap-2 sm:gap-4">
       <button type="button" onClick={onBack}
@@ -546,7 +546,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
     </div>
   )
 
-  // â”€â”€ STEP 1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── STEP 1 ────────────────────────────────────────────────────────────────────
   if (step === 1) {
     const selectedSubtype = SUBTYPES[category].find(s => s.id === subtype)
     return (
@@ -630,7 +630,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
     )
   }
 
-  // â”€â”€ STEP 2 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── STEP 2 ────────────────────────────────────────────────────────────────────
   if (step === 2) {
     return (
       <div className="flex h-full flex-col overflow-hidden bg-slate-50">
@@ -717,10 +717,10 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                     {/* Uploaded / selected file state */}
                     {mediaFileName && headerMediaUrl ? (
                       <div className="flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                        <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0" />
                         <div className="flex-1 min-w-0">
                           <p className="text-[12px] font-medium text-emerald-800 truncate">{mediaFileName}</p>
-                          <p className="text-[10px] text-emerald-600 truncate">{headerMediaUrl}</p>
+                          <p className="text-[10px] text-emerald-700 truncate">{headerMediaUrl}</p>
                         </div>
                         <button type="button" onClick={clearMedia}
                           className="shrink-0 rounded-md p-1 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 transition-colors" aria-label="Close">
@@ -752,9 +752,9 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                                  headerType === "video"    ? "Upload video"    : "Upload document"}
                               </p>
                               <p className="text-[11px] text-slate-400 mt-0.5">
-                                {headerType === "image"    ? "PNG, JPG, WEBP, GIF Â· max 16 MB" :
-                                 headerType === "video"    ? "MP4, 3GP Â· max 16 MB" :
-                                 "PDF, DOCX, XLSX, PPTX, TXT Â· max 16 MB"}
+                                {headerType === "image"    ? "PNG, JPG, WEBP, GIF · max 16 MB" :
+                                 headerType === "video"    ? "MP4, 3GP · max 16 MB" :
+                                 "PDF, DOCX, XLSX, PPTX, TXT · max 16 MB"}
                               </p>
                               <p className="text-[11px] text-indigo-600 mt-1.5 font-medium">Click to browse or drag & drop</p>
                             </div>
@@ -839,7 +839,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
               <div>
                 <div className="flex items-center justify-between mb-3">
                   <label className="text-[12px] font-semibold text-slate-700">Buttons</label>
-                  <span className="text-[11px] text-slate-400">Optional Â· max 10</span>
+                  <span className="text-[11px] text-slate-400">Optional · max 10</span>
                 </div>
                 {isFlowsType && (
                   <div className="mb-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-700">
@@ -889,7 +889,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                 <button type="button" onClick={() => isEditMode ? onBack() : setStep(1)}
                   className="flex-1 rounded-lg border border-slate-200 py-2.5 text-[13px] font-medium text-slate-600">Back</button>
                 <button type="button" onClick={() => setStep(3)} disabled={!name.trim() || !bodyText.trim()}
-                  className="flex-1 rounded-lg bg-indigo-600 py-2.5 text-[13px] font-semibold text-white disabled:opacity-40">Review â†’</button>
+                  className="flex-1 rounded-lg bg-indigo-600 py-2.5 text-[13px] font-semibold text-white disabled:opacity-40">Review →</button>
               </div>
 
               <div className="h-2" />
@@ -907,7 +907,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
     )
   }
 
-  // â”€â”€ STEP 3 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── STEP 3 ────────────────────────────────────────────────────────────────────
   return (
     <div className="flex h-full flex-col overflow-hidden bg-slate-50">
       {topBar}
@@ -1010,7 +1010,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
   )
 }
 
-// â”€â”€â”€ Template list page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Template list page ───────────────────────────────────────────────────────
 
 export default function TemplatesV2() {
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
@@ -1075,7 +1075,7 @@ export default function TemplatesV2() {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50">
-              <FileText className="h-4 w-4 text-amber-600" />
+              <FileText className="h-4 w-4 text-amber-700" />
             </div>
             <div className="min-w-0">
               <h1 className="text-[14px] sm:text-[15px] font-semibold text-slate-900">Templates</h1>
@@ -1083,7 +1083,7 @@ export default function TemplatesV2() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button type="button" onClick={sync} disabled={syncing}
+            <button type="button" onClick={sync} disabled={syncing} aria-label="Sync from Meta"
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 sm:px-3 py-1.5 text-[12px] sm:text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors">
               <RefreshCw className={cn("h-3.5 w-3.5 shrink-0", syncing && "animate-spin")} />
               <span className="hidden sm:inline">Sync from Meta</span>
@@ -1141,11 +1141,11 @@ export default function TemplatesV2() {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-[11px] text-slate-400">{t.category}</span>
-                    {t.language && <span className="text-[10px] text-slate-400">Â· {t.language}</span>}
+                    {t.language && <span className="text-[10px] text-slate-400">· {t.language}</span>}
                     {t.quality_score && (
                       <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
-                        t.quality_score === "GREEN" ? "bg-emerald-50 text-emerald-600" :
-                        t.quality_score === "YELLOW" ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600")}>
+                        t.quality_score === "GREEN" ? "bg-emerald-50 text-emerald-700" :
+                        t.quality_score === "YELLOW" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700")}>
                         {t.quality_score}
                       </span>
                     )}
@@ -1197,7 +1197,7 @@ export default function TemplatesV2() {
                 <button
                   type="button"
                   onClick={() => setDeleteId(t.id)}
-                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors">
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-[12px] font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-700 transition-colors">
                   <Trash2 className="h-3.5 w-3.5" />
                   Delete
                 </button>

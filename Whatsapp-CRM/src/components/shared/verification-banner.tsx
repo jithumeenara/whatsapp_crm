@@ -23,7 +23,7 @@ export function VerificationBanner() {
   return (
     <div className="mb-6 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-2.5">
-        <ShieldAlert className="h-4.5 w-4.5 shrink-0 mt-0.5 text-amber-600" />
+        <ShieldAlert className="h-4.5 w-4.5 shrink-0 mt-0.5 text-amber-700" />
         <p className="text-[13px] text-amber-800">
           <span className="font-semibold">Verify your {missing.join(" and ")}</span> to keep your account secure.
         </p>

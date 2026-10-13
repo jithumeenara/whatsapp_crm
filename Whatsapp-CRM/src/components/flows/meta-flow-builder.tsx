@@ -1454,7 +1454,7 @@ function LabelSourceRow({
                 </select>
               )}
               {fieldMeta?.field_type === 'boolean' && (
-                <p className="text-[10px] text-amber-600">
+                <p className="text-[10px] text-amber-700">
                   ⚠ This is a Yes/No field — it will display as literal &quot;true&quot;/&quot;false&quot; text. Pick a text-type field instead.
                 </p>
               )}
@@ -1706,7 +1706,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
   return (
     <div className="rounded-md border border-sky-500/30 bg-sky-500/5 px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5">
-        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-bold text-sky-600">⚡ LIVE</span>
+        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">⚡ LIVE</span>
         <span className="text-[10px] font-medium text-slate-800">Options fetched from database at runtime</span>
       </div>
       <div className="flex items-center justify-between">
@@ -1717,7 +1717,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
           <button
             type="button"
             onClick={syncToCurrentOrigin}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 transition-colors"
             title={`Auto-detect: use ${currentOrigin}`}
           >
             <RefreshCw className="h-2.5 w-2.5" /> Sync URL
@@ -2188,7 +2188,7 @@ function ComponentForm({
                   )}
 
                   {filterFormName && !filterByField && (
-                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                    <p className="text-[10px] text-amber-700 dark:text-amber-400">
                       ↑ Pick a DB column to complete the filter setup
                     </p>
                   )}
@@ -2533,7 +2533,7 @@ function LivePreviewPanel({
             <button
               onClick={startSim}
               disabled={screens.length === 0}
-              className="flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-600 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
+              className="flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-40 transition-colors"
             >
               <Play className="h-3 w-3" /> Simulate
             </button>
@@ -2589,7 +2589,7 @@ function LivePreviewPanel({
                 )}
                 <button
                   onClick={() => startSim()}
-                  className="text-[10px] text-emerald-600 hover:underline"
+                  className="text-[10px] text-emerald-700 hover:underline"
                 >
                   ↩ Start over
                 </button>

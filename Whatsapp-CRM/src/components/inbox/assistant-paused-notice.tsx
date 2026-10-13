@@ -59,7 +59,7 @@ export function AssistantPausedNotice({
 
   return (
     <div className="flex items-start gap-2 border-t border-amber-100 bg-amber-50/80 px-3 py-2 sm:px-4">
-      <PauseCircle className="mt-[1px] h-3.5 w-3.5 shrink-0 text-amber-600" />
+      <PauseCircle className="mt-[1px] h-3.5 w-3.5 shrink-0 text-amber-700" />
       <p className="min-w-0 flex-1 text-[11.5px] leading-relaxed text-amber-900">
         The assistant is not replying here —{" "}
         {assignedAgentName ? (

@@ -279,7 +279,7 @@ export function WorkingHoursDialog({
               type="button"
               onClick={() => save(null)}
               disabled={saving}
-              className="text-[12px] font-medium text-slate-500 underline underline-offset-2 hover:text-rose-600"
+              className="text-[12px] font-medium text-slate-500 underline underline-offset-2 hover:text-rose-700"
             >
               Clear hours
             </button>

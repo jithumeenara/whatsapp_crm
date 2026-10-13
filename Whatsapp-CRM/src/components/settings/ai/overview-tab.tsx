@@ -52,8 +52,8 @@ export function OverviewTab(props: OverviewTabProps) {
 
   const quickActions = [
     { key: 'training' as const, label: 'AI Training', blurb: 'Teach your AI with your business data.', Icon: BookOpen, tint: 'bg-[#EEF0FF] text-[#4A5CE8]' },
-    { key: 'test' as const, label: 'Test AI', blurb: 'Try it with real conversations.', Icon: Send, tint: 'bg-emerald-50 text-emerald-600' },
-    { key: 'usage' as const, label: 'Usage', blurb: 'Track performance and costs.', Icon: BarChart3, tint: 'bg-amber-50 text-amber-600' },
+    { key: 'test' as const, label: 'Test AI', blurb: 'Try it with real conversations.', Icon: Send, tint: 'bg-emerald-50 text-emerald-700' },
+    { key: 'usage' as const, label: 'Usage', blurb: 'Track performance and costs.', Icon: BarChart3, tint: 'bg-amber-50 text-amber-700' },
   ];
 
   const stats = [
@@ -64,7 +64,7 @@ export function OverviewTab(props: OverviewTabProps) {
   ];
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="min-w-0 space-y-5">
         {props.systemPromptMissing && (
           <button
@@ -84,7 +84,7 @@ export function OverviewTab(props: OverviewTabProps) {
                 → Advanced Features to write one, or start from the template.
               </span>
             </span>
-            <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
           </button>
         )}
 

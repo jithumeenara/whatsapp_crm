@@ -163,7 +163,7 @@ export function MessageActions({
           <button
             type="button"
             onClick={() => { onDelete(); setTouchOpen(false); }}
-            className="flex h-5 w-5 items-center justify-center rounded-full text-slate-800/80 hover:bg-rose-100 hover:text-rose-600"
+            className="flex h-5 w-5 items-center justify-center rounded-full text-slate-800/80 hover:bg-rose-100 hover:text-rose-700"
             aria-label={deleteLabel}
             title={deleteLabel}
           >

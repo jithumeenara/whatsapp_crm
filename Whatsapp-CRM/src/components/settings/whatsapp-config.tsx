@@ -108,13 +108,13 @@ function HeroStat({ icon: Icon, label, value, tone }: {
         'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
         tone === 'emerald' ? 'bg-emerald-100' : 'bg-slate-100',
       )}>
-        <Icon className={cn('h-3.5 w-3.5', tone === 'emerald' ? 'text-emerald-600' : 'text-slate-500')} />
+        <Icon className={cn('h-3.5 w-3.5', tone === 'emerald' ? 'text-emerald-700' : 'text-slate-500')} />
       </span>
       <div className="min-w-0">
         <p className="text-[11px] text-slate-400">{label}</p>
         <p className={cn(
           'truncate text-[13px] font-semibold',
-          tone === 'emerald' ? 'text-emerald-600' : 'text-slate-800',
+          tone === 'emerald' ? 'text-emerald-700' : 'text-slate-800',
         )}>
           {value}
         </p>
@@ -147,7 +147,7 @@ function CredentialRow({ icon: Icon, label, right, children }: {
   return (
     <div className="flex items-center gap-3.5 px-6 py-4">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
-        <Icon className="h-4 w-4 text-emerald-600" />
+        <Icon className="h-4 w-4 text-emerald-700" />
       </span>
       <div className="flex-1 min-w-0">
         <p className="text-[11px] font-medium text-slate-400">{label}</p>
@@ -187,11 +187,11 @@ function TimelineRow({ label, value, isLast }: { label: string; value?: string |
 /** Small green/amber configured-or-not pill for a CredentialRow's right side. */
 function ConfiguredPill({ ok, label }: { ok: boolean; label: string }) {
   return ok ? (
-    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600">
+    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
       <CheckCircle2 className="h-3 w-3" /> {label}
     </span>
   ) : (
-    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+    <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
       <AlertTriangle className="h-3 w-3" /> {label}
     </span>
   )
@@ -863,7 +863,7 @@ export function WhatsAppConfig(props: {
                       ? <Loader2 className={cn('h-4 w-4 shrink-0 text-slate-400', !delivery && !probeFailed && 'animate-spin')} />
                       : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />}
                 </div>
-                <p className={cn('mt-1 text-[13.5px] font-semibold', h.ok === true ? 'text-emerald-600' : h.ok === null ? 'text-slate-600' : 'text-amber-600')}>
+                <p className={cn('mt-1 text-[13.5px] font-semibold', h.ok === true ? 'text-emerald-700' : h.ok === null ? 'text-slate-600' : 'text-amber-700')}>
                   {h.value}
                 </p>
               </div>
@@ -895,7 +895,7 @@ export function WhatsAppConfig(props: {
             <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 space-y-2">
               <p className="text-[12px] font-semibold text-slate-700">
                 Latest diagnostic —{' '}
-                <span className={registrationProbe.live ? 'text-emerald-600' : 'text-amber-600'}>
+                <span className={registrationProbe.live ? 'text-emerald-700' : 'text-amber-700'}>
                   {registrationProbe.live ? 'Live' : 'Not live'}
                 </span>
               </p>
@@ -1004,7 +1004,7 @@ export function WhatsAppConfig(props: {
               />
             ) : (
               <span className="hidden h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 sm:flex">
-                <Building2 className="h-6 w-6 text-emerald-600" />
+                <Building2 className="h-6 w-6 text-emerald-700" />
               </span>
             )}
             <div className="grid flex-1 grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
@@ -1068,7 +1068,7 @@ export function WhatsAppConfig(props: {
         {/* Help */}
         <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
               <CircleHelp className="h-5 w-5" />
             </span>
             <div>
@@ -1080,7 +1080,7 @@ export function WhatsAppConfig(props: {
             href="https://developers.facebook.com/docs/whatsapp/cloud-api"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-[12.5px] font-semibold text-emerald-600 transition hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-4 py-2.5 text-[12.5px] font-semibold text-emerald-700 transition hover:bg-slate-50"
           >
             <ExternalLink className="h-3.5 w-3.5" />
             View documentation
@@ -1217,11 +1217,11 @@ export function WhatsAppConfig(props: {
       {isConnected && isRegistered ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 flex items-center gap-4">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100">
-            <Wifi className="h-5 w-5 text-emerald-600" />
+            <Wifi className="h-5 w-5 text-emerald-700" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[14px] font-semibold text-emerald-800">WhatsApp Connected &amp; Registered</p>
-            <p className="text-[12px] mt-0.5 text-emerald-600">
+            <p className="text-[12px] mt-0.5 text-emerald-700">
               Authenticated with Meta and subscribed since{' '}
               {config?.registered_at ? new Date(config.registered_at).toLocaleString() : 'unknown'}. Meta will deliver events.
             </p>
@@ -1265,7 +1265,7 @@ export function WhatsAppConfig(props: {
           isConnected ? "bg-emerald-100" : "bg-slate-200",
         )}>
           {isConnected
-            ? <Wifi className="h-5 w-5 text-emerald-600" />
+            ? <Wifi className="h-5 w-5 text-emerald-700" />
             : <WifiOff className="h-5 w-5 text-slate-500" />}
         </div>
         <div className="flex-1 min-w-0">
@@ -1275,7 +1275,7 @@ export function WhatsAppConfig(props: {
             {isConnected ? 'WhatsApp Connected' : 'Not Connected'}
           </p>
           <p className={cn("text-[12px] mt-0.5",
-            isConnected ? "text-emerald-600" : "text-slate-500"
+            isConnected ? "text-emerald-700" : "text-slate-500"
           )}>
             {isConnected
               ? 'Your access token authenticates successfully with Meta.'
@@ -1316,7 +1316,7 @@ export function WhatsAppConfig(props: {
           <p className="text-[12px] font-semibold text-slate-700 flex items-center gap-1.5">
             <Info className="h-3.5 w-3.5 text-slate-400" />
             Registration Diagnostic —{' '}
-            <span className={registrationProbe.live ? 'text-emerald-600' : 'text-amber-600'}>
+            <span className={registrationProbe.live ? 'text-emerald-700' : 'text-amber-700'}>
               {registrationProbe.live ? 'Live' : 'Not live'}
             </span>
           </p>
@@ -1393,7 +1393,7 @@ export function WhatsAppConfig(props: {
           isRegistered ? "bg-emerald-50 border-emerald-200" : "bg-amber-50 border-amber-200"
         )}>
           {isRegistered
-            ? <CheckCheck className="h-4.5 w-4.5 text-emerald-600 mt-0.5 shrink-0" />
+            ? <CheckCheck className="h-4.5 w-4.5 text-emerald-700 mt-0.5 shrink-0" />
             : <AlertTriangle className="h-4.5 w-4.5 text-amber-500 mt-0.5 shrink-0" />}
           <div className="flex-1 min-w-0">
             <p className={cn("text-[13px] font-semibold",
@@ -1594,7 +1594,7 @@ export function WhatsAppConfig(props: {
                   }}
                   className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[12px] font-medium transition-colors whitespace-nowrap h-9 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                 >
-                  {tokenCopied ? <ClipboardCheck className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
+                  {tokenCopied ? <ClipboardCheck className="h-3 w-3 text-green-700" /> : <Copy className="h-3 w-3" />}
                   {tokenCopied ? "Copied!" : "Copy"}
                 </button>
               )}
@@ -1671,7 +1671,7 @@ export function WhatsAppConfig(props: {
             <Globe className="h-3.5 w-3.5 text-slate-400" />
             Callback URL
             {isLocalhost && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                 Not public
               </span>
             )}
@@ -1693,7 +1693,7 @@ export function WhatsAppConfig(props: {
             </Button>
           </div>
           {!isLocalhost && (
-            <p className="text-[11px] text-emerald-600 flex items-center gap-1.5">
+            <p className="text-[11px] text-emerald-700 flex items-center gap-1.5">
               <CheckCircle2 className="h-3 w-3 shrink-0" />
               Public HTTPS URL — Meta can reach it.
             </p>
@@ -1715,7 +1715,7 @@ export function WhatsAppConfig(props: {
               'Subscribe to the messages field',
             ].map((step, i) => (
               <li key={i} className="flex items-start gap-2.5 text-[12px] text-slate-600">
-                <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] font-bold text-emerald-600 mt-px">
+                <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-[10px] font-bold text-emerald-700 mt-px">
                   {i + 1}
                 </span>
                 {step}
@@ -1750,7 +1750,7 @@ export function WhatsAppConfig(props: {
                   ? <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
                   : <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />}
               </div>
-              <p className={cn('mt-1 text-[13.5px] font-semibold', tile.ok ? 'text-emerald-600' : 'text-amber-600')}>
+              <p className={cn('mt-1 text-[13.5px] font-semibold', tile.ok ? 'text-emerald-700' : 'text-amber-700')}>
                 {tile.value}
               </p>
               <p className="mt-0.5 text-[11px] text-slate-400 leading-relaxed">{tile.detail}</p>
@@ -1758,7 +1758,7 @@ export function WhatsAppConfig(props: {
           ))}
           <div className="rounded-xl border border-slate-100 bg-white px-4 py-3.5">
             <p className="text-[11.5px] text-slate-400">Overall status</p>
-            <p className={cn('mt-1 text-[13.5px] font-semibold', allTestReady ? 'text-emerald-600' : 'text-amber-600')}>
+            <p className={cn('mt-1 text-[13.5px] font-semibold', allTestReady ? 'text-emerald-700' : 'text-amber-700')}>
               {allTestReady ? 'Ready to test' : 'Needs setup'}
             </p>
             <p className="mt-0.5 text-[11px] text-slate-400 leading-relaxed">
@@ -1797,7 +1797,7 @@ export function WhatsAppConfig(props: {
           className="w-full flex items-center gap-3 px-6 py-4 text-left transition-colors hover:bg-slate-50/70"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
-            <BookOpen className="h-4.5 w-4.5 text-emerald-600" />
+            <BookOpen className="h-4.5 w-4.5 text-emerald-700" />
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold text-slate-800">Setup Guide</h3>
@@ -1834,7 +1834,7 @@ export function WhatsAppConfig(props: {
               href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-emerald-600 hover:underline"
+              className="mt-4 inline-flex items-center gap-1.5 text-[13px] text-emerald-700 hover:underline"
             >
               <ExternalLink className="h-3.5 w-3.5" />
               Meta WhatsApp API Documentation
@@ -1870,7 +1870,7 @@ export function WhatsAppConfig(props: {
 
           <div className="flex flex-col items-center pt-1 text-center">
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
-              <ListChecks className="h-6 w-6 text-emerald-600" />
+              <ListChecks className="h-6 w-6 text-emerald-700" />
             </span>
             <h2 className="mt-3 text-[15px] font-semibold text-slate-900">Connection activity</h2>
             <p className="mt-1 text-[12.5px] text-slate-500 leading-relaxed max-w-[300px]">
@@ -1893,7 +1893,7 @@ export function WhatsAppConfig(props: {
               <div className="mt-2 rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-2.5 space-y-1.5">
                 <p className="text-[12px] font-semibold text-slate-700">
                   Latest diagnostic —{' '}
-                  <span className={registrationProbe.live ? 'text-emerald-600' : 'text-amber-600'}>
+                  <span className={registrationProbe.live ? 'text-emerald-700' : 'text-amber-700'}>
                     {registrationProbe.live ? 'Live' : 'Not live'}
                   </span>
                 </p>

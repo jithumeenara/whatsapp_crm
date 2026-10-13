@@ -359,7 +359,7 @@ export function RecordAlertsPanel({
               </PanelSection>
 
               <p className="flex items-start gap-2 rounded-xl bg-slate-50 px-3.5 py-3 text-[12px] leading-relaxed text-slate-500">
-                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-700" />
                 Alerts carry the first few details only. Aadhaar, PAN, bank, card and password fields are masked to
                 their last four characters — open the record for the rest. At most 20 alerts per table every 10 minutes.
               </p>

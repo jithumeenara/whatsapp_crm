@@ -375,8 +375,8 @@ function MetaAdsOverview() {
               icon={Database}
               label="Conversions API dataset"
               right={config?.dataset_id
-                ? <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-600"><CheckCircle2 className="h-3 w-3" />Ready</span>
-                : <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-600"><AlertTriangle className="h-3 w-3" />Not created yet</span>}
+                ? <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" />Ready</span>
+                : <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700"><AlertTriangle className="h-3 w-3" />Not created yet</span>}
             >
               {config?.dataset_id ? <span className="font-mono text-[12px]">{config.dataset_id}</span> : (config?.test_error || 'Will be created automatically once permissions allow')}
             </InfoRow>

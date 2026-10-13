@@ -203,9 +203,9 @@ export function NewLeadAlert() {
   const waitedFor = (at: number) => (now > 0 ? Math.max(0, now - at) : 0)
   const toneFor = (ms: number) =>
     ms >= LATE_AFTER_MS
-      ? { ring: 'ring-rose-200', bg: 'bg-rose-600', text: 'text-rose-600', pulse: true }
+      ? { ring: 'ring-rose-200', bg: 'bg-rose-600', text: 'text-rose-700', pulse: true }
       : ms >= WARN_AFTER_MS
-        ? { ring: 'ring-amber-200', bg: 'bg-amber-500', text: 'text-amber-600', pulse: false }
+        ? { ring: 'ring-amber-200', bg: 'bg-amber-500', text: 'text-amber-700', pulse: false }
         : { ring: 'ring-indigo-200', bg: 'bg-[#4A5CE8]', text: 'text-slate-500', pulse: false }
 
   // The whole card takes its edge from the worst one on it, so a single

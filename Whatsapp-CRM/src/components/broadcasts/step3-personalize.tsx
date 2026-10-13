@@ -390,7 +390,7 @@ export function Step3Personalize({
               )
             ) : (
               <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', mediaRequired ? 'bg-amber-100' : 'bg-indigo-50')}>
-                {MediaIcon && <MediaIcon className={cn('h-5 w-5', mediaRequired ? 'text-amber-600' : 'text-indigo-500')} />}
+                {MediaIcon && <MediaIcon className={cn('h-5 w-5', mediaRequired ? 'text-amber-700' : 'text-indigo-500')} />}
               </div>
             )}
             <div className="min-w-0 flex-1">
@@ -419,7 +419,7 @@ export function Step3Personalize({
             )}
           >
             <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg', unmappedKeys.length > 0 ? 'bg-amber-100' : 'bg-indigo-50')}>
-              <Sparkles className={cn('h-5 w-5', unmappedKeys.length > 0 ? 'text-amber-600' : 'text-indigo-500')} />
+              <Sparkles className={cn('h-5 w-5', unmappedKeys.length > 0 ? 'text-amber-700' : 'text-indigo-500')} />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-slate-800">Variable Mapping</p>
@@ -486,7 +486,7 @@ export function Step3Personalize({
                       <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary">
                         {placeholder}
                       </span>
-                      <p className={cn('mt-1.5 truncate text-[12.5px]', complete ? 'text-slate-600' : 'text-amber-600')}>{label}</p>
+                      <p className={cn('mt-1.5 truncate text-[12.5px]', complete ? 'text-slate-600' : 'text-amber-700')}>{label}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {complete ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <AlertTriangle className="h-4 w-4 text-amber-500" />}
@@ -676,7 +676,7 @@ export function Step3Personalize({
 
         {mediaMissing && (
           <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
             <p className="text-[12px] text-amber-700">
               No {template.header_type} attached for this campaign, and this template has no default media Meta can reuse —
               tap <span className="font-semibold">Header Media</span> above, or the send will fail.

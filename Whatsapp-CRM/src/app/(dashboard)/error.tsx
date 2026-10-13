@@ -30,7 +30,7 @@ export default function DashboardError({
     <div className="flex min-h-[60vh] items-center justify-center p-6">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50">
-          <AlertTriangle className="h-5 w-5 text-amber-600" />
+          <AlertTriangle className="h-5 w-5 text-amber-700" />
         </div>
         <h2 className="text-[15px] font-semibold text-slate-800">This page could not be shown</h2>
         <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">

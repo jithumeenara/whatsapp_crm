@@ -79,7 +79,8 @@ export default async function RootLayout({
         {isDevMachine && (
           <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-[9999] flex justify-center">
             <div className="absolute inset-x-0 top-0 h-[3px] bg-red-600" />
-            <span className="mt-[3px] rounded-b-md bg-red-600 px-2 py-0.5 text-[10px] font-bold tracking-widest text-white shadow">DEV · nothing is sent</span>
+            {/* On a phone the centred label sat on the page title; it goes to a bottom corner there. */}
+            <span className="fixed bottom-1 left-1 rounded-md bg-red-600 px-2 py-0.5 text-[10px] font-bold tracking-widest text-white shadow sm:static sm:mt-[3px] sm:rounded-t-none sm:rounded-b-md">DEV · nothing is sent</span>
           </div>
         )}
         <Providers>

@@ -29,7 +29,7 @@ function SectionCard({ title, description, icon: Icon, tone = 'indigo', children
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-start gap-3 border-b border-slate-100 px-6 py-4">
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tone === 'emerald' ? 'bg-emerald-50' : 'bg-[#EEF0FF]'}`}>
-          <Icon className={`h-4.5 w-4.5 ${tone === 'emerald' ? 'text-emerald-600' : 'text-[#4A5CE8]'}`} />
+          <Icon className={`h-4.5 w-4.5 ${tone === 'emerald' ? 'text-emerald-700' : 'text-[#4A5CE8]'}`} />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-[14px] font-semibold text-slate-800">{title}</h2>

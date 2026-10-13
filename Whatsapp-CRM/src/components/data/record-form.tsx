@@ -862,7 +862,7 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved, ru
           {error && (
             <div className="flex items-start gap-2 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2">
               <AlertTriangle className="h-3.5 w-3.5 text-rose-500 shrink-0 mt-0.5" />
-              <p className="text-[12px] text-rose-600 leading-relaxed">{error}</p>
+              <p className="text-[12px] text-rose-700 leading-relaxed">{error}</p>
             </div>
           )}
         </div>

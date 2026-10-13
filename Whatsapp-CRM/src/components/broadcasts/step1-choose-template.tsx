@@ -113,7 +113,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         </div>
       ) : error ? (
         <div className="flex h-52 flex-col items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50">
-          <p className="text-[13px] font-medium text-rose-600">Failed to load templates</p>
+          <p className="text-[13px] font-medium text-rose-700">Failed to load templates</p>
           <p className="max-w-xs text-center text-[12px] text-rose-400">{error}</p>
         </div>
       ) : filtered.length === 0 ? (

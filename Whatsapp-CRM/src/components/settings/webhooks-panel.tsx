@@ -30,11 +30,11 @@ function fmt(iso: string | null) {
 }
 
 function statusBadge(status: number | null, failures: number) {
-  if (failures >= 10) return <span className="text-[11.5px] text-rose-600 font-medium">Auto-disabled</span>
+  if (failures >= 10) return <span className="text-[11.5px] text-rose-700 font-medium">Auto-disabled</span>
   if (!status) return null
   const ok = status >= 200 && status < 300
   return (
-    <span className={`text-[11.5px] font-mono ${ok ? 'text-emerald-600' : 'text-rose-600'}`}>{status}</span>
+    <span className={`text-[11.5px] font-mono ${ok ? 'text-emerald-700' : 'text-rose-700'}`}>{status}</span>
   )
 }
 
@@ -145,7 +145,7 @@ export function WebhooksPanel() {
       {newSecret && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+            <AlertTriangle className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
             <p className="text-[13px] font-medium text-amber-800">Copy the signing secret now — it will never be shown again.</p>
           </div>
           <div className="flex items-center gap-2">
@@ -222,7 +222,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-[12.5px] text-rose-600">
+            <div className="flex items-center gap-2 text-[12.5px] text-rose-700">
               <AlertCircle className="h-4 w-4 shrink-0" />
               {error}
             </div>
@@ -276,7 +276,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
                   </button>
                   <button
                     onClick={() => setDeleteTarget(h)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                    className="rounded-lg p-1.5 text-slate-400 hover:text-rose-700 hover:bg-rose-50 transition-colors"
                     title="Delete"
                    aria-label="Delete">
                     <Trash2 className="h-4 w-4" />
@@ -295,7 +295,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
                 <span>Last: {fmt(h.last_triggered_at)}</span>
                 {statusBadge(h.last_response_status, h.failure_count)}
                 {h.failure_count > 0 && h.failure_count < 10 && (
-                  <span className="text-amber-600">{h.failure_count} failure{h.failure_count > 1 ? 's' : ''}</span>
+                  <span className="text-amber-700">{h.failure_count} failure{h.failure_count > 1 ? 's' : ''}</span>
                 )}
               </div>
             </motion.div>

@@ -190,7 +190,10 @@ function SettingsContent() {
 
   const firstTab = visibleSections[0]?.tabs[0]?.key ?? "profile"
   const requestedTab = searchParams.get("tab")
-  const activeTab = requestedTab ?? firstTab
+  // An old or mistyped ?tab= (e.g. "team") showed the Profile form under a
+  // raw lowercase title; anything not a real tab opens the first one.
+  const knownTab = !!requestedTab && NAV_SECTIONS.some((s) => s.tabs.some((t) => t.key === requestedTab))
+  const activeTab = knownTab ? requestedTab : firstTab
 
   // Website Bot moved into Channels; a saved link to its old tab still
   // lands on it.

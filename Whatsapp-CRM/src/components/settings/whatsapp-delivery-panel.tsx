@@ -102,7 +102,7 @@ export function DeliveryPanel({
   }
 
   const rejectedNote = report.rejected && report.rejected.count > 0 && (
-    <p className="text-[11.5px] text-rose-600">
+    <p className="text-[11.5px] text-rose-700">
       Since {when(report.since)}, {report.rejected.count} delivery attempt{report.rejected.count === 1 ? '' : 's'} from Meta {report.rejected.count === 1 ? 'was' : 'were'} turned away
       {report.rejected.reason === 'mismatch' ? ' because the signature did not match' : ''} — last at {when(report.rejected.at)}.
     </p>
@@ -159,8 +159,8 @@ export function DeliveryPanel({
     <div className="space-y-2.5 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3.5 text-[12.5px] text-rose-900">
       <div className="flex items-start gap-2.5">
         {first === 'secret_mismatch' || first === 'no_secret'
-          ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-          : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />}
+          ? <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-rose-700" />
+          : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-700" />}
         <div className="min-w-0 space-y-1.5">
           {first === 'elsewhere' && (
             <>

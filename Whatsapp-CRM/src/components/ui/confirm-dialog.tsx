@@ -47,7 +47,7 @@ export function ConfirmDialog({
           <span
             className={cn(
               "flex h-14 w-14 items-center justify-center rounded-full ring-8",
-              danger ? "bg-rose-100 text-rose-600 ring-rose-50" : "bg-amber-100 text-amber-600 ring-amber-50",
+              danger ? "bg-rose-100 text-rose-700 ring-rose-50" : "bg-amber-100 text-amber-700 ring-amber-50",
             )}
           >
             <Icon className="h-6 w-6" />

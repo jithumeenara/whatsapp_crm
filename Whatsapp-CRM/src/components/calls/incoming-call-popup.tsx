@@ -142,7 +142,7 @@ export function IncomingCallPopup() {
     >
       <div className="w-full max-w-[340px] overflow-hidden rounded-3xl bg-white shadow-2xl">
         <div className="flex flex-col items-center px-6 pb-5 pt-8 text-center">
-          <span className="relative grid h-16 w-16 place-items-center rounded-full bg-emerald-50 text-emerald-600">
+          <span className="relative grid h-16 w-16 place-items-center rounded-full bg-emerald-50 text-emerald-700">
             <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/30" />
             <PhoneIncoming className="relative h-7 w-7" />
           </span>

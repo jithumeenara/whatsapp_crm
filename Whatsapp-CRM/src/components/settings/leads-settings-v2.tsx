@@ -168,15 +168,15 @@ function EditableItemList({
       header: "text-rose-700", headerBg: "bg-rose-50 border-rose-100",
       badge: "bg-rose-100 text-rose-700",
       input: "border-rose-200 focus:border-rose-400 focus:ring-rose-100",
-      add: "text-rose-600 hover:text-rose-800 hover:bg-rose-50",
-      remove: "text-rose-300 hover:text-rose-600 hover:bg-rose-100",
+      add: "text-rose-700 hover:text-rose-800 hover:bg-rose-50",
+      remove: "text-rose-300 hover:text-rose-700 hover:bg-rose-100",
     },
     emerald: {
       header: "text-emerald-700", headerBg: "bg-emerald-50 border-emerald-100",
       badge: "bg-emerald-100 text-emerald-700",
       input: "border-emerald-200 focus:border-emerald-400 focus:ring-emerald-100",
-      add: "text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50",
-      remove: "text-emerald-300 hover:text-emerald-600 hover:bg-emerald-100",
+      add: "text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50",
+      remove: "text-emerald-300 hover:text-emerald-700 hover:bg-emerald-100",
     },
     indigo: {
       header: "text-indigo-700", headerBg: "bg-indigo-50 border-indigo-100",
@@ -437,6 +437,7 @@ export function LeadsSettingsV2() {
             type="button"
             role="switch"
             aria-checked={settings.auto_lead_creation}
+            aria-label="Auto Lead Creation"
             onClick={() => setSettings((s) => ({ ...s, auto_lead_creation: !s.auto_lead_creation }))}
             className={`relative shrink-0 mt-0.5 h-6 w-10 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#5B6CF9]/40 focus:ring-offset-2 ${
               settings.auto_lead_creation ? "bg-[#4A5CE8]" : "bg-slate-200"
@@ -584,7 +585,7 @@ export function LeadsSettingsV2() {
             </div>
 
             {settings.sla_breach_hours > 0 && settings.sla_breach_hours < settings.sla_warn_hours && (
-              <p className="mt-2 text-[11.5px] text-rose-600">
+              <p className="mt-2 text-[11.5px] text-rose-700">
                 Red has to come after amber, or the amber stage never shows.
               </p>
             )}

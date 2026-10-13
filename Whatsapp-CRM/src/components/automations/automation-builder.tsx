@@ -249,7 +249,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
     // Members go through the API so we inherit its email-visibility
     // rules (agents/viewers don't see emails). Unreachable on older
-    // deployments â†’ pickers fall back to a raw agent-id input.
+    // deployments → pickers fall back to a raw agent-id input.
     void (async () => {
       try {
         const res = await fetch("/api/account/members", { cache: "no-store" })
@@ -1640,7 +1640,7 @@ function moveInBranches(
 }
 
 // ------------------------------------------------------------
-// Serialize builder tree â†’ API payload (flattened shape)
+// Serialize builder tree → API payload (flattened shape)
 // ------------------------------------------------------------
 
 interface ApiStep {

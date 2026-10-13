@@ -46,7 +46,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   const visible = items?.slice(0, pageSize) ?? []
   // A size option is "useful" if picking it would reveal rows the
   // smaller option doesn't already show. With PAGE_SIZES=[5,10,20,50]:
-  // "10" is useful only once we've loaded â‰¥6 items, "20" once â‰¥11, etc.
+  // "10" is useful only once we've loaded ≥6 items, "20" once ≥11, etc.
   // The smallest option is always enabled.
   const isSizeUseful = (size: PageSize, i: number) =>
     i === 0 || totalLoaded > PAGE_SIZES[i - 1]
@@ -59,7 +59,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
           href="/inbox"
           className="text-xs font-medium text-primary hover:text-primary/80"
         >
-          View all â†’
+          View all →
         </Link>
       </header>
 

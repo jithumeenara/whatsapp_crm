@@ -23,10 +23,10 @@ interface TestResult { success: boolean; records_count: number; sample_fields: {
 // ── Category config ─────────────────────────────────────────────
 const CAT_CFG: Record<string, { label: string; icon: React.ElementType; color: string; bg: string }> = {
   ecommerce:  { label: "E-Commerce",       icon: ShoppingCart, color: "text-violet-600", bg: "bg-violet-50 border-violet-200" },
-  payment:    { label: "Payment Gateway",  icon: CreditCard,   color: "text-emerald-600",bg: "bg-emerald-50 border-emerald-200" },
-  crm:        { label: "CRM / Leads",      icon: Users,        color: "text-sky-600",    bg: "bg-sky-50 border-sky-200" },
-  feedback:   { label: "Feedback",         icon: Star,         color: "text-amber-600",  bg: "bg-amber-50 border-amber-200" },
-  healthcare: { label: "Healthcare",       icon: Heart,        color: "text-rose-600",   bg: "bg-rose-50 border-rose-200" },
+  payment:    { label: "Payment Gateway",  icon: CreditCard,   color: "text-emerald-700",bg: "bg-emerald-50 border-emerald-200" },
+  crm:        { label: "CRM / Leads",      icon: Users,        color: "text-sky-700",    bg: "bg-sky-50 border-sky-200" },
+  feedback:   { label: "Feedback",         icon: Star,         color: "text-amber-700",  bg: "bg-amber-50 border-amber-200" },
+  healthcare: { label: "Healthcare",       icon: Heart,        color: "text-rose-700",   bg: "bg-rose-50 border-rose-200" },
   inventory:  { label: "Inventory / ERP",  icon: Package,      color: "text-indigo-600", bg: "bg-indigo-50 border-indigo-200" },
   custom:     { label: "Custom API",       icon: Cog,          color: "text-slate-600",  bg: "bg-slate-50 border-slate-200" },
 }
@@ -486,8 +486,8 @@ export default function IntegrationsPage() {
                   testResult.success ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50")}>
                   <div className="flex items-center gap-2">
                     {testResult.success
-                      ? <CheckCircle2 className="h-4.5 w-4.5 text-emerald-600 shrink-0" />
-                      : <XCircle className="h-4.5 w-4.5 text-rose-600 shrink-0" />}
+                      ? <CheckCircle2 className="h-4.5 w-4.5 text-emerald-700 shrink-0" />
+                      : <XCircle className="h-4.5 w-4.5 text-rose-700 shrink-0" />}
                     <p className={cn("text-[13px] font-semibold", testResult.success ? "text-emerald-800" : "text-rose-800")}>
                       {testResult.success ? "Connection Successful!" : "Connection Failed"}
                     </p>
@@ -600,7 +600,7 @@ export default function IntegrationsPage() {
                         {intg.last_synced_at && <span className="flex items-center gap-1"><Clock className="h-3 w-3 text-slate-300" />Last sync {new Date(intg.last_synced_at).toLocaleString()}</span>}
                         {lastSync && (
                           <span className={cn("font-medium flex items-center gap-1",
-                            lastSync.status === "success" ? "text-emerald-600" : lastSync.status === "error" ? "text-rose-600" : "text-indigo-600")}>
+                            lastSync.status === "success" ? "text-emerald-700" : lastSync.status === "error" ? "text-rose-700" : "text-indigo-600")}>
                             {lastSync.status === "success" ? <CheckCircle2 className="h-3 w-3" /> : lastSync.status === "error" ? <AlertCircle className="h-3 w-3" /> : <Loader2 className="h-3 w-3 animate-spin" />}
                             {lastSync.records_synced} records · {lastSync.contacts_created} contacts
                           </span>
@@ -712,7 +712,7 @@ export default function IntegrationsPage() {
                             }
                           </button>
                           {payError && !payError.toLowerCase().includes("auth") && (
-                            <p className="text-[11px] text-rose-600 max-w-[240px]">{payError}</p>
+                            <p className="text-[11px] text-rose-700 max-w-[240px]">{payError}</p>
                           )}
                         </div>
                       </div>
@@ -777,7 +777,7 @@ export default function IntegrationsPage() {
                         {intg.syncs.map((s) => (
                           <div key={s.id} className="flex items-center gap-3 text-[12px]">
                             <span className={cn("font-semibold w-16 shrink-0",
-                              s.status === "success" ? "text-emerald-600" : s.status === "error" ? "text-rose-600" : "text-indigo-600")}>
+                              s.status === "success" ? "text-emerald-700" : s.status === "error" ? "text-rose-700" : "text-indigo-600")}>
                               {s.status.charAt(0).toUpperCase() + s.status.slice(1)}
                             </span>
                             <span className="text-slate-600">{s.records_synced} records</span>

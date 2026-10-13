@@ -127,7 +127,7 @@ function SecretBlock({ text }: { text: string }) {
         <PemBlock text={text} />
       ) : (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/60 px-2.5 py-3">
-          <Lock className="size-3.5 shrink-0 text-emerald-600" />
+          <Lock className="size-3.5 shrink-0 text-emerald-700" />
           <span className="font-mono text-[11px] tracking-[0.2em] text-emerald-700">
             ••••••••••••••••••••••••
           </span>
@@ -325,9 +325,9 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                   {broken ? (
                     <ShieldAlert className="mt-0.5 size-4 shrink-0 text-rose-500" />
                   ) : healthy ? (
-                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                    <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-700" />
                   ) : (
-                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-amber-700" />
                   )}
                   <div className="min-w-0">
                     <p className="text-[13px] font-semibold text-slate-800">
@@ -389,7 +389,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                       works stops working.
                     </p>
                     {resyncStatus === 'error' && (
-                      <p className="flex items-start gap-1.5 text-[11px] text-rose-600">
+                      <p className="flex items-start gap-1.5 text-[11px] text-rose-700">
                         <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                         {resyncError}
                       </p>
@@ -463,7 +463,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
               <>
                 {keys.stored ? (
                   <div className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3 text-[12px] leading-relaxed text-emerald-900">
-                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-700" />
                     <span>
                       <strong>Saved on this server and read back.</strong> The webhook is using it
                       now — no restart needed.
@@ -471,7 +471,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                   </div>
                 ) : (
                   <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-[12px] leading-relaxed text-rose-900">
-                    <ShieldAlert className="mt-0.5 size-4 shrink-0 text-rose-600" />
+                    <ShieldAlert className="mt-0.5 size-4 shrink-0 text-rose-700" />
                     <span>
                       <strong>Not saved on this server.</strong> {keys.storeError} Nothing was
                       sent to Meta, so your existing Flows are untouched.
@@ -502,7 +502,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                 ) : (
                   <>
                     <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-[12px] leading-relaxed text-amber-900">
-                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700" />
                       <span>
                         <strong>Copy the private key now.</strong> The server could not keep it,
                         so this is the only copy that will ever exist. It stays hidden on screen —
@@ -569,7 +569,7 @@ export function KeysDialog({ open, onOpenChange }: KeysDialogProps) {
                               : 'Upload to Meta'}
                         </Button>
                         {uploadStatus === 'error' && (
-                          <p className="flex items-start gap-1.5 text-[11px] text-rose-600">
+                          <p className="flex items-start gap-1.5 text-[11px] text-rose-700">
                             <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
                             {uploadError}
                           </p>

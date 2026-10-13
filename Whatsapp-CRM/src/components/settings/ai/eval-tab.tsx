@@ -274,7 +274,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
             {quality.no_knowledge.length > 0 && (
               <div className="mt-4">
                 <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
-                  <HelpCircle className="h-3.5 w-3.5 text-amber-600" />
+                  <HelpCircle className="h-3.5 w-3.5 text-amber-700" />
                   Asked, with nothing to answer from
                 </p>
                 <p className="mt-0.5 text-[11.5px] text-slate-500">
@@ -301,7 +301,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
             {quality.caught_items.length > 0 && (
               <div className="mt-4">
                 <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
-                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
                   Kept out of replies
                 </p>
                 <p className="mt-0.5 text-[11.5px] text-slate-500">
@@ -561,9 +561,9 @@ export function EvalTab({ configured }: { configured: boolean }) {
                       {!result ? (
                         <span className="block h-4 w-4 rounded-full ring-1 ring-slate-200" />
                       ) : result.passed ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        <CheckCircle2 className="h-4 w-4 text-emerald-700" />
                       ) : (
-                        <XCircle className="h-4 w-4 text-rose-600" />
+                        <XCircle className="h-4 w-4 text-rose-700" />
                       )}
                     </span>
 
@@ -676,7 +676,7 @@ export function EvalTab({ configured }: { configured: boolean }) {
                         type="button"
                         aria-label={`Delete test: ${c.question}`}
                         onClick={() => void post({ action: 'delete_case', id: c.id })}
-                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                        className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-700"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

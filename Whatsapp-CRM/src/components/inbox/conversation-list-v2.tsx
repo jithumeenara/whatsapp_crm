@@ -54,7 +54,7 @@ const CHANNEL_OPTIONS: { value: ChannelFilter; label: string; icon: React.ReactN
   { value: "sms",       label: "SMS",       icon: <MessageSquare className="h-3.5 w-3.5 text-indigo-500" /> },
   { value: "email",     label: "Email",     icon: <Mail className="h-3.5 w-3.5 text-sky-500" /> },
   { value: "rcs",       label: "RCS",       icon: <Radio className="h-3.5 w-3.5 text-violet-500" /> },
-  { value: "website",   label: "Website",   icon: <Globe className="h-3.5 w-3.5 text-orange-600" /> },
+  { value: "website",   label: "Website",   icon: <Globe className="h-3.5 w-3.5 text-orange-700" /> },
 ]
 
 /** Icon shown inside the small badge on a conversation's avatar — same set as CHANNEL_OPTIONS, minus "all". */
@@ -65,7 +65,7 @@ function channelIcon(channel: string, className: string) {
     case "sms":       return <MessageSquare className={cn(className, "text-indigo-500")} />
     case "email":     return <Mail className={cn(className, "text-sky-500")} />
     case "rcs":       return <Radio className={cn(className, "text-violet-500")} />
-    case "website":   return <Globe className={cn(className, "text-orange-600")} />
+    case "website":   return <Globe className={cn(className, "text-orange-700")} />
     default:          return <WhatsAppIcon className={className} />
   }
 }
@@ -251,6 +251,8 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
               <button
                 type="button"
                 onClick={() => setChannelOpen((v) => !v)}
+                aria-label={`Channel: ${CHANNEL_OPTIONS.find(o => o.value === channelFilter)?.label ?? "All"}`}
+                aria-expanded={channelOpen}
                 className={cn(
                   "flex items-center gap-1.5 rounded-xl px-2.5 h-8 text-[12px] font-medium transition-all border",
                   channelFilter !== "all"
@@ -289,7 +291,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
               )}
             </div>
             {/* Search button */}
-            <button type="button" onClick={() => { setSearchOpen((v) => !v); setSearch("") }}
+            <button type="button" onClick={() => { setSearchOpen((v) => !v); setSearch("") }} aria-label={searchOpen ? "Close search" : "Search conversations"}
               className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition-all",
                 searchOpen ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
               {searchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
