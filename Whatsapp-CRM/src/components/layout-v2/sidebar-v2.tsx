@@ -126,6 +126,7 @@ export function SidebarV2({
       />
 
       <aside
+        aria-label="Main menu"
         className={cn(
           "fixed inset-y-0 left-0 z-40 flex flex-col bg-white border-r border-slate-200",
           "transition-all duration-200 ease-out",
@@ -144,6 +145,7 @@ export function SidebarV2({
         >
           <Link
             href="/dashboard"
+            aria-label="WhatsApp CRM — dashboard"
             className={cn("flex items-center gap-2.5 min-w-0", collapsed && "justify-center")}
           >
             <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-indigo-600 shadow-sm">
@@ -179,7 +181,7 @@ export function SidebarV2({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto scroll-styled px-2 py-3 space-y-5">
+        <nav aria-label="Pages" className="flex-1 overflow-y-auto scroll-styled px-2 py-3 space-y-5">
           {NAV_SECTIONS.map((section) => {
             // The server's answer when there is one. `agentAllowed`
             // stays as the fallback for the moment before the profile

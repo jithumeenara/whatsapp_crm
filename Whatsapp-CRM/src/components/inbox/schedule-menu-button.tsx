@@ -27,7 +27,7 @@ export function ScheduleMenuButton({ conversationId, disabled }: ScheduleMenuBut
           disabled={disabled}
           title="Scheduled messages"
           className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 disabled:opacity-40"
-        >
+         aria-label="Scheduled messages">
           <CalendarClock className="h-4 w-4" />
         </button>
         {menuOpen && (

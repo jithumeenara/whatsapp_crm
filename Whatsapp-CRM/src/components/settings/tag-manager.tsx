@@ -176,7 +176,7 @@ export function TagManager() {
                 <button
                   onClick={() => confirmDelete(tag)}
                   className="ml-0.5 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/5"
-                >
+                 aria-label="Close">
                   <X className="h-3 w-3" />
                 </button>
               </motion.span>

@@ -278,7 +278,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
                     onClick={() => setDeleteTarget(h)}
                     className="rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                     title="Delete"
-                  >
+                   aria-label="Delete">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>

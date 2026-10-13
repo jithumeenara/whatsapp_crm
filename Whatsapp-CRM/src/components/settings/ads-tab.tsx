@@ -417,7 +417,7 @@ function MetaAdsOverview() {
                   placeholder="Enter your access token"
                   className="h-9 text-[13px] border-slate-200 pr-10 font-mono"
                 />
-                <button type="button" onClick={() => setShowToken(!showToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <button type="button" onClick={() => setShowToken(!showToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label={showToken ? "Hide" : "Show"} aria-pressed={showToken}>
                   {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>

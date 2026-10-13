@@ -44,7 +44,7 @@ export default function FlowRunsPage() {
   return (
     <div className="flex flex-col h-full bg-[#F4F6FA]">
       <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100">
-        <button onClick={() => router.push(`/flows/${id}`)} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100">
+        <button onClick={() => router.push(`/flows/${id}`)} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100" aria-label="Back">
           <ArrowLeft className="h-4 w-4 text-slate-500" />
         </button>
         <div className="flex-1">

@@ -561,7 +561,7 @@ export default function LeadDetailPage() {
     <div className="flex flex-col h-full bg-[#F4F6FA]">
       {/* Header */}
       <div className="flex items-center gap-3 px-6 py-4 bg-white border-b border-slate-100 shrink-0">
-        <button onClick={() => router.push("/leads")} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100 shrink-0">
+        <button onClick={() => router.push("/leads")} className="flex items-center justify-center h-8 w-8 rounded-lg hover:bg-slate-100 shrink-0" aria-label="Back">
           <ArrowLeft className="h-4 w-4 text-slate-500" />
         </button>
         <div className="flex items-center gap-2 min-w-0 flex-1 text-[14px]">
@@ -586,11 +586,11 @@ export default function LeadDetailPage() {
 
         <div className="flex items-center gap-1 shrink-0 rounded-xl border border-slate-200 p-0.5">
           <button onClick={() => goTo(prevId)} disabled={!prevId}
-            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent">
+            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent" aria-label="Previous">
             <ChevronLeft className="h-3.5 w-3.5 text-slate-500" />
           </button>
           <button onClick={() => goTo(nextId)} disabled={!nextId}
-            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent">
+            className="flex items-center justify-center h-7 w-7 rounded-lg hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent" aria-label="Next">
             <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
           </button>
         </div>

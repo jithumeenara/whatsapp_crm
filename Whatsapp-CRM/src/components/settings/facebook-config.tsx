@@ -217,7 +217,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
                 />
                 <button type="button" onClick={() => setShowToken((s) => !s)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label={showToken ? "Hide" : "Show"} aria-pressed={showToken}>
                   {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
@@ -248,7 +248,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] pr-10 outline-none focus:border-[#5B6CF9]/40 focus:ring-2 focus:ring-[#5B6CF9]/10 font-mono"
                 />
                 <button type="button" onClick={() => setShowSecret((s) => !s)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label={showSecret ? "Hide" : "Show"} aria-pressed={showSecret}>
                   {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>

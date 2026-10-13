@@ -137,7 +137,7 @@ export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: S
                       <div className="flex items-center gap-1 shrink-0">
                         {canEdit(sm.status) && (
                           <button type="button" onClick={() => setEditItem(sm)} title="Edit"
-                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-indigo-600">
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white hover:text-indigo-600" aria-label="Edit">
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                         )}

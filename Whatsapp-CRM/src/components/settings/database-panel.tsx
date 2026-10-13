@@ -32,7 +32,7 @@ function SectionCard({ title, description, icon: Icon, tone = 'indigo', children
           <Icon className={`h-4.5 w-4.5 ${tone === 'emerald' ? 'text-emerald-600' : 'text-[#4A5CE8]'}`} />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
+          <h2 className="text-[14px] font-semibold text-slate-800">{title}</h2>
           <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{description}</p>
         </div>
       </div>

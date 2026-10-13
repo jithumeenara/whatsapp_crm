@@ -183,7 +183,7 @@ export function ApiKeysPanel() {
                         onClick={() => setRevokeTarget(k)}
                         className="rounded-lg p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
                         title="Revoke"
-                      >
+                       aria-label="Revoke">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </td>

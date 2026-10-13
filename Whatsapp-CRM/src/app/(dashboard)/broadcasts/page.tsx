@@ -180,7 +180,7 @@ export default function BroadcastsV2() {
                               disabled={deleting.has(b.id) || b.status === "sending"}
                               title={b.status === "sending" ? "Cannot delete while sending" : "Delete broadcast"}
                               className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 opacity-0 group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-500 transition-all disabled:opacity-20 disabled:cursor-not-allowed"
-                            >
+                             aria-label={b.status === "sending" ? "Cannot delete while sending" : "Delete broadcast"}>
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>

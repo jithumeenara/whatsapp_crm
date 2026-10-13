@@ -423,7 +423,7 @@ function CreateLeadDialog({
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-white rounded-t-2xl">
           <h2 className="text-[15px] font-semibold text-slate-900">New Lead</h2>
-          <button type="button" onClick={() => { onClose(); resetAll() }} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100">
+          <button type="button" onClick={() => { onClose(); resetAll() }} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -589,7 +589,7 @@ function LeadMenu({ lead, menuOpenId, onMenuToggle, onDelete, onHide, onAddToPip
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <button type="button" onClick={() => onMenuToggle(lead.id)}
-        className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all">
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all" aria-label="More actions">
         <MoreHorizontal className="h-4 w-4" />
       </button>
       {isMenuOpen && (
@@ -1659,12 +1659,12 @@ function LeadsV2() {
           <div className="hidden sm:flex items-center rounded-xl border border-slate-200 bg-slate-50 p-0.5 shrink-0">
             <button type="button" onClick={() => chooseView("tiles")} title="Tile view"
               className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all",
-                view === "tiles" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}>
+                view === "tiles" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")} aria-label="Tile view">
               <LayoutGrid className="h-3.5 w-3.5" />
             </button>
             <button type="button" onClick={() => chooseView("table")} title="Table view"
               className={cn("flex h-7 w-7 items-center justify-center rounded-lg transition-all",
-                view === "table" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")}>
+                view === "table" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-400 hover:text-slate-600")} aria-label="Table view">
               <Table2 className="h-3.5 w-3.5" />
             </button>
           </div>

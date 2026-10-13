@@ -160,7 +160,7 @@ function KpiCard({
       <div className="pointer-events-none absolute bottom-3 right-3 h-12 w-28" aria-hidden="true">
         {/* A fixed size, like its box. Measured instead, it drew once at
             -1×-1 before the box existed and warned in the console. */}
-        <AreaChart width={112} height={48} data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+        <AreaChart width={112} height={48} data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }} accessibilityLayer={false} tabIndex={-1}>
             <defs>
               <linearGradient id={`spark-${id}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={t.stroke} stopOpacity={0.25} />

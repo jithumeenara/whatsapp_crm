@@ -530,7 +530,7 @@ export default function ChatbotV2() {
                   onClick={() => exportBot(bot)}
                   className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-300 hover:bg-indigo-50 hover:text-indigo-500 transition-colors"
                   title="Export JSON"
-                >
+                 aria-label="Export JSON">
                   <Download className="h-3 w-3" />
                 </button>
                 <button
@@ -538,7 +538,7 @@ export default function ChatbotV2() {
                   onClick={() => setDeleteId(bot.id)}
                   className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition-colors"
                   title="Delete"
-                >
+                 aria-label="Delete">
                   <Trash2 className="h-3 w-3" />
                 </button>
               </div>
@@ -635,6 +635,7 @@ export default function ChatbotV2() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Switch
+                        aria-label={`${bot.name} — ${active ? "on" : "off"}`}
                         checked={active}
                         disabled={togglingId === bot.id}
                         onCheckedChange={() => toggleActive(bot)}
@@ -678,14 +679,14 @@ export default function ChatbotV2() {
                         onClick={() => exportBot(bot)}
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-indigo-50 hover:text-indigo-500 transition-colors"
                         title="Export JSON"
-                      >
+                       aria-label="Export JSON">
                         <Download className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
                         onClick={() => setDeleteId(bot.id)}
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition-colors"
-                      >
+                       aria-label="Delete">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -767,7 +768,7 @@ export default function ChatbotV2() {
                   "flex h-7 w-7 items-center justify-center rounded-md transition-all",
                   view === "grid" ? "bg-white shadow-sm text-indigo-600" : "text-slate-400 hover:text-slate-600"
                 )}
-              >
+               aria-label="Grid view">
                 <LayoutGrid className="h-3.5 w-3.5" />
               </button>
               <button
@@ -777,7 +778,7 @@ export default function ChatbotV2() {
                   "flex h-7 w-7 items-center justify-center rounded-md transition-all",
                   view === "table" ? "bg-white shadow-sm text-indigo-600" : "text-slate-400 hover:text-slate-600"
                 )}
-              >
+               aria-label="List view">
                 <List className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -787,6 +788,7 @@ export default function ChatbotV2() {
               ref={importRef}
               type="file"
               accept=".json"
+              aria-label="Import a chatbot from a JSON file"
               className="sr-only"
               onChange={importBot}
             />

@@ -300,7 +300,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
             <div ref={moreRef} className="relative">
               <button type="button" onClick={() => setMoreOpen((v) => !v)} title="More"
                 className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition-all",
-                  moreOpen ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}>
+                  moreOpen ? "bg-indigo-50 text-indigo-600" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")} aria-label="More">
                 <MoreVertical className="h-4 w-4" />
               </button>
               {/* Always mounted, toggled with CSS rather than conditionally

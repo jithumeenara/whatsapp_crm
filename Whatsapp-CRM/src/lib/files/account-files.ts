@@ -10,6 +10,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { randomUUID } from 'crypto'
 import { prisma } from '@/lib/db'
+import { scanCallbackUrl } from './scan-signature'
 
 export const UPLOADS_DIR = join(process.cwd(), 'uploads')
 
@@ -157,7 +158,7 @@ export async function saveAccountFile(args: {
         url,
         original_name: record.original_name,
         mime_type: args.mime,
-        callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/file-manager/${record.id}/scan-result`,
+        callback_url: scanCallbackUrl(record.id),
       }),
     }).catch(() => {})
   }

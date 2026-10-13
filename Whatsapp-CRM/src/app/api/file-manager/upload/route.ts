@@ -4,6 +4,7 @@ import { join, extname, basename } from "path";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
 import { contentMatchesType, extensionFor } from "@/lib/files/account-files";
+import { scanCallbackUrl } from "@/lib/files/scan-signature";
 import { randomUUID } from "crypto";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
             url,
             original_name: file.name,
             mime_type: file.type,
-            callback_url: `${process.env.NEXT_PUBLIC_APP_URL}/api/file-manager/${record.id}/scan-result`,
+            callback_url: scanCallbackUrl(record.id),
           }),
         }).catch(() => {});
       }

@@ -320,7 +320,7 @@ export default function FollowUpsV2() {
                           type="button"
                           onClick={() => setOpenMenuId((v) => v === fu.id ? null : fu.id)}
                           className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors"
-                        >
+                         aria-label="More actions">
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
                         {openMenuId === fu.id && (

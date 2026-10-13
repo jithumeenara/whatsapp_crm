@@ -55,7 +55,7 @@ export function ValidationPanel() {
               type="button"
               onClick={() => setOpen(false)}
               className="rounded p-0.5 text-slate-400 hover:bg-black/5 hover:text-slate-600"
-            >
+             aria-label="Close">
               <X className="h-3 w-3" />
             </button>
           </div>

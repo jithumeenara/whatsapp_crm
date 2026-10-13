@@ -408,7 +408,7 @@ export function FieldEditor({ tableId, fields, allTables, onFieldsChange }: Prop
                           />
                           {form.select_items.length > 1 && (
                             <button type="button" onClick={() => removeOption(i)}
-                              className="text-slate-500 hover:text-destructive transition-colors">
+                              className="text-slate-500 hover:text-destructive transition-colors" aria-label="Close">
                               <X className="size-4" />
                             </button>
                           )}

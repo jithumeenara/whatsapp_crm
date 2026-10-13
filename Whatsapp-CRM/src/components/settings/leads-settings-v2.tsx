@@ -75,7 +75,7 @@ function EmojiPicker({ value, onChange }: { value: string; onChange: (e: string)
         onClick={() => setOpen((o) => !o)}
         title="Pick icon"
         className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors overflow-hidden"
-      >
+       aria-label="Pick icon">
         <IconPreview value={value} />
       </button>
 
@@ -226,7 +226,7 @@ function EditableItemList({
               onClick={() => remove(i)}
               className={`h-6 w-6 flex items-center justify-center rounded-md transition-colors ${colors.remove}`}
               title="Remove"
-            >
+             aria-label="Remove">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>

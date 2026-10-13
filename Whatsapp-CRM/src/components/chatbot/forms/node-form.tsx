@@ -795,7 +795,7 @@ function SendButtonsForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                     <button
                       onClick={() => removeButton(i)}
                       className="text-slate-400 hover:text-rose-500"
-                    >
+                     aria-label="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
@@ -938,7 +938,7 @@ function SendListForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 <button
                   onClick={() => removeRow(si, ri)}
                   className="text-slate-400 hover:text-rose-500"
-                >
+                 aria-label="Delete">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -1790,7 +1790,7 @@ function SetVariableForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 <button
                   onClick={() => remove(i)}
                   className="text-slate-500 hover:text-rose-500"
-                >
+                 aria-label="Delete">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -3327,7 +3327,7 @@ function SwitchCaseForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                   type="button"
                   onClick={() => removeCase(i)}
                   className="text-slate-500 hover:text-rose-500"
-                >
+                 aria-label="Delete">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               )}

@@ -310,7 +310,7 @@ export function CatalogTab() {
                     placeholder="System user token with catalog_management"
                     className="h-9 pr-9 text-sm"
                   />
-                  <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <button type="button" onClick={() => setShowToken((s) => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label={showToken ? "Hide" : "Show"} aria-pressed={showToken}>
                     {showToken ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                   </button>
                 </div>

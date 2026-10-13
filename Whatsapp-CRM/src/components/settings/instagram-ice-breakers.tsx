@@ -140,7 +140,7 @@ export function InstagramIceBreakers() {
                     placeholder="STORE_HOURS"
                     className="h-9 w-40 rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono text-[12px] text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-100"
                   />
-                  <button type="button" onClick={() => setIceBreakers((prev) => prev.filter((_, j) => j !== i))} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                  <button type="button" onClick={() => setIceBreakers((prev) => prev.filter((_, j) => j !== i))} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500" aria-label="Delete">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -215,7 +215,7 @@ export function InstagramIceBreakers() {
                         className="h-9 w-40 rounded-lg border border-slate-200 bg-slate-50 px-3 font-mono text-[12px] text-slate-600 focus:outline-none focus:ring-2 focus:ring-pink-100"
                       />
                     )}
-                    <button type="button" onClick={() => setMenuItems((prev) => prev.filter((_, j) => j !== i))} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                    <button type="button" onClick={() => setMenuItems((prev) => prev.filter((_, j) => j !== i))} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500" aria-label="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>

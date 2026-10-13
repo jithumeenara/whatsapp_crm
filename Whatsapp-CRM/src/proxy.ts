@@ -189,7 +189,11 @@ async function route(req: NextRequest, forwarded: Headers) {
     PUBLIC_PREFIXES.some((p) => pathname.startsWith(p)) ||
     // Meta WhatsApp Flows webhook — server-to-server call from Meta (RSA-encrypted, no session cookie).
     // Pattern: /api/flows/{uuid}/webhook
-    /^\/api\/flows\/[^/]+\/webhook$/.test(pathname)
+    /^\/api\/flows\/[^/]+\/webhook$/.test(pathname) ||
+    // The virus scanner's callback — server to server, no session. The
+    // route accepts only the signature of the file id it was given
+    // (src/lib/files/scan-signature.ts). Exactly this path, nothing near it.
+    /^\/api\/file-manager\/[0-9a-f-]{36}\/scan-result$/.test(pathname)
   ) {
     return NextResponse.next({ request: { headers: forwarded } })
   }

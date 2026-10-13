@@ -277,7 +277,7 @@ export function SessionsCard() {
             title="Auto-logout timeout settings"
             onClick={() => setTimeoutSettingsOpen(true)}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-          >
+           aria-label="Auto-logout timeout settings">
             <Settings className="h-4 w-4" />
           </button>
         </div>

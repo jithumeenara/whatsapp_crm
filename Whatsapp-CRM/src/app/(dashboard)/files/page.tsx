@@ -244,7 +244,7 @@ export default function FilesPage() {
                       onClick={() => setDeleteId(f.id)}
                       className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/90 text-rose-500 hover:bg-white shadow transition-colors"
                       title="Delete"
-                    >
+                     aria-label="Delete">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>

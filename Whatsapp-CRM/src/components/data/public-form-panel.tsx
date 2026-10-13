@@ -343,7 +343,7 @@ export function PublicFormPanel({
                   onClick={() => copy(url)}
                   title="Copy link"
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
-                >
+                 aria-label="Copy link">
                   <Copy className="h-3.5 w-3.5" />
                 </button>
                 <a
@@ -648,7 +648,7 @@ export function PublicFormPanel({
                       onClick={() => copy(personal.url)}
                       title="Copy link"
                       className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    >
+                     aria-label="Copy link">
                       <Copy className="h-3.5 w-3.5" />
                     </button>
                   </div>

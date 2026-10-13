@@ -216,7 +216,7 @@ export function ReportsWorkspace() {
       <div className="grid gap-6 lg:grid-cols-[288px_minmax(0,1fr)]">
         <Library catalog={catalog} activeId={activeId} onOpen={open} onChanged={loadCatalog} />
 
-        <main className="min-w-0 space-y-5">
+        <section aria-label="Report" className="min-w-0 space-y-5">
           <QuestionBar catalog={catalog} moment={moment} spec={spec} onChange={edit} />
 
           {runError && (
@@ -243,7 +243,7 @@ export function ReportsWorkspace() {
               <ResultSkeleton />
             ) : null}
           </section>
-        </main>
+        </section>
       </div>
 
       {presenting && result && (
@@ -489,7 +489,7 @@ function Library({ catalog, activeId, onOpen, onChanged }: {
   }
 
   return (
-    <aside className={cn(CARD, 'self-start p-3 print:hidden lg:sticky lg:top-4')}>
+    <aside aria-label="Saved reports" className={cn(CARD, 'self-start p-3 print:hidden lg:sticky lg:top-4')}>
       <button
         type="button"
         onClick={() => setMobileOpen((v) => !v)}

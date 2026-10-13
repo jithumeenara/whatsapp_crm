@@ -49,7 +49,7 @@ export function EditorHeader({ view, isMobile, onViewChange }: EditorHeaderProps
         onClick={() => router.push("/flows")}
         title="Back to Flows"
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-      >
+       aria-label="Back to Flows">
         <ArrowLeft className="h-4 w-4" />
       </button>
 

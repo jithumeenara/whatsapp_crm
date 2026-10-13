@@ -951,7 +951,7 @@ export function TemplateManager() {
                     title="Bold (*text*)"
                     onClick={() => insertFormatting('*')}
                     className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                  >
+                   aria-label="Bold (*text*)">
                     <Bold className="size-3.5" />
                   </button>
                   <button
@@ -959,7 +959,7 @@ export function TemplateManager() {
                     title="Italic (_text_)"
                     onClick={() => insertFormatting('_')}
                     className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                  >
+                   aria-label="Italic (_text_)">
                     <Italic className="size-3.5" />
                   </button>
                   <button
@@ -967,7 +967,7 @@ export function TemplateManager() {
                     title="Strikethrough (~text~)"
                     onClick={() => insertFormatting('~')}
                     className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                  >
+                   aria-label="Strikethrough (~text~)">
                     <Strikethrough className="size-3.5" />
                   </button>
                   <button
@@ -975,7 +975,7 @@ export function TemplateManager() {
                     title="Monospace (```text```)"
                     onClick={() => insertFormatting('```')}
                     className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                  >
+                   aria-label="Monospace (```text```)">
                     <Code className="size-3.5" />
                   </button>
                   <button
@@ -983,7 +983,7 @@ export function TemplateManager() {
                     title="Expand editor"
                     onClick={() => setBodyEditorOpen(true)}
                     className="ml-1 rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
-                  >
+                   aria-label="Expand editor">
                     <Maximize2 className="size-3.5" />
                   </button>
                 </div>

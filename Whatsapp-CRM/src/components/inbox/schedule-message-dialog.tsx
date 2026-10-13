@@ -212,7 +212,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                       )}
                     </div>
                     <button type="button" onClick={() => setTemplatePickerOpen(true)}
-                      className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-indigo-500 hover:bg-white" title="Change template">
+                      className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg text-indigo-500 hover:bg-white" title="Change template" aria-label="Change template">
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
                   </div>

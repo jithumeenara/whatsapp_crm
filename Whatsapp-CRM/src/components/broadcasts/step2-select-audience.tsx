@@ -879,7 +879,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
               />
               {search && (
                 <button type="button" onClick={() => { setSearch(''); setPage(0); setQuery(''); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label="Close">
                   <X className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -1049,7 +1049,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                 </span>
                 {c.name || c.phone}
                 <button type="button" onClick={() => removeSelected(c.id)}
-                  className="text-indigo-300 hover:text-indigo-600 transition-colors">
+                  className="text-indigo-300 hover:text-indigo-600 transition-colors" aria-label="Close">
                   <X className="h-3 w-3" />
                 </button>
               </span>

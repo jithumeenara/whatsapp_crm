@@ -280,7 +280,7 @@ export default function BroadcastDetailPage() {
             <button
               onClick={() => router.push("/broadcasts")}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
-            >
+             aria-label="Back">
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50">
@@ -326,7 +326,7 @@ export default function BroadcastDetailPage() {
               onClick={() => load(true)}
               disabled={refreshing}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition-colors disabled:opacity-50"
-            >
+             aria-label="Refresh">
               <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
             </button>
           </div>
@@ -491,7 +491,7 @@ export default function BroadcastDetailPage() {
                             onClick={() => setPreviewRecipient(r)}
                             title="View sent message"
                             className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                          >
+                           aria-label="View sent message">
                             <Eye className="h-3.5 w-3.5" />
                           </button>
                         ) : (

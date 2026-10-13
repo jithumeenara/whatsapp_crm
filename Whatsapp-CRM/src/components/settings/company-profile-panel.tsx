@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Building2, Loader2, Save, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TimezonePicker } from './timezone-picker';
@@ -403,8 +402,12 @@ function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-[12.5px] font-medium text-slate-700">{label}</Label>
-      {children}
+      {/* A <label> around the control, so the field has its name — the
+          text above it was not connected to the input (axe: label). */}
+      <label className="block space-y-1.5">
+        <span className="block text-[12.5px] font-medium text-slate-700">{label}</span>
+        {children}
+      </label>
       {hint && <p className="text-[11px] leading-relaxed text-slate-400">{hint}</p>}
     </div>
   );

@@ -352,7 +352,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                   type="button"
                   onClick={() => onOpenChange(false)}
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                >
+                 aria-label="Close">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -567,7 +567,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                                 type="button"
                                 onClick={() => router.push(`/leads/${lead.id}`)}
                                 className="shrink-0 flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600 transition-colors"
-                              >
+                               aria-label="Open in a new tab">
                                 <ExternalLink className="h-3.5 w-3.5" />
                               </button>
                             </div>
@@ -675,7 +675,7 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                               type="button"
                               onClick={() => deleteNote(note.id)}
                               className="shrink-0 opacity-0 group-hover:opacity-100 flex h-6 w-6 items-center justify-center rounded-lg text-slate-300 hover:bg-rose-50 hover:text-rose-500 transition-all"
-                            >
+                             aria-label="Delete">
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>

@@ -166,7 +166,9 @@ const nextConfig: NextConfig = {
    *     the correct production headers for hashed assets.
    *   - /api/*          — no-store. API responses are per-user and
    *     must never be shared across requests at the edge.
-   *   - Everything else — public, brief s-maxage + generous
+   *   - Everything else — private, no-cache (see the value below; this
+   *     replaced public + s-maxage, which let an edge keep a signed-in
+   *     page). Formerly: public, brief s-maxage + generous
    *     stale-while-revalidate. The edge serves instantly from cache
    *     for the first 5 min, then returns cached content while
    *     refreshing in the background for up to 24 h. A deploy's
@@ -202,7 +204,12 @@ const nextConfig: NextConfig = {
           {
             key: "Cache-Control",
             value:
-              "public, max-age=0, s-maxage=300",
+              // private: no shared cache (a CDN, nginx) may keep a page at all —
+              // the live audit (Oct 2026) found a signed-in /dashboard going
+              // out as public, s-maxage=300, so one user's page could have been
+              // served to another for five minutes. no-cache: the browser asks
+              // again every time, so a deploy's new chunk names are always seen.
+              "private, no-cache, max-age=0",
           },
         ],
       },

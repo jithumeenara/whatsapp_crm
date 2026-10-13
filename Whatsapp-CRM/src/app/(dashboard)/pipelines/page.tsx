@@ -123,7 +123,7 @@ function DealCard({
           <button
             onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v) }}
             className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity"
-          >
+           aria-label="More actions">
             <MoreHorizontal className="h-3.5 w-3.5" />
           </button>
           {menuOpen && (
@@ -176,7 +176,9 @@ function SortableDealCard({ deal, onEdit, onDelete }: { deal: Deal; onEdit: (d: 
   const style = { transform: CSS.Transform.toString(transform), transition }
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
+    // dnd-kit makes the wrapper a role="button"; the card inside has its own
+    // edit and delete buttons, so it is a group (axe: nested-interactive).
+    <div ref={setNodeRef} style={style} {...attributes} role="group" aria-roledescription="draggable deal" aria-label={deal.title}>
       <div {...listeners} className="cursor-grab active:cursor-grabbing">
         <DealCard deal={deal} onEdit={onEdit} onDelete={onDelete} dragging={isDragging} />
       </div>
@@ -232,7 +234,7 @@ function StageColumn({
           <button
             onClick={() => setMenuOpen((v) => !v)}
             className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200"
-          >
+           aria-label="More actions">
             <MoreHorizontal className="h-3.5 w-3.5" />
           </button>
           {menuOpen && (
@@ -535,7 +537,7 @@ function NewPipelineModal({ onSave, onClose }: { onSave: (name: string, stages: 
                     onClick={() => setOpenStages(openStages.filter((_, j) => j !== i))}
                     disabled={openStages.length <= 1}
                     className="flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                  >
+                   aria-label="Close">
                     <X className="h-3 w-3" />
                   </button>
                 </div>
@@ -869,7 +871,7 @@ export default function PipelinesPage() {
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <span className="text-[12px] font-bold uppercase tracking-widest text-slate-400">Pipelines</span>
           <button onClick={() => setShowNewPipeline(true)}
-            className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">
+            className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" aria-label="Add">
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -900,42 +902,48 @@ export default function PipelinesPage() {
                       className="flex-1 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
                     />
                     <button onClick={() => handleRenamePipeline(p.id, renamePipelineName)}
-                      className="flex h-5 w-5 items-center justify-center rounded text-emerald-600 hover:bg-emerald-50">
+                      className="flex h-5 w-5 items-center justify-center rounded text-emerald-600 hover:bg-emerald-50" aria-label="Confirm">
                       <Check className="h-3 w-3" />
                     </button>
                     <button onClick={() => setRenamingPipelineId(null)}
-                      className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100">
+                      className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-100" aria-label="Close">
                       <X className="h-3 w-3" />
                     </button>
                   </div>
                 ) : (
+                  // One row, two kinds of control side by side — the pipeline itself
+                  // (a real button) and its rename/delete — never one inside the
+                  // other, which a screen reader cannot reach (axe: nested-interactive).
                   <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setActivePipelineId(p.id)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setActivePipelineId(p.id) }}
                     className={cn(
-                      "flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors",
+                      "flex w-full items-center gap-2 px-3 py-2 transition-colors",
                       activePipelineId === p.id
                         ? "bg-indigo-50 text-indigo-700"
                         : "text-slate-700 hover:bg-slate-50",
                     )}
                   >
-                    <Target className="h-3.5 w-3.5 shrink-0" />
-                    <span className="flex-1 truncate text-[13px] font-semibold">{p.name}</span>
-                    <span className={cn(
-                      "rounded-full px-1.5 text-[10px] font-bold",
-                      activePipelineId === p.id ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-500"
-                    )}>
-                      {p._count.deals}
-                    </span>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      onClick={() => setActivePipelineId(p.id)}
+                      aria-current={activePipelineId === p.id ? "true" : undefined}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <Target className="h-3.5 w-3.5 shrink-0" />
+                      <span className="flex-1 truncate text-[13px] font-semibold">{p.name}</span>
+                      <span className={cn(
+                        "rounded-full px-1.5 text-[10px] font-bold",
+                        activePipelineId === p.id ? "bg-indigo-100 text-indigo-600" : "bg-slate-100 text-slate-500"
+                      )}>
+                        {p._count.deals}
+                      </span>
+                    </button>
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                       <button onClick={(e) => { e.stopPropagation(); setRenamePipelineName(p.name); setRenamingPipelineId(p.id) }}
-                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-200">
+                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-slate-200" aria-label="Edit">
                         <Edit2 className="h-2.5 w-2.5" />
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); handleDeletePipeline(p.id) }}
-                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                        className="flex h-5 w-5 items-center justify-center rounded text-slate-400 hover:bg-rose-50 hover:text-rose-500" aria-label="Delete">
                         <Trash2 className="h-2.5 w-2.5" />
                       </button>
                     </div>

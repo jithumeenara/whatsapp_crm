@@ -420,7 +420,7 @@ function DataTable({ result, compare, top }: { result: ReportResult; compare: bo
   const th = 'px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500'
   const td = 'px-4 py-2.5 text-[13px] text-slate-700 tabular-nums'
   const wrap = (body: React.ReactNode) => (
-    <div className="overflow-x-auto rounded-xl border border-slate-100">
+    <div tabIndex={0} role="region" aria-label="Report table — scroll sideways for more columns" className="overflow-x-auto rounded-xl border border-slate-100">
       <table className="w-full min-w-[440px]">{body}</table>
     </div>
   )

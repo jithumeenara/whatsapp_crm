@@ -261,7 +261,7 @@ export function ChatbotShell({
           onClick={() => void goBack()}
           title="Back to chatbots"
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-        >
+         aria-label="Back to chatbots">
           <ChevronLeft className="h-4 w-4" />
         </button>
 
@@ -356,7 +356,7 @@ export function ChatbotShell({
                   "flex h-5 w-5 items-center justify-center rounded transition-colors",
                   noReplyPanelOpen ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                 )}
-              >
+               aria-label="Configure auto-end message">
                 <Settings2 className="h-3 w-3" />
               </button>
             </div>
@@ -426,7 +426,7 @@ export function ChatbotShell({
                   ? "bg-white shadow-sm text-slate-800"
                   : "text-slate-400 hover:text-slate-600"
               )}
-            >
+             aria-label={label}>
               <Icon className="h-3.5 w-3.5" />
             </button>
           ))}

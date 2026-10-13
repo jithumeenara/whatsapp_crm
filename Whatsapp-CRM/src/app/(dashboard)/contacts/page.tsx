@@ -554,7 +554,7 @@ export default function ContactsV2() {
                 type="button"
                 onClick={() => { setSearch(""); setPage(0); setSearchQ("") }}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
-              >
+               aria-label="Close">
                 <X className="h-3.5 w-3.5" />
               </button>
             )}
@@ -654,6 +654,7 @@ export default function ContactsV2() {
               <th className="pl-4 pr-2 py-2.5 border-b border-slate-200 w-10">
                 <input autoComplete="off"
                   type="checkbox"
+                  aria-label="Select all contacts"
                   checked={allChecked}
                   ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked }}
                   onChange={() => {
@@ -668,7 +669,7 @@ export default function ContactsV2() {
               <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 hidden md:table-cell">Email</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 hidden lg:table-cell">Tags</th>
               <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200 hidden xl:table-cell">Added</th>
-              <th className="px-3 py-2.5 border-b border-slate-200 w-10" />
+              <th className="px-3 py-2.5 border-b border-slate-200 w-10"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
@@ -732,6 +733,7 @@ export default function ContactsV2() {
                   <td className="pl-4 pr-2 py-4" onClick={(e) => e.stopPropagation()}>
                     <input autoComplete="off"
                       type="checkbox"
+                      aria-label={`Select ${contact.name || contact.phone}`}
                       checked={checkedIds.has(contact.id)}
                       onChange={(e) => {
                         setCheckedIds((prev) => {
@@ -855,7 +857,7 @@ export default function ContactsV2() {
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setOpenMenuId((v) => v === contact.id ? null : contact.id) }}
                           className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 opacity-0 group-hover:opacity-100 hover:bg-slate-100 hover:text-slate-700 transition-all"
-                        >
+                         aria-label="More actions">
                           <MoreHorizontal className="h-4 w-4" />
                         </button>
 
@@ -916,7 +918,7 @@ export default function ContactsV2() {
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shadow-sm"
-              >
+               aria-label="Previous">
                 <ChevronLeft className="h-4 w-4" />
               </button>
               {/* Page number pills */}

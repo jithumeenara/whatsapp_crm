@@ -496,3 +496,15 @@ html[data-theme="rose"] {
     }
   }
 }
+
+/* Readable secondary text (UI audit, axe-core): Tailwind's slate-400
+ * (#90a1b9) is 2.6:1 on white and was the colour of most helper text —
+ * 438 failures on 57 screens. slate-500 was 4.3:1 on the light-grey
+ * panels. Darkened at the token, so every screen is fixed at once and the
+ * order (400 lighter than 500) is kept. 400 → 4.8:1 on #f7f8fb and 5.1:1
+ * on white; 500 → 5.6:1 on #f7f8fb. slate-400 is never light text on a
+ * dark background in this app (checked), so nothing gets worse. */
+@theme {
+  --color-slate-400: #5f6f86;
+  --color-slate-500: #56657b;
+}

@@ -241,7 +241,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
                   type="button"
                   onClick={() => setShowToken((s) => !s)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
+                 aria-label={showToken ? "Hide" : "Show"} aria-pressed={showToken}>
                   {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>

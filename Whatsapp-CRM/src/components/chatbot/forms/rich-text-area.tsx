@@ -104,7 +104,7 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
             "hover:bg-slate-100 hover:text-slate-700 transition-colors",
             btnH,
           )}
-        >
+         aria-label={title}>
           <Icon className={iconH} />
         </button>
       ))}
@@ -123,7 +123,7 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
             btnH,
             showEmoji && "bg-slate-100 text-slate-700",
           )}
-        >
+         aria-label="Insert emoji">
           <Smile className={iconH} />
         </button>
 
@@ -139,7 +139,7 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
               <button
                 onMouseDown={(e) => { e.preventDefault(); setShowEmoji(false); }}
                 className="text-slate-400 hover:text-slate-600"
-              >
+               aria-label="Close">
                 <X className="h-3 w-3" />
               </button>
             </div>
@@ -447,7 +447,7 @@ export function RichTextArea({
               setShowExpand(true);
             }}
             className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-          >
+           aria-label="Expand to full editor">
             <Maximize2 className="h-3 w-3" />
           </button>
         </div>

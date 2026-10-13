@@ -234,7 +234,7 @@ function LeadHistoryCard({
                 onClick={(e) => { e.stopPropagation(); onNavigate(lead.id) }}
                 className="flex h-6 w-6 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
                 title="Open lead"
-              >
+               aria-label="Open lead">
                 <ExternalLink className="h-3.5 w-3.5" />
               </button>
               {expanded

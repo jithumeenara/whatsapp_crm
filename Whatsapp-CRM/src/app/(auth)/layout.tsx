@@ -7,8 +7,8 @@ export const metadata: Metadata = {
 
 export default function AuthLayoutV2({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-slate-50">
       {children}
-    </div>
+    </main>
   )
 }

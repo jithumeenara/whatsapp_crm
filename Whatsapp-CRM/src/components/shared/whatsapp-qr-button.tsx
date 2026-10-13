@@ -98,7 +98,7 @@ export function WhatsAppQrButton({ className, label, onOpen }: WhatsAppQrButtonP
               <button
                 onClick={() => setOpen(false)}
                 className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-slate-100"
-              >
+               aria-label="Close">
                 <X className="h-4 w-4 text-slate-400" />
               </button>
             </div>

@@ -341,7 +341,7 @@ function SaveToTableForm({
                 type="button"
                 onClick={() => removeMapping(i)}
                 className="mt-1 text-slate-500 hover:text-destructive transition-colors"
-              >
+               aria-label="Delete">
                 <Trash2 className="size-3.5" />
               </button>
             </div>

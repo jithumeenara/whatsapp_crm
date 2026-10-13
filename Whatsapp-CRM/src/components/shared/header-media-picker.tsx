@@ -141,7 +141,7 @@ export function HeaderMediaPicker({
               )}
               <p className="min-w-0 flex-1 truncate text-[12.5px] text-slate-600" title={headerMediaUrl.split('/').pop()}>{headerMediaUrl.split('/').pop()}</p>
               <button type="button" onClick={() => onHeaderMediaChange('')}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label="Close">
                 <X className="h-4 w-4" />
               </button>
             </div>

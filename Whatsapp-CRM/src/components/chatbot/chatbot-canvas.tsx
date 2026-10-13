@@ -735,7 +735,7 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
                     })()}
                     title="Delete node"
                     className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition-colors"
-                  >
+                   aria-label="Delete node">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
@@ -744,7 +744,7 @@ function CanvasInner({ nodes: builderNodes, entryNodeId, onChange, onEntryChange
                   onClick={() => setSheetKey(null)}
                   title="Close"
                   className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
-                >
+                 aria-label="Close">
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -1167,7 +1167,7 @@ function NodePalette({ channel = 'whatsapp' }: { channel?: string }) {
             className="flex-1 bg-transparent text-[12px] text-slate-700 placeholder:text-slate-400 focus:outline-none"
           />
           {query && (
-            <button onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600">
+            <button onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600" aria-label="Close">
               <X className="h-3 w-3" />
             </button>
           )}

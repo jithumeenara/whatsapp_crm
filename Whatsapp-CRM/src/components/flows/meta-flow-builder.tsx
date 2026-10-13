@@ -1254,7 +1254,7 @@ function CompDataSource({
               />
               <button onClick={() => onChange(items.filter((_, j) => j !== i))}
                 disabled={items.length <= 1}
-                className="text-slate-500 hover:text-destructive disabled:opacity-30">
+                className="text-slate-500 hover:text-destructive disabled:opacity-30" aria-label="Close">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -1759,7 +1759,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
             onClick={() => { setDraft(baseUrl); setEditing(true); }}
             className="rounded p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
             title="Change base URL (e.g. ngrok)"
-          >
+           aria-label="Change base URL (e.g. ngrok)">
             <Settings className="h-3 w-3" />
           </button>
           <button
@@ -1767,7 +1767,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
             onClick={() => navigator.clipboard.writeText(fullUrl).then(() => toast.success('Endpoint URL copied'))}
             className="rounded p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0"
             title="Copy endpoint URL"
-          >
+           aria-label="Copy endpoint URL">
             <Copy className="h-3 w-3" />
           </button>
         </div>
@@ -1846,7 +1846,7 @@ function CompImageForm({
               onClick={() => set({ src: '' })}
               className="absolute right-1 top-1 rounded bg-black/60 p-0.5 text-white hover:bg-black/80"
               title="Remove image"
-            >
+             aria-label="Remove image">
               <X className="h-3 w-3" />
             </button>
           </div>

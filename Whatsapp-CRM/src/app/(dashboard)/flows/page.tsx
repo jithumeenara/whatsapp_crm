@@ -155,7 +155,7 @@ export default function FlowsV2() {
                     <div className="flex shrink-0 gap-1">
                       <Link href={`/flows/${flow.id}`} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></Link>
                       <Link href={`/flows/${flow.id}/runs`} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="View runs"><Eye className="h-3.5 w-3.5" /></Link>
-                      <button type="button" onClick={() => setDeleteId(flow.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button type="button" onClick={() => setDeleteId(flow.id)} className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-500" aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   </div>
                   <AccordionContent className="px-4">

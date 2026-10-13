@@ -323,6 +323,7 @@ export default function InboxV2() {
         <div className="h-6 w-6 animate-spin rounded-full border-[2.5px] border-indigo-600 border-t-transparent" />
       </div>
     }>
+      <h1 className="sr-only">Inbox</h1>
       <InboxV2Content />
     </Suspense>
   )

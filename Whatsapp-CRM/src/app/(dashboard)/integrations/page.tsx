@@ -637,7 +637,7 @@ export default function IntegrationsPage() {
                         {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </button>
                       <button type="button" onClick={() => handleDelete(intg.id)}
-                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 text-rose-400 hover:bg-rose-50">
+                        className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 text-rose-400 hover:bg-rose-50" aria-label="Delete">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>

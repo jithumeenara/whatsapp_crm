@@ -240,10 +240,10 @@ export default function CatalogPage() {
                     </div>
                   </div>
                   <div className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    <button onClick={() => openEdit(p)} className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow hover:bg-white">
+                    <button onClick={() => openEdit(p)} className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-slate-600 shadow hover:bg-white" aria-label="Edit">
                       <Pencil className="h-3 w-3" />
                     </button>
-                    <button onClick={() => setDeleteTarget(p)} className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-red-500 shadow hover:bg-white">
+                    <button onClick={() => setDeleteTarget(p)} className="flex h-6 w-6 items-center justify-center rounded-full bg-white/90 text-red-500 shadow hover:bg-white" aria-label="Delete">
                       <Trash2 className="h-3 w-3" />
                     </button>
                   </div>

@@ -114,10 +114,10 @@ export default function SegmentsV2() {
                   <p className="text-[13px] font-semibold text-slate-900 truncate">{tag.name}</p>
                 </div>
                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button type="button" onClick={() => openEdit(tag)} className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                  <button type="button" onClick={() => openEdit(tag)} className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Edit">
                     <Pencil className="h-3 w-3" />
                   </button>
-                  <button type="button" onClick={() => setDeleteId(tag.id)} className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-500">
+                  <button type="button" onClick={() => setDeleteId(tag.id)} className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-500" aria-label="Delete">
                     <Trash2 className="h-3 w-3" />
                   </button>
                 </div>

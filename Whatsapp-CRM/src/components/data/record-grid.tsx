@@ -224,7 +224,7 @@ export function RecordGrid({ tableId, fields, allTables }: Props) {
                         type="button"
                         onClick={() => openEdit(record)}
                         className="p-1 rounded text-slate-500 hover:text-primary hover:bg-slate-100 transition-colors"
-                      >
+                       aria-label="Edit">
                         <Pencil className="size-3.5" />
                       </button>
                       <button

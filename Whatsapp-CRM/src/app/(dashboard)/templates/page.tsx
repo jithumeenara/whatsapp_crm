@@ -506,7 +506,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
         {/* Mobile preview toggle */}
         {step === 2 && (
           <button type="button" onClick={() => setShowMobilePreview(true)}
-            className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50 lg:hidden">
+            className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-slate-50 lg:hidden" aria-label="Preview">
             <Eye className="h-3.5 w-3.5" />
           </button>
         )}

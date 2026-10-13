@@ -97,6 +97,7 @@ export default function DataStorePage() {
 
   return (
     <div className="flex flex-col h-full bg-[#F4F6FA]">
+      <h1 className="sr-only">Data Store</h1>
 
       {/* Backdrop — closes any open menu */}
       {menuOpenId && (
@@ -200,7 +201,7 @@ export default function DataStorePage() {
                           setMenuOpenId(isMenuOpen ? null : table.id)
                         }}
                         className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-all"
-                      >
+                       aria-label="More actions">
                         <MoreVertical className="h-3.5 w-3.5" />
                       </button>
 

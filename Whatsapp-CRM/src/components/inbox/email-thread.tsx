@@ -157,7 +157,7 @@ function EmailCard({
                 aria-expanded={showQuoted}
                 title={showQuoted ? "Hide earlier messages" : "Show earlier messages"}
                 className="inline-flex h-6 items-center rounded-md bg-slate-100 px-2 text-slate-500 hover:bg-slate-200"
-              >
+               aria-label={showQuoted ? "Hide earlier messages" : "Show earlier messages"}>
                 <MoreHorizontal className="h-4 w-4" />
               </button>
               {showQuoted && (
