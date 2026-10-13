@@ -66,6 +66,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const theme = await getThemeCookie();
+  // A development machine says so on every page (src/lib/dev/send-guard.ts).
+  const isDevMachine = ["development", "dev", "local"].includes((process.env.APP_ENV ?? "").trim().toLowerCase());
 
   return (
     <html
@@ -74,6 +76,12 @@ export default async function RootLayout({
       className={`${inter.variable} ${anekMalayalam.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-white text-slate-900 font-sans">
+        {isDevMachine && (
+          <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-[9999] flex justify-center">
+            <div className="absolute inset-x-0 top-0 h-[3px] bg-red-600" />
+            <span className="mt-[3px] rounded-b-md bg-red-600 px-2 py-0.5 text-[10px] font-bold tracking-widest text-white shadow">DEV · nothing is sent</span>
+          </div>
+        )}
         <Providers>
         <ThemeProvider>
           {children}

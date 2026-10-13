@@ -27,6 +27,7 @@ import { isClientGone } from "./src/lib/net/client-gone";
 import { verifyRealtimeTicket } from "./src/lib/realtime-ticket";
 import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
 import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
+import { installDevSendGuard, isDevelopment } from "./src/lib/dev/send-guard";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -86,6 +87,10 @@ const app = next({ dev, hostname, port, webpack: true });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
+  // A laptop (APP_ENV=development in .env.local) sends nothing to real
+  // people — see src/lib/dev/send-guard.ts. Installed here, after Next has
+  // read .env.local. A no-op on every production server.
+  installDevSendGuard();
   const httpServer = createServer((req, res) => {
     // Listen for the abort before handing the request on.
     //
@@ -175,12 +180,19 @@ app.prepare().then(() => {
     console.log(`> Ready on http://${hostname}:${port} (bound to ${bindHost})`);
   });
 
+  // Background jobs send to customers and change data. On a laptop
+  // (APP_ENV=development) they would do it from whatever database the
+  // laptop points at — so there they run only with DEV_RUN_JOBS=1.
+  const runJobs = !isDevelopment(process.env) || process.env.DEV_RUN_JOBS === "1";
+  if (!runJobs) console.warn("[DEV] Background jobs are off on this development server. DEV_RUN_JOBS=1 to run them.");
+  const every = (fn: () => void, ms: number) => (runJobs ? setInterval(fn, ms) : undefined);
+
   // Scheduled/recurring conversation messages -- sends run from right here,
   // in this always-on process (PM2 keeps it alive), instead of depending on
   // an external cron job being set up. Runs every minute for as long as the
   // server is up; a brief failure (e.g. a DB blip) just gets retried on the
   // next tick.
-  setInterval(() => {
+  every(() => {
     sweepScheduledMessages().catch((err) => {
       console.error("[scheduled-messages] sweep interval failed:", err);
     });
@@ -189,7 +201,7 @@ app.prepare().then(() => {
   // Scheduled/recurring broadcasts -- same always-on-process pattern as
   // above, just a separate sweep since broadcasts and per-conversation
   // scheduled messages are unrelated tables with different send loops.
-  setInterval(() => {
+  every(() => {
     sweepScheduledBroadcasts().catch((err) => {
       console.error("[broadcasts] sweep interval failed:", err);
     });
@@ -200,7 +212,7 @@ app.prepare().then(() => {
   // the request for it to stay current). Hourly: websites are only
   // touched after 24h, and a sheet edited now reaches the bot within
   // the hour, which is the granularity that was actually wanted.
-  setInterval(() => {
+  every(() => {
     sweepWebsiteKnowledge().catch((err) => {
       console.error("[ai-knowledge] website sweep failed:", err);
     });
@@ -211,7 +223,7 @@ app.prepare().then(() => {
   // the setting's own minimum is five minutes, so this can never lag it
   // by more than one tick. A no-op for every account that has not asked
   // for it: the first query filters on the flag.
-  setInterval(() => {
+  every(() => {
     sweepIdleConversations().catch((err) => {
       console.error("[idle-close] sweep interval failed:", err);
     });
@@ -220,7 +232,7 @@ app.prepare().then(() => {
   // A customer answered a team member who has not replied for an hour:
   // the assistant steps in (src/lib/ai/staff-wait-sweep.ts). Every
   // minute, so the wait is an hour, not an hour and a quarter.
-  setInterval(() => {
+  every(() => {
     sweepStaffWaits().catch((err) => {
       console.error("[staff-wait] sweep interval failed:", err);
     });
@@ -228,7 +240,7 @@ app.prepare().then(() => {
 
   // "Gmail — full inbox": new mail into the Inbox, read from Gmail's
   // change history every minute (src/lib/google/gmail.ts).
-  setInterval(() => {
+  every(() => {
     sweepGmailInboxes().catch((err) => {
       console.error("[gmail] inbox sweep failed:", err);
     });
@@ -236,7 +248,7 @@ app.prepare().then(() => {
 
   // Google Calendar: follow-ups and tasks out to the calendar, and times
   // changed or events cancelled there back in (src/lib/google/calendar.ts).
-  setInterval(() => {
+  every(() => {
     sweepGoogleCalendars().catch((err) => {
       console.error("[calendar] sweep failed:", err);
     });
@@ -245,7 +257,7 @@ app.prepare().then(() => {
   // Google Sheets set to "keep in sync": new rows come into their Data
   // Store tables (src/lib/google/sheet-sync.ts). A no-op for an account
   // with no such link — the first query finds none.
-  setInterval(() => {
+  every(() => {
     sweepGoogleSheetImports().catch((err) => {
       console.error("[google-sheet] import sweep failed:", err);
     });
@@ -267,7 +279,7 @@ app.prepare().then(() => {
   // well inside the hour the content sweep runs on, and a pass over an
   // unchanged knowledge base costs one query and no provider calls —
   // syncKnowledgeEmbeddings skips every hash it has already seen.
-  setInterval(() => {
+  every(() => {
     trainPendingKnowledge().catch((err) => {
       console.error("[auto-train] interval failed:", err);
     });
@@ -281,14 +293,14 @@ app.prepare().then(() => {
       console.error("[microsoft-mail] upkeep failed:", err);
     });
   };
-  setTimeout(microsoftUpkeep, 60_000);
-  setInterval(microsoftUpkeep, 60 * 60_000);
+  if (runJobs) setTimeout(microsoftUpkeep, 60_000);
+  every(microsoftUpkeep, 60 * 60_000);
 
   // PhonePe payment links: PhonePe says plainly that a webhook may never
   // arrive, so open links are asked about on a schedule as well — often
   // while fresh, rarely once old. The status answer, not the webhook, is
   // what marks a payment paid (see src/lib/payments/phonepe-reconcile.ts).
-  setInterval(() => {
+  every(() => {
     sweepPhonePePayments().catch((err) => {
       console.error("[phonepe] sweep failed:", err);
     });
@@ -296,7 +308,7 @@ app.prepare().then(() => {
 
   // Website chat visitors whose session ran out (30 days unused). Their
   // conversations and contacts stay; only the dead credential goes.
-  setInterval(() => {
+  every(() => {
     sweepExpiredWebChatSessions().catch((err) => {
       console.error("[webchat] session sweep failed:", err);
     });

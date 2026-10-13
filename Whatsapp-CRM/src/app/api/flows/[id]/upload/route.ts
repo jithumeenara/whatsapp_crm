@@ -863,7 +863,9 @@ export async function GET(
     }
     return NextResponse.json({ hasDynamicData, flowJson })
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 })
+    // The detail is for the log; the screen gets a sentence.
+    console.error('[flows/upload] building the Flow JSON failed:', err)
+    return NextResponse.json({ error: 'The Flow could not be built. Check its screens and try again.' }, { status: 500 })
   }
 }
 
