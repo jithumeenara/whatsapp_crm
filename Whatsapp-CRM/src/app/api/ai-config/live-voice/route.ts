@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { issueLiveVoiceTicket } from '@/lib/ai/live-voice-ticket'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
 import { LIVE_VOICE_PATH } from '@/lib/ai/live-voice-server'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * Authorises one live voice session.
@@ -26,6 +27,8 @@ export async function POST(req: Request) {
   } catch (err) {
     return toErrorResponse(err)
   }
+  const limited = checkRateLimit(`ai-call:${userId}`, RATE_LIMITS.aiCall)
+  if (!limited.success) return rateLimitResponse(limited)
 
   const aiConfig = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
   if (!aiConfig) {

@@ -5,6 +5,7 @@ import { getProviderKeys } from '@/lib/ai/providers/registry'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { detectAndTranslate, isAlreadyTargetLanguage, TRANSLATE_MODEL } from '@/lib/ai/translate'
 import { recordAiUsage } from '@/lib/ai/usage'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * POST /api/messages/translate
@@ -27,6 +28,8 @@ import { recordAiUsage } from '@/lib/ai/usage'
 export async function POST(req: Request) {
   try {
     const ctx = await requireRole('agent')
+    const limited = checkRateLimit(`ai-call:${ctx.userId}`, RATE_LIMITS.aiCall)
+    if (!limited.success) return rateLimitResponse(limited)
 
     const body = await req.json().catch(() => ({}))
     const { message_id, text, target_language, romanized } = body as {

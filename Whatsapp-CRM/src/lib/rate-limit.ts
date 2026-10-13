@@ -212,6 +212,14 @@ export const RATE_LIMITS = {
   /** Settings > Profile — submitting the 6-digit phone code. Same budget
    *  as mfaVerify for the same brute-force reasoning. */
   profileVerifyConfirm: { limit: 15, windowMs: 15 * 60_000 },
+  /** One paid model call a person asks for — translate a message, a
+   *  test-chat turn, a live-voice ticket. Per user. 30/min is far past
+   *  what anyone clicks, and stops a loop billing the tenant's key. */
+  aiCall: { limit: 30, windowMs: 60_000 },
+  /** A paid job that runs many model calls at once — an eval run, a
+   *  knowledge re-index, reading an uploaded file. Per account, since
+   *  the bill is the account's whichever admin clicks. */
+  aiBatch: { limit: 10, windowMs: 10 * 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

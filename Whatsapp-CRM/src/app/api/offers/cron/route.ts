@@ -1,7 +1,6 @@
-import { NextResponse, type NextRequest } from 'next/server'
-import { prisma } from '@/lib/db'
-import { advanceStaleOffers } from '@/lib/agents/advance-offers'
-import { isExpired } from '@/lib/agents/offer'
+import { timingSafeEqual } from 'node:crypto'
+import { NextResponse } from 'next/server'
+import { sweepStaleOffers } from '@/lib/agents/advance-offers'
 
 /**
  * GET /api/offers/cron
@@ -19,55 +18,26 @@ import { isExpired } from '@/lib/agents/offer'
  * rotation runs out, the customer needs telling, and a callback needs
  * scheduling. If nothing runs, none of that happens: the customer is
  * left mid-conversation, the follow-up is never created, and by morning
- * the only trace is a conversation nobody claimed. So the case with
- * nobody watching gets its own trigger.
+ * the only trace is a conversation nobody claimed.
  *
- * ── Why it does nothing when there is nothing to do ─────────────────
- *
- * Called on a schedule, so it runs mostly at times when every offer is
- * either live or answered. It looks for ripe ones first and returns
- * without touching an account that has none, rather than sweeping every
- * account on the instance every minute.
+ * server.ts now runs the same sweep every minute (sweepStaleOffers), so
+ * this route is only a manual trigger. It used to compare a query-string
+ * CRON_SECRET and let everyone through when that was unset; it now takes
+ * the same x-cron-secret header as the other crons and refuses without it.
  */
-export async function GET(req: NextRequest) {
-  // Same shape as the other cron routes on this app: a shared secret in
-  // the query, because these are called by an external scheduler that
-  // cannot sign a session.
-  const secret = new URL(req.url).searchParams.get('secret')
-  const expected = process.env.CRON_SECRET
-  if (expected && secret !== expected) {
+export async function GET(request: Request) {
+  const expected = process.env.AUTOMATION_CRON_SECRET
+  if (!expected) {
+    return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
+  }
+  const supplied = Buffer.from(request.headers.get('x-cron-secret') ?? '')
+  const want = Buffer.from(expected)
+  if (supplied.length !== want.length || !timingSafeEqual(supplied, want)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
-    const now = new Date()
-
-    // Only accounts with an offer that has actually run out. Cheap, and
-    // it keeps a quiet minute genuinely quiet.
-    const pending = await prisma.conversationOffer.findMany({
-      where: { status: 'pending' },
-      select: { account_id: true, offered_at: true, window_seconds: true },
-      take: 500,
-    })
-
-    const accountIds = [
-      ...new Set(
-        pending
-          .filter((o) => isExpired(o.offered_at, o.window_seconds, now))
-          .map((o) => o.account_id),
-      ),
-    ]
-
-    let advanced = 0
-    let exhausted = 0
-    for (const accountId of accountIds) {
-      const result = await advanceStaleOffers(accountId).catch(() => null)
-      if (!result) continue
-      advanced += result.advanced
-      exhausted += result.exhausted.length
-    }
-
-    return NextResponse.json({ accounts: accountIds.length, advanced, exhausted })
+    return NextResponse.json(await sweepStaleOffers())
   } catch (err) {
     console.error('[offers/cron] failed:', err instanceof Error ? err.message : err)
     // 200 with a body saying so: a scheduler that sees a 500 will often

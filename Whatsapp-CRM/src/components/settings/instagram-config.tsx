@@ -123,7 +123,7 @@ export function InstagramConfig({ defaultConnectMethod = 'quick' }: { defaultCon
   }
 
   function generateVerifyToken() {
-    const token = `ig_verify_${Math.random().toString(36).slice(2, 10)}_${Date.now()}`
+    const token = `ig_verify_${crypto.randomUUID().replace(/-/g, "")}`
     setVerifyToken(token)
   }
 

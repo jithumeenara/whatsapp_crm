@@ -34,6 +34,11 @@ const PUBLIC_PATHS = new Set([
   // route checks the tenant's SHA256(username:password) header and then
   // trusts only PhonePe's own status API, never the body; POST only.
   '/api/payments/phonepe/webhook',
+  // Razorpay's payment-link webhook — server to server, no session. POST
+  // only; nothing is acted on until the tenant's own webhook secret
+  // verifies the signature. Behind the session check every call got a
+  // 401, so a paid link never marked itself paid.
+  '/api/whatsapp/payments/webhook',
 ])
 
 // Paths whose prefix is always public (NextAuth internals, public API)
@@ -193,7 +198,12 @@ async function route(req: NextRequest, forwarded: Headers) {
     // The virus scanner's callback — server to server, no session. The
     // route accepts only the signature of the file id it was given
     // (src/lib/files/scan-signature.ts). Exactly this path, nothing near it.
-    /^\/api\/file-manager\/[0-9a-f-]{36}\/scan-result$/.test(pathname)
+    /^\/api\/file-manager\/[0-9a-f-]{36}\/scan-result$/.test(pathname) ||
+    // The Pixel-pairing snippet on a client's own website (Settings → Ads).
+    // A visitor's browser has no session here; the route checks the
+    // account's web_events_secret and its own rate limit. Behind the
+    // session check it answered 401 to every visitor, preflight included.
+    pathname === '/api/meta-ads/track'
   ) {
     return NextResponse.next({ request: { headers: forwarded } })
   }

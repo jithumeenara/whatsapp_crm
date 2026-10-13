@@ -9,6 +9,7 @@ import { TOOL_DECLARATIONS, runTool } from '@/lib/ai/insights/tools'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { tokensFromGemini, type GeminiUsageMetadata } from '@/lib/ai/pricing'
 import { loadCompanyProfile, formatCompanyBlock } from '@/lib/ai/company-profile'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * Admin Test — ask questions about this account's own CRM data in plain
@@ -50,7 +51,10 @@ interface RequestBody {
 export async function POST(req: Request) {
   let accountId: string
   try {
-    accountId = (await requireRole('admin')).accountId
+    const ctx = await requireRole('admin')
+    accountId = ctx.accountId
+    const limited = checkRateLimit(`ai-call:${ctx.userId}`, RATE_LIMITS.aiCall)
+    if (!limited.success) return rateLimitResponse(limited)
   } catch (err) {
     return toErrorResponse(err)
   }

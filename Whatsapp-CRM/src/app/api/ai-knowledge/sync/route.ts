@@ -6,6 +6,7 @@ import { getProviderKeys } from '@/lib/ai/providers/registry'
 import { syncKnowledgeEmbeddings, toKnowledgeItems } from '@/lib/ai/embeddings'
 import { chunkDocument } from '@/lib/ai/knowledge'
 import { loadKnowledge, invalidateKnowledge } from '@/lib/ai/knowledge-store'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * "Train" — brings the account's embeddings in line with its current
@@ -24,6 +25,8 @@ export async function POST() {
   } catch (err) {
     return toErrorResponse(err)
   }
+  const limited = checkRateLimit(`ai-batch:${accountId}`, RATE_LIMITS.aiBatch)
+  if (!limited.success) return rateLimitResponse(limited)
 
   const config = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
   if (!config) {

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { flattenPlain, detectType } from "@/lib/integration-fetch"
+import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+
+/** One push writes at most this many rows, each with at most this many fields. */
+const MAX_ROWS = 500
+const MAX_FIELDS = 100
 
 /**
  * POST /api/integrations/[id]/ingest
@@ -8,14 +13,22 @@ import { flattenPlain, detectType } from "@/lib/integration-fetch"
  * Body can be a single object OR an array of objects.
  * Records are upserted; Contacts are created from phone fields.
  *
- * External apps call this URL directly — no login required, but the
- * integration must exist and be active.
+ * An external app calls this with one of the account's API keys
+ * (Authorization: Bearer wcrm_…), or a supervisor from the app itself.
+ * It used to trust the integration id alone, so any signed-in user of
+ * any workspace could write records and contacts into another one.
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  // Look up integration by id (no user session needed — this is a server-to-server push)
-  const integration = await prisma.integration.findUnique({ where: { id } })
+  let accountId: string
+  try {
+    accountId = (await requireRoleOrApiKey(req, "supervisor")).accountId
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+
+  const integration = await prisma.integration.findFirst({ where: { id, account_id: accountId } })
   if (!integration) return NextResponse.json({ error: "Integration not found" }, { status: 404 })
   if (integration.status === "paused") return NextResponse.json({ error: "Integration is paused" }, { status: 400 })
 
@@ -28,6 +41,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .map((r) => flattenPlain(r as Record<string, unknown>))
 
   if (rows.length === 0) return NextResponse.json({ error: "No valid records in body" }, { status: 400 })
+  if (rows.length > MAX_ROWS) return NextResponse.json({ error: `Send at most ${MAX_ROWS} records at a time.` }, { status: 400 })
+  if (rows.some((r) => Object.keys(r).length > MAX_FIELDS)) {
+    return NextResponse.json({ error: `A record can have at most ${MAX_FIELDS} fields.` }, { status: 400 })
+  }
 
   // Find or create the Data Store table
   const tableName = integration.table_name || `${integration.name} ${integration.resource}`

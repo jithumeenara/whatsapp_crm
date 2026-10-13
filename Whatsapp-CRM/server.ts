@@ -18,6 +18,7 @@ import { sweepGoogleForms } from "./src/lib/google/forms";
 import { trainPendingKnowledge } from "./src/lib/ai/train-pending";
 import { sweepMicrosoftSubscriptions } from "./src/lib/email/microsoft/graph";
 import { sweepPhonePePayments } from "./src/lib/payments/phonepe-reconcile";
+import { sweepStaleOffers } from "./src/lib/agents/advance-offers";
 import { ensureDataStoreColumns } from "./src/lib/data-store/schema";
 import { ensureEmailColumns } from "./src/lib/email/schema";
 import { ensureAiMetaColumn } from "./src/lib/ai/reply-sources";
@@ -305,6 +306,16 @@ app.prepare().then(() => {
       console.error("[phonepe] sweep failed:", err);
     });
   }, 2 * 60_000);
+
+  // Chat offers nobody answered — the rotation moves on, and when it runs
+  // out the customer is told and a callback is scheduled. Agents online
+  // trigger this themselves; this is for the night, when nobody is.
+  // (/api/offers/cron was meant to, but sat behind the login check.)
+  every(() => {
+    sweepStaleOffers().catch((err) => {
+      console.error("[offers] sweep failed:", err);
+    });
+  }, 60_000);
 
   // Website chat visitors whose session ran out (30 days unused). Their
   // conversations and contacts stay; only the dead credential goes.

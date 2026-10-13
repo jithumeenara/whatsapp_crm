@@ -209,3 +209,29 @@ async function noteExhausted(conversationId: string, reason: string): Promise<vo
     // A missing note must not stop the rotation ending.
   }
 }
+
+/**
+ * Every account's stalled offers, in one pass — the case where nobody is
+ * watching (an unanswered offer at ten at night). Run from server.ts each
+ * minute; it looks for ripe offers first, so a quiet minute costs one query.
+ */
+export async function sweepStaleOffers(): Promise<{ accounts: number; advanced: number; exhausted: number }> {
+  const now = new Date()
+  const pending = await prisma.conversationOffer.findMany({
+    where: { status: 'pending' },
+    select: { account_id: true, offered_at: true, window_seconds: true },
+    take: 500,
+  })
+  const accountIds = [
+    ...new Set(pending.filter((o) => isExpired(o.offered_at, o.window_seconds, now)).map((o) => o.account_id)),
+  ]
+  let advanced = 0
+  let exhausted = 0
+  for (const accountId of accountIds) {
+    const result = await advanceStaleOffers(accountId).catch(() => null)
+    if (!result) continue
+    advanced += result.advanced
+    exhausted += result.exhausted.length
+  }
+  return { accounts: accountIds.length, advanced, exhausted }
+}

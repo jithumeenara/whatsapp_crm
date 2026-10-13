@@ -7,6 +7,7 @@ import { STARTER_CASES } from '@/lib/ai/eval/starter-cases'
 import { cleanPhrases, ensureEvalColumns } from '@/lib/ai/eval/schema'
 import { realQuestions } from '@/lib/ai/eval/real-questions'
 import { qualityReport } from '@/lib/ai/eval/quality-report'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * The evaluation suite: test cases, runs, and results.
@@ -201,6 +202,8 @@ export async function POST(req: Request) {
     }
 
     case 'run': {
+      const limited = checkRateLimit(`ai-batch:${accountId}`, RATE_LIMITS.aiBatch)
+      if (!limited.success) return rateLimitResponse(limited)
       try {
         const result = await runEvalSuite({
           accountId,

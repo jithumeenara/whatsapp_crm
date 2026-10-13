@@ -5,6 +5,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { extractFileText, SUPPORTED_UPLOAD_HINT } from '@/lib/ai/file-extract'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * Upload a document straight into the knowledge base: the file's text is
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
   } catch (err) {
     return toErrorResponse(err)
   }
+  const limited = checkRateLimit(`ai-batch:${ctx.accountId}`, RATE_LIMITS.aiBatch)
+  if (!limited.success) return rateLimitResponse(limited)
 
   const config = await prisma.aiConfig.findUnique({
     where: { account_id: ctx.accountId },
