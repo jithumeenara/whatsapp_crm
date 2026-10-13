@@ -55,7 +55,7 @@ export default function AutomationLogsPage() {
         ) : logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-slate-400">
             <Clock className="h-8 w-8 mb-2" />
-            <p className="text-[14px]">No logs yet — automation hasn't run</p>
+            <p className="text-[14px]">No logs yet — automation hasn&apos;t run</p>
           </div>
         ) : (
           <div className="space-y-2">

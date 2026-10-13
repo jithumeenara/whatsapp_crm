@@ -189,11 +189,11 @@ export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
                   // h-9, not the p-2 of a settings row: this is a jump
                   // list, read at a glance and never scrolled.
                   'group flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-[13px] text-slate-600',
-                  'transition-colors hover:bg-[#EEF0FF] hover:text-[#5B6CF9]',
+                  'transition-colors hover:bg-[#EEF0FF] hover:text-[#4A5CE8]',
                 )}
               >
                 <item.icon
-                  className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-[#5B6CF9]"
+                  className="h-4 w-4 shrink-0 text-slate-400 transition-colors group-hover:text-[#4A5CE8]"
                   strokeWidth={1.9}
                 />
                 <span className="truncate">{item.label}</span>

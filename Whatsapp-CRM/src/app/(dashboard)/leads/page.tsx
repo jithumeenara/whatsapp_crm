@@ -737,7 +737,7 @@ function LeadTile({
         <div className="mt-auto flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
           {lead.assignee ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[9px] font-bold text-indigo-700 shrink-0">
+              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700 shrink-0">
                 {(lead.assignee.profile?.full_name ?? lead.assignee.email ?? "?")[0].toUpperCase()}
               </div>
               {lead.assignee.profile?.full_name ?? lead.assignee.email ?? "Agent"}
@@ -987,7 +987,7 @@ function FollowUpRow({ item, index, onNavigate }: {
           overdue ? "font-semibold text-rose-600" : "text-slate-600")}>
           <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
           {fmtDate(item.due_at)}
-          {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white">OVERDUE</span>}
+          {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">OVERDUE</span>}
         </span>
       </td>
       <td className="px-4 py-3.5 hidden lg:table-cell text-[12px] text-slate-500">
@@ -1050,7 +1050,7 @@ function TaskRow({ item, index, onNavigate }: {
             overdue ? "font-semibold text-rose-600" : "text-slate-600")}>
             <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
             {fmtDate(item.due_date)}
-            {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white">OVERDUE</span>}
+            {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">OVERDUE</span>}
           </span>
         ) : <span className="text-slate-300">—</span>}
       </td>

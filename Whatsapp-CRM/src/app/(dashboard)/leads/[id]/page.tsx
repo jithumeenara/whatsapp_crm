@@ -917,7 +917,7 @@ export default function LeadDetailPage() {
                   type="button"
                   onClick={pickLead}
                   disabled={picking || !userId}
-                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-[#5B6CF9] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                  className="mt-4 inline-flex h-9 items-center gap-2 rounded-xl bg-[#4A5CE8] px-4 text-[13px] font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
                 >
                   {picking && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
                   Pick this lead

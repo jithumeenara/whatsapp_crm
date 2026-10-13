@@ -1,4 +1,5 @@
 "use client"
+import Link from "next/link";
 
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
@@ -136,7 +137,7 @@ function StepBar({ step }: { step: 1 | 2 | 3 }) {
             {i > 0 && <ChevronRight className="h-3 w-3 text-slate-300 mx-0.5" />}
             <div className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
               active ? "bg-indigo-50 text-indigo-700" : done ? "text-emerald-600" : "text-slate-400")}>
-              <div className={cn("flex h-4.5 w-4.5 h-[18px] w-[18px] items-center justify-center rounded-full text-[9px] font-bold shrink-0",
+              <div className={cn("flex h-4.5 w-4.5 h-[18px] w-[18px] items-center justify-center rounded-full text-[10px] font-bold shrink-0",
                 active ? "bg-indigo-600 text-white" : done ? "bg-emerald-500 text-white" : "bg-slate-200 text-slate-500")}>
                 {done ? "âœ“" : n}
               </div>
@@ -164,7 +165,7 @@ function WAPreview({ headerType, headerContent, bodyText, footerText, buttons, b
         <div className="mx-auto mb-2 h-[5px] w-12 rounded-full bg-[#333]" />
         <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2">
           <div className="h-7 w-7 rounded-full bg-emerald-300 flex items-center justify-center text-[10px] font-bold text-white shrink-0">B</div>
-          <div><p className="text-[11px] font-semibold text-white">Your Business</p><p className="text-[9px] text-emerald-200">WhatsApp Business</p></div>
+          <div><p className="text-[11px] font-semibold text-white">Your Business</p><p className="text-[10px] text-emerald-200">WhatsApp Business</p></div>
         </div>
         <div className="bg-[#ECE5DD] px-2.5 py-3" style={{ minHeight: 380 }}>
           {has ? (
@@ -174,8 +175,8 @@ function WAPreview({ headerType, headerContent, bodyText, footerText, buttons, b
               {headerType === "video"    && <div className="h-[90px] bg-slate-700 flex items-center justify-center gap-1"><VideoIcon className="h-5 w-5 text-slate-300" /><span className="text-[10px] text-slate-300">Video</span></div>}
               {headerType === "document" && <div className="flex items-center gap-2 bg-slate-100 px-2.5 py-2"><FileIcon className="h-4 w-4 text-rose-400" /><span className="text-[10px] text-slate-500">Document</span></div>}
               {bodyText && <div className={cn("px-2.5 py-2", !headerType && "pt-2.5")}><p className="text-[10px] text-[#111] whitespace-pre-wrap break-words leading-relaxed">{body}</p></div>}
-              {footerText && <div className="px-2.5 pb-1.5"><p className="text-[9px] text-[#999]">{footerText}</p></div>}
-              <div className="flex justify-end px-2.5 pb-2"><span className="text-[8px] text-[#999]">10:30 AM âœ“âœ“</span></div>
+              {footerText && <div className="px-2.5 pb-1.5"><p className="text-[10px] text-[#999]">{footerText}</p></div>}
+              <div className="flex justify-end px-2.5 pb-2"><span className="text-[10px] text-[#999]">10:30 AM âœ“âœ“</span></div>
               {buttons.length > 0 && (
                 <div className="border-t border-slate-100">
                   {buttons.map((btn, i) => (
@@ -247,7 +248,7 @@ function FlowButtonFields({ btn, onChange }: {
           {flows.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
         </select>
         {!loading && flows.length === 0 && (
-          <p className="mt-1 text-[10px] text-amber-600">No flows found. <a href="/flows" className="underline font-medium">Create flows first â†’</a></p>
+          <p className="mt-1 text-[10px] text-amber-600">No flows found. <Link href="/flows" className="underline font-medium">Create flows first →</Link></p>
         )}
       </div>
       <div>
@@ -596,7 +597,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className={cn("text-[12px] sm:text-[13px] font-semibold", subtype === opt.id && opt.supported ? "text-indigo-800" : "text-slate-800")}>{opt.label}</p>
-                          {!opt.supported && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[9px] sm:text-[10px] text-slate-500">Coming soon</span>}
+                          {!opt.supported && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] sm:text-[10px] text-slate-500">Coming soon</span>}
                         </div>
                         <p className="mt-0.5 text-[11px] sm:text-[12px] text-slate-500 leading-snug">{opt.desc}</p>
                       </div>
@@ -1134,7 +1135,7 @@ export default function TemplatesV2() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <p className="text-[13px] font-semibold text-slate-900 break-all leading-tight">{t.name}</p>
-                    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold whitespace-nowrap", STATUS_COLOR[statusKey] ?? STATUS_COLOR.DRAFT)}>
+                    <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", STATUS_COLOR[statusKey] ?? STATUS_COLOR.DRAFT)}>
                       {statusKey}
                     </span>
                   </div>
@@ -1142,7 +1143,7 @@ export default function TemplatesV2() {
                     <span className="text-[11px] text-slate-400">{t.category}</span>
                     {t.language && <span className="text-[10px] text-slate-400">Â· {t.language}</span>}
                     {t.quality_score && (
-                      <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold",
+                      <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
                         t.quality_score === "GREEN" ? "bg-emerald-50 text-emerald-600" :
                         t.quality_score === "YELLOW" ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600")}>
                         {t.quality_score}

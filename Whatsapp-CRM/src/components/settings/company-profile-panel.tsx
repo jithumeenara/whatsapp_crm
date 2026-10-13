@@ -138,7 +138,7 @@ export function CompanyProfilePanel() {
   if (loading) {
     return (
       <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-10 shadow-sm">
-        <Loader2 className="h-5 w-5 animate-spin text-[#5B6CF9]" />
+        <Loader2 className="h-5 w-5 animate-spin text-[#4A5CE8]" />
       </div>
     );
   }
@@ -146,7 +146,7 @@ export function CompanyProfilePanel() {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF] text-[#5B6CF9]">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF] text-[#4A5CE8]">
           <Building2 className="h-4 w-4" />
         </span>
         <div className="min-w-0">
@@ -381,7 +381,7 @@ export function CompanyProfilePanel() {
           <Button
             onClick={save}
             disabled={saving}
-            className="h-9 gap-2 rounded-xl bg-[#5B6CF9] px-5 text-[13px] font-semibold text-white hover:bg-[#4a5ce8]"
+            className="h-9 gap-2 rounded-xl bg-[#4A5CE8] px-5 text-[13px] font-semibold text-white hover:bg-[#3D4FD6]"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save company details

@@ -118,7 +118,7 @@ const CHANNEL_META: Record<string, { label: string; icon: React.ReactNode; badge
 function ChannelBadge({ channel }: Readonly<{ channel?: string }>) {
   const meta = CHANNEL_META[channel || "whatsapp"] ?? CHANNEL_META.whatsapp
   return (
-    <span className="flex items-center gap-1 rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold text-white border border-white/20">
+    <span className="flex items-center gap-1 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold text-white border border-white/20">
       {meta.badgeIcon}
       {meta.label}
     </span>
@@ -412,7 +412,7 @@ export default function ChatbotV2() {
                     disabled={togglingId === bot.id}
                     title={active ? "Pause this chatbot" : "Activate this chatbot"}
                     className={cn(
-                      "flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold transition-colors disabled:opacity-60",
+                      "flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold transition-colors disabled:opacity-60",
                       active ? "bg-white/20 text-white hover:bg-white/30" : "bg-black/20 text-white/75 hover:bg-black/30"
                     )}
                   >
@@ -428,7 +428,7 @@ export default function ChatbotV2() {
                 <h3 className="mt-1.5 text-[12px] font-bold text-white truncate pr-12">{bot.name}</h3>
                 {breakingCount(bot) > 0 && (
                   <p
-                    className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[9px] font-bold text-white"
+                    className="mt-1 inline-flex items-center gap-1 rounded-full bg-rose-500/90 px-1.5 py-0.5 text-[10px] font-bold text-white"
                     title={issueSummary(bot)}
                   >
                     <AlertTriangle className="h-2.5 w-2.5" />
@@ -445,12 +445,12 @@ export default function ChatbotV2() {
                 {getKeywords(bot).length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {getKeywords(bot).slice(0, 3).map((kw) => (
-                      <span key={kw} className="rounded bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold text-white/90 border border-white/20">
+                      <span key={kw} className="rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold text-white/90 border border-white/20">
                         {kw}
                       </span>
                     ))}
                     {getKeywords(bot).length > 3 && (
-                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-[9px] text-white/60">
+                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-white/60">
                         +{getKeywords(bot).length - 3}
                       </span>
                     )}
@@ -459,18 +459,18 @@ export default function ChatbotV2() {
               </div>
               <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
                 <div className="px-2.5 py-2">
-                  <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-wider">Runs</p>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Runs</p>
                   <div className="flex items-baseline gap-1 mt-0.5">
                     <span className="text-[16px] font-bold text-slate-900 leading-none">{bot.execution_count.toLocaleString()}</span>
                     <MessagesSquare className="h-2.5 w-2.5 text-slate-300" />
                   </div>
                 </div>
                 <div className="px-2.5 py-2">
-                  <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-wider">Created</p>
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Created</p>
                   <p className="text-[10px] font-semibold text-slate-700 mt-0.5 leading-none">
                     {bot.created_at ? format(new Date(bot.created_at), "d MMM yy") : "—"}
                   </p>
-                  <p className="text-[9px] text-slate-400 mt-0.5">
+                  <p className="text-[10px] text-slate-400 mt-0.5">
                     {bot.created_at ? formatDistanceToNow(new Date(bot.created_at), { addSuffix: true }) : ""}
                   </p>
                 </div>
@@ -859,7 +859,7 @@ export default function ChatbotV2() {
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">WhatsApp</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Templates, lists,<br />buttons & flows</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Templates, lists,<br />buttons & flows</p>
                   </div>
                 </button>
 
@@ -874,7 +874,7 @@ export default function ChatbotV2() {
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">Instagram</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Text & quick<br />replies</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Text & quick<br />replies</p>
                   </div>
                 </button>
 
@@ -889,7 +889,7 @@ export default function ChatbotV2() {
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">Messenger</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Text & quick<br />replies</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Text & quick<br />replies</p>
                   </div>
                 </button>
 
@@ -904,7 +904,7 @@ export default function ChatbotV2() {
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">SMS</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />only</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />only</p>
                   </div>
                 </button>
 
@@ -919,7 +919,7 @@ export default function ChatbotV2() {
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">Email</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />only</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />only</p>
                   </div>
                 </button>
 
@@ -934,7 +934,7 @@ export default function ChatbotV2() {
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">RCS</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />(rich cards soon)</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Plain text<br />(rich cards soon)</p>
                   </div>
                 </button>
 
@@ -949,7 +949,7 @@ export default function ChatbotV2() {
                   </div>
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">Website</p>
-                    <p className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Text, buttons,<br />lists & links</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Text, buttons,<br />lists & links</p>
                   </div>
                 </button>
               </div>

@@ -230,7 +230,7 @@ export function SidebarV2({
                               strokeWidth={isActive ? 2 : 1.75}
                             />
                             {collapsed && showBadge && (
-                              <span className="absolute -top-1.5 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-indigo-600 text-[8px] font-bold text-white px-0.5">
+                              <span className="absolute -top-1.5 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white px-0.5">
                                 {totalUnread > 9 ? "9+" : totalUnread}
                               </span>
                             )}
@@ -313,7 +313,7 @@ export function SidebarV2({
                 const meta = ROLE_META[accountRole];
                 const Icon = ROLE_ICON[accountRole];
                 return (
-                  <span className={`ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${meta.color}`}>
+                  <span className={`ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${meta.color}`}>
                     <Icon className="size-2.5" />
                     {meta.label}
                   </span>

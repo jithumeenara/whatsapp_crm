@@ -138,7 +138,7 @@ export function CustomFieldsPanel() {
               type="button"
               onClick={handleAdd}
               disabled={adding || !newName.trim()}
-              className="flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl bg-[#5B6CF9] px-5 py-2.5 text-[14px] font-semibold text-white hover:bg-[#4a5ce8] disabled:opacity-50 transition-colors shadow-sm"
+              className="flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl bg-[#4A5CE8] px-5 py-2.5 text-[14px] font-semibold text-white hover:bg-[#3D4FD6] disabled:opacity-50 transition-colors shadow-sm"
             >
               {adding
                 ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -157,7 +157,7 @@ export function CustomFieldsPanel() {
               onClick={() => setNewType(t.value)}
               className={`rounded-lg px-2.5 py-1 text-[12px] font-medium transition-all ${
                 newType === t.value
-                  ? "bg-[#EEF0FF] text-[#5B6CF9] ring-1 ring-[#5B6CF9]/25"
+                  ? "bg-[#EEF0FF] text-[#4A5CE8] ring-1 ring-[#5B6CF9]/25"
                   : "bg-slate-100 text-slate-500 hover:bg-slate-200"
               }`}
             >

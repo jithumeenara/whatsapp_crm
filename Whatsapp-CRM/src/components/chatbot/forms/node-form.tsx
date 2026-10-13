@@ -3004,7 +3004,7 @@ function SendTemplateForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                     <span className="text-slate-500">({t.language})</span>
                     <span
                       className={cn(
-                        "ml-auto rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
+                        "ml-auto rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
                         STATUS_BADGE[t.status] ?? "bg-slate-100 text-slate-500 border-slate-200",
                       )}
                     >

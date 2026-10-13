@@ -276,7 +276,7 @@ export function Sidebar({ open = false, onClose, collapsed = false, onToggleColl
                         strokeWidth={1.75}
                       />
                       {collapsed && showBadge && (
-                        <span className="absolute -top-1.5 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-emerald-500 text-[8px] font-bold text-white px-0.5">
+                        <span className="absolute -top-1.5 -right-1.5 flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white px-0.5">
                           {totalUnread > 9 ? "9+" : totalUnread}
                         </span>
                       )}
@@ -285,7 +285,7 @@ export function Sidebar({ open = false, onClose, collapsed = false, onToggleColl
                       <>
                         <span className="flex-1 truncate">{item.label}</span>
                         {item.beta && (
-                          <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-amber-700">
+                          <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
                             Beta
                           </span>
                         )}

@@ -63,7 +63,7 @@ export function OfferSettingsPanel({
               aria-label="Offer handovers to an agent"
               onClick={() => onChange({ offer_enabled: !values.offer_enabled })}
               className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
-                values.offer_enabled ? 'bg-[#5B6CF9]' : 'bg-slate-200'
+                values.offer_enabled ? 'bg-[#4A5CE8]' : 'bg-slate-200'
               }`}
             >
               <span

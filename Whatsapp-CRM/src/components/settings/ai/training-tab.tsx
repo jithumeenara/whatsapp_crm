@@ -73,7 +73,7 @@ export interface TrainingTabProps {
 type AddKind = 'qa' | 'document' | 'website' | 'text' | 'database' | 'sheet' | 'chatbot';
 
 const SOURCE_CARDS: Array<{ kind: AddKind; label: string; blurb: string; Icon: typeof FileText; tint: string }> = [
-  { kind: 'document', label: 'Documents', blurb: 'Upload files, PDFs, policies, etc.', Icon: FileText, tint: 'bg-[#EEF0FF] text-[#5B6CF9]' },
+  { kind: 'document', label: 'Documents', blurb: 'Upload files, PDFs, policies, etc.', Icon: FileText, tint: 'bg-[#EEF0FF] text-[#4A5CE8]' },
   { kind: 'qa', label: 'Q&A Pairs', blurb: 'Add common questions and answers.', Icon: MessageSquare, tint: 'bg-emerald-50 text-emerald-600' },
   { kind: 'website', label: 'Website', blurb: 'Sync from your website URLs.', Icon: Link2, tint: 'bg-violet-50 text-violet-600' },
   { kind: 'text', label: 'Text / Notes', blurb: 'Add custom instructions and context.', Icon: StickyNote, tint: 'bg-amber-50 text-amber-600' },
@@ -487,7 +487,7 @@ export function TrainingTab(props: TrainingTabProps) {
                 {loading && (
                   <tr>
                     <td colSpan={6} className="px-6 py-10 text-center">
-                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#5B6CF9]" />
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#4A5CE8]" />
                     </td>
                   </tr>
                 )}
@@ -1045,7 +1045,7 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
                   ref={fileRef}
                   type="file"
                   accept=".pdf,.txt,.md,.csv,.json,.html"
-                  className="w-full cursor-pointer rounded-xl px-3 py-2.5 text-[12.5px] text-slate-600 ring-1 ring-slate-200/90 transition-shadow hover:ring-slate-300 file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#EEF0FF] file:px-3 file:py-1.5 file:text-[12px] file:font-semibold file:text-[#5B6CF9]"
+                  className="w-full cursor-pointer rounded-xl px-3 py-2.5 text-[12.5px] text-slate-600 ring-1 ring-slate-200/90 transition-shadow hover:ring-slate-300 file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-[#EEF0FF] file:px-3 file:py-1.5 file:text-[12px] file:font-semibold file:text-[#4A5CE8]"
                 />
                 <AiHint>PDF, TXT, MD, CSV, JSON or HTML, up to 10MB. Scanned PDFs have no readable text.</AiHint>
               </div>
@@ -1246,12 +1246,12 @@ function AddContentDialog({ kind, onClose, onAdded }: { kind: AddKind; onClose: 
                   className={[
                     'rounded-xl p-2.5 text-left ring-1 transition-all duration-150',
                     audience === a.value
-                      ? 'bg-[#5B6CF9]/[0.05] ring-[#5B6CF9]/30'
+                      ? 'bg-[#4A5CE8]/[0.05] ring-[#5B6CF9]/30'
                       : 'bg-white ring-slate-200/70 hover:ring-slate-300',
                   ].join(' ')}
                 >
                   <span
-                    className={`block text-[12.5px] font-semibold ${audience === a.value ? 'text-[#5B6CF9]' : 'text-slate-700'}`}
+                    className={`block text-[12.5px] font-semibold ${audience === a.value ? 'text-[#4A5CE8]' : 'text-slate-700'}`}
                   >
                     {a.label}
                   </span>

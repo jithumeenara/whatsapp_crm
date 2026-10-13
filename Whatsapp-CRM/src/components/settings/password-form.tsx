@@ -143,7 +143,7 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
     <form onSubmit={onSubmit} className="space-y-5">
       <div className="flex justify-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#EEF0FF]">
-          <Lock className="h-6 w-6 text-[#5B6CF9]" />
+          <Lock className="h-6 w-6 text-[#4A5CE8]" />
         </span>
       </div>
 
@@ -199,7 +199,7 @@ export function PasswordForm({ onDone }: { onDone?: () => void }) {
         <Button
           type="submit"
           disabled={saving || !current || !next || !confirm}
-          className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+          className="h-9 px-5 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white"
         >
           {saving ? (
             <>

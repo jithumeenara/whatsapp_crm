@@ -55,7 +55,7 @@ export function SecurityCard() {
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-            <Lock className="h-4.5 w-4.5 text-[#5B6CF9]" />
+            <Lock className="h-4.5 w-4.5 text-[#4A5CE8]" />
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold text-slate-800">Security</h3>
@@ -67,7 +67,7 @@ export function SecurityCard() {
           {/* Password row */}
           <div className="flex items-center gap-3 px-6 py-4">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-              <Lock className="h-4 w-4 text-[#5B6CF9]" />
+              <Lock className="h-4 w-4 text-[#4A5CE8]" />
             </span>
             <div className="flex-1 min-w-0">
               <p className="text-[13.5px] font-semibold text-slate-800">Password</p>

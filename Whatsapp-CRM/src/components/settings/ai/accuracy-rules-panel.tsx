@@ -189,7 +189,7 @@ export function AccuracyRulesPanel() {
           </ul>
           <div className="flex flex-wrap items-center gap-3">
             {missing.length > 0 && (
-              <a href="/settings?tab=profile" className="text-[12px] font-semibold text-[#5B6CF9] hover:underline">
+              <a href="/settings?tab=profile" className="text-[12px] font-semibold text-[#4A5CE8] hover:underline">
                 Fill in the {missing.length} missing detail{missing.length === 1 ? '' : 's'} →
               </a>
             )}

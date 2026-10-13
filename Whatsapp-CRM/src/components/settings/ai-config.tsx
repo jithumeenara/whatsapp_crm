@@ -439,7 +439,7 @@ export function AiConfig() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-5 w-5 animate-spin text-[#5B6CF9]" />
+        <Loader2 className="h-5 w-5 animate-spin text-[#4A5CE8]" />
       </div>
     );
   }
@@ -493,7 +493,7 @@ export function AiConfig() {
       {/* ── Connected header ── */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <Sparkles className="mt-0.5 h-8 w-8 shrink-0 text-[#5B6CF9]" strokeWidth={1.5} />
+          <Sparkles className="mt-0.5 h-8 w-8 shrink-0 text-[#4A5CE8]" strokeWidth={1.5} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-[18px] font-bold tracking-[-0.02em] text-slate-900 sm:text-[20px]">{activeMeta.label}</h2>
@@ -527,7 +527,7 @@ export function AiConfig() {
             <TabsTrigger
               key={value}
               value={value}
-              className="shrink-0 gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] transition-all duration-150 data-active:bg-white data-active:text-[#5B6CF9] data-active:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_2px_8px_-2px_rgba(15,23,42,0.12)]"
+              className="shrink-0 gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] transition-all duration-150 data-active:bg-white data-active:text-[#4A5CE8] data-active:shadow-[0_1px_2px_rgba(15,23,42,0.06),0_2px_8px_-2px_rgba(15,23,42,0.12)]"
             >
               <Icon className="h-3.5 w-3.5 shrink-0" />
               {label}
@@ -679,7 +679,7 @@ export function AiConfig() {
             <span className="text-slate-400">No AI provider configured yet.</span>
           )}
         </div>
-        <Button onClick={() => void save()} disabled={saving} className="h-9 px-5 text-[13px] gap-2 bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+        <Button onClick={() => void save()} disabled={saving} className="h-9 px-5 text-[13px] gap-2 bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save AI Settings
         </Button>

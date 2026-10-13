@@ -51,7 +51,7 @@ export function OverviewTab(props: OverviewTabProps) {
   const languageLabel = props.replyLanguage || 'Auto-detect';
 
   const quickActions = [
-    { key: 'training' as const, label: 'AI Training', blurb: 'Teach your AI with your business data.', Icon: BookOpen, tint: 'bg-[#EEF0FF] text-[#5B6CF9]' },
+    { key: 'training' as const, label: 'AI Training', blurb: 'Teach your AI with your business data.', Icon: BookOpen, tint: 'bg-[#EEF0FF] text-[#4A5CE8]' },
     { key: 'test' as const, label: 'Test AI', blurb: 'Try it with real conversations.', Icon: Send, tint: 'bg-emerald-50 text-emerald-600' },
     { key: 'usage' as const, label: 'Usage', blurb: 'Track performance and costs.', Icon: BarChart3, tint: 'bg-amber-50 text-amber-600' },
   ];
@@ -136,7 +136,7 @@ export function OverviewTab(props: OverviewTabProps) {
                 </span>
                 <span className="mt-3 text-[13.5px] font-semibold text-slate-800">{label}</span>
                 <span className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{blurb}</span>
-                <ArrowRight className="mt-3 h-4 w-4 text-slate-300 transition-all duration-200 group-hover:text-[#5B6CF9] motion-safe:group-hover:translate-x-0.5" />
+                <ArrowRight className="mt-3 h-4 w-4 text-slate-300 transition-all duration-200 group-hover:text-[#4A5CE8] motion-safe:group-hover:translate-x-0.5" />
               </button>
             ))}
           </div>

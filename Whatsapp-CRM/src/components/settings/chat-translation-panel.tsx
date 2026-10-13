@@ -64,7 +64,7 @@ export function ChatTranslationPanel() {
             type="button"
             onClick={() => setLanguage(l)}
             className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-              language === l ? 'bg-[#5B6CF9] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              language === l ? 'bg-[#4A5CE8] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
             {l}

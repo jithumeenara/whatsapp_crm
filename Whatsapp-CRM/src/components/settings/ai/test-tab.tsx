@@ -539,7 +539,7 @@ export function TestTab(props: TestTabProps) {
                     'grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors',
                     listening
                       ? 'bg-rose-500 text-white'
-                      : 'bg-[#F5F6FA] text-slate-500 ring-1 ring-slate-200/80 hover:text-[#5B6CF9]',
+                      : 'bg-[#F5F6FA] text-slate-500 ring-1 ring-slate-200/80 hover:text-[#4A5CE8]',
                   ].join(' ')}
                 >
                   <Mic className="h-4 w-4" />
@@ -625,9 +625,9 @@ export function TestTab(props: TestTabProps) {
                       disabled={loading}
                       className="group flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-[#F5F6FA] disabled:opacity-50"
                     >
-                      <MessageSquare className="h-3 w-3 shrink-0 text-slate-300 group-hover:text-[#5B6CF9]" />
+                      <MessageSquare className="h-3 w-3 shrink-0 text-slate-300 group-hover:text-[#4A5CE8]" />
                       <span className="min-w-0 flex-1 truncate text-[12px] text-slate-600 group-hover:text-slate-900">{q}</span>
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-[#5B6CF9]" />
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 group-hover:text-[#4A5CE8]" />
                     </button>
                   </li>
                 ))}
@@ -682,7 +682,7 @@ export function TestTab(props: TestTabProps) {
                 right now — and a divider says that better than a gap. */}
             <div className="mt-3 border-t border-slate-100 pt-3">
               <div className="mb-2 flex items-center gap-2">
-                <Zap className="h-3.5 w-3.5 shrink-0 text-[#5B6CF9]" />
+                <Zap className="h-3.5 w-3.5 shrink-0 text-[#4A5CE8]" />
                 <span className="flex-1 text-[12px] font-semibold text-slate-800">This session</span>
                 {visible.length > 0 && (
                   <button
@@ -769,7 +769,7 @@ function ModeRadio({ value, onChange }: { value: 'admin' | 'customer'; onChange:
                 active ? 'ring-[#5B6CF9]' : 'ring-slate-300',
               ].join(' ')}
             >
-              {active && <span className="h-1.5 w-1.5 rounded-full bg-[#5B6CF9]" />}
+              {active && <span className="h-1.5 w-1.5 rounded-full bg-[#4A5CE8]" />}
             </span>
             <Icon className="h-3.5 w-3.5" />
             {label}

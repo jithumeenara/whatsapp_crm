@@ -126,7 +126,7 @@ export function ApiKeysPanel() {
           />
           {error && <p className="text-[12px] text-rose-600">{error}</p>}
           <div className="flex gap-2">
-            <Button onClick={create} disabled={creating} className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+            <Button onClick={create} disabled={creating} className="h-9 px-4 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
               {creating ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Key'}
             </Button>
             <Button variant="outline" onClick={() => { setShowForm(false); setError('') }} className="h-9 px-4 text-[13px] border-slate-200">
@@ -137,7 +137,7 @@ export function ApiKeysPanel() {
       ) : (
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-[13px] text-slate-500 hover:border-[#5B6CF9]/50 hover:text-[#5B6CF9] transition-colors"
+          className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-[13px] text-slate-500 hover:border-[#5B6CF9]/50 hover:text-[#4A5CE8] transition-colors"
         >
           <Plus className="h-4 w-4" />
           New API Key

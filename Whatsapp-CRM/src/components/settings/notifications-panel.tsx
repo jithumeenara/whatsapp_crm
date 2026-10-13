@@ -72,7 +72,7 @@ export function NotificationsPanel() {
                 </div>
               </div>
               {state === 'default' && (
-                <Button onClick={handleSubscribe} className="h-9 px-4 text-[13px] shrink-0 bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+                <Button onClick={handleSubscribe} className="h-9 px-4 text-[13px] shrink-0 bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
                   <BellRing className="h-3.5 w-3.5" /> Enable Notifications
                 </Button>
               )}
@@ -96,7 +96,7 @@ export function NotificationsPanel() {
             'A high-priority task is assigned to you (upcoming feature)',
           ].map((item) => (
             <li key={item} className="flex items-start gap-2">
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B6CF9]" />
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#4A5CE8]" />
               {item}
             </li>
           ))}

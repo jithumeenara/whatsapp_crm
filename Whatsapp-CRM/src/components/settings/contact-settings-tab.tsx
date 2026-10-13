@@ -89,7 +89,7 @@ export function ContactSettingsTab() {
               className={cn(
                 '-mb-px flex min-w-0 items-center justify-center gap-1.5 whitespace-nowrap border-b-2 px-1 py-2.5 text-[12.5px] font-medium transition-colors sm:shrink-0 sm:justify-start sm:px-3.5 sm:text-[13px]',
                 isActive
-                  ? 'border-[#5B6CF9] text-[#5B6CF9]'
+                  ? 'border-[#5B6CF9] text-[#4A5CE8]'
                   : 'border-transparent text-slate-500 hover:border-slate-200 hover:text-slate-800',
               )}
             >

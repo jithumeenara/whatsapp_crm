@@ -76,6 +76,7 @@ import {
   type MetaFlowScreen,
   type TextLabelComp,
 } from "@/lib/flows/meta-flow-types";
+import { useTableFields } from '@/hooks/use-table-fields'
 
 const MAX_IMAGE_BYTES = 300 * 1024; // Meta's recommended max for base64-embedded Flow images
 
@@ -432,7 +433,7 @@ function SortableScreenItem({
           <GripVertical className="h-3.5 w-3.5" />
         </span>
         <span className={cn(
-          "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold",
+          "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
           isSelected ? "bg-primary text-primary-foreground" : "bg-slate-100 text-slate-500",
         )}>
           {screenIndex}
@@ -623,7 +624,7 @@ function AddComponentMenu({ onAdd }: { onAdd: (t: ComponentType) => void }) {
               </p>
               {types.map(([type, meta]) => (
                 <DropdownMenuItem key={type} onClick={() => onAdd(type)} className="text-xs">
-                  <span className={cn("mr-2 rounded px-1.5 py-0.5 text-[9px] font-semibold", meta.color)}>
+                  <span className={cn("mr-2 rounded px-1.5 py-0.5 text-[10px] font-semibold", meta.color)}>
                     {meta.label.charAt(0)}
                   </span>
                   {meta.label}
@@ -681,7 +682,7 @@ function SortableComponentItem({
         >
           <GripVertical className="h-3.5 w-3.5" />
         </span>
-        <span className={cn("rounded px-1.5 py-0.5 text-[9px] font-semibold shrink-0", meta.color)}>
+        <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold shrink-0", meta.color)}>
           {meta.label}
         </span>
         {preview && (
@@ -1110,7 +1111,7 @@ function SaveMappingTable({
                   })}
                 </select>
                 {mappedComp && (
-                  <div className="text-[9px] text-slate-500 truncate">on {mappedComp.screenTitle}</div>
+                  <div className="text-[10px] text-slate-500 truncate">on {mappedComp.screenTitle}</div>
                 )}
               </div>
               <div className="text-center">
@@ -1158,11 +1159,10 @@ function CompDataSource({
   const { flowId } = useContext(FlowBuilderContext);
   const [mode, setMode] = useState<'manual' | 'table'>(sourceTableId ? 'table' : 'manual');
   const [tables, setTables] = useState<TableInfo[]>([]);
-  const [tableFields, setTableFields] = useState<TableField[]>([]);
   const [selectedTable, setSelectedTable] = useState(sourceTableId ?? '');
   const [selectedField, setSelectedField] = useState(sourceFieldKey ?? '');
-  const [loadingFields, setLoadingFields] = useState(false);
-  const [liveCount, setLiveCount] = useState<number | null>(null); // null = not yet loaded
+  const { fields: tableFields, loading: loadingFields } = useTableFields(selectedTable) as { fields: TableField[]; loading: boolean };
+  const [polledCount, setLiveCount] = useState<number | null>(null); // null = not yet loaded
 
   // Stable refs so the polling interval never goes stale. Synced in an
   // effect (not directly during render) — mutating a ref during render is
@@ -1183,29 +1183,15 @@ function CompDataSource({
     fetch('/api/data-tables').then((r) => r.json()).then((d) => setTables(d.tables ?? [])).catch(() => {});
   }, []);
 
-  // Load fields when table changes. No explicit reset needed when
-  // selectedTable is empty — the field picker is only rendered when
-  // selectedTable is truthy, so a stale tableFields value is never shown.
-  useEffect(() => {
-    if (!selectedTable) return;
-    setLoadingFields(true);
-    fetch(`/api/data-tables/${selectedTable}`)
-      .then((r) => r.json())
-      .then((d) => setTableFields(
-        (d.table?.fields ?? []).filter(
-          (f: TableField) => !['section_header', 'html_block', 'signature', 'file', 'image'].includes(f.field_type)
-        )
-      ))
-      .catch(() => setTableFields([]))
-      .finally(() => setLoadingFields(false));
-  }, [selectedTable]);
+  // Only counts while a table and a field are chosen; anything else reads
+  // as "not loaded" without an effect resetting it.
+  const liveCount = mode === 'table' && selectedTable && selectedField ? polledCount : null;
+
+  // The table's fields come from useTableFields above.
 
   // Live polling — fetch values every 3 s, silently update when data changes
   useEffect(() => {
-    if (mode !== 'table' || !selectedTable || !selectedField) {
-      setLiveCount(null);
-      return;
-    }
+    if (mode !== 'table' || !selectedTable || !selectedField) return;
 
     const poll = async () => {
       const tbl = selectedTableRef.current;
@@ -1335,7 +1321,7 @@ function CompDataSource({
                         : `${liveCount} live option${liveCount > 1 ? 's' : ''}`}
                   </span>
                 </div>
-                <span className="text-[9px] text-slate-400">preview</span>
+                <span className="text-[10px] text-slate-400">preview</span>
               </div>
 
               {liveCount === null ? (
@@ -1389,27 +1375,13 @@ function LabelSourceRow({
   onRemove: () => void
 }) {
   const [tables, setTables] = useState<TableInfo[]>([])
-  const [tableFields, setTableFields] = useState<TableField[]>([])
-  const [loadingFields, setLoadingFields] = useState(false)
+  const { fields: tableFields, loading: loadingFields } = useTableFields(source.table_id) as { fields: TableField[]; loading: boolean }
   const [expanded, setExpanded] = useState(!source.table_id || !source.field_key)
 
   useEffect(() => {
     fetch('/api/data-tables').then((r) => r.json()).then((d) => setTables(d.tables ?? [])).catch(() => {})
   }, [])
 
-  useEffect(() => {
-    if (!source.table_id) { setTableFields([]); return }
-    setLoadingFields(true)
-    fetch(`/api/data-tables/${source.table_id}`)
-      .then((r) => r.json())
-      .then((d) => setTableFields(
-        (d.table?.fields ?? []).filter(
-          (f: TableField) => !['section_header', 'html_block', 'signature', 'file', 'image'].includes(f.field_type)
-        )
-      ))
-      .catch(() => setTableFields([]))
-      .finally(() => setLoadingFields(false))
-  }, [source.table_id])
 
   const fieldMeta = tableFields.find((f) => f.field_key === source.field_key)
 
@@ -1449,7 +1421,7 @@ function LabelSourceRow({
               onChange={(e) => onChange({ ...source, id: e.target.value.toLowerCase().replace(/[^a-z0-9_]+/g, '_') })}
               placeholder="e.g. coordinator"
             />
-            <p className="text-[9px] text-slate-500">
+            <p className="text-[10px] text-slate-500">
               Insert <code className="font-mono bg-slate-100 px-1 rounded">{`{{${source.id || 'token'}}}`}</code> into the text below to show this value.
             </p>
           </div>
@@ -1491,7 +1463,7 @@ function LabelSourceRow({
           {source.table_id && source.field_key && (
             <div className="rounded-md border border-slate-200 bg-slate-50 overflow-hidden">
               <div className="px-2 py-1.5 border-b border-slate-200">
-                <span className="text-[9px] font-bold uppercase tracking-wide text-slate-500">Filter by parent (optional)</span>
+                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Filter by parent (optional)</span>
               </div>
               <div className="space-y-2 px-2 py-2">
                 <FilterParentPicker
@@ -1505,7 +1477,7 @@ function LabelSourceRow({
                   onChange={(v) => onChange({ ...source, filter_by_field: v || undefined })}
                 />
                 {source.filter_form_name && source.filter_by_field && (
-                  <p className="text-[9px] text-teal-700">
+                  <p className="text-[10px] text-teal-700">
                     Fetch row where <code className="font-mono bg-teal-100 px-1 rounded">{source.filter_by_field}</code> = value from <code className="font-mono bg-teal-100 px-1 rounded">{source.filter_form_name}</code>
                   </p>
                 )}
@@ -1671,24 +1643,7 @@ function FilterFieldPicker({
   value: string
   onChange: (fieldKey: string) => void
 }) {
-  const [fields, setFields] = useState<TableField[]>([])
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    // Parent only mounts this component once tableId is truthy, so this
-    // is defensive only — no need to reset fields here.
-    if (!tableId) return
-    setLoading(true)
-    fetch(`/api/data-tables/${tableId}`)
-      .then((r) => r.json())
-      .then((d) => setFields(
-        (d.table?.fields ?? []).filter(
-          (f: TableField) => !['section_header', 'html_block', 'signature', 'file', 'image'].includes(f.field_type)
-        )
-      ))
-      .catch(() => setFields([]))
-      .finally(() => setLoading(false))
-  }, [tableId])
+  const { fields, loading } = useTableFields(tableId) as { fields: TableField[]; loading: boolean }
 
   if (loading) return <p className="text-[10px] text-slate-500">Loading columns…</p>
 
@@ -1751,7 +1706,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
   return (
     <div className="rounded-md border border-sky-500/30 bg-sky-500/5 px-2.5 py-2 space-y-1.5">
       <div className="flex items-center gap-1.5">
-        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[9px] font-bold text-sky-600">⚡ LIVE</span>
+        <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[10px] font-bold text-sky-600">⚡ LIVE</span>
         <span className="text-[10px] font-medium text-slate-800">Options fetched from database at runtime</span>
       </div>
       <div className="flex items-center justify-between">
@@ -1762,7 +1717,7 @@ function WebhookUrlCard({ flowId }: { flowId: string }) {
           <button
             type="button"
             onClick={syncToCurrentOrigin}
-            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
             title={`Auto-detect: use ${currentOrigin}`}
           >
             <RefreshCw className="h-2.5 w-2.5" /> Sync URL
@@ -2160,7 +2115,7 @@ function ComponentForm({
                       When the user picks a value here, fields pointing at this as their parent refresh automatically.
                     </p>
                     <div className="space-y-0.5">
-                      <p className="text-[9px] text-slate-500">Pick this as the parent on the child field:</p>
+                      <p className="text-[10px] text-slate-500">Pick this as the parent on the child field:</p>
                       <div className="flex items-center gap-1.5">
                         <code className="flex-1 text-[11px] font-mono text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded">
                           {comp.name || '(set a field name above)'}
@@ -2168,7 +2123,7 @@ function ComponentForm({
                         {comp.name && (
                           <button
                             onClick={() => { navigator.clipboard.writeText(comp.name) }}
-                            className="text-[9px] text-blue-500 hover:text-blue-700 px-1.5 py-1 rounded border border-blue-300 dark:border-blue-700"
+                            className="text-[10px] text-blue-500 hover:text-blue-700 px-1.5 py-1 rounded border border-blue-300 dark:border-blue-700"
                           >
                             Copy
                           </button>
@@ -2186,7 +2141,7 @@ function ComponentForm({
                   {/* Step 1 */}
                   <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">1</span>
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">1</span>
                       <p className="text-[10px] font-medium text-slate-800">Parent field name</p>
                     </div>
                     <FilterParentPicker
@@ -2194,7 +2149,7 @@ function ComponentForm({
                       value={filterFormName}
                       onChange={(v) => set({ _filter_form_name: v || undefined })}
                     />
-                    <p className="text-[9px] text-slate-500">
+                    <p className="text-[10px] text-slate-500">
                       Pick the field marked as a trigger whose selection should filter this one.
                     </p>
                   </div>
@@ -2202,7 +2157,7 @@ function ComponentForm({
                   {/* Step 2 */}
                   <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <span className="text-[9px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">2</span>
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded-full h-4 w-4 flex items-center justify-center">2</span>
                       <p className="text-[10px] font-medium text-slate-800">Filter column (from DB table)</p>
                     </div>
                     {cRec._source_table_id ? (
@@ -2219,21 +2174,21 @@ function ComponentForm({
                         placeholder="e.g. month"
                       />
                     )}
-                    <p className="text-[9px] text-slate-500">
+                    <p className="text-[10px] text-slate-500">
                       The column that stores the parent&apos;s value (e.g. month column in Training table).
                     </p>
                   </div>
 
                   {/* Live rule preview */}
                   {filterFormName && filterByField && (
-                    <div className="rounded bg-emerald-500/8 border border-emerald-400/30 p-2 text-[9px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
+                    <div className="rounded bg-emerald-500/8 border border-emerald-400/30 p-2 text-[10px] text-emerald-700 dark:text-emerald-400 leading-relaxed">
                       <span className="font-semibold block mb-0.5">Filter rule:</span>
                       Fetch rows where <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterByField}</code> = value selected in <code className="font-mono bg-emerald-100 dark:bg-emerald-900/30 px-1 rounded">{filterFormName}</code>
                     </div>
                   )}
 
                   {filterFormName && !filterByField && (
-                    <p className="text-[9px] text-amber-600 dark:text-amber-400">
+                    <p className="text-[10px] text-amber-600 dark:text-amber-400">
                       ↑ Pick a DB column to complete the filter setup
                     </p>
                   )}
@@ -2465,6 +2420,10 @@ function LivePreviewPanel({
           // Reset children to undefined (waiting) when parent is cleared —
           // a single batched update, not one setState call per child.
           if (children.length > 0) {
+            // Part of the same effect that starts the children's fetches
+            // below; splitting the reset out would let a stale answer land
+            // after it. One batched update, only when a trigger is cleared.
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setPreviewData((prev) => {
               const next = { ...prev }
               for (const child of children) delete next[child.key]
@@ -2548,7 +2507,7 @@ function LivePreviewPanel({
             {simMode ? 'Live Simulation' : 'Preview'}
           </h2>
           {simMode && (
-            <span className="flex h-4 items-center rounded-full bg-emerald-500/15 px-1.5 text-[9px] font-semibold text-emerald-500">
+            <span className="flex h-4 items-center rounded-full bg-emerald-500/15 px-1.5 text-[10px] font-semibold text-emerald-500">
               LIVE
             </span>
           )}
@@ -2604,10 +2563,10 @@ function LivePreviewPanel({
         {completed ? (
           <div className="mx-auto max-w-[280px]">
             <div className="overflow-hidden rounded-[2rem] border-4 border-gray-800 bg-white shadow-2xl">
-              <div className="bg-gray-800 px-4 py-1 text-center text-[9px] text-white/60">9:41 AM</div>
+              <div className="bg-gray-800 px-4 py-1 text-center text-[10px] text-white/60">9:41 AM</div>
               <div className="bg-[#075E54] flex items-center gap-2 px-3 py-2.5">
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-400/30">
-                  <span className="text-[9px] text-white font-bold">B</span>
+                  <span className="text-[10px] text-white font-bold">B</span>
                 </div>
                 <p className="flex-1 text-[10px] font-semibold text-white">WhatsApp Flow</p>
               </div>
@@ -2619,7 +2578,7 @@ function LivePreviewPanel({
                 <p className="text-center text-[11px] text-gray-500">The user has submitted the form.</p>
                 {Object.keys(simValues).length > 0 && (
                   <div className="w-full rounded-lg bg-gray-50 p-3 space-y-1">
-                    <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Collected data</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-2">Collected data</p>
                     {Object.entries(simValues).map(([k, v]) => (
                       <div key={k} className="flex items-baseline justify-between gap-2">
                         <span className="text-[10px] text-gray-500">{k}</span>
@@ -2680,10 +2639,10 @@ function SimPhonePreview({
   return (
     <div className="mx-auto max-w-[280px]">
       <div className="overflow-hidden rounded-[2rem] border-4 border-gray-800 bg-white shadow-2xl">
-        <div className="bg-gray-800 px-4 py-1 text-center text-[9px] text-white/60">9:41 AM</div>
+        <div className="bg-gray-800 px-4 py-1 text-center text-[10px] text-white/60">9:41 AM</div>
         <div className="flex items-center gap-2 bg-[#075E54] px-3 py-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-400/30">
-            <span className="text-[9px] text-white font-bold">B</span>
+            <span className="text-[10px] text-white font-bold">B</span>
           </div>
           <div className="flex-1">
             <p className="text-[10px] font-semibold text-white">{screen.title}</p>
@@ -2720,7 +2679,7 @@ function SimPhonePreview({
                 {footer.label}
               </button>
               {(footer as MetaFlowComponent & {'center-caption'?: string})['center-caption'] && (
-                <p className="mt-1.5 text-center text-[9px] text-gray-400">
+                <p className="mt-1.5 text-center text-[10px] text-gray-400">
                   {(footer as MetaFlowComponent & {'center-caption'?: string})['center-caption']}
                 </p>
               )}
@@ -2798,7 +2757,7 @@ function SimPreviewComponent({
               <span className="text-[10px] text-gray-400">Leave a comment (optional)</span>
             </div>
           )}
-          <p className="text-right text-[9px] text-gray-400">
+          <p className="text-right text-[10px] text-gray-400">
             {simMode ? (simValues[ta.name] ?? '').length : 0} / {ta['max-length'] ?? 600}
           </p>
         </div>

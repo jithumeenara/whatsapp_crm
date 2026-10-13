@@ -70,7 +70,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             className={cn(
               "h-11 rounded-xl text-[14px] font-semibold text-white shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-              danger ? "bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-400" : "bg-[#5B6CF9] hover:bg-[#4a5ce8] focus-visible:ring-indigo-400",
+              danger ? "bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-400" : "bg-[#4A5CE8] hover:bg-[#3D4FD6] focus-visible:ring-indigo-400",
             )}
           >
             {confirmLabel}

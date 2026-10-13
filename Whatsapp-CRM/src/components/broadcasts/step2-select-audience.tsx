@@ -1021,12 +1021,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
               <div className="flex -space-x-1.5">
                 {selectedContacts.slice(0, 5).map((c) => (
                   <div key={c.id}
-                    className={cn('h-6 w-6 rounded-full ring-2 ring-indigo-50 flex items-center justify-center bg-gradient-to-br text-white text-[9px] font-bold shrink-0', grad(c.id))}>
+                    className={cn('h-6 w-6 rounded-full ring-2 ring-indigo-50 flex items-center justify-center bg-gradient-to-br text-white text-[10px] font-bold shrink-0', grad(c.id))}>
                     {initials(c)}
                   </div>
                 ))}
                 {selectedContacts.length > 5 && (
-                  <div className="h-6 w-6 rounded-full ring-2 ring-indigo-50 bg-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-600">
+                  <div className="h-6 w-6 rounded-full ring-2 ring-indigo-50 bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">
                     +{selectedContacts.length - 5}
                   </div>
                 )}
@@ -1044,7 +1044,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
             {selectedContacts.map((c) => (
               <span key={c.id}
                 className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-white pl-2.5 pr-1.5 py-0.5 text-[12px] font-medium text-indigo-800">
-                <span className={cn('h-3.5 w-3.5 rounded-full shrink-0 flex items-center justify-center bg-gradient-to-br text-white text-[7px] font-bold', grad(c.id))}>
+                <span className={cn('h-3.5 w-3.5 rounded-full shrink-0 flex items-center justify-center bg-gradient-to-br text-white text-[10px] font-bold', grad(c.id))}>
                   {initials(c)[0]}
                 </span>
                 {c.name || c.phone}

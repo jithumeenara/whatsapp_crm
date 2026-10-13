@@ -212,7 +212,7 @@ export function WorkingHoursDialog({
                       aria-pressed={shift.mode === m.value}
                       className={`px-2.5 py-1 text-[11.5px] font-medium transition-colors ${
                         shift.mode === m.value
-                          ? 'bg-[#5B6CF9] text-white'
+                          ? 'bg-[#4A5CE8] text-white'
                           : 'bg-white text-slate-500 hover:bg-slate-50'
                       }`}
                     >

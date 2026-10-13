@@ -127,7 +127,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-[#5B6CF9]" />
+        <Loader2 className="h-6 w-6 animate-spin text-[#4A5CE8]" />
       </div>
     )
   }
@@ -190,7 +190,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       {/* Step 1 — Page Access Token */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">1</span>
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#4A5CE8] text-[10px] font-bold text-white">1</span>
           <div>
             <p className="text-[12px] font-semibold text-slate-700">Page Access Token</p>
             <p className="text-[11px] text-slate-500 mt-0.5">
@@ -266,7 +266,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       {/* Step 2 — Page ID */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <div className="flex items-center gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">2</span>
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#4A5CE8] text-[10px] font-bold text-white">2</span>
           <p className="text-[12px] font-semibold text-slate-700">Page ID</p>
         </div>
         <div className="p-4">
@@ -284,7 +284,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       {/* Step 3 — Webhook */}
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <div className="flex items-start gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-100">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#5B6CF9] text-[10px] font-bold text-white">3</span>
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#4A5CE8] text-[10px] font-bold text-white">3</span>
           <div>
             <p className="text-[12px] font-semibold text-slate-700">Webhook Configuration</p>
             <p className="text-[11px] text-slate-500 mt-0.5">Paste these into Meta Developer Console → Messenger → API Settings → Webhooks</p>
@@ -358,7 +358,7 @@ export function FacebookConfig({ defaultConnectMethod = 'quick' }: { defaultConn
       {/* Actions */}
       <div className="flex items-center gap-3">
         <button type="button" onClick={handleSave} disabled={saving}
-          className="flex items-center gap-2 rounded-xl bg-[#5B6CF9] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-[#4a5ce8] disabled:opacity-60 transition-colors">
+          className="flex items-center gap-2 rounded-xl bg-[#4A5CE8] px-5 py-2.5 text-[13px] font-semibold text-white hover:bg-[#3D4FD6] disabled:opacity-60 transition-colors">
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Save Settings
         </button>

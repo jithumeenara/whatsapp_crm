@@ -226,7 +226,7 @@ export function DuplicateLeadDialog({
               </div>
               <div>
                 <p className="text-[13px] font-semibold text-orange-900">Continue Active Lead</p>
-                <p className="text-[11px] text-orange-600 truncate">Open "{activeLead.title}"</p>
+                <p className="text-[11px] text-orange-600 truncate">Open &ldquo;{activeLead.title}&rdquo;</p>
               </div>
             </button>
           )}

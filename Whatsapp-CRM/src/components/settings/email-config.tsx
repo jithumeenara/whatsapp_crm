@@ -253,7 +253,7 @@ export function EmailConfig() {
           <Input id="email-inbound-host" value={inboundParseHost} onChange={(e) => setInboundParseHost(e.target.value)} placeholder="reply.yourbusiness.com" className="h-9 text-[13px] font-mono border-slate-200" />
         </FieldRow>
         <div className="flex items-center gap-2 pt-1">
-          <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+          <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
             {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
           </Button>
           {hasConfig && (

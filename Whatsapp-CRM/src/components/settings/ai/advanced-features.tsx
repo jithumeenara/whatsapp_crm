@@ -150,7 +150,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
             <div className="space-y-5 pb-4">
               <div className="space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <MessageSquare className="h-3.5 w-3.5 text-[#5B6CF9]" />
+                  <MessageSquare className="h-3.5 w-3.5 text-[#4A5CE8]" />
                   <AiLabel htmlFor="system-prompt">Customer prompt</AiLabel>
                   <AiBadge tone={customerPromptMissing ? 'rose' : 'slate'}>Required</AiBadge>
                 </div>

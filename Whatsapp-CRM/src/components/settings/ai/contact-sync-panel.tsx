@@ -112,7 +112,7 @@ export function ContactSyncPanel() {
 
       {loading && !data && (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-[#5B6CF9]" />
+          <Loader2 className="h-5 w-5 animate-spin text-[#4A5CE8]" />
         </div>
       )}
 

@@ -248,7 +248,7 @@ function SettingsContent() {
       <aside className="hidden md:flex md:w-[264px] shrink-0 flex-col bg-white border-r border-slate-200/80">
         <div className="px-5 pt-5 pb-4">
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#5B6CF9] shadow-sm shadow-[#5B6CF9]/30">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#4A5CE8] shadow-sm shadow-[#5B6CF9]/30">
               <Settings className="h-4.5 w-4.5 text-white" />
             </div>
             <div className="min-w-0 flex-1">
@@ -316,7 +316,7 @@ function SettingsContent() {
                       className={cn(
                         "group w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all text-left",
                         isActive
-                          ? "bg-[#EEF0FF] text-[#5B6CF9]"
+                          ? "bg-[#EEF0FF] text-[#4A5CE8]"
                           : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
                       )}
                     >
@@ -324,7 +324,7 @@ function SettingsContent() {
                         "flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition-colors",
                         isActive ? "bg-white" : "bg-slate-100 group-hover:bg-slate-200/70",
                       )}>
-                        <Icon className={cn("h-3.5 w-3.5", isActive ? "text-[#5B6CF9]" : "text-slate-500")} />
+                        <Icon className={cn("h-3.5 w-3.5", isActive ? "text-[#4A5CE8]" : "text-slate-500")} />
                       </span>
                       {t.label}
                     </button>
@@ -411,7 +411,7 @@ function SettingsContent() {
                       )}
                     >
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-                        <Icon className="h-4 w-4 text-[#5B6CF9]" />
+                        <Icon className="h-4 w-4 text-[#4A5CE8]" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block text-[14.5px] font-semibold leading-tight text-slate-800">{t.label}</span>

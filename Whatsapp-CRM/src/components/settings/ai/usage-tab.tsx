@@ -290,7 +290,7 @@ export function UsageTab() {
 
       {loading && !data && (
         <AiCard className="flex items-center justify-center p-12">
-          <Loader2 className="h-5 w-5 animate-spin text-[#5B6CF9]" />
+          <Loader2 className="h-5 w-5 animate-spin text-[#4A5CE8]" />
         </AiCard>
       )}
 

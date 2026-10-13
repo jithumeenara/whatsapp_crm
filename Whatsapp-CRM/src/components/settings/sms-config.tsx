@@ -332,7 +332,7 @@ export function SmsConfig() {
             </FieldRow>
           </div>
           <div className="flex items-center gap-2 pt-1">
-            <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+            <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
               {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
             </Button>
             {hasConfig && savedProvider === 'msg91' && (
@@ -360,7 +360,7 @@ export function SmsConfig() {
             <Input id="sms-device-id" value={deviceId} onChange={(e) => setDeviceId(e.target.value)} placeholder="Optional — from TextBee dashboard → Devices" className="h-9 text-[13px] border-slate-200" />
           </FieldRow>
           <div className="flex items-center gap-2 pt-1">
-            <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+            <Button onClick={handleSave} disabled={saving} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
               {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Configuration'}
             </Button>
             {hasConfig && savedProvider === 'textbee' && (
@@ -487,7 +487,7 @@ export function SmsConfig() {
             </ol>
             {provider === 'textbee' && (
               <a href="https://textbee.dev/docs" target="_blank" rel="noopener noreferrer"
-                className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8]">
+                className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-medium text-[#4A5CE8] hover:text-[#4a5ce8]">
                 <Webhook className="h-3.5 w-3.5" /> Full TextBee docs ↗
               </a>
             )}

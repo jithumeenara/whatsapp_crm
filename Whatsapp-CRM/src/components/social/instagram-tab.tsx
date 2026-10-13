@@ -296,12 +296,12 @@ function PostTile({ item, onClick }: { item: IgMedia; onClick: () => void }) {
       {/* Type badge */}
       <div className="absolute top-1.5 left-1.5">
         {isReel && (
-          <span className="flex items-center gap-0.5 bg-black/70 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          <span className="flex items-center gap-0.5 bg-black/70 backdrop-blur-sm text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
             <Film className="h-2.5 w-2.5" /> REEL
           </span>
         )}
         {isCarousel && (
-          <span className="flex items-center gap-0.5 bg-black/70 backdrop-blur-sm text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          <span className="flex items-center gap-0.5 bg-black/70 backdrop-blur-sm text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
             <Layers className="h-2.5 w-2.5" /> ALBUM
           </span>
         )}
@@ -322,9 +322,9 @@ function PostTile({ item, onClick }: { item: IgMedia; onClick: () => void }) {
       {/* Always-visible bottom bar: reach + date */}
       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/75 to-transparent px-2 pt-4 pb-1.5">
         <div className="flex items-center justify-between text-white">
-          <span className="text-[9px] font-medium opacity-70">{ago(item.timestamp)}</span>
+          <span className="text-[10px] font-medium opacity-70">{ago(item.timestamp)}</span>
           {item.reach > 0 && (
-            <span className="flex items-center gap-0.5 text-[9px] font-bold text-white">
+            <span className="flex items-center gap-0.5 text-[10px] font-bold text-white">
               <Eye className="h-2.5 w-2.5" /> {n(item.reach)}
             </span>
           )}

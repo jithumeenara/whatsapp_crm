@@ -603,7 +603,7 @@ export function TemplatePicker({
                       <div className="flex flex-wrap items-center gap-1.5">
                         <p className="text-[13px] font-semibold text-slate-800">Header Media</p>
                         {mediaRequired && !headerMediaUrl && (
-                          <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800">Required</span>
+                          <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Required</span>
                         )}
                       </div>
                       <p className="truncate text-[12px] text-slate-500">

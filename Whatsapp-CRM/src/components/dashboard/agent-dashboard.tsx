@@ -121,7 +121,7 @@ export function AgentDashboard() {
       <div>
         <h1 className="text-2xl font-bold text-slate-800">{greeting(profile?.full_name)}</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Here's your work summary for today.
+          Here&apos;s your work summary for today.
         </p>
       </div>
 

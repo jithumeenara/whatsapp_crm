@@ -134,7 +134,7 @@ export function AiIconTile({
   className?: string;
 }) {
   const tints: Record<string, string> = {
-    indigo: 'bg-[#EEF0FF] text-[#5B6CF9] ring-[#5B6CF9]/10',
+    indigo: 'bg-[#EEF0FF] text-[#4A5CE8] ring-[#5B6CF9]/10',
     emerald: 'bg-emerald-50 text-emerald-600 ring-emerald-500/10',
     amber: 'bg-amber-50 text-amber-600 ring-amber-500/10',
     violet: 'bg-violet-50 text-violet-600 ring-violet-500/10',
@@ -474,7 +474,7 @@ export function AiSegmented<T extends string>({
               'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold',
               'transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[#5B6CF9]/35',
               active
-                ? 'bg-white text-[#5B6CF9] shadow-[0_1px_2px_rgba(15,23,42,0.06),0_2px_8px_-2px_rgba(15,23,42,0.12)]'
+                ? 'bg-white text-[#4A5CE8] shadow-[0_1px_2px_rgba(15,23,42,0.06),0_2px_8px_-2px_rgba(15,23,42,0.12)]'
                 : 'text-slate-500 hover:text-slate-700',
             )}
           >
@@ -583,14 +583,14 @@ export function AiSelectItem({
         'flex cursor-default select-none items-center justify-between gap-2 rounded-xl px-2.5 py-2',
         'text-[13px] text-slate-700 outline-none transition-colors duration-100',
         'data-highlighted:bg-slate-100/90',
-        'data-selected:bg-[#5B6CF9]/[0.07] data-selected:font-medium data-selected:text-[#4A5CE8]',
+        'data-selected:bg-[#4A5CE8]/[0.07] data-selected:font-medium data-selected:text-[#4A5CE8]',
         'data-disabled:pointer-events-none data-disabled:opacity-50',
         className,
       )}
     >
       <SelectPrimitive.ItemText className="min-w-0 truncate">{children}</SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator
-        render={<span className="flex size-4 shrink-0 items-center justify-center text-[#5B6CF9]" />}
+        render={<span className="flex size-4 shrink-0 items-center justify-center text-[#4A5CE8]" />}
       >
         <Check className="size-3.5" />
       </SelectPrimitive.ItemIndicator>
@@ -669,7 +669,7 @@ export function AiPromptEditor({
           onClick={openEditor}
           aria-label={`Expand ${title} to full screen`}
           title="Expand to full screen"
-          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg bg-white/90 text-slate-400 ring-1 ring-slate-200/80 backdrop-blur-sm transition-colors hover:bg-white hover:text-[#5B6CF9] hover:ring-[#5B6CF9]/35"
+          className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg bg-white/90 text-slate-400 ring-1 ring-slate-200/80 backdrop-blur-sm transition-colors hover:bg-white hover:text-[#4A5CE8] hover:ring-[#5B6CF9]/35"
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>

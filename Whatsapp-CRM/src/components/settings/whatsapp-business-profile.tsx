@@ -99,7 +99,7 @@ export function WhatsAppBusinessProfile() {
               <Info className="h-3.5 w-3.5 shrink-0 mt-0.5 text-slate-400" />
               <p className="text-[11.5px] text-slate-500 leading-relaxed">
                 Display name (&quot;{displayName || phoneDisplay}&quot;) and profile photo require Meta&apos;s review and can only be changed in{' '}
-                <a href="https://business.facebook.com/wa/manage/home/" target="_blank" rel="noopener noreferrer" className="text-[#5B6CF9] hover:underline inline-flex items-center gap-0.5">
+                <a href="https://business.facebook.com/wa/manage/home/" target="_blank" rel="noopener noreferrer" className="text-[#4A5CE8] hover:underline inline-flex items-center gap-0.5">
                   WhatsApp Manager <ExternalLink className="h-3 w-3" />
                 </a>.
               </p>

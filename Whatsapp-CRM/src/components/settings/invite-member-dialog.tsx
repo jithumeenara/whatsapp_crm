@@ -192,7 +192,7 @@ export function InviteMemberDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-slate-800">
-                <Sparkles className="h-4 w-4 text-[#5B6CF9]" />
+                <Sparkles className="h-4 w-4 text-[#4A5CE8]" />
                 Invite created
               </DialogTitle>
               <DialogDescription className="text-slate-500">
@@ -219,7 +219,7 @@ export function InviteMemberDialog({
                 <Button
                   type="button"
                   onClick={copyToClipboard}
-                  className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0"
+                  className="bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white shrink-0"
                 >
                   <Copy className="size-4" />
                   Copy
@@ -258,7 +258,7 @@ export function InviteMemberDialog({
             <DialogFooter className="bg-white border-slate-200">
               <Button
                 onClick={() => onOpenChange(false)}
-                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+                className="bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white"
               >
                 Done
               </Button>
@@ -345,7 +345,7 @@ export function InviteMemberDialog({
               <Button
                 onClick={handleCreate}
                 disabled={submitting}
-                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+                className="bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white"
               >
                 {submitting ? (
                   <>

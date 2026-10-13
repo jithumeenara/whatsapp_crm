@@ -140,7 +140,7 @@ export function TagManager() {
             setSelectedColor(PRESET_COLORS[3].value);
             setDialogOpen(true);
           }}
-          className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0"
+          className="h-9 px-4 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white shrink-0"
         >
           <Plus className="h-3.5 w-3.5" />
           New Tag
@@ -249,7 +249,7 @@ export function TagManager() {
             <Button variant="outline" onClick={() => setDialogOpen(false)} className="h-9 text-[13px] border-slate-200">
               Cancel
             </Button>
-            <Button onClick={handleCreate} disabled={saving} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+            <Button onClick={handleCreate} disabled={saving} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
               {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Tag'}
             </Button>
           </DialogFooter>

@@ -96,7 +96,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
             <>
               <p className="text-[12px] text-slate-500 leading-relaxed">
                 These three values come from your own Meta App&apos;s dashboard, after it&apos;s approved as a{' '}
-                <a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers" target="_blank" rel="noopener noreferrer" className="text-[#5B6CF9] hover:underline inline-flex items-center gap-0.5">
+                <a href="https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers" target="_blank" rel="noopener noreferrer" className="text-[#4A5CE8] hover:underline inline-flex items-center gap-0.5">
                   Tech Provider <ExternalLink className="h-3 w-3" />
                 </a>. Set once here — every tenant who clicks &quot;Connect with Facebook&quot; uses this same App.
               </p>
@@ -128,7 +128,7 @@ export function MetaPlatformConfig({ defaultOpen = false }: Props) {
               </div>
 
               <div className="flex justify-end pt-1">
-                <Button onClick={onSave} disabled={saving} className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+                <Button onClick={onSave} disabled={saving} className="h-9 px-5 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
                   {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save'}
                 </Button>
               </div>

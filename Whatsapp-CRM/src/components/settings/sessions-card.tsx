@@ -116,7 +116,7 @@ function TimeoutSettingsDialog({ open, onOpenChange, onSaved }: {
 
         <div className="flex justify-center">
           <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#EEF0FF]">
-            <Clock className="h-6 w-6 text-[#5B6CF9]" />
+            <Clock className="h-6 w-6 text-[#4A5CE8]" />
           </span>
         </div>
         <h2 className="text-center text-[15px] font-semibold text-slate-900 mt-3">Auto-logout timeout</h2>
@@ -146,7 +146,7 @@ function TimeoutSettingsDialog({ open, onOpenChange, onSaved }: {
                     type="button"
                     onClick={() => setUnit(u)}
                     className={`flex-1 rounded-lg py-1.5 text-[12.5px] font-medium capitalize transition-colors ${
-                      unit === u ? 'bg-[#5B6CF9] text-white' : 'text-slate-500 hover:bg-slate-50'
+                      unit === u ? 'bg-[#4A5CE8] text-white' : 'text-slate-500 hover:bg-slate-50'
                     }`}
                   >
                     {u}
@@ -162,7 +162,7 @@ function TimeoutSettingsDialog({ open, onOpenChange, onSaved }: {
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving} className="flex-1 h-9 text-[13px] border-slate-200">
             Cancel
           </Button>
-          <Button onClick={save} disabled={saving || loading} className="flex-1 h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+          <Button onClick={save} disabled={saving || loading} className="flex-1 h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
             {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save'}
           </Button>
         </div>
@@ -300,7 +300,7 @@ export function SessionsCard() {
                     <p className="text-[13px] font-semibold text-slate-800 flex items-center gap-2">
                       {s.device_label}
                       {s.isCurrent && (
-                        <span className="rounded-full bg-[#EEF0FF] px-2 py-0.5 text-[10.5px] font-semibold text-[#5B6CF9]">
+                        <span className="rounded-full bg-[#EEF0FF] px-2 py-0.5 text-[10.5px] font-semibold text-[#4A5CE8]">
                           Current session
                         </span>
                       )}
@@ -337,7 +337,7 @@ export function SessionsCard() {
             {sessions.length === 0 && loadError && (
               <div className="flex items-center justify-between gap-3 px-6 py-4">
                 <p className="text-[12.5px] text-rose-500">{loadError}</p>
-                <button type="button" onClick={loadSessions} className="text-[12px] font-medium text-[#5B6CF9] hover:text-[#4a5ce8] shrink-0">
+                <button type="button" onClick={loadSessions} className="text-[12px] font-medium text-[#4A5CE8] hover:text-[#4a5ce8] shrink-0">
                   Retry
                 </button>
               </div>

@@ -180,7 +180,7 @@ export function MfaSettings() {
           )}>
             {isEnabled
               ? <ShieldCheck className="h-6 w-6 text-emerald-600" />
-              : <ShieldOff className="h-6 w-6 text-[#5B6CF9]" />}
+              : <ShieldOff className="h-6 w-6 text-[#4A5CE8]" />}
           </span>
         </div>
       )}
@@ -247,13 +247,13 @@ export function MfaSettings() {
               <button key={key} type="button" onClick={() => setPicking(key)}
                 className="group flex w-full items-center gap-3 rounded-xl border border-slate-200 p-3.5 text-left transition-all hover:border-[#5B6CF9]/40 hover:shadow-sm hover:-translate-y-0.5">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-                  <Icon className="h-4.5 w-4.5 text-[#5B6CF9]" />
+                  <Icon className="h-4.5 w-4.5 text-[#4A5CE8]" />
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13.5px] font-semibold text-slate-800">{meta.label}</p>
                   <p className="text-[11.5px] text-slate-500 leading-relaxed mt-0.5">{meta.description}</p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-slate-300 shrink-0 group-hover:text-[#5B6CF9] transition-colors" />
+                <ChevronRight className="h-4 w-4 text-slate-300 shrink-0 group-hover:text-[#4A5CE8] transition-colors" />
               </button>
             );
           })}
@@ -273,7 +273,7 @@ export function MfaSettings() {
                   <div className="flex gap-2 mt-1">
                     <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91XXXXXXXXXX"
                       className="h-9 text-[13px] font-mono border-slate-200" />
-                    <Button onClick={() => startSmsOrWhatsapp(picking)} disabled={sending} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
+                    <Button onClick={() => startSmsOrWhatsapp(picking)} disabled={sending} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white shrink-0">
                       {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Send code'}
                     </Button>
                   </div>
@@ -289,7 +289,7 @@ export function MfaSettings() {
                     <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       placeholder="123456" inputMode="numeric" maxLength={6}
                       className="h-9 text-[13px] font-mono border-slate-200 text-center tracking-[0.3em]" />
-                    <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
+                    <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white shrink-0">
                       {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
                     </Button>
                   </div>
@@ -311,7 +311,7 @@ export function MfaSettings() {
                 title: 'Scan the QR code',
                 state: totpQr ? 'done' : 'active',
                 children: !totpQr ? (
-                  <Button onClick={startTotp} disabled={sending} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white mt-1">
+                  <Button onClick={startTotp} disabled={sending} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white mt-1">
                     {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate QR code'}
                   </Button>
                 ) : (
@@ -337,7 +337,7 @@ export function MfaSettings() {
                       <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         placeholder="123456" inputMode="numeric" maxLength={6}
                         className="h-9 text-[13px] font-mono border-slate-200 text-center tracking-[0.3em]" />
-                      <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
+                      <Button onClick={confirmEnroll} disabled={confirming || code.length !== 6} className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white shrink-0">
                         {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
                       </Button>
                     </div>

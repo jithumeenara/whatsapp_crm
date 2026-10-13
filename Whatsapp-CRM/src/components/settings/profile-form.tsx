@@ -370,7 +370,7 @@ export function ProfileForm() {
 
           <motion.div className="absolute inset-0" style={blobParallax}>
             <motion.div
-              className="absolute -left-14 -top-14 h-52 w-52 rounded-full bg-[#5B6CF9]/30 blur-3xl"
+              className="absolute -left-14 -top-14 h-52 w-52 rounded-full bg-[#4A5CE8]/30 blur-3xl"
               {...blobMotion}
             />
             <motion.div
@@ -390,7 +390,7 @@ export function ProfileForm() {
             {PROFILE_HERO_PARTICLES.map((p, i) => (
               <motion.span
                 key={i}
-                className="absolute rounded-full bg-[#5B6CF9] shadow-[0_0_6px_rgba(91,108,249,0.6)]"
+                className="absolute rounded-full bg-[#4A5CE8] shadow-[0_0_6px_rgba(91,108,249,0.6)]"
                 style={{ left: p.x, top: p.y, width: p.size, height: p.size }}
                 animate={reduceMotion ? undefined : { y: [0, -12, 0], opacity: [0.4, 0.95, 0.4] }}
                 transition={reduceMotion ? undefined : { duration: p.duration, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
@@ -411,7 +411,7 @@ export function ProfileForm() {
               "focus on the head background" touch, drawing the eye to
               the photo instead of spreading everything evenly. */}
           <motion.div
-            className="pointer-events-none absolute left-1/2 top-0 h-40 w-40 -translate-x-1/2 rounded-full bg-[#5B6CF9]/35 blur-2xl"
+            className="pointer-events-none absolute left-1/2 top-0 h-40 w-40 -translate-x-1/2 rounded-full bg-[#4A5CE8]/35 blur-2xl"
             {...glowPulse}
           />
           {/* No `size` prop here on purpose — Avatar's own size="lg" variant
@@ -430,7 +430,7 @@ export function ProfileForm() {
               {currentAvatar ? (
                 <AvatarImage src={currentAvatar} alt={fullName || 'Avatar'} />
               ) : null}
-              <AvatarFallback className="bg-[#5B6CF9] text-white text-5xl font-bold">
+              <AvatarFallback className="bg-[#4A5CE8] text-white text-5xl font-bold">
                 {initial}
               </AvatarFallback>
             </Avatar>
@@ -468,7 +468,7 @@ export function ProfileForm() {
           )}
 
           {(pendingAvatar || removeAvatar) && (
-            <p className="text-[11px] text-[#5B6CF9] mt-3">Photo will be saved with your other changes below.</p>
+            <p className="text-[11px] text-[#4A5CE8] mt-3">Photo will be saved with your other changes below.</p>
           )}
         </div>
       </div>
@@ -536,7 +536,7 @@ export function ProfileForm() {
                     <VerifiedPill verified />
                   ) : profile.phone && !phoneVerifying ? (
                     <Button type="button" size="sm" onClick={startPhoneVerify} disabled={phoneSending}
-                      className="h-7 px-3 text-[11.5px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+                      className="h-7 px-3 text-[11.5px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
                       {phoneSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Verify'}
                     </Button>
                   ) : !profile.phone ? (
@@ -551,7 +551,7 @@ export function ProfileForm() {
                         placeholder="123456" inputMode="numeric" maxLength={6}
                         className="h-9 text-[13px] font-mono border-slate-200 bg-white text-center tracking-[0.3em]" />
                       <Button type="button" onClick={confirmPhoneVerify} disabled={phoneConfirming || phoneCode.length !== 6}
-                        className="h-9 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white shrink-0">
+                        className="h-9 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white shrink-0">
                         {phoneConfirming ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Confirm'}
                       </Button>
                     </div>
@@ -599,7 +599,7 @@ export function ProfileForm() {
                   <span className="text-[11px] font-medium text-emerald-600">Link sent</span>
                 ) : (
                   <Button type="button" size="sm" onClick={sendVerificationEmail} disabled={emailSending}
-                    className="h-7 px-3 text-[11.5px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+                    className="h-7 px-3 text-[11.5px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
                     {emailSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Verify'}
                   </Button>
                 )
@@ -614,7 +614,7 @@ export function ProfileForm() {
               <Button
                 type="submit"
                 disabled={saving || (!dirty) || !profile}
-                className="h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+                className="h-9 px-5 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white"
               >
                 {saving ? (
                   <><Loader2 className="h-4 w-4 animate-spin" />Saving…</>
@@ -639,7 +639,7 @@ export function ProfileForm() {
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-            <Palette className="h-4.5 w-4.5 text-[#5B6CF9]" />
+            <Palette className="h-4.5 w-4.5 text-[#4A5CE8]" />
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold text-slate-800">Appearance</h3>
@@ -655,7 +655,7 @@ export function ProfileForm() {
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div className="flex items-start gap-3 px-6 py-4 border-b border-slate-100">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-            <Languages className="h-4.5 w-4.5 text-[#5B6CF9]" />
+            <Languages className="h-4.5 w-4.5 text-[#4A5CE8]" />
           </span>
           <div className="flex-1 min-w-0">
             <h3 className="text-[14px] font-semibold text-slate-800">Chat Translation</h3>

@@ -125,7 +125,7 @@ export function Stepper({ steps }: {
                 className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
                   state === 'pending'
                     ? 'bg-slate-100 text-slate-400'
-                    : 'bg-[#5B6CF9] text-white'
+                    : 'bg-[#4A5CE8] text-white'
                 }`}
               >
                 {i + 1}

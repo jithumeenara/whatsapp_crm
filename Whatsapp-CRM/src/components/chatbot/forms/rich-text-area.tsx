@@ -146,7 +146,7 @@ function Toolbar({ onWrap, onPrefixLines, onInsert, vars, size = "sm" }: Toolbar
             <div className="max-h-52 overflow-y-auto p-2 space-y-1.5">
               {EMOJI_GROUPS.map((g) => (
                 <div key={g.label}>
-                  <p className="mb-0.5 px-0.5 text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                  <p className="mb-0.5 px-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400">
                     {g.label}
                   </p>
                   <div className="flex flex-wrap">
@@ -341,7 +341,7 @@ function ExpandModal({
           <p className="mt-1.5 text-[10px] text-slate-400">
             Formatting: *bold* · _italic_ · ~strike~ · • bullet · 1. numbered
             <span className="ml-2 text-slate-300">|</span>
-            <span className="ml-2 text-[9px] text-indigo-400">Instagram: bold/italic auto-converted to Unicode ✦</span>
+            <span className="ml-2 text-[10px] text-indigo-400">Instagram: bold/italic auto-converted to Unicode ✦</span>
           </p>
         </div>
 

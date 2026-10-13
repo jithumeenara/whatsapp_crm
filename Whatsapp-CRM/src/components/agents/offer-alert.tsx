@@ -220,7 +220,7 @@ export function OfferAlert() {
             type="button"
             onClick={() => void answer(offer, 'accept')}
             disabled={busy === offer.id}
-            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#5B6CF9] text-[13px] font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+            className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#4A5CE8] text-[13px] font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
           >
             {busy === offer.id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             I&rsquo;ll take it

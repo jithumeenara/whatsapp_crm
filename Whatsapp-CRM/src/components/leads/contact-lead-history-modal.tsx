@@ -9,6 +9,7 @@ import {
   Phone, PhoneOff, MessageSquare, Activity,
 } from 'lucide-react'
 import type { LeadActivity } from '@/types'
+import { useLoadFor } from '@/hooks/use-load-for'
 
 function cn(...c: (string | boolean | undefined | null)[]) {
   return c.filter(Boolean).join(' ')
@@ -190,7 +191,7 @@ function LeadHistoryCard({
                   {lead.title}
                 </span>
                 {isCurrent && (
-                  <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700 uppercase tracking-wide">
+                  <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 uppercase tracking-wide">
                     Current
                   </span>
                 )}
@@ -278,26 +279,23 @@ interface ContactLeadHistoryModalProps {
   onClose: () => void
 }
 
+const NO_COUNTS = { total: 0, active: 0, closed: 0 }
+const NO_HISTORY = { leads: [] as LeadRecord[], counts: NO_COUNTS }
+
 export function ContactLeadHistoryModal({
   contactId, contactName, currentLeadId, onClose,
 }: ContactLeadHistoryModalProps) {
   const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [leads, setLeads] = useState<LeadRecord[]>([])
-  const [counts, setCounts] = useState({ total: 0, active: 0, closed: 0 })
-
-  useEffect(() => {
-    setLoading(true)
-    fetch(`/api/contacts/${contactId}/leads/history`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => {
-        if (!d) return
-        setLeads(d.leads ?? [])
-        setCounts(d.counts ?? { total: 0, active: 0, closed: 0 })
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [contactId])
+  const { data: history, loading } = useLoadFor<{ leads: LeadRecord[]; counts: { total: number; active: number; closed: number } }>(
+    contactId,
+    async (id) => {
+      const r = await fetch(`/api/contacts/${id}/leads/history`)
+      const d = r.ok ? await r.json() : null
+      return { leads: d?.leads ?? [], counts: d?.counts ?? NO_COUNTS }
+    },
+    NO_HISTORY,
+  )
+  const { leads, counts } = history
 
   function handleNavigate(leadId: string) {
     if (leadId !== currentLeadId) {

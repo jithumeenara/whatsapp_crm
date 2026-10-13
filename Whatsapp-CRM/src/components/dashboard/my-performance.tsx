@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { PhoneCall, PhoneOff, Trophy, HandCoins, Inbox } from 'lucide-react'
+import { useLoadFor } from '@/hooks/use-load-for'
+
+const NO_ROWS: never[] = []
 
 /**
  * How this week went for the person looking at it.
@@ -156,24 +159,15 @@ export function MyPerformance() {
 /** Same figures for a whole team, for somebody who can see them all. */
 export function TeamPerformance() {
   const [days, setDays] = useState<number>(7)
-  const [rows, setRows] = useState<Array<Performance & { user_id: string; full_name: string }>>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    fetch(`/api/dashboard/performance?days=${days}`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body) => {
-        if (cancelled || !body?.team) return
-        setRows(body.team)
-      })
-      .catch(() => {})
-      .finally(() => !cancelled && setLoading(false))
-    return () => {
-      cancelled = true
-    }
-  }, [days])
+  const { data: rows, loading } = useLoadFor<Array<Performance & { user_id: string; full_name: string }>>(
+    days,
+    async (d) => {
+      const r = await fetch(`/api/dashboard/performance?days=${d}`, { cache: 'no-store' })
+      const body = r.ok ? ((await r.json()) as { team?: Array<Performance & { user_id: string; full_name: string }> }) : null
+      return body?.team ?? []
+    },
+    NO_ROWS,
+  )
 
   // Nobody who did nothing at all. A roster padded with zero rows
   // buries the people who worked, and the absence is visible in the

@@ -1,6 +1,8 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useSyncExternalStore } from 'react'
+
+const noSubscribe = () => () => {}
 import { Clock } from 'lucide-react'
 import { DOW_SHORT_MON_FIRST } from '@/lib/dashboard/date-utils'
 import type { ResponseTimeSummary } from '@/lib/dashboard/types'
@@ -31,8 +33,9 @@ export function ResponseTimeChart({
   loading,
   thresholdMinutes = 5,
 }: ResponseTimeChartProps) {
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+  // True in the browser, false while rendering on the server — without
+  // an effect that renders the chart twice.
+  const mounted = useSyncExternalStore(noSubscribe, () => true, () => false)
 
   const hasData = data?.buckets.some((b) => b.avgMinutes != null) ?? false
 

@@ -29,7 +29,7 @@ function SectionCard({ title, description, icon: Icon, tone = 'indigo', children
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-start gap-3 border-b border-slate-100 px-6 py-4">
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tone === 'emerald' ? 'bg-emerald-50' : 'bg-[#EEF0FF]'}`}>
-          <Icon className={`h-4.5 w-4.5 ${tone === 'emerald' ? 'text-emerald-600' : 'text-[#5B6CF9]'}`} />
+          <Icon className={`h-4.5 w-4.5 ${tone === 'emerald' ? 'text-emerald-600' : 'text-[#4A5CE8]'}`} />
         </span>
         <div className="min-w-0 flex-1">
           <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
@@ -83,7 +83,7 @@ export function DatabasePanel() {
           type="button"
           onClick={() => void handleBackup()}
           disabled={status === 'loading'}
-          className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#5B6CF9] px-4 text-[13px] font-semibold text-white shadow-sm hover:bg-[#4a5ce8] disabled:opacity-60"
+          className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#4A5CE8] px-4 text-[13px] font-semibold text-white shadow-sm hover:bg-[#3D4FD6] disabled:opacity-60"
         >
           {status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           {status === 'loading' ? 'Preparing…' : 'Download backup'}

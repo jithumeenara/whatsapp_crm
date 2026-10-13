@@ -416,7 +416,7 @@ export function LeadsSettingsV2() {
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
         <div className="flex items-start gap-4">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-            <Zap className="h-4 w-4 text-[#5B6CF9]" />
+            <Zap className="h-4 w-4 text-[#4A5CE8]" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[14px] font-semibold text-slate-800">Auto Lead Creation</p>
@@ -439,7 +439,7 @@ export function LeadsSettingsV2() {
             aria-checked={settings.auto_lead_creation}
             onClick={() => setSettings((s) => ({ ...s, auto_lead_creation: !s.auto_lead_creation }))}
             className={`relative shrink-0 mt-0.5 h-6 w-10 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-[#5B6CF9]/40 focus:ring-offset-2 ${
-              settings.auto_lead_creation ? "bg-[#5B6CF9]" : "bg-slate-200"
+              settings.auto_lead_creation ? "bg-[#4A5CE8]" : "bg-slate-200"
             }`}
           >
             <span
@@ -487,7 +487,7 @@ export function LeadsSettingsV2() {
               }))
             }
             className={`relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors ${
-              settings.new_lead_alert_enabled !== false ? "bg-[#5B6CF9]" : "bg-slate-200"
+              settings.new_lead_alert_enabled !== false ? "bg-[#4A5CE8]" : "bg-slate-200"
             }`}
           >
             <span
@@ -596,7 +596,7 @@ export function LeadsSettingsV2() {
       <div className="space-y-3">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#EEF0FF]">
-            <BarChart3 className="h-4 w-4 text-[#5B6CF9]" />
+            <BarChart3 className="h-4 w-4 text-[#4A5CE8]" />
           </div>
           <div>
             <p className="text-[14px] font-semibold text-slate-800">Lead Score Options</p>
@@ -683,7 +683,7 @@ export function LeadsSettingsV2() {
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="h-9 rounded-lg bg-[#5B6CF9] px-5 text-[13px] font-semibold text-white hover:bg-[#4a5ce8] disabled:opacity-50 transition-colors"
+          className="h-9 rounded-lg bg-[#4A5CE8] px-5 text-[13px] font-semibold text-white hover:bg-[#3D4FD6] disabled:opacity-50 transition-colors"
         >
           {saving ? "Saving…" : "Save Settings"}
         </button>

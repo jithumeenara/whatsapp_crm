@@ -229,7 +229,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
           )}
 
           <div className="flex gap-2">
-            <Button onClick={create} disabled={submitting} className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+            <Button onClick={create} disabled={submitting} className="h-9 px-4 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
               {submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Webhook'}
             </Button>
             <Button variant="outline" onClick={resetForm} className="h-9 px-4 text-[13px] border-slate-200">Cancel</Button>
@@ -238,7 +238,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
       ) : (
         <button
           onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-[13px] text-slate-500 hover:border-[#5B6CF9]/50 hover:text-[#5B6CF9] transition-colors"
+          className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-[13px] text-slate-500 hover:border-[#5B6CF9]/50 hover:text-[#4A5CE8] transition-colors"
         >
           <Plus className="h-4 w-4" />
           Add Webhook
@@ -269,10 +269,10 @@ if (sig !== expected) return res.status(401).end()`}</pre>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => toggleActive(h)}
-                    className="rounded-lg p-1.5 text-slate-400 hover:text-[#5B6CF9] hover:bg-[#EEF0FF] transition-colors"
+                    className="rounded-lg p-1.5 text-slate-400 hover:text-[#4A5CE8] hover:bg-[#EEF0FF] transition-colors"
                     title={h.is_active ? 'Disable' : 'Enable'}
                   >
-                    {h.is_active ? <ToggleRight className="h-5 w-5 text-[#5B6CF9]" /> : <ToggleLeft className="h-5 w-5" />}
+                    {h.is_active ? <ToggleRight className="h-5 w-5 text-[#4A5CE8]" /> : <ToggleLeft className="h-5 w-5" />}
                   </button>
                   <button
                     onClick={() => setDeleteTarget(h)}
@@ -286,7 +286,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
 
               <div className="flex flex-wrap gap-1.5">
                 {h.events.map((ev) => (
-                  <span key={ev} className="rounded-full bg-[#EEF0FF] text-[#5B6CF9] text-[11px] px-2 py-0.5 font-mono">{ev}</span>
+                  <span key={ev} className="rounded-full bg-[#EEF0FF] text-[#4A5CE8] text-[11px] px-2 py-0.5 font-mono">{ev}</span>
                 ))}
                 {h.table && <span className="rounded-full bg-slate-100 text-slate-500 text-[11px] px-2 py-0.5">{h.table.name}</span>}
               </div>

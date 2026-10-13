@@ -149,7 +149,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
           {meta.label}
         </span>
         {isEntry && (
-          <span className="ml-auto rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-700">
+          <span className="ml-auto rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700">
             Entry
           </span>
         )}

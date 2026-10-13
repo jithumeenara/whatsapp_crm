@@ -362,7 +362,7 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
               {f.value !== "all" && (() => {
                 const cnt = conversations.filter((c) => c.status === f.value && c.unread_count > 0).length
                 return cnt > 0 ? (
-                  <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-100 px-1 text-[9px] font-bold text-indigo-700">
+                  <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-100 px-1 text-[10px] font-bold text-indigo-700">
                     {cnt}
                   </span>
                 ) : null

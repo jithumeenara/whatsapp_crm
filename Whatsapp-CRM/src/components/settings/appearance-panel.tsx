@@ -69,12 +69,12 @@ export function AppearancePanel() {
               <div className="flex items-center justify-between">
                 <span className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg",
-                  isActive ? "bg-[#5B6CF9]/10" : "bg-slate-100",
+                  isActive ? "bg-[#4A5CE8]/10" : "bg-slate-100",
                 )}>
-                  <Icon className={cn("h-4.5 w-4.5", isActive ? "text-[#5B6CF9]" : "text-slate-500")} />
+                  <Icon className={cn("h-4.5 w-4.5", isActive ? "text-[#4A5CE8]" : "text-slate-500")} />
                 </span>
                 {isActive && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#5B6CF9]/10 px-2 py-0.5 text-[11px] font-medium text-[#5B6CF9]">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#4A5CE8]/10 px-2 py-0.5 text-[11px] font-medium text-[#4A5CE8]">
                     <Check className="h-3 w-3" />
                     Active
                   </span>

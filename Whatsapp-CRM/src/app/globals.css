@@ -475,3 +475,24 @@ html[data-theme="rose"] {
     scroll-behavior: auto !important;
   }
 }
+
+/* Small icon buttons (24–32px) are fine for a mouse and too small for a
+ * finger. On touch screens each gets an invisible 44px touch area around
+ * it — the button looks exactly the same. A button that is already
+ * absolutely positioned keeps that: utilities outrank this base layer. */
+@layer base {
+  @media (pointer: coarse) {
+    :where(button.h-6, button.h-7, button.h-8, button.size-6, button.size-7, button.size-8, button.w-6, button.w-7, button.w-8) {
+      position: relative;
+    }
+    :where(button.h-6, button.h-7, button.h-8, button.size-6, button.size-7, button.size-8, button.w-6, button.w-7, button.w-8)::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}

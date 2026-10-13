@@ -50,7 +50,7 @@ export function ProviderLanding({ onConfigure }: { onConfigure: () => void }) {
 
       {/* ── Gemini hero ── */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#EFF1FF] via-[#F7F8FF] to-white p-5 ring-1 ring-[#5B6CF9]/12 sm:p-7 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_20px_48px_-24px_rgba(91,108,249,0.45)]">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#5B6CF9]/[0.07] blur-2xl" />
+        <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-[#4A5CE8]/[0.07] blur-2xl" />
         <div className="pointer-events-none absolute -bottom-20 left-1/3 h-52 w-52 rounded-full bg-violet-400/[0.07] blur-2xl" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-center">
           <div className="flex min-w-0 flex-1 items-start gap-4 sm:gap-5">

@@ -139,7 +139,7 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
             <DialogFooter className="bg-white border-slate-200">
               <Button
                 onClick={() => onOpenChange(false)}
-                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+                className="bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white"
               >
                 Done
               </Button>
@@ -198,7 +198,7 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
               <Button
                 onClick={handleCreate}
                 disabled={submitting}
-                className="bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+                className="bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white"
               >
                 {submitting ? (
                   <>

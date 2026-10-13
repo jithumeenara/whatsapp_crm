@@ -89,7 +89,7 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-[12px] font-bold leading-tight text-slate-800" title={nodeName}>{nodeName}</span>
           {isEntry ? (
-            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-600">
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-600">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Entry
             </span>
@@ -132,7 +132,7 @@ const ChatbotNodeComponent = memo(function ChatbotNode({ data, selected }: NodeP
               )}
             >
               {h.label && (
-                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
                   {h.label}
                 </span>
               )}

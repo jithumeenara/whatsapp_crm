@@ -122,7 +122,7 @@ const ROLE_CHIP: Record<
   admin: {
     icon: Shield,
     label: 'Manager',
-    className: 'border-[#5B6CF9]/25 bg-[#EEF0FF] text-[#5B6CF9]',
+    className: 'border-[#5B6CF9]/25 bg-[#EEF0FF] text-[#4A5CE8]',
   },
   supervisor: {
     icon: UserCheck,
@@ -406,7 +406,7 @@ export function MembersTab() {
         <div className="flex justify-end gap-2">
           <Button
             onClick={() => setAddAgentOpen(true)}
-            className="h-9 px-4 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white"
+            className="h-9 px-4 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white"
           >
             <Plus className="h-3.5 w-3.5" />
             Add Agent
@@ -451,7 +451,7 @@ export function MembersTab() {
                           alt={member.full_name || 'Member'}
                         />
                       ) : null}
-                      <AvatarFallback className="bg-[#EEF0FF] text-sm font-medium text-[#5B6CF9]">
+                      <AvatarFallback className="bg-[#EEF0FF] text-sm font-medium text-[#4A5CE8]">
                         {(member.full_name || member.email || 'U')
                           .charAt(0)
                           .toUpperCase()}
@@ -551,7 +551,7 @@ export function MembersTab() {
                         aria-checked={member.restrict_to_assigned}
                         onClick={() => handleRestrictToggle(member, !member.restrict_to_assigned)}
                         className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-                          member.restrict_to_assigned ? 'bg-[#5B6CF9]' : 'bg-slate-200'
+                          member.restrict_to_assigned ? 'bg-[#4A5CE8]' : 'bg-slate-200'
                         }`}
                       >
                         <span

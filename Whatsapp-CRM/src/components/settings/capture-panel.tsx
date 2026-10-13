@@ -97,7 +97,7 @@ export function CapturePanel() {
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm flex items-start justify-between gap-4 p-5">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#EEF0FF]">
-            <UserCheck className="h-4.5 w-4.5 text-[#5B6CF9]" />
+            <UserCheck className="h-4.5 w-4.5 text-[#4A5CE8]" />
           </span>
           <div>
             <Label className="text-[13.5px] font-semibold text-slate-800">Enable Name Verification</Label>
@@ -136,7 +136,7 @@ export function CapturePanel() {
               Preview — how it will appear
             </p>
             <div className="flex gap-2">
-              <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-[#5B6CF9]" />
+              <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-[#4A5CE8]" />
               <p className="text-[13px] text-slate-700">{previewConfirm}</p>
             </div>
           </div>
@@ -165,7 +165,7 @@ export function CapturePanel() {
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <Label className="flex items-center gap-2 text-[13.5px] font-semibold text-slate-800">
-                <BellRing className="h-4 w-4 text-[#5B6CF9]" />
+                <BellRing className="h-4 w-4 text-[#4A5CE8]" />
                 Alert staff when someone new messages
               </Label>
               <p className="mt-1 text-[12.5px] leading-relaxed text-slate-500">
@@ -280,7 +280,7 @@ export function CapturePanel() {
               <>Contact types their correct name → saved to CRM, flow complete</>,
             ].map((item, i) => (
               <li key={i} className="flex items-start gap-2.5">
-                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-semibold text-slate-500">{i + 1}</span>
+                <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-500">{i + 1}</span>
                 {item}
               </li>
             ))}
@@ -289,7 +289,7 @@ export function CapturePanel() {
 
       </div>
 
-      <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto h-9 px-5 text-[13px] bg-[#5B6CF9] hover:bg-[#4a5ce8] text-white">
+      <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto h-9 px-5 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
         {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : 'Save Settings'}
       </Button>
     </div>

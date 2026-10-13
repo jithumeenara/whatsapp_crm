@@ -228,7 +228,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
               <canvas ref={canvasRef} className="h-full w-full" />
               {status === 'connecting' && (
                 <span className="absolute inset-0 grid place-items-center">
-                  <Loader2 className="h-6 w-6 animate-spin text-[#5B6CF9]" />
+                  <Loader2 className="h-6 w-6 animate-spin text-[#4A5CE8]" />
                 </span>
               )}
             </div>
@@ -263,7 +263,7 @@ export function VoiceChatModal(props: VoiceChatModalProps) {
               key={i}
               className={[
                 'w-1.5 rounded-full transition-[height,background-color] duration-100',
-                youSpeaking ? 'bg-emerald-500' : assistantSpeaking ? 'bg-[#5B6CF9]' : 'bg-slate-300',
+                youSpeaking ? 'bg-emerald-500' : assistantSpeaking ? 'bg-[#4A5CE8]' : 'bg-slate-300',
               ].join(' ')}
               style={{
                 height: `${Math.max(6, Math.round((live ? level : 0) * 34 * scale + 6))}px`,

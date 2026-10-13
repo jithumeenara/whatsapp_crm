@@ -98,9 +98,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Dedup: match by external_id first, then phone
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let existing = externalId
-      ? await prisma.contact.findFirst({ where: { account_id: accountId, external_id: externalId } as any })
+      ? await prisma.contact.findFirst({ where: { account_id: accountId, external_id: externalId } })
       : null
 
     if (!existing && phone) {
@@ -111,7 +110,6 @@ export async function POST(req: NextRequest) {
     }
 
     if (existing) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const updated = await prisma.contact.update({
         where: { id: existing.id },
         data: {
@@ -119,12 +117,11 @@ export async function POST(req: NextRequest) {
           ...(email && { email }),
           ...(company && { company }),
           ...(externalId && { external_id: externalId }),
-        } as any,
+        },
       })
       contactId = updated.id
     } else {
       const normalized = phone ? normalizePhone(phone) : null
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const created = await prisma.contact.create({
         data: {
           account_id: accountId,
@@ -137,7 +134,7 @@ export async function POST(req: NextRequest) {
           external_id: externalId,
           opt_in_source: 'external_webhook',
           opt_in_at: new Date(),
-        } as any,
+        },
       })
       contactId = created.id
     }
@@ -153,9 +150,8 @@ export async function POST(req: NextRequest) {
     const notes = typeof leadPayload.notes === 'string' ? leadPayload.notes.trim() : null
 
     // Dedup by external_id (stored as notes prefix with a marker, or via contact)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let existingLead = externalId
-      ? await prisma.lead.findFirst({ where: { account_id: accountId, external_id: externalId } as any })
+    const existingLead = externalId
+      ? await prisma.lead.findFirst({ where: { account_id: accountId, external_id: externalId } })
       : null
 
     if (existingLead) {
@@ -172,7 +168,6 @@ export async function POST(req: NextRequest) {
       })
       leadId = updated.id
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const created = await prisma.lead.create({
         data: {
           account_id: accountId,
@@ -184,7 +179,7 @@ export async function POST(req: NextRequest) {
           notes: notes ?? null,
           contact_id: contactId,
           external_id: externalId,
-        } as any,
+        },
       })
       leadId = created.id
 

@@ -545,7 +545,7 @@ function ChannelTag({ channel }: { channel?: string }) {
   const tag = CHANNEL_TAG[channel];
   if (!tag) return null;
   return (
-    <span className={cn("rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide", tag.className)}>
+    <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide", tag.className)}>
       {tag.label}
     </span>
   );
@@ -562,7 +562,7 @@ function BroadcastTag({ broadcastId }: { broadcastId?: string | null }) {
       href={`/broadcasts/${broadcastId}`}
       onClick={(e) => e.stopPropagation()}
       title="Sent via a Broadcast campaign — click to view it"
-      className="flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-700 hover:bg-violet-200"
+      className="flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 hover:bg-violet-200"
     >
       <Radio className="h-2.5 w-2.5" />
       Broadcast

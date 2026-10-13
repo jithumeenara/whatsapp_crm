@@ -205,7 +205,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                   href="https://aistudio.google.com/apikey"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#5B6CF9] hover:underline"
+                  className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[#4A5CE8] hover:underline"
                 >
                   Get API key from Google AI Studio
                   <ExternalLink className="h-3.5 w-3.5" />
@@ -346,7 +346,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                   <div className="space-y-1.5">
                     <AiLabel>Reply language</AiLabel>
                     <div className="flex h-10 items-center gap-2 rounded-xl bg-[#F4F5FA] px-3 ring-1 ring-slate-200/80">
-                      <Languages className="h-3.5 w-3.5 shrink-0 text-[#5B6CF9]" />
+                      <Languages className="h-3.5 w-3.5 shrink-0 text-[#4A5CE8]" />
                       <span className="text-[13px] font-medium text-slate-700">Matched to each customer</span>
                     </div>
                     <AiHint>
@@ -423,7 +423,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
 
           {/* ── Side rail ── */}
           <aside className="h-fit rounded-2xl bg-gradient-to-br from-[#EFF1FF] to-[#F7F8FF] p-5 ring-1 ring-[#5B6CF9]/10">
-            <Sparkles className="h-7 w-7 text-[#5B6CF9]" strokeWidth={1.5} />
+            <Sparkles className="h-7 w-7 text-[#4A5CE8]" strokeWidth={1.5} />
             <p className="mt-3 text-[15px] font-bold text-slate-900">Why Google Gemini?</p>
             <ul className="mt-3 space-y-2.5">
               {[
@@ -432,7 +432,7 @@ export function ConfigureWizard(props: ConfigureWizardProps) {
                 'Cost efficient at chat volume',
               ].map((s) => (
                 <li key={s} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-slate-700">
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#5B6CF9]" />
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#4A5CE8]" />
                   {s}
                 </li>
               ))}

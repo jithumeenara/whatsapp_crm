@@ -170,7 +170,7 @@ export function SuggestedLeads({ onReviewed }: { onReviewed?: () => void }) {
                   disabled={busy.has(row.id)}
                   onClick={() => review(row.id, 'accepted')}
                   title="Add to New Leads"
-                  className="flex h-8 items-center gap-1.5 rounded-lg bg-[#5B6CF9] px-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#4a5ce8] disabled:opacity-50"
+                  className="flex h-8 items-center gap-1.5 rounded-lg bg-[#4A5CE8] px-2.5 text-[12px] font-semibold text-white transition-colors hover:bg-[#3D4FD6] disabled:opacity-50"
                 >
                   <Check className="h-3.5 w-3.5" /> Add
                 </button>

@@ -47,6 +47,7 @@ import {
 import { cn } from "@/lib/utils";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
+import { useTableFields } from "@/hooks/use-table-fields";
 
 interface NodeConfigFormProps {
   node: BuilderNode;
@@ -245,8 +246,10 @@ function SaveToTableForm({
   onUpdateConfig: (patch: Record<string, unknown>) => void;
 }) {
   const [tables, setTables] = useState<TableInfo[]>([]);
-  const [loadingFields, setLoadingFields] = useState(false);
-  const [tableFields, setTableFields] = useState<TableInfo["fields"]>([]);
+  const { fields: tableFields, loading: loadingFields } = useTableFields(cfg.table_id, { pickableOnly: false }) as {
+    fields: TableInfo["fields"];
+    loading: boolean;
+  };
 
   // Load all tables once
   useEffect(() => {
@@ -256,16 +259,6 @@ function SaveToTableForm({
       .catch(() => {});
   }, []);
 
-  // When table changes, load its fields
-  useEffect(() => {
-    if (!cfg.table_id) { setTableFields([]); return; }
-    setLoadingFields(true);
-    fetch(`/api/data-tables/${cfg.table_id}`)
-      .then((r) => r.json())
-      .then((d) => setTableFields(d.table?.fields ?? []))
-      .catch(() => setTableFields([]))
-      .finally(() => setLoadingFields(false));
-  }, [cfg.table_id]);
 
   const mappings = cfg.field_mappings ?? [];
 
