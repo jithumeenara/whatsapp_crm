@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { isPlatformOwner } from '@/lib/auth/platform-owner'
 
 function parseDatabaseUrl(url: string) {
   const u = new URL(url.replace(/^postgres:\/\//, 'postgresql://'))
@@ -36,13 +36,10 @@ export async function GET() {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
   }
 
-  // Only account owners can export the full DB
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_role: true },
-  })
-  if (!profile || !['owner', 'admin'].includes(profile.account_role)) {
-    return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 })
+  // The whole database — every workspace on this server — so the server's
+  // owner only, never any workspace's owner or admin (platform-owner.ts).
+  if (!(await isPlatformOwner(session.user.id))) {
+    return new Response(JSON.stringify({ error: 'Only the owner of this server can download a backup of the whole database.' }), { status: 403 })
   }
 
   const dbUrl = process.env.DATABASE_URL

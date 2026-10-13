@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { isAccountRole } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
+import { isDeactivatedMember, reviveMember } from '@/lib/auth/deactivate-member'
 
 export async function POST(req: Request) {
   try {
@@ -36,29 +37,26 @@ export async function POST(req: Request) {
       },
     })
     if (existing) {
-      // Orphaned agent: the user exists but belongs to a different account
-      // (the old DELETE handler moved them to a personal account instead of
-      // deleting them). Clean up the stale record so it can be re-created.
-      const profileAccountId = existing.profile?.account_id
-      if (profileAccountId !== ctx.accountId) {
-        await prisma.$transaction(async (tx) => {
-          // Must delete owned accounts before the user due to Restrict FK.
-          // Cascade on Account deletes the profile automatically.
-          for (const acct of existing.owned_accounts) {
-            await tx.account.delete({ where: { id: acct.id } })
-          }
-          // If somehow the profile survived (no owned account), delete it.
-          if (existing.profile) {
-            await tx.profile.deleteMany({ where: { user_id: existing.id } })
-          }
-          await tx.user.delete({ where: { id: existing.id } })
-        })
-      } else {
-        return NextResponse.json(
-          { error: 'A member with this WhatsApp number already exists' },
-          { status: 409 },
-        )
+      if (existing.profile?.account_id === ctx.accountId) {
+        return NextResponse.json({ error: 'A member with this WhatsApp number already exists' }, { status: 409 })
       }
+      // Removed earlier: switched back on, with everything they did intact.
+      // Somebody who works in another workspace is never taken.
+      if (!(await isDeactivatedMember(existing.id))) {
+        return NextResponse.json({ error: 'This WhatsApp number is already used by another workspace.' }, { status: 409 })
+      }
+      const password = randomBytes(16).toString('hex')
+      await reviveMember({
+        userId: existing.id,
+        accountId: ctx.accountId,
+        role: role as 'admin' | 'supervisor' | 'agent' | 'viewer',
+        fullName: name,
+        passwordHash: await bcrypt.hash(password, 12),
+      })
+      return NextResponse.json(
+        { ok: true, revived: true, member: { name, role, username: digits, whatsapp: digits, password } },
+        { status: 201 },
+      )
     }
 
     const password = randomBytes(16).toString('hex')

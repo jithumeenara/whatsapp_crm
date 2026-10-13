@@ -427,7 +427,7 @@ model Contact {
   updated_at             DateTime  @updatedAt @db.Timestamptz(6)
 
   account           Account   @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [user_id], references: [id], onDelete: Restrict)
   merged_into       Contact?  @relation("ContactMergedInto", fields: [merged_into_contact_id], references: [id], onDelete: SetNull)
   absorbed_contacts Contact[] @relation("ContactMergedInto")
 
@@ -489,7 +489,7 @@ model ContactMerge {
   created_at              DateTime @default(now()) @db.Timestamptz(6)
 
   account      Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  performed_by User    @relation(fields: [performed_by_user_id], references: [id], onDelete: Cascade)
+  performed_by User    @relation(fields: [performed_by_user_id], references: [id], onDelete: Restrict)
 
   @@index([account_id, created_at])
   @@map("contact_merges")
@@ -504,7 +504,7 @@ model Tag {
   created_at DateTime @default(now()) @db.Timestamptz(6)
 
   account  Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user     User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contacts ContactTag[]
 
   @@map("tags")
@@ -533,7 +533,7 @@ model CustomField {
   created_at    DateTime @default(now()) @db.Timestamptz(6)
 
   account Account              @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User                 @relation(fields: [user_id], references: [id], onDelete: Restrict)
   values  ContactCustomValue[]
 
   @@map("custom_fields")
@@ -563,7 +563,7 @@ model ContactNote {
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@map("contact_notes")
 }
@@ -586,7 +586,7 @@ model Conversation {
   updated_at        DateTime  @updatedAt @db.Timestamptz(6)
 
   account        Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user           User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user           User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact        Contact @relation(fields: [contact_id], references: [id], onDelete: Cascade)
   assigned_agent User?   @relation("ConversationAgent", fields: [assigned_agent_id], references: [id], onDelete: SetNull)
 
@@ -814,7 +814,7 @@ model ScheduledMessage {
   account      Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
   contact      Contact      @relation(fields: [contact_id], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [created_by], references: [id], onDelete: Restrict)
 
   @@index([status, next_send_at])
   @@map("scheduled_messages")
@@ -893,7 +893,7 @@ model WhatsAppConfig {
   updated_at                DateTime  @updatedAt @db.Timestamptz(6)
 
   account                Account               @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user                   User                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user                   User                  @relation(fields: [user_id], references: [id], onDelete: Restrict)
   conversations          Conversation[]
   payment_gateway_config PaymentGatewayConfig?
 
@@ -968,7 +968,7 @@ model MetaAdsConfig {
   updated_at               DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@map("meta_ads_config")
 }
@@ -1005,7 +1005,7 @@ model CatalogConfig {
   updated_at          DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@map("catalog_config")
 }
@@ -1116,7 +1116,7 @@ model PaymentGatewayConfig {
   updated_at         DateTime @updatedAt @db.Timestamptz(6)
 
   account         Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user            User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user            User           @relation(fields: [user_id], references: [id], onDelete: Restrict)
   whatsapp_config WhatsAppConfig @relation(fields: [whatsapp_config_id], references: [id], onDelete: Cascade)
 
   @@map("payment_gateway_config")
@@ -1498,7 +1498,7 @@ model AiConfig {
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
   account              Account                @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user                 User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user                 User                   @relation(fields: [user_id], references: [id], onDelete: Restrict)
   knowledge_embeddings AiKnowledgeEmbedding[]
   knowledge_items      AiKnowledgeItem[]
   eval_cases           AiEvalCase[]
@@ -1814,7 +1814,7 @@ model SmsConfig {
   updated_at         DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@map("sms_config")
 }
@@ -2034,7 +2034,7 @@ model EmailConfig {
   updated_at         DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@map("email_config")
 }
@@ -2057,7 +2057,7 @@ model RcsConfig {
   updated_at            DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@map("rcs_config")
 }
@@ -2097,7 +2097,7 @@ model MessageTemplate {
   updated_at        DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@unique([account_id, waba_id, name, language])
   @@map("message_templates")
@@ -2115,7 +2115,7 @@ model Pipeline {
   created_at DateTime @default(now()) @db.Timestamptz(6)
 
   account Account         @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [user_id], references: [id], onDelete: Restrict)
   stages  PipelineStage[]
   deals   Deal[]
 
@@ -2165,7 +2165,7 @@ model Deal {
   updated_at          DateTime  @updatedAt @db.Timestamptz(6)
 
   account      Account       @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user         User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [user_id], references: [id], onDelete: Restrict)
   pipeline     Pipeline      @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
   stage        PipelineStage @relation(fields: [stage_id], references: [id])
   contact      Contact?      @relation(fields: [contact_id], references: [id], onDelete: SetNull)
@@ -2232,7 +2232,7 @@ model Broadcast {
   updated_at         DateTime  @updatedAt @db.Timestamptz(6)
 
   account    Account              @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user       User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user       User                 @relation(fields: [user_id], references: [id], onDelete: Restrict)
   recipients BroadcastRecipient[]
   messages   Message[]
 
@@ -2282,7 +2282,7 @@ model Automation {
   updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account                      @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User                         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User                         @relation(fields: [user_id], references: [id], onDelete: Restrict)
   steps   AutomationStep[]
   logs    AutomationLog[]
   pending AutomationPendingExecution[]
@@ -2323,7 +2323,7 @@ model AutomationLog {
 
   account    Account    @relation(fields: [account_id], references: [id], onDelete: Cascade)
   automation Automation @relation(fields: [automation_id], references: [id], onDelete: Cascade)
-  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact    Contact?   @relation(fields: [contact_id], references: [id], onDelete: SetNull)
 
   pending_executions AutomationPendingExecution[]
@@ -2348,7 +2348,7 @@ model AutomationPendingExecution {
 
   account    Account         @relation(fields: [account_id], references: [id], onDelete: Cascade)
   automation Automation      @relation(fields: [automation_id], references: [id], onDelete: Cascade)
-  user       User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user       User            @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact    Contact?        @relation(fields: [contact_id], references: [id], onDelete: SetNull)
   log        AutomationLog?  @relation(fields: [log_id], references: [id], onDelete: Cascade)
   parent     AutomationStep? @relation(fields: [parent_step_id], references: [id], onDelete: SetNull)
@@ -2385,7 +2385,7 @@ model Flow {
   updated_at       DateTime  @updatedAt @db.Timestamptz(6)
 
   account Account    @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user    User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user    User       @relation(fields: [user_id], references: [id], onDelete: Restrict)
   nodes   FlowNode[]
   runs    FlowRun[]
 
@@ -2432,7 +2432,7 @@ model FlowRun {
 
   account      Account        @relation(fields: [account_id], references: [id], onDelete: Cascade)
   flow         Flow           @relation(fields: [flow_id], references: [id], onDelete: Cascade)
-  user         User           @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact      Contact?       @relation(fields: [contact_id], references: [id], onDelete: SetNull)
   conversation Conversation?  @relation(fields: [conversation_id], references: [id], onDelete: SetNull)
   last_prompt  Message?       @relation("LastPromptMessage", fields: [last_prompt_message_id], references: [id], onDelete: SetNull)
@@ -2658,7 +2658,7 @@ model Lead {
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
   account             Account            @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user                User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user                User               @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact             Contact?           @relation(fields: [contact_id], references: [id], onDelete: SetNull)
   assignee            User?              @relation("LeadAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
   activities          LeadActivity[]
@@ -2812,7 +2812,7 @@ model FollowUp {
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
 
   account  Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user     User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact  Contact? @relation(fields: [contact_id], references: [id], onDelete: SetNull)
   lead     Lead?    @relation(fields: [lead_id], references: [id], onDelete: SetNull)
   assignee User?    @relation("FollowUpAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
@@ -2890,7 +2890,7 @@ model Segment {
   updated_at    DateTime @updatedAt @db.Timestamptz(6)
 
   account              Account             @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user                 User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user                 User                @relation(fields: [user_id], references: [id], onDelete: Restrict)
   meta_custom_audience MetaCustomAudience?
 
   @@map("segments")
@@ -2920,7 +2920,7 @@ model Task {
   updated_at   DateTime  @updatedAt @db.Timestamptz(6)
 
   account  Account  @relation(fields: [account_id], references: [id], onDelete: Cascade)
-  user     User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contact  Contact? @relation(fields: [contact_id], references: [id], onDelete: SetNull)
   lead     Lead?    @relation(fields: [lead_id], references: [id], onDelete: SetNull)
   assignee User?    @relation("TaskAssignee", fields: [assigned_to], references: [id], onDelete: SetNull)
@@ -3479,7 +3479,7 @@ model ConversationOffer {
 
   account      Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [user_id], references: [id], onDelete: Restrict)
 
   @@index([user_id, status, offered_at(sort: Desc)])
   @@index([conversation_id, created_at])

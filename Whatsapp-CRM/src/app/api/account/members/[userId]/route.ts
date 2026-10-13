@@ -28,6 +28,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { parseWorkingHours, validateWorkingHours } from "@/lib/agents/working-hours";
 import { isAccountRole, type AccountRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db";
+import { deactivateMember } from "@/lib/auth/deactivate-member";
 import { parsePageAccess } from "@/lib/auth/page-access";
 import { Prisma } from "@prisma/client";
 import {
@@ -255,46 +256,10 @@ export async function DELETE(
       );
     }
 
-    // Agent accounts ({digits}@agent.local) have no external identity —
-    // hard-delete the profile and user so the same number can be re-added.
-    const isAgentAccount = (target.email ?? "").endsWith("@agent.local");
-
-    if (isAgentAccount) {
-      await prisma.$transaction(async (tx) => {
-        await tx.profile.delete({ where: { user_id: userId } });
-        await tx.user.delete({ where: { id: userId } });
-      });
-      return NextResponse.json({ ok: true });
-    }
-
-    // For regular members: create a new personal account and reassign
-    // their profile to it. Done in a transaction so the user is never
-    // left account-less.
-    const newPersonalAccount = await prisma.$transaction(async (tx) => {
-      const newAccount = await tx.account.create({
-        data: {
-          name: target.full_name
-            ? `${target.full_name}'s Account`
-            : "Personal Account",
-          owner_user_id: userId,
-        },
-      });
-
-      await tx.profile.update({
-        where: { user_id: userId },
-        data: {
-          account_id: newAccount.id,
-          account_role: "owner",
-        },
-      });
-
-      return newAccount;
-    });
-
-    return NextResponse.json({
-      ok: true,
-      newPersonalAccountId: newPersonalAccount.id,
-    });
+    // Switched off, never deleted and never made an owner — see
+    // src/lib/auth/deactivate-member.ts for what each of those cost.
+    await deactivateMember(userId, target.full_name);
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);
   }
