@@ -522,7 +522,7 @@ export function AiConfig() {
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         {/* -mx-1 px-1 keeps the focus ring of the first/last trigger from
             being clipped by the scroll container. */}
-        <TabsList className="-mx-1 h-10 max-w-full overflow-x-auto rounded-xl bg-slate-100 p-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <TabsList className="-mx-1 h-10 max-w-full justify-start overflow-x-auto rounded-xl bg-slate-100 p-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {AI_TABS.map(({ value, label, Icon }) => (
             <TabsTrigger
               key={value}
