@@ -4,6 +4,7 @@ import { join, resolve, relative, isAbsolute } from "path";
 import { lookup } from "mime-types";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { servableMime } from "@/lib/files/account-files";
 
 const UPLOADS_DIR = resolve(join(process.cwd(), "uploads"));
 
@@ -45,8 +46,10 @@ export async function GET(
     const data = await readFile(requestedPath);
     const mimeType = lookup(requestedPath) || "application/octet-stream";
 
-    // Serve SVGs as plain text to prevent script execution
-    const safeMime = mimeType === "image/svg+xml" ? "text/plain" : mimeType;
+    // Only the types uploads are checked against are served as themselves.
+    // Anything else — an old file stored under a name like page.html or
+    // icon.svg — goes out as an opaque download the browser never renders.
+    const safeMime = servableMime(mimeType) ? mimeType : "application/octet-stream";
 
     return new NextResponse(data, {
       headers: {

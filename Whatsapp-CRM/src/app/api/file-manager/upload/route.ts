@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { join, extname, basename } from "path";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
+import { contentMatchesType, extensionFor } from "@/lib/files/account-files";
 import { randomUUID } from "crypto";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
@@ -60,13 +61,18 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
+      const bytes = Buffer.from(await file.arrayBuffer());
+      if (!contentMatchesType(file.type, bytes)) {
+        errors.push({ name: file.name, error: "Not what its type says — choose the original file" });
+        continue;
+      }
+
       const ext = extname(file.name) || "";
-      const safeName = basename(file.name, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
-      const storedName = `${randomUUID()}-${safeName}${ext}`;
+      const safeName = basename(file.name, ext).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "file";
+      const storedName = `${randomUUID()}-${safeName}${extensionFor(file.type)}`;
       const filePath = join(accountDir, storedName);
 
-      const bytes = await file.arrayBuffer();
-      await writeFile(filePath, Buffer.from(bytes));
+      await writeFile(filePath, bytes);
 
       const url = `/api/files/account-${ctx.accountId}/${storedName}`;
       const category = MIME_CATEGORY[file.type] ?? "other";

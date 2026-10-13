@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { join, extname, basename } from "path";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
+import { contentMatchesType, extensionFor } from "@/lib/files/account-files";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
 
@@ -73,15 +74,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "File exceeds 16 MB limit" }, { status: 400 });
     }
 
+    const bytes = Buffer.from(await file.arrayBuffer());
+    // The type a browser declares is the uploader's word; the first bytes
+    // are the file's. A program renamed photo.jpg stops here.
+    if (!contentMatchesType(file.type, bytes)) {
+      return NextResponse.json({ error: "This file is not what its type says. Choose the original file." }, { status: 400 });
+    }
+
     const ext = extname(file.name) || "";
-    const safeName = basename(file.name, ext).replace(/[^a-zA-Z0-9_-]/g, "_");
-    const storedName = `${Date.now()}-${safeName}${ext}`;
+    const safeName = basename(file.name, ext).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "file";
+    // Named by its checked type, never by the extension the uploader typed.
+    const storedName = `${Date.now()}-${safeName}${extensionFor(file.type)}`;
     const accountDir = join(UPLOADS_DIR, `account-${ctx.accountId}`);
 
     await mkdir(accountDir, { recursive: true });
-
-    const bytes = await file.arrayBuffer();
-    await writeFile(join(accountDir, storedName), Buffer.from(bytes));
+    await writeFile(join(accountDir, storedName), bytes);
 
     const publicUrl = `/api/files/account-${ctx.accountId}/${storedName}`;
     const category = MIME_CATEGORY[file.type] ?? "other";

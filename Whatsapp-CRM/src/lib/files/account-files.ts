@@ -35,6 +35,32 @@ export const MIME_CATEGORY: Record<string, string> = {
   'text/csv': 'document',
 }
 
+/** The extension a stored file gets — from its checked type, never from
+ *  the name the uploader typed (a file called page.html is not stored as
+ *  .html whatever it claims to be). */
+const EXTENSION: Record<string, string> = {
+  'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp', 'image/gif': '.gif',
+  'video/mp4': '.mp4', 'video/3gpp': '.3gp', 'video/quicktime': '.mov',
+  'audio/aac': '.aac', 'audio/mp4': '.m4a', 'audio/mpeg': '.mp3', 'audio/amr': '.amr', 'audio/ogg': '.ogg', 'audio/opus': '.opus',
+  'application/pdf': '.pdf',
+  'application/msword': '.doc', 'application/vnd.ms-excel': '.xls', 'application/vnd.ms-powerpoint': '.ppt',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+  'text/plain': '.txt', 'text/csv': '.csv',
+}
+
+export function extensionFor(mime: string): string {
+  return EXTENSION[mime] ?? '.bin'
+}
+
+/** Types the file route serves as themselves; anything else is a plain download. */
+const ALSO_SERVED = new Set(['audio/x-m4a', 'audio/wav', 'audio/x-wav', 'audio/webm', 'video/webm'])
+
+export function servableMime(mime: string): boolean {
+  return Object.prototype.hasOwnProperty.call(EXTENSION, mime) || ALSO_SERVED.has(mime)
+}
+
 export function isAllowedMime(mime: string): boolean {
   return Object.prototype.hasOwnProperty.call(MIME_CATEGORY, mime)
 }
@@ -71,6 +97,18 @@ export function contentMatchesType(mime: string, bytes: Buffer): boolean {
     case 'application/vnd.ms-excel':
     case 'application/vnd.ms-powerpoint':
       return starts([0xd0, 0xcf, 0x11, 0xe0]) // OLE compound file
+    // Voice notes and audio, as WhatsApp sends and accepts them.
+    case 'audio/ogg':
+    case 'audio/opus':
+      return starts([0x4f, 0x67, 0x67, 0x53]) // OggS
+    case 'audio/amr':
+      return starts([0x23, 0x21, 0x41, 0x4d, 0x52]) // #!AMR
+    case 'audio/mp4':
+      return starts([0x66, 0x74, 0x79, 0x70], 4) // ftyp
+    case 'audio/aac':
+      return head[0] === 0xff && (head[1] & 0xf6) === 0xf0 // ADTS sync word
+    case 'audio/mpeg':
+      return starts([0x49, 0x44, 0x33]) || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0) // ID3 or MPEG frame sync
     case 'text/plain':
     case 'text/csv':
       return !bytes.subarray(0, 4096).includes(0) // text has no NUL bytes
@@ -90,7 +128,7 @@ export async function saveAccountFile(args: {
   if (!isAllowedMime(args.mime)) throw new Error('File type not allowed')
   const dir = join(UPLOADS_DIR, `account-${args.accountId}`)
   await mkdir(dir, { recursive: true })
-  const ext = extname(args.name).replace(/[^a-zA-Z0-9.]/g, '').slice(0, 10)
+  const ext = extensionFor(args.mime)
   const safe = basename(args.name, extname(args.name)).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'file'
   const storedName = `${randomUUID()}-${safe}${ext}`
   const filePath = join(dir, storedName)
