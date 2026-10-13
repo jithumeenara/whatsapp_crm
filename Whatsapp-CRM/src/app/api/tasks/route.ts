@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isOneOf, TASK_PRIORITIES, TASK_STATUSES } from '@/lib/status-lists'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
@@ -49,6 +50,12 @@ export async function POST(req: NextRequest) {
     const { title, description, priority, status, due_date, contact_id, lead_id, assigned_to } =
       body as Record<string, string | undefined>
     if (!title) return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    if (status !== undefined && !isOneOf(TASK_STATUSES, status)) {
+      return NextResponse.json({ error: `status must be one of: ${TASK_STATUSES.join(', ')}` }, { status: 400 })
+    }
+    if (priority !== undefined && !isOneOf(TASK_PRIORITIES, priority)) {
+      return NextResponse.json({ error: `priority must be one of: ${TASK_PRIORITIES.join(', ')}` }, { status: 400 })
+    }
 
     const task = await prisma.task.create({
       data: {

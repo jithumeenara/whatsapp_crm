@@ -49,6 +49,7 @@ import { loadSearchableTables } from "@/lib/ai/table-search-store";
 import { buildLanguageBlock } from "@/lib/ai/language";
 import { assessConfidence } from "@/lib/ai/confidence";
 import { validateReply } from "@/lib/ai/validator";
+import { oneOfOr, TASK_PRIORITIES } from "@/lib/status-lists";
 import { accuracyPromptBlock, accuracyRulesFor, checkAccuracyRules, correctionFor, DEFAULT_ACCURACY_RULES, mergeRuleBreaches } from "@/lib/ai/accuracy-rules";
 import { buildHandoffNote } from "@/lib/ai/handoff-context";
 import { scanActionTokens } from "@/lib/ai/action-tokens";
@@ -2701,7 +2702,7 @@ The assistant could not generate a reply: ${detail}`,
                 description: cfg.task_description
                   ? interpolateWithContact(cfg.task_description, run.vars, contact)
                   : null,
-                priority: cfg.task_priority || "medium",
+                priority: oneOfOr(TASK_PRIORITIES, cfg.task_priority, "medium"),
                 status: "todo",
                 due_date: dueDate,
                 ...(cfg.task_assigned_to ? { assigned_to: cfg.task_assigned_to } : {}),

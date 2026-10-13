@@ -48,7 +48,7 @@ SELECT
 \echo '=== Migrations 072 and 099 onward, one row each ==='
 -- One thing each migration creates, checked for existence. "NO" means
 -- that migration has not run here. Every file from 072 on is safe to run
--- again, so scripts/apply-migrations.sh <first NO> 132 brings it up to
+-- again, so scripts/apply-migrations.sh <first NO> 133 brings it up to
 -- date; 064–071 are not, and are covered by the sections above.
 --
 -- A few columns are also added by the app itself at start-up (the
@@ -92,7 +92,8 @@ FROM (VALUES
   ('129_sheet_column_map',              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'google_sheet_links' AND column_name = 'column_map')),
   ('130_website_chat',                  to_regclass('web_chat_sessions') IS NOT NULL),
   ('131_contact_preferred_language',    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'preferred_language')),
-  ('132_user_delete_never_cascades',   NOT EXISTS (SELECT 1 FROM pg_constraint WHERE contype = 'f' AND confrelid = 'public.users'::regclass AND confdeltype = 'c' AND conrelid = 'public.contacts'::regclass))
+  ('132_user_delete_never_cascades',   NOT EXISTS (SELECT 1 FROM pg_constraint WHERE contype = 'f' AND confrelid = 'public.users'::regclass AND confdeltype = 'c' AND conrelid = 'public.contacts'::regclass)),
+  ('133_indexes_links_and_status_lists', EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_status_check'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 

@@ -1,5 +1,6 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { NextRequest, NextResponse } from "next/server"
+import { CONVERSATION_STATUSES, isOneOf } from "@/lib/status-lists"
 import { sendPushToUser } from "@/lib/push"
 import { requestFeedback } from "@/lib/ai/csat"
 
@@ -63,7 +64,12 @@ export async function PATCH(
     }
 
     const data: Record<string, unknown> = {}
-    if (body.status !== undefined) data.status = body.status
+    if (body.status !== undefined) {
+      if (!isOneOf(CONVERSATION_STATUSES, body.status)) {
+        return NextResponse.json({ error: `status must be one of: ${CONVERSATION_STATUSES.join(", ")}` }, { status: 400 })
+      }
+      data.status = body.status
+    }
     if ("assigned_agent_id" in body) data.assigned_agent_id = body.assigned_agent_id
     if (body.unread_count !== undefined) data.unread_count = body.unread_count
 
