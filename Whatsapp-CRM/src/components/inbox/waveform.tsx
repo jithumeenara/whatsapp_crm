@@ -52,8 +52,10 @@ export function Waveform({
  * The shape of a recording, for the preview: the loudest moment in each
  * of `bars` slices, scaled so the loudest slice fills the height.
  */
-export async function peaksOf(url: string, bars = 40): Promise<number[]> {
-  const bytes = await (await fetch(url)).arrayBuffer();
+export async function peaksOf(recording: Blob, bars = 40): Promise<number[]> {
+  // Read from the recording itself, not fetched from its blob: URL —
+  // the site's connect-src does not (and need not) allow blob:.
+  const bytes = await recording.arrayBuffer();
   const context = new AudioContext();
   try {
     const audio = await context.decodeAudioData(bytes);

@@ -27,12 +27,15 @@ function clock(seconds: number): string {
 
 export function VoicePreview({
   url,
+  file,
   fallbackSeconds,
   sending,
   progress,
   onDiscard,
 }: {
   url: string;
+  /** The recording itself, for the waveform. */
+  file: Blob;
   /** The recorder's own timing, shown until the audio reports its length
    *  (some browsers report Infinity for a fresh recording). */
   fallbackSeconds: number;
@@ -51,11 +54,11 @@ export function VoicePreview({
   // and if it cannot be read the bars stay flat and playback still works.
   useEffect(() => {
     let cancelled = false;
-    peaksOf(url, 40)
+    peaksOf(file, 40)
       .then((p) => { if (!cancelled) setPeaks(p); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [url]);
+  }, [file]);
 
   useEffect(() => {
     const audio = audioRef.current;

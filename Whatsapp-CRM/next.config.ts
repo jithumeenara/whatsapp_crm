@@ -83,6 +83,10 @@ const SECURITY_HEADERS = [
       // tiny inline assets.
       "img-src 'self' data: blob: https:",
       "font-src 'self' data:",
+      // blob:: a voice message recorded in the Inbox is previewed from a
+      // local blob URL before it is sent. Without this, default-src
+      // 'self' applied and the preview would not play.
+      "media-src 'self' blob:",
       // Supabase REST + realtime (WSS). Most Meta API calls happen
       // server-side, but the Embedded Signup JS SDK itself pings
       // *.facebook.com client-side (cookie/session sync, app-event

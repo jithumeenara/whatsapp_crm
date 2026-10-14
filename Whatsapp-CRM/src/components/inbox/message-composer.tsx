@@ -651,6 +651,7 @@ export function MessageComposer({
         ) : voiceDraft ? (
           <VoicePreview
             url={voiceDraft.url}
+            file={voiceDraft.file}
             fallbackSeconds={voiceDraft.seconds}
             sending={sendingVoice}
             progress={uploadProgress}
