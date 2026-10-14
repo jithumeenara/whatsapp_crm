@@ -39,3 +39,10 @@ new feature or fix against all ten before calling it done.
 7. Return only the fields the screen needs — never tokens, secrets, password hashes or other accounts' data.
 8. Public or paid (AI, SMS, email) routes get `checkRateLimit`.
 9. Error responses say what went wrong in plain words; stack traces and raw library errors stay in the server log.
+
+# Bugs and tests (test first: "fixed" means a test went red → green)
+
+- A reported bug that touches money (prices, totals, payments, refunds), login / who can see what, or that came back after a fix: write a failing test first (`src/**/*.test.ts`, next to the code) and show it failing **for the bug's reason**, not a typo or import error. Change no other code until it has failed. Bugs seen only in the browser get a Playwright click-through instead. Typos, colours and spacing need no test.
+- Never edit, delete, skip or loosen an existing test to make it pass. If a test looks wrong, stop and ask.
+- Fix the cause with the smallest change; don't hard-code the expected answer or special-case the test's input. List other problems found; leave them alone.
+- Before saying "fixed": run that test, then the whole suite (`npm test`), and show both. Commit the test with the fix, naming the bug it covers. Run `npm test` before starting a new feature; if anything is red, stop and say so.

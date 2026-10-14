@@ -1,5 +1,14 @@
 {
   "permissions": {
-    "deny": ["Read(./.env)", "Read(./.env.local)", "Read(./.env.production)"]
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.production)"
+    ],
+    "ask": [
+      "Edit(**/*.test.*)",
+      "Edit(**/__tests__/**)",
+      "Edit(**/e2e/**)"
+    ]
   }
 }
