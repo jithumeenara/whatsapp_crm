@@ -106,6 +106,20 @@ export function canOpenPath(role: AccountRole, stored: unknown, pathname: string
 }
 
 /**
+ * May somebody whose resolved pages are `allowed` open this address?
+ *
+ * The same matching as canOpenPath, for a client that already has the
+ * server's resolved list (/api/me's allowed_pages) rather than the raw
+ * column and role — the menu and the dashboard's quick links. An address
+ * that is not a grantable page is not this rule's to refuse.
+ */
+export function pathAllowedBy(allowed: Iterable<string>, pathname: string): boolean {
+  const page = longestNavMatch(pathname)
+  if (!page) return true
+  return new Set(allowed).has(page)
+}
+
+/**
  * The nav entry that owns this address, if any.
  *
  * Longest match wins, because `/data` and `/data/[tableId]` are both

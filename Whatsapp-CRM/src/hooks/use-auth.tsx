@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useSession, signOut as nextAuthSignOut } from "next-auth/react";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
+import { profileFromMe } from "./profile-from-me";
 import {
   canEditSettings as canEditSettingsFor,
   canEditWhatsAppConfig as canEditWhatsAppConfigFor,
@@ -21,7 +22,7 @@ import {
   type AccountRole,
 } from "@/lib/auth/roles";
 
-interface Profile {
+export interface Profile {
   id: string;
   full_name: string | null;
   email: string;
@@ -98,23 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) return;
       const data = await res.json();
       if (data.profile) {
-        const accountRole = isAccountRole(data.profile.account_role)
-          ? data.profile.account_role
-          : null;
-        setProfile({
-          id: data.profile.id,
-          full_name: data.profile.full_name,
-          email: data.profile.email,
-          avatar_url: data.profile.avatar_url,
-          phone: data.profile.phone ?? null,
-          phone_verified: !!data.profile.phone_verified,
-          email_verified: !!data.profile.email_verified,
-          account_id: data.profile.account_id,
-          account_role: accountRole,
-          preferred_language: data.profile.preferred_language ?? null,
-          quick_links: Array.isArray(data.profile.quick_links) ? data.profile.quick_links : [],
-          quick_links_enabled: data.profile.quick_links_enabled !== false,
-        });
+        setProfile(profileFromMe(data.profile));
         if (data.account) {
           setAccount({
             id: data.account.id,

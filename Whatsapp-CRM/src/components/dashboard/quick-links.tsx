@@ -12,6 +12,8 @@ import {
   sanitizeQuickLinks,
   type NavItem,
 } from '@/lib/navigation/sections'
+import { visibleQuickLinks } from '@/lib/navigation/quick-link-access'
+import { useAuth } from '@/hooks/use-auth'
 
 /**
  * A round button on the dashboard that opens somebody's own shortcuts.
@@ -69,7 +71,8 @@ function ReserveCorner() {
 
 export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
   const [open, setOpen] = useState(false)
-  const [live, setLive] = useState<{ links: string[]; enabled: boolean } | null>(null)
+  const { profile } = useAuth()
+  const [live, setLive] = useState<{ links: string[]; enabled: boolean; allowedPages?: string[] } | null>(null)
   const [tables, setTables] = useState<Array<{ id: string; name: string }>>([])
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -85,6 +88,7 @@ export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
         setLive({
           links: sanitizeQuickLinks(data.profile?.quick_links),
           enabled: data.profile?.quick_links_enabled !== false,
+          allowedPages: Array.isArray(data.profile?.allowed_pages) ? data.profile.allowed_pages : undefined,
         })
       } catch {
         /* the prop is a perfectly good fallback */
@@ -140,14 +144,17 @@ export function QuickLinks({ links, enabled, isAgent }: QuickLinksProps) {
   // A table link resolves against the tables this account actually has,
   // so one deleted since it was chosen simply drops out instead of
   // becoming a row that goes nowhere.
-  const items = hrefs
+  const found = hrefs
     .map((href): NavItem | undefined => {
       if (!isDataTableHref(href)) return navItemFor(href)
       const table = tables.find((t) => `/data/${t.id}` === href)
       return table ? dataTableNavItem(table.id, table.name) : undefined
     })
     .filter((i): i is NavItem => Boolean(i))
-    .filter((i) => !isAgent || i.agentAllowed !== false)
+  const items = visibleQuickLinks(found, {
+    isAgent: !!isAgent,
+    allowedPages: live?.allowedPages ?? profile?.allowed_pages,
+  })
 
   if (items.length === 0) return null
 

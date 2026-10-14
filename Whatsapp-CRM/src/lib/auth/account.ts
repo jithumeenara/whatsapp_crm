@@ -99,6 +99,15 @@ function getCachedProfile(userId: string): CachedProfile | null {
   return entry
 }
 
+/**
+ * Drop one person's cached profile, so a change an admin just saved —
+ * their role or the pages they may open — takes effect on their next
+ * request instead of up to a minute later. Only this process's cache.
+ */
+export function forgetCachedProfile(userId: string) {
+  profileCache.delete(userId)
+}
+
 function setCachedProfile(userId: string, profile: Omit<CachedProfile, 'expiresAt'>) {
   profileCache.set(userId, { ...profile, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS })
 }

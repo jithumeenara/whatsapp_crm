@@ -24,7 +24,7 @@
 
 import { NextResponse } from "next/server";
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { forgetCachedProfile, requireRole, toErrorResponse } from "@/lib/auth/account";
 import { parseWorkingHours, validateWorkingHours } from "@/lib/agents/working-hours";
 import { isAccountRole, type AccountRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db";
@@ -207,6 +207,9 @@ export async function PATCH(
         ...(isPagesChange ? { page_access: pagesValue } : {}),
       },
     });
+    // Their next page load must see the new role or pages, not a copy
+    // cached for up to a minute.
+    forgetCachedProfile(userId);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
