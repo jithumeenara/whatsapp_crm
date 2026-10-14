@@ -29,6 +29,7 @@ import { shouldReleaseOnReturn } from '@/lib/agents/presence'
 import { autoReplyToMessage, handOver, AI_AUTO_REPLY_SOURCE } from '@/lib/ai/auto-reply'
 import { sendHandoffAlert } from '@/lib/ai/handoff-alert'
 import { autoCreateLead } from '@/lib/leads/auto-create'
+import { leadForHandoff } from '@/lib/leads/handoff-lead'
 import { visitorPhone } from './tokens'
 import type { AuthenticatedSession } from './session'
 import { toVisitorMessage, type VisitorMessage } from './public-message'
@@ -363,6 +364,15 @@ export async function requestHuman(session: AuthenticatedSession): Promise<{ con
       contact: await prisma.contact
         .findUnique({ where: { id: thread.contactId }, select: { name: true, phone: true } })
         .catch(() => null),
+    })
+    // Asking for a person is an enquiry said out loud: a lead in New
+    // Pool, announced to the team (or a push to whoever owns it).
+    await leadForHandoff({
+      accountId: session.account_id,
+      userId: session.widget.user_id,
+      contactId: thread.contactId,
+      source: WEBSITE_CHANNEL,
+      conversationId: thread.conversationId,
     })
   }
   pushVisitorStatus(thread.conversationId, { status: 'pending', with_team: true })

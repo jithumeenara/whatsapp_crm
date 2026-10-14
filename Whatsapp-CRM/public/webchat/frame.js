@@ -434,7 +434,7 @@
     input.addEventListener('input', function () {
       input.style.height = 'auto';
       input.style.height = Math.min(120, input.scrollHeight) + 'px';
-      sendBtn.disabled = state.sending || !input.value.trim();
+      sendBtn.disabled = state.sending || awaitingChoice() || !input.value.trim();
     });
     // Enter is a new line, never a send: people write addresses and
     // lists here, and a message sent half-typed cannot be taken back.
@@ -455,7 +455,7 @@
 
     function submit() {
       var text = input.value.trim();
-      if (!text || state.sending) return;
+      if (!text || state.sending || awaitingChoice()) return;
       input.value = '';
       input.style.height = 'auto';
       sendBtn.disabled = true;
@@ -467,7 +467,7 @@
     app.appendChild(notice);
     app.appendChild(handoff);
     app.appendChild(form);
-    dom = { status: status, dot: dot, log: log, notice: notice, handoff: handoff, input: input, send: sendBtn };
+    dom = { status: status, dot: dot, log: log, notice: notice, handoff: handoff, input: input, send: sendBtn, field: field, locked: false };
   }
 
   function bubble(row, msg) {
@@ -612,8 +612,26 @@
     if (nearBottom || Object.keys(state.pending).length) log.scrollTop = log.scrollHeight;
   }
 
+  // The chatbot is waiting for one of its buttons — the language at the
+  // start, or any other menu: the newest message is the bot's and has
+  // buttons. The message box is closed until one is pressed, so a typed
+  // answer cannot slip past the question (it used to be taken as the
+  // language). Not once the team has been asked for — then a person
+  // replies, and the visitor must be able to write.
+  function awaitingChoice() {
+    if (state.withTeam || Object.keys(state.pending).length) return false;
+    var last = state.messages[state.messages.length - 1];
+    return !!(last && last.sender === 'bot' && last.buttons && last.buttons.length);
+  }
+
   function render() {
     if (!dom) build();
+    var locked = awaitingChoice();
+    var wasLocked = dom.locked;
+    dom.locked = locked;
+    dom.input.disabled = locked;
+    dom.input.placeholder = locked ? 'Choose an option above' : 'Type a message…';
+    dom.field.className = 'field' + (locked ? ' locked' : '');
     var online = state.connected || typeof window.io !== 'function';
     var status = state.withTeam
       ? 'Connecting you with the team'
@@ -630,8 +648,11 @@
     dom.handoff.textContent = '';
     dom.handoff.appendChild(svg(state.withTeam ? 'M20 6 9 17l-5-5' : 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75'));
     dom.handoff.appendChild(document.createTextNode(state.withTeam ? 'The team has been told — someone will reply here' : 'Talk to a person'));
-    dom.send.disabled = state.sending || !dom.input.value.trim();
+    dom.send.disabled = state.sending || locked || !dom.input.value.trim();
     renderLog();
+    // Choice made, the box opens: put the cursor in it for the next
+    // question (their name, usually).
+    if (wasLocked && !locked && state.visible !== false) focusInput();
   }
 
   function focusInput() {

@@ -126,6 +126,9 @@ button { font: inherit; }
 .composer textarea { flex: 1; resize: none; border: 0; outline: 0; background: transparent; padding: 7px 0; max-height: 120px;
   font: inherit; color: var(--ink); line-height: 1.4; }
 .composer textarea::placeholder { color: var(--muted); }
+.composer .field.locked { background: var(--line); border-color: transparent; box-shadow: none; }
+.composer textarea:disabled { cursor: not-allowed; }
+.composer .field.locked textarea::placeholder { color: var(--ink-2); font-weight: 500; }
 .send { border: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .1s, opacity .15s; }
 .send:not(:disabled):hover { transform: scale(1.06); }
