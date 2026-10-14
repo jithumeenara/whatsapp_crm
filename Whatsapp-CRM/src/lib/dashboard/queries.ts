@@ -18,9 +18,38 @@ import type {
   Sparks,
 } from './types'
 
+// --- Whose work ---------------------------------------------------------
+//
+// `agentId` is set for an agent and null for anybody who manages the
+// team. An agent's dashboard shows the same work their Inbox and Leads
+// do — chats assigned to them, their own leads, follow-ups and tasks —
+// never the whole account's. It used to count and list everything.
+
+/** Conversations this person may see. */
+function convWhere(accountId: string, agentId: string | null) {
+  return { account_id: accountId, ...(agentId ? { assigned_agent_id: agentId } : {}) }
+}
+
+/** Contacts this person works: through a chat or a lead of theirs. */
+function contactWhere(accountId: string, agentId: string | null) {
+  if (!agentId) return { account_id: accountId }
+  return {
+    account_id: accountId,
+    OR: [
+      { conversations: { some: { assigned_agent_id: agentId } } },
+      { leads: { some: { assigned_to: agentId } } },
+    ],
+  }
+}
+
+/** Leads, follow-ups and tasks: the ones assigned to this person. */
+function ownedWhere(accountId: string, agentId: string | null) {
+  return { account_id: accountId, ...(agentId ? { assigned_to: agentId } : {}) }
+}
+
 // --- 1. Metric cards ---------------------------------------------------
 
-export async function loadMetrics(accountId: string): Promise<MetricsBundle> {
+export async function loadMetrics(accountId: string, agentId: string | null = null): Promise<MetricsBundle> {
   const todayStart = startOfLocalDay()
   const yesterdayStart = daysAgoStart(1)
 
@@ -33,23 +62,23 @@ export async function loadMetrics(accountId: string): Promise<MetricsBundle> {
     messagesToday,
     messagesYesterday,
   ] = await Promise.all([
-    prisma.conversation.count({ where: { account_id: accountId, status: 'open' } }),
-    prisma.conversation.count({ where: { account_id: accountId, status: 'open', created_at: { gte: todayStart } } }),
-    prisma.conversation.count({ where: { account_id: accountId, status: 'open', created_at: { gte: yesterdayStart, lt: todayStart } } }),
-    prisma.contact.count({ where: { account_id: accountId, created_at: { gte: todayStart } } }),
-    prisma.contact.count({ where: { account_id: accountId, created_at: { gte: yesterdayStart, lt: todayStart } } }),
+    prisma.conversation.count({ where: { ...convWhere(accountId, agentId), status: 'open' } }),
+    prisma.conversation.count({ where: { ...convWhere(accountId, agentId), status: 'open', created_at: { gte: todayStart } } }),
+    prisma.conversation.count({ where: { ...convWhere(accountId, agentId), status: 'open', created_at: { gte: yesterdayStart, lt: todayStart } } }),
+    prisma.contact.count({ where: { ...contactWhere(accountId, agentId), created_at: { gte: todayStart } } }),
+    prisma.contact.count({ where: { ...contactWhere(accountId, agentId), created_at: { gte: yesterdayStart, lt: todayStart } } }),
     prisma.message.count({
       where: {
         sender_type: 'agent',
         created_at: { gte: todayStart },
-        conversation: { account_id: accountId },
+        conversation: convWhere(accountId, agentId),
       },
     }),
     prisma.message.count({
       where: {
         sender_type: 'agent',
         created_at: { gte: yesterdayStart, lt: todayStart },
-        conversation: { account_id: accountId },
+        conversation: convWhere(accountId, agentId),
       },
     }),
   ])
@@ -75,13 +104,14 @@ export async function loadMetrics(accountId: string): Promise<MetricsBundle> {
 export async function loadConversationsSeries(
   accountId: string,
   rangeDays: number,
+  agentId: string | null = null,
 ): Promise<ConversationsSeriesPoint[]> {
   const start = daysAgoStart(rangeDays - 1)
 
   const messages = await prisma.message.findMany({
     where: {
       created_at: { gte: start },
-      conversation: { account_id: accountId },
+      conversation: convWhere(accountId, agentId),
     },
     select: { created_at: true, sender_type: true },
     orderBy: { created_at: 'asc' },
@@ -104,13 +134,13 @@ export async function loadConversationsSeries(
 
 // --- 3. Response time by day of week ----------------------------------
 
-export async function loadResponseTime(accountId: string): Promise<ResponseTimeSummary> {
+export async function loadResponseTime(accountId: string, agentId: string | null = null): Promise<ResponseTimeSummary> {
   const fourteenDaysAgo = daysAgoStart(13)
 
   const rows = await prisma.message.findMany({
     where: {
       created_at: { gte: fourteenDaysAgo },
-      conversation: { account_id: accountId },
+      conversation: convWhere(accountId, agentId),
     },
     select: { conversation_id: true, sender_type: true, created_at: true },
     orderBy: [{ conversation_id: 'asc' }, { created_at: 'asc' }],
@@ -204,10 +234,11 @@ export async function loadActivity(
    *  whole account, and an agent has no business reading a colleague's
    *  customers' messages from the dashboard. */
   withDetail = false,
+  agentId: string | null = null,
 ): Promise<ActivityItem[]> {
   const [msgs, contacts, broadcasts, autoLogs] = await Promise.all([
     prisma.message.findMany({
-      where: { sender_type: 'customer', conversation: { account_id: accountId } },
+      where: { sender_type: 'customer', conversation: convWhere(accountId, agentId) },
       select: {
         id: true,
         content_text: true,
@@ -219,18 +250,19 @@ export async function loadActivity(
       take: 10,
     }),
     prisma.contact.findMany({
-      where: { account_id: accountId },
+      where: contactWhere(accountId, agentId),
       select: { id: true, name: true, phone: true, email: true, created_at: true },
       orderBy: { created_at: 'desc' },
       take: 10,
     }),
-    prisma.broadcast.findMany({
+    // Broadcasts and automation runs are the account's, not an agent's.
+    agentId ? [] : prisma.broadcast.findMany({
       where: { account_id: accountId },
       select: { id: true, name: true, status: true, total_recipients: true, created_at: true },
       orderBy: { created_at: 'desc' },
       take: 5,
     }),
-    prisma.automationLog.findMany({
+    agentId ? [] : prisma.automationLog.findMany({
       where: { account_id: accountId },
       select: {
         id: true,
@@ -302,38 +334,38 @@ export async function loadActivity(
 
 // --- 5. CRM stats -------------------------------------------------------
 
-export async function loadCRMStats(accountId: string): Promise<CRMStats> {
+export async function loadCRMStats(accountId: string, agentId: string | null = null): Promise<CRMStats> {
   const now = new Date()
 
   const [leadGroups, hotLeads, pendingFollowUps, overdueFollowUps, pendingTasks, overdueTasks, teamMembers] =
     await Promise.all([
       prisma.lead.groupBy({
         by: ['status'],
-        where: { account_id: accountId },
+        where: ownedWhere(accountId, agentId),
         _count: { _all: true },
       }),
       // Score is stored as the label chosen in settings ("Hot", "hot"),
       // and an open lead is anything not closed — the old filter looked
       // for 'converted' and 'lost', statuses this app has never had.
       prisma.lead.count({
-        where: { account_id: accountId, score: { equals: 'hot', mode: 'insensitive' }, status: { not: 'closed' } },
+        where: { ...ownedWhere(accountId, agentId), score: { equals: 'hot', mode: 'insensitive' }, status: { not: 'closed' } },
       }),
       prisma.followUp.count({
-        where: { account_id: accountId, status: 'pending', due_at: { gte: now } },
+        where: { ...ownedWhere(accountId, agentId), status: 'pending', due_at: { gte: now } },
       }),
       prisma.followUp.count({
-        where: { account_id: accountId, status: 'pending', due_at: { lt: now } },
+        where: { ...ownedWhere(accountId, agentId), status: 'pending', due_at: { lt: now } },
       }),
       prisma.task.count({
         where: {
-          account_id: accountId,
+          ...ownedWhere(accountId, agentId),
           status: { in: ['todo', 'in_progress'] },
           due_date: { not: null, gte: now },
         },
       }),
       prisma.task.count({
         where: {
-          account_id: accountId,
+          ...ownedWhere(accountId, agentId),
           status: { in: ['todo', 'in_progress'] },
           due_date: { not: null, lt: now },
         },
@@ -360,7 +392,7 @@ export async function loadCRMStats(accountId: string): Promise<CRMStats> {
 
 // --- 6. Small trend lines for the headline cards ------------------------
 
-export async function loadSparks(accountId: string, days = 7): Promise<Sparks> {
+export async function loadSparks(accountId: string, days = 7, agentId: string | null = null): Promise<Sparks> {
   const start = daysAgoStart(days - 1)
   const keys = lastNDayKeys(days)
   const index = new Map(keys.map((k, i) => [k, i]))
@@ -368,15 +400,15 @@ export async function loadSparks(accountId: string, days = 7): Promise<Sparks> {
 
   const [messages, contacts, hot] = await Promise.all([
     prisma.message.findMany({
-      where: { created_at: { gte: start }, conversation: { account_id: accountId } },
+      where: { created_at: { gte: start }, conversation: convWhere(accountId, agentId) },
       select: { created_at: true, sender_type: true, conversation_id: true },
     }),
     prisma.contact.findMany({
-      where: { account_id: accountId, created_at: { gte: start } },
+      where: { ...contactWhere(accountId, agentId), created_at: { gte: start } },
       select: { created_at: true },
     }),
     prisma.lead.findMany({
-      where: { account_id: accountId, created_at: { gte: start }, score: { equals: 'hot', mode: 'insensitive' } },
+      where: { ...ownedWhere(accountId, agentId), created_at: { gte: start }, score: { equals: 'hot', mode: 'insensitive' } },
       select: { created_at: true },
     }),
   ])
@@ -406,4 +438,28 @@ export async function loadSparks(accountId: string, days = 7): Promise<Sparks> {
     if (i !== undefined) hotLeads[i] += 1
   }
   return { days: keys, conversations, newContacts, messagesSent, hotLeads }
+}
+
+// --- 7. New leads waiting for an agent -----------------------------------
+
+/** Statuses an unassigned lead can have and still be in New Pool — the
+ *  same list the Leads page's pool tab uses. */
+const POOL_STATUSES = ['new', 'follow_up']
+
+/**
+ * What an agent should pick up next: leads in New Pool nobody has
+ * claimed, and leads assigned to them they have not touched yet. The
+ * dashboard's Leads button carries this number.
+ */
+export async function loadNewLeads(accountId: string, agentId: string): Promise<number> {
+  return prisma.lead.count({
+    where: {
+      account_id: accountId,
+      ai_suggested: false,
+      OR: [
+        { assigned_to: null, status: { in: POOL_STATUSES } },
+        { assigned_to: agentId, status: 'new' },
+      ],
+    },
+  })
 }

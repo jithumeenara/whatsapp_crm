@@ -37,6 +37,8 @@ import { VerificationBanner } from "@/components/shared/verification-banner"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { WhatsAppQrButton } from "@/components/shared/whatsapp-qr-button"
 import { QuickLinks } from "@/components/dashboard/quick-links"
+import { NewLeadsButton } from "@/components/dashboard/new-leads-button"
+import { pathAllowedBy } from "@/lib/auth/page-access"
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -92,6 +94,8 @@ interface Overview {
   activity: ActivityItem[]
   crm: CRMStats
   sparks: Sparks
+  /** Agents only: leads waiting to be picked up. */
+  newLeads?: number | null
 }
 
 interface PerfRow {
@@ -326,6 +330,10 @@ export default function Dashboard() {
   // panels are for supervisors and above, never for a viewer.
   const isManager = !!accountRole && hasMinRole(accountRole, "supervisor")
   const canWork = !!accountRole && hasMinRole(accountRole, "agent")
+  // An agent's day starts with leads, so their main button is Leads —
+  // unless an admin has taken the Leads page away from them.
+  const isAgent = accountRole === "agent"
+  const agentLeads = isAgent && (!profile?.allowed_pages || pathAllowedBy(profile.allowed_pages, "/leads"))
 
   const [range, setRange] = useState<RangeDays>(7)
   // Which period the figures on screen are for. Loading is "the period
@@ -410,7 +418,9 @@ export default function Dashboard() {
               <ArrowDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-slate-400" />
             </label>
             <WhatsAppQrButton className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50" />
-            {canWork && (
+            {agentLeads ? (
+              <NewLeadsButton initial={data?.newLeads ?? null} />
+            ) : canWork && (
               <NewChatDialog
                 label="New Message"
                 className="flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-[14px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-[var(--primary-hover)]"
