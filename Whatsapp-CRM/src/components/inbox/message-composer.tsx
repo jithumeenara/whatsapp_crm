@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from "react";
+import { VoicePreview } from "./voice-preview";
+import { composerButton } from "./composer-button";
 import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle, Maximize2, Minimize2, Mic, Square, Trash2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GatedButton } from "@/components/ui/gated-button";
@@ -402,30 +404,63 @@ export function MessageComposer({
     }
   }, [onSendMedia, uploadFile]);
 
-  /** Uploads the finished recording and sends it as a voice note. */
-  const handleRecordingComplete = useCallback(
-    async (file: File) => {
-      setUploading(true);
-      setUploadProgress(0);
-      setUploadingFilename('Voice message');
-      try {
-        const url = await uploadFile(file);
-        // 'Voice message', not the generated filename. For audio this
-        // argument is only ever stored as the message text, and the
-        // audio bubble does not render it — the one place it surfaces is
-        // the conversation list, where "voice-2026-09-13T15-14-54.mp3"
-        // is not what anyone wants to read.
-        onSendMedia(url, 'audio', 'Voice message');
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'The voice message could not be sent.');
-      } finally {
-        setUploading(false);
-        setUploadProgress(null);
-        setUploadingFilename(null);
-      }
-    },
-    [uploadFile, onSendMedia],
-  );
+  /**
+   * A finished recording waits to be heard before it goes.
+   *
+   * It used to be uploaded and sent the moment recording stopped, so a
+   * false start or the wrong recording reached the customer with no way
+   * back. Now it is kept as a local blob and shown in the preview bar;
+   * nothing leaves the browser until Send.
+   */
+  const [voiceDraft, setVoiceDraft] = useState<{ file: File; url: string; seconds: number } | null>(null);
+  const [sendingVoice, setSendingVoice] = useState(false);
+  const voiceUrlRef = useRef<string | null>(null);
+
+  const clearVoiceDraft = useCallback(() => {
+    if (voiceUrlRef.current) URL.revokeObjectURL(voiceUrlRef.current);
+    voiceUrlRef.current = null;
+    setVoiceDraft(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (voiceUrlRef.current) URL.revokeObjectURL(voiceUrlRef.current);
+  }, []);
+
+  const handleRecordingComplete = useCallback((file: File, durationMs: number) => {
+    if (voiceUrlRef.current) URL.revokeObjectURL(voiceUrlRef.current);
+    const url = URL.createObjectURL(file);
+    voiceUrlRef.current = url;
+    setVoiceDraft({ file, url, seconds: durationMs / 1000 });
+  }, []);
+
+  /** Uploads the reviewed recording and sends it as a voice note. Once:
+   *  the button is locked while it runs. */
+  const sendVoiceDraft = useCallback(async () => {
+    if (!voiceDraft || sendingVoice) return;
+    setSendingVoice(true);
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadingFilename('Voice message');
+    try {
+      const url = await uploadFile(voiceDraft.file);
+      // 'Voice message', not the generated filename. For audio this
+      // argument is only ever stored as the message text, and the
+      // audio bubble does not render it — the one place it surfaces is
+      // the conversation list, where "voice-2026-09-13T15-14-54.mp3"
+      // is not what anyone wants to read.
+      onSendMedia(url, 'audio', 'Voice message');
+      clearVoiceDraft();
+    } catch (err) {
+      console.error('[composer] voice message upload failed:', err);
+      // Kept, so it can be sent again without recording it again.
+      toast.error(err instanceof Error ? err.message : 'The voice message could not be sent. Try Send again.');
+    } finally {
+      setSendingVoice(false);
+      setUploading(false);
+      setUploadProgress(null);
+      setUploadingFilename(null);
+    }
+  }, [voiceDraft, sendingVoice, uploadFile, onSendMedia, clearVoiceDraft]);
 
   const handleRecorderError = useCallback((message: string) => {
     // The microphone diagnosis runs to several lines, and the important
@@ -500,6 +535,8 @@ export function MessageComposer({
 
   const recording = recorder.status === 'recording';
   const preparing = recorder.status === 'encoding';
+  // One button on the right, like WhatsApp (composer-button.ts).
+  const button = composerButton({ text, recording, preparing, hasVoiceDraft: Boolean(voiceDraft) });
 
   return (
     <div
@@ -591,7 +628,7 @@ export function MessageComposer({
                   </span>
                 ) : null}
                 <span className="min-w-0 truncate text-[11.5px] text-rose-700/80">
-                  {recorder.locked ? 'Recording — press stop when you are done' : 'Release to send · double-click to lock'}
+                  {recorder.locked ? 'Recording — press stop to listen before sending' : 'Release to listen · double-click to lock'}
                 </span>
                 <button
                   type="button"
@@ -605,6 +642,14 @@ export function MessageComposer({
               </>
             )}
           </div>
+        ) : voiceDraft ? (
+          <VoicePreview
+            url={voiceDraft.url}
+            fallbackSeconds={voiceDraft.seconds}
+            sending={sendingVoice}
+            progress={uploadProgress}
+            onDiscard={clearVoiceDraft}
+          />
         ) : (
         <div className="relative min-w-0 flex-1">
         <textarea autoComplete="off"
@@ -640,10 +685,12 @@ export function MessageComposer({
         </div>
         )}
 
-        {/* Hold to record, double-click to lock. It sits beside Send
-            because it is the other way of answering, not a tool. While it
-            is live it becomes the stop button, so the control that
-            started the recording is the one that ends it. */}
+        {/* Hold to record, double-click to lock. It takes the Send
+            button's place while nothing is typed, because it is the other
+            way of answering. While it is live it becomes the stop button,
+            so the control that started the recording is the one that ends
+            it — and ending it opens the preview, not the send. */}
+        {button === 'mic' ? (
         <button
           type="button"
           onPointerDown={handleMicPointerDown}
@@ -651,8 +698,8 @@ export function MessageComposer({
           onPointerCancel={handleMicPointerUp}
           onContextMenu={(e) => e.preventDefault()}
           disabled={readOnly || sessionExpired || uploading || preparing}
-          aria-label={recording ? 'Stop recording and send' : 'Record a voice message'}
-          title={recording ? 'Stop and send' : 'Hold to record · double-click to record hands-free'}
+          aria-label={recording ? 'Stop recording and listen' : 'Record a voice message'}
+          title={recording ? 'Stop and listen before sending' : 'Hold to record · double-click to record hands-free'}
           className={cn(
             "grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-xl transition-colors disabled:opacity-40",
             recording
@@ -662,20 +709,35 @@ export function MessageComposer({
         >
           {recording ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-4 w-4" />}
         </button>
-
-        {/* Beside the message, not at the end of the tool row below: this
-            is the one control that acts on what was typed. Bottom-aligned
-            so it stays level with the last line as the box grows. */}
+        ) : button === 'send-voice' ? (
         <GatedButton
           size="sm"
           canAct={!readOnly}
           gateReason="send messages"
-          disabled={!text.trim() || sessionExpired || sending || recording || preparing}
+          disabled={sessionExpired || sendingVoice}
+          onClick={() => void sendVoiceDraft()}
+          aria-label="Send voice message"
+          title="Send voice message"
+          className="h-10 w-10 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+        >
+          {sendingVoice ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </GatedButton>
+        ) : (
+        /* Beside the message, not at the end of the tool row below: this
+           is the one control that acts on what was typed. Bottom-aligned
+           so it stays level with the last line as the box grows. */
+        <GatedButton
+          size="sm"
+          canAct={!readOnly}
+          gateReason="send messages"
+          disabled={!text.trim() || sessionExpired || sending}
           onClick={handleSend}
+          aria-label="Send message"
           className="h-10 w-10 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
         >
           {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </GatedButton>
+        )}
       </div>
 
       {/* Actions, spread across the full width: compose, send-something,
