@@ -39,6 +39,7 @@ import {
   Clock,
   Tags,
   LayoutGrid,
+  KeyRound,
 } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -58,6 +59,9 @@ import { useAuth } from '@/hooks/use-auth';
 import type { AccountRole } from '@/lib/auth/roles';
 import { InviteMemberDialog } from './invite-member-dialog';
 import { AddAgentDialog } from './add-agent-dialog';
+import { AgentCredentialsDialog } from './agent-credentials-dialog';
+import { apiFetch, errorText } from '@/lib/api-fetch';
+import type { CreatedAgent } from '@/lib/auth/agent-credentials';
 import { WorkingHoursDialog } from './working-hours-dialog';
 import { AgentSubjectsDialog } from './agent-subjects-dialog';
 import { MemberPagesDialog } from './member-pages-dialog';
@@ -176,6 +180,8 @@ export function MembersTab() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [addAgentOpen, setAddAgentOpen] = useState(false);
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
+  const [passwordMember, setPasswordMember] = useState<Member | null>(null);
+  const [issuedCredentials, setIssuedCredentials] = useState<CreatedAgent | null>(null);
   const [hoursMember, setHoursMember] = useState<Member | null>(null);
   const [subjectsMember, setSubjectsMember] = useState<Member | null>(null);
   const [pagesMember, setPagesMember] = useState<Member | null>(null);
@@ -342,6 +348,25 @@ export function MembersTab() {
       );
       console.error('[MembersTab] role change error:', err);
       toast.error('Could not reach the server');
+    } finally {
+      setPendingMemberAction(null);
+    }
+  }
+
+  // A new password for an agent who signs in with their WhatsApp number —
+  // shown once, to send to them; their old sessions end.
+  async function handleNewPassword() {
+    const member = passwordMember;
+    if (!member || pendingMemberAction) return;
+    setPendingMemberAction(member.user_id);
+    try {
+      const res = await apiFetch(`/api/account/members/${member.user_id}/password`, { method: 'POST' });
+      const data = (await res.json()) as { member: CreatedAgent };
+      setPasswordMember(null);
+      setIssuedCredentials(data.member);
+    } catch (err) {
+      console.error('[MembersTab] new password error:', err);
+      toast.error(errorText(err, 'Could not make a new password'));
     } finally {
       setPendingMemberAction(null);
     }
@@ -695,6 +720,23 @@ export function MembersTab() {
                         user moused over. Now red is the default
                         state with a darker shade on hover so the
                         affordance reads at-a-glance. */}
+                    {/* New password — only for a phone-number login below
+                        admin (the server checks the same). */}
+                    {canManageMembers && !isSelf && member.email?.startsWith('WhatsApp: ') &&
+                      (member.role === 'agent' || member.role === 'supervisor' || member.role === 'viewer') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPasswordMember(member)}
+                        disabled={isBusy}
+                        title="New password"
+                        aria-label={`New password for ${member.full_name || 'this member'}`}
+                        className="text-slate-500"
+                      >
+                        <KeyRound className="size-4" />
+                      </Button>
+                    )}
+
                     {canManageMembers && !isOwnerRow && !isSelf && (
                       <Button
                         variant="outline"
@@ -846,6 +888,25 @@ export function MembersTab() {
           onSaved={() => void loadEverything()}
         />
       )}
+
+      <ConfirmIconDialog
+        open={passwordMember !== null}
+        onOpenChange={(open) => !open && setPasswordMember(null)}
+        icon={KeyRound}
+        tone="info"
+        title="Make a new password?"
+        description={
+          <>
+            <span className="font-medium text-slate-700">{passwordMember?.full_name || 'This agent'}</span> gets a new
+            password and is signed out everywhere. You will see it once, to send to them.
+          </>
+        }
+        actionLabel="Make new password"
+        actionPendingLabel="Making…"
+        onConfirm={handleNewPassword}
+        pending={pendingMemberAction !== null && pendingMemberAction === passwordMember?.user_id}
+      />
+      <AgentCredentialsDialog agent={issuedCredentials} onClose={() => setIssuedCredentials(null)} />
 
       <ConfirmIconDialog
         open={removingMember !== null}

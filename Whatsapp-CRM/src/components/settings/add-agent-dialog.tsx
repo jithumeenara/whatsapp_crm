@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { credentialLines, credentialsShareText, type CreatedAgent } from '@/lib/auth/agent-credentials'
 
 interface AddAgentDialogProps {
   open: boolean
@@ -22,11 +23,6 @@ interface AddAgentDialogProps {
   onCreated: () => void
 }
 
-interface CreatedAgent {
-  name: string
-  username: string
-  whatsapp: string
-}
 
 export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialogProps) {
   const [name, setName] = useState('')
@@ -70,15 +66,7 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
   function waShareUrl() {
     if (!result) return '#'
     const siteUrl = typeof window !== 'undefined' ? window.location.origin : ''
-    const msg = [
-      `Hi ${result.name}! Here are your WhatsApp CRM login details:`,
-      ``,
-      `Login URL: ${siteUrl}/login`,
-      `Username: ${result.username}`,
-      `Password: ${result.username}`,
-      ``,
-      `Please change your password after first login.`,
-    ].join('\n')
+    const msg = credentialsShareText(result, siteUrl)
     return `https://wa.me/${result.whatsapp}?text=${encodeURIComponent(msg)}`
   }
 
@@ -106,23 +94,19 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
 
             <div className="space-y-3 py-2">
               <div className="rounded-lg border border-slate-200 bg-slate-100 p-4 space-y-2.5 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Username</span>
-                  <span className="font-mono font-semibold text-slate-800">
-                    {result.username}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500">Password</span>
-                  <span className="font-mono font-semibold text-slate-800">
-                    {result.username}
-                  </span>
-                </div>
+                {credentialLines(result).map((line) => (
+                  <div key={line.label} className="flex items-center justify-between">
+                    <span className="text-slate-500">{line.label}</span>
+                    <span className="font-mono font-semibold text-slate-800">
+                      {line.value}
+                    </span>
+                  </div>
+                ))}
               </div>
 
               <p className="text-xs text-slate-500">
-                Username and initial password are both the WhatsApp number (digits only). The
-                agent can change their password from Settings → Profile after logging in.
+                The username is the WhatsApp number (digits only); the password is shown only now,
+                so send it before closing. The agent can change it from Settings → Profile.
               </p>
 
               <a
@@ -151,7 +135,7 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
               <DialogTitle className="text-slate-800">Add Agent</DialogTitle>
               <DialogDescription className="text-slate-500">
                 Create an agent account instantly. Their WhatsApp number becomes their
-                username and default password — no invite link needed.
+                username, and a password is generated for them — no invite link needed.
               </DialogDescription>
             </DialogHeader>
 
@@ -181,8 +165,8 @@ export function AddAgentDialog({ open, onOpenChange, onCreated }: AddAgentDialog
                   className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500"
                 />
                 <p className="text-xs text-slate-500">
-                  Full number with country code, no spaces or +. This becomes both the
-                  login username and initial password.
+                  Full number with country code, no spaces or +. This becomes the login
+                  username; a password is generated on the next screen.
                 </p>
               </div>
             </div>
