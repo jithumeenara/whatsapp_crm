@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from "react";
 import { VoicePreview } from "./voice-preview";
+import { Waveform } from "./waveform";
 import { composerButton } from "./composer-button";
 import { Send, LayoutTemplate, Paperclip, FileText, Image, Music, Loader2, FolderOpen, ShoppingBag, KeyRound, IndianRupee, Languages, Sparkles, Check, AlertTriangle, Maximize2, Minimize2, Mic, Square, Trash2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -246,9 +247,13 @@ export function MessageComposer({
     const lineHeight = Number.parseFloat(styles.lineHeight) || 20;
     const padding =
       Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom);
+    // scrollHeight is content + padding; the box is border-box, so its
+    // height must include the border too or the text area is 2px short.
+    const border =
+      Number.parseFloat(styles.borderTopWidth) + Number.parseFloat(styles.borderBottomWidth);
     const maxHeight = lineHeight * MAX_VISIBLE_LINES + padding;
 
-    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight) + border}px`;
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, []);
 
@@ -606,7 +611,7 @@ export function MessageComposer({
              screen can tell you whether the microphone is live, and a
              small red dot beside an unchanged composer is not enough for
              something that is listening to the room. */
-          <div className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-rose-50 px-3.5 ring-1 ring-rose-500/20">
+          <div className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-rose-50 px-3.5 ring-1 ring-rose-500/20">
             {preparing ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-rose-500" />
@@ -621,21 +626,22 @@ export function MessageComposer({
                 <span className="shrink-0 text-[14px] font-semibold tabular-nums text-rose-900">
                   {formatElapsed(recorder.elapsedMs)}
                 </span>
+                <Waveform levels={recorder.levels} bars={40} className="h-6 flex-1" activeClass="bg-rose-500" />
                 {recorder.locked ? (
                   <span className="flex shrink-0 items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10.5px] font-semibold text-rose-700">
                     <Lock className="h-3 w-3" />
                     Hands-free
                   </span>
                 ) : null}
-                <span className="min-w-0 truncate text-[11.5px] text-rose-700/80">
-                  {recorder.locked ? 'Recording — press stop to listen before sending' : 'Release to listen · double-click to lock'}
+                <span className="hidden max-w-[11rem] shrink-0 truncate text-[11.5px] text-rose-700/80 md:block">
+                  {recorder.locked ? 'Press stop to listen' : 'Release to listen · double-click to lock'}
                 </span>
                 <button
                   type="button"
                   onClick={recorder.cancel}
                   aria-label="Discard this recording"
                   title="Discard this recording"
-                  className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-lg text-rose-500 transition-colors hover:bg-rose-100 hover:text-rose-700"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-rose-500 transition-colors hover:bg-rose-100 hover:text-rose-700"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -651,7 +657,7 @@ export function MessageComposer({
             onDiscard={clearVoiceDraft}
           />
         ) : (
-        <div className="relative min-w-0 flex-1">
+        <div className="relative flex min-w-0 flex-1">
         <textarea autoComplete="off"
           ref={textareaRef}
           value={text}
@@ -668,7 +674,7 @@ export function MessageComposer({
           rows={1}
           title={readOnly ? "Read-only — your role can't send messages" : undefined}
           className={cn(
-            "w-full resize-none rounded-xl border border-slate-200 bg-slate-100 py-2.5 pl-4 pr-11 text-sm text-slate-800 placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
+            "block min-h-11 w-full resize-none rounded-xl border border-slate-200 bg-slate-100 py-3 pl-4 pr-11 text-sm leading-5 text-slate-800 placeholder-slate-500 outline-none transition-colors focus:border-primary/50",
             (sessionExpired || readOnly) && "cursor-not-allowed opacity-50",
           )}
         />
@@ -678,7 +684,7 @@ export function MessageComposer({
           disabled={readOnly}
           aria-label="Open a larger editor"
           title="Open a larger editor"
-          className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-200/70 hover:text-slate-700 disabled:opacity-40"
+          className="absolute right-2 top-2.5 grid h-6 w-6 place-items-center rounded-md text-slate-400 transition-colors hover:bg-slate-200/70 hover:text-slate-700 disabled:opacity-40"
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
@@ -701,13 +707,11 @@ export function MessageComposer({
           aria-label={recording ? 'Stop recording and listen' : 'Record a voice message'}
           title={recording ? 'Stop and listen before sending' : 'Hold to record · double-click to record hands-free'}
           className={cn(
-            "grid h-10 w-10 shrink-0 touch-none select-none place-items-center rounded-xl transition-colors disabled:opacity-40",
-            recording
-              ? "bg-rose-500 text-white hover:bg-rose-600"
-              : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+            "grid h-11 w-11 shrink-0 touch-none select-none place-items-center rounded-xl text-white shadow-sm transition-colors disabled:opacity-40",
+            recording ? "bg-rose-500 hover:bg-rose-600" : "bg-primary hover:bg-primary/90",
           )}
         >
-          {recording ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-4 w-4" />}
+          {recording ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-5 w-5" />}
         </button>
         ) : button === 'send-voice' ? (
         <GatedButton
@@ -718,9 +722,9 @@ export function MessageComposer({
           onClick={() => void sendVoiceDraft()}
           aria-label="Send voice message"
           title="Send voice message"
-          className="h-10 w-10 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+          className="h-11 w-11 shrink-0 rounded-xl bg-primary p-0 shadow-sm hover:bg-primary/90 disabled:opacity-40"
         >
-          {sendingVoice ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {sendingVoice ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
         </GatedButton>
         ) : (
         /* Beside the message, not at the end of the tool row below: this
@@ -733,9 +737,9 @@ export function MessageComposer({
           disabled={!text.trim() || sessionExpired || sending}
           onClick={handleSend}
           aria-label="Send message"
-          className="h-10 w-10 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+          className="h-11 w-11 shrink-0 rounded-xl bg-primary p-0 shadow-sm hover:bg-primary/90 disabled:opacity-40"
         >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {sending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
         </GatedButton>
         )}
       </div>

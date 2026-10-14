@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Pause, Play, Trash2 } from "lucide-react";
+import { Waveform, peaksOf } from "./waveform";
 
 function cn(...c: (string | boolean | undefined | null)[]) {
   return c.filter(Boolean).join(" ");
@@ -44,6 +45,17 @@ export function VoicePreview({
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(fallbackSeconds);
+  const [peaks, setPeaks] = useState<number[]>([]);
+
+  // The recording's shape for the bars; a flat line until it is read,
+  // and if it cannot be read the bars stay flat and playback still works.
+  useEffect(() => {
+    let cancelled = false;
+    peaksOf(url, 40)
+      .then((p) => { if (!cancelled) setPeaks(p); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [url]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -113,7 +125,7 @@ export function VoicePreview({
   const pct = duration > 0 ? Math.min(100, (current / duration) * 100) : 0;
 
   return (
-    <div className="flex h-10 min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-indigo-50 px-2 ring-1 ring-indigo-500/20">
+    <div className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-indigo-50 px-2 ring-1 ring-indigo-500/20">
       <audio ref={audioRef} src={url} preload="metadata" />
       <button
         type="button"
@@ -137,8 +149,7 @@ export function VoicePreview({
         onKeyDown={seekByKey}
         className="group relative h-6 min-w-0 flex-1 cursor-pointer outline-none"
       >
-        <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-indigo-200/70" />
-        <div className="absolute left-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-primary" style={{ width: `${pct}%` }} />
+        <Waveform levels={peaks} bars={40} progress={pct / 100} className="absolute inset-0" />
         <div
           className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary shadow ring-2 ring-white group-focus-visible:ring-indigo-300"
           style={{ left: `${pct}%` }}

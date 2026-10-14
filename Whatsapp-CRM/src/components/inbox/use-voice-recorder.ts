@@ -76,7 +76,7 @@ function loadMp3Encoder(): Promise<Mp3EncoderCtor> {
   return encoderPromise;
 }
 
-async function encodeToMp3(recorded: Blob): Promise<File> {
+export async function encodeToMp3(recorded: Blob): Promise<File> {
   const bytes = await recorded.arrayBuffer();
 
   const decodeContext = new AudioContext();
@@ -131,6 +131,11 @@ export function useVoiceRecorder({ onComplete, onError }: UseVoiceRecorderArgs) 
   const [status, setStatus] = useState<RecorderStatus>("idle");
   const [locked, setLocked] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  // The last few microphone levels (0–1), newest last — the live
+  // waveform. A meter that fails to start leaves this empty; recording
+  // carries on without it.
+  const [levels, setLevels] = useState<number[]>([]);
+  const meterRef = useRef<{ context: AudioContext; timer: ReturnType<typeof setInterval> } | null>(null);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -147,6 +152,12 @@ export function useVoiceRecorder({ onComplete, onError }: UseVoiceRecorderArgs) 
       clearInterval(tickRef.current);
       tickRef.current = null;
     }
+    if (meterRef.current) {
+      clearInterval(meterRef.current.timer);
+      void meterRef.current.context.close().catch(() => {});
+      meterRef.current = null;
+    }
+    setLevels([]);
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     recorderRef.current = null;
@@ -201,6 +212,35 @@ export function useVoiceRecorder({ onComplete, onError }: UseVoiceRecorderArgs) 
           .finally(() => setStatus("idle"));
       };
 
+      // Read the same stream for the waveform: about twelve levels a
+      // second, the last 48 kept.
+      try {
+        const context = new AudioContext();
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 512;
+        context.createMediaStreamSource(stream).connect(analyser);
+        const samples = new Uint8Array(analyser.fftSize);
+        const history: number[] = [];
+        const timer = setInterval(() => {
+          analyser.getByteTimeDomainData(samples);
+          let sum = 0;
+          for (let i = 0; i < samples.length; i += 1) {
+            const v = (samples[i] - 128) / 128;
+            sum += v * v;
+          }
+          // A curve, not a straight multiple: a microphone's level is
+          // mostly small numbers, and a quiet voice should still move the
+          // bars — room hush stays low, normal speech reaches the top.
+          const rms = Math.sqrt(sum / samples.length);
+          history.push(Math.min(1, Math.pow(rms * 8, 0.7)));
+          if (history.length > 48) history.shift();
+          setLevels([...history]);
+        }, 80);
+        meterRef.current = { context, timer };
+      } catch {
+        // No meter — the recording itself is unaffected.
+      }
+
       startedAtRef.current = Date.now();
       recorder.start();
       setStatus("recording");
@@ -237,7 +277,7 @@ export function useVoiceRecorder({ onComplete, onError }: UseVoiceRecorderArgs) 
   /** Keep recording after the finger comes off the button. */
   const lock = useCallback(() => setLocked(true), []);
 
-  return { status, locked, elapsedMs, start, stop, cancel, lock };
+  return { status, locked, elapsedMs, levels, start, stop, cancel, lock };
 }
 
 export function formatElapsed(ms: number): string {
