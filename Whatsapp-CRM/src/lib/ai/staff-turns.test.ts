@@ -41,6 +41,40 @@ describe('waiting for the team member', () => {
     findFirst.mockResolvedValueOnce({ sender_type: 'agent', created_at: new Date('2026-10-07T10:29:00+05:30') })
     expect(await staffAwaitingReply('c1', now)).toBeNull()
   })
+
+  // Live, 15 Oct: a colleague sent the "november" programme template from
+  // the Inbox at 16:17; the customer asked for a call back at 16:20, 16:21
+  // and 16:22, and the assistant stayed silent, waiting on a person who
+  // had asked them nothing.
+  it('does not hold for a template a team member sent', async () => {
+    findFirst.mockResolvedValueOnce({
+      sender_type: 'agent',
+      content_type: 'template',
+      broadcast_id: null,
+      created_at: new Date('2026-10-09T11:30:00+05:30'),
+    })
+    expect(await staffAwaitingReply('c1', now)).toBeNull()
+  })
+
+  it('does not hold for a broadcast', async () => {
+    findFirst.mockResolvedValueOnce({
+      sender_type: 'agent',
+      content_type: 'text',
+      broadcast_id: 'b1',
+      created_at: new Date('2026-10-09T11:30:00+05:30'),
+    })
+    expect(await staffAwaitingReply('c1', now)).toBeNull()
+  })
+
+  it('still holds for a voice note a team member recorded', async () => {
+    findFirst.mockResolvedValueOnce({
+      sender_type: 'agent',
+      content_type: 'audio',
+      broadcast_id: null,
+      created_at: new Date('2026-10-09T11:30:00+05:30'),
+    })
+    expect(await staffAwaitingReply('c1', now)).not.toBeNull()
+  })
 })
 
 describe('drafts change nothing', () => {

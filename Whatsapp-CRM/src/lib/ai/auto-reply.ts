@@ -859,9 +859,14 @@ export async function staffAwaitingReply(conversationId: string, now: Date = new
   const lastOutgoing = await prisma.message.findFirst({
     where: { conversation_id: conversationId, sender_type: { notIn: ['customer', 'system'] } },
     orderBy: { created_at: 'desc' },
-    select: { sender_type: true, created_at: true },
+    select: { sender_type: true, content_type: true, broadcast_id: true, created_at: true },
   })
   if (!lastOutgoing || lastOutgoing.sender_type !== 'agent') return null
+  // A template or broadcast is an announcement, not a person mid-conversation.
+  // A colleague sent a programme template from the Inbox; the customer
+  // asked for a call back three times and heard nothing for an hour,
+  // because the assistant was waiting on someone who had asked them nothing.
+  if (lastOutgoing.content_type === 'template' || lastOutgoing.broadcast_id) return null
   if (now.getTime() - lastOutgoing.created_at.getTime() > STAFF_EXCHANGE_MS) return null
   return { at: lastOutgoing.created_at }
 }
