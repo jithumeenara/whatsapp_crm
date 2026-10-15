@@ -16,6 +16,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 // rule all have to agree with. See the file for what went wrong when
 // each of them held its own copy.
 import { IDLE_TIMEOUT_MS } from '@/lib/auth/session-timing'
+import { flowEndpointRewrite } from '@/lib/flows/endpoint-path'
 
 // Public paths that never require a session
 const PUBLIC_PATHS = new Set([
@@ -186,6 +187,14 @@ async function route(req: NextRequest, forwarded: Headers) {
       limited.rule,
     )
     if (!result.success) return rateLimitResponse(result)
+  }
+
+  // A Flow whose endpoint on Meta was set to its editor page
+  // (/flows/<id>) instead of /api/flows/<id>/webhook: Meta's server was
+  // sent to the login page. Its POST goes to the real endpoint instead.
+  const flowEndpoint = flowEndpointRewrite(req.method, pathname, req.headers)
+  if (flowEndpoint) {
+    return NextResponse.rewrite(new URL(flowEndpoint, req.url), { request: { headers: forwarded } })
   }
 
   // Let public routes through immediately
