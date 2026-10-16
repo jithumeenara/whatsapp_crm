@@ -55,10 +55,15 @@ interface ScheduleMessageDialogProps {
   /** When set, edits this existing scheduled message instead of creating a new one. */
   editItem?: ScheduledMessage | null
   onScheduled?: () => void
+  /** 'website': a plain message — a website chat has no 24-hour window
+   *  and cannot show a WhatsApp template. */
+  channel?: string
 }
 
-export function ScheduleMessageDialog({ open, onOpenChange, conversationId, editItem, onScheduled }: ScheduleMessageDialogProps) {
+export function ScheduleMessageDialog({ open, onOpenChange, conversationId, editItem, onScheduled, channel }: ScheduleMessageDialogProps) {
   const isEdit = !!editItem
+  const textMode = channel === 'website'
+  const [messageText, setMessageText] = useState('')
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [selected, setSelected] = useState<SelectedTemplate | null>(null)
 
@@ -88,6 +93,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
         buttonParams: editItem.template_button_params ?? undefined,
         preview: editItem.content_text || editItem.template_name || '',
       })
+      setMessageText(editItem.content_text ?? '')
       setScheduleType(editItem.schedule_type)
       setDate(toLocalDateInput(editItem.next_send_at))
       setTime(toLocalTimeInput(editItem.next_send_at))
@@ -97,6 +103,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
       setMaxSends(editItem.max_sends || 3)
     } else {
       setSelected(null)
+      setMessageText('')
       setScheduleType('once')
       setDate('')
       setTime('09:00')
@@ -122,27 +129,35 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
     setTemplatePickerOpen(false)
   }
 
-  const canSubmit = !!selected && (scheduleType === 'once' ? !!date : intervalValue >= 1)
+  const canSubmit = (textMode ? !!messageText.trim() : !!selected) && (scheduleType === 'once' ? !!date : intervalValue >= 1)
 
   async function handleSubmit() {
-    if (!canSubmit || !selected) return
+    if (!canSubmit || (!textMode && !selected)) return
     setSaving(true)
     try {
-      const body: Record<string, unknown> = {
+      const body: Record<string, unknown> = textMode
+        ? {
+            conversation_id: conversationId,
+            content_text: messageText.trim(),
+            schedule_type: scheduleType,
+            stop_on_reply: stopOnReply,
+            max_sends: scheduleType === 'recurring' ? maxSends : 1,
+          }
+        : {
         conversation_id: conversationId,
-        template_name: selected.name,
-        template_language: selected.language,
+        template_name: selected!.name,
+        template_language: selected!.language,
         // Positional and named templates share this one JSON slot — the
         // API route (and the sweep that later sends it) tells them apart
         // by shape (array vs. plain object), see isNamedBodyParams above.
-        template_body_params: (selected.bodyByName && Object.keys(selected.bodyByName).length > 0)
-          ? selected.bodyByName
-          : (selected.bodyParams.length > 0 ? selected.bodyParams : undefined),
-        template_header_text: selected.headerText || undefined,
-        template_header_media_url: selected.headerMediaUrl || undefined,
-        template_header_media_type: selected.headerMediaType || undefined,
-        template_button_params: selected.buttonParams,
-        content_text: selected.preview,
+        template_body_params: (selected!.bodyByName && Object.keys(selected!.bodyByName).length > 0)
+          ? selected!.bodyByName
+          : (selected!.bodyParams.length > 0 ? selected!.bodyParams : undefined),
+        template_header_text: selected!.headerText || undefined,
+        template_header_media_url: selected!.headerMediaUrl || undefined,
+        template_header_media_type: selected!.headerMediaType || undefined,
+        template_button_params: selected!.buttonParams,
+        content_text: selected!.preview,
         schedule_type: scheduleType,
         stop_on_reply: stopOnReply,
         max_sends: scheduleType === 'recurring' ? maxSends : 1,
@@ -183,7 +198,11 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
               {isEdit ? 'Edit Scheduled Message' : 'Schedule Message'}
             </DialogTitle>
             <p className="text-[12px] text-slate-400 mt-0.5">
-              {isEdit ? 'Changes restart this message’s progress.' : 'Send an approved template later, or on a repeating schedule.'}
+              {isEdit
+                ? 'Changes restart this message’s progress.'
+                : textMode
+                  ? 'Send a message to this website chat later, or on a repeating schedule.'
+                  : 'Send an approved template later, or on a repeating schedule.'}
             </p>
           </DialogHeader>
 
@@ -193,6 +212,16 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                 the customer's 24h session window closes, which a
                 scheduled (especially recurring, multi-day) send routinely
                 runs into. */}
+            {textMode ? (
+              <div className="space-y-1.5">
+                <label htmlFor="schedule-text" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  Message <span className="text-rose-500">*</span>
+                </label>
+                <textarea id="schedule-text" value={messageText} onChange={(e) => setMessageText(e.target.value)} rows={4} maxLength={4000}
+                  placeholder="Type the message to send"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+              </div>
+            ) : (
             <div className="space-y-1.5">
               <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                 Template <span className="text-rose-500">*</span>
@@ -224,6 +253,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                 </button>
               )}
             </div>
+            )}
 
             {/* Schedule type */}
             <div className="grid grid-cols-2 gap-2">

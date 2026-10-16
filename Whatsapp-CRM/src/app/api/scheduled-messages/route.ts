@@ -4,6 +4,7 @@ import { ensureEmailColumns } from "@/lib/email/schema"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
+import { websiteScheduleText } from "@/lib/scheduled-messages/website-text"
 
 /**
  * GET /api/scheduled-messages?conversation_id=...
@@ -117,25 +118,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ item: created }, { status: 201 })
     }
 
-    if (!body.template_name || !body.template_language) {
-      return NextResponse.json({ error: "A Meta-approved template is required" }, { status: 400 })
-    }
-
     const conversation = await prisma.conversation.findFirst({
       where: { id: body.conversation_id, account_id: ctx.accountId },
-      select: { id: true, contact_id: true },
+      select: { id: true, contact_id: true, channel: true },
     })
     if (!conversation) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 })
     }
 
-    // The template must actually belong to this account (and exist).
-    const template = await prisma.messageTemplate.findFirst({
-      where: { account_id: ctx.accountId, name: body.template_name, language: body.template_language },
-      select: { id: true },
-    })
-    if (!template) {
-      return NextResponse.json({ error: "Template not found for this account" }, { status: 404 })
+    // A website chat has no 24-hour window and no templates: plain text.
+    const isWebsite = conversation.channel === "website"
+    let websiteText: string | null = null
+    if (isWebsite) {
+      const checked = websiteScheduleText(body.content_text)
+      if ("error" in checked) return NextResponse.json({ error: checked.error }, { status: 400 })
+      websiteText = checked.text
+    } else {
+      if (!body.template_name || !body.template_language) {
+        return NextResponse.json({ error: "A Meta-approved template is required" }, { status: 400 })
+      }
+      // The template must actually belong to this account (and exist).
+      const template = await prisma.messageTemplate.findFirst({
+        where: { account_id: ctx.accountId, name: body.template_name, language: body.template_language },
+        select: { id: true },
+      })
+      if (!template) {
+        return NextResponse.json({ error: "Template not found for this account" }, { status: 404 })
+      }
     }
 
     const scheduleType = body.schedule_type === "recurring" ? "recurring" : "once"
@@ -180,16 +189,30 @@ export async function POST(req: NextRequest) {
         conversation_id: conversation.id,
         contact_id: conversation.contact_id,
         created_by: ctx.userId,
-        content_text: body.content_text?.trim() || null,
-        template_name: body.template_name,
-        template_language: body.template_language,
-        template_body_params: bodyParams ? (bodyParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
-        template_header_text: body.template_header_text?.trim() || null,
-        template_button_params: buttonParams ? (buttonParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
-        // Reused (not "legacy") for a template's media-header override --
-        // see the sweep, which passes this straight through as headerMediaUrl.
-        media_url: body.template_header_media_url?.trim() || null,
-        media_type: body.template_header_media_url?.trim() ? body.template_header_media_type || null : null,
+        ...(isWebsite
+          ? {
+              // No template: the sweep's text path sends it to the website.
+              content_text: websiteText,
+              template_name: null,
+              template_language: null,
+              template_body_params: Prisma.JsonNull,
+              template_header_text: null,
+              template_button_params: Prisma.JsonNull,
+              media_url: null,
+              media_type: null,
+            }
+          : {
+              content_text: body.content_text?.trim() || null,
+              template_name: body.template_name,
+              template_language: body.template_language,
+              template_body_params: bodyParams ? (bodyParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+              template_header_text: body.template_header_text?.trim() || null,
+              template_button_params: buttonParams ? (buttonParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+              // Reused (not "legacy") for a template's media-header override --
+              // see the sweep, which passes this straight through as headerMediaUrl.
+              media_url: body.template_header_media_url?.trim() || null,
+              media_type: body.template_header_media_url?.trim() ? body.template_header_media_type || null : null,
+            }),
         schedule_type: scheduleType,
         interval_value: intervalValue ?? null,
         interval_unit: intervalUnit ?? null,

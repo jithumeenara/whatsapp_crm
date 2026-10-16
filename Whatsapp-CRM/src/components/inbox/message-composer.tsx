@@ -753,7 +753,7 @@ export function MessageComposer({
       <div className="mt-2 flex items-center justify-between gap-0.5">
           <EmojiPickerPopover onSelect={insertEmoji} disabled={readOnly} />
 
-          <ScheduleMenuButton conversationId={conversationId} disabled={readOnly} />
+          <ScheduleMenuButton conversationId={conversationId} disabled={readOnly} channel={channel} />
 
           {/* Attach keeps only what it is for: device files and the file
               manager. The four WhatsApp actions that used to live in here

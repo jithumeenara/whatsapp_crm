@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
+import { websiteScheduleText } from "@/lib/scheduled-messages/website-text"
 
 /**
  * PATCH /api/scheduled-messages/[id]
@@ -44,15 +45,28 @@ export async function PATCH(
     }
 
     // Full edit
-    if (!body.template_name || !body.template_language) {
-      return NextResponse.json({ error: "A Meta-approved template is required" }, { status: 400 })
-    }
-    const template = await prisma.messageTemplate.findFirst({
-      where: { account_id: ctx.accountId, name: body.template_name, language: body.template_language },
-      select: { id: true },
+    // A website chat has no 24-hour window and no templates: plain text.
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: existing.conversation_id, account_id: ctx.accountId },
+      select: { channel: true },
     })
-    if (!template) {
-      return NextResponse.json({ error: "Template not found for this account" }, { status: 404 })
+    const isWebsite = conversation?.channel === "website"
+    let websiteText: string | null = null
+    if (isWebsite) {
+      const checked = websiteScheduleText(body.content_text)
+      if ("error" in checked) return NextResponse.json({ error: checked.error }, { status: 400 })
+      websiteText = checked.text
+    } else {
+      if (!body.template_name || !body.template_language) {
+        return NextResponse.json({ error: "A Meta-approved template is required" }, { status: 400 })
+      }
+      const template = await prisma.messageTemplate.findFirst({
+        where: { account_id: ctx.accountId, name: body.template_name, language: body.template_language },
+        select: { id: true },
+      })
+      if (!template) {
+        return NextResponse.json({ error: "Template not found for this account" }, { status: 404 })
+      }
     }
 
     const scheduleType = body.schedule_type === "recurring" ? "recurring" : "once"
@@ -93,14 +107,27 @@ export async function PATCH(
     const updated = await prisma.scheduledMessage.update({
       where: { id },
       data: {
-        content_text: body.content_text?.trim() || null,
-        template_name: body.template_name,
-        template_language: body.template_language,
-        template_body_params: bodyParams ? (bodyParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
-        template_header_text: body.template_header_text?.trim() || null,
-        template_button_params: buttonParams ? (buttonParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
-        media_url: body.template_header_media_url?.trim() || null,
-        media_type: body.template_header_media_url?.trim() ? body.template_header_media_type || null : null,
+        ...(isWebsite
+          ? {
+              content_text: websiteText,
+              template_name: null,
+              template_language: null,
+              template_body_params: Prisma.JsonNull,
+              template_header_text: null,
+              template_button_params: Prisma.JsonNull,
+              media_url: null,
+              media_type: null,
+            }
+          : {
+              content_text: body.content_text?.trim() || null,
+              template_name: body.template_name,
+              template_language: body.template_language,
+              template_body_params: bodyParams ? (bodyParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+              template_header_text: body.template_header_text?.trim() || null,
+              template_button_params: buttonParams ? (buttonParams as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+              media_url: body.template_header_media_url?.trim() || null,
+              media_type: body.template_header_media_url?.trim() ? body.template_header_media_type || null : null,
+            }),
         schedule_type: scheduleType,
         interval_value: intervalValue ?? null,
         interval_unit: intervalUnit ?? null,

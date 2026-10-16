@@ -36,9 +36,10 @@ interface ScheduledMessagesPanelProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   conversationId: string
+  channel?: string
 }
 
-export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: ScheduledMessagesPanelProps) {
+export function ScheduledMessagesPanel({ open, onOpenChange, conversationId, channel }: ScheduledMessagesPanelProps) {
   const [items, setItems] = useState<ScheduledMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [editItem, setEditItem] = useState<ScheduledMessage | null>(null)
@@ -159,6 +160,7 @@ export function ScheduledMessagesPanel({ open, onOpenChange, conversationId }: S
         open={!!editItem}
         onOpenChange={(v) => { if (!v) setEditItem(null) }}
         conversationId={conversationId}
+        channel={channel}
         editItem={editItem}
         onScheduled={() => { setEditItem(null); load() }}
       />

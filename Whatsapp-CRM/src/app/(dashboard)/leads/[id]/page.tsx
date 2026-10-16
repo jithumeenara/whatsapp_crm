@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useSessionWindow } from "@/lib/hooks/use-session-window"
 import {
@@ -138,6 +138,9 @@ export default function LeadDetailPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [chatLoading, setChatLoading] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
+  // "website" when the lead's latest chat is the website one: no 24-hour
+  // window and no WhatsApp templates there.
+  const [conversationChannel, setConversationChannel] = useState<string>("whatsapp")
   const [composerText, setComposerText] = useState("")
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
@@ -153,7 +156,11 @@ export default function LeadDetailPage() {
   // 24-hour session window — same rule the main Inbox composer enforces,
   // now shared with message-thread.tsx via useSessionWindow so the two
   // surfaces can never drift out of sync.
-  const sessionExpired = useSessionWindow(messages).expired
+  // Counted from WhatsApp messages only; a website chat has no window.
+  const whatsappMessages = useMemo(() => messages.filter((m) => !m.channel || m.channel === "whatsapp"), [messages])
+  const whatsappSessionExpired = useSessionWindow(whatsappMessages).expired
+  const isWebsiteChat = conversationChannel === "website"
+  const sessionExpired = whatsappSessionExpired && !isWebsiteChat
 
   const loadLead = useCallback(() => {
     fetch(`/api/leads/${id}?from=${encodeURIComponent(fromTab)}`)
@@ -183,8 +190,11 @@ export default function LeadDetailPage() {
       .then((d) => {
         const msgs: Message[] = Array.isArray(d.messages) ? d.messages : []
         setMessages(msgs)
-        const lastWa = [...msgs].reverse().find((m) => !m.channel || m.channel === "whatsapp")
-        setConversationId(lastWa?.conversation_id ?? null)
+        // The latest WhatsApp or website chat — a lead from the website
+        // chat window is answered there.
+        const lastChat = [...msgs].reverse().find((m) => !m.channel || m.channel === "whatsapp" || m.channel === "website")
+        setConversationId(lastChat?.conversation_id ?? null)
+        setConversationChannel(lastChat?.channel === "website" ? "website" : "whatsapp")
       })
       .catch(() => {})
       .finally(() => setChatLoading(false))
@@ -974,7 +984,7 @@ export default function LeadDetailPage() {
 
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
               <EmojiPickerPopover onSelect={insertEmoji} disabled={!conversationId || sessionExpired} />
-              {conversationId && <ScheduleMenuButton conversationId={conversationId} />}
+              {conversationId && <ScheduleMenuButton conversationId={conversationId} channel={conversationChannel} />}
               <div className="relative shrink-0">
                 <button type="button" onClick={() => setAttachOpen((v) => !v)} disabled={!conversationId || uploading || sessionExpired}
                   className="text-slate-400 hover:text-slate-600 disabled:opacity-40" title={sessionExpired ? "Session expired — send a template to re-engage first" : "Attach"}>
@@ -984,12 +994,16 @@ export default function LeadDetailPage() {
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setAttachOpen(false)} />
                     <div className="absolute bottom-9 left-0 z-20 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                      <button type="button" onClick={() => { setAttachOpen(false); setTemplatePickerOpen(true) }}
-                        className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
-                        <LayoutTemplate className="h-4 w-4 shrink-0 text-amber-500" />
-                        Message Template
-                      </button>
-                      <div className="mx-3 my-1 border-t border-slate-100" />
+                      {!isWebsiteChat && (
+                        <>
+                          <button type="button" onClick={() => { setAttachOpen(false); setTemplatePickerOpen(true) }}
+                            className="flex w-full items-center gap-3 px-4 py-2.5 text-[13px] text-slate-800 hover:bg-slate-100 transition-colors">
+                            <LayoutTemplate className="h-4 w-4 shrink-0 text-amber-500" />
+                            Message Template
+                          </button>
+                          <div className="mx-3 my-1 border-t border-slate-100" />
+                        </>
+                      )}
                       <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">From Device</div>
                       {ATTACH_OPTIONS.map(({ key, label, icon: Icon, color, accept }) => (
                         <button key={key} type="button" onClick={() => openFilePicker(accept)}

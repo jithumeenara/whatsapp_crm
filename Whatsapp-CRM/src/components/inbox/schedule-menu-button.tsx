@@ -8,12 +8,14 @@ import { ScheduledMessagesPanel } from './scheduled-messages-panel'
 interface ScheduleMenuButtonProps {
   conversationId: string
   disabled?: boolean
+  /** 'website': plain-text schedules — no 24-hour window, no templates. */
+  channel?: string
 }
 
 /** Single entry point for scheduled messages — one icon, a small menu with
  *  "New Schedule" and "View Schedule". Shared by the main Inbox composer
  *  and the Lead page's chat composer. */
-export function ScheduleMenuButton({ conversationId, disabled }: ScheduleMenuButtonProps) {
+export function ScheduleMenuButton({ conversationId, disabled, channel }: ScheduleMenuButtonProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [listOpen, setListOpen] = useState(false)
@@ -53,8 +55,8 @@ export function ScheduleMenuButton({ conversationId, disabled }: ScheduleMenuBut
         )}
       </div>
 
-      <ScheduleMessageDialog open={scheduleOpen} onOpenChange={setScheduleOpen} conversationId={conversationId} />
-      <ScheduledMessagesPanel open={listOpen} onOpenChange={setListOpen} conversationId={conversationId} />
+      <ScheduleMessageDialog open={scheduleOpen} onOpenChange={setScheduleOpen} conversationId={conversationId} channel={channel} />
+      <ScheduledMessagesPanel open={listOpen} onOpenChange={setListOpen} conversationId={conversationId} channel={channel} />
     </>
   )
 }
