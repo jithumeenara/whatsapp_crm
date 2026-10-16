@@ -3,6 +3,8 @@
   --brand: #4f46e5;
   --brand-ink: #ffffff;
   --brand-deep: color-mix(in srgb, var(--brand) 72%, #000);
+  /* Solid or gradient, from Settings → Website Bot (set in frame.js). */
+  --brand-fill: linear-gradient(135deg, var(--brand), var(--brand-deep));
   --brand-soft: color-mix(in srgb, var(--brand) 12%, #fff);
   --bg: #ffffff;
   --canvas: #f6f7fb;
@@ -38,7 +40,7 @@ button { font: inherit; }
 
 /* ── Header ── */
 .head { position: relative; display: flex; align-items: center; gap: 12px; padding: 16px 14px 16px 16px; color: var(--brand-ink);
-  background: linear-gradient(135deg, var(--brand), var(--brand-deep)); }
+  background: var(--brand-fill); }
 .head::after { content: ""; position: absolute; inset: auto 0 -1px 0; height: 1px; background: rgba(0,0,0,.06); }
 .avatar { position: relative; flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
   background: rgba(255,255,255,.18); box-shadow: 0 0 0 2px rgba(255,255,255,.35); font-weight: 700; font-size: 17px; text-transform: uppercase; }
@@ -74,7 +76,7 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) { .row.new { animation: none; } }
 
 .bubble { padding: 9px 13px; border-radius: var(--radius); white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere; font-size: 14.5px; }
-.me .bubble { background: var(--brand); color: var(--brand-ink); border-bottom-right-radius: 6px; box-shadow: 0 1px 2px rgba(15,23,42,.12); }
+.me .bubble { background: var(--brand-fill); color: var(--brand-ink); border-bottom-right-radius: 6px; box-shadow: 0 1px 2px rgba(15,23,42,.12); }
 .them .bubble { background: var(--bubble); color: var(--ink); border-bottom-left-radius: 6px; box-shadow: 0 1px 2px rgba(15,23,42,.06), 0 0 0 1px rgba(15,23,42,.04); }
 .bubble a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .bubble strong { font-weight: 650; }
@@ -129,7 +131,7 @@ button { font: inherit; }
 .composer .field.locked { background: var(--line); border-color: transparent; box-shadow: none; }
 .composer textarea:disabled { cursor: not-allowed; }
 .composer .field.locked textarea::placeholder { color: var(--ink-2); font-weight: 500; }
-.send { border: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); cursor: pointer;
+.send { border: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--brand-fill); color: var(--brand-ink); cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; transition: transform .1s, opacity .15s; }
 .send:not(:disabled):hover { transform: scale(1.06); }
 .send:disabled { opacity: .35; cursor: default; }

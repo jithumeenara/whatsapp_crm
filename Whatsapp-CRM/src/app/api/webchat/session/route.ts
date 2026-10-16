@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isPublicKeyShape, hashIp } from '@/lib/webchat/tokens'
 import { authenticateSession, createSession, loadEnabledWidget } from '@/lib/webchat/session'
-import { publicWidgetConfig } from '@/lib/webchat/widget-config'
+import { publicWidget } from '@/lib/webchat/widget-config'
 import { visitorHistory } from '@/lib/webchat/history'
 import { WEBCHAT_LIMITS, ipKey, isFromOurFrame, jsonError, limit, readJson } from '@/lib/webchat/http'
 
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
   if (existing && existing.widget_id === widget.id) {
     const history = await visitorHistory(existing)
     return NextResponse.json(
-      { token: body.token, resumed: true, widget: publicWidgetConfig(widget), ...history },
+      { token: body.token, resumed: true, widget: publicWidget(widget), ...history },
       { headers: { 'Cache-Control': 'no-store' } },
     )
   }
@@ -58,7 +58,7 @@ export async function POST(req: Request) {
       token,
       expires_at: expiresAt.toISOString(),
       resumed: false,
-      widget: publicWidgetConfig(widget),
+      widget: publicWidget(widget),
       messages: [],
       status: null,
       with_team: false,

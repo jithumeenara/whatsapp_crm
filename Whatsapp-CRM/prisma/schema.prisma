@@ -1951,6 +1951,12 @@ model WebChatWidget {
   title            String    @default("Chat with us")
   welcome_message  String    @default("Hi! How can we help you today?")
   primary_color    String    @default("#4f46e5")
+  /// 'solid' | 'gradient' (migration 134)
+  color_style        String  @default("gradient")
+  /// The gradient's second colour; null = a darker shade of primary_color.
+  secondary_color    String?
+  /// 'none' | 'pulse' | 'bounce' | 'wiggle' | 'float' | 'glow'
+  launcher_animation String  @default("none")
   /// 'right' | 'left'
   position         String    @default("right")
   logo_url         String?

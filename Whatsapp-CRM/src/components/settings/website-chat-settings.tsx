@@ -5,7 +5,8 @@
  *
  * One card per chat widget, laid out as editor + live preview:
  *
- *   Appearance  title, welcome, brand colour, side, logo
+ *   Appearance  title, welcome, brand colour (solid or gradient), button
+ *               animation, side, logo
  *   Behaviour   which websites may show it, "Talk to a person", AI cap
  *   Install     a three-step checklist with the code to paste
  *
@@ -43,6 +44,9 @@ interface Widget {
   title: string
   welcome_message: string
   primary_color: string
+  color_style: 'solid' | 'gradient'
+  secondary_color: string | null
+  launcher_animation: LauncherAnimation
   position: 'left' | 'right'
   logo_url: string | null
   allowed_domains: string[]
@@ -63,6 +67,87 @@ interface Overview {
 }
 
 const SWATCHES = ['#4f46e5', '#2563eb', '#0891b2', '#0f766e', '#16a34a', '#ca8a04', '#ea580c', '#e11d48', '#9333ea', '#0f172a']
+
+/** Ready-made pairs for the gradient: primary → second. */
+const GRADIENT_PRESETS: [string, string][] = [
+  ['#4f46e5', '#9333ea'],
+  ['#2563eb', '#06b6d4'],
+  ['#0f766e', '#22c55e'],
+  ['#ea580c', '#e11d48'],
+  ['#e11d48', '#9333ea'],
+  ['#da2727', '#f59e0b'],
+  ['#0f172a', '#4f46e5'],
+  ['#ca8a04', '#ea580c'],
+]
+
+type LauncherAnimation = 'none' | 'pulse' | 'bounce' | 'wiggle' | 'float' | 'glow'
+
+const ANIMATIONS: { key: LauncherAnimation; label: string; hint: string }[] = [
+  { key: 'none', label: 'None', hint: 'Still' },
+  { key: 'pulse', label: 'Pulse', hint: 'Rings ripple out' },
+  { key: 'bounce', label: 'Bounce', hint: 'Hops now and then' },
+  { key: 'wiggle', label: 'Wiggle', hint: 'A playful shake' },
+  { key: 'float', label: 'Float', hint: 'Gently bobs' },
+  { key: 'glow', label: 'Glow', hint: 'Shine + soft glow' },
+]
+
+/** The button's look, the same rule as public/webchat/widget.js. */
+function fillOf(primary: string, style: 'solid' | 'gradient', second: string | null): string {
+  if (style === 'solid') return primary
+  return `linear-gradient(135deg, ${primary}, ${second || `color-mix(in srgb, ${primary} 72%, #000)`})`
+}
+
+/**
+ * The same keyframes widget.js draws on the website, for the previews
+ * here. Kept as one string so the two cannot drift far: change one, change
+ * the other. Stopped for anyone who asked for reduced motion.
+ */
+const LAUNCHER_KEYFRAMES = `
+@media (prefers-reduced-motion: no-preference) {
+  .wcp-pulse .wcp-ring { animation: wcp-ring 2.6s cubic-bezier(.2,.6,.3,1) infinite; }
+  .wcp-pulse .wcp-ring.r2 { animation-delay: 1.3s; }
+  .wcp-bounce .wcp-btn { animation: wcp-bounce 3.4s cubic-bezier(.3,.7,.4,1) infinite; }
+  .wcp-wiggle .wcp-btn { animation: wcp-wiggle 4.2s ease-in-out infinite; }
+  .wcp-float .wcp-btn { animation: wcp-float 3.2s ease-in-out infinite; }
+  .wcp-glow .wcp-btn { animation: wcp-glow 2.8s ease-in-out infinite; }
+  .wcp-glow .wcp-btn::after { content: ""; position: absolute; inset: 0; border-radius: 9999px; pointer-events: none;
+    background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%); background-size: 260% 100%;
+    animation: wcp-shine 2.8s ease-in-out infinite; }
+}
+.wcp-ring { opacity: 0; }
+@keyframes wcp-ring { 0% { transform: scale(1); opacity: .5 } 100% { transform: scale(1.85); opacity: 0 } }
+@keyframes wcp-bounce { 0%,55%,100% { translate: 0 0; scale: 1 1 } 12% { translate: 0 -16%; scale: .96 1.05 } 24% { translate: 0 0; scale: 1.08 .9 }
+  32% { translate: 0 -7%; scale: .98 1.02 } 42% { translate: 0 0; scale: 1.03 .97 } }
+@keyframes wcp-wiggle { 0%,68%,100% { rotate: 0deg } 72% { rotate: -16deg } 76% { rotate: 14deg } 80% { rotate: -10deg } 84% { rotate: 7deg } 88% { rotate: -3deg } 92% { rotate: 0deg } }
+@keyframes wcp-float { 0%,100% { translate: 0 0 } 50% { translate: 0 -12% } }
+@keyframes wcp-glow { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wcp-color) 45%, transparent) }
+  50% { box-shadow: 0 0 18px 6px color-mix(in srgb, var(--wcp-color) 45%, transparent) } }
+@keyframes wcp-shine { 0% { background-position: 130% 0 } 55%,100% { background-position: -130% 0 } }
+`
+
+/** A chat button as the website shows it, animated. */
+function LauncherPreview({ size, color, fill, animation }: { size: number; color: string; fill: string; animation: LauncherAnimation }) {
+  return (
+    <span
+      className={cn('relative inline-flex shrink-0', animation !== 'none' && `wcp-${animation}`)}
+      style={{ width: size, height: size, ['--wcp-color' as string]: color }}
+      aria-hidden="true"
+    >
+      {animation === 'pulse' && (
+        <>
+          <span className="wcp-ring absolute inset-0 rounded-full" style={{ background: color }} />
+          <span className="wcp-ring r2 absolute inset-0 rounded-full" style={{ background: color }} />
+        </>
+      )}
+      <span
+        className="wcp-btn relative flex h-full w-full items-center justify-center overflow-hidden rounded-full text-white shadow-lg"
+        style={{ background: fill }}
+      >
+        <Bot style={{ width: size * 0.45, height: size * 0.45 }} />
+      </span>
+    </span>
+  )
+}
 
 function timeAgo(iso: string | null): string {
   if (!iso) return 'never'
@@ -273,6 +358,10 @@ interface FormState {
   title: string
   welcome_message: string
   primary_color: string
+  color_style: 'solid' | 'gradient'
+  /** '' = a darker shade of the primary. */
+  secondary_color: string
+  launcher_animation: LauncherAnimation
   position: 'left' | 'right'
   logo_url: string
   domains: string[]
@@ -286,6 +375,9 @@ function formOf(w: Widget): FormState {
     title: w.title,
     welcome_message: w.welcome_message,
     primary_color: w.primary_color,
+    color_style: w.color_style === 'solid' ? 'solid' : 'gradient',
+    secondary_color: w.secondary_color ?? '',
+    launcher_animation: w.launcher_animation ?? 'none',
     position: w.position,
     logo_url: w.logo_url ?? '',
     domains: w.allowed_domains,
@@ -308,6 +400,9 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
   const saved = useMemo(() => formOf(widget), [widget])
   const dirty = JSON.stringify(form) !== JSON.stringify(saved)
   const colorValid = /^#[0-9a-fA-F]{6}$/.test(form.primary_color)
+  const secondValid = form.secondary_color === '' || /^#[0-9a-fA-F]{6}$/.test(form.secondary_color)
+  const shownColor = colorValid ? form.primary_color : widget.primary_color
+  const shownFill = fillOf(shownColor, form.color_style, secondValid ? form.secondary_color || null : null)
   const limitValid = /^\d{1,6}$/.test(form.daily_ai_limit) && Number(form.daily_ai_limit) <= 100000
   const installed = Boolean(widget.last_seen_at)
 
@@ -326,12 +421,14 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
         title: form.title || 'Chat',
         welcome_message: form.welcome_message,
         primary_color: colorValid ? form.primary_color : widget.primary_color,
+        color_style: form.color_style,
+        secondary_color: secondValid && form.secondary_color ? form.secondary_color : null,
         logo_url: form.logo_url.startsWith('https://') ? form.logo_url : null,
         allow_handoff: form.allow_handoff,
       },
       window.location.origin,
     )
-  }, [form, colorValid, widget.primary_color])
+  }, [form, colorValid, secondValid, widget.primary_color])
 
   useEffect(() => {
     const t = window.setTimeout(pushPreview, 150)
@@ -341,6 +438,7 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
   async function save() {
     if (saving) return
     if (!colorValid) { toast.error('Colour must look like #4f46e5.'); setTab('appearance'); return }
+    if (!secondValid) { toast.error('Second colour must look like #4f46e5.'); setTab('appearance'); return }
     if (!limitValid) { toast.error('AI replies per day is a whole number from 0 to 100000.'); setTab('behaviour'); return }
     setSaving(true)
     try {
@@ -352,6 +450,9 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
           title: form.title,
           welcome_message: form.welcome_message,
           primary_color: form.primary_color,
+          color_style: form.color_style,
+          secondary_color: form.secondary_color || null,
+          launcher_animation: form.launcher_animation,
           position: form.position,
           logo_url: form.logo_url.trim() || null,
           allowed_domains: form.domains,
@@ -436,7 +537,7 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-slate-100 px-5 py-4">
         <div
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
-          style={{ background: colorValid ? form.primary_color : widget.primary_color }}
+          style={{ background: shownFill }}
         >
           <MessageCircle className="h-5 w-5" />
         </div>
@@ -563,6 +664,118 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                       className={cn('h-8 w-24 font-mono text-[12px]', !colorValid && 'border-rose-300 focus-visible:ring-rose-200')}
                     />
                   </div>
+
+                  {/* Solid or gradient */}
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <div role="radiogroup" aria-label="Colour style" className="inline-flex rounded-xl bg-slate-100 p-1">
+                      {(['solid', 'gradient'] as const).map((style) => (
+                        <button
+                          key={style}
+                          type="button"
+                          role="radio"
+                          aria-checked={form.color_style === style}
+                          onClick={() => set('color_style', style)}
+                          className={cn(
+                            'inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition',
+                            form.color_style === style ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800',
+                          )}
+                        >
+                          <span className="h-3.5 w-3.5 rounded-full" style={{ background: fillOf(shownColor, style, secondValid ? form.secondary_color || null : null) }} />
+                          {style === 'solid' ? 'Solid' : 'Gradient'}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="h-8 flex-1 min-w-[120px] rounded-xl ring-1 ring-black/5" style={{ background: shownFill }} aria-hidden="true" />
+                  </div>
+
+                  {form.color_style === 'gradient' && (
+                    <div className="mt-3 space-y-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="mr-1 text-[12px] font-medium text-slate-600">Second colour</span>
+                        <button
+                          type="button"
+                          onClick={() => set('secondary_color', '')}
+                          aria-pressed={form.secondary_color === ''}
+                          className={cn(
+                            'h-8 rounded-full border px-3 text-[12px] transition',
+                            form.secondary_color === '' ? 'border-slate-900 bg-white font-semibold text-slate-900' : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                          )}
+                        >
+                          Auto (darker)
+                        </button>
+                        <label className="relative flex h-8 cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white pl-1 pr-3 text-[12px] text-slate-600 hover:border-slate-300">
+                          <span className="h-6 w-6 rounded-full border border-white shadow-inner" style={{ background: form.secondary_color && secondValid ? form.secondary_color : '#fff' }} />
+                          <input
+                            type="color"
+                            value={form.secondary_color && secondValid ? form.secondary_color : '#9333ea'}
+                            onChange={(e) => set('secondary_color', e.target.value)}
+                            className="absolute inset-0 cursor-pointer opacity-0"
+                            aria-label="Second colour"
+                          />
+                          Pick
+                        </label>
+                        <Input
+                          value={form.secondary_color}
+                          maxLength={7}
+                          placeholder="#9333ea"
+                          onChange={(e) => set('secondary_color', e.target.value.trim())}
+                          aria-label="Second colour code"
+                          className={cn('h-8 w-24 font-mono text-[12px]', !secondValid && 'border-rose-300 focus-visible:ring-rose-200')}
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-1.5 text-[11.5px] text-slate-500">Or start from a ready-made gradient</div>
+                        <div className="flex flex-wrap gap-2">
+                          {GRADIENT_PRESETS.map(([a, b]) => {
+                            const active = form.primary_color.toLowerCase() === a && form.secondary_color.toLowerCase() === b
+                            return (
+                              <button
+                                key={a + b}
+                                type="button"
+                                onClick={() => setForm((f) => ({ ...f, primary_color: a, secondary_color: b, color_style: 'gradient' }))}
+                                aria-label={`Gradient ${a} to ${b}`}
+                                className={cn('flex h-8 w-14 items-center justify-center rounded-full ring-offset-2 transition hover:scale-105', active && 'ring-2 ring-slate-900')}
+                                style={{ background: `linear-gradient(135deg, ${a}, ${b})` }}
+                              >
+                                {active && <Check className="h-4 w-4 text-white" />}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <FieldLabel>Button animation</FieldLabel>
+                  <style>{LAUNCHER_KEYFRAMES}</style>
+                  <div role="radiogroup" aria-label="Button animation" className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                    {ANIMATIONS.map((a) => (
+                      <button
+                        key={a.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={form.launcher_animation === a.key}
+                        onClick={() => set('launcher_animation', a.key)}
+                        className={cn(
+                          'flex items-center gap-3 rounded-xl border p-3 text-left transition',
+                          form.launcher_animation === a.key ? 'border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-500' : 'border-slate-200 hover:border-slate-300',
+                        )}
+                      >
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center">
+                          <LauncherPreview size={34} color={shownColor} fill={shownFill} animation={a.key} />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-[12.5px] font-semibold text-slate-800">{a.label}</span>
+                          <span className="block truncate text-[11px] text-slate-500">{a.hint}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1.5 text-[11.5px] text-slate-400">
+                    The button also springs in when the page loads. The animation stops once a visitor opens the chat, and never plays for people who turned motion off on their device.
+                  </p>
                 </div>
 
                 <div>
@@ -584,7 +797,7 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                           <div className="absolute left-2 top-5 h-1.5 w-20 rounded bg-slate-100" />
                           <span
                             className={cn('absolute bottom-1.5 h-4 w-4 rounded-full shadow', side === 'left' ? 'left-1.5' : 'right-1.5')}
-                            style={{ background: colorValid ? form.primary_color : widget.primary_color }}
+                            style={{ background: shownFill }}
                           />
                         </div>
                         <div className="mt-2 text-[12.5px] font-medium text-slate-700">Bottom {side}</div>
@@ -723,7 +936,8 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                 <div className="h-2 w-1/2 rounded bg-slate-100" />
               </div>
               {widget.enabled ? (
-                <div className={cn('absolute bottom-3 top-14 w-[calc(100%-24px)] max-w-[340px]', form.position === 'left' ? 'left-3' : 'right-3')}>
+                <>
+                <div className={cn('absolute bottom-[76px] top-14 w-[calc(100%-24px)] max-w-[340px]', form.position === 'left' ? 'left-3' : 'right-3')}>
                   <iframe
                     key={previewKey}
                     ref={frameRef}
@@ -733,6 +947,10 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                     className="h-full w-full rounded-2xl border border-slate-200 shadow-xl shadow-slate-900/10"
                   />
                 </div>
+                <div className={cn('absolute bottom-3', form.position === 'left' ? 'left-3' : 'right-3')}>
+                  <LauncherPreview size={52} color={shownColor} fill={shownFill} animation={form.launcher_animation} />
+                </div>
+                </>
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-[12.5px] text-slate-500">
                   <MessageCircle className="h-6 w-6 text-slate-300" />

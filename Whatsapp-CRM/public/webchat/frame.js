@@ -250,6 +250,8 @@
       if (typeof data.title === 'string') state.widget.title = data.title.slice(0, 60);
       if (typeof data.welcome_message === 'string') state.widget.welcome_message = data.welcome_message.slice(0, 500);
       if (typeof data.primary_color === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.primary_color)) state.widget.primary_color = data.primary_color;
+      if (data.color_style === 'solid' || data.color_style === 'gradient') state.widget.color_style = data.color_style;
+      if (data.secondary_color === null || (typeof data.secondary_color === 'string' && /^#[0-9a-fA-F]{6}$/.test(data.secondary_color))) state.widget.secondary_color = data.secondary_color;
       state.widget.logo_url = data.logo_url && safeUrl(data.logo_url) && /^https:/.test(data.logo_url) ? data.logo_url : null;
       if (typeof data.allow_handoff === 'boolean') state.widget.allow_handoff = data.allow_handoff;
       applyBrand();
@@ -337,6 +339,12 @@
     var light = (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62;
     document.documentElement.style.setProperty('--brand', color);
     document.documentElement.style.setProperty('--brand-ink', light ? '#0f172a' : '#ffffff');
+    // Solid, or a gradient to the second colour (a darker shade when none).
+    var second = state.widget && /^#[0-9a-fA-F]{6}$/.test(state.widget.secondary_color) ? state.widget.secondary_color : 'var(--brand-deep)';
+    document.documentElement.style.setProperty(
+      '--brand-fill',
+      state.widget && state.widget.color_style === 'solid' ? color : 'linear-gradient(135deg, ' + color + ', ' + second + ')'
+    );
     document.title = (state.widget && state.widget.title) || 'Chat';
   }
 

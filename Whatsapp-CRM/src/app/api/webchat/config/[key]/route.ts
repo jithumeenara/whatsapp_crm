@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { isPublicKeyShape } from '@/lib/webchat/tokens'
 import { loadEnabledWidget } from '@/lib/webchat/session'
 import { hostOf, isHostAllowed } from '@/lib/webchat/domains'
-import { publicWidgetConfig } from '@/lib/webchat/widget-config'
+import { publicWidget } from '@/lib/webchat/widget-config'
 import { WEBCHAT_LIMITS, ipKey, jsonError, limit } from '@/lib/webchat/http'
 
 /**
@@ -53,7 +53,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
       .catch(() => {})
   }
 
-  return NextResponse.json(publicWidgetConfig(widget), {
+  return NextResponse.json(publicWidget(widget), {
     headers: { ...cors(origin), 'Cache-Control': 'public, max-age=60' },
   })
 }

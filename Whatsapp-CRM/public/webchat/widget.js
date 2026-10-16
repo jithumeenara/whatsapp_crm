@@ -55,9 +55,17 @@
     return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#4f46e5';
   }
 
+  var ANIMATIONS = ['none', 'pulse', 'bounce', 'wiggle', 'float', 'glow'];
+
   function mount(cfg) {
     var color = safeColor(cfg.primary_color);
     var side = cfg.position === 'left' ? 'left' : 'right';
+    // Solid, or a gradient to a second colour (a darker shade when none).
+    var second = /^#[0-9a-fA-F]{6}$/.test(cfg.secondary_color) ? cfg.secondary_color : 'color-mix(in srgb,' + color + ' 72%,#000)';
+    var fill = cfg.color_style === 'solid' ? color : 'linear-gradient(135deg,' + color + ',' + second + ')';
+    var animation = ANIMATIONS.indexOf(cfg.launcher_animation) >= 0 ? cfg.launcher_animation : 'none';
+    var calm = false;
+    try { calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* fine */ }
 
     var host = document.createElement('div');
     host.setAttribute('data-crm-webchat', '');
@@ -68,10 +76,35 @@
     style.textContent =
       ':host,*{box-sizing:border-box}' +
       '.launcher{position:fixed;bottom:20px;' + side + ':20px;width:60px;height:60px;border-radius:50%;border:0;cursor:pointer;' +
-      'background:linear-gradient(135deg,' + color + ',color-mix(in srgb,' + color + ' 72%,#000));color:#fff;' +
+      'background:' + fill + ';color:#fff;overflow:hidden;' +
       'box-shadow:0 10px 30px -6px color-mix(in srgb,' + color + ' 60%,transparent),0 4px 10px rgba(15,23,42,.18);' +
-      'display:flex;align-items:center;justify-content:center;transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s}' +
-      '.launcher:hover{transform:translateY(-2px) scale(1.04)}' +
+      'display:flex;align-items:center;justify-content:center;transition:transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .2s}' +
+      '.launcher:hover{transform:translateY(-2px) scale(1.08)}' +
+      '.launcher:active{transform:scale(.92)}' +
+      // The attention animations use translate/rotate/scale, which compose
+      // with the hover transform instead of fighting it. They stop for good
+      // once the chat has been opened, and never run for reduced motion.
+      '.ring{position:fixed;bottom:20px;' + side + ':20px;width:60px;height:60px;border-radius:50%;background:' + color + ';' +
+      'pointer-events:none;opacity:0}' +
+      '@media (prefers-reduced-motion:no-preference){' +
+      '.a-pulse .ring{animation:wc-ring 2.6s cubic-bezier(.2,.6,.3,1) infinite}' +
+      '.a-pulse .ring.r2{animation-delay:1.3s}' +
+      '.a-bounce .launcher{animation:wc-bounce 3.4s cubic-bezier(.3,.7,.4,1) infinite}' +
+      '.a-wiggle .launcher{animation:wc-wiggle 4.2s ease-in-out infinite}' +
+      '.a-float .launcher{animation:wc-float 3.2s ease-in-out infinite}' +
+      '.a-glow .launcher{animation:wc-glow 2.8s ease-in-out infinite}' +
+      '.a-glow .launcher::after{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;' +
+      'background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);background-size:260% 100%;' +
+      'animation:wc-shine 2.8s ease-in-out infinite}' +
+      '}' +
+      '@keyframes wc-ring{0%{transform:scale(1);opacity:.5}100%{transform:scale(1.85);opacity:0}}' +
+      '@keyframes wc-bounce{0%,55%,100%{translate:0 0;scale:1 1}12%{translate:0 -16px;scale:.96 1.05}24%{translate:0 0;scale:1.08 .9}' +
+      '32%{translate:0 -7px;scale:.98 1.02}42%{translate:0 0;scale:1.03 .97}}' +
+      '@keyframes wc-wiggle{0%,68%,100%{rotate:0deg}72%{rotate:-16deg}76%{rotate:14deg}80%{rotate:-10deg}84%{rotate:7deg}88%{rotate:-3deg}92%{rotate:0deg}}' +
+      '@keyframes wc-float{0%,100%{translate:0 0}50%{translate:0 -8px}}' +
+      '@keyframes wc-glow{0%,100%{box-shadow:0 10px 30px -6px color-mix(in srgb,' + color + ' 60%,transparent),0 0 0 0 color-mix(in srgb,' + color + ' 45%,transparent)}' +
+      '50%{box-shadow:0 10px 30px -6px color-mix(in srgb,' + color + ' 60%,transparent),0 0 26px 8px color-mix(in srgb,' + color + ' 45%,transparent)}}' +
+      '@keyframes wc-shine{0%{background-position:130% 0}55%,100%{background-position:-130% 0}}' +
       '.launcher svg{transition:transform .25s cubic-bezier(.2,.8,.2,1)}' +
       '.open .launcher svg{transform:rotate(90deg)}' +
       '.launcher:focus-visible{outline:3px solid #fff;outline-offset:2px;box-shadow:0 0 0 6px ' + color + '}' +
@@ -80,22 +113,34 @@
       'background:#ef4444;color:#fff;font:600 12px/20px system-ui,-apple-system,sans-serif;text-align:center}' +
       '.panel{position:fixed;bottom:94px;' + side + ':20px;width:384px;height:min(640px,calc(100vh - 116px));' +
       'border-radius:20px;overflow:hidden;background:#fff;box-shadow:0 24px 60px -12px rgba(15,23,42,.35),0 0 0 1px rgba(15,23,42,.06);' +
-      'transform-origin:bottom ' + side + ';animation:wc-pop .22s cubic-bezier(.2,.8,.2,1)}' +
-      '@keyframes wc-pop{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}' +
+      'transform-origin:bottom ' + side + ';animation:wc-pop .38s cubic-bezier(.34,1.56,.64,1)}' +
+      '@keyframes wc-pop{from{opacity:0;transform:translateY(14px) scale(.9)}to{opacity:1;transform:none}}' +
+      '@keyframes wc-teaser{0%{opacity:0;transform:translateY(10px) scale(.85)}60%{opacity:1;transform:translateY(-3px) scale(1.03)}100%{transform:none}}' +
       '.teaser{position:fixed;bottom:92px;' + side + ':20px;max-width:260px;padding:12px 34px 12px 14px;border-radius:16px;' +
       'border-bottom-' + side + '-radius:4px;background:#fff;color:#0f172a;cursor:pointer;' +
       'font:14px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Malayalam",sans-serif;' +
-      'box-shadow:0 12px 32px -8px rgba(15,23,42,.3),0 0 0 1px rgba(15,23,42,.06);animation:wc-pop .25s cubic-bezier(.2,.8,.2,1)}' +
+      'box-shadow:0 12px 32px -8px rgba(15,23,42,.3),0 0 0 1px rgba(15,23,42,.06);transform-origin:bottom ' + side + ';animation:wc-teaser .55s cubic-bezier(.2,.8,.2,1)}' +
       '.teaser .x{position:absolute;top:6px;right:6px;width:22px;height:22px;border:0;border-radius:50%;background:#f1f5f9;color:#475569;' +
       'cursor:pointer;font:600 13px/22px system-ui;text-align:center;padding:0}' +
       '.teaser .x:hover{background:#e2e8f0}' +
-      '@media (prefers-reduced-motion:reduce){.panel,.teaser{animation:none}.launcher,.launcher svg{transition:none}}' +
+      '@media (prefers-reduced-motion:reduce){.panel,.teaser,.launcher,.ring{animation:none!important}.launcher,.launcher svg{transition:none}}' +
       '.panel iframe{width:100%;height:100%;border:0;display:block}' +
       '[hidden]{display:none!important}' +
       '@media (max-width:480px){.panel{inset:0;width:100%;height:100%;border-radius:0;bottom:0}' +
-      '.open .launcher,.open .badge{display:none}.teaser{max-width:calc(100vw - 110px)}}';
+      '.open .launcher,.open .badge,.open .ring{display:none}.teaser{max-width:calc(100vw - 110px)}}';
 
     var wrap = document.createElement('div');
+    var attention = animation !== 'none' ? 'a-' + animation : '';
+    wrap.className = attention;
+    var rings = [];
+    if (animation === 'pulse') {
+      for (var i = 0; i < 2; i++) {
+        var ring = document.createElement('span');
+        ring.className = i ? 'ring r2' : 'ring';
+        ring.setAttribute('aria-hidden', 'true');
+        rings.push(ring);
+      }
+    }
     var launcher = document.createElement('button');
     launcher.className = 'launcher';
     launcher.type = 'button';
@@ -168,8 +213,17 @@
     function setOpen(next) {
       open = next;
       panel.hidden = !open;
-      wrap.className = open ? 'open' : '';
+      // The attention animation has done its job once the chat is opened.
+      if (open) attention = '';
+      wrap.className = (open ? 'open ' : '') + attention;
       launcher.innerHTML = open ? closeIcon : chatIcon;
+      // The icon spins in as it changes.
+      if (!calm && launcher.firstChild && launcher.firstChild.animate) {
+        launcher.firstChild.animate(
+          [{ transform: 'rotate(' + (open ? '-90deg' : '90deg') + ') scale(.4)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+          { duration: 320, easing: 'cubic-bezier(.34,1.56,.64,1)' }
+        );
+      }
       launcher.setAttribute('aria-label', open ? 'Close chat' : 'Open chat');
       launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
       if (open) {
@@ -211,11 +265,25 @@
 
     wrap.appendChild(panel);
     wrap.appendChild(teaser);
+    for (var r = 0; r < rings.length; r++) wrap.appendChild(rings[r]);
     wrap.appendChild(badge);
     wrap.appendChild(launcher);
     root.appendChild(style);
     root.appendChild(wrap);
     document.body.appendChild(host);
+
+    // The button arrives with a spring: grows in, overshoots, settles.
+    if (!calm && launcher.animate) {
+      launcher.animate(
+        [
+          { transform: 'scale(0) rotate(-120deg)', opacity: 0 },
+          { transform: 'scale(1.18) rotate(10deg)', opacity: 1, offset: 0.55 },
+          { transform: 'scale(.94) rotate(-4deg)', offset: 0.78 },
+          { transform: 'scale(1) rotate(0deg)' }
+        ],
+        { duration: 750, easing: 'ease-out', delay: 250, fill: 'backwards' }
+      );
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

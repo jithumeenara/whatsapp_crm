@@ -5,7 +5,7 @@
  */
 
 import { normalizeDomainList } from './domains'
-import { isHexColor } from './widget-config'
+import { isHexColor, isLauncherAnimation, type LauncherAnimation } from './widget-config'
 import { isSafeHttpsUrl } from './public-message'
 
 export interface WidgetPatch {
@@ -13,6 +13,9 @@ export interface WidgetPatch {
   title?: string
   welcome_message?: string
   primary_color?: string
+  color_style?: 'solid' | 'gradient'
+  secondary_color?: string | null
+  launcher_animation?: LauncherAnimation
   position?: 'left' | 'right'
   logo_url?: string | null
   allowed_domains?: string[]
@@ -49,6 +52,19 @@ export function parseWidgetPatch(body: Record<string, unknown>): PatchResult {
   if (body.primary_color !== undefined) {
     if (!isHexColor(body.primary_color)) return { ok: false, error: 'Colour must look like #4f46e5.' }
     patch.primary_color = body.primary_color.toLowerCase()
+  }
+  if (body.color_style !== undefined) {
+    if (body.color_style !== 'solid' && body.color_style !== 'gradient') return { ok: false, error: 'Colour style is solid or gradient.' }
+    patch.color_style = body.color_style
+  }
+  if (body.secondary_color !== undefined) {
+    if (body.secondary_color === null || body.secondary_color === '') patch.secondary_color = null
+    else if (!isHexColor(body.secondary_color)) return { ok: false, error: 'Second colour must look like #4f46e5.' }
+    else patch.secondary_color = body.secondary_color.toLowerCase()
+  }
+  if (body.launcher_animation !== undefined) {
+    if (!isLauncherAnimation(body.launcher_animation)) return { ok: false, error: 'Pick one of the button animations.' }
+    patch.launcher_animation = body.launcher_animation
   }
   if (body.position !== undefined) {
     if (body.position !== 'left' && body.position !== 'right') return { ok: false, error: 'Position is left or right.' }
