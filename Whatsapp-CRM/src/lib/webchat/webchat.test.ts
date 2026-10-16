@@ -159,6 +159,19 @@ describe('widget settings', () => {
       '<script src="https://crm.example.com/webchat/widget.js" data-widget="wk_abc" defer></script>',
     )
   })
+
+  // Live, 16 Oct: the hospital CRM handed out http://leads.innowayz.com/…;
+  // pasted into an https WordPress site, the browser blocked it as mixed
+  // content and the chat button never appeared.
+  it('always gives an https address for a public CRM', () => {
+    expect(installSnippet('http://leads.innowayz.com', 'wk_abc')).toBe(
+      '<script src="https://leads.innowayz.com/webchat/widget.js" data-widget="wk_abc" defer></script>',
+    )
+  })
+
+  it('leaves a local test address alone', () => {
+    expect(installSnippet('http://localhost:3000', 'wk_abc')).toContain('src="http://localhost:3000/webchat/widget.js"')
+  })
 })
 
 describe('assistant tools for an anonymous visitor', () => {

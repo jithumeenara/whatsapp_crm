@@ -79,6 +79,12 @@ export function parseWidgetPatch(body: Record<string, unknown>): PatchResult {
 }
 
 /** The install snippet, for an origin and a key. */
+// Always https for a real host: the snippet goes on public websites, which
+// are https, and a browser blocks an http script there as mixed content.
+// The admin page can be reached over http (or behind a proxy that says so),
+// and that used to leak into the code people pasted.
 export function installSnippet(origin: string, publicKey: string): string {
-  return `<script src="${origin}/webchat/widget.js" data-widget="${publicKey}" defer></script>`
+  const local = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)
+  const src = local ? origin : origin.replace(/^http:\/\//i, 'https://')
+  return `<script src="${src}/webchat/widget.js" data-widget="${publicKey}" defer></script>`
 }
