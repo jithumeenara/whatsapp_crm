@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { parseWidgetPatch } from '@/lib/webchat/settings'
+import { buildWidgetPatch } from '@/lib/webchat/widget-patch'
+import type { Prisma } from '@prisma/client'
 
 /**
  * One website chat widget. Admins only.
@@ -22,12 +23,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const ctx = await requireRole('admin')
     const { id } = await params
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
-    const parsed = parseWidgetPatch(body)
+    const parsed = await buildWidgetPatch(ctx.accountId, body)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
     const { count } = await prisma.webChatWidget.updateMany({
       where: { id, account_id: ctx.accountId },
-      data: parsed.patch,
+      data: parsed.patch as Prisma.WebChatWidgetUpdateManyMutationInput,
     })
     if (count === 0) return NextResponse.json({ error: 'Widget not found' }, { status: 404 })
     return NextResponse.json({ ok: true })

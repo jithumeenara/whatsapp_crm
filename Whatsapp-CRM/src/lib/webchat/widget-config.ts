@@ -8,6 +8,7 @@
 
 import type { WebChatWidgetRow } from './session'
 import { isSafeHttpsUrl } from './public-message'
+import { publicContactMenu } from './contact-menu'
 
 export interface PublicWidgetConfig {
   key: string
@@ -70,6 +71,20 @@ export function publicWidgetStyle(
 }
 
 /** What a visitor's browser receives: config plus style. */
-export function publicWidget(widget: ConfigFields & Pick<WebChatWidgetRow, 'color_style' | 'secondary_color' | 'launcher_animation'>) {
-  return { ...publicWidgetConfig(widget), ...publicWidgetStyle(widget) }
+type MenuFields = Pick<WebChatWidgetRow, 'contact_menu_enabled' | 'whatsapp_links' | 'call_links' | 'whatsapp_prefill'>
+
+export function publicWidget(
+  widget: ConfigFields & Pick<WebChatWidgetRow, 'color_style' | 'secondary_color' | 'launcher_animation'> & Partial<MenuFields>,
+) {
+  return {
+    ...publicWidgetConfig(widget),
+    ...publicWidgetStyle(widget),
+    // WhatsApp / Call / bot on the button; null = the button opens the chat.
+    contact_menu: publicContactMenu({
+      contact_menu_enabled: widget.contact_menu_enabled ?? false,
+      whatsapp_links: widget.whatsapp_links ?? [],
+      call_links: widget.call_links ?? [],
+      whatsapp_prefill: widget.whatsapp_prefill ?? null,
+    }),
+  }
 }

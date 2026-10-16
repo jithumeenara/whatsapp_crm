@@ -8,6 +8,7 @@
  *   Appearance  title, welcome, brand colour (solid or gradient), button
  *               animation, side, logo
  *   Behaviour   which websites may show it, "Talk to a person", AI cap
+ *   Contact     the menu on the button: WhatsApp numbers, call numbers, bot
  *   Install     a three-step checklist with the code to paste
  *
  * The preview is the real chat window inside a mock browser. Edits are
@@ -22,7 +23,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   AlertTriangle, Bot, Check, CheckCircle2, Copy, Globe, Loader2, MessageCircle, Palette,
-  Plus, ShieldCheck, Sparkles, Trash2, Users, Wand2, X, Code2, Clock, Workflow,
+  Plus, ShieldCheck, Sparkles, Trash2, Users, Wand2, X, Code2, Clock, Workflow, Phone, ChevronRight, RefreshCw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -47,6 +48,10 @@ interface Widget {
   color_style: 'solid' | 'gradient'
   secondary_color: string | null
   launcher_animation: LauncherAnimation
+  contact_menu_enabled: boolean
+  whatsapp_links: { config_id: string; label: string; phone: string }[]
+  call_links: { label: string; phone: string }[]
+  whatsapp_prefill: string | null
   position: 'left' | 'right'
   logo_url: string | null
   allowed_domains: string[]
@@ -351,7 +356,7 @@ export function WebsiteChatSettings() {
 
 // ─────────────────────────────────────────────────────────────────────────
 
-type Tab = 'appearance' | 'behaviour' | 'install'
+type Tab = 'appearance' | 'behaviour' | 'contact' | 'install'
 
 interface FormState {
   name: string
@@ -362,6 +367,12 @@ interface FormState {
   /** '' = a darker shade of the primary. */
   secondary_color: string
   launcher_animation: LauncherAnimation
+  contact_menu_enabled: boolean
+  /** Which of the account's WhatsApp numbers, with the name shown. */
+  wa_selected: { config_id: string; label: string }[]
+  /** As typed: "+91 85900 55117". */
+  call_links: { label: string; phone: string }[]
+  whatsapp_prefill: string
   position: 'left' | 'right'
   logo_url: string
   domains: string[]
@@ -378,6 +389,10 @@ function formOf(w: Widget): FormState {
     color_style: w.color_style === 'solid' ? 'solid' : 'gradient',
     secondary_color: w.secondary_color ?? '',
     launcher_animation: w.launcher_animation ?? 'none',
+    contact_menu_enabled: w.contact_menu_enabled ?? false,
+    wa_selected: (Array.isArray(w.whatsapp_links) ? w.whatsapp_links : []).map((l) => ({ config_id: l.config_id, label: l.label })),
+    call_links: (Array.isArray(w.call_links) ? w.call_links : []).map((l) => ({ label: l.label, phone: `+${l.phone}` })),
+    whatsapp_prefill: w.whatsapp_prefill ?? '',
     position: w.position,
     logo_url: w.logo_url ?? '',
     domains: w.allowed_domains,
@@ -453,6 +468,11 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
           color_style: form.color_style,
           secondary_color: form.secondary_color || null,
           launcher_animation: form.launcher_animation,
+          contact_menu_enabled: form.contact_menu_enabled,
+          call_links: form.call_links.filter((l) => l.phone.trim() || l.label.trim()),
+          whatsapp_prefill: form.whatsapp_prefill.trim() || null,
+          // Only when changed: saving these reads each number from WhatsApp.
+          ...(JSON.stringify(form.wa_selected) !== JSON.stringify(saved.wa_selected) ? { whatsapp_numbers: form.wa_selected } : {}),
           position: form.position,
           logo_url: form.logo_url.trim() || null,
           allowed_domains: form.domains,
@@ -584,6 +604,7 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
             {([
               ['appearance', 'Appearance', Palette],
               ['behaviour', 'Behaviour', ShieldCheck],
+              ['contact', 'Contact menu', Phone],
               ['install', 'Install', Code2],
             ] as const).map(([key, label, Icon]) => (
               <button
@@ -879,6 +900,15 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
 
             {tab === 'behaviour' && <WelcomeChatbotCard />}
 
+            {tab === 'contact' && (
+              <ContactMenuEditor
+                form={form}
+                set={set}
+                fill={shownFill}
+                title={form.title || 'Chat with us'}
+              />
+            )}
+
             {tab === 'install' && (
               <InstallSteps widget={widget} hasDomains={form.domains.length > 0} onGoToDomains={() => setTab('behaviour')} />
             )}
@@ -1107,6 +1137,274 @@ function DomainChips({ domains, onChange }: { domains: string[]; onChange: (d: s
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+
+interface AccountNumber {
+  id: string
+  label: string | null
+  is_default: boolean
+  status: string
+  phone: string | null
+}
+
+/**
+ * The contact menu: when it is on and has at least one number, clicking
+ * the chat button on the website offers WhatsApp, a direct call, or the
+ * bot (public/webchat/widget.js). WhatsApp numbers come from the
+ * account's connected numbers; call numbers are typed in.
+ */
+function ContactMenuEditor({
+  form,
+  set,
+  fill,
+  title,
+}: {
+  form: FormState
+  set: <K extends keyof FormState>(key: K, value: FormState[K]) => void
+  fill: string
+  title: string
+}) {
+  const [numbers, setNumbers] = useState<AccountNumber[] | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setLoadError(null)
+    try {
+      const res = await apiFetch('/api/website-chat/whatsapp-numbers')
+      const data = (await res.json()) as { numbers?: AccountNumber[] }
+      setNumbers(Array.isArray(data.numbers) ? data.numbers : [])
+    } catch (err) {
+      console.error('[website-chat] could not load WhatsApp numbers:', err)
+      setLoadError(errorText(err, 'Could not load your WhatsApp numbers.'))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const selected = new Map(form.wa_selected.map((s) => [s.config_id, s.label]))
+  const toggleNumber = (n: AccountNumber) => {
+    if (selected.has(n.id)) set('wa_selected', form.wa_selected.filter((s) => s.config_id !== n.id))
+    else if (form.wa_selected.length < 5) set('wa_selected', [...form.wa_selected, { config_id: n.id, label: n.label || 'WhatsApp' }])
+  }
+  const renameNumber = (id: string, label: string) =>
+    set('wa_selected', form.wa_selected.map((s) => (s.config_id === id ? { ...s, label } : s)))
+
+  const setCall = (i: number, patch: Partial<{ label: string; phone: string }>) =>
+    set('call_links', form.call_links.map((c, j) => (j === i ? { ...c, ...patch } : c)))
+  const phoneLooksRight = (v: string) => {
+    const digits = v.replace(/\D/g, '')
+    return !v.trim() || (/^[\d\s+().-]+$/.test(v) && digits.length >= 7 && digits.length <= 15)
+  }
+
+  const waCount = form.wa_selected.length
+  const callCount = form.call_links.filter((c) => c.phone.trim()).length
+  const nothingToShow = form.contact_menu_enabled && waCount === 0 && callCount === 0
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4">
+        <div>
+          <div className="text-[13.5px] font-semibold text-slate-800">Show a contact menu on the chat button</div>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">
+            Visitors click the button and choose WhatsApp, a direct call, or the bot. Off: the button opens the chat straight away.
+          </p>
+        </div>
+        <Switch
+          checked={form.contact_menu_enabled}
+          onCheckedChange={(v) => set('contact_menu_enabled', v)}
+          aria-label="Show a contact menu on the chat button"
+        />
+      </div>
+
+      {nothingToShow && (
+        <div className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-[12.5px] text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          Add a WhatsApp or call number below. Until then the button keeps opening the chat.
+        </div>
+      )}
+
+      <div>
+        <FieldLabel hint={`${waCount}/5`}>WhatsApp numbers</FieldLabel>
+        <p className="-mt-1 mb-2 text-[11.5px] text-slate-400">
+          Your connected numbers. Tick the ones to offer; the name is what visitors see.
+        </p>
+        {loading && !numbers ? (
+          <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 px-3 py-4 text-[12.5px] text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" /> Reading your numbers from WhatsApp…
+          </div>
+        ) : loadError ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-rose-50 px-3 py-2.5 text-[12.5px] text-rose-700">
+            {loadError}
+            <Button size="sm" variant="ghost" onClick={() => void load()}>
+              <RefreshCw className="mr-1 h-3.5 w-3.5" /> Retry
+            </Button>
+          </div>
+        ) : numbers && numbers.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-[12.5px] text-slate-500">
+            No WhatsApp number is connected yet — connect one in Settings → Channels → WhatsApp.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {(numbers ?? []).map((n) => {
+              const on = selected.has(n.id)
+              return (
+                <div
+                  key={n.id}
+                  className={cn('flex flex-wrap items-center gap-3 rounded-xl border p-3 transition', on ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200')}
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={!n.phone || (!on && waCount >= 5)}
+                    onChange={() => toggleNumber(n)}
+                    aria-label={`Offer ${n.label || 'this number'}`}
+                    className="h-4 w-4 accent-emerald-600"
+                  />
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#25d366] text-white">
+                    <MessageCircle className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-medium text-slate-800">
+                      {n.phone ? `+${n.phone}` : 'Number could not be read from WhatsApp'}
+                      {n.is_default && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-500">default</span>}
+                    </div>
+                    <div className="text-[11.5px] text-slate-400">{n.label || 'Unnamed number'} · {n.status}</div>
+                  </div>
+                  {on && (
+                    <Input
+                      value={selected.get(n.id) ?? ''}
+                      maxLength={40}
+                      onChange={(e) => renameNumber(n.id, e.target.value)}
+                      placeholder="Name visitors see"
+                      aria-label="Name visitors see"
+                      className="h-8 w-full sm:w-44"
+                    />
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <FieldLabel htmlFor="wc-prefill" hint={`${form.whatsapp_prefill.length}/300`}>First WhatsApp message (optional)</FieldLabel>
+        <Textarea
+          id="wc-prefill"
+          rows={2}
+          maxLength={300}
+          value={form.whatsapp_prefill}
+          onChange={(e) => set('whatsapp_prefill', e.target.value)}
+          placeholder="Hi, I came from your website"
+        />
+        <p className="mt-1 text-[11.5px] text-slate-400">Typed into WhatsApp for them — they can change it before sending.</p>
+      </div>
+
+      <div>
+        <FieldLabel hint={`${form.call_links.length}/5`}>Call numbers</FieldLabel>
+        <p className="-mt-1 mb-2 text-[11.5px] text-slate-400">The Call button opens the visitor&apos;s dial pad with this number. Include the country code.</p>
+        <div className="space-y-2">
+          {form.call_links.map((c, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2">
+              <Input
+                value={c.label}
+                maxLength={40}
+                onChange={(e) => setCall(i, { label: e.target.value })}
+                placeholder="Office"
+                aria-label="Name"
+                className="h-9 w-36"
+              />
+              <Input
+                value={c.phone}
+                maxLength={22}
+                inputMode="tel"
+                onChange={(e) => setCall(i, { phone: e.target.value })}
+                placeholder="+91 85900 55117"
+                aria-label="Phone number"
+                className={cn('h-9 flex-1 min-w-[160px] font-mono text-[12.5px]', !phoneLooksRight(c.phone) && 'border-rose-300 focus-visible:ring-rose-200')}
+              />
+              <button
+                type="button"
+                onClick={() => set('call_links', form.call_links.filter((_, j) => j !== i))}
+                className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                aria-label="Remove number"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={form.call_links.length >= 5}
+            onClick={() => set('call_links', [...form.call_links, { label: '', phone: '' }])}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" /> Add number
+          </Button>
+          {(numbers ?? [])
+            .filter((n) => n.phone && !form.call_links.some((c) => c.phone.replace(/\D/g, '') === n.phone))
+            .slice(0, 3)
+            .map((n) => (
+              <button
+                key={n.id}
+                type="button"
+                disabled={form.call_links.length >= 5}
+                onClick={() => set('call_links', [...form.call_links, { label: n.label || 'Call us', phone: `+${n.phone}` }])}
+                className="rounded-full border border-slate-200 px-3 py-1 text-[12px] text-slate-600 hover:border-slate-300 disabled:opacity-50"
+              >
+                + Use {n.label || `+${n.phone}`}
+              </button>
+            ))}
+        </div>
+      </div>
+
+      {/* What visitors will see */}
+      <div>
+        <FieldLabel>What visitors see</FieldLabel>
+        <div className="mx-auto w-full max-w-[300px] overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-slate-900/5">
+          <div className="px-4 py-3 text-white" style={{ background: fill }}>
+            <div className="text-[14px] font-semibold">How can we help?</div>
+            <div className="text-[11.5px] opacity-85">Choose how you would like to reach us</div>
+          </div>
+          <div className="space-y-2 p-2.5">
+            {[
+              waCount > 0 && { key: 'wa', bg: '#25d366', icon: MessageCircle, t: 'WhatsApp', s: waCount === 1 ? form.wa_selected[0].label : 'Chat with us on WhatsApp' },
+              callCount > 0 && { key: 'call', bg: '#2563eb', icon: Phone, t: 'Direct call', s: callCount === 1 ? form.call_links.find((c) => c.phone.trim())?.phone : 'Talk to our team' },
+              { key: 'bot', bg: fill, icon: Bot, t: title, s: 'Instant answers, any time' },
+            ]
+              .filter(Boolean)
+              .map((o) => {
+                const row = o as { key: string; bg: string; icon: typeof Phone; t: string; s: string | undefined }
+                const Icon = row.icon
+                return (
+                  <div key={row.key} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg text-white" style={{ background: row.bg }}>
+                      <Icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-semibold text-slate-800">{row.t}</span>
+                      <span className="block truncate text-[11.5px] text-slate-500">{row.s}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 text-slate-300" />
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+        {!form.contact_menu_enabled && (
+          <p className="mt-2 text-center text-[11.5px] text-slate-400">Switch the menu on above to use it on your website.</p>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const PLATFORMS = {
   html: { label: 'Any website', how: 'Paste just before </body> on every page (or in a shared footer).' },

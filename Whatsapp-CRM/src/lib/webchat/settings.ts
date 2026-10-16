@@ -7,6 +7,7 @@
 import { normalizeDomainList } from './domains'
 import { isHexColor, isLauncherAnimation, type LauncherAnimation } from './widget-config'
 import { isSafeHttpsUrl } from './public-message'
+import { MAX_PREFILL, parseCallLinks, type MenuNumber, type WhatsAppLink } from './contact-menu'
 
 export interface WidgetPatch {
   name?: string
@@ -16,6 +17,11 @@ export interface WidgetPatch {
   color_style?: 'solid' | 'gradient'
   secondary_color?: string | null
   launcher_animation?: LauncherAnimation
+  contact_menu_enabled?: boolean
+  call_links?: MenuNumber[]
+  /** Set by the route after reading the numbers from Meta. */
+  whatsapp_links?: WhatsAppLink[]
+  whatsapp_prefill?: string | null
   position?: 'left' | 'right'
   logo_url?: string | null
   allowed_domains?: string[]
@@ -80,11 +86,22 @@ export function parseWidgetPatch(body: Record<string, unknown>): PatchResult {
     if (invalid.length) return { ok: false, error: `Not a website address: ${invalid.slice(0, 3).join(', ')}` }
     patch.allowed_domains = domains
   }
-  for (const key of ['allow_handoff', 'enabled'] as const) {
+  for (const key of ['allow_handoff', 'enabled', 'contact_menu_enabled'] as const) {
     if (body[key] !== undefined) {
       if (typeof body[key] !== 'boolean') return { ok: false, error: `${key} must be true or false.` }
       patch[key] = body[key] as boolean
     }
+  }
+  if (body.call_links !== undefined) {
+    const parsed = parseCallLinks(body.call_links)
+    if (!parsed.ok) return { ok: false, error: parsed.error }
+    patch.call_links = parsed.links
+  }
+  if (body.whatsapp_prefill !== undefined) {
+    if (body.whatsapp_prefill === null || body.whatsapp_prefill === '') patch.whatsapp_prefill = null
+    else if (typeof body.whatsapp_prefill !== 'string') return { ok: false, error: 'The WhatsApp message must be text.' }
+    else if (body.whatsapp_prefill.trim().length > MAX_PREFILL) return { ok: false, error: `Keep the WhatsApp message under ${MAX_PREFILL} characters.` }
+    else patch.whatsapp_prefill = body.whatsapp_prefill.trim() || null
   }
   if (body.daily_ai_limit !== undefined) {
     const n = Number(body.daily_ai_limit)

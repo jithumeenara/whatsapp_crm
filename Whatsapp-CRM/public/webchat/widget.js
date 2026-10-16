@@ -65,6 +65,21 @@
     var fill = cfg.color_style === 'solid' ? color : 'linear-gradient(135deg,' + color + ',' + second + ')';
     var animation = ANIMATIONS.indexOf(cfg.launcher_animation) >= 0 ? cfg.launcher_animation : 'none';
     var calm = false;
+    // WhatsApp / Call / bot. Numbers are re-checked here: digits only.
+    function numbersOf(list) {
+      var out = [];
+      if (!list || !list.length) return out;
+      for (var n = 0; n < list.length && out.length < 5; n++) {
+        var item = list[n] || {};
+        if (/^\d{7,15}$/.test(item.phone)) out.push({ label: String(item.label || '').slice(0, 40), phone: item.phone });
+      }
+      return out;
+    }
+    var menuCfg = cfg.contact_menu || null;
+    var waNumbers = numbersOf(menuCfg && menuCfg.whatsapp);
+    var callNumbers = numbersOf(menuCfg && menuCfg.call);
+    var hasMenu = waNumbers.length > 0 || callNumbers.length > 0;
+    var prefill = menuCfg && typeof menuCfg.prefill === 'string' ? menuCfg.prefill.slice(0, 300) : '';
     try { calm = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* fine */ }
 
     var host = document.createElement('div');
@@ -125,6 +140,33 @@
       '.teaser .x:hover{background:#e2e8f0}' +
       '@media (prefers-reduced-motion:reduce){.panel,.teaser,.launcher,.ring{animation:none!important}.launcher,.launcher svg{transition:none}}' +
       '.panel iframe{width:100%;height:100%;border:0;display:block}' +
+      '.menu{position:fixed;bottom:94px;' + side + ':20px;width:300px;max-height:calc(100vh - 116px);overflow:auto;border-radius:20px;' +
+      'background:#fff;color:#0f172a;box-shadow:0 24px 60px -12px rgba(15,23,42,.35),0 0 0 1px rgba(15,23,42,.06);' +
+      'font:14px/1.4 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Malayalam",sans-serif;' +
+      'transform-origin:bottom ' + side + ';animation:wc-pop .38s cubic-bezier(.34,1.56,.64,1)}' +
+      '.menu .top{padding:16px 16px 12px;background:' + fill + ';color:#fff;display:flex;align-items:center;gap:8px}' +
+      '.menu .top b{font-size:15px;font-weight:650;flex:1}' +
+      '.menu .top small{display:block;font-size:12px;opacity:.85;font-weight:400;margin-top:2px}' +
+      '.menu .back{border:0;background:rgba(255,255,255,.2);color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;' +
+      'display:flex;align-items:center;justify-content:center;padding:0}' +
+      '.menu .back:hover{background:rgba(255,255,255,.32)}' +
+      '.menu .list{padding:10px;display:flex;flex-direction:column;gap:8px}' +
+      '.menu .opt{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px;border:1px solid #e2e8f0;border-radius:14px;' +
+      'background:#fff;color:#0f172a;text-decoration:none;cursor:pointer;text-align:left;font:inherit;' +
+      'transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .15s,box-shadow .15s}' +
+      '.menu .opt:hover{transform:translateY(-1px);border-color:#cbd5e1;box-shadow:0 6px 18px -8px rgba(15,23,42,.25)}' +
+      '.menu .opt:focus-visible{outline:2px solid ' + color + ';outline-offset:2px}' +
+      '.menu .ic{width:40px;height:40px;flex:none;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff}' +
+      '.menu .ic svg{width:21px;height:21px}' +
+      '.menu .ic.wa{background:#25d366}.menu .ic.call{background:#2563eb}.menu .ic.bot{background:' + fill + '}' +
+      '.menu .txt{flex:1;min-width:0}.menu .txt b{display:block;font-weight:600}' +
+      '.menu .txt span{display:block;color:#64748b;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '.menu .go{flex:none;color:#94a3b8;width:18px;height:18px}' +
+      '.menu .pill{flex:none;padding:7px 14px;border-radius:999px;color:#fff;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:6px}' +
+      '.menu .pill svg{width:15px;height:15px}' +
+      '.menu .pill.wa{background:#25d366}.menu .pill.call{background:#2563eb}' +
+      '.open-menu .launcher svg{transform:none}' +
+      '@media (max-width:480px){.menu{width:calc(100vw - 40px)}}' +
       '[hidden]{display:none!important}' +
       '@media (max-width:480px){.panel{inset:0;width:100%;height:100%;border-radius:0;bottom:0}' +
       '.open .launcher,.open .badge,.open .ring{display:none}.teaser{max-width:calc(100vw - 110px)}}';
@@ -195,7 +237,8 @@
     });
     teaser.addEventListener('click', function () {
       hideTeaser();
-      setOpen(true);
+      if (hasMenu) openMenu();
+      else setOpen(true);
     });
     if (welcome && !teaserSeen()) {
       window.setTimeout(function () {
@@ -206,6 +249,159 @@
     var frame = null;
     var open = false;
 
+    // ── The contact menu: WhatsApp, Call, or the bot ──────────────────
+    var ICON = {
+      wa: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm5.79 14.01c-.24.68-1.41 1.3-1.95 1.38-.5.07-1.13.1-1.82-.11-.42-.13-.96-.31-1.65-.61-2.9-1.25-4.79-4.17-4.94-4.36-.14-.19-1.18-1.57-1.18-3s.75-2.13 1.02-2.42c.27-.29.58-.36.78-.36h.56c.18 0 .42-.07.65.5.24.58.82 2 .89 2.15.07.14.12.31.02.5-.1.19-.14.31-.29.48l-.43.51c-.14.14-.29.3-.13.58.17.29.74 1.22 1.59 1.97 1.09.97 2.01 1.27 2.3 1.42.29.14.46.12.63-.07.17-.19.72-.84.91-1.13.19-.29.38-.24.65-.14.27.1 1.7.8 1.99.95.29.14.48.22.55.34.07.12.07.7-.17 1.38z"/></svg>',
+      call: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+      go: '<svg class="go" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
+      back: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>'
+    };
+    var menu = document.createElement('div');
+    menu.className = 'menu';
+    menu.hidden = true;
+    menu.setAttribute('role', 'dialog');
+    menu.setAttribute('aria-label', 'Contact options');
+    var menuOpen = false;
+
+    function el(tag, cls, text) {
+      var node = document.createElement(tag);
+      if (cls) node.className = cls;
+      if (text) node.textContent = text;
+      return node;
+    }
+    function shown(phone) { return '+' + phone; }
+    function waHref(phone) {
+      return 'https://wa.me/' + phone + (prefill ? '?text=' + encodeURIComponent(prefill) : '');
+    }
+    // One row: an icon, two lines of text, and a chevron or a pill.
+    function option(kind, title, sub, tail) {
+      var row = el(tail && tail.href ? 'a' : 'button', 'opt');
+      if (tail && tail.href) {
+        row.href = tail.href;
+        if (tail.external) { row.target = '_blank'; row.rel = 'noopener noreferrer'; }
+      } else {
+        row.type = 'button';
+      }
+      var ic = el('span', 'ic ' + kind);
+      ic.innerHTML = kind === 'bot' ? chatIcon : ICON[kind];
+      var txt = el('span', 'txt');
+      txt.appendChild(el('b', '', title));
+      if (sub) txt.appendChild(el('span', '', sub));
+      row.appendChild(ic);
+      row.appendChild(txt);
+      if (tail && tail.pill) {
+        var pill = el('span', 'pill ' + kind);
+        pill.innerHTML = ICON[kind];
+        pill.appendChild(document.createTextNode(tail.pill));
+        row.appendChild(pill);
+      } else {
+        row.insertAdjacentHTML('beforeend', ICON.go);
+      }
+      return row;
+    }
+
+    function renderMenu(view) {
+      menu.textContent = '';
+      var top = el('div', 'top');
+      var heading = el('b');
+      if (view !== 'main') {
+        var back = el('button', 'back');
+        back.type = 'button';
+        back.setAttribute('aria-label', 'Back');
+        back.innerHTML = ICON.back;
+        back.addEventListener('click', function () { renderMenu('main'); });
+        top.appendChild(back);
+      }
+      heading.textContent = view === 'whatsapp' ? 'Chat on WhatsApp' : view === 'call' ? 'Call us' : 'How can we help?';
+      heading.appendChild(el('small', '', view === 'main' ? 'Choose how you would like to reach us' : 'Tap a number'));
+      top.appendChild(heading);
+      menu.appendChild(top);
+
+      var list = el('div', 'list');
+      var rows = [];
+      if (view === 'main') {
+        if (waNumbers.length === 1) {
+          rows.push(option('wa', 'WhatsApp', shown(waNumbers[0].phone), { href: waHref(waNumbers[0].phone), external: true }));
+        } else if (waNumbers.length > 1) {
+          var waRow = option('wa', 'WhatsApp', 'Chat with us on WhatsApp');
+          waRow.addEventListener('click', function () { renderMenu('whatsapp'); });
+          rows.push(waRow);
+        }
+        if (callNumbers.length) {
+          var callRow = option('call', 'Direct call', callNumbers.length === 1 ? shown(callNumbers[0].phone) : 'Talk to our team');
+          callRow.addEventListener('click', function () { renderMenu('call'); });
+          rows.push(callRow);
+        }
+        var botRow = option('bot', cfg.title || 'Chat with us', 'Instant answers, any time');
+        botRow.addEventListener('click', function () { closeMenu(true); setOpen(true); });
+        rows.push(botRow);
+      } else if (view === 'whatsapp') {
+        for (var w = 0; w < waNumbers.length; w++) {
+          rows.push(option('wa', waNumbers[w].label || 'WhatsApp', shown(waNumbers[w].phone), { href: waHref(waNumbers[w].phone), external: true, pill: 'Chat' }));
+        }
+      } else {
+        // Straight to the phone's dial pad.
+        for (var c = 0; c < callNumbers.length; c++) {
+          rows.push(option('call', callNumbers[c].label || 'Call us', shown(callNumbers[c].phone), { href: 'tel:+' + callNumbers[c].phone, pill: 'Call' }));
+        }
+      }
+      for (var i = 0; i < rows.length; i++) {
+        rows[i].addEventListener('click', function (event) {
+          // A link leaves the page or opens WhatsApp: the menu can close.
+          if (event.currentTarget.tagName === 'A') closeMenu(true);
+        });
+        list.appendChild(rows[i]);
+        // Each option springs in a beat after the one above it.
+        if (!calm && rows[i].animate) {
+          rows[i].animate(
+            [{ opacity: 0, transform: 'translateY(14px) scale(.96)' }, { opacity: 1, transform: 'none' }],
+            { duration: 420, delay: 60 + i * 70, easing: 'cubic-bezier(.34,1.56,.64,1)', fill: 'backwards' }
+          );
+        }
+      }
+      menu.appendChild(list);
+      var first = list.querySelector('.opt') || menu.querySelector('.back');
+      if (first) first.focus({ preventScroll: true });
+    }
+
+    function setLauncher(expanded, label) {
+      launcher.innerHTML = expanded ? closeIcon : chatIcon;
+      if (!calm && launcher.firstChild && launcher.firstChild.animate) {
+        launcher.firstChild.animate(
+          [{ transform: 'rotate(' + (expanded ? '-90deg' : '90deg') + ') scale(.4)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+          { duration: 320, easing: 'cubic-bezier(.34,1.56,.64,1)' }
+        );
+      }
+      launcher.setAttribute('aria-label', label);
+      launcher.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    }
+
+    function openMenu() {
+      menuOpen = true;
+      attention = '';
+      hideTeaser();
+      wrap.className = 'open-menu';
+      renderMenu('main');
+      menu.hidden = false;
+      setLauncher(true, 'Close contact options');
+    }
+    function closeMenu(quiet) {
+      if (!menuOpen) return;
+      menuOpen = false;
+      menu.hidden = true;
+      wrap.className = attention;
+      setLauncher(false, 'Open chat');
+      if (!quiet) launcher.focus();
+    }
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && menuOpen) closeMenu(false);
+    });
+    // A click anywhere else on the page closes it. Clicks inside arrive
+    // retargeted to the host element (closed shadow root).
+    document.addEventListener('click', function (event) {
+      if (menuOpen && event.target !== host) closeMenu(true);
+    });
+
     function frameWindow() {
       return frame && frame.contentWindow;
     }
@@ -215,17 +411,10 @@
       panel.hidden = !open;
       // The attention animation has done its job once the chat is opened.
       if (open) attention = '';
+      if (open && menuOpen) { menuOpen = false; menu.hidden = true; }
       wrap.className = (open ? 'open ' : '') + attention;
-      launcher.innerHTML = open ? closeIcon : chatIcon;
       // The icon spins in as it changes.
-      if (!calm && launcher.firstChild && launcher.firstChild.animate) {
-        launcher.firstChild.animate(
-          [{ transform: 'rotate(' + (open ? '-90deg' : '90deg') + ') scale(.4)', opacity: 0 }, { transform: 'none', opacity: 1 }],
-          { duration: 320, easing: 'cubic-bezier(.34,1.56,.64,1)' }
-        );
-      }
-      launcher.setAttribute('aria-label', open ? 'Close chat' : 'Open chat');
-      launcher.setAttribute('aria-expanded', open ? 'true' : 'false');
+      setLauncher(open, open ? 'Close chat' : 'Open chat');
       if (open) {
         badge.hidden = true;
         hideTeaser();
@@ -247,7 +436,10 @@
     }
 
     launcher.addEventListener('click', function () {
-      setOpen(!open);
+      if (open) setOpen(false);
+      else if (menuOpen) closeMenu(false);
+      else if (hasMenu) openMenu();
+      else setOpen(true);
     });
 
     // Messages from the chat frame. Only from that frame, at the CRM's
@@ -264,6 +456,7 @@
     });
 
     wrap.appendChild(panel);
+    wrap.appendChild(menu);
     wrap.appendChild(teaser);
     for (var r = 0; r < rings.length; r++) wrap.appendChild(rings[r]);
     wrap.appendChild(badge);

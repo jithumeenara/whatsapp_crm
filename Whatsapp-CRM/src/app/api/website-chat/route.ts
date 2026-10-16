@@ -3,7 +3,9 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { publicOrigin } from '@/lib/email/microsoft/origin'
 import { newPublicKey } from '@/lib/webchat/tokens'
-import { installSnippet, parseWidgetPatch } from '@/lib/webchat/settings'
+import { installSnippet } from '@/lib/webchat/settings'
+import { buildWidgetPatch } from '@/lib/webchat/widget-patch'
+import type { Prisma } from '@prisma/client'
 import { AI_AUTO_REPLY_SOURCE } from '@/lib/ai/auto-reply'
 
 /**
@@ -76,6 +78,10 @@ export async function GET(req: Request) {
         color_style: w.color_style,
         secondary_color: w.secondary_color,
         launcher_animation: w.launcher_animation,
+        contact_menu_enabled: w.contact_menu_enabled,
+        whatsapp_links: w.whatsapp_links,
+        call_links: w.call_links,
+        whatsapp_prefill: w.whatsapp_prefill,
         position: w.position,
         logo_url: w.logo_url,
         allowed_domains: w.allowed_domains,
@@ -96,14 +102,14 @@ export async function POST(req: Request) {
   try {
     const ctx = await requireRole('admin')
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
-    const parsed = parseWidgetPatch(body)
+    const parsed = await buildWidgetPatch(ctx.accountId, body)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
 
     const count = await prisma.webChatWidget.count({ where: { account_id: ctx.accountId } })
     if (count >= 20) return NextResponse.json({ error: 'An account can have up to 20 chat widgets.' }, { status: 400 })
 
     const widget = await prisma.webChatWidget.create({
-      data: { account_id: ctx.accountId, user_id: ctx.userId, public_key: newPublicKey(), name: 'Website Bot', ...parsed.patch },
+      data: { account_id: ctx.accountId, user_id: ctx.userId, public_key: newPublicKey(), name: 'Website Bot', ...(parsed.patch as Record<string, unknown>) } as Prisma.WebChatWidgetUncheckedCreateInput,
     })
     return NextResponse.json({ id: widget.id }, { status: 201 })
   } catch (err) {

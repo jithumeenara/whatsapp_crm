@@ -1957,6 +1957,13 @@ model WebChatWidget {
   secondary_color    String?
   /// 'none' | 'pulse' | 'bounce' | 'wiggle' | 'float' | 'glow'
   launcher_animation String  @default("none")
+  /// Contact menu on the button: WhatsApp / Call / bot (migration 135).
+  contact_menu_enabled Boolean @default(false)
+  /// [{config_id, label, phone}] — phone snapshotted from Meta on save.
+  whatsapp_links       Json    @default("[]")
+  /// [{label, phone}]
+  call_links           Json    @default("[]")
+  whatsapp_prefill     String?
   /// 'right' | 'left'
   position         String    @default("right")
   logo_url         String?

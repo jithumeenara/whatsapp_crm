@@ -94,7 +94,8 @@ FROM (VALUES
   ('131_contact_preferred_language',    EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'preferred_language')),
   ('132_user_delete_never_cascades',   NOT EXISTS (SELECT 1 FROM pg_constraint WHERE contype = 'f' AND confrelid = 'public.users'::regclass AND confdeltype = 'c' AND conrelid = 'public.contacts'::regclass)),
   ('133_indexes_links_and_status_lists', EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_status_check')),
-  ('134_webchat_brand_style',           EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'web_chat_widgets_launcher_animation_check'))
+  ('134_webchat_brand_style',           EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'web_chat_widgets_launcher_animation_check')),
+  ('135_webchat_contact_menu',          EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'web_chat_widgets_call_links_check'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 
