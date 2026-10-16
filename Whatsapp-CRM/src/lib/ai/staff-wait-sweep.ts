@@ -16,6 +16,8 @@
 
 import { prisma } from '@/lib/db'
 import { autoReplyToMessage, staffAwaitingReply, STAFF_WAIT_MS } from './auto-reply'
+import { websiteAiLimitReached, widgetLimitForConversation } from '@/lib/webchat/ai-allowance'
+import { pushVisitorStatus, pushVisitorTyping } from '@/lib/webchat/realtime'
 
 const GIVE_UP_AFTER_MS = 6 * 60 * 60 * 1000
 
@@ -45,13 +47,16 @@ export async function sweepStaffWaits(now: Date = new Date()): Promise<number> {
 
     const newest = new Date(now.getTime() - STAFF_WAIT_MS)
     const oldest = new Date(now.getTime() - GIVE_UP_AFTER_MS)
+    // WhatsApp and the website chat. The website used to be left out, so a
+    // visitor answered once by a colleague who then went quiet was never
+    // answered again by anyone.
     const conversations = await prisma.conversation.findMany({
       where: {
         account_id: { in: accounts.map((a) => a.account_id) },
-        channel: 'whatsapp',
+        channel: { in: ['whatsapp', 'website'] },
         last_message_at: { gte: oldest, lte: newest },
       },
-      select: { id: true, account_id: true, user_id: true, contact_id: true },
+      select: { id: true, account_id: true, user_id: true, contact_id: true, channel: true },
       take: 200,
     })
 
@@ -77,6 +82,14 @@ export async function sweepStaffWaits(now: Date = new Date()): Promise<number> {
       remember(last.id)
       if (!text || !c.contact_id) continue
 
+      const isWebsite = c.channel === 'website'
+      // The website chat's own daily ceiling applies here as well.
+      if (isWebsite) {
+        const limit = await widgetLimitForConversation(c.id)
+        if (limit === null || (await websiteAiLimitReached(c.account_id, limit, now))) continue
+        pushVisitorTyping(c.id, true)
+      }
+
       try {
         const outcome = await autoReplyToMessage({
           accountId: c.account_id,
@@ -84,14 +97,17 @@ export async function sweepStaffWaits(now: Date = new Date()): Promise<number> {
           conversationId: c.id,
           contactId: c.contact_id,
           message: text,
-          channel: 'whatsapp',
-          wasVoice: !last.content_text && Boolean(last.transcript),
-          providerMessageId: last.message_id ?? undefined,
+          channel: isWebsite ? 'website' : 'whatsapp',
+          wasVoice: !isWebsite && !last.content_text && Boolean(last.transcript),
+          providerMessageId: isWebsite ? undefined : last.message_id ?? undefined,
           afterStaffWait: true,
         })
         if (outcome === 'replied' || outcome === 'handed_off') answered++
+        if (isWebsite && outcome === 'handed_off') pushVisitorStatus(c.id, { status: 'pending', with_team: true })
       } catch (err) {
         console.error('[staff-wait] assistant reply failed:', err instanceof Error ? err.message : err)
+      } finally {
+        if (isWebsite) pushVisitorTyping(c.id, false)
       }
     }
     return answered

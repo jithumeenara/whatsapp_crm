@@ -26,7 +26,8 @@ import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
 import { shouldReleaseOnReturn } from '@/lib/agents/presence'
-import { autoReplyToMessage, handOver, AI_AUTO_REPLY_SOURCE } from '@/lib/ai/auto-reply'
+import { autoReplyToMessage, handOver } from '@/lib/ai/auto-reply'
+import { websiteAiLimitReached } from './ai-allowance'
 import { sendHandoffAlert } from '@/lib/ai/handoff-alert'
 import { tellHandover } from '@/lib/ai/team-hours'
 import { autoCreateLead } from '@/lib/leads/auto-create'
@@ -302,15 +303,7 @@ async function react(args: {
 
   // The daily ceiling. Counted across the account's website chats, which
   // is where a flood would land; WhatsApp and the rest are unaffected.
-  const startOfDay = new Date(Date.now() - 24 * 60 * 60 * 1000)
-  const repliesToday = await prisma.message.count({
-    where: {
-      bot_source: AI_AUTO_REPLY_SOURCE,
-      created_at: { gte: startOfDay },
-      conversation: { account_id: accountId, channel: WEBSITE_CHANNEL },
-    },
-  })
-  if (repliesToday >= session.widget.daily_ai_limit) {
+  if (await websiteAiLimitReached(accountId, session.widget.daily_ai_limit)) {
     console.warn(`[webchat] daily assistant limit (${session.widget.daily_ai_limit}) reached for account ${accountId}; left for the team`)
     return
   }
