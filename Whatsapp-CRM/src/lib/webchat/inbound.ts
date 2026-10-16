@@ -28,6 +28,7 @@ import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
 import { shouldReleaseOnReturn } from '@/lib/agents/presence'
 import { autoReplyToMessage, handOver, AI_AUTO_REPLY_SOURCE } from '@/lib/ai/auto-reply'
 import { sendHandoffAlert } from '@/lib/ai/handoff-alert'
+import { tellHandover } from '@/lib/ai/team-hours'
 import { autoCreateLead } from '@/lib/leads/auto-create'
 import { leadForHandoff } from '@/lib/leads/handoff-lead'
 import { visitorPhone } from './tokens'
@@ -373,6 +374,24 @@ export async function requestHuman(session: AuthenticatedSession): Promise<{ con
       contactId: thread.contactId,
       source: WEBSITE_CHANNEL,
       conversationId: thread.conversationId,
+    })
+    // Outside working hours the visitor is told so, when the team is
+    // back, and asked for a time (team-hours.ts). Inside them the window
+    // already shows that the team has the chat.
+    const lastWords = await prisma.message
+      .findFirst({
+        where: { conversation_id: thread.conversationId, sender_type: 'customer' },
+        orderBy: { created_at: 'desc' },
+        select: { content_text: true },
+      })
+      .catch(() => null)
+    await tellHandover({
+      accountId: session.account_id,
+      userId: session.widget.user_id,
+      conversationId: thread.conversationId,
+      contactId: thread.contactId,
+      customerText: lastWords?.content_text ?? '',
+      openLine: null,
     })
   }
   pushVisitorStatus(thread.conversationId, { status: 'pending', with_team: true })

@@ -361,6 +361,13 @@ export function describeShift(
   return { onShift: false, label: `Off shift — back ${next}` }
 }
 
+/** "tomorrow 9:00 AM", or null when they are on shift (or have no days). */
+export function nextOpening(hours: WorkingHours | null, now: Date = new Date()): string | null {
+  if (!hours || isOnShift(hours, now)) return null
+  const clock = localClock(hours.timezone, now)
+  return clock ? nextStart(hours, clock) : null
+}
+
 /**
  * When their next shift begins, in words.
  *

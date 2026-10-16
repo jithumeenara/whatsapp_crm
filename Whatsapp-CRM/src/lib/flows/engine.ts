@@ -1861,19 +1861,23 @@ async function advanceFromNodeKey(
         // on. Used for both of the code-enforced handoffs below, so the
         // holding message and the logging stay identical between them.
         const handOverToHuman = async (note: string, reason: string) => {
-          const holdingMessage =
-            aiConfig.low_confidence_message?.trim() ||
-            "Let me connect you with a team member who can help with that.";
-          const { whatsapp_message_id } = await engineSendText({
+          // Inside working hours the usual line; outside them, when the
+          // team is back and a call back (team-hours.ts).
+          const { tellHandover } = await import("@/lib/ai/team-hours");
+          const told = await tellHandover({
             accountId: run.account_id,
             userId: run.user_id,
             conversationId: run.conversation_id!,
             contactId: run.contact_id!,
-            text: holdingMessage,
+            customerText: lastUserMessage,
+            openLine:
+              aiConfig.low_confidence_message?.trim() ||
+              "Let me connect you with a team member who can help with that.",
           });
           await logEvent(run.id, "message_sent", node.node_key, {
             node_type: "ai_reply",
-            whatsapp_message_id,
+            whatsapp_message_id: told.whatsappMessageId ?? null,
+            outside_hours: told.closed,
             reason,
           });
           // executeHandoff logs its own "handoff" event (assign/note) —
@@ -2010,6 +2014,14 @@ async function advanceFromNodeKey(
         // The business's own accuracy rules — checked again in code below.
         const accuracyRules = await accuracyRulesFor(run.account_id).catch(() => DEFAULT_ACCURACY_RULES);
         promptParts.push(accuracyPromptBlock(accuracyRules));
+        // Whether anybody is at work, so it never promises a person
+        // "shortly" at night (team-hours.ts).
+        {
+          const { teamHoursNow, teamHoursPromptBlock } = await import("@/lib/ai/team-hours");
+          const team = await teamHoursNow(run.account_id).catch(() => null);
+          const teamBlock = team ? teamHoursPromptBlock(team) : "";
+          if (teamBlock) promptParts.push(teamBlock);
+        }
         // Guardrails — prompt-level guidance, not code-enforced (an LLM
         // can still ignore an instruction; there's no second verification
         // pass here). Stated as plainly in the Settings UI copy too.
@@ -2023,7 +2035,7 @@ async function advanceFromNodeKey(
           : [];
         if (escalationTopics.length > 0) {
           promptParts.push(
-            `If the user asks about any of: ${escalationTopics.join(", ")} — say a team member will follow up shortly, and don't try to answer it yourself.`,
+            `If the user asks about any of: ${escalationTopics.join(", ")} — say a team member will follow up, and don't try to answer it yourself.`,
           );
         }
         if (cfg.system_prompt) {

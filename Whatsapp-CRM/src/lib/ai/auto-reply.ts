@@ -33,6 +33,7 @@ import { runCustomerTurn, formatTurnTimings, type CustomerAiConfig } from './cus
 import { buildReplyMeta, recordReplyMeta } from './reply-sources'
 import { historyTurns } from './history'
 import { askForConsent } from './handover-consent'
+import { tellHandover } from './team-hours'
 import { handoverSettingsFor } from './handover-settings'
 import { buildHandoffNote, type HandoffReason } from './handoff-context'
 import { recordAiUsage } from './usage'
@@ -352,19 +353,18 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
     })
 
     if (!alreadyNoted) {
-      const customerLine =
-        aiConfig.low_confidence_message?.trim() ||
-        'Let me connect you with a team member who can help with that.'
-
-      if (!(await saidRecently(args.conversationId, customerLine))) {
-        await engineSendText({
-          accountId: args.accountId,
-          userId: args.userId,
-          conversationId: args.conversationId,
-          contactId: args.contactId,
-          text: customerLine,
-        }).catch((err) => console.error('[auto-reply] holding message failed:', err))
-      }
+      // Inside working hours the usual line; outside them, when the team
+      // is back and a call back (team-hours.ts).
+      await tellHandover({
+        accountId: args.accountId,
+        userId: args.userId,
+        conversationId: args.conversationId,
+        contactId: args.contactId,
+        customerText: text,
+        openLine:
+          aiConfig.low_confidence_message?.trim() ||
+          'Let me connect you with a team member who can help with that.',
+      })
 
       await handOver({
         accountId: args.accountId,
@@ -594,7 +594,19 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
     // identical one is still the last thing the assistant said to them.
     const alreadySaid = customerLine ? await saidRecently(args.conversationId, customerLine) : false
 
-    if (customerLine && !alreadySaid) {
+    if (reason !== 'safety') {
+      // Working hours decide what they are told: the usual line while the
+      // team is in, otherwise when it is back and a call back. Said once
+      // (tellHandover keeps its own count).
+      await tellHandover({
+        accountId: args.accountId,
+        userId: args.userId,
+        conversationId: args.conversationId,
+        contactId: args.contactId,
+        customerText: text,
+        openLine: customerLine ?? null,
+      })
+    } else if (customerLine && !alreadySaid) {
       await engineSendText({
         accountId: args.accountId,
         userId: args.userId,

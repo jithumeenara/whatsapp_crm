@@ -32,7 +32,7 @@
 
 import { prisma } from '@/lib/db'
 import { engineSendInteractiveButtons, engineSendText } from '@/lib/flows/meta-send'
-import { isOnShift, parseWorkingHours, summariseWeek } from '@/lib/agents/working-hours'
+import { teamHoursNow } from './team-hours'
 import { sendHandoffAlert } from './handoff-alert'
 
 export const ASK_MARKER = 'Offered to connect the customer to a person'
@@ -43,8 +43,6 @@ const DECLINED_NOTE = 'The customer said no to being connected to a person.'
 const ANSWER_WINDOW_MS = 24 * 60 * 60 * 1000
 /** Asked this recently: do not ask again, the buttons are right there. */
 const REASK_AFTER_MS = 10 * 60 * 1000
-
-const REPLY_CAPABLE = ['owner', 'supervisor', 'admin', 'agent']
 
 type Lang = 'ml' | 'en'
 
@@ -118,15 +116,10 @@ export function consentFromText(text: string | null | undefined): 'yes' | 'no' |
 
 // ── Working hours ───────────────────────────────────────────────────
 
+/** The team's hours now — team-hours.ts, shared with every other handover. */
 export async function officeHours(accountId: string, now = new Date()): Promise<{ open: boolean; hours: string | null }> {
-  const profiles = await prisma.profile.findMany({
-    where: { account_id: accountId, account_role: { in: REPLY_CAPABLE as never } },
-    select: { working_hours: true },
-  })
-  const rotas = profiles.map((p) => parseWorkingHours(p.working_hours)).filter((r) => r !== null)
-  // Nobody has hours set: always open, exactly as the offers treat it.
-  if (rotas.length === 0) return { open: true, hours: null }
-  return { open: rotas.some((r) => isOnShift(r, now)), hours: summariseWeek(rotas[0]) }
+  const team = await teamHoursNow(accountId, now)
+  return { open: team.open, hours: team.hours }
 }
 
 // ── The pending question ────────────────────────────────────────────

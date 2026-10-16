@@ -14,6 +14,7 @@
  * its own private copy of the prompt.
  */
 
+import { teamHoursNow, teamHoursPromptBlock } from './team-hours'
 import { loadCompanyProfile, formatCompanyBlock } from './company-profile'
 import { localDate, localWeekday } from '@/lib/agents/zoned-time'
 import { buildCustomerContext } from './customer-context'
@@ -141,7 +142,7 @@ export async function loadPromptSources(args: {
    *  told to take their name and number before registering anybody. */
   anonymousVisitor?: boolean
 }): Promise<PromptSources> {
-  const [companyProfile, customerContext, toolInstruction, accuracyRules, chosen] = await Promise.all([
+  const [companyProfile, customerContext, toolInstruction, accuracyRules, chosen, team] = await Promise.all([
     loadCompanyProfile(args.accountId).catch(() => null),
     args.aiConfig.customer_context_enabled && args.contactId
       ? buildCustomerContext({
@@ -161,6 +162,9 @@ export async function loadPromptSources(args: {
           .findUnique({ where: { id: args.contactId }, select: { preferred_language: true } })
           .catch(() => null)
       : Promise.resolve(null),
+    // Whether anybody is at work, so it never promises a person "shortly"
+    // at night (team-hours.ts).
+    teamHoursNow(args.accountId).catch(() => null),
   ])
 
   // ── What day it is, where the business is ──────────────────────
@@ -181,12 +185,13 @@ export async function loadPromptSources(args: {
     today && weekday
       ? `Today is ${weekday}, ${today}. The business operates in the ${timezone} time zone — every date and time you are told, or that you record, is in that zone.`
       : ''
+  const teamBlock = team ? teamHoursPromptBlock(team) : ''
 
   return {
     companyBlock: formatCompanyBlock(companyProfile, 'customer') || '',
     customerContext,
     toolInstruction: args.anonymousVisitor && toolInstruction ? `${toolInstruction}\n\n${WEBSITE_VISITOR_INSTRUCTION}` : toolInstruction,
-    nowBlock,
+    nowBlock: [nowBlock, teamBlock].filter(Boolean).join('\n\n'),
     timezone,
     accuracyRules,
     preferredLanguage: chosen?.preferred_language?.trim() || null,
@@ -301,7 +306,7 @@ export async function buildCustomerSystemPrompt(args: {
     : []
   if (escalationTopics.length > 0) {
     parts.push(
-      `If the user asks about any of: ${escalationTopics.join(', ')} — say a team member will follow up shortly, and don't try to answer it yourself.`,
+      `If the user asks about any of: ${escalationTopics.join(', ')} — say a team member will follow up, and don't try to answer it yourself.`,
     )
   }
 
