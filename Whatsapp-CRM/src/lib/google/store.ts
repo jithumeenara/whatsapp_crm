@@ -101,6 +101,30 @@ export function ensureGoogleTables(): Promise<void> {
       `CREATE INDEX IF NOT EXISTS google_form_links_account_id_idx ON google_form_links (account_id)`,
       // Migration 129 — a sheet's column mapping.
       `ALTER TABLE google_sheet_links ADD COLUMN IF NOT EXISTS column_map JSONB`,
+      // Migration 136 — two-way sync ('sync' links, snapshots per row).
+      `DO $$
+       BEGIN
+         IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'google_sheet_links_direction_check'
+                    AND pg_get_constraintdef(oid) NOT LIKE '%sync%') THEN
+           ALTER TABLE google_sheet_links DROP CONSTRAINT google_sheet_links_direction_check;
+         END IF;
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'google_sheet_links_direction_check') THEN
+           ALTER TABLE google_sheet_links ADD CONSTRAINT google_sheet_links_direction_check
+             CHECK (direction IN ('export', 'import', 'sync'));
+         END IF;
+       END $$`,
+      `ALTER TABLE google_sheet_links ADD COLUMN IF NOT EXISTS sync_token_enc TEXT`,
+      `ALTER TABLE google_sheet_links ADD COLUMN IF NOT EXISTS instant_ping_at TIMESTAMPTZ`,
+      `ALTER TABLE google_sheet_links ADD COLUMN IF NOT EXISTS held_deletes TEXT[] NOT NULL DEFAULT '{}'`,
+      `ALTER TABLE google_sheet_links ADD COLUMN IF NOT EXISTS sync_warning TEXT`,
+      `ALTER TABLE google_sheet_links ADD COLUMN IF NOT EXISTS sync_stats JSONB`,
+      `CREATE TABLE IF NOT EXISTS google_sheet_rows (
+         link_id    UUID NOT NULL REFERENCES google_sheet_links(id) ON DELETE CASCADE,
+         record_id  UUID NOT NULL,
+         snapshot   JSONB NOT NULL DEFAULT '{}'::jsonb,
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         PRIMARY KEY (link_id, record_id)
+       )`,
     ]) {
       await prisma.$executeRawUnsafe(sql)
     }

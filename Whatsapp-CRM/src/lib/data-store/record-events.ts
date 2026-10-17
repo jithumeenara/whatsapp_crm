@@ -59,9 +59,23 @@ function allowAlert(tableId: string): boolean {
   return allowed
 }
 
+/**
+ * Records in a table were edited or deleted (or added in bulk) — by staff,
+ * the API, the AI, a payment, an integration, the data-health fixer. A
+ * table kept in two-way sync with a Google Sheet follows within seconds.
+ * Never throws, never waits.
+ */
+export function afterRecordsChanged(tableId: string, accountId: string): void {
+  void import('@/lib/google/sheet-two-way')
+    .then((m) => m.syncTableSoon(tableId, accountId))
+    .catch((err) => console.error('[google-sheet] sync hook failed:', err instanceof Error ? err.message : err))
+}
+
 export function afterRecordCreated(record: CreatedRecord): void {
   // A connected table's knowledge is brought up to date within a minute.
   scheduleKnowledgeRefresh(record.account_id, record.table_id)
+  // Two-way sheet: the new row is in the sheet within seconds.
+  afterRecordsChanged(record.table_id, record.account_id)
   // A table linked to a Google Sheet gets the row appended there — from
   // every channel, not only the alertable ones. Loaded lazily: most
   // tables have no link, and this file is in server.ts's import graph.

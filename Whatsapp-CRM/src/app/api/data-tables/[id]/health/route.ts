@@ -11,6 +11,7 @@ import {
 } from '@/lib/data-store/data-health'
 import { invalidateSearchableTables } from '@/lib/ai/table-search-store'
 import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
+import { afterRecordsChanged } from '@/lib/data-store/record-events'
 
 /**
  * Data health for one table (lib/data-store/data-health.ts): what is
@@ -117,7 +118,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // The assistant's search reads the table fresh; its knowledge text
     // catches up within a minute.
     invalidateSearchableTables(ctx.accountId)
-    if (changes.length > 0) scheduleKnowledgeRefresh(ctx.accountId, id)
+    if (changes.length > 0) {
+      scheduleKnowledgeRefresh(ctx.accountId, id)
+      afterRecordsChanged(id, ctx.accountId)
+    }
 
     const fresh = await load(ctx.accountId, id)
     return NextResponse.json({

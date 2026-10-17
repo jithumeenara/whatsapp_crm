@@ -1,18 +1,22 @@
 "use client"
 
 /**
- * A table's Google Sheet links: bring a sheet in, send new records out.
+ * A table's Google Sheet links:
+ *
+ *   Two-way sync — the table and a sheet tab kept equal both ways: adds,
+ *                  edits and deletions, within seconds (sheet-two-way.ts).
+ *                  Optional Apps Script makes sheet-side edits instant too.
+ *   Import       — a sheet's new rows come in (one way).
+ *   Export       — every new record is appended to a sheet (one way).
  *
  * Import opens the wizard (sheet-import-wizard.tsx): every sheet in the
  * account, the tab, and where each column goes — new fields are made
- * from the sheet, so an empty table works. Export appends each new
- * record to a sheet. Neither mirrors edits or deletions; that is said
- * here, where it is decided.
+ * from the sheet, so an empty table works.
  */
 
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
-import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, FilePlus2, Loader2, RefreshCw, Repeat, Trash2 } from "lucide-react"
+import { AlertTriangle, ArrowDownToLine, ArrowLeftRight, ArrowUpFromLine, Check, Copy, ExternalLink, FilePlus2, Loader2, RefreshCw, Repeat, Trash2, Undo2, X, Zap } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { SidePanel } from "./side-panel"
 import { SheetImportWizard } from "./sheet-import-wizard"
@@ -21,6 +25,7 @@ import { GoogleSheetsIcon } from "@/components/shared/google-icons"
 import { useConfirm } from "@/hooks/use-confirm"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import type { PickedSheet } from "@/lib/google/picker-client"
+import { everyWhileVisible } from "@/lib/visible-interval"
 
 interface LinkView {
   id: string
@@ -34,13 +39,32 @@ interface LinkView {
   last_error: string | null
 }
 
+interface SyncView {
+  id: string
+  spreadsheet_name: string | null
+  sheet_title: string
+  url: string
+  linked_rows: number
+  held: number
+  instant: boolean
+  last_synced_at: string | null
+  last_error: string | null
+  warning: string | null
+  stats: {
+    fromSheet?: { created: number; updated: number; deleted: number }
+    toSheet?: { added: number; updated: number; deleted: number }
+  } | null
+}
+
 interface State {
   connected: boolean
   can_pick: boolean
   can_browse: boolean
+  can_write: boolean
   google_email: string | null
   export: LinkView | null
   import: LinkView | null
+  sync: SyncView | null
 }
 
 function when(iso: string | null): string {
@@ -48,7 +72,19 @@ function when(iso: string | null): string {
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })
 }
 
-function SheetChip({ link }: { link: LinkView }) {
+function lastRun(stats: SyncView["stats"]): string {
+  if (!stats) return ""
+  const f = stats.fromSheet
+  const t = stats.toSheet
+  const parts: string[] = []
+  const inSum = (f?.created ?? 0) + (f?.updated ?? 0) + (f?.deleted ?? 0)
+  const outSum = (t?.added ?? 0) + (t?.updated ?? 0) + (t?.deleted ?? 0)
+  if (inSum) parts.push(`${inSum} change${inSum === 1 ? "" : "s"} from the sheet`)
+  if (outSum) parts.push(`${outSum} to the sheet`)
+  return parts.length ? `Last run: ${parts.join(", ")}.` : "Last run: already in step."
+}
+
+function SheetChip({ link }: { link: Pick<LinkView, "url" | "spreadsheet_name" | "sheet_title"> }) {
   return (
     <a
       href={link.url}
@@ -99,7 +135,8 @@ export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {
   const [state, setState] = useState<State | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
-  const [wizard, setWizard] = useState(false)
+  const [wizard, setWizard] = useState<false | "two_way" | "one_way">(false)
+  const [instantOpen, setInstantOpen] = useState(false)
   const [exportTab, setExportTab] = useState("")
 
   const load = useCallback(async () => {
@@ -196,6 +233,55 @@ export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {
     })
   }
 
+  async function syncAction(action: "sync_now" | "apply_deletions" | "keep_deleted" | "convert_import", done: string) {
+    await run(action, async () => {
+      const res = (await (await apiFetch(`/api/data-tables/${tableId}/google-sheet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      })).json()) as { ok?: boolean; error?: string; stats?: SyncView["stats"] }
+      if (res.ok === false) throw new Error(res.error || "The sync did not finish.")
+      toast.success(done)
+      onImported()
+    })
+  }
+
+  async function applyDeletions(held: number) {
+    const ok = await confirm({
+      title: `Delete ${held} record${held === 1 ? "" : "s"} here too?`,
+      description: "Their rows were removed from the Google Sheet. This deletes the matching records in the CRM. It cannot be undone.",
+      confirmLabel: "Delete them",
+      variant: "destructive",
+    })
+    if (ok) await syncAction("apply_deletions", "Deleted to match the sheet.")
+  }
+
+  const newSyncSheet = () =>
+    run("sync-new", async () => {
+      const res = (await (await apiFetch(`/api/data-tables/${tableId}/google-sheet`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction: "sync", create_new: true }),
+      })).json()) as { synced?: { ok?: boolean; error?: string } }
+      if (res.synced && res.synced.ok === false) throw new Error(res.synced.error || "The first sync did not finish.")
+      toast.success("A new sheet was made for this table — two-way sync is on.")
+      onImported()
+    })
+
+  async function stopSync() {
+    const ok = await confirm({
+      title: "Stop two-way sync?",
+      description: "The sheet and the records both stay as they are; they just stop following each other. The CRM ID column stays in the sheet.",
+      confirmLabel: "Stop sync",
+      variant: "destructive",
+    })
+    if (!ok) return
+    await run("sync-unlink", async () => {
+      await apiFetch(`/api/data-tables/${tableId}/google-sheet?direction=sync`, { method: "DELETE" })
+      toast.success("Two-way sync stopped.")
+    })
+  }
+
   const pickExport = (picked: PickedSheet) => {
     const tab = exportTab.trim()
     void linkExport({ spreadsheet_id: picked.id, ...(tab ? { sheet_title: tab } : {}) })
@@ -221,6 +307,97 @@ export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {
 
           {state?.connected && (
             <>
+              <Card
+                icon={<ArrowLeftRight className="h-4.5 w-4.5" />}
+                title="Two-way sync"
+                hint="The table and a sheet stay the same both ways — add, edit or delete on either side and the other follows within seconds."
+              >
+                {state.sync ? (
+                  <div className="space-y-3">
+                    <SheetChip link={state.sync} />
+                    <div className="grid grid-cols-2 gap-2 text-[12px]">
+                      <div className="rounded-xl bg-slate-50 px-3 py-2">
+                        <p className="text-slate-500">Rows in sync</p>
+                        <p className="text-[15px] font-semibold text-slate-900">{state.sync.linked_rows}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-3 py-2">
+                        <p className="text-slate-500">Last synced</p>
+                        <p className="truncate text-[12.5px] font-medium text-slate-800">{when(state.sync.last_synced_at)}</p>
+                      </div>
+                    </div>
+                    <div className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] ${state.sync.instant ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-600"}`}>
+                      <Zap className={`h-3.5 w-3.5 shrink-0 ${state.sync.instant ? "text-emerald-600" : "text-slate-400"}`} />
+                      <span className="min-w-0 flex-1">
+                        {state.sync.instant
+                          ? "Instant both ways — the sheet tells the CRM the moment it changes."
+                          : "CRM changes reach the sheet in seconds; sheet changes are checked every minute."}
+                      </span>
+                      {!state.sync.instant && (
+                        <button type="button" onClick={() => setInstantOpen(true)} className="shrink-0 font-semibold text-[#1A73E8] hover:underline">
+                          Make it instant
+                        </button>
+                      )}
+                    </div>
+                    {state.sync.stats && !state.sync.last_error && <p className="text-[11.5px] text-slate-500">{lastRun(state.sync.stats)}</p>}
+
+                    {state.sync.held > 0 && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <p className="flex items-start gap-2 text-[12.5px] leading-relaxed text-amber-900">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                          {state.sync.held} row{state.sync.held === 1 ? " was" : "s were"} removed from the sheet at once. Nothing was deleted here — choose what to do.
+                        </p>
+                        <div className="mt-2.5 flex flex-wrap gap-2">
+                          <button type="button" disabled={!!busy} onClick={() => void applyDeletions(state.sync!.held)} className={btn.danger + " bg-white"}>
+                            <Trash2 className="h-3.5 w-3.5" /> Delete them here too
+                          </button>
+                          <button type="button" disabled={!!busy} onClick={() => void syncAction("keep_deleted", "Put back in the sheet.")} className={btn.soft}>
+                            <Undo2 className="h-3.5 w-3.5" /> Put them back in the sheet
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {state.sync.warning && <p className="rounded-xl bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900">{state.sync.warning}</p>}
+                    {state.sync.last_error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-[12px] leading-relaxed text-rose-700">{state.sync.last_error}</p>}
+
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => void syncAction("sync_now", "In sync.")} disabled={!!busy} className={btn.primary}>
+                        {busy === "sync_now" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync now
+                      </button>
+                      {state.sync.instant && (
+                        <button type="button" onClick={() => setInstantOpen(true)} disabled={!!busy} className={btn.soft}>
+                          <Zap className="h-3.5 w-3.5" /> Instant setup
+                        </button>
+                      )}
+                      <button type="button" onClick={() => void stopSync()} disabled={!!busy} className={btn.danger}>
+                        <Trash2 className="h-3.5 w-3.5" /> Stop
+                      </button>
+                    </div>
+                  </div>
+                ) : !state.can_write ? (
+                  <div className="space-y-2">
+                    <p className="text-[12px] leading-relaxed text-slate-500">Two-way sync needs permission to change the sheets you link here.</p>
+                    <a href={`/api/google/connect?services=sheets_sync&return=${encodeURIComponent(`/data/${tableId}`)}`} className={`${btn.primary} w-full !bg-[#1A73E8] hover:!bg-[#1765CC]`}>
+                      Allow two-way sync
+                    </a>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {state.import && (
+                      <button type="button" onClick={() => void syncAction("convert_import", "Two-way sync is on for this sheet.")} disabled={!!busy} className={`${btn.primary} w-full`}>
+                        {busy === "convert_import" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowLeftRight className="h-4 w-4" />} Turn on two-way sync for “{state.import.sheet_title}”
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setWizard("two_way")} disabled={!!busy} className={`${state.import ? btn.soft : btn.primary} w-full`}>
+                      <GoogleSheetsIcon className="h-4 w-4 rounded-sm bg-white" /> Choose a Google Sheet
+                    </button>
+                    <button type="button" onClick={() => void newSyncSheet()} disabled={!!busy} className={`${btn.soft} w-full`}>
+                      {busy === "sync-new" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus2 className="h-3.5 w-3.5" />} Create a new sheet for this table
+                    </button>
+                  </div>
+                )}
+              </Card>
+
+              {!state.sync && (
               <Card
                 icon={<ArrowDownToLine className="h-4.5 w-4.5" />}
                 title="Import a sheet into this table"
@@ -248,18 +425,19 @@ export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {
                       <button type="button" onClick={() => void importNow()} disabled={!!busy} className={btn.primary}>
                         {busy === "import-now" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Import new rows
                       </button>
-                      <button type="button" onClick={() => setWizard(true)} disabled={!!busy} className={btn.soft}>Change sheet</button>
+                      <button type="button" onClick={() => setWizard("one_way")} disabled={!!busy} className={btn.soft}>Change sheet</button>
                       <button type="button" onClick={() => void unlink("import")} disabled={!!busy} className={btn.danger}>
                         <Trash2 className="h-3.5 w-3.5" /> Stop
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => setWizard(true)} className={`${btn.primary} w-full`}>
+                  <button type="button" onClick={() => setWizard("one_way")} className={`${btn.primary} w-full`}>
                     <GoogleSheetsIcon className="h-4 w-4 rounded-sm bg-white" /> Choose a Google Sheet
                   </button>
                 )}
               </Card>
+              )}
 
               <Card
                 icon={<ArrowUpFromLine className="h-4.5 w-4.5" />}
@@ -312,6 +490,7 @@ export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {
           tableId={tableId}
           tableName={tableName}
           canPick={state.can_pick}
+          defaultSync={wizard}
           onClose={() => setWizard(false)}
           onDone={() => {
             onImported()
@@ -319,6 +498,132 @@ export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {
           }}
         />
       )}
+
+      {instantOpen && (
+        <InstantSetup
+          tableId={tableId}
+          onClose={() => {
+            setInstantOpen(false)
+            void load()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+/**
+ * "Make it instant": the Apps Script, three steps, and a live check that
+ * it is working. The script only tells the CRM "the sheet changed".
+ */
+function InstantSetup({ tableId, onClose }: { tableId: string; onClose: () => void }) {
+  const [script, setScript] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [working, setWorking] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const d = (await (await apiFetch(`/api/data-tables/${tableId}/google-sheet/instant`, { cache: "no-store" })).json()) as { script: string }
+        if (alive) setScript(d.script)
+      } catch (err) {
+        console.error("[instant sheet] load failed:", err)
+        if (alive) setError(errorText(err, "Could not prepare the script."))
+      }
+    })()
+    return () => { alive = false }
+  }, [tableId])
+
+  // Has the sheet called in yet? Checked every 5 s while this is open.
+  useEffect(() => {
+    if (working) return
+    const check = async () => {
+      try {
+        const d = (await (await apiFetch(`/api/data-tables/${tableId}/google-sheet`, { cache: "no-store" })).json()) as State
+        if (d.sync?.instant) setWorking(true)
+      } catch {
+        // quiet: this is only a status check
+      }
+    }
+    return everyWhileVisible(() => void check(), 5000)
+  }, [tableId, working])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  async function copy() {
+    if (!script) return
+    try {
+      await navigator.clipboard.writeText(script)
+      setCopied(true)
+      toast.success("Script copied")
+      window.setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast.error("Could not copy — select the script and copy it by hand.")
+    }
+  }
+
+  const steps = [
+    "Open the sheet. Menu: Extensions → Apps Script.",
+    "Delete what is there, paste the script, and press Save (💾).",
+    "Choose “install” at the top and press ▶ Run. Allow access when Google asks (Advanced → Go to … if it warns).",
+  ]
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="Make sheet sync instant">
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-3xl">
+        <div className="flex items-center gap-3 border-b border-slate-100 px-6 py-4">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><Zap className="h-5 w-5" /></span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[16px] font-semibold text-slate-900">Make sheet changes instant</h2>
+            <p className="text-[12px] text-slate-500">One-time setup, about a minute. Without it, sheet changes arrive within a minute.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <ol className="space-y-2">
+            {steps.map((t, i) => (
+              <li key={i} className="flex gap-3 text-[13px] leading-relaxed text-slate-700">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#1A73E8] text-[11px] font-semibold text-white">{i + 1}</span>
+                <span>{t}</span>
+              </li>
+            ))}
+          </ol>
+          {error && <p className="rounded-xl bg-rose-50 p-3 text-[12.5px] text-rose-700">{error}</p>}
+          {!script && !error && <div className="h-40 animate-pulse rounded-2xl bg-slate-50" />}
+          {script && (
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
+                <span className="text-[11.5px] font-medium text-slate-500">Apps Script</span>
+                <button type="button" onClick={() => void copy()} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-[12px] font-semibold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />} {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <pre className="max-h-64 overflow-auto bg-slate-900 p-3 text-[11.5px] leading-relaxed text-slate-100"><code>{script}</code></pre>
+            </div>
+          )}
+          <p className="text-[11.5px] leading-relaxed text-slate-500">
+            The script only tells the CRM “this sheet changed” — it sends no sheet data. Keep it private: it holds this link’s key. Anyone with edit access to the sheet can see it.
+          </p>
+          <div className={`flex items-center gap-2 rounded-xl px-3 py-2.5 text-[12.5px] ${working ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-600"}`} role="status" aria-live="polite">
+            {working ? <Check className="h-4 w-4 text-emerald-600" /> : <Loader2 className="h-4 w-4 animate-spin text-slate-400" />}
+            {working ? "Working — the sheet has called in. Changes there now sync instantly." : "Waiting for the sheet to call in… (after you press ▶ Run)"}
+          </div>
+        </div>
+        <div className="flex justify-end border-t border-slate-100 px-6 py-3">
+          <button type="button" onClick={onClose} className="h-9 rounded-xl px-4 text-[13px] font-semibold text-slate-700 hover:bg-slate-100">
+            {working ? "Done" : "Close"}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }

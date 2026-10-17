@@ -7,6 +7,8 @@ import {
   Table2, Loader2, AlertTriangle,
 } from "lucide-react"
 import { CreateTableDialog } from "@/components/data/create-table-dialog"
+import { SheetImportWizard } from "@/components/data/sheet-import-wizard"
+import { GoogleSheetsIcon } from "@/components/shared/google-icons"
 import type { DataTable } from "@/lib/data-store/types"
 import { getIconEmoji } from "@/lib/data-store/types"
 import { toast } from "sonner"
@@ -56,6 +58,7 @@ export default function DataStorePage() {
   const [tables, setTables] = useState<DataTable[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [search, setSearch] = useState("")
@@ -134,6 +137,16 @@ export default function DataStorePage() {
               />
             </div>
             <button
+              type="button"
+              onClick={() => setSheetOpen(true)}
+              aria-label="Import from Google Sheet"
+              title="Import a Google Sheet as a table, kept in sync"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] font-medium hover:bg-slate-50 hover:border-slate-300 transition-colors"
+            >
+              <GoogleSheetsIcon className="h-4 w-4" />
+              <span className="hidden md:inline">Import from Google Sheet</span>
+            </button>
+            <button
               onClick={() => setCreateOpen(true)}
               aria-label="New table"
               className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 active:scale-95 transition-all"
@@ -155,7 +168,7 @@ export default function DataStorePage() {
           </div>
         ) : filtered.length === 0 ? (
           tables.length === 0 ? (
-            <EmptyState onCreate={() => setCreateOpen(true)} />
+            <EmptyState onCreate={() => setCreateOpen(true)} onImportSheet={() => setSheetOpen(true)} />
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
               <Search className="h-8 w-8 mb-3 opacity-40" />
@@ -248,6 +261,18 @@ export default function DataStorePage() {
         )}
       </div>
 
+      {sheetOpen && (
+        <SheetImportWizard
+          mode="new"
+          canPick
+          onClose={() => setSheetOpen(false)}
+          onDone={(r) => {
+            if (r?.tableId) router.push(`/data/${r.tableId}`)
+            else void load()
+          }}
+        />
+      )}
+
       <CreateTableDialog
         open={createOpen}
         onClose={() => setCreateOpen(false)}
@@ -265,7 +290,7 @@ export default function DataStorePage() {
   )
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState({ onCreate, onImportSheet }: { onCreate: () => void; onImportSheet: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 mb-5">
@@ -289,6 +314,15 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
         <Plus className="h-3.5 w-3.5" />
         Create your first table
       </button>
+      <button
+        type="button"
+        onClick={onImportSheet}
+        className="mt-3 flex items-center gap-2 h-9 px-4 rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] font-medium hover:bg-slate-50 hover:border-slate-300 transition-colors"
+      >
+        <GoogleSheetsIcon className="h-4 w-4" />
+        Import from Google Sheet
+      </button>
+      <p className="mt-2 text-[11.5px] text-slate-400">Kept in sync both ways — edit in the sheet or here.</p>
     </div>
   )
 }

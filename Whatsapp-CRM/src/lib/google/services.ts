@@ -13,6 +13,7 @@
 export type GoogleServiceId =
   | 'sheets'
   | 'sheets_browse'
+  | 'sheets_sync'
   | 'drive'
   | 'gmail_send'
   | 'gmail_inbox'
@@ -69,6 +70,20 @@ export const GOOGLE_SERVICES: readonly GoogleService[] = [
     ],
     scopes: ['https://www.googleapis.com/auth/drive.metadata.readonly', 'https://www.googleapis.com/auth/spreadsheets.readonly'],
     level: 'restricted',
+    availability: 'available',
+    openHref: '/data',
+  },
+  {
+    id: 'sheets_sync',
+    name: 'Google Sheets — two-way sync',
+    summary: 'Keep a Data Store table and a sheet the same, both ways — adds, edits and deletions within seconds.',
+    features: [
+      'Data Store: import a sheet as a new table and keep it in sync',
+      'Edit in the CRM or in the sheet — the other side follows',
+      'The CRM writes only to sheets you link to a table',
+    ],
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    level: 'sensitive',
     availability: 'available',
     openHref: '/data',
   },

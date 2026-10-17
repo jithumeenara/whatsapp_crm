@@ -90,6 +90,7 @@ export function GoogleSheetList({
   onChoose,
   onPickInGoogle,
   pickBusy,
+  alsoSync = false,
 }: {
   endpoint?: string
   /** Page to come back to after allowing access. */
@@ -98,11 +99,14 @@ export function GoogleSheetList({
   /** Google's own file window, offered when browsing is not allowed. */
   onPickInGoogle?: () => void
   pickBusy?: boolean
+  /** Ask for two-way sync in the same Google screen (Data Store import). */
+  alsoSync?: boolean
 }) {
   const [search, setSearch] = useState("")
   const [files, setFiles] = useState<SheetFile[] | null>(null)
   const [next, setNext] = useState<string | null>(null)
   const [needsPermission, setNeedsPermission] = useState(false)
+  const [canPickHere, setCanPickHere] = useState(true)
   const [disabled, setDisabled] = useState<ApiDisabled | null>(null)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
@@ -116,12 +120,14 @@ export function GoogleSheetList({
       if (page) q.set("page", page)
       const d = (await (await apiFetch(`${endpoint}${endpoint.includes("?") ? "&" : "?"}${q}`, { cache: "no-store" })).json()) as {
         needs_permission?: boolean
+        can_pick?: boolean
         api_disabled?: ApiDisabled
         files?: SheetFile[]
         next?: string | null
       }
       if (seq !== seqRef.current) return
       setNeedsPermission(Boolean(d.needs_permission))
+      if (typeof d.can_pick === "boolean") setCanPickHere(d.can_pick)
       setDisabled(d.api_disabled ?? null)
       if (d.files) setFiles((prev) => (page ? [...(prev ?? []), ...d.files!] : d.files!))
       else if (!page) setFiles([])
@@ -143,7 +149,8 @@ export function GoogleSheetList({
   if (disabled) return <ApiDisabledCard info={disabled} onRetry={() => void load(search)} />
 
   if (needsPermission) {
-    const href = `/api/google/connect?services=sheets_browse&return=${encodeURIComponent(returnTo)}`
+    const services = alsoSync ? "sheets_browse,sheets_sync" : "sheets_browse"
+    const href = `/api/google/connect?services=${services}&return=${encodeURIComponent(returnTo)}`
     return (
       <div className="flex flex-col items-center px-6 py-12 text-center">
         <div className="flex -space-x-2">
@@ -152,12 +159,14 @@ export function GoogleSheetList({
         </div>
         <h3 className="mt-5 text-[17px] font-semibold text-slate-900">See all your Google Sheets here</h3>
         <p className="mt-2 max-w-md text-[13px] leading-relaxed text-slate-500">
-          Allow the CRM to list and read your sheets once. It can only read — it never changes or deletes anything in Google.
+          {alsoSync
+            ? "Allow the CRM to list your sheets, and to keep the ones you link to a table in step both ways. It only ever changes a sheet you link here."
+            : "Allow the CRM to list and read your sheets once. It can only read — it never changes or deletes anything in Google."}
         </p>
         <a href={href} className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A73E8] px-5 text-[13.5px] font-semibold text-white shadow-sm hover:bg-[#1765CC]">
           Allow access to my sheets <ArrowRight className="h-4 w-4" />
         </a>
-        {onPickInGoogle && (
+        {onPickInGoogle && canPickHere && (
           <button type="button" onClick={onPickInGoogle} disabled={pickBusy} className="mt-3 text-[12.5px] font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50">
             {pickBusy ? "Working…" : "or choose one file in Google’s window"}
           </button>

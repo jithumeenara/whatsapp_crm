@@ -96,6 +96,10 @@ const PUBLIC_PREFIXES = [
   // staff-facing settings routes live under /api/website-chat/, which is
   // NOT public.
   '/api/webchat/',
+  // Google Apps Script in a business's sheet says "this sheet changed".
+  // POST only, checked against the link's secret, rate-limited; it carries
+  // no data and triggers nothing but a sync of that one link.
+  '/api/google/sheet-ping',
   '/_next/',
   '/favicon',
   '/icon',   // Next.js App Router favicon generator

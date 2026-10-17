@@ -99,6 +99,48 @@ export async function writeTab(token: string, spreadsheetId: string, title: stri
   })
 }
 
+/** 0 → A, 25 → Z, 26 → AA. */
+export function columnLetter(index: number): string {
+  let n = index + 1
+  let out = ''
+  while (n > 0) {
+    const r = (n - 1) % 26
+    out = String.fromCharCode(65 + r) + out
+    n = Math.floor((n - 1) / 26)
+  }
+  return out
+}
+
+/** Single cells, RAW, in as few calls as Google allows. `row` is the
+ *  sheet's own 1-based row number. */
+export async function writeCells(
+  token: string,
+  spreadsheetId: string,
+  title: string,
+  cells: ReadonlyArray<{ row: number; col: number; value: string }>,
+): Promise<void> {
+  for (let i = 0; i < cells.length; i += 500) {
+    const chunk = cells.slice(i, i + 500)
+    await call(token, `${API}/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        valueInputOption: 'RAW',
+        data: chunk.map((c) => ({ range: `${tabRange(title)}!${columnLetter(c.col)}${c.row}`, values: [[c.value]] })),
+      }),
+    })
+  }
+}
+
+/** Removes whole rows (1-based sheet row numbers), bottom first so the
+ *  numbers stay true while deleting. */
+export async function deleteRows(token: string, spreadsheetId: string, sheetGid: number, rows: readonly number[]): Promise<void> {
+  if (rows.length === 0) return
+  const requests = [...new Set(rows)]
+    .sort((a, b) => b - a)
+    .map((r) => ({ deleteDimension: { range: { sheetId: sheetGid, dimension: 'ROWS', startIndex: r - 1, endIndex: r } } }))
+  await call(token, `${API}/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: 'POST', body: JSON.stringify({ requests }) })
+}
+
 /** A new spreadsheet owned by the connected account. Files the CRM creates
  *  are reachable under drive.file without being picked. */
 export async function createSpreadsheet(token: string, title: string, tabTitle: string): Promise<SpreadsheetInfo> {

@@ -60,6 +60,7 @@ interface GoogleConfig {
 const ICONS: Record<GoogleServiceId, (p: { className?: string }) => React.ReactNode> = {
   sheets: GoogleSheetsIcon,
   sheets_browse: GoogleSheetsIcon,
+  sheets_sync: GoogleSheetsIcon,
   drive: GoogleDriveIcon,
   gmail_send: GmailIcon,
   gmail_inbox: GmailIcon,

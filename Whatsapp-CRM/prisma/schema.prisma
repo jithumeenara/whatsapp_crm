@@ -1931,12 +1931,35 @@ model GoogleSheetLink {
   column_map       Json?
   last_synced_at   DateTime? @db.Timestamptz(6)
   last_error       String?
+  /// sync only (migration 136): encrypted secret for the Apps Script ping.
+  sync_token_enc   String?
+  instant_ping_at  DateTime? @db.Timestamptz(6)
+  /// sync only: rows gone from the sheet in a bulk, waiting for a person.
+  held_deletes     String[]  @default([])
+  sync_warning     String?
+  sync_stats       Json?
   created_at       DateTime  @default(now()) @db.Timestamptz(6)
   updated_at       DateTime  @updatedAt @db.Timestamptz(6)
+
+  rows GoogleSheetRow[]
 
   @@unique([table_id, direction])
   @@index([account_id])
   @@map("google_sheet_links")
+}
+
+/// What a synced row looked like on both sides at the last sync (mig 136):
+/// field key → cell text. A side that differs from it changed.
+model GoogleSheetRow {
+  link_id    String   @db.Uuid
+  record_id  String   @db.Uuid
+  snapshot   Json     @default("{}")
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  link GoogleSheetLink @relation(fields: [link_id], references: [id], onDelete: Cascade)
+
+  @@id([link_id, record_id])
+  @@map("google_sheet_rows")
 }
 
 /// A chat window installed on a business's website (migration 130).

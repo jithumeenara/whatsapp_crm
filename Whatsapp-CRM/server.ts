@@ -11,6 +11,7 @@ import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
+import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
 import { sweepGoogleHealth } from "./src/lib/google/oauth";
 import { sweepGmailInboxes } from "./src/lib/google/gmail";
 import { sweepGoogleCalendars } from "./src/lib/google/calendar";
@@ -271,6 +272,16 @@ app.prepare().then(() => {
       console.error("[google] health sweep failed:", err);
     });
   }, 15 * 60_000);
+
+  // Two-way Google Sheets: every minute (every 10 once the sheet's Apps
+  // Script pings on each change). CRM-side changes don't wait for this —
+  // they sync within seconds — it is the safety net and the sheet-side
+  // check for sheets without the script (src/lib/google/sheet-two-way.ts).
+  every(() => {
+    sweepTwoWaySheets().catch((err) => {
+      console.error("[sheet-sync] sweep failed:", err);
+    });
+  }, 60_000);
 
   // Embedding whatever the sweeps above left marked "Not trained".
   //

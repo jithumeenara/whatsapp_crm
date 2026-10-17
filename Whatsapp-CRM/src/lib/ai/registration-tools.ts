@@ -22,7 +22,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { businessTimezone, humanDate } from './human-date'
 import { listRegistrationForms, validateValues } from './registration'
-import { afterRecordCreated } from '@/lib/data-store/record-events'
+import { afterRecordCreated, afterRecordsChanged } from '@/lib/data-store/record-events'
 
 export interface RegistrationToolContext {
   accountId: string
@@ -368,6 +368,7 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
         where: { id: record.id },
         data: { data: merged as Prisma.InputJsonValue },
       })
+      afterRecordsChanged(record.table_id, ctx.accountId)
 
       return {
         saved: true,

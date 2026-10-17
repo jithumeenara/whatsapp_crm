@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { afterRecordsChanged } from '@/lib/data-store/record-events'
 import { prisma } from "@/lib/db"
 import { flattenPlain, detectType } from "@/lib/integration-fetch"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   await prisma.integration.update({ where: { id }, data: { last_synced_at: new Date() } })
+  if (recordsUpserted > 0) afterRecordsChanged(table.id, integration.account_id)
 
   return NextResponse.json({ success: true, records_upserted: recordsUpserted, contacts_created: contactsCreated })
 }

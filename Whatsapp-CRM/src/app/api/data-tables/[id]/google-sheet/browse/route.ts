@@ -5,6 +5,8 @@ import { GoogleNotConnectedError } from '@/lib/google/oauth'
 import { ApiDisabledError, canBrowseSheets, listSpreadsheets, previewSpreadsheet } from '@/lib/google/sheet-browse'
 import { suggestColumns } from '@/lib/google/sheet-sync'
 import { SheetsApiError } from '@/lib/google/sheets'
+import { canWriteSheets } from '@/lib/google/sheet-two-way'
+import { ID_HEADER } from '@/lib/google/sheet-two-way-plan'
 
 /**
  * The import screen's data.
@@ -41,7 +43,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ...preview,
       sample: preview.sample.slice(0, 6),
       fields: fields.filter((f) => !['section_header', 'html_block', 'signature', 'file', 'image'].includes(f.field_type)),
-      columns: suggestColumns(preview.headers, preview.sample, fields),
+      columns: suggestColumns(preview.headers, preview.sample, fields).map((c) =>
+        c.header.trim().toLowerCase() === ID_HEADER.toLowerCase() ? { ...c, target: 'skip' } : c,
+      ),
+      can_write: await canWriteSheets(ctx.accountId),
     })
   } catch (err) {
     if (err instanceof ApiDisabledError) {

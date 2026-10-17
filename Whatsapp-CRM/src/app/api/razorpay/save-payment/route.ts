@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { detectType } from "@/lib/integration-fetch"
-import { afterRecordCreated } from '@/lib/data-store/record-events'
+import { afterRecordCreated, afterRecordsChanged } from '@/lib/data-store/record-events'
 
 const RAZORPAY_API = "https://api.razorpay.com/v1"
 
@@ -121,6 +121,7 @@ export async function POST(req: NextRequest) {
     })
     if (existingRecord) {
       await prisma.dataRecord.update({ where: { id: existingRecord.id }, data: { data: row } })
+      afterRecordsChanged(table.id, ctx.accountId)
     } else {
       const created = await prisma.dataRecord.create({
         data: { table_id: table.id, account_id: ctx.accountId, data: row, source: 'payment' },

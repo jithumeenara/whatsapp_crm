@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client"
+import { afterRecordsChanged } from '@/lib/data-store/record-events'
 import { buildFetchHeaders, fetchExternalRows, detectType } from "@/lib/integration-fetch"
 
 export interface IntegrationRow {
@@ -158,10 +159,12 @@ async function upsertRecord(db: PrismaClient, tableId: string, accountId: string
     })
     if (existing) {
       await db.dataRecord.update({ where: { id: existing.id }, data: { data: row } })
+      afterRecordsChanged(tableId, accountId)
       return
     }
   }
   await db.dataRecord.create({ data: { table_id: tableId, account_id: accountId, data: row, source: 'integration' } })
+  afterRecordsChanged(tableId, accountId)
 }
 
 async function upsertContact(db: PrismaClient, accountId: string, userId: string, row: Record<string, string>): Promise<boolean> {
