@@ -46,3 +46,10 @@ new feature or fix against all ten before calling it done.
 - Never edit, delete, skip or loosen an existing test to make it pass. If a test looks wrong, stop and ask.
 - Fix the cause with the smallest change; don't hard-code the expected answer or special-case the test's input. List other problems found; leave them alone.
 - Before saying "fixed": run that test, then the whole suite (`npm test`), and show both. Commit the test with the fix, naming the bug it covers. Run `npm test` before starting a new feature; if anything is red, stop and say so.
+
+# UI work
+
+- How the app looks: `DESIGN.md` (tokens, sizes, components, sentence case). Reuse `src/components/ui/*`.
+- Before calling a screen done: run the `crm-ui-review` skill on the changed files (pinned Web Interface Guidelines + CRM overrides, no network) and fix what it finds.
+- Look at it, don't assume: the `playwright-cli` skill drives a real browser (360px, dark theme, reduced motion). Saved logins (`*.auth-state.json`) and `.playwright-cli/` output are git-ignored; never commit one.
+- `public/webchat/*` runs on customers' websites without `globals.css`: focus, reduced motion and touch rules must be in the file itself.

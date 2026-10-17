@@ -57,3 +57,10 @@ next-env.d.ts
 pw-*.cjs
 pw-*.js
 .playwright-mcp/
+
+# playwright-cli: page snapshots, screenshots, its workspace folder, and
+# saved logins. A saved login is a live session cookie — never commit one.
+/.playwright-cli/
+/.playwright/
+*.auth-state.json
+storage-state-*.json
