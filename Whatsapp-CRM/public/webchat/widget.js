@@ -93,7 +93,9 @@
       '.launcher{position:fixed;bottom:20px;' + side + ':20px;width:60px;height:60px;border-radius:50%;border:0;cursor:pointer;' +
       'background:' + fill + ';color:#fff;overflow:hidden;' +
       'box-shadow:0 10px 30px -6px color-mix(in srgb,' + color + ' 60%,transparent),0 4px 10px rgba(15,23,42,.18);' +
-      'display:flex;align-items:center;justify-content:center;transition:transform .25s cubic-bezier(.34,1.56,.64,1),box-shadow .2s}' +
+      'display:flex;align-items:center;justify-content:center;transition:transform .25s cubic-bezier(.34,1.56,.64,1)}' +
+      // No globals.css on a customer's site: touch and tap handled here.
+      'button,a{touch-action:manipulation;-webkit-tap-highlight-color:transparent}' +
       '.launcher:hover{transform:translateY(-2px) scale(1.08)}' +
       '.launcher:active{transform:scale(.92)}' +
       // The attention animations use translate/rotate/scale, which compose
@@ -107,19 +109,22 @@
       '.a-bounce .launcher{animation:wc-bounce 3.4s cubic-bezier(.3,.7,.4,1) infinite}' +
       '.a-wiggle .launcher{animation:wc-wiggle 4.2s ease-in-out infinite}' +
       '.a-float .launcher{animation:wc-float 3.2s ease-in-out infinite}' +
-      '.a-glow .launcher{animation:wc-glow 2.8s ease-in-out infinite}' +
-      '.a-glow .launcher::after{content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;' +
-      'background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.55) 50%,transparent 65%);background-size:260% 100%;' +
+      // Glow and shine move only opacity and transform: the halo's shadow
+      // is painted once and faded, the shine band slides across.
+      '.a-glow .halo{animation:wc-glow 2.8s ease-in-out infinite}' +
+      '.a-glow .launcher::after{content:"";position:absolute;top:0;bottom:0;left:0;width:45%;pointer-events:none;' +
+      'background:linear-gradient(115deg,transparent,rgba(255,255,255,.55),transparent);transform:translateX(-120%);' +
       'animation:wc-shine 2.8s ease-in-out infinite}' +
       '}' +
+      '.halo{position:fixed;bottom:20px;' + side + ':20px;width:60px;height:60px;border-radius:50%;pointer-events:none;opacity:0;' +
+      'box-shadow:0 0 26px 8px color-mix(in srgb,' + color + ' 45%,transparent)}' +
       '@keyframes wc-ring{0%{transform:scale(1);opacity:.5}100%{transform:scale(1.85);opacity:0}}' +
       '@keyframes wc-bounce{0%,55%,100%{translate:0 0;scale:1 1}12%{translate:0 -16px;scale:.96 1.05}24%{translate:0 0;scale:1.08 .9}' +
       '32%{translate:0 -7px;scale:.98 1.02}42%{translate:0 0;scale:1.03 .97}}' +
       '@keyframes wc-wiggle{0%,68%,100%{rotate:0deg}72%{rotate:-16deg}76%{rotate:14deg}80%{rotate:-10deg}84%{rotate:7deg}88%{rotate:-3deg}92%{rotate:0deg}}' +
       '@keyframes wc-float{0%,100%{translate:0 0}50%{translate:0 -8px}}' +
-      '@keyframes wc-glow{0%,100%{box-shadow:0 10px 30px -6px color-mix(in srgb,' + color + ' 60%,transparent),0 0 0 0 color-mix(in srgb,' + color + ' 45%,transparent)}' +
-      '50%{box-shadow:0 10px 30px -6px color-mix(in srgb,' + color + ' 60%,transparent),0 0 26px 8px color-mix(in srgb,' + color + ' 45%,transparent)}}' +
-      '@keyframes wc-shine{0%{background-position:130% 0}55%,100%{background-position:-130% 0}}' +
+      '@keyframes wc-glow{0%,100%{opacity:0}50%{opacity:1}}' +
+      '@keyframes wc-shine{0%{transform:translateX(-120%)}55%,100%{transform:translateX(330%)}}' +
       '.launcher svg{transition:transform .25s cubic-bezier(.2,.8,.2,1)}' +
       '.open .launcher svg{transform:rotate(90deg)}' +
       '.launcher:focus-visible{outline:3px solid #fff;outline-offset:2px;box-shadow:0 0 0 6px ' + color + '}' +
@@ -138,9 +143,11 @@
       '.teaser .x{position:absolute;top:6px;right:6px;width:22px;height:22px;border:0;border-radius:50%;background:#f1f5f9;color:#475569;' +
       'cursor:pointer;font:600 13px/22px system-ui;text-align:center;padding:0}' +
       '.teaser .x:hover{background:#e2e8f0}' +
-      '@media (prefers-reduced-motion:reduce){.panel,.teaser,.launcher,.ring{animation:none!important}.launcher,.launcher svg{transition:none}}' +
+      '.teaser .x:focus-visible{outline:2px solid ' + color + ';outline-offset:1px}' +
+      '@media (prefers-reduced-motion:reduce){.panel,.teaser,.launcher,.ring,.halo,.menu{animation:none!important}' +
+      '.launcher,.launcher svg,.menu .opt{transition:none}}' +
       '.panel iframe{width:100%;height:100%;border:0;display:block}' +
-      '.menu{position:fixed;bottom:94px;' + side + ':20px;width:300px;max-height:calc(100vh - 116px);overflow:auto;border-radius:20px;' +
+      '.menu{position:fixed;bottom:94px;' + side + ':20px;width:300px;max-height:calc(100vh - 116px);overflow:auto;overscroll-behavior:contain;border-radius:20px;' +
       'background:#fff;color:#0f172a;box-shadow:0 24px 60px -12px rgba(15,23,42,.35),0 0 0 1px rgba(15,23,42,.06);' +
       'font:14px/1.4 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans","Noto Sans Malayalam",sans-serif;' +
       'transform-origin:bottom ' + side + ';animation:wc-pop .38s cubic-bezier(.34,1.56,.64,1)}' +
@@ -150,10 +157,11 @@
       '.menu .back{border:0;background:rgba(255,255,255,.2);color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;' +
       'display:flex;align-items:center;justify-content:center;padding:0}' +
       '.menu .back:hover{background:rgba(255,255,255,.32)}' +
+      '.menu .back:focus-visible{outline:2px solid #fff;outline-offset:2px}' +
       '.menu .list{padding:10px;display:flex;flex-direction:column;gap:8px}' +
       '.menu .opt{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px;border:1px solid #e2e8f0;border-radius:14px;' +
       'background:#fff;color:#0f172a;text-decoration:none;cursor:pointer;text-align:left;font:inherit;' +
-      'transition:transform .18s cubic-bezier(.34,1.56,.64,1),border-color .15s,box-shadow .15s}' +
+      'transition:transform .18s cubic-bezier(.34,1.56,.64,1)}' +
       '.menu .opt:hover{transform:translateY(-1px);border-color:#cbd5e1;box-shadow:0 6px 18px -8px rgba(15,23,42,.25)}' +
       '.menu .opt:focus-visible{outline:2px solid ' + color + ';outline-offset:2px}' +
       '.menu .ic{width:40px;height:40px;flex:none;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff}' +
@@ -169,7 +177,7 @@
       '@media (max-width:480px){.menu{width:calc(100vw - 40px)}}' +
       '[hidden]{display:none!important}' +
       '@media (max-width:480px){.panel{inset:0;width:100%;height:100%;border-radius:0;bottom:0}' +
-      '.open .launcher,.open .badge,.open .ring{display:none}.teaser{max-width:calc(100vw - 110px)}}';
+      '.open .launcher,.open .badge,.open .ring,.open .halo{display:none}.teaser{max-width:calc(100vw - 110px)}}';
 
     var wrap = document.createElement('div');
     var attention = animation !== 'none' ? 'a-' + animation : '';
@@ -182,6 +190,11 @@
         ring.setAttribute('aria-hidden', 'true');
         rings.push(ring);
       }
+    } else if (animation === 'glow') {
+      var halo = document.createElement('span');
+      halo.className = 'halo';
+      halo.setAttribute('aria-hidden', 'true');
+      rings.push(halo);
     }
     var launcher = document.createElement('button');
     launcher.className = 'launcher';

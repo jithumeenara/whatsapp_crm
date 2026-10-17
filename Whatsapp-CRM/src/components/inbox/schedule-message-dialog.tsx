@@ -218,7 +218,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
                   Message <span className="text-rose-500">*</span>
                 </label>
                 <textarea id="schedule-text" value={messageText} onChange={(e) => setMessageText(e.target.value)} rows={4} maxLength={4000}
-                  placeholder="Type the message to send"
+                  placeholder="Type the message to send…"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100" />
               </div>
             ) : (

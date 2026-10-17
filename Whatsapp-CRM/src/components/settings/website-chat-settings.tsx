@@ -114,20 +114,19 @@ const LAUNCHER_KEYFRAMES = `
   .wcp-bounce .wcp-btn { animation: wcp-bounce 3.4s cubic-bezier(.3,.7,.4,1) infinite; }
   .wcp-wiggle .wcp-btn { animation: wcp-wiggle 4.2s ease-in-out infinite; }
   .wcp-float .wcp-btn { animation: wcp-float 3.2s ease-in-out infinite; }
-  .wcp-glow .wcp-btn { animation: wcp-glow 2.8s ease-in-out infinite; }
-  .wcp-glow .wcp-btn::after { content: ""; position: absolute; inset: 0; border-radius: 9999px; pointer-events: none;
-    background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%); background-size: 260% 100%;
+  .wcp-glow .wcp-halo { animation: wcp-glow 2.8s ease-in-out infinite; }
+  .wcp-glow .wcp-btn::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 45%; pointer-events: none;
+    background: linear-gradient(115deg, transparent, rgba(255,255,255,.55), transparent); transform: translateX(-120%);
     animation: wcp-shine 2.8s ease-in-out infinite; }
 }
-.wcp-ring { opacity: 0; }
+.wcp-ring, .wcp-halo { opacity: 0; }
 @keyframes wcp-ring { 0% { transform: scale(1); opacity: .5 } 100% { transform: scale(1.85); opacity: 0 } }
 @keyframes wcp-bounce { 0%,55%,100% { translate: 0 0; scale: 1 1 } 12% { translate: 0 -16%; scale: .96 1.05 } 24% { translate: 0 0; scale: 1.08 .9 }
   32% { translate: 0 -7%; scale: .98 1.02 } 42% { translate: 0 0; scale: 1.03 .97 } }
 @keyframes wcp-wiggle { 0%,68%,100% { rotate: 0deg } 72% { rotate: -16deg } 76% { rotate: 14deg } 80% { rotate: -10deg } 84% { rotate: 7deg } 88% { rotate: -3deg } 92% { rotate: 0deg } }
 @keyframes wcp-float { 0%,100% { translate: 0 0 } 50% { translate: 0 -12% } }
-@keyframes wcp-glow { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--wcp-color) 45%, transparent) }
-  50% { box-shadow: 0 0 18px 6px color-mix(in srgb, var(--wcp-color) 45%, transparent) } }
-@keyframes wcp-shine { 0% { background-position: 130% 0 } 55%,100% { background-position: -130% 0 } }
+@keyframes wcp-glow { 0%,100% { opacity: 0 } 50% { opacity: 1 } }
+@keyframes wcp-shine { 0% { transform: translateX(-120%) } 55%,100% { transform: translateX(330%) } }
 `
 
 /** A chat button as the website shows it, animated. */
@@ -143,6 +142,12 @@ function LauncherPreview({ size, color, fill, animation }: { size: number; color
           <span className="wcp-ring absolute inset-0 rounded-full" style={{ background: color }} />
           <span className="wcp-ring r2 absolute inset-0 rounded-full" style={{ background: color }} />
         </>
+      )}
+      {animation === 'glow' && (
+        <span
+          className="wcp-halo absolute inset-0 rounded-full"
+          style={{ boxShadow: `0 0 18px 6px color-mix(in srgb, ${color} 45%, transparent)` }}
+        />
       )}
       <span
         className="wcp-btn relative flex h-full w-full items-center justify-center overflow-hidden rounded-full text-white shadow-lg"
@@ -688,13 +693,12 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
 
                   {/* Solid or gradient */}
                   <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <div role="radiogroup" aria-label="Colour style" className="inline-flex rounded-xl bg-slate-100 p-1">
+                    <div role="group" aria-label="Colour style" className="inline-flex rounded-xl bg-slate-100 p-1">
                       {(['solid', 'gradient'] as const).map((style) => (
                         <button
                           key={style}
                           type="button"
-                          role="radio"
-                          aria-checked={form.color_style === style}
+                          aria-pressed={form.color_style === style}
                           onClick={() => set('color_style', style)}
                           className={cn(
                             'inline-flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold transition',
@@ -739,6 +743,9 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                           value={form.secondary_color}
                           maxLength={7}
                           placeholder="#9333ea"
+                          name="secondary_color"
+                          autoComplete="off"
+                          spellCheck={false}
                           onChange={(e) => set('secondary_color', e.target.value.trim())}
                           aria-label="Second colour code"
                           className={cn('h-8 w-24 font-mono text-[12px]', !secondValid && 'border-rose-300 focus-visible:ring-rose-200')}
@@ -771,13 +778,12 @@ function WidgetCard({ widget, onChanged }: { widget: Widget; onChanged: () => Pr
                 <div>
                   <FieldLabel>Button animation</FieldLabel>
                   <style>{LAUNCHER_KEYFRAMES}</style>
-                  <div role="radiogroup" aria-label="Button animation" className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                  <div role="group" aria-label="Button animation" className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                     {ANIMATIONS.map((a) => (
                       <button
                         key={a.key}
                         type="button"
-                        role="radio"
-                        aria-checked={form.launcher_animation === a.key}
+                        aria-pressed={form.launcher_animation === a.key}
                         onClick={() => set('launcher_animation', a.key)}
                         className={cn(
                           'flex items-center gap-3 rounded-xl border p-3 text-left transition',
@@ -1257,30 +1263,34 @@ function ContactMenuEditor({
                   key={n.id}
                   className={cn('flex flex-wrap items-center gap-3 rounded-xl border p-3 transition', on ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-200')}
                 >
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={!n.phone || (!on && waCount >= 5)}
-                    onChange={() => toggleNumber(n)}
-                    aria-label={`Offer ${n.label || 'this number'}`}
-                    className="h-4 w-4 accent-emerald-600"
-                  />
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#25d366] text-white">
-                    <MessageCircle className="h-4 w-4" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-medium text-slate-800">
-                      {n.phone ? `+${n.phone}` : 'Number could not be read from WhatsApp'}
-                      {n.is_default && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-500">default</span>}
-                    </div>
-                    <div className="text-[11.5px] text-slate-400">{n.label || 'Unnamed number'} · {n.status}</div>
-                  </div>
+                  {/* The whole left part toggles the number, not just the box. */}
+                  <label className={cn('flex min-w-0 flex-1 items-center gap-3', n.phone ? 'cursor-pointer' : 'cursor-not-allowed')}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      disabled={!n.phone || (!on && waCount >= 5)}
+                      onChange={() => toggleNumber(n)}
+                      className="h-4 w-4 shrink-0 accent-emerald-600"
+                    />
+                    <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#25d366] text-white">
+                      <MessageCircle className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13px] font-medium text-slate-800">
+                        {n.phone ? `+${n.phone}` : 'Number could not be read from WhatsApp'}
+                        {n.is_default && <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] text-slate-500">default</span>}
+                      </span>
+                      <span className="block truncate text-[11.5px] text-slate-400">{n.label || 'Unnamed number'} · {n.status}</span>
+                    </span>
+                  </label>
                   {on && (
                     <Input
                       value={selected.get(n.id) ?? ''}
                       maxLength={40}
                       onChange={(e) => renameNumber(n.id, e.target.value)}
-                      placeholder="Name visitors see"
+                      placeholder="Name visitors see…"
+                      name="whatsapp_label"
+                      autoComplete="off"
                       aria-label="Name visitors see"
                       className="h-8 w-full sm:w-44"
                     />
@@ -1301,6 +1311,8 @@ function ContactMenuEditor({
           value={form.whatsapp_prefill}
           onChange={(e) => set('whatsapp_prefill', e.target.value)}
           placeholder="Hi, I came from your website"
+          name="whatsapp_prefill"
+          autoComplete="off"
         />
         <p className="mt-1 text-[11.5px] text-slate-400">Typed into WhatsApp for them — they can change it before sending.</p>
       </div>
@@ -1316,6 +1328,8 @@ function ContactMenuEditor({
                 maxLength={40}
                 onChange={(e) => setCall(i, { label: e.target.value })}
                 placeholder="Office"
+                name="call_label"
+                autoComplete="off"
                 aria-label="Name"
                 className="h-9 w-36"
               />
@@ -1325,6 +1339,9 @@ function ContactMenuEditor({
                 inputMode="tel"
                 onChange={(e) => setCall(i, { phone: e.target.value })}
                 placeholder="+91 85900 55117"
+                name="call_phone"
+                type="tel"
+                autoComplete="off"
                 aria-label="Phone number"
                 className={cn('h-9 flex-1 min-w-[160px] font-mono text-[12.5px]', !phoneLooksRight(c.phone) && 'border-rose-300 focus-visible:ring-rose-200')}
               />
