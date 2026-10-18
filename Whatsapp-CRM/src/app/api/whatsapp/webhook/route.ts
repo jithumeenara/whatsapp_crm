@@ -8,6 +8,9 @@ import { checkMetaWebhookSignature, logSignatureCheck } from '@/lib/whatsapp/web
 import { whatsappWebhookSecrets } from '@/lib/whatsapp/webhook-secrets'
 import { noteDelivered, noteRejected } from '@/lib/whatsapp/webhook-health'
 import { attributeBroadcastReply } from '@/lib/broadcasts/replies'
+import { optOutIntent } from '@/lib/broadcasts/rules'
+import { getBroadcastSettings } from '@/lib/broadcasts/settings'
+import { applyMetaUserPreferences, setMarketingConsent, CONSENT_REPLY, type MetaUserPreference } from '@/lib/broadcasts/opt-out'
 import { failureText } from '@/lib/whatsapp/meta-error-codes'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { autoReplyToMessage } from '@/lib/ai/auto-reply'
@@ -357,6 +360,17 @@ async function processWebhook(
       }
 
       const value = change.value
+
+      // The customer pressed "Stop promotions" (or "Resume") on a
+      // marketing message — Meta's own opt-out, src/lib/broadcasts/opt-out.ts.
+      // Needs the user_preferences field subscribed on the Meta app.
+      const prefs = (value as { user_preferences?: unknown }).user_preferences
+      if (Array.isArray(prefs)) {
+        await applyMetaUserPreferences(value.metadata?.phone_number_id, prefs as MetaUserPreference[]).catch((err) =>
+          console.error('[opt-out] user_preferences failed:', err instanceof Error ? err.message : err),
+        )
+        if (!value.messages) continue
+      }
 
       // Handle status updates
       if (value.statuses) {
@@ -965,6 +979,31 @@ async function processMessage(
   // If this contact was a recent broadcast recipient, flag the reply.
   // A reply to a broadcast, if it came within the reply window.
   await attributeBroadcastReply(accountId, contactRecord.id)
+
+  // A message that is only STOP / START (several languages) changes
+  // whether this person gets campaigns, is answered once to confirm, and
+  // goes no further — no bot or AI reply to the word "stop".
+  const consentText = message.type === 'text' ? message.text?.body ?? '' : ''
+  const consent = optOutIntent(consentText)
+  if (consent) {
+    const settings = await getBroadcastSettings(accountId)
+    if (settings.stop_keywords_enabled) {
+      try {
+        await setMarketingConsent({ accountId, contactId: contactRecord.id, intent: consent, source: 'stop_keyword' })
+        const { engineSendText } = await import('@/lib/automations/meta-send')
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId: conversation.id,
+          contactId: contactRecord.id,
+          text: CONSENT_REPLY[consent],
+        })
+      } catch (err) {
+        console.error('[opt-out] STOP/START handling failed:', err instanceof Error ? err.message : err)
+      }
+      return
+    }
+  }
 
   // ============================================================
   // Auto lead creation — if enabled, create a lead for brand-new

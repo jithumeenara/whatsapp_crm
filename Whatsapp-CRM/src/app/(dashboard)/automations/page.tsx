@@ -19,6 +19,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   new_contact_created: "New contact",
   conversation_assigned: "Conv assigned",
   tag_added: "Tag added",
+  tag_removed: "Tag removed",
   time_based: "Scheduled",
   comment_keyword_match: "IG comment (pending approval)",
 }

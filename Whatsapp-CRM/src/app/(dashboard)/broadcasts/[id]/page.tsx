@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation"
 import {
   ArrowLeft, Users, CheckCircle2, XCircle,
   Eye, MessageCircle, Send, Search, Clock, RefreshCw, FileText, Radio, Download,
-  RotateCcw, AlertCircle, MessageSquareText, Image as ImageIcon, Film,
+  RotateCcw, AlertCircle, Pause, Play, Ban, MessageSquareText, Image as ImageIcon, Film,
   File as FileIcon, ExternalLink, Phone as PhoneIcon, Copy, Zap, Reply,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -14,6 +14,8 @@ import type { MessageTemplate } from "@/types"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { OutcomeGroups } from "@/components/broadcasts/outcome-groups"
 import { everyWhileVisible } from "@/lib/visible-interval"
+import { apiFetch, errorText } from "@/lib/api-fetch"
+import { useConfirm } from "@/hooks/use-confirm"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -33,6 +35,7 @@ interface Broadcast {
   read_count: number
   replied_count: number
   failed_count: number
+  schedule_type?: string
 }
 
 interface Recipient {
@@ -70,6 +73,11 @@ const BROADCAST_STATUS_CONFIG: Record<string, { label: string; color: string; bg
   sending:   { label: "Sending…", color: "text-blue-700",    bg: "bg-blue-100" },
   sent:      { label: "Sent",     color: "text-emerald-700", bg: "bg-emerald-100" },
   failed:    { label: "Failed",   color: "text-rose-700",    bg: "bg-rose-100" },
+  waiting:   { label: "Waiting",  color: "text-sky-700",     bg: "bg-sky-100" },
+  active:    { label: "Active",   color: "text-emerald-700", bg: "bg-emerald-100" },
+  paused:    { label: "Paused",   color: "text-slate-600",   bg: "bg-slate-100" },
+  cancelled: { label: "Cancelled", color: "text-slate-600",  bg: "bg-slate-100" },
+  cancelling: { label: "Cancelling…", color: "text-slate-600", bg: "bg-slate-100" },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -129,6 +137,7 @@ export default function BroadcastDetailPage() {
   const [previewRecipient, setPreviewRecipient] = useState<Recipient | null>(null)
   // Bumped on every reload so the "What happened" groups reload with it.
   const [refreshKey, setRefreshKey] = useState(0)
+  const confirm = useConfirm()
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -192,6 +201,40 @@ export default function BroadcastDetailPage() {
       toast.error(err instanceof Error ? err.message : "Retry failed")
     } finally {
       setRetrying(false)
+    }
+  }
+
+  // Pause / resume an event-based broadcast, cancel a scheduled one or a
+  // waiting automatic follow-up — the server allows each only from the
+  // right state.
+  const [changing, setChanging] = useState(false)
+  async function changeStatus(action: "pause" | "resume" | "cancel") {
+    if (!broadcast || changing) return
+    if (action === "cancel") {
+      const ok = await confirm({
+        title: "Cancel this broadcast?",
+        description: "It will not be sent. The report stays.",
+        confirmLabel: "Cancel broadcast",
+        cancelLabel: "Keep it",
+        variant: "destructive",
+      })
+      if (!ok) return
+    }
+    setChanging(true)
+    try {
+      const res = await apiFetch(`/api/broadcasts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      })
+      const d = (await res.json()) as { status: string }
+      setBroadcast((b) => (b ? { ...b, status: d.status } : b))
+      toast.success(action === "pause" ? "Paused" : action === "resume" ? "Resumed" : "Cancelled")
+    } catch (err) {
+      console.error("[broadcast] status change failed:", err)
+      toast.error(errorText(err, "Could not change it"))
+    } finally {
+      setChanging(false)
     }
   }
 
@@ -316,6 +359,24 @@ export default function BroadcastDetailPage() {
 
           {/* Actions — wraps below the identity block on mobile instead of overlapping it */}
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            {broadcast.schedule_type === "event" && (broadcast.status === "active" || broadcast.status === "sending") && (
+              <button type="button" onClick={() => void changeStatus("pause")} disabled={changing}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-40">
+                <Pause className="h-3.5 w-3.5" aria-hidden /> Pause
+              </button>
+            )}
+            {broadcast.schedule_type === "event" && (broadcast.status === "paused" || broadcast.status === "failed") && (
+              <button type="button" onClick={() => void changeStatus("resume")} disabled={changing}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-[12.5px] font-medium text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-40">
+                <Play className="h-3.5 w-3.5" aria-hidden /> Resume
+              </button>
+            )}
+            {(broadcast.status === "scheduled" || broadcast.status === "waiting") && (
+              <button type="button" onClick={() => void changeStatus("cancel")} disabled={changing}
+                className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-[12.5px] font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-40">
+                <Ban className="h-3.5 w-3.5" aria-hidden /> Cancel
+              </button>
+            )}
             {broadcast.failed_count > 0 && broadcast.status !== "sending" && broadcast.status !== "cancelling" && (
               <button
                 onClick={handleRetryFailed}
@@ -323,7 +384,7 @@ export default function BroadcastDetailPage() {
                 className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-[12.5px] font-medium text-rose-700 hover:bg-rose-100 transition-colors disabled:opacity-40"
               >
                 <RotateCcw className={cn("h-3.5 w-3.5", retrying && "animate-spin")} />
-                Retry Failed ({broadcast.failed_count})
+                Retry failed ({broadcast.failed_count})
               </button>
             )}
             <button

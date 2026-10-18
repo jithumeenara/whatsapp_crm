@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { runBroadcast } from '@/lib/broadcasts/run-broadcast'
+import { sweepAutomaticBroadcasts } from '@/lib/broadcasts/auto-sweep'
 
 const INTERVAL_MS: Record<string, number> = {
   minutes: 60_000,
@@ -75,6 +76,10 @@ export async function sweepScheduledBroadcasts(): Promise<BroadcastSweepResult> 
         await prisma.broadcast.update({ where: { id: b.id }, data: { status: 'failed' } }).catch(() => {})
       })
   }
+
+  // Automatic follow-ups, event-based sends and daily-limit retries
+  // (auto-sweep.ts) — after the scheduled ones, never stopping them.
+  await sweepAutomaticBroadcasts()
 
   return { started, checked: due.length }
 }

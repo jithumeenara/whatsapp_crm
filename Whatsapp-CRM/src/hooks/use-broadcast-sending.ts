@@ -18,7 +18,7 @@ export interface CustomFieldFilter {
 }
 
 export interface AudienceConfig {
-  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list';
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement';
   tagIds?: string[];
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string; tagNames?: string[]; company?: string; customFields?: Record<string, string> }[];
@@ -28,10 +28,20 @@ export interface AudienceConfig {
   fromBroadcast?: { broadcastId: string; outcome: string };
   /** 'list': a saved contact list. */
   listId?: string;
+  /** 'engagement': how people responded to broadcasts lately. */
+  engagement?: { kind: string; days: number };
 }
 
 export interface BroadcastSchedule {
-  type: 'now' | 'once' | 'recurring';
+  /** 'after_parent': an automatic follow-up (needs a broadcast_outcome
+   *  audience); 'event': sent when a tag is added/removed. */
+  type: 'now' | 'once' | 'recurring' | 'after_parent' | 'event';
+  /** 'after_parent': wait this long after the first broadcast finishes. */
+  followUpDelay?: { value: number; unit: 'minutes' | 'hours' | 'days' };
+  /** 'event': the trigger. */
+  event?: { trigger: 'tag_added' | 'tag_removed'; tagId: string; delayValue: number; delayUnit: 'minutes' | 'hours' | 'days'; includeExisting: boolean };
+  /** 'HH:MM-HH:MM' (business zone) for automatic sends, or null for any time. */
+  sendWindow?: string | null;
   /** ISO datetime -- required for 'once'/'recurring'. */
   scheduledAt?: string;
   intervalValue?: number;
@@ -113,6 +123,17 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           interval_value: schedule?.intervalValue,
           interval_unit: schedule?.intervalUnit,
           max_sends: schedule?.maxSends,
+          follow_up_delay: schedule?.followUpDelay,
+          event: schedule?.event
+            ? {
+                trigger: schedule.event.trigger,
+                tag_id: schedule.event.tagId,
+                delay_value: schedule.event.delayValue,
+                delay_unit: schedule.event.delayUnit,
+                include_existing: schedule.event.includeExisting,
+              }
+            : undefined,
+          send_window: schedule?.sendWindow ?? null,
         }),
       });
 

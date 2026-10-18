@@ -124,6 +124,9 @@ export function OutcomeGroups({ broadcastId, refreshKey }: { broadcastId: string
 
   const total = data.outcomes.reduce((n, g) => n + g.count, 0);
   const sending = data.broadcast.status === 'sending' || data.broadcast.status === 'cancelling';
+  // Before the first broadcast has finished, a follow-up can still be
+  // planned — it then goes automatically once the group is known.
+  const finished = data.broadcast.status === 'sent' || data.broadcast.status === 'failed' || data.broadcast.status === 'active';
   // Follow-up groups always show (an empty one says so); the rest only
   // when somebody is in them.
   const shown = data.outcomes.filter((g) => g.followUp || g.count > 0);
@@ -184,12 +187,12 @@ export function OutcomeGroups({ broadcastId, refreshKey }: { broadcastId: string
                   )}
                 </div>
                 <p className="mt-2 flex-1 text-[11.5px] leading-snug text-slate-500">{g.means}</p>
-                {g.followUp && (canAct && !sending ? (
+                {g.followUp && ((canAct && !sending) || !finished ? (
                   <Link
                     href={`/broadcasts/new?followUp=${encodeURIComponent(broadcastId)}&outcome=${encodeURIComponent(g.key)}`}
                     className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-3 w-full')}
                   >
-                    <Repeat aria-hidden /> Send follow-up
+                    <Repeat aria-hidden /> {finished ? 'Send follow-up' : 'Plan follow-up'}
                   </Link>
                 ) : (
                   <Button variant="outline" size="sm" className="mt-3 w-full" disabled>

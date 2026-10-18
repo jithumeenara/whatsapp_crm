@@ -11,6 +11,9 @@
  * on the contact are written, and each new one fires "Tag added" (in the
  * background — the caller never waits on an automation). A chain of
  * automations that add tags to each other stops after a few hops.
+ *
+ * Removing works the same way (removeTagsFromContact) and fires "Tag
+ * removed". Both also feed event-based broadcasts (src/lib/broadcasts/events.ts).
  */
 
 import { prisma } from '@/lib/db'
@@ -81,23 +84,80 @@ export async function addTagsToContacts(args: {
 
   const hop = (args.hop ?? 0) + 1
   if (hop <= MAX_TAG_HOPS) {
-    for (const p of fresh) fireTagAdded(args.accountId, p.contactId, p.tagId, args.source, hop)
+    for (const p of fresh) fireTagEvent('tag_added', args.accountId, p.contactId, p.tagId, args.source, hop)
   } else {
     console.warn(`[tags] not firing "Tag added" (${fresh.length}) — ${MAX_TAG_HOPS} automation hops in a row`)
   }
+  fireEventBroadcasts('tag_added', args.accountId, fresh)
   return fresh.map((p) => p.tagId)
 }
 
-function fireTagAdded(accountId: string, contactId: string, tagId: string, source: TagSource, hop: number): void {
+/**
+ * Takes tags off a contact: either the named ones, or every tag except
+ * `keepTagIds` (the Inbox's "set the tags to exactly these"). Only this
+ * account's tags; returns the tag ids actually removed, each of which fires
+ * "Tag removed".
+ */
+export async function removeTagsFromContact(args: {
+  accountId: string
+  contactId: string
+  tagIds?: readonly string[]
+  keepTagIds?: readonly string[]
+  source: TagSource
+  hop?: number
+}): Promise<string[]> {
+  if (!args.tagIds && !args.keepTagIds) return []
+  const links = await prisma.contactTag.findMany({
+    where: {
+      contact_id: args.contactId,
+      tag: { account_id: args.accountId },
+      ...(args.tagIds ? { tag_id: { in: [...args.tagIds] } } : { tag_id: { notIn: [...(args.keepTagIds ?? [])] } }),
+    },
+    select: { tag_id: true },
+  })
+  if (links.length === 0) return []
+  const removed = links.map((l) => l.tag_id)
+  // Conditional delete: when two requests race, only the rows still
+  // there are removed, and only the request that removed them reports so.
+  const r = await prisma.contactTag.deleteMany({ where: { contact_id: args.contactId, tag_id: { in: removed } } })
+  if (r.count === 0) return []
+
+  const hop = (args.hop ?? 0) + 1
+  if (hop <= MAX_TAG_HOPS) {
+    for (const tagId of removed) fireTagEvent('tag_removed', args.accountId, args.contactId, tagId, args.source, hop)
+  }
+  fireEventBroadcasts('tag_removed', args.accountId, removed.map((tagId) => ({ contactId: args.contactId, tagId })))
+  return removed
+}
+
+function fireTagEvent(
+  triggerType: 'tag_added' | 'tag_removed',
+  accountId: string,
+  contactId: string,
+  tagId: string,
+  source: TagSource,
+  hop: number,
+): void {
   // Loaded lazily: the automation engine itself adds tags through here.
   void import('@/lib/automations/engine')
     .then((m) =>
       m.runAutomationsForTrigger({
         accountId,
-        triggerType: 'tag_added',
+        triggerType,
         contactId,
         context: { tag_id: tagId, tag_source: source, tag_hop: hop },
       }),
     )
-    .catch((err) => console.error('[tags] "Tag added" automations failed:', err instanceof Error ? err.message : err))
+    .catch((err) => console.error(`[tags] "${triggerType}" automations failed:`, err instanceof Error ? err.message : err))
+}
+
+function fireEventBroadcasts(
+  event: 'tag_added' | 'tag_removed',
+  accountId: string,
+  pairs: ReadonlyArray<{ contactId: string; tagId: string }>,
+): void {
+  if (pairs.length === 0) return
+  void import('@/lib/broadcasts/events')
+    .then((m) => m.onTagEvent({ accountId, event, pairs }))
+    .catch((err) => console.error(`[tags] event broadcasts for "${event}" failed:`, err instanceof Error ? err.message : err))
 }

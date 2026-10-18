@@ -318,10 +318,15 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'remove_tag': {
       const cfg = step.step_config as TagStepConfig
       if (!args.contactId || !cfg.tag_id) throw new Error('remove_tag needs contact + tag_id')
-      await prisma.contactTag.deleteMany({
-        where: { contact_id: args.contactId, tag_id: cfg.tag_id },
+      const { removeTagsFromContact } = await import('@/lib/contacts/tag-events')
+      const removed = await removeTagsFromContact({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        tagIds: [cfg.tag_id],
+        source: 'automation',
+        hop: args.context.tag_hop ?? 0,
       })
-      return `tag ${cfg.tag_id} removed`
+      return removed.length ? `tag ${cfg.tag_id} removed` : `tag ${cfg.tag_id} was not on the contact`
     }
 
     case 'assign_conversation': {
@@ -458,8 +463,9 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
 }
 
 export function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
-  // A "Tag added" automation names one tag; any other tag is not its event.
-  if (automation.trigger_type === 'tag_added') {
+  // A "Tag added" / "Tag removed" automation names one tag; any other tag
+  // is not its event.
+  if (automation.trigger_type === 'tag_added' || automation.trigger_type === 'tag_removed') {
     const want = (automation.trigger_config as { tag_id?: unknown } | null)?.tag_id
     return typeof want === 'string' && want !== '' && ctx?.tag_id === want
   }

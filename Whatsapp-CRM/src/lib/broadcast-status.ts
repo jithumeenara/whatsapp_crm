@@ -51,6 +51,18 @@ export const broadcastStatusConfig: Record<BroadcastStatus, StatusDisplay> = {
     label: "Cancelled",
     classes: "bg-gray-500/10 text-gray-500 border-gray-500/20",
   },
+  waiting: {
+    label: "Waiting",
+    classes: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  },
+  active: {
+    label: "Active",
+    classes: "bg-primary/10 text-primary border-primary/20",
+  },
+  paused: {
+    label: "Paused",
+    classes: "bg-gray-500/10 text-gray-500 border-gray-500/20",
+  },
 };
 
 export const recipientStatusConfig: Record<RecipientStatus, StatusDisplay> = {
@@ -77,6 +89,10 @@ export const recipientStatusConfig: Record<RecipientStatus, StatusDisplay> = {
   failed: {
     label: "Failed",
     classes: "bg-red-500/10 text-red-400 border-red-500/20",
+  },
+  skipped: {
+    label: "Left out",
+    classes: "bg-gray-500/10 text-gray-500 border-gray-500/20",
   },
 };
 

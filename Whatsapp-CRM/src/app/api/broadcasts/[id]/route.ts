@@ -66,11 +66,22 @@ export async function GET(
 }
 
 /**
- * PATCH /api/broadcasts/[id]
+ * PATCH /api/broadcasts/[id]   { action: "pause" | "resume" | "cancel" }
  *
- * Finalizes a broadcast's status to "sent" or "failed".
- * Called by the hook after the send loop completes.
+ * The only status changes a person may make, each allowed from certain
+ * states only and applied with a conditional update (so a sweep starting
+ * the same broadcast at the same moment wins or loses cleanly):
+ *   pause   an event-based broadcast that is listening or sending
+ *   resume  an event-based broadcast that is paused or stopped
+ *   cancel  a scheduled broadcast or a waiting automatic follow-up
+ * It used to write whatever status the body named.
  */
+const TRANSITIONS: Record<string, { from: string[]; to: string; eventOnly?: boolean }> = {
+  pause: { from: ["active", "sending"], to: "paused", eventOnly: true },
+  resume: { from: ["paused", "failed"], to: "active", eventOnly: true },
+  cancel: { from: ["scheduled", "waiting", "draft"], to: "cancelled" },
+};
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -78,14 +89,26 @@ export async function PATCH(
   try {
     const ctx = await requireRoleOrApiKey(request, "agent");
     const { id } = await params;
-    const body = await request.json() as { status: string };
+    const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
+    const rule = typeof body?.action === "string" ? TRANSITIONS[body.action] : undefined;
+    if (!rule) return NextResponse.json({ error: "Unknown action." }, { status: 400 });
 
-    await ctx.db.broadcast.update({
+    const broadcast = await ctx.db.broadcast.findFirst({
       where: { id, account_id: ctx.accountId },
-      data: { status: body.status },
+      select: { id: true, status: true, schedule_type: true },
     });
-
-    return NextResponse.json({ ok: true });
+    if (!broadcast) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (rule.eventOnly && broadcast.schedule_type !== "event") {
+      return NextResponse.json({ error: "Only an event-based broadcast can be paused or resumed." }, { status: 400 });
+    }
+    const changed = await ctx.db.broadcast.updateMany({
+      where: { id: broadcast.id, account_id: ctx.accountId, status: { in: rule.from } },
+      data: { status: rule.to },
+    });
+    if (changed.count === 0) {
+      return NextResponse.json({ error: `This broadcast is ${broadcast.status} and can't be changed that way now.` }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, status: rule.to });
   } catch (err) {
     return toErrorResponse(err);
   }

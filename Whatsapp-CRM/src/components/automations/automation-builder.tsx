@@ -128,6 +128,7 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType; label: string; hint: stri
   { value: "new_contact_created", label: "New Contact Created", hint: "When a contact is auto-created from an incoming message" },
   { value: "conversation_assigned", label: "Conversation Assigned", hint: "When assigned to an agent" },
   { value: "tag_added", label: "Tag Added", hint: "When a tag is added to a contact" },
+  { value: "tag_removed", label: "Tag Removed", hint: "When a tag is taken off a contact" },
   { value: "time_based", label: "Time-Based", hint: "On a recurring schedule" },
   {
     value: "comment_keyword_match",
@@ -751,7 +752,7 @@ function TriggerCard({
                 </span>
               </div>
             )}
-            {type === "tag_added" && (
+            {(type === "tag_added" || type === "tag_removed") && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-500">
                   Tag

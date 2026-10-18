@@ -6,7 +6,7 @@ import type { AutomationTriggerType } from '@/types'
 
 const TRIGGERS: readonly AutomationTriggerType[] = [
   'new_message_received', 'first_inbound_message', 'keyword_match', 'new_contact_created',
-  'conversation_assigned', 'tag_added', 'time_based', 'comment_keyword_match',
+  'conversation_assigned', 'tag_added', 'tag_removed', 'time_based', 'comment_keyword_match',
 ]
 
 /**

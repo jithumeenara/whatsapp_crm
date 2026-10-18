@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
 import { skipReason } from "@/lib/broadcasts/send-skip";
+import { frequencyCapReason } from "@/lib/broadcasts/rules";
+import { getBroadcastSettings } from "@/lib/broadcasts/settings";
 import { sendTemplateMessage, sendMarketingTemplateMessage } from "@/lib/whatsapp/meta-api";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { isMessageTemplate } from "@/lib/whatsapp/template-row-guard";
@@ -139,11 +141,14 @@ export async function recordBroadcastMessage(args: {
  * @param recipientFilter optional filter; if omitted, loads all "pending" recipients.
  */
 export async function runBroadcast(broadcastId: string, accountId: string) {
+  const startedAt = new Date();
   const broadcast = await prisma.broadcast.findFirst({
     where: { id: broadcastId, account_id: accountId },
     include: {
       recipients: {
-        where: { status: "pending" },
+        // An event broadcast's recipient waits for its send_after
+        // (events.ts); everyone else has none and goes now.
+        where: { status: "pending", OR: [{ send_after: null }, { send_after: { lte: startedAt } }] },
         include: { contact: true },
         orderBy: { created_at: "asc" },
       },
@@ -210,6 +215,10 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   // an unenrolled number, or any non-Marketing template, uses the
   // normal endpoint unchanged.
   const useMarketingEndpoint = templateRow?.category === "Marketing" && config.marketing_messages_status === "ELIGIBLE";
+  const isMarketing = templateRow?.category === "Marketing";
+  if (templateRow?.category && templateRow.category !== broadcast.template_category) {
+    await prisma.broadcast.update({ where: { id: broadcastId }, data: { template_category: templateRow.category } });
+  }
   const templateSendFn = useMarketingEndpoint ? sendMarketingTemplateMessage : sendTemplateMessage;
 
   const variables = (broadcast.template_variables ?? {}) as Record<string, VariableMapping>;
@@ -257,6 +266,26 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     for (const r of replied) repliedToParent.add(r.contact_id);
   }
 
+  // Frequency cap: how many marketing broadcasts each person already had
+  // in the window (rules.ts), counted once and kept up to date as we go.
+  const settings = await getBroadcastSettings(accountId);
+  const recentMarketing = new Map<string, number>();
+  if (isMarketing && settings.frequency_cap_enabled && contactIds.length > 0) {
+    const since = new Date(startedAt.getTime() - settings.frequency_cap_days * 86_400_000);
+    const rows = await prisma.broadcastRecipient.groupBy({
+      by: ["contact_id"],
+      where: {
+        contact_id: { in: contactIds },
+        sent_at: { gte: since },
+        status: { in: ["sent", "delivered", "read", "replied"] },
+        broadcast_id: { not: broadcastId },
+        broadcast: { account_id: accountId, template_category: "Marketing" },
+      },
+      _count: { _all: true },
+    });
+    for (const r of rows) recentMarketing.set(r.contact_id, r._count._all);
+  }
+
   for (let i = 0; i < broadcast.recipients.length; i++) {
     const recipient = broadcast.recipients[i];
 
@@ -265,6 +294,8 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       where: { id: broadcastId },
       select: { status: true },
     });
+    // Paused (an event broadcast) stops here and stays paused.
+    if (current?.status === "paused") return;
     if (current?.status === "cancelling" || current?.status === "cancelled") {
       await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: "cancelled" } });
       return;
@@ -273,11 +304,12 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     if (i > 0) await sleep(INTER_MESSAGE_MS);
 
     const contact = recipient.contact;
-    const leftOut = skipReason({
-      contact,
-      repliedToParent: repliedToParent.has(recipient.contact_id),
-      parentOutcome: broadcast.parent_outcome,
-    });
+    const leftOut =
+      skipReason({
+        contact,
+        repliedToParent: repliedToParent.has(recipient.contact_id),
+        parentOutcome: broadcast.parent_outcome,
+      }) ?? frequencyCapReason(recentMarketing.get(recipient.contact_id) ?? 0, isMarketing, settings);
     if (leftOut) {
       await prisma.broadcastRecipient.update({
         where: { id: recipient.id },
@@ -394,6 +426,7 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         where: { id: recipient.id },
         data: { status: "sent", sent_at: new Date(), whatsapp_message_id: sentMessageId, error_message: null, rendered_body: renderedBody },
       });
+      recentMarketing.set(recipient.contact_id, (recentMarketing.get(recipient.contact_id) ?? 0) + 1);
       await refreshBroadcastCounts(broadcastId);
       await recordBroadcastMessage({
         accountId,
@@ -419,7 +452,8 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
       // grinding through the rest of the list.
       if (tokenExpired) {
         await prisma.broadcastRecipient.updateMany({
-          where: { broadcast_id: broadcastId, status: "pending" },
+          // Only this run's people — an event broadcast's later waits stay queued.
+          where: { broadcast_id: broadcastId, status: "pending", id: { in: broadcast.recipients.map((r) => r.id) } },
           data: {
             status: "failed",
             error_message: "Broadcast aborted: WhatsApp access token expired mid-run. Reconnect WhatsApp in Settings, then retry the failed recipients.",
@@ -439,5 +473,14 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   // Everyone left out (send-skip.ts) with nothing failed is a finished
   // broadcast, not a failed one.
   const finalStatus = finalRow.sent_count > 0 || finalRow.failed_count === 0 ? "sent" : "failed";
-  await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: finalStatus } });
+  if (broadcast.schedule_type === "event") {
+    // An event broadcast keeps listening; only a pause or cancel made
+    // during this run is left as it is.
+    await prisma.broadcast.updateMany({
+      where: { id: broadcastId, status: "sending" },
+      data: { status: "active", finished_at: new Date(), last_sent_at: new Date() },
+    });
+    return;
+  }
+  await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: finalStatus, finished_at: new Date() } });
 }

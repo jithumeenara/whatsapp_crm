@@ -498,8 +498,12 @@ export interface MessageTemplate {
 }
 
 
-export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelling' | 'cancelled';
-export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed';
+export type BroadcastStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'failed' | 'cancelling' | 'cancelled'
+  /** An automatic follow-up waiting for its first broadcast (migration 138). */
+  | 'waiting'
+  /** An event-based broadcast listening for its tag, or paused. */
+  | 'active' | 'paused';
+export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'replied' | 'failed' | 'skipped';
 
 export interface Broadcast {
   id: string;
@@ -529,6 +533,17 @@ export interface Broadcast {
   replied_count: number;
   failed_count: number;
   created_at: string;
+  /** Migration 138 — automatic follow-ups and event-based broadcasts. */
+  finished_at?: string | null;
+  parent_broadcast_id?: string | null;
+  parent_outcome?: string | null;
+  follow_up_delay_minutes?: number | null;
+  event_trigger?: 'tag_added' | 'tag_removed' | null;
+  event_tag_id?: string | null;
+  event_delay_minutes?: number;
+  send_window?: string | null;
+  event_tag?: { id: string; name: string } | null;
+  parent?: { id: string; name: string } | null;
 }
 
 export interface BroadcastRecipient {
@@ -570,6 +585,7 @@ export type AutomationTriggerType =
   | 'new_contact_created'
   | 'conversation_assigned'
   | 'tag_added'
+  | 'tag_removed'
   | 'time_based'
   /** IG·01 — GATED scaffolding: requires Meta's instagram_business_manage_comments
    *  permission (a fresh App Review submission this app cannot self-grant).

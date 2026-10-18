@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { sendableContactWhere } from "@/lib/broadcasts/sendable"
 import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience"
 import { isOutcome } from "@/lib/broadcasts/outcomes"
+import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement"
 
 interface AudienceCountBody {
   type: string
@@ -17,6 +18,7 @@ interface AudienceCountBody {
   excludeTagIds?: string[]
   fromBroadcast?: { broadcastId: string; outcome: string }
   listId?: string
+  engagement?: { kind?: string; days?: number }
 }
 
 /**
@@ -50,6 +52,14 @@ export async function POST(req: NextRequest) {
       const ids = (body.contactIds ?? []).filter((id) => typeof id === "string").slice(0, 10_000)
       if (ids.length === 0) return NextResponse.json({ count: 0 })
       const count = await db.contact.count({ where: { AND: [sendable, { id: { in: ids } }, notExcluded] } })
+      return NextResponse.json({ count })
+    }
+
+    if (body.type === "engagement") {
+      const kind = body.engagement?.kind
+      const days = engagementDays(body.engagement?.days)
+      if (!isEngagementKind(kind) || !days) return NextResponse.json({ count: 0 })
+      const count = await db.contact.count({ where: { AND: [sendable, engagementWhere(ctx.accountId, kind, days), notExcluded] } })
       return NextResponse.json({ count })
     }
 

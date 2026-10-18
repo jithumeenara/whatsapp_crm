@@ -1478,12 +1478,8 @@ async function advanceFromNodeKey(
           const { addTagsToContact } = await import("@/lib/contacts/tag-events");
           await addTagsToContact({ accountId: run.account_id, contactId: run.contact_id!, tagIds: [cfg.tag_id], source: "chatbot" });
         } else {
-          await prisma.contactTag.deleteMany({
-            where: {
-              contact_id: run.contact_id!,
-              tag_id: cfg.tag_id,
-            },
-          });
+          const { removeTagsFromContact } = await import("@/lib/contacts/tag-events");
+          await removeTagsFromContact({ accountId: run.account_id, contactId: run.contact_id!, tagIds: [cfg.tag_id], source: "chatbot" });
         }
       } catch (err) {
         // Non-fatal — log + advance. A tag-write failure shouldn't

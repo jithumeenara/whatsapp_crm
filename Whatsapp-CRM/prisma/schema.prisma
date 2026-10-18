@@ -246,6 +246,7 @@ model Account {
   deals                         Deal[]
   broadcasts                    Broadcast[]
   contact_lists                 ContactList[]
+  broadcast_settings            BroadcastSettings?
   automations                   Automation[]
   automation_logs               AutomationLog[]
   automation_pending_executions AutomationPendingExecution[]
@@ -509,6 +510,7 @@ model Tag {
   account  Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
   user     User         @relation(fields: [user_id], references: [id], onDelete: Restrict)
   contacts ContactTag[]
+  event_broadcasts Broadcast[]
 
   @@map("tags")
 }
@@ -2271,6 +2273,19 @@ model Broadcast {
   /// (migration 137, src/lib/broadcasts/outcomes.ts).
   parent_broadcast_id String?  @db.Uuid
   parent_outcome      String?
+  /// Migration 138 — when the last send ended; an automatic follow-up
+  /// (schedule_type 'after_parent') waits follow_up_delay_minutes from it.
+  finished_at             DateTime? @db.Timestamptz(6)
+  follow_up_delay_minutes Int?
+  /// The template's category when last sent; the frequency cap counts 'Marketing'.
+  template_category       String?
+  /// schedule_type 'event': 'tag_added' | 'tag_removed' on event_tag_id,
+  /// once per person, after event_delay_minutes (src/lib/broadcasts/events.ts).
+  event_trigger           String?
+  event_tag_id            String?   @db.Uuid
+  event_delay_minutes     Int       @default(0)
+  /// 'HH:MM-HH:MM' in the business zone; automatic sends wait for it.
+  send_window             String?
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   updated_at         DateTime  @updatedAt @db.Timestamptz(6)
 
@@ -2281,8 +2296,11 @@ model Broadcast {
   parent     Broadcast?           @relation("BroadcastFollowUps", fields: [parent_broadcast_id], references: [id], onDelete: SetNull)
   follow_ups Broadcast[]          @relation("BroadcastFollowUps")
   lists_from ContactList[]
+  event_tag  Tag?                 @relation(fields: [event_tag_id], references: [id], onDelete: SetNull)
 
   @@index([parent_broadcast_id])
+  @@index([event_tag_id], map: "broadcasts_event_tag_idx")
+  @@index([status, schedule_type], map: "broadcasts_status_schedule_idx")
   @@map("broadcasts")
 }
 
@@ -2340,12 +2358,17 @@ model BroadcastRecipient {
   // the report page can show exactly what this recipient's message said,
   // without re-deriving it later from data that may have since changed.
   rendered_body       String?
+  /// Migration 138 — an event recipient waits until then (null = now).
+  send_after          DateTime? @db.Timestamptz(6)
+  /// Retried once automatically after Meta's marketing limit (131049).
+  auto_retried_at     DateTime? @db.Timestamptz(6)
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
 
   broadcast Broadcast @relation(fields: [broadcast_id], references: [id], onDelete: Cascade)
   contact   Contact   @relation(fields: [contact_id], references: [id])
 
   @@index([broadcast_id, status], map: "idx_broadcast_recipients_broadcast_status")
+  @@index([contact_id, sent_at], map: "broadcast_recipients_contact_sent_idx")
   @@map("broadcast_recipients")
 }
 
@@ -3571,4 +3594,20 @@ model ConversationOffer {
   @@index([conversation_id, created_at])
   @@index([status, offered_at])
   @@map("conversation_offers")
+}
+
+/// Broadcast compliance settings, one row per account (migration 138).
+/// No row = the defaults (src/lib/broadcasts/settings.ts).
+model BroadcastSettings {
+  account_id             String   @id @db.Uuid
+  frequency_cap_enabled  Boolean  @default(true)
+  frequency_cap_count    Int      @default(2)
+  frequency_cap_days     Int      @default(7)
+  stop_keywords_enabled  Boolean  @default(true)
+  auto_retry_daily_limit Boolean  @default(true)
+  updated_at             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("broadcast_settings")
 }

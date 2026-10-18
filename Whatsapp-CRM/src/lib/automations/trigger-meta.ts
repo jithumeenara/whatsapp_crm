@@ -31,6 +31,10 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     label: 'Tag Added',
     pillClass: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
   },
+  tag_removed: {
+    label: 'Tag Removed',
+    pillClass: 'border-orange-500/30 bg-orange-500/10 text-orange-300',
+  },
   time_based: {
     label: 'Time-Based',
     pillClass: 'border-gray-300 bg-gray-100 text-gray-600',

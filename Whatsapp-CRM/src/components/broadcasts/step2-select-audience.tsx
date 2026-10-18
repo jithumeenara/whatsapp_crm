@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   Users, ArrowRight, ArrowLeft, X, Search, Phone,
   CheckCheck, Tag as TagIcon, FileSpreadsheet, Upload, AlertCircle, Trash2,
-  ShieldCheck, Loader2, CheckCircle2, XCircle, Download, ListChecks,
+  ShieldCheck, Loader2, CheckCircle2, XCircle, Download, ListChecks, Activity,
 } from 'lucide-react';
 import { apiFetch, errorText } from '@/lib/api-fetch';
 
@@ -16,7 +16,14 @@ import { apiFetch, errorText } from '@/lib/api-fetch';
 // 'pick' folded into 'all' -- the All WhatsApp tab itself now offers a
 // "send to everyone" vs "pick specific contacts" toggle instead of being
 // a separate tab (see pickSpecific state below).
-type AudienceMode = 'all' | 'tags' | 'excel' | 'list';
+type AudienceMode = 'all' | 'tags' | 'excel' | 'list' | 'engagement';
+
+const ENGAGEMENT_OPTIONS = [
+  { kind: 'ignored', label: 'Got broadcasts but never replied' },
+  { kind: 'read', label: 'Opened a broadcast' },
+  { kind: 'replied', label: 'Replied to a broadcast' },
+  { kind: 'not_sent', label: 'Got no broadcast (rested)' },
+] as const;
 
 interface SavedList {
   id: string;
@@ -27,7 +34,7 @@ interface SavedList {
 }
 
 export interface AudienceConfig {
-  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list';
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement';
   tagIds?: string[];
   customField?: { fieldId: string; operator: 'is' | 'is_not' | 'contains'; value: string };
   csvContacts?: ExcelContactRow[];
@@ -37,6 +44,8 @@ export interface AudienceConfig {
   fromBroadcast?: { broadcastId: string; outcome: string };
   /** A saved contact list. */
   listId?: string;
+  /** How people responded to broadcasts lately (engagement.ts). */
+  engagement?: { kind: string; days: number };
   /** Human words for a follow-up or list audience, for the summaries. */
   label?: string;
 }
@@ -199,6 +208,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     if (audience.type === 'tags') return 'tags';
     if (audience.type === 'csv') return 'excel';
     if (audience.type === 'list') return 'list';
+    if (audience.type === 'engagement') return 'engagement';
     return 'all'; // 'contacts' lives under 'all' too, see pickSpecific
   };
   const [mode, setMode] = useState<AudienceMode>(initMode);
@@ -244,6 +254,34 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   function chooseList(l: SavedList) {
     setSelectedListId(l.id);
     onUpdate({ type: 'list', listId: l.id, label: l.name });
+  }
+
+  /* Engagement (engagement mode): how people responded lately. */
+  const [engKind, setEngKind] = useState<string>(audience.engagement?.kind ?? 'ignored');
+  const [engDays, setEngDays] = useState<number>(audience.engagement?.days ?? 30);
+  const [engCount, setEngCount] = useState<number | null>(null);
+  const engSeq = useRef(0);
+  useEffect(() => {
+    if (mode !== 'engagement') return;
+    const seq = ++engSeq.current;
+    setEngCount(null);
+    apiFetch('/api/broadcasts/audience-count', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'engagement', engagement: { kind: engKind, days: engDays } }),
+    })
+      .then((r) => r.json())
+      .then((d: { count?: number | null }) => { if (seq === engSeq.current) setEngCount(d.count ?? 0); })
+      .catch((err) => {
+        console.error('[audience] engagement count failed:', err);
+        if (seq === engSeq.current) { setEngCount(0); toast.error(errorText(err, 'Could not count these people')); }
+      });
+  }, [mode, engKind, engDays]);
+  function chooseEngagement(kind: string, days: number) {
+    setEngKind(kind);
+    setEngDays(days);
+    const label = ENGAGEMENT_OPTIONS.find((o) => o.kind === kind)?.label ?? kind;
+    onUpdate({ type: 'engagement', engagement: { kind, days }, label: `${label} · last ${days} days` });
   }
 
   /* Selected contact IDs (for pick mode) */
@@ -346,6 +384,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     if (m === 'all') onUpdate(pickSpecific ? { type: 'contacts', contactIds: [...selectedIds] } : { type: 'all' });
     else if (m === 'tags') onUpdate({ type: 'tags', tagIds: selectedTagIds });
     else if (m === 'list') onUpdate({ type: 'list', listId: selectedListId || undefined, label: selectedList?.name });
+    else if (m === 'engagement') chooseEngagement(engKind, engDays);
     else onUpdate({ type: 'csv', csvContacts: excelContacts });
   }
 
@@ -525,6 +564,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     (mode === 'all' && (!pickSpecific || selectedIds.size > 0)) ||
     (mode === 'tags' && selectedTagIds.length > 0) ||
     (mode === 'list' && !!selectedList && selectedList.member_count > 0) ||
+    (mode === 'engagement' && (engCount ?? 0) > 0) ||
     (mode === 'excel' && validationStatus === 'done' && sendCount > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
@@ -533,6 +573,11 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       return pickSpecific
         ? `${selectedIds.size} contact${plural(selectedIds.size)} selected`
         : `${totalWa.toLocaleString()} WhatsApp contacts`;
+    }
+
+    if (mode === 'engagement') {
+      if (engCount === null) return 'Counting…';
+      return `${engCount.toLocaleString()} ${engCount === 1 ? 'person' : 'people'} — ${ENGAGEMENT_OPTIONS.find((o) => o.kind === engKind)?.label.toLowerCase()} in the last ${engDays} days`;
     }
 
     if (mode === 'list') {
@@ -577,12 +622,13 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       </div>
 
       {/* ── Mode tabs ── */}
-      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-3 lg:grid-cols-5">
         {([
           { key: 'all',   label: 'All WhatsApp',   icon: Users },
           { key: 'tags',  label: 'By Tag',          icon: TagIcon },
           { key: 'excel', label: 'Import Excel',    icon: FileSpreadsheet },
           { key: 'list',  label: 'Saved list',      icon: ListChecks },
+          { key: 'engagement', label: 'Engagement', icon: Activity },
         ] as { key: AudienceMode; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -600,6 +646,33 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           </button>
         ))}
       </div>
+
+      {/* ── Engagement (engagement mode) ── */}
+      {mode === 'engagement' && (
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+          <fieldset>
+            <legend className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-600">People who</legend>
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              {ENGAGEMENT_OPTIONS.map((o) => (
+                <label key={o.kind} className={cn('flex cursor-pointer items-center gap-2.5 rounded-lg border px-3 py-2 text-[13px]',
+                  engKind === o.kind ? 'border-indigo-500 bg-indigo-50 text-indigo-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50')}>
+                  <input type="radio" name="engagement-kind" value={o.kind} checked={engKind === o.kind}
+                    onChange={() => chooseEngagement(o.kind, engDays)} className="h-4 w-4 accent-indigo-600" />
+                  {o.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="engagement-days" className="text-[12.5px] text-slate-600">In the last</label>
+            <select id="engagement-days" name="engagement-days" value={engDays} onChange={(e) => chooseEngagement(engKind, Number(e.target.value))}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-[13px] text-slate-700 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100">
+              {[7, 14, 30, 60, 90, 180, 365].map((d) => <option key={d} value={d}>{d} days</option>)}
+            </select>
+          </div>
+          <p className="text-[11.5px] text-slate-500">Counted from your broadcasts. Opted-out and blocked contacts are never included.</p>
+        </div>
+      )}
 
       {/* ── Saved list picker (list mode) ── */}
       {mode === 'list' && (

@@ -11,6 +11,7 @@ import { Step2SelectAudience, type AudienceConfig } from "@/components/broadcast
 import { Step3Personalize } from "@/components/broadcasts/step3-personalize"
 import { Step4ScheduleSend } from "@/components/broadcasts/step4-schedule-send"
 import { FollowUpAudience } from "@/components/broadcasts/follow-up-audience"
+import { EventTrigger, eventSummaryText } from "@/components/broadcasts/event-trigger"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { useBroadcastSending, type BroadcastSchedule } from "@/hooks/use-broadcast-sending"
 
@@ -39,6 +40,11 @@ export default function NewBroadcastV2() {
   // otherwise, so a single-number account sees no new UI at all.
   const [numbers, setNumbers] = useState<{ id: string; label: string }[]>([])
   const [whatsappConfigId, setWhatsappConfigId] = useState<string>("")
+  // ?mode=event — an event-based message: step 2 is its trigger, not an audience.
+  const [eventMode, setEventMode] = useState(false)
+  const [tagNames, setTagNames] = useState<Record<string, string>>({})
+  // A follow-up whose first broadcast has not finished can only be automatic.
+  const [parentFinished, setParentFinished] = useState(true)
 
   useEffect(() => {
     fetch("/api/whatsapp/config")
@@ -64,17 +70,51 @@ export default function NewBroadcastV2() {
     let live = true
     apiFetch(`/api/broadcasts/${encodeURIComponent(parentId)}/outcomes`)
       .then((r) => r.json())
-      .then((d: { broadcast?: { name?: string }; outcomes?: Array<{ key: string; label: string; followUp: boolean }> }) => {
+      .then((d: { broadcast?: { name?: string; status?: string }; outcomes?: Array<{ key: string; label: string; followUp: boolean }> }) => {
         if (!live) return
         const group = d.outcomes?.find((o) => o.key === outcome && o.followUp)
         if (!group) { toast.error("That group can't get a follow-up."); return }
         const parentName = d.broadcast?.name ?? "broadcast"
+        const finished = d.broadcast?.status === "sent" || d.broadcast?.status === "failed" || d.broadcast?.status === "active"
+        setParentFinished(finished)
+        if (!finished) setSchedule({ type: "after_parent", followUpDelay: { value: 1, unit: "days" }, sendWindow: "09:00-21:00" })
         setAudience({ type: "broadcast_outcome", fromBroadcast: { broadcastId: parentId, outcome }, label: `${group.label} · ${parentName}` })
         setName((n) => n || `${parentName} — follow-up (${group.label.toLowerCase()})`.slice(0, 120))
       })
       .catch((err) => {
         console.error("[broadcast] follow-up group failed to load:", err)
         if (live) toast.error(errorText(err, "Could not load the group for this follow-up."))
+      })
+    return () => { live = false }
+  }, [])
+
+  // ?mode=event and ?list=<id> (Lists → "Send to list").
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    if (q.get("mode") === "event") {
+      // Switched on once the tag names are in (step 0, the template, is
+      // the same in both modes, so nothing visible waits on it).
+      apiFetch("/api/tags", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { tags?: { id: string; name: string }[] }) => setTagNames(Object.fromEntries((d.tags ?? []).map((t) => [t.id, t.name]))))
+        .catch((err) => console.error("[broadcast] tags failed to load:", err))
+        .finally(() => {
+          setEventMode(true)
+          setSchedule({ type: "event", event: { trigger: "tag_added", tagId: "", delayValue: 0, delayUnit: "minutes", includeExisting: false }, sendWindow: "09:00-21:00" })
+        })
+      return
+    }
+    const listId = q.get("list")
+    if (!listId) return
+    let live = true
+    apiFetch(`/api/contact-lists/${encodeURIComponent(listId)}`)
+      .then((r) => r.json())
+      .then((d: { list?: { id: string; name: string } }) => {
+        if (live && d.list) setAudience({ type: "list", listId: d.list.id, label: d.list.name })
+      })
+      .catch((err) => {
+        console.error("[broadcast] list failed to load:", err)
+        if (live) toast.error(errorText(err, "Could not load that list."))
       })
     return () => { live = false }
   }, [])
@@ -87,11 +127,18 @@ export default function NewBroadcastV2() {
   async function handleSend() {
     if (!template) return
     try {
-      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
-      toast.success(schedule.type === "now" ? "Broadcast sending…" : schedule.type === "once" ? "Broadcast scheduled" : "Recurring broadcast started")
+      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId, engagement: audience.engagement }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
+      toast.success(
+        schedule.type === "now" ? "Broadcast sending…"
+          : schedule.type === "once" ? "Broadcast scheduled"
+          : schedule.type === "event" ? "Event-based message is on"
+          : schedule.type === "after_parent" ? "Follow-up set up — it goes by itself"
+          : "Recurring broadcast started",
+      )
       router.push(`/broadcasts/${id}`)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Broadcast failed")
+      console.error("[broadcast] create failed:", err)
+      toast.error(errorText(err, "Broadcast failed"))
     }
   }
 
@@ -115,8 +162,8 @@ export default function NewBroadcastV2() {
             <Radio className="h-4 w-4 text-white" />
           </div>
           <div>
-            <h1 className="text-[15px] font-semibold text-slate-900">New Broadcast</h1>
-            <p className="text-[11px] text-slate-500">Send a message to multiple contacts</p>
+            <h1 className="text-[15px] font-semibold text-slate-900">{eventMode ? "New event-based message" : "New broadcast"}</h1>
+            <p className="text-[11px] text-slate-500">{eventMode ? "Sent by itself when a tag is added or removed" : "Send a message to multiple contacts"}</p>
           </div>
         </div>
 
@@ -133,7 +180,7 @@ export default function NewBroadcastV2() {
                     {done ? <Check className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : i + 1}
                   </div>
                   <span className={cn("hidden text-[12px] font-medium sm:block", active ? "text-slate-900" : done ? "text-indigo-600" : "text-slate-400")}>
-                    {s.label}
+                    {eventMode && s.key === "audience" ? "Trigger" : s.label}
                   </span>
                 </div>
                 {i < STEPS.length - 1 && (
@@ -149,10 +196,15 @@ export default function NewBroadcastV2() {
       <div className="mx-auto max-w-3xl p-4 sm:p-6">
         <div style={{ opacity: isProcessing ? 0.6 : 1, pointerEvents: isProcessing ? "none" : "auto" }} className="transition-opacity">
           {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} />}
-          {step === 1 && audience.type === "broadcast_outcome" && (
-            <FollowUpAudience audience={audience} onChangeAudience={() => setAudience({ type: "all" })} onNext={() => setStep(2)} onBack={() => setStep(0)} />
+          {step === 1 && eventMode && (
+            <EventTrigger schedule={schedule} onChange={setSchedule} onNext={() => setStep(2)} onBack={() => setStep(0)} />
           )}
-          {step === 1 && audience.type !== "broadcast_outcome" && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
+          {step === 1 && !eventMode && audience.type === "broadcast_outcome" && (
+            <FollowUpAudience audience={audience} parentFinished={parentFinished}
+              onChangeAudience={() => { setAudience({ type: "all" }); setSchedule({ type: "now" }); setParentFinished(true) }}
+              onNext={() => setStep(2)} onBack={() => setStep(0)} />
+          )}
+          {step === 1 && !eventMode && audience.type !== "broadcast_outcome" && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && template && <Step3Personalize template={template} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
           {step === 3 && template && numbers.length > 1 && (
             <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
@@ -169,7 +221,11 @@ export default function NewBroadcastV2() {
               </select>
             </div>
           )}
-          {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template} audience={audience} schedule={schedule} onScheduleChange={setSchedule} onSend={handleSend} onSaveDraft={handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}
+          {step === 3 && template && <Step4ScheduleSend name={name} onNameChange={setName} template={template}
+            audience={eventMode ? { type: "event" } : audience} schedule={schedule}
+            mode={eventMode ? "event" : audience.type === "broadcast_outcome" ? "follow_up" : "normal"}
+            parentFinished={parentFinished}
+            eventSummary={eventMode ? eventSummaryText(schedule, tagNames[schedule.event?.tagId ?? ""]) : undefined} onScheduleChange={setSchedule} onSend={handleSend} onSaveDraft={eventMode || audience.type === "broadcast_outcome" ? undefined : handleSaveDraft} onBack={() => setStep(2)} isProcessing={isProcessing} progress={progress} />}
         </div>
       </div>
     </div>

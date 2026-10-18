@@ -11,8 +11,11 @@ import type { AudienceConfig } from './step2-select-audience';
  * set by the report's "Send follow-up". Shown, not picked, so the people a
  * reminder goes to are the people the report showed.
  */
-export function FollowUpAudience({ audience, onChangeAudience, onNext, onBack }: {
+export function FollowUpAudience({ audience, parentFinished = true, onChangeAudience, onNext, onBack }: {
   audience: AudienceConfig;
+  /** false while the first broadcast is still to go: the group is empty
+   *  now and the follow-up can only be automatic. */
+  parentFinished?: boolean;
   onChangeAudience: () => void;
   onNext: () => void;
   onBack: () => void;
@@ -38,7 +41,7 @@ export function FollowUpAudience({ audience, onChangeAudience, onNext, onBack }:
     return () => { live = false; };
   }, [audience.type, audience.fromBroadcast, audience.listId]);
 
-  const empty = count === 0;
+  const empty = count === 0 && parentFinished;
 
   return (
     <div className="space-y-5">
@@ -57,6 +60,7 @@ export function FollowUpAudience({ audience, onChangeAudience, onNext, onBack }:
             <p className="mt-0.5 text-[12.5px] text-slate-500" aria-live="polite">
               {error ? <span className="text-rose-700">{error}</span>
                 : count === null ? <span className="inline-flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> Counting…</span>
+                : !parentFinished ? 'Fills in once the first broadcast has been sent — this follow-up then goes to it automatically.'
                 : empty ? 'Nobody in this group can get a message now.'
                 : <><span className="font-semibold tabular-nums text-slate-700">{count.toLocaleString()}</span> {count === 1 ? 'person' : 'people'} will get it.</>}
             </p>

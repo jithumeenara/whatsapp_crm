@@ -7,6 +7,8 @@ import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-send
 import { liveCounts } from "@/lib/broadcasts/counts";
 import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
 import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
+import { isSendWindow } from "@/lib/broadcasts/rules";
+import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement";
 
 /**
  * GET /api/broadcasts
@@ -22,6 +24,10 @@ export async function GET(req: NextRequest) {
     const rows = await ctx.db.broadcast.findMany({
       where: { account_id: ctx.accountId },
       orderBy: { created_at: "desc" },
+      include: {
+        event_tag: { select: { id: true, name: true } },
+        parent: { select: { id: true, name: true } },
+      },
     });
     // Counted from the recipients, the same way each broadcast's own page
     // does, so the list and the page can never disagree — and so rows
@@ -68,7 +74,7 @@ export async function POST(request: NextRequest) {
        *  same as before this field existed. 'once'/'recurring' create the
        *  row as status:'scheduled' instead -- the sweep in
        *  src/lib/broadcasts/sweep.ts picks it up at next_send_at. */
-      schedule_type?: "now" | "once" | "recurring";
+      schedule_type?: "now" | "once" | "recurring" | "after_parent" | "event";
       scheduled_at?: string;
       interval_value?: number;
       interval_unit?: "minutes" | "hours" | "days";
@@ -76,7 +82,29 @@ export async function POST(request: NextRequest) {
       /** Whether this campaign's sends may reorder the Inbox. Defaults
        *  to false — see src/lib/broadcasts/run-broadcast.ts. */
       show_in_inbox?: boolean;
+      /** 'after_parent': wait this long after the first broadcast finishes. */
+      follow_up_delay?: { value?: number; unit?: string };
+      /** 'event': send when this tag is added to / removed from someone. */
+      event?: { trigger?: string; tag_id?: string; delay_value?: number; delay_unit?: string; include_existing?: boolean };
+      /** 'HH:MM-HH:MM' in the business zone, for automatic sends. */
+      send_window?: string | null;
     };
+    if (typeof body.name !== "string" || !body.name.trim() || body.name.length > 200) {
+      return NextResponse.json({ error: "Give the broadcast a name (up to 200 characters)." }, { status: 400 });
+    }
+    if (typeof body.template_name !== "string" || !body.template_name) {
+      return NextResponse.json({ error: "Choose a template." }, { status: 400 });
+    }
+    const sendWindow = body.send_window == null || body.send_window === "" ? null : body.send_window;
+    if (sendWindow !== null && !isSendWindow(sendWindow)) {
+      return NextResponse.json({ error: "Send window must look like 09:00-21:00." }, { status: 400 });
+    }
+
+    // Automatic follow-up and event-based broadcasts choose their people
+    // later (auto-sweep.ts / events.ts) — no audience is resolved now.
+    if (body.schedule_type === "after_parent" || body.schedule_type === "event") {
+      return createAutomatic(ctx, body, sendWindow);
+    }
 
     if (!body.audience || typeof body.audience !== "object") {
       return NextResponse.json({ error: "Choose who this broadcast goes to." }, { status: 400 });
@@ -148,6 +176,7 @@ export async function POST(request: NextRequest) {
           excludeTagIds: body.audience.excludeTagIds,
           ...(parent ? { fromBroadcast: { broadcastId: parent.id, outcome: parent.outcome } } : {}),
           ...(body.audience.type === "list" && typeof body.audience.listId === "string" ? { listId: body.audience.listId } : {}),
+          ...(body.audience.type === "engagement" && body.audience.engagement ? { engagement: body.audience.engagement } : {}),
         } as Prisma.InputJsonValue,
         parent_broadcast_id: parent?.id ?? null,
         parent_outcome: parent?.outcome ?? null,
@@ -319,6 +348,10 @@ async function resolveAudience(
   } else if (audience.type === "broadcast_outcome" && audience.fromBroadcast && isOutcome(audience.fromBroadcast.outcome)) {
     const ids = await contactsInOutcome(db, ctx.accountId, audience.fromBroadcast.broadcastId, audience.fromBroadcast.outcome);
     contacts = ids && ids.length > 0 ? await db.contact.findMany({ where: { id: { in: ids }, ...sendable } }) : [];
+  } else if (audience.type === "engagement" && audience.engagement && isEngagementKind(audience.engagement.kind) && engagementDays(audience.engagement.days)) {
+    contacts = await db.contact.findMany({
+      where: { AND: [sendable, engagementWhere(ctx.accountId, audience.engagement.kind, engagementDays(audience.engagement.days)!)] },
+    });
   } else if (audience.type === "list" && typeof audience.listId === "string") {
     const ids = await contactsInList(db, ctx.accountId, audience.listId);
     contacts = ids && ids.length > 0 ? await db.contact.findMany({ where: { id: { in: ids }, ...sendable } }) : [];
@@ -496,4 +529,113 @@ async function upsertCsvContacts(
   return [...uniqueByDigits.keys()]
     .map((digits) => byDigits.get(digits))
     .filter((c): c is ContactRow => Boolean(c));
+}
+
+// ── Automatic follow-ups and event-based broadcasts ────────────────────
+
+const UNIT_MINUTES: Record<string, number> = { minutes: 1, hours: 60, days: 1440 };
+const MAX_WAIT_MINUTES = 43_200; // 30 days
+
+function toMinutes(value: unknown, unit: unknown): number | null {
+  const v = Number(value ?? 0);
+  const m = UNIT_MINUTES[String(unit ?? "hours")];
+  if (!Number.isFinite(v) || v < 0 || !m) return null;
+  const total = Math.round(v * m);
+  return total <= MAX_WAIT_MINUTES ? total : null;
+}
+
+async function createAutomatic(
+  ctx: AccountContext,
+  body: {
+    name: string;
+    template_name: string;
+    template_language: string;
+    variables: Record<string, VariableMapping>;
+    audience: AudienceConfig;
+    header_media_url?: string;
+    whatsapp_config_id?: string;
+    schedule_type?: string;
+    show_in_inbox?: boolean;
+    follow_up_delay?: { value?: number; unit?: string };
+    event?: { trigger?: string; tag_id?: string; delay_value?: number; delay_unit?: string; include_existing?: boolean };
+  },
+  sendWindow: string | null,
+) {
+  const db = ctx.db;
+  const base = {
+    user_id: ctx.userId,
+    account_id: ctx.accountId,
+    name: body.name.trim(),
+    template_name: body.template_name,
+    template_language: typeof body.template_language === "string" && body.template_language ? body.template_language : "en_US",
+    template_variables: (body.variables ?? {}) as Prisma.InputJsonValue,
+    header_media_url: body.header_media_url?.trim() || null,
+    whatsapp_config_id: body.whatsapp_config_id?.trim() || null,
+    show_in_inbox: body.show_in_inbox === true,
+    send_window: sendWindow,
+    total_recipients: 0,
+  };
+
+  if (body.schedule_type === "after_parent") {
+    const from = body.audience?.type === "broadcast_outcome" ? body.audience.fromBroadcast : undefined;
+    if (!from || typeof from.broadcastId !== "string" || !isOutcome(from.outcome) || !OUTCOME_INFO[from.outcome].followUp) {
+      return NextResponse.json({ error: "An automatic follow-up needs a group of an earlier broadcast." }, { status: 400 });
+    }
+    const parent = await db.broadcast.findFirst({ where: { id: from.broadcastId, account_id: ctx.accountId }, select: { id: true } });
+    if (!parent) return NextResponse.json({ error: "The first broadcast was not found." }, { status: 404 });
+    const delay = toMinutes(body.follow_up_delay?.value, body.follow_up_delay?.unit);
+    if (delay === null) return NextResponse.json({ error: "The wait must be between 0 minutes and 30 days." }, { status: 400 });
+
+    const b = await db.broadcast.create({
+      data: {
+        ...base,
+        schedule_type: "after_parent",
+        status: "waiting",
+        parent_broadcast_id: parent.id,
+        parent_outcome: from.outcome,
+        follow_up_delay_minutes: delay,
+        audience_filter: { type: "broadcast_outcome", fromBroadcast: { broadcastId: parent.id, outcome: from.outcome } },
+      },
+      select: { id: true },
+    });
+    return NextResponse.json({ broadcastId: b.id, scheduled: true, recipients: [] });
+  }
+
+  // Event-based.
+  const ev = body.event ?? {};
+  if (ev.trigger !== "tag_added" && ev.trigger !== "tag_removed") {
+    return NextResponse.json({ error: "Choose when it is sent: a tag added or a tag removed." }, { status: 400 });
+  }
+  const tag = typeof ev.tag_id === "string"
+    ? await db.tag.findFirst({ where: { id: ev.tag_id, account_id: ctx.accountId }, select: { id: true } })
+    : null;
+  if (!tag) return NextResponse.json({ error: "Choose a tag." }, { status: 400 });
+  const delay = toMinutes(ev.delay_value, ev.delay_unit);
+  if (delay === null) return NextResponse.json({ error: "The wait must be between 0 minutes and 30 days." }, { status: 400 });
+
+  const b = await db.broadcast.create({
+    data: {
+      ...base,
+      schedule_type: "event",
+      status: "active",
+      event_trigger: ev.trigger,
+      event_tag_id: tag.id,
+      event_delay_minutes: delay,
+      audience_filter: { type: "event", trigger: ev.trigger, tagId: tag.id },
+    },
+    select: { id: true },
+  });
+
+  // "Also send to people who already have this tag" — once each, like
+  // anyone tagged later.
+  let queued = 0;
+  if (ev.include_existing === true && ev.trigger === "tag_added") {
+    const holders = await db.contactTag.findMany({
+      where: { tag_id: tag.id, contact: { account_id: ctx.accountId } },
+      select: { contact_id: true },
+    });
+    const { enqueueEventRecipients } = await import("@/lib/broadcasts/events");
+    queued = await enqueueEventRecipients(ctx.accountId, b.id, holders.map((h) => h.contact_id), delay);
+  }
+  return NextResponse.json({ broadcastId: b.id, scheduled: true, recipients: [], queued });
 }

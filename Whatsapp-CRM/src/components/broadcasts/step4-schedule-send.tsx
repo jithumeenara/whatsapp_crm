@@ -3,11 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import type { MessageTemplate } from '@/types';
 import type { BroadcastSchedule } from '@/hooks/use-broadcast-sending';
+import { WaitField, SendWindowField } from './timing-fields';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   ArrowLeft, Send, Loader2, Users, Save, FileText, Tag, CheckCheck, Table2, Upload,
-  Rocket, ShieldAlert, Zap, CalendarClock, Repeat, Inbox,
+  Rocket, ShieldAlert, Zap, CalendarClock, Repeat, Inbox, Hourglass,
 } from 'lucide-react';
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(' ') }
@@ -23,6 +24,7 @@ interface AudienceConfig {
   listId?: string;
   /** Shown in the summary for a follow-up or a list, e.g. "Read, no reply · Diwali offer". */
   label?: string;
+  engagement?: { kind: string; days: number };
 }
 
 interface Step4Props {
@@ -37,6 +39,14 @@ interface Step4Props {
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
+  /** 'follow_up' adds "automatically after the first broadcast";
+   *  'event' replaces timing with the event trigger summary. */
+  mode?: 'normal' | 'follow_up' | 'event';
+  /** follow_up: the first broadcast has finished, so the group is known
+   *  now. When false only the automatic option makes sense. */
+  parentFinished?: boolean;
+  /** event: "When “Paid” is added, 1 hour later". */
+  eventSummary?: string;
 }
 
 const AUDIENCE_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
@@ -47,6 +57,23 @@ const AUDIENCE_META: Record<string, { label: string; icon: React.ElementType; co
   csv:          { label: 'CSV Upload',              icon: Upload,    color: 'text-amber-700 bg-amber-50' },
   broadcast_outcome: { label: 'Follow-up to a group',  icon: Repeat,    color: 'text-indigo-700 bg-indigo-50' },
   list:         { label: 'Saved list',               icon: CheckCheck, color: 'text-emerald-700 bg-emerald-50' },
+  engagement:   { label: 'By engagement',            icon: Users,     color: 'text-violet-700 bg-violet-50' },
+  event:        { label: 'Event-based',              icon: Zap,       color: 'text-amber-800 bg-amber-50' },
+};
+
+const SEND_LABEL: Record<BroadcastSchedule['type'], string> = {
+  now: 'Send broadcast',
+  once: 'Schedule broadcast',
+  recurring: 'Start recurring broadcast',
+  after_parent: 'Set up follow-up',
+  event: 'Start event-based message',
+};
+const CONFIRM_TITLE: Record<BroadcastSchedule['type'], string> = {
+  now: 'Confirm broadcast',
+  once: 'Confirm schedule',
+  recurring: 'Confirm recurring broadcast',
+  after_parent: 'Confirm automatic follow-up',
+  event: 'Confirm event-based message',
 };
 
 function toLocalDateInput(iso: string): string {
@@ -60,6 +87,7 @@ function toLocalTimeInput(iso: string): string {
 
 export function Step4ScheduleSend({
   name, onNameChange, template, audience, schedule, onScheduleChange, onSend, onSaveDraft, onBack, isProcessing, progress,
+  mode = 'normal', parentFinished = true, eventSummary,
 }: Step4Props) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
@@ -79,7 +107,11 @@ export function Step4ScheduleSend({
   }
 
   function setScheduleType(type: BroadcastSchedule['type']) {
-    if (type === 'now') { onScheduleChange({ type: 'now' }); return; }
+    if (type === 'now') { onScheduleChange({ type: 'now', showInInbox: schedule.showInInbox }); return; }
+    if (type === 'after_parent') {
+      onScheduleChange({ type, followUpDelay: schedule.followUpDelay ?? { value: 1, unit: 'days' }, sendWindow: schedule.sendWindow ?? '09:00-21:00', showInInbox: schedule.showInInbox });
+      return;
+    }
     onScheduleChange({
       type,
       scheduledAt: date ? new Date(`${date}T${time || '09:00'}:00`).toISOString() : undefined,
@@ -93,6 +125,7 @@ export function Step4ScheduleSend({
     async function calculateReach() {
       setLoadingReach(true);
       try {
+        if (audience.type === 'event') { setEstimatedReach(0); return; }
         if (audience.type === 'csv') { setEstimatedReach(audience.csvContacts?.length ?? 0); return; }
         if (audience.type === 'contacts') { setEstimatedReach(audience.contactIds?.length ?? 0); return; }
         const res = await fetch('/api/broadcasts/audience-count', {
@@ -103,6 +136,7 @@ export function Step4ScheduleSend({
           body: JSON.stringify({
             type: audience.type, tagIds: audience.tagIds, customField: audience.customField,
             excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId,
+            engagement: audience.engagement,
           }),
         });
         if (res.ok) { const j = await res.json(); setEstimatedReach(j.count ?? 0); }
@@ -169,6 +203,7 @@ export function Step4ScheduleSend({
           </div>
 
           {/* Reach */}
+          {mode !== 'event' && (
           <div className="col-span-1 flex items-center gap-3 bg-indigo-50/50 p-4 sm:col-span-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-indigo-100 bg-white">
               <Users className="h-4 w-4 text-indigo-600" />
@@ -178,23 +213,36 @@ export function Step4ScheduleSend({
               {loadingReach ? (
                 <div className="flex items-center gap-1.5"><Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" /><span className="text-[13px] text-slate-400">Calculating…</span></div>
               ) : (
-                <p className="text-[20px] font-bold text-indigo-700">{estimatedReach.toLocaleString()}</p>
+                <p className="text-[20px] font-bold text-indigo-700">{mode === 'follow_up' && !parentFinished ? 'Not known yet' : estimatedReach.toLocaleString()}</p>
+              )}
+              {mode === 'follow_up' && !parentFinished && (
+                <p className="text-[11.5px] text-slate-500">The group fills in when the first broadcast has been sent; this follow-up goes to it then.</p>
               )}
             </div>
           </div>
+          )}
         </div>
       </div>
 
       {/* When to send */}
+      {mode === 'event' ? (
+        <div className="space-y-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="flex items-center gap-1.5 text-[13px] font-semibold text-amber-900"><Zap className="h-4 w-4" aria-hidden /> Sends by itself</p>
+          <p className="text-[12.5px] text-amber-900">{eventSummary}</p>
+          <p className="text-[11.5px] text-amber-800">Each person gets it once. Opted-out and blocked contacts, and anyone over your offers limit, are left out.</p>
+        </div>
+      ) : (
       <div className="space-y-3">
         <p className="text-[12px] font-semibold text-slate-700">When to send</p>
-        <div className="grid grid-cols-3 gap-2">
+        <div className={cn('grid gap-2', mode === 'follow_up' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3')}>
           {([
             { type: 'now' as const,       label: 'Send now',  icon: Zap },
             { type: 'once' as const,      label: 'Schedule',  icon: CalendarClock },
             { type: 'recurring' as const, label: 'Repeat',    icon: Repeat },
+            ...(mode === 'follow_up' ? [{ type: 'after_parent' as const, label: 'Automatically', icon: Hourglass }] : []),
           ]).map(({ type, label, icon: Icon }) => (
-            <button key={type} type="button" onClick={() => setScheduleType(type)} disabled={isProcessing}
+            <button key={type} type="button" onClick={() => setScheduleType(type)}
+              disabled={isProcessing || (mode === 'follow_up' && !parentFinished && type !== 'after_parent')}
               className={cn('flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-[12.5px] font-semibold transition-all disabled:opacity-50',
                 schedule.type === type ? 'border-indigo-300 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300')}>
               <Icon className="h-3.5 w-3.5" /> {label}
@@ -202,7 +250,20 @@ export function Step4ScheduleSend({
           ))}
         </div>
 
-        {schedule.type !== 'now' && (
+        {schedule.type === 'after_parent' && (
+          <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+            <WaitField id="follow-up-wait" label="Wait after the first broadcast finishes"
+              value={schedule.followUpDelay?.value ?? 1} unit={schedule.followUpDelay?.unit ?? 'days'}
+              onChange={(v) => onScheduleChange({ ...schedule, followUpDelay: v })} disabled={isProcessing} />
+            <SendWindowField id="follow-up-window" value={schedule.sendWindow ?? null}
+              onChange={(v) => onScheduleChange({ ...schedule, sendWindow: v })} disabled={isProcessing} />
+            <p className="text-[11.5px] text-indigo-700">
+              The group is worked out when it goes, so anyone who replies in the meantime is no longer in it.
+            </p>
+          </div>
+        )}
+
+        {(schedule.type === 'once' || schedule.type === 'recurring') && (
           <div className="space-y-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -261,6 +322,8 @@ export function Step4ScheduleSend({
         )}
       </div>
 
+      )}
+
       {/* What this does to the Inbox.
           Placed here, next to scheduling, because both are decisions
           about *how* the campaign lands rather than what it says. */}
@@ -317,12 +380,12 @@ export function Step4ScheduleSend({
             </Button>
           )}
           <Button
-            disabled={!name.trim() || isProcessing || (schedule.type !== 'now' && !date)}
+            disabled={!name.trim() || isProcessing || ((schedule.type === 'once' || schedule.type === 'recurring') && !date)}
             onClick={() => setShowConfirm(true)}
             className="h-9 bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            {schedule.type === 'now' ? <Send className="h-4 w-4" /> : schedule.type === 'once' ? <CalendarClock className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
-            {schedule.type === 'now' ? 'Send Broadcast' : schedule.type === 'once' ? 'Schedule Broadcast' : 'Start Recurring Broadcast'}
+            {schedule.type === 'now' ? <Send className="h-4 w-4" /> : schedule.type === 'once' ? <CalendarClock className="h-4 w-4" /> : schedule.type === 'event' ? <Zap className="h-4 w-4" /> : schedule.type === 'after_parent' ? <Hourglass className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
+            {SEND_LABEL[schedule.type]}
           </Button>
         </div>
       </div>
@@ -335,7 +398,7 @@ export function Step4ScheduleSend({
               <Rocket className="h-5 w-5 text-indigo-600" />
             </div>
             <DialogTitle className="text-[17px] font-bold text-slate-800">
-              {schedule.type === 'now' ? 'Confirm Broadcast' : schedule.type === 'once' ? 'Confirm Schedule' : 'Confirm Recurring Broadcast'}
+              {CONFIRM_TITLE[schedule.type]}
             </DialogTitle>
             <p className="mt-0.5 text-[12px] text-slate-400">
               {schedule.type === 'now' ? "Review before this goes out — this can't be undone." : 'Review before this is scheduled.'}
@@ -352,10 +415,17 @@ export function Step4ScheduleSend({
                 <span className="text-[12px] text-slate-500">Template</span>
                 <span className="truncate text-[13px] font-semibold text-slate-800">{template.name}</span>
               </div>
+              {mode !== 'event' && schedule.type !== 'after_parent' && (
               <div className="flex items-center justify-between gap-3">
                 <span className="text-[12px] text-slate-500">Recipients</span>
                 <span className="text-[13px] font-bold text-indigo-600">{estimatedReach.toLocaleString()} contacts</span>
               </div>
+              )}
+              {(mode === 'event' || schedule.type === 'after_parent') && (
+                <p className="text-[12.5px] text-slate-700">
+                  {mode === 'event' ? eventSummary : `Goes ${schedule.followUpDelay?.value ?? 1} ${schedule.followUpDelay?.unit ?? 'days'} after the first broadcast finishes, to “${audience.label ?? 'the group'}” as it is then.`}
+                </p>
+              )}
               {schedule.type !== 'now' && schedule.scheduledAt && (
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[12px] text-slate-500">{schedule.type === 'recurring' ? 'First send' : 'Sends on'}</span>
@@ -378,6 +448,8 @@ export function Step4ScheduleSend({
               <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700" />
               <p className="text-[11.5px] text-amber-700">
                 {schedule.type === 'now' ? 'Once sent, this broadcast cannot be recalled or edited.'
+                  : schedule.type === 'event' ? 'It keeps sending by itself until you pause it on Broadcasts → Event-based.'
+                  : schedule.type === 'after_parent' ? 'It goes by itself. You can cancel it on its own page until then.'
                   : schedule.type === 'once' ? 'Once scheduled, this broadcast will send automatically — even if you close this tab.'
                   : 'Once started, this campaign re-sends to the full audience automatically on the interval above. Cancel any time from the Broadcasts list.'}
               </p>
@@ -391,7 +463,7 @@ export function Step4ScheduleSend({
               <button type="button" onClick={() => { setShowConfirm(false); onSend(); }}
                 className="flex h-10 items-center gap-2 rounded-xl bg-indigo-600 px-5 text-[13px] font-bold text-white hover:bg-indigo-700">
                 {schedule.type === 'now' ? <Send className="h-4 w-4" /> : schedule.type === 'once' ? <CalendarClock className="h-4 w-4" /> : <Repeat className="h-4 w-4" />}
-                {schedule.type === 'now' ? 'Confirm & Send' : schedule.type === 'once' ? 'Confirm & Schedule' : 'Confirm & Start'}
+                {schedule.type === 'now' ? 'Confirm and send' : schedule.type === 'once' ? 'Confirm and schedule' : 'Confirm and start'}
               </button>
             </div>
           </div>

@@ -10,8 +10,11 @@ import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
  *
  * GET  /api/contact-lists            this account's lists, newest use first
  * POST /api/contact-lists            { name, description?, fromBroadcast: { broadcastId, outcome } }
- *      saves one group of a broadcast's recipients as a list. The name is
- *      unique per account (any case), so a double click makes one list.
+ *      saves one group of a broadcast's recipients as a list; or
+ *                                     { name, description?, mergeListIds: [id, id, …] }
+ *      makes a new list of everyone on those lists (each person once).
+ *      The name is unique per account (any case), so a double click makes
+ *      one list.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -40,7 +43,7 @@ export async function POST(req: NextRequest) {
     const ctx = await requireRoleOrApiKey(req, "agent");
     assertPageAccess(ctx, "/broadcasts");
     const body = (await req.json().catch(() => null)) as {
-      name?: unknown; description?: unknown; fromBroadcast?: { broadcastId?: unknown; outcome?: unknown };
+      name?: unknown; description?: unknown; fromBroadcast?: { broadcastId?: unknown; outcome?: unknown }; mergeListIds?: unknown;
     } | null;
 
     const name = typeof body?.name === "string" ? body.name.trim() : "";
@@ -49,13 +52,28 @@ export async function POST(req: NextRequest) {
     const description = typeof body?.description === "string" ? body.description.trim().slice(0, 500) || null : null;
 
     const from = body?.fromBroadcast;
-    if (!from || typeof from.broadcastId !== "string" || !isOutcome(from.outcome)) {
-      return NextResponse.json({ error: "Choose the group to save." }, { status: 400 });
-    }
-    const contactIds = await contactsInOutcome(ctx.db, ctx.accountId, from.broadcastId, from.outcome);
-    if (contactIds === null) return NextResponse.json({ error: "That broadcast was not found." }, { status: 404 });
-    if (contactIds.length === 0) {
-      return NextResponse.json({ error: `Nobody is in “${OUTCOME_INFO[from.outcome].label}” — nothing to save.` }, { status: 422 });
+    let contactIds: string[];
+    let origin: { source: string; source_broadcast_id: string | null; source_outcome: string | null };
+    if (Array.isArray(body?.mergeListIds)) {
+      const ids = [...new Set((body.mergeListIds as unknown[]).filter((v): v is string => typeof v === "string"))];
+      if (ids.length < 2 || ids.length > 20) return NextResponse.json({ error: "Choose 2 to 20 lists to merge." }, { status: 400 });
+      const owned = await ctx.db.contactList.findMany({ where: { id: { in: ids }, account_id: ctx.accountId }, select: { id: true } });
+      if (owned.length !== ids.length) return NextResponse.json({ error: "One of those lists was not found." }, { status: 404 });
+      const rows = await ctx.db.contactListMember.findMany({ where: { list_id: { in: ids } }, select: { contact_id: true } });
+      contactIds = [...new Set(rows.map((r) => r.contact_id))];
+      if (contactIds.length === 0) return NextResponse.json({ error: "Those lists are empty — nothing to merge." }, { status: 422 });
+      origin = { source: "manual", source_broadcast_id: null, source_outcome: null };
+    } else {
+      if (!from || typeof from.broadcastId !== "string" || !isOutcome(from.outcome)) {
+        return NextResponse.json({ error: "Choose the group to save." }, { status: 400 });
+      }
+      const found = await contactsInOutcome(ctx.db, ctx.accountId, from.broadcastId, from.outcome);
+      if (found === null) return NextResponse.json({ error: "That broadcast was not found." }, { status: 404 });
+      if (found.length === 0) {
+        return NextResponse.json({ error: `Nobody is in “${OUTCOME_INFO[from.outcome].label}” — nothing to save.` }, { status: 422 });
+      }
+      contactIds = found;
+      origin = { source: "broadcast", source_broadcast_id: from.broadcastId, source_outcome: from.outcome };
     }
 
     try {
@@ -66,9 +84,7 @@ export async function POST(req: NextRequest) {
             user_id: ctx.userId,
             name,
             description,
-            source: "broadcast",
-            source_broadcast_id: from.broadcastId as string,
-            source_outcome: from.outcome as string,
+            ...origin,
           },
           select: { id: true, name: true },
         });

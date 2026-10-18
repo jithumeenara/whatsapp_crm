@@ -1,6 +1,6 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
-import { addTagsToContact } from "@/lib/contacts/tag-events"
+import { addTagsToContact, removeTagsFromContact } from "@/lib/contacts/tag-events"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -63,7 +63,7 @@ export async function PUT(
     // Tags no longer in the list go; the rest are added through the one
     // path that checks they are this account's and fires "Tag added" for
     // the ones that are new.
-    await prisma.contactTag.deleteMany({ where: { contact_id: id, tag_id: { notIn: tagIds } } })
+    await removeTagsFromContact({ accountId: ctx.accountId, contactId: id, keepTagIds: tagIds, source: "inbox" })
     if (tagIds.length > 0) {
       await addTagsToContact({ accountId: ctx.accountId, contactId: id, tagIds, source: "inbox" })
     }
@@ -141,9 +141,7 @@ export async function DELETE(
       return NextResponse.json({ error: "tag_id is required" }, { status: 400 })
     }
 
-    await prisma.contactTag.deleteMany({
-      where: { contact_id: id, tag_id: tagId },
-    })
+    await removeTagsFromContact({ accountId: ctx.accountId, contactId: id, tagIds: [tagId], source: "inbox" })
 
     return NextResponse.json({ ok: true })
   } catch (err) {
