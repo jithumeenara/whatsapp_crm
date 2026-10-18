@@ -3481,6 +3481,7 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const tableId = String(cfg.table_id ?? "");
   const which = (cfg.which === "oldest" || cfg.which === "all" ? cfg.which : "latest") as "latest" | "oldest" | "all";
   const ifNotFound = cfg.if_not_found === "create" ? "create" : "branch";
+  const match = cfg.match === "any" ? "any" : "all";
   // The first version stored one phone column as match_field.
   const conds: UtrCond[] = Array.isArray(cfg.conditions)
     ? (cfg.conditions as UtrCond[])
@@ -3557,7 +3558,8 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
   // Typed values only matter when nothing else ties the row to this
   // customer (their number, or "only rows saved for this chat").
-  const tiedToCustomer = onlyThisChat || conds.some((c) => c.op === "phone" && (c.value ?? "").includes("{{contact.phone}}"));
+  // With "any", the number is only one way in — a typed value alone can match.
+  const tiedToCustomer = onlyThisChat || (match === "all" && conds.some((c) => c.op === "phone" && (c.value ?? "").includes("{{contact.phone}}")));
   const usesTyped = !tiedToCustomer && conds.some((c) => /\{\{\s*vars\./.test(c.value ?? ""));
   const noConditions = conds.filter((c) => c.field_key).length === 0;
 
@@ -3572,7 +3574,7 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       const res = await fetch(`/api/data-tables/${tableId}/find-row`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conditions, which }),
+        body: JSON.stringify({ conditions, which, match }),
       });
       const d = (await res.json().catch(() => ({}))) as {
         error?: string; note?: string; found?: number;
@@ -3603,7 +3605,8 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       const op = UTR_OPS.find((o) => o.value === c.op)?.label ?? "is";
       return c.op === "empty" || c.op === "not_empty" ? `${col} ${op}` : `${col} ${op} ${c.value === "{{contact.phone}}" ? "the chatting number" : `“${c.value ?? ""}”`}`;
     });
-    const scope = [...where, ...(onlyThisChat ? ["saved for this chat"] : [])].join(" and ");
+    const joined = where.join(match === "any" ? " or " : " and ");
+    const scope = [joined, ...(onlyThisChat ? ["saved for this chat"] : [])].filter(Boolean).join(" and ");
     const rowWords = which === "all" ? "every matching row" : which === "oldest" ? "the oldest matching row" : "the latest matching row";
     return `${label} becomes ${v} on ${rowWords}${scope ? ` (${scope})` : ""}.${ifNotFound === "create" ? " If none matches, a new row is made." : ""}`;
   })();
@@ -3625,12 +3628,26 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         <>
           <div className="space-y-2">
             <span className="text-xs font-medium text-slate-700">Find rows where</span>
+            {conds.filter((c) => c.field_key).length > 1 && (
+              <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="How conditions combine">
+                {([["all", "All of these (AND)"], ["any", "Any of these (OR)"]] as const).map(([v, label]) => (
+                  <button key={v} type="button" role="radio" aria-checked={match === v}
+                    onClick={() => { setTestResult(null); onChange({ ...cfg, conditions: conds, match: v }); }}
+                    className={cn(
+                      "rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors",
+                      match === v ? "border-indigo-500 bg-indigo-50 text-indigo-600" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:text-slate-900",
+                    )}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {conds.map((c, i) => {
               const needsValue = c.op !== "empty" && c.op !== "not_empty";
               const choices = utrOptions(byKey.get(c.field_key));
               return (
                 <div key={i} className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
-                  {i > 0 && <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">and</span>}
+                  {i > 0 && <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{match === "any" ? "or" : "and"}</span>}
                   <div className="flex items-center gap-1.5">
                     <Select value={c.field_key} onValueChange={(v) => {
                       const f = byKey.get(String(v ?? ""));

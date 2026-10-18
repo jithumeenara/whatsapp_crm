@@ -20,6 +20,7 @@
  */
 
 import crypto from 'crypto'
+import { syncDropdownFields } from './sheet-dropdowns'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
@@ -141,6 +142,12 @@ async function syncOnce(linkId: string, accountId: string, allowDeletes: boolean
       return fail(`The sheet has more than ${SHEET_MAX_ROWS.toLocaleString('en-IN')} rows; two-way sync handles up to that many.`)
     }
     const [header = [], ...rows] = all
+
+    // The sheet's dropdowns become the fields' choices (at most every 10 min).
+    await syncDropdownFields({
+      accountId, tableId: link.table_id, token, spreadsheetId: link.spreadsheet_id, sheetTitle: link.sheet_title,
+      columnKeys: header.map((h) => columnMap[String(h).trim()] || null), rows,
+    })
 
     const snapshots = new Map<string, Snapshot>()
     for (const s of snapshotRows) snapshots.set(s.record_id, (s.snapshot as Snapshot) ?? {})

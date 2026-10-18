@@ -13,6 +13,7 @@
 
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
 import { SheetsApiError } from './sheets'
+import { readDropdowns } from './sheet-dropdowns'
 import { disabledApi, isApiDisabled, type DisabledApi } from './api-disabled'
 
 const DRIVE = 'https://www.googleapis.com/drive/v3/files'
@@ -106,6 +107,8 @@ export interface SheetPreview {
   sample: string[][]
   /** Data rows (not counting the header) that have anything in them. */
   total_rows: number
+  /** Column index → the sheet's own dropdown choices for that column. */
+  dropdowns: Record<number, string[]>
 }
 
 /** The spreadsheet's tabs, and the chosen tab's header and first rows. */
@@ -132,6 +135,8 @@ export async function previewSpreadsheet(accountId: string, spreadsheetId: strin
     `${SHEETS}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`,
   )
   const rows = (values.values ?? []).map((r) => r.map((v) => (v == null ? '' : String(v)))).filter((r) => r.some((c) => c.trim() !== ''))
+  // The tab's dropdown columns, so the import screen suggests them as dropdowns.
+  const dropdowns = Object.fromEntries(await readDropdowns(token, spreadsheetId, chosen.title))
   const [head = [], ...body] = rows
   const width = Math.max(head.length, ...body.slice(0, 50).map((r) => r.length), 0)
   const headers = Array.from({ length: width }, (_, i) => head[i]?.trim() || `Column ${i + 1}`)
@@ -143,6 +148,7 @@ export async function previewSpreadsheet(accountId: string, spreadsheetId: strin
     headers,
     sample: body.slice(0, 50).map((r) => headers.map((_, i) => r[i] ?? '')),
     total_rows: body.length,
+    dropdowns,
   }
 }
 

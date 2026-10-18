@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     if (sp.get('picked') !== '1' && !(await canBrowseSheets(ctx.accountId))) return NextResponse.json({ needs_permission: true })
     const spreadsheet = sp.get('spreadsheet') ?? ''
     const preview = await previewSpreadsheet(ctx.accountId, spreadsheet, sp.get('tab'))
-    const columns = suggestColumns(preview.headers, preview.sample, []).map((c) =>
+    const columns = suggestColumns(preview.headers, preview.sample, [], preview.dropdowns).map((c) =>
       c.header.trim().toLowerCase() === ID_HEADER.toLowerCase() ? { ...c, target: 'skip' } : c,
     )
     return NextResponse.json({ ...preview, sample: preview.sample.slice(0, 6), fields: [], columns, can_write: await canWriteSheets(ctx.accountId) })

@@ -21,6 +21,7 @@ import { appendRows, readTab, writeTab, SHEET_MAX_ROWS } from './sheets'
 import { ensureGoogleTables } from './store'
 import { slugify } from '@/lib/data-store/slugify'
 import { guessFieldType } from './sheet-browse'
+import { syncDropdownFields } from './sheet-dropdowns'
 
 /** Fields that hold no value of their own (layout) or no text (a drawn
  *  signature) — never a column. */
@@ -246,6 +247,11 @@ export async function importFromSheet(linkId: string, accountId: string): Promis
             return k && known.has(k) ? k : null
           })
         : byName
+      // The sheet's dropdowns (District, Gender, …) become the fields' choices.
+      await syncDropdownFields({
+        accountId, tableId: link.table_id, token, spreadsheetId: link.spreadsheet_id, sheetTitle: link.sheet_title,
+        columnKeys, rows: body.slice(0, SHEET_MAX_ROWS), force: true,
+      })
       const matchedColumns = columnKeys.filter(Boolean).length
       const unmatchedHeaders = headers.filter((h, i) => h.trim() && !columnKeys[i] && h.trim() !== ADDED_ON_HEADER)
       if (matchedColumns === 0) {
@@ -333,7 +339,14 @@ export function columnMapOf(raw: unknown): Record<string, string> | null {
  * What the import screen suggests for each column: the field with the
  * same name if there is one, otherwise a new field of the guessed type.
  */
-export function suggestColumns(headers: readonly string[], sample: readonly string[][], fields: readonly FieldLite[]): ColumnChoice[] {
+export function suggestColumns(
+  headers: readonly string[],
+  sample: readonly string[][],
+  fields: readonly FieldLite[],
+  /** The sheet's own dropdown choices by column index — a column with one
+   *  is suggested as a dropdown with the whole list. */
+  dropdowns: Readonly<Record<number, string[]>> = {},
+): ColumnChoice[] {
   const matched = mapHeaders(headers, fields)
   const taken = new Set<string>()
   return headers.map((header, i) => {
@@ -342,6 +355,8 @@ export function suggestColumns(headers: readonly string[], sample: readonly stri
       taken.add(key)
       return { header, target: key }
     }
+    const list = dropdowns[i]
+    if (list && list.length) return { header, target: 'new', type: 'select', label: header.slice(0, 80), options: list }
     const guess = guessFieldType(header, sample.map((r) => r[i] ?? ''))
     return { header, target: 'new', type: guess.type, label: header.slice(0, 80), options: guess.options }
   })
@@ -375,7 +390,7 @@ export async function applyColumnChoices(accountId: string, tableId: string, cho
     for (let i = 2; keys.has(key); i++) key = `${base}_${i}`
     keys.add(key)
     const type = NEW_FIELD_TYPES.has(c.type ?? '') ? c.type! : 'text'
-    const options = type === 'select' ? (c.options ?? []).filter((o) => typeof o === 'string' && o.trim()).slice(0, 50) : []
+    const options = type === 'select' ? (c.options ?? []).filter((o) => typeof o === 'string' && o.trim()).slice(0, 200) : []
     toCreate.push({
       table_id: tableId,
       account_id: accountId,

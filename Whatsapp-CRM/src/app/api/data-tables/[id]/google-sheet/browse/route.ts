@@ -43,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       ...preview,
       sample: preview.sample.slice(0, 6),
       fields: fields.filter((f) => !['section_header', 'html_block', 'signature', 'file', 'image'].includes(f.field_type)),
-      columns: suggestColumns(preview.headers, preview.sample, fields).map((c) =>
+      columns: suggestColumns(preview.headers, preview.sample, fields, preview.dropdowns).map((c) =>
         c.header.trim().toLowerCase() === ID_HEADER.toLowerCase() ? { ...c, target: 'skip' } : c,
       ),
       can_write: await canWriteSheets(ctx.accountId),

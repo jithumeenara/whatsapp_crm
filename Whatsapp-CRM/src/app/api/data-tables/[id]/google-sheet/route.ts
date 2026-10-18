@@ -195,7 +195,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       } else {
         const preview = await previewSpreadsheet(ctx.accountId, spreadsheetId, sheetTitle).catch(() => null)
         const fields = await prisma.dataField.findMany({ where: { table_id: id }, select: { field_key: true, label: true, field_type: true } })
-        choices = preview ? suggestColumns(preview.headers, preview.sample, fields) : []
+        choices = preview ? suggestColumns(preview.headers, preview.sample, fields, preview.dropdowns) : []
       }
       // The sync's own id column is never a field.
       choices = choices.map((c) => (c.header.trim().toLowerCase() === ID_HEADER.toLowerCase() ? { ...c, target: 'skip' } : c))

@@ -4,8 +4,8 @@
  *
  * Everything is the bot builder's choice:
  *   - which rows: conditions on any columns (equals, same phone number,
- *     contains, empty, not empty), all of which must hold, and/or "only
- *     rows saved for this chat" (contact_id);
+ *     contains, empty, not empty) — all of them must hold, or any one of
+ *     them — and/or "only rows saved for this chat" (contact_id);
  *   - which of them: the latest, the oldest or all (up to 20);
  *   - what to write: any columns, to text, a variable, today, now, yes,
  *     no or empty;
@@ -50,7 +50,13 @@ export interface RowCondition {
   op: MatchOp
   /** Already interpolated by the caller. Unused for empty / not_empty. */
   value?: string
+  /** Set by normaliseConditions: this one can match nothing (its value
+   *  came out empty, or a phone with under 10 digits). */
+  never?: boolean
 }
+
+/** All conditions must hold, or any one is enough. */
+export type MatchMode = 'all' | 'any'
 
 export interface FieldLite {
   field_key: string
@@ -132,6 +138,7 @@ export function normaliseConditions(
   fields: readonly FieldLite[],
   conditions: readonly RowCondition[],
   onlyThisChat: boolean,
+  mode: MatchMode = 'all',
 ): { conditions: RowCondition[]; nothing: boolean } | { error: string } {
   const byKey = new Map(fields.map((f) => [f.field_key, f]))
   const out: RowCondition[] = []
@@ -143,13 +150,12 @@ export function normaliseConditions(
     if (NOT_SEARCHABLE.has(f.field_type)) return { error: `Column "${f.label}" can't be searched.` }
     if (!MATCH_OPS.includes(c.op)) return { error: `Unknown comparison "${c.op}".` }
     const value = (c.value ?? '').trim().slice(0, 500)
-    if (c.op === 'equals' || c.op === 'contains') {
-      if (!value) nothing = true
-    } else if (c.op === 'phone') {
-      if (!phoneKey(value)) nothing = true
-    }
-    out.push({ field_key: c.field_key, op: c.op, value })
+    const never = ((c.op === 'equals' || c.op === 'contains') && !value) || (c.op === 'phone' && !phoneKey(value))
+    out.push({ field_key: c.field_key, op: c.op, value, ...(never ? { never: true } : {}) })
   }
+  // "All": one condition that can match nothing means no row matches.
+  // "Any": only when every condition can match nothing.
+  nothing = out.length > 0 && (mode === 'all' ? out.some((c) => c.never) : out.every((c) => c.never))
   // With no condition and not limited to this chat, a step would change
   // rows of the whole table — refused.
   if (out.length === 0 && !onlyThisChat) return { error: 'Add a condition, or limit it to rows saved for this chat.' }
@@ -161,6 +167,7 @@ function likeEscape(v: string): string {
 }
 
 function conditionSql(c: RowCondition): Prisma.Sql {
+  if (c.never) return Prisma.sql`false`
   const cell = Prisma.sql`coalesce(data ->> ${c.field_key}, '')`
   switch (c.op) {
     case 'equals':
@@ -191,10 +198,16 @@ export async function findRows(args: {
   accountId: string
   tableId: string
   conditions: readonly RowCondition[]
-  /** Set to limit to rows saved for this contact. */
+  /** All conditions, or any one of them. */
+  mode?: MatchMode
+  /** Set to limit to rows saved for this contact (always, whatever the mode). */
   onlyContactId: string | null
 }): Promise<FoundRow[]> {
-  const parts: Prisma.Sql[] = args.conditions.map(conditionSql)
+  const parts: Prisma.Sql[] = []
+  if (args.conditions.length > 0) {
+    const conds = args.conditions.map(conditionSql)
+    parts.push(Prisma.sql`(${Prisma.join(conds, args.mode === 'any' ? ' OR ' : ' AND ')})`)
+  }
   if (args.onlyContactId) parts.push(Prisma.sql`contact_id = ${args.onlyContactId}::uuid`)
   if (parts.length === 0) return []
   const rows = await prisma.$queryRaw<Array<{ id: string; data: unknown; created_at: Date }>>(Prisma.sql`
@@ -230,7 +243,7 @@ function fmt(v: unknown): string {
 export function rowForCreate(conditions: readonly RowCondition[], patch: Record<string, unknown>): Record<string, unknown> {
   const data: Record<string, unknown> = {}
   for (const c of conditions) {
-    if ((c.op === 'equals' || c.op === 'phone') && c.value) data[c.field_key] = c.value
+    if ((c.op === 'equals' || c.op === 'phone') && c.value && !c.never) data[c.field_key] = c.value
   }
   return { ...data, ...patch }
 }
@@ -257,6 +270,8 @@ export async function updateRows(args: {
   accountId: string
   tableId: string
   conditions: readonly RowCondition[]
+  /** All conditions must hold (default), or any one of them. */
+  mode?: MatchMode
   /** Limit to rows saved for this chat (needs contactId). */
   onlyThisChat: boolean
   contactId: string | null
@@ -273,7 +288,7 @@ export async function updateRows(args: {
     select: { id: true, name: true, fields: { select: { field_key: true, label: true, field_type: true } } },
   })
   if (!table) return { ...none, error: 'Table not found in this account' }
-  const conds = normaliseConditions(table.fields, args.conditions, args.onlyThisChat)
+  const conds = normaliseConditions(table.fields, args.conditions, args.onlyThisChat, args.mode ?? 'all')
   if ('error' in conds) return { ...none, error: conds.error }
   const built = buildPatch(table.fields, args.sets, args.now ?? new Date(), args.timeZone)
   if ('error' in built) return { ...none, error: built.error }
@@ -286,6 +301,7 @@ export async function updateRows(args: {
         accountId: args.accountId,
         tableId: table.id,
         conditions: conds.conditions,
+        mode: args.mode ?? 'all',
         onlyContactId: args.onlyThisChat ? args.contactId : null,
       })
 

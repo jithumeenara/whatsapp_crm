@@ -3,7 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { MATCH_OPS, findRows, normaliseConditions, pickRows, type MatchOp, type WhichRow } from '@/lib/data-store/contact-rows'
 
 /**
- * POST /api/data-tables/[id]/find-row   { conditions: [{ field_key, op, value }], which }
+ * POST /api/data-tables/[id]/find-row   { conditions: [{ field_key, op, value }], match: 'all' | 'any', which }
  *
  * The chatbot builder's "Test": which row(s) an "Update table row" step
  * would change, with the values typed into the test box in place of the
@@ -14,7 +14,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const ctx = await requireRole('admin')
     const { id } = await params
-    const body = (await req.json().catch(() => null)) as { conditions?: unknown; which?: unknown } | null
+    const body = (await req.json().catch(() => null)) as { conditions?: unknown; which?: unknown; match?: unknown } | null
+    const mode = body?.match === 'any' ? 'any' : 'all'
     const which: WhichRow = body?.which === 'oldest' || body?.which === 'all' ? body.which : 'latest'
     const raw = Array.isArray(body?.conditions) ? (body.conditions as Array<Record<string, unknown>>) : []
     const conditions = raw.slice(0, 5).map((c) => ({
@@ -29,11 +30,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
     if (!table) return NextResponse.json({ error: 'Table not found' }, { status: 404 })
 
-    const norm = normaliseConditions(table.fields, conditions, false)
+    const norm = normaliseConditions(table.fields, conditions, false, mode)
     if ('error' in norm) return NextResponse.json({ error: norm.error }, { status: 400 })
     if (norm.nothing) return NextResponse.json({ found: 0, rows: [], note: 'A value is empty, or a phone number has fewer than 10 digits — that matches nothing.' })
 
-    const rows = await findRows({ accountId: ctx.accountId, tableId: table.id, conditions: norm.conditions, onlyContactId: null })
+    const rows = await findRows({ accountId: ctx.accountId, tableId: table.id, conditions: norm.conditions, mode, onlyContactId: null })
     const chosen = pickRows(rows, which)
     // Only the first few columns, for recognising the row — not the whole record.
     const shown = table.fields

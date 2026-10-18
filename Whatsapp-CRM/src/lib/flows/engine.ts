@@ -2502,6 +2502,7 @@ The assistant could not generate a reply: ${detail}`,
         conditions?: Array<{ field_key?: string; op?: string; value?: string }>;
         match_field?: string;
         only_this_chat?: boolean;
+        match?: string;
         which?: string;
         sets?: Array<{ field_key?: string; mode?: string; value?: string }>;
         if_not_found?: string;
@@ -2533,6 +2534,7 @@ The assistant could not generate a reply: ${detail}`,
           accountId: run.account_id,
           tableId: cfg.table_id,
           conditions,
+          mode: cfg.match === "any" ? "any" : "all",
           onlyThisChat,
           contactId: run.contact_id ?? null,
           which,
