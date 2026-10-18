@@ -203,6 +203,8 @@ export interface FoundRow {
   id: string
   data: Record<string, unknown>
   created_at: Date
+  /** Set when a chat (bot or AI) saved the row; null for imported rows. */
+  contact_id: string | null
 }
 
 /**
@@ -226,8 +228,8 @@ export async function findRows(args: {
   }
   if (args.onlyContactId) parts.push(Prisma.sql`contact_id = ${args.onlyContactId}::uuid`)
   if (parts.length === 0) return []
-  const rows = await prisma.$queryRaw<Array<{ id: string; data: unknown; created_at: Date }>>(Prisma.sql`
-    SELECT id, data, created_at
+  const rows = await prisma.$queryRaw<Array<{ id: string; data: unknown; created_at: Date; contact_id: string | null }>>(Prisma.sql`
+    SELECT id, data, created_at, contact_id
     FROM data_records
     WHERE table_id = ${args.tableId}::uuid
       AND account_id = ${args.accountId}::uuid
@@ -239,6 +241,7 @@ export async function findRows(args: {
     id: r.id,
     data: (r.data && typeof r.data === 'object' ? r.data : {}) as Record<string, unknown>,
     created_at: r.created_at,
+    contact_id: r.contact_id ?? null,
   }))
 }
 
@@ -264,6 +267,23 @@ export function rowForCreate(conditions: readonly RowCondition[], patch: Record<
   return { ...data, ...patch }
 }
 
+/**
+ * What to do when no row matched. With "Only rows saved for this chat" on,
+ * rows that match the conditions but came from a sheet, Excel or by hand
+ * (no chat saved them) are left out — say so, and never create a second
+ * row for a person who already has one.
+ */
+export function notFoundOutcome(args: { onlyThisChat: boolean; matchedIgnoringChat: number; createIfMissing: boolean }): { create: boolean; reason: string | null } {
+  if (args.onlyThisChat && args.matchedIgnoringChat > 0) {
+    const n = args.matchedIgnoringChat
+    return {
+      create: false,
+      reason: `${n} row${n === 1 ? '' : 's'} matched, but ${n === 1 ? 'it was' : 'they were'} not saved by this chat (imported or added by hand), and “Only rows saved for this chat” is on. Untick it to use ${n === 1 ? 'it' : 'them'}.`,
+    }
+  }
+  return { create: args.createIfMissing, reason: null }
+}
+
 export interface UpdateRowsResult {
   /** Rows that matched, before picking. */
   found: number
@@ -273,6 +293,8 @@ export interface UpdateRowsResult {
   /** The (first) row after the change, for {{vars.row_<column>}}. */
   row: Record<string, unknown> | null
   error?: string
+  /** Why nothing matched, when it can be said (notFoundOutcome). */
+  reason?: string
 }
 
 /**
@@ -328,7 +350,14 @@ export async function updateRows(args: {
   ])
 
   if (rows.length === 0) {
-    if (!args.createIfMissing || conds.nothing) return none
+    if (conds.nothing) return none
+    // Rows that match but were not saved by this chat — counted only to
+    // explain, and so a "create" never duplicates a person.
+    const matchedIgnoringChat = args.onlyThisChat && conds.conditions.length > 0
+      ? (await findRows({ accountId: args.accountId, tableId: table.id, conditions: conds.conditions, mode: args.mode ?? 'all', onlyContactId: null })).length
+      : 0
+    const outcome = notFoundOutcome({ onlyThisChat: args.onlyThisChat, matchedIgnoringChat, createIfMissing: args.createIfMissing })
+    if (!outcome.create) return outcome.reason ? { ...none, reason: outcome.reason } : none
     const data = rowForCreate(conds.conditions, built.patch)
     const created = await prisma.dataRecord.create({
       data: {

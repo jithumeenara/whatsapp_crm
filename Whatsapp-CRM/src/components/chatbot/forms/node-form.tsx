@@ -1831,12 +1831,111 @@ function SetVariableForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   );
 }
 
+const NEW_TAG = "__new_tag__";
+
+/**
+ * Pick a tag from the account's list — or make a new one right here. The
+ * step stores the tag's id. A name typed in the old text box still works
+ * (the engine matches it), and is shown here so it can be swapped for the
+ * real tag.
+ */
+function TagPicker({ value, onChange }: { value: string; onChange: (tagId: string) => void }) {
+  const [tags, setTags] = useState<Array<{ id: string; name: string; color?: string }> | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/tags", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { tags?: Array<{ id: string; name: string; color?: string }> }) => { if (live) setTags(d.tags ?? []); })
+      .catch((err) => {
+        console.error("[tag-step] tags failed to load:", err);
+        if (live) { setTags([]); toast.error("Could not load your tags"); }
+      });
+    return () => { live = false; };
+  }, []);
+
+  const known = tags?.find((t) => t.id === value) ?? tags?.find((t) => t.name.toLowerCase() === value.trim().toLowerCase());
+  const typedName = value && tags && !known ? value : "";
+
+  async function create() {
+    const name = newName.trim();
+    if (!name || saving) return;
+    const existing = tags?.find((t) => t.name.toLowerCase() === name.toLowerCase());
+    if (existing) { onChange(existing.id); setCreating(false); setNewName(""); return; }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/tags", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { tag?: { id: string; name: string; color?: string }; error?: string };
+      if (!res.ok || !d.tag) throw new Error(d.error || `Request failed (${res.status})`);
+      setTags((t) => [...(t ?? []), d.tag!].sort((a, b) => a.name.localeCompare(b.name)));
+      onChange(d.tag.id);
+      setCreating(false);
+      setNewName("");
+      toast.success(`Tag “${d.tag.name}” created`);
+    } catch (err) {
+      console.error("[tag-step] create failed:", err);
+      toast.error(err instanceof Error ? err.message : "Could not create the tag");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Select value={known ? known.id : null} onValueChange={(v) => {
+        const next = String(v ?? "");
+        if (next === NEW_TAG) { setCreating(true); return; }
+        setCreating(false);
+        onChange(next);
+      }}>
+        <SelectTrigger className="h-8 w-full text-xs" aria-label="Tag">
+          <SelectValue placeholder={tags === null ? "Loading…" : tags.length === 0 ? "No tags yet — create one" : "Choose a tag…"} />
+        </SelectTrigger>
+        <SelectContent>
+          {(tags ?? []).map((t) => (
+            <SelectItem key={t.id} value={t.id} className="text-xs">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: /^#[0-9a-f]{6}$/i.test(t.color ?? "") ? t.color : "#94a3b8" }} aria-hidden />
+                {t.name}
+              </span>
+            </SelectItem>
+          ))}
+          <SelectItem value={NEW_TAG} className="text-xs font-medium text-indigo-600">+ Create a new tag…</SelectItem>
+        </SelectContent>
+      </Select>
+      {typedName && !creating && (
+        <p className="text-[10px] text-amber-800">“{typedName}” is not one of your tags. Choose it from the list, or create it.</p>
+      )}
+      {creating && (
+        <div className="flex gap-1.5">
+          <Input className="h-8 flex-1 text-xs" value={newName} autoFocus aria-label="New tag name" placeholder="e.g. Interested"
+            onChange={(e) => setNewName(e.target.value)} maxLength={50}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void create(); } }} />
+          <button type="button" onClick={() => void create()} disabled={saving || !newName.trim()}
+            className="flex h-8 items-center gap-1 rounded-lg bg-indigo-600 px-2.5 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+            {saving && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />} Create
+          </button>
+          <button type="button" onClick={() => { setCreating(false); setNewName(""); }}
+            className="h-8 rounded-lg px-2 text-[11px] text-slate-500 hover:bg-slate-100">Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SetTagForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   return (
     <div className="space-y-4">
       <Field label="Action">
         <Select
-          value={String(cfg.mode ?? "add")}
+          value={cfg.mode === "remove" ? "remove" : "add"}
           onValueChange={(v) => onChange({ ...cfg, mode: v })}
         >
           <SelectTrigger className="h-8 text-xs">
@@ -1852,13 +1951,8 @@ function SetTagForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           </SelectContent>
         </Select>
       </Field>
-      <Field label="Tag ID" hint="Enter the tag's ID from your Tags settings.">
-        <Input
-          className="h-8 text-xs"
-          value={String(cfg.tag_id ?? "")}
-          onChange={(e) => onChange({ ...cfg, tag_id: e.target.value })}
-          placeholder="tag_id_here"
-        />
+      <Field label="Tag">
+        <TagPicker value={String(cfg.tag_id ?? "")} onChange={(id) => onChange({ ...cfg, mode: cfg.mode === "remove" ? "remove" : "add", tag_id: id })} />
       </Field>
       <NodeSelect
         label="Next node"
@@ -3819,10 +3913,10 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       const res = await fetch(`/api/data-tables/${tableId}/find-row`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conditions, which, match }),
+        body: JSON.stringify({ conditions, which, match, only_this_chat: onlyThisChat }),
       });
       const d = (await res.json().catch(() => ({}))) as {
-        error?: string; note?: string; found?: number;
+        error?: string; note?: string; found?: number; chat_note?: string | null;
         rows?: Array<{ preview: Array<{ label: string; value: string }> }>;
       };
       if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
@@ -3830,7 +3924,8 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       else if (!d.found) setTestResult(ifNotFound === "create" ? "No row matches — the bot would create a new one." : "No row matches — the bot would take the “Not found” path.");
       else {
         const first = d.rows?.[0]?.preview.map((p) => `${p.label}: ${p.value || "—"}`).join(" · ") ?? "";
-        setTestResult(`${d.found} row${d.found === 1 ? "" : "s"} match. Would change ${which === "all" ? `${Math.min(d.found, 20)}` : `the ${which} one`}: ${first}`);
+        setTestResult(`${d.found} row${d.found === 1 ? "" : "s"} match. Would change ${which === "all" ? `${Math.min(d.found, 20)}` : `the ${which} one`}: ${first}${d.chat_note ? `
+⚠ ${d.chat_note}` : ""}`);
       }
     } catch (err) {
       console.error("[update-table-row] test failed:", err);
@@ -3954,9 +4049,14 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 onChange={(e) => onChange({ ...cfg, only_this_chat: e.target.checked, conditions: conds })} />
               <span className="text-[11px] text-slate-700">
                 Only rows saved for this chat
-                <span className="block text-[10px] text-slate-500">Rows this bot or the AI saved while talking to this customer.</span>
+                <span className="block text-[10px] text-slate-500">Only rows this bot or the AI saved while chatting with this customer. Rows imported from a sheet or Excel, or added by hand, will NOT be found.</span>
               </span>
             </label>
+            {onlyThisChat && conds.some((c) => c.op === "phone" && (c.value ?? "").includes("{{contact.phone}}")) && (
+              <p className="rounded-md bg-amber-50 px-2 py-1.5 text-[10px] text-amber-900">
+                Not needed here — “same number as the chatting number” already finds this customer’s rows. With it ticked, imported rows are skipped.
+              </p>
+            )}
             {noConditions && !onlyThisChat && (
               <p className="text-[10px] text-rose-700">Add a condition or tick “Only rows saved for this chat” — a step never changes a whole table.</p>
             )}
@@ -4102,7 +4202,7 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                 className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                 {testing ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null} Find matching rows
               </button>
-              <p className="text-[10px] text-slate-500" aria-live="polite">{testResult ?? "Shows which row would change. Nothing is saved."}</p>
+              <p className="whitespace-pre-line text-[10px] text-slate-500" aria-live="polite">{testResult ?? "Shows which row would change. Nothing is saved."}</p>
             </div>
           )}
         </>

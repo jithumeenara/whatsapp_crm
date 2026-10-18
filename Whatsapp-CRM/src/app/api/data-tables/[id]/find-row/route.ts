@@ -14,7 +14,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const ctx = await requireRole('admin')
     const { id } = await params
-    const body = (await req.json().catch(() => null)) as { conditions?: unknown; which?: unknown; match?: unknown } | null
+    const body = (await req.json().catch(() => null)) as { conditions?: unknown; which?: unknown; match?: unknown; only_this_chat?: unknown } | null
+    const onlyThisChat = body?.only_this_chat === true
     const mode = body?.match === 'any' ? 'any' : 'all'
     const which: WhichRow = body?.which === 'oldest' || body?.which === 'all' ? body.which : 'latest'
     const raw = Array.isArray(body?.conditions) ? (body.conditions as Array<Record<string, unknown>>) : []
@@ -35,6 +36,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (norm.nothing) return NextResponse.json({ found: 0, rows: [], note: 'A value is empty, or a phone number has fewer than 10 digits — that matches nothing.' })
 
     const rows = await findRows({ accountId: ctx.accountId, tableId: table.id, conditions: norm.conditions, mode, onlyContactId: null })
+    // "Only rows saved for this chat": in a real chat, rows no chat saved
+    // (imported, Excel, by hand) are left out. Say how many that is, so the
+    // Test never promises a match the chatbot will not make.
+    const savedByAChat = rows.filter((r) => r.contact_id).length
+    const chatNote = onlyThisChat && rows.length > 0
+      ? savedByAChat === 0
+        ? `In the chat this would find NOTHING: “Only rows saved for this chat” is on, and ${rows.length === 1 ? 'this row was' : 'these rows were'} imported or added by hand, not saved by a chat. Untick it.`
+        : `In the chat only rows saved by that customer’s chat count (${savedByAChat} of ${rows.length} here were saved by a chat).`
+      : null
     const chosen = pickRows(rows, which)
     // Only the first few columns, for recognising the row — not the whole record.
     const shown = table.fields
@@ -42,6 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .slice(0, 4)
     return NextResponse.json({
       found: rows.length,
+      chat_note: chatNote,
       rows: chosen.slice(0, 5).map((r) => ({
         id: r.id,
         created_at: r.created_at,

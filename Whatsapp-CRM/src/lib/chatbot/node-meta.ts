@@ -218,7 +218,7 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
   },
   update_table_row: {
     label: 'Update Table Row',
-    description: "Change a column on this customer's row in a Data Store table (e.g. Status to Confirmed)",
+    description: "Find rows in a Data Store table and change their columns (e.g. Status to Confirmed)",
     icon: TableProperties,
     color: 'text-teal-700',
     bg: 'bg-teal-50',

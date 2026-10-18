@@ -102,6 +102,7 @@ import {
 } from "./types";
 import { afterRecordCreated } from "@/lib/data-store/record-events";
 import { triggerVars, carriedTriggerVars } from "@/lib/flows/trigger-vars";
+import { resolveTagStep } from "@/lib/flows/tag-step";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -1476,12 +1477,18 @@ async function advanceFromNodeKey(
     if (node.node_type === "set_tag") {
       const cfg = node.config as unknown as SetTagNodeConfig;
       try {
-        if (cfg.mode === "add") {
+        // Which tag, add or remove (tag-step.ts): a missing mode is "add",
+        // and a tag typed by name in the old text box still works.
+        const accountTags = await prisma.tag.findMany({ where: { account_id: run.account_id }, select: { id: true, name: true } });
+        const step = resolveTagStep(cfg as unknown as { mode?: string; tag_id?: string }, accountTags);
+        if (!step.tagId) throw new Error(step.problem ?? "No tag chosen in this step.");
+        if (!run.contact_id) throw new Error("This chat has no contact to tag.");
+        if (step.action === "add") {
           const { addTagsToContact } = await import("@/lib/contacts/tag-events");
-          await addTagsToContact({ accountId: run.account_id, contactId: run.contact_id!, tagIds: [cfg.tag_id], source: "chatbot" });
+          await addTagsToContact({ accountId: run.account_id, contactId: run.contact_id, tagIds: [step.tagId], source: "chatbot" });
         } else {
           const { removeTagsFromContact } = await import("@/lib/contacts/tag-events");
-          await removeTagsFromContact({ accountId: run.account_id, contactId: run.contact_id!, tagIds: [cfg.tag_id], source: "chatbot" });
+          await removeTagsFromContact({ accountId: run.account_id, contactId: run.contact_id, tagIds: [step.tagId], source: "chatbot" });
         }
       } catch (err) {
         // Non-fatal — log + advance. A tag-write failure shouldn't
@@ -2560,7 +2567,12 @@ The assistant could not generate a reply: ${detail}`,
             unchanged: !result.created && result.updated.length === 0 ? "already had these values" : undefined,
           });
         } else {
-          await logEvent(run.id, "node_entered", node.node_key, { node_type: "update_table_row", found: 0, outcome: "not_found" });
+          await logEvent(run.id, "node_entered", node.node_key, {
+            node_type: "update_table_row",
+            found: 0,
+            outcome: "not_found",
+            ...(result.reason ? { reason: result.reason } : {}),
+          });
         }
       } catch (err) {
         await logEvent(run.id, "error", node.node_key, {

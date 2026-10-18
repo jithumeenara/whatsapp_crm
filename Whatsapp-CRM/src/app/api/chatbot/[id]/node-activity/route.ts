@@ -53,6 +53,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           result = 'created'
         } else if (p.outcome === 'not_found' || p.found === 0) {
           result = 'not_found'
+          detail = typeof p.reason === 'string' ? p.reason : ''
         } else if (Array.isArray(p.changes) && p.changes.length > 0) {
           result = 'updated'
           detail = (p.changes as unknown[]).map(String).join('; ')
