@@ -3472,6 +3472,77 @@ function utrOptions(f: UtrField | undefined): string[] {
   return items.map((i) => String(i.value ?? i.label ?? "")).filter(Boolean);
 }
 
+const UTR_CHOICE_TYPES = ["select", "multiselect", "radio"];
+const CUSTOM = "__custom__";
+
+/**
+ * "Set <column> to …" for a dropdown column: a drop-down of the column's
+ * choices, and "Custom text…" for anything else (a variable, a new word).
+ * A dropdown with no choices saved yet (say, a sheet still to sync) offers
+ * the values the column already holds.
+ */
+function ChoiceValue({ tableId, field, value, vars, onChange }: {
+  tableId: string;
+  field: UtrField;
+  value: string;
+  vars: string[];
+  onChange: (value: string) => void;
+}) {
+  const saved = utrOptions(field);
+  const [fromRows, setFromRows] = useState<string[]>([]);
+  const options = saved.length > 0 ? saved : fromRows;
+  const [custom, setCustom] = useState(() => value !== "" && saved.length > 0 && !saved.includes(value));
+  const showCustom = custom || (value !== "" && options.length > 0 && !options.includes(value));
+
+  useEffect(() => {
+    if (saved.length > 0 || !UTR_CHOICE_TYPES.includes(field.field_type)) return;
+    let live = true;
+    fetch(`/api/data-tables/${tableId}/field-values?field_key=${encodeURIComponent(field.field_key)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { values?: unknown[] }) => {
+        if (live) setFromRows((d.values ?? []).map((v) => String(v)).filter(Boolean).slice(0, 200));
+      })
+      .catch((err) => console.error("[update-table-row] column values failed to load:", err));
+    return () => { live = false; };
+  }, [tableId, field.field_key, field.field_type, saved.length]);
+
+  if (options.length === 0) {
+    return (
+      <>
+        <Input className="h-8 text-xs" value={value} aria-label={`Value for ${field.label}`}
+          onChange={(e) => onChange(e.target.value)} placeholder="A value, or {{vars.answer}}" />
+        <VarChips vars={vars} onInsert={(v) => onChange(value + v)} />
+      </>
+    );
+  }
+  return (
+    <>
+      <Select value={showCustom ? CUSTOM : value || null} onValueChange={(v) => {
+        const next = String(v ?? "");
+        if (next === CUSTOM) { setCustom(true); onChange(""); return; }
+        setCustom(false);
+        onChange(next);
+      }}>
+        <SelectTrigger className="h-8 w-full text-xs" aria-label={`Value for ${field.label}`}>
+          <SelectValue placeholder={`Choose ${field.label}…`} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+          <SelectItem value={CUSTOM}>Custom text…</SelectItem>
+        </SelectContent>
+      </Select>
+      {saved.length === 0 && <p className="text-[10px] text-slate-500">Choices taken from the values already in this column.</p>}
+      {showCustom && (
+        <>
+          <Input className="h-8 text-xs" value={value} autoFocus aria-label={`Custom value for ${field.label}`}
+            onChange={(e) => onChange(e.target.value)} placeholder="Type a value, or {{vars.answer}}" />
+          <VarChips vars={vars} onInsert={(v) => onChange(value + v)} />
+        </>
+      )}
+    </>
+  );
+}
+
 function isPhoneLike(f: UtrField): boolean {
   return f.field_type === "phone" || /phone|mobile|whatsapp/i.test(f.label);
 }
@@ -3745,6 +3816,7 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
               const choices = utrOptions(f);
               const isDate = f?.field_type === "date" || f?.field_type === "datetime";
               const isBool = f?.field_type === "boolean";
+              const isChoice = !!f && (UTR_CHOICE_TYPES.includes(f.field_type) || choices.length > 0);
               return (
                 <div key={i} className="space-y-2 rounded-lg border border-slate-200 p-2.5">
                   <div className="flex items-center gap-1.5">
@@ -3788,18 +3860,12 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
                     </div>
                   ) : null)}
 
-                  {s.field_key && choices.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {choices.map((ch) => (
-                        <button key={ch} type="button" onClick={() => setAt(i, { mode: "value", value: ch })}
-                          className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium", s.mode === "value" && s.value === ch ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-indigo-200")}>
-                          {ch}
-                        </button>
-                      ))}
-                    </div>
+                  {s.field_key && f && isChoice && s.mode === "value" && (
+                    <ChoiceValue key={s.field_key} tableId={tableId} field={f} value={s.value ?? ""} vars={vars}
+                      onChange={(v) => setAt(i, { mode: "value", value: v })} />
                   )}
 
-                  {s.field_key && !isBool && s.mode === "value" && (
+                  {s.field_key && !isBool && !isChoice && s.mode === "value" && (
                     <>
                       <Input className="h-8 text-xs" value={s.value ?? ""} aria-label={`Value for ${f?.label ?? "column"}`}
                         onChange={(e) => setAt(i, { mode: "value", value: e.target.value })}
