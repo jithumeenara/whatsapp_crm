@@ -75,6 +75,7 @@ model User {
   pipelines                     Pipeline[]
   deals                         Deal[]
   broadcasts                    Broadcast[]
+  contact_lists                 ContactList[]
   automations                   Automation[]
   automation_logs               AutomationLog[]
   automation_pending_executions AutomationPendingExecution[]
@@ -244,6 +245,7 @@ model Account {
   pipelines                     Pipeline[]
   deals                         Deal[]
   broadcasts                    Broadcast[]
+  contact_lists                 ContactList[]
   automations                   Automation[]
   automation_logs               AutomationLog[]
   automation_pending_executions AutomationPendingExecution[]
@@ -450,6 +452,7 @@ model Contact {
   calls                         Call[]
   feedback                      ConversationFeedback[]
   data_records                  DataRecord[]
+  list_memberships              ContactListMember[]
   /// When this contact was blocked. Null means not blocked — "when"
   /// answers "whether" as well, so there is no separate boolean to keep
   /// in step with it.
@@ -2264,6 +2267,10 @@ model Broadcast {
   read_count         Int       @default(0)
   replied_count      Int       @default(0)
   failed_count       Int       @default(0)
+  /// A follow-up: the broadcast and the group of its recipients it went to
+  /// (migration 137, src/lib/broadcasts/outcomes.ts).
+  parent_broadcast_id String?  @db.Uuid
+  parent_outcome      String?
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   updated_at         DateTime  @updatedAt @db.Timestamptz(6)
 
@@ -2271,8 +2278,50 @@ model Broadcast {
   user       User                 @relation(fields: [user_id], references: [id], onDelete: Restrict)
   recipients BroadcastRecipient[]
   messages   Message[]
+  parent     Broadcast?           @relation("BroadcastFollowUps", fields: [parent_broadcast_id], references: [id], onDelete: SetNull)
+  follow_ups Broadcast[]          @relation("BroadcastFollowUps")
+  lists_from ContactList[]
 
+  @@index([parent_broadcast_id])
   @@map("broadcasts")
+}
+
+/// A saved, fixed set of contacts (migration 137). Deleting a list never
+/// deletes a contact.
+model ContactList {
+  id                  String    @id @default(uuid()) @db.Uuid
+  account_id          String    @db.Uuid
+  user_id             String    @db.Uuid
+  name                String
+  description         String?
+  /// 'broadcast' | 'csv' | 'manual'
+  source              String    @default("manual")
+  source_broadcast_id String?   @db.Uuid
+  source_outcome      String?
+  last_used_at        DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime  @updatedAt @db.Timestamptz(6)
+
+  account          Account             @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  user             User                @relation(fields: [user_id], references: [id], onDelete: Restrict)
+  source_broadcast Broadcast?          @relation(fields: [source_broadcast_id], references: [id], onDelete: SetNull)
+  members          ContactListMember[]
+
+  @@index([account_id])
+  @@map("contact_lists")
+}
+
+model ContactListMember {
+  list_id    String   @db.Uuid
+  contact_id String   @db.Uuid
+  added_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  list    ContactList @relation(fields: [list_id], references: [id], onDelete: Cascade)
+  contact Contact     @relation(fields: [contact_id], references: [id], onDelete: Cascade)
+
+  @@id([list_id, contact_id])
+  @@index([contact_id])
+  @@map("contact_list_members")
 }
 
 model BroadcastRecipient {
@@ -2296,6 +2345,7 @@ model BroadcastRecipient {
   broadcast Broadcast @relation(fields: [broadcast_id], references: [id], onDelete: Cascade)
   contact   Contact   @relation(fields: [contact_id], references: [id])
 
+  @@index([broadcast_id, status], map: "idx_broadcast_recipients_broadcast_status")
   @@map("broadcast_recipients")
 }
 

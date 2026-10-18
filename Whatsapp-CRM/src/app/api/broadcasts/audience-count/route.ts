@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { sendableContactWhere } from "@/lib/broadcasts/sendable"
+import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience"
+import { isOutcome } from "@/lib/broadcasts/outcomes"
 
 interface AudienceCountBody {
   type: string
@@ -13,6 +15,8 @@ interface AudienceCountBody {
   csvContacts?: { phone: string }[]
   contactIds?: string[]
   excludeTagIds?: string[]
+  fromBroadcast?: { broadcastId: string; outcome: string }
+  listId?: string
 }
 
 /**
@@ -73,6 +77,10 @@ export async function POST(req: NextRequest) {
         select: { contact_id: true },
       })
       baseIds = [...new Set(rows.map((r) => r.contact_id))]
+    } else if (body.type === "broadcast_outcome" && body.fromBroadcast && isOutcome(body.fromBroadcast.outcome)) {
+      baseIds = (await contactsInOutcome(db, ctx.accountId, String(body.fromBroadcast.broadcastId), body.fromBroadcast.outcome)) ?? []
+    } else if (body.type === "list" && typeof body.listId === "string") {
+      baseIds = (await contactsInList(db, ctx.accountId, body.listId)) ?? []
     } else {
       return NextResponse.json({ count: null })
     }

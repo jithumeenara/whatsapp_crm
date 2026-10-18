@@ -12,6 +12,8 @@ import { toast } from "sonner"
 import { format, formatDistanceToNow } from "date-fns"
 import type { MessageTemplate } from "@/types"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { OutcomeGroups } from "@/components/broadcasts/outcome-groups"
+import { everyWhileVisible } from "@/lib/visible-interval"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -59,6 +61,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   read:      { label: "Read",      color: "text-emerald-700", bg: "bg-emerald-50",  icon: Eye },
   replied:   { label: "Replied",   color: "text-violet-600",  bg: "bg-violet-50",   icon: MessageCircle },
   failed:    { label: "Failed",    color: "text-rose-700",    bg: "bg-rose-50",     icon: XCircle },
+  skipped:   { label: "Left out",  color: "text-slate-600",   bg: "bg-slate-100",   icon: Clock },
 }
 
 const BROADCAST_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -106,7 +109,7 @@ function StatCard({ icon: Icon, label, value, color, sub }: {
   )
 }
 
-const FILTER_TABS = ["all", "sent", "delivered", "read", "replied", "failed", "pending"] as const
+const FILTER_TABS = ["all", "sent", "delivered", "read", "replied", "failed", "skipped", "pending"] as const
 type FilterTab = typeof FILTER_TABS[number]
 
 export default function BroadcastDetailPage() {
@@ -124,6 +127,8 @@ export default function BroadcastDetailPage() {
   // popup — fetched once, matched by name+language against this broadcast.
   const [template, setTemplate] = useState<MessageTemplate | null>(null)
   const [previewRecipient, setPreviewRecipient] = useState<Recipient | null>(null)
+  // Bumped on every reload so the "What happened" groups reload with it.
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -134,6 +139,7 @@ export default function BroadcastDetailPage() {
       const data = await res.json()
       setBroadcast(data.broadcast ?? null)
       setRecipients(data.recipients ?? [])
+      setRefreshKey((k) => k + 1)
     } catch {
       toast.error("Failed to load broadcast")
     } finally {
@@ -159,13 +165,14 @@ export default function BroadcastDetailPage() {
       .catch(() => {})
   }, [broadcast, template])
 
-  // Auto-poll while broadcast is actively sending
+  // Auto-poll while broadcast is actively sending; rests while the tab
+  // is hidden. Keyed on the status alone, so each reload's new object
+  // doesn't restart the timer.
+  const status = broadcast?.status
   useEffect(() => {
-    if (!broadcast) return
-    if (broadcast.status !== "sending") return
-    const timer = setInterval(() => load(true), 4000)
-    return () => clearInterval(timer)
-  }, [broadcast, load])
+    if (status !== "sending") return
+    return everyWhileVisible(() => load(true), 4000)
+  }, [status, load])
 
   async function handleRetryFailed() {
     if (!broadcast) return
@@ -378,6 +385,8 @@ export default function BroadcastDetailPage() {
           </div>
         </div>
 
+        <OutcomeGroups broadcastId={id} refreshKey={refreshKey} />
+
         {/* ── Recipients List ── */}
         <div className="rounded-xl border border-slate-100 bg-white shadow-sm overflow-hidden">
           {/* List header */}
@@ -471,8 +480,8 @@ export default function BroadcastDetailPage() {
                       <td className="px-4 py-3">
                         <div>
                           <RecipientStatusBadge status={r.status} />
-                          {r.status === "failed" && r.error_message && (
-                            <p className="mt-1 text-[10px] text-rose-400 max-w-[160px] truncate" title={r.error_message}>
+                          {(r.status === "failed" || r.status === "skipped") && r.error_message && (
+                            <p className={cn("mt-1 text-[10px] max-w-[160px] truncate", r.status === "failed" ? "text-rose-700" : "text-slate-500")} title={r.error_message}>
                               {r.error_message}
                             </p>
                           )}

@@ -17,6 +17,12 @@ interface AudienceConfig {
   tagIds?: string[];
   csvContacts?: { phone: string; name?: string }[];
   contactIds?: string[];
+  customField?: { fieldId: string; operator: string; value: string };
+  excludeTagIds?: string[];
+  fromBroadcast?: { broadcastId: string; outcome: string };
+  listId?: string;
+  /** Shown in the summary for a follow-up or a list, e.g. "Read, no reply · Diwali offer". */
+  label?: string;
 }
 
 interface Step4Props {
@@ -39,6 +45,8 @@ const AUDIENCE_META: Record<string, { label: string; icon: React.ElementType; co
   contacts:     { label: 'Picked Contacts',         icon: CheckCheck, color: 'text-emerald-700 bg-emerald-50' },
   custom_field: { label: 'Custom Field Filter',    icon: Table2,    color: 'text-sky-700 bg-sky-50' },
   csv:          { label: 'CSV Upload',              icon: Upload,    color: 'text-amber-700 bg-amber-50' },
+  broadcast_outcome: { label: 'Follow-up to a group',  icon: Repeat,    color: 'text-indigo-700 bg-indigo-50' },
+  list:         { label: 'Saved list',               icon: CheckCheck, color: 'text-emerald-700 bg-emerald-50' },
 };
 
 function toLocalDateInput(iso: string): string {
@@ -90,7 +98,12 @@ export function Step4ScheduleSend({
         const res = await fetch('/api/broadcasts/audience-count', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: audience.type, tagIds: audience.tagIds }),
+          // Everything that narrows the audience, so the estimate is the
+          // number the send will reach (same rules on the server).
+          body: JSON.stringify({
+            type: audience.type, tagIds: audience.tagIds, customField: audience.customField,
+            excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId,
+          }),
         });
         if (res.ok) { const j = await res.json(); setEstimatedReach(j.count ?? 0); }
       } finally { setLoadingReach(false); }
@@ -104,7 +117,7 @@ export function Step4ScheduleSend({
   const audienceDetail =
     audience.type === 'tags' ? `${audience.tagIds?.length ?? 0} tag${(audience.tagIds?.length ?? 0) !== 1 ? 's' : ''}` :
     audience.type === 'contacts' ? `${audience.contactIds?.length ?? 0} contact${(audience.contactIds?.length ?? 0) !== 1 ? 's' : ''}` :
-    null;
+    audience.label ?? null;
 
   return (
     <div className="space-y-5">

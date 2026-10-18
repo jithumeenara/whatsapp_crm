@@ -10,6 +10,8 @@ import { Step1ChooseTemplate } from "@/components/broadcasts/step1-choose-templa
 import { Step2SelectAudience, type AudienceConfig } from "@/components/broadcasts/step2-select-audience"
 import { Step3Personalize } from "@/components/broadcasts/step3-personalize"
 import { Step4ScheduleSend } from "@/components/broadcasts/step4-schedule-send"
+import { FollowUpAudience } from "@/components/broadcasts/follow-up-audience"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 import { useBroadcastSending, type BroadcastSchedule } from "@/hooks/use-broadcast-sending"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
@@ -50,6 +52,33 @@ export default function NewBroadcastV2() {
       .catch(() => {})
   }, [])
 
+  // "Send follow-up" on a broadcast's report opens this page with
+  // ?followUp=<broadcast id>&outcome=<group>: the audience is that group.
+  // Read from location rather than useSearchParams, which would need a
+  // Suspense boundary around the whole wizard.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const parentId = q.get("followUp")
+    const outcome = q.get("outcome")
+    if (!parentId || !outcome) return
+    let live = true
+    apiFetch(`/api/broadcasts/${encodeURIComponent(parentId)}/outcomes`)
+      .then((r) => r.json())
+      .then((d: { broadcast?: { name?: string }; outcomes?: Array<{ key: string; label: string; followUp: boolean }> }) => {
+        if (!live) return
+        const group = d.outcomes?.find((o) => o.key === outcome && o.followUp)
+        if (!group) { toast.error("That group can't get a follow-up."); return }
+        const parentName = d.broadcast?.name ?? "broadcast"
+        setAudience({ type: "broadcast_outcome", fromBroadcast: { broadcastId: parentId, outcome }, label: `${group.label} · ${parentName}` })
+        setName((n) => n || `${parentName} — follow-up (${group.label.toLowerCase()})`.slice(0, 120))
+      })
+      .catch((err) => {
+        console.error("[broadcast] follow-up group failed to load:", err)
+        if (live) toast.error(errorText(err, "Could not load the group for this follow-up."))
+      })
+    return () => { live = false }
+  }, [])
+
   function handleSelectTemplate(t: MessageTemplate) {
     if (template?.id !== t.id) setHeaderMediaUrl("") // new template -> old media override no longer applies
     setTemplate(t)
@@ -58,7 +87,7 @@ export default function NewBroadcastV2() {
   async function handleSend() {
     if (!template) return
     try {
-      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
+      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
       toast.success(schedule.type === "now" ? "Broadcast sending…" : schedule.type === "once" ? "Broadcast scheduled" : "Recurring broadcast started")
       router.push(`/broadcasts/${id}`)
     } catch (err) {
@@ -71,7 +100,7 @@ export default function NewBroadcastV2() {
     const res = await fetch("/api/broadcasts/draft", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, header_media_url: headerMediaUrl || undefined, whatsapp_config_id: whatsappConfigId || undefined, audience_filter: { type: audience.type, tagIds: audience.tagIds } }),
+      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, header_media_url: headerMediaUrl || undefined, whatsapp_config_id: whatsappConfigId || undefined, audience_filter: { type: audience.type, tagIds: audience.tagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId } }),
     })
     if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(`Failed: ${b?.error ?? `HTTP ${res.status}`}`); return }
     toast.success("Draft saved"); router.push("/broadcasts")
@@ -120,7 +149,10 @@ export default function NewBroadcastV2() {
       <div className="mx-auto max-w-3xl p-4 sm:p-6">
         <div style={{ opacity: isProcessing ? 0.6 : 1, pointerEvents: isProcessing ? "none" : "auto" }} className="transition-opacity">
           {step === 0 && <Step1ChooseTemplate selectedTemplate={template} onSelect={handleSelectTemplate} onNext={() => setStep(1)} onBack={() => router.push("/broadcasts")} />}
-          {step === 1 && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
+          {step === 1 && audience.type === "broadcast_outcome" && (
+            <FollowUpAudience audience={audience} onChangeAudience={() => setAudience({ type: "all" })} onNext={() => setStep(2)} onBack={() => setStep(0)} />
+          )}
+          {step === 1 && audience.type !== "broadcast_outcome" && <Step2SelectAudience audience={audience} onUpdate={setAudience} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
           {step === 2 && template && <Step3Personalize template={template} headerMediaUrl={headerMediaUrl} onHeaderMediaChange={setHeaderMediaUrl} variables={variables} onUpdate={setVariables} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
           {step === 3 && template && numbers.length > 1 && (
             <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">

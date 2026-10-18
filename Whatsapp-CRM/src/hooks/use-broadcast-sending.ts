@@ -18,12 +18,16 @@ export interface CustomFieldFilter {
 }
 
 export interface AudienceConfig {
-  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list';
   tagIds?: string[];
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string; tagNames?: string[]; company?: string; customFields?: Record<string, string> }[];
   contactIds?: string[];
   excludeTagIds?: string[];
+  /** 'broadcast_outcome': one group of an earlier broadcast — a follow-up. */
+  fromBroadcast?: { broadcastId: string; outcome: string };
+  /** 'list': a saved contact list. */
+  listId?: string;
 }
 
 export interface BroadcastSchedule {

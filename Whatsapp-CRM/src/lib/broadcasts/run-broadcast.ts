@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { skipReason } from "@/lib/broadcasts/send-skip";
 import { sendTemplateMessage, sendMarketingTemplateMessage } from "@/lib/whatsapp/meta-api";
 import { decrypt } from "@/lib/whatsapp/encryption";
 import { isMessageTemplate } from "@/lib/whatsapp/template-row-guard";
@@ -245,6 +246,17 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   );
 
 
+  // A follow-up leaves out anyone who has replied to the broadcast it
+  // follows up since it was set up (send-skip.ts) — read once, here.
+  const repliedToParent = new Set<string>();
+  if (broadcast.parent_broadcast_id) {
+    const replied = await prisma.broadcastRecipient.findMany({
+      where: { broadcast_id: broadcast.parent_broadcast_id, status: "replied", contact_id: { in: contactIds } },
+      select: { contact_id: true },
+    });
+    for (const r of replied) repliedToParent.add(r.contact_id);
+  }
+
   for (let i = 0; i < broadcast.recipients.length; i++) {
     const recipient = broadcast.recipients[i];
 
@@ -261,6 +273,19 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
     if (i > 0) await sleep(INTER_MESSAGE_MS);
 
     const contact = recipient.contact;
+    const leftOut = skipReason({
+      contact,
+      repliedToParent: repliedToParent.has(recipient.contact_id),
+      parentOutcome: broadcast.parent_outcome,
+    });
+    if (leftOut) {
+      await prisma.broadcastRecipient.update({
+        where: { id: recipient.id },
+        data: { status: "skipped", error_message: leftOut },
+      });
+      await refreshBroadcastCounts(broadcastId);
+      continue;
+    }
     if (!contact?.phone) {
       await prisma.broadcastRecipient.update({
         where: { id: recipient.id },
@@ -411,6 +436,8 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   // a retry run which itself sends 0 doesn't mark a previously-partially-sent
   // broadcast as "failed".
   const finalRow = await refreshBroadcastCounts(broadcastId);
-  const finalStatus = finalRow.sent_count > 0 ? "sent" : "failed";
+  // Everyone left out (send-skip.ts) with nothing failed is a finished
+  // broadcast, not a failed one.
+  const finalStatus = finalRow.sent_count > 0 || finalRow.failed_count === 0 ? "sent" : "failed";
   await prisma.broadcast.update({ where: { id: broadcastId }, data: { status: finalStatus } });
 }

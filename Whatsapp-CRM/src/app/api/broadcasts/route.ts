@@ -5,6 +5,8 @@ import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/au
 import type { AccountContext } from "@/lib/auth/account";
 import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-sending";
 import { liveCounts } from "@/lib/broadcasts/counts";
+import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
+import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
 
 /**
  * GET /api/broadcasts
@@ -76,6 +78,23 @@ export async function POST(request: NextRequest) {
       show_in_inbox?: boolean;
     };
 
+    if (!body.audience || typeof body.audience !== "object") {
+      return NextResponse.json({ error: "Choose who this broadcast goes to." }, { status: 400 });
+    }
+
+    // A follow-up goes to one group of an earlier broadcast in this
+    // account, and only to a group that may be followed up.
+    let parent: { id: string; outcome: string } | null = null;
+    if (body.audience.type === "broadcast_outcome") {
+      const from = body.audience.fromBroadcast;
+      if (!from || typeof from.broadcastId !== "string" || !isOutcome(from.outcome) || !OUTCOME_INFO[from.outcome].followUp) {
+        return NextResponse.json({ error: "That group of people cannot get a follow-up." }, { status: 400 });
+      }
+      const found = await db.broadcast.findFirst({ where: { id: from.broadcastId, account_id: ctx.accountId }, select: { id: true } });
+      if (!found) return NextResponse.json({ error: "The first broadcast was not found." }, { status: 404 });
+      parent = { id: found.id, outcome: from.outcome };
+    }
+
     // ── Resolve audience ──────────────────────────────────────
     const contacts = await resolveAudience(ctx, body.audience);
 
@@ -127,7 +146,11 @@ export async function POST(request: NextRequest) {
           tagIds: body.audience.tagIds,
           customField: body.audience.customField,
           excludeTagIds: body.audience.excludeTagIds,
+          ...(parent ? { fromBroadcast: { broadcastId: parent.id, outcome: parent.outcome } } : {}),
+          ...(body.audience.type === "list" && typeof body.audience.listId === "string" ? { listId: body.audience.listId } : {}),
         } as Prisma.InputJsonValue,
+        parent_broadcast_id: parent?.id ?? null,
+        parent_outcome: parent?.outcome ?? null,
         schedule_type: scheduleType,
         show_in_inbox: body.show_in_inbox === true,
         scheduled_at: scheduledAt,
@@ -293,6 +316,15 @@ async function resolveAudience(
     contacts = upsertedIds.length > 0
       ? await db.contact.findMany({ where: { id: { in: upsertedIds }, ...sendable } })
       : [];
+  } else if (audience.type === "broadcast_outcome" && audience.fromBroadcast && isOutcome(audience.fromBroadcast.outcome)) {
+    const ids = await contactsInOutcome(db, ctx.accountId, audience.fromBroadcast.broadcastId, audience.fromBroadcast.outcome);
+    contacts = ids && ids.length > 0 ? await db.contact.findMany({ where: { id: { in: ids }, ...sendable } }) : [];
+  } else if (audience.type === "list" && typeof audience.listId === "string") {
+    const ids = await contactsInList(db, ctx.accountId, audience.listId);
+    contacts = ids && ids.length > 0 ? await db.contact.findMany({ where: { id: { in: ids }, ...sendable } }) : [];
+    if (ids) {
+      await db.contactList.updateMany({ where: { id: audience.listId, account_id: ctx.accountId }, data: { last_used_at: new Date() } });
+    }
   } else if (audience.type === "contacts" && audience.contactIds && audience.contactIds.length > 0) {
     contacts = await db.contact.findMany({
       where: { id: { in: audience.contactIds }, ...sendable },

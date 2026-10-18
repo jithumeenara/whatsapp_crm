@@ -96,7 +96,8 @@ FROM (VALUES
   ('133_indexes_links_and_status_lists', EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'conversations_status_check')),
   ('134_webchat_brand_style',           EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'web_chat_widgets_launcher_animation_check')),
   ('135_webchat_contact_menu',          EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'web_chat_widgets_call_links_check')),
-  ('136_google_sheet_two_way',          to_regclass('google_sheet_rows') IS NOT NULL)
+  ('136_google_sheet_two_way',          to_regclass('google_sheet_rows') IS NOT NULL),
+  ('137_broadcast_followups_and_lists', to_regclass('contact_list_members') IS NOT NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 

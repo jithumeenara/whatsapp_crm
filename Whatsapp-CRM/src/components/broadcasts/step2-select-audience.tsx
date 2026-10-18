@@ -8,22 +8,37 @@ import { Button } from '@/components/ui/button';
 import {
   Users, ArrowRight, ArrowLeft, X, Search, Phone,
   CheckCheck, Tag as TagIcon, FileSpreadsheet, Upload, AlertCircle, Trash2,
-  ShieldCheck, Loader2, CheckCircle2, XCircle, Download,
+  ShieldCheck, Loader2, CheckCircle2, XCircle, Download, ListChecks,
 } from 'lucide-react';
+import { apiFetch, errorText } from '@/lib/api-fetch';
 
 /* ── types ─────────────────────────────────────────────────────── */
 // 'pick' folded into 'all' -- the All WhatsApp tab itself now offers a
 // "send to everyone" vs "pick specific contacts" toggle instead of being
 // a separate tab (see pickSpecific state below).
-type AudienceMode = 'all' | 'tags' | 'excel';
+type AudienceMode = 'all' | 'tags' | 'excel' | 'list';
+
+interface SavedList {
+  id: string;
+  name: string;
+  member_count: number;
+  source_outcome: string | null;
+  source_broadcast: { id: string; name: string } | null;
+}
 
 export interface AudienceConfig {
-  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts';
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list';
   tagIds?: string[];
   customField?: { fieldId: string; operator: 'is' | 'is_not' | 'contains'; value: string };
   csvContacts?: ExcelContactRow[];
   contactIds?: string[];
   excludeTagIds?: string[];
+  /** A follow-up: one group of an earlier broadcast. */
+  fromBroadcast?: { broadcastId: string; outcome: string };
+  /** A saved contact list. */
+  listId?: string;
+  /** Human words for a follow-up or list audience, for the summaries. */
+  label?: string;
 }
 
 interface Step2Props {
@@ -183,6 +198,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const initMode = (): AudienceMode => {
     if (audience.type === 'tags') return 'tags';
     if (audience.type === 'csv') return 'excel';
+    if (audience.type === 'list') return 'list';
     return 'all'; // 'contacts' lives under 'all' too, see pickSpecific
   };
   const [mode, setMode] = useState<AudienceMode>(initMode);
@@ -207,6 +223,28 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   /* Tags */
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(audience.tagIds ?? []);
+
+  /* Saved lists (list mode) — loaded the first time the tab is opened. */
+  const [lists, setLists] = useState<SavedList[] | null>(null);
+  const [listsError, setListsError] = useState('');
+  const [selectedListId, setSelectedListId] = useState<string>(audience.type === 'list' ? (audience.listId ?? '') : '');
+  useEffect(() => {
+    if (mode !== 'list' || lists !== null) return;
+    let live = true;
+    apiFetch('/api/contact-lists')
+      .then((r) => r.json())
+      .then((d: { lists?: SavedList[] }) => { if (live) setLists(d.lists ?? []); })
+      .catch((err) => {
+        console.error('[audience] lists failed to load:', err);
+        if (live) { setLists([]); setListsError(errorText(err, 'Could not load your lists.')); }
+      });
+    return () => { live = false; };
+  }, [mode, lists]);
+  const selectedList = lists?.find((l) => l.id === selectedListId) ?? null;
+  function chooseList(l: SavedList) {
+    setSelectedListId(l.id);
+    onUpdate({ type: 'list', listId: l.id, label: l.name });
+  }
 
   /* Selected contact IDs (for pick mode) */
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
@@ -307,6 +345,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setSearch('');
     if (m === 'all') onUpdate(pickSpecific ? { type: 'contacts', contactIds: [...selectedIds] } : { type: 'all' });
     else if (m === 'tags') onUpdate({ type: 'tags', tagIds: selectedTagIds });
+    else if (m === 'list') onUpdate({ type: 'list', listId: selectedListId || undefined, label: selectedList?.name });
     else onUpdate({ type: 'csv', csvContacts: excelContacts });
   }
 
@@ -485,6 +524,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const isValid =
     (mode === 'all' && (!pickSpecific || selectedIds.size > 0)) ||
     (mode === 'tags' && selectedTagIds.length > 0) ||
+    (mode === 'list' && !!selectedList && selectedList.member_count > 0) ||
     (mode === 'excel' && validationStatus === 'done' && sendCount > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
@@ -493,6 +533,11 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       return pickSpecific
         ? `${selectedIds.size} contact${plural(selectedIds.size)} selected`
         : `${totalWa.toLocaleString()} WhatsApp contacts`;
+    }
+
+    if (mode === 'list') {
+      if (!selectedList) return 'Choose a saved list';
+      return `${selectedList.member_count.toLocaleString()} ${selectedList.member_count === 1 ? 'person' : 'people'} in “${selectedList.name}”`;
     }
 
     if (mode === 'tags') {
@@ -532,11 +577,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       </div>
 
       {/* ── Mode tabs ── */}
-      <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-slate-100 p-1">
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-4">
         {([
           { key: 'all',   label: 'All WhatsApp',   icon: Users },
           { key: 'tags',  label: 'By Tag',          icon: TagIcon },
           { key: 'excel', label: 'Import Excel',    icon: FileSpreadsheet },
+          { key: 'list',  label: 'Saved list',      icon: ListChecks },
         ] as { key: AudienceMode; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -554,6 +600,42 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           </button>
         ))}
       </div>
+
+      {/* ── Saved list picker (list mode) ── */}
+      {mode === 'list' && (
+        <fieldset className="rounded-xl border border-slate-200 bg-white p-4">
+          <legend className="sr-only">Saved list</legend>
+          <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-slate-600">Saved lists</p>
+          {lists === null ? (
+            <p className="flex items-center gap-1.5 text-[13px] text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> Loading…</p>
+          ) : listsError ? (
+            <p className="text-[13px] text-rose-700">{listsError}</p>
+          ) : lists.length === 0 ? (
+            <p className="text-[13px] text-slate-500">No saved lists yet. On a broadcast&apos;s report, use “Save as list” on any group.</p>
+          ) : (
+            <div className="max-h-72 space-y-1.5 overflow-y-auto">
+              {lists.map((l) => {
+                const on = l.id === selectedListId;
+                return (
+                  <label key={l.id} className={cn(
+                    'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
+                    on ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50',
+                  )}>
+                    <input type="radio" name="saved-list" value={l.id} checked={on} onChange={() => chooseList(l)} className="h-4 w-4 accent-indigo-600" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-slate-800">{l.name}</span>
+                      {l.source_broadcast && (
+                        <span className="block truncate text-[11.5px] text-slate-500">From “{l.source_broadcast.name}”</span>
+                      )}
+                    </span>
+                    <span className="shrink-0 text-[12px] tabular-nums text-slate-500">{l.member_count.toLocaleString()}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </fieldset>
+      )}
 
       {/* ── Tag picker (tags mode) ── */}
       {mode === 'tags' && (
