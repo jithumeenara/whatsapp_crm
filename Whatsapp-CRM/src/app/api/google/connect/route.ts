@@ -41,6 +41,9 @@ export async function GET(req: NextRequest) {
     // Started from a page (a Data Store table): Google sends them back there.
     const back = req.nextUrl.searchParams.get('return')
     const returnTo = back && /^\/(?!\/)[A-Za-z0-9/_-]{0,200}$/.test(back) ? back : null
+    // Opened in its own window (src/lib/google/connect-popup.ts): the end
+    // page reports back to the CRM tab and closes.
+    const popup = req.nextUrl.searchParams.get('popup') === '1'
 
     const state = crypto.randomBytes(32).toString('base64url')
     const { verifier, challenge } = newPkce()
@@ -59,7 +62,7 @@ export async function GET(req: NextRequest) {
     )
     res.cookies.set(
       GOOGLE_OAUTH_COOKIE,
-      encrypt(JSON.stringify({ state, verifier, redirectUri, origin, accountId: ctx.accountId, userId: ctx.userId, at: Date.now(), services: requested, switching, returnTo })),
+      encrypt(JSON.stringify({ state, verifier, redirectUri, origin, accountId: ctx.accountId, userId: ctx.userId, at: Date.now(), services: requested, switching, returnTo, popup })),
       {
         httpOnly: true,
         secure: origin.startsWith('https://'),

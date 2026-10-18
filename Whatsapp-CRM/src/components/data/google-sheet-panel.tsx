@@ -26,6 +26,7 @@ import { useConfirm } from "@/hooks/use-confirm"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import type { PickedSheet } from "@/lib/google/picker-client"
 import { everyWhileVisible } from "@/lib/visible-interval"
+import { connectGoogle } from '@/lib/google/connect-popup'
 
 interface LinkView {
   id: string
@@ -376,9 +377,14 @@ export function GoogleSheetPanel({ tableId, tableName, onClose, onImported }: {
                 ) : !state.can_write ? (
                   <div className="space-y-2">
                     <p className="text-[12px] leading-relaxed text-slate-500">Two-way sync needs permission to change the sheets you link here.</p>
-                    <a href={`/api/google/connect?services=sheets_sync&return=${encodeURIComponent(`/data/${tableId}`)}`} className={`${btn.primary} w-full !bg-[#1A73E8] hover:!bg-[#1765CC]`}>
+                    <button type="button"
+                      onClick={() => connectGoogle(`/api/google/connect?services=sheets_sync&return=${encodeURIComponent(`/data/${tableId}`)}`, (r) => {
+                        if (r.outcome === 'error') toast.error(r.reason || 'Google was not connected.')
+                        if (r.outcome !== 'closed') void load()
+                      })}
+                      className={`${btn.primary} w-full !bg-[#1A73E8] hover:!bg-[#1765CC]`}>
                       Allow two-way sync
-                    </a>
+                    </button>
                   </div>
                 ) : (
                   <div className="space-y-2">

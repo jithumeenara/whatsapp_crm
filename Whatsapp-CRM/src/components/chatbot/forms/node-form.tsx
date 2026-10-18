@@ -5,7 +5,9 @@
  * Dispatches to the correct sub-form based on node_type.
  */
 
-import { useId, useState, useEffect, useRef } from "react";
+import { useId, useState, useEffect, useRef, useCallback } from "react";
+import { useParams } from "next/navigation";
+import { connectGoogle } from "@/lib/google/connect-popup";
 import { toast } from "sonner";
 import {
   Plus,
@@ -3547,7 +3549,179 @@ function isPhoneLike(f: UtrField): boolean {
   return f.field_type === "phone" || /phone|mobile|whatsapp/i.test(f.label);
 }
 
+/**
+ * Where the step's changes end up in Google: the table's two-way sheet
+ * ("changes reach the sheet within seconds"), or why they don't — an
+ * import-only link, a send-only link, no link — with the one click that
+ * fixes it. Admin only (the API is); others see nothing here.
+ */
+function UtrSheetCard({ tableId }: { tableId: string }) {
+  interface SheetState {
+    connected: boolean
+    can_write: boolean
+    sync: { spreadsheet_name: string; url: string; last_error: string | null; last_synced_at: string | null } | null
+    import: { spreadsheet_name?: string } | null
+    export: { spreadsheet_name?: string } | null
+  }
+  const [state, setState] = useState<SheetState | null>(null)
+  const [hidden, setHidden] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const seq = useRef(0)
+
+  const load = useCallback(async () => {
+    const n = ++seq.current
+    try {
+      const res = await fetch(`/api/data-tables/${tableId}/google-sheet`)
+      if (res.status === 401 || res.status === 403) { if (n === seq.current) setHidden(true); return }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const d = (await res.json()) as SheetState
+      if (n === seq.current) { setState(d); setHidden(false) }
+    } catch (err) {
+      console.error("[update-table-row] sheet status failed:", err)
+      if (n === seq.current) setHidden(true)
+    }
+  }, [tableId])
+  useEffect(() => { void load() }, [load])
+
+  async function act(body: Record<string, unknown>, method: "PUT" | "POST", ok: string) {
+    if (busy) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/data-tables/${tableId}/google-sheet`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const d = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`)
+      toast.success(ok)
+      await load()
+    } catch (err) {
+      console.error("[update-table-row] sheet action failed:", err)
+      toast.error(err instanceof Error ? err.message : "Could not set up the sheet")
+    } finally {
+      setBusy(false)
+    }
+  }
+  const allowWrite = () =>
+    connectGoogle(`/api/google/connect?services=sheets_sync&return=${encodeURIComponent(`/data/${tableId}`)}`, (r) => {
+      if (r.outcome === "error") toast.error(r.reason || "Google was not connected.")
+      if (r.outcome !== "closed") void load()
+    })
+
+  if (hidden || !state) return null
+  const box = "space-y-1.5 rounded-lg border border-slate-200 bg-white p-2.5"
+  const btnCls = "rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+
+  if (state.sync) {
+    return (
+      <div className={box}>
+        <p className="text-[11px] text-emerald-800">✓ Changes also go to Google Sheet “{state.sync.spreadsheet_name}” within seconds.</p>
+        {state.sync.last_error && <p className="text-[10px] text-rose-700">Last sync problem: {state.sync.last_error}</p>}
+        <a href={state.sync.url} target="_blank" rel="noopener noreferrer" className="text-[11px] font-medium text-indigo-600 hover:underline">Open the sheet</a>
+      </div>
+    )
+  }
+  if (!state.connected) {
+    return (
+      <div className={box}>
+        <p className="text-[11px] text-slate-600">Google Sheet: not connected. Changes stay in the Data Store only.</p>
+        <button type="button" className={btnCls} onClick={allowWrite}>Connect Google</button>
+      </div>
+    )
+  }
+  if (!state.can_write) {
+    return (
+      <div className={box}>
+        <p className="text-[11px] text-slate-600">To send the bot’s changes to a Google Sheet, allow two-way sync.</p>
+        <button type="button" className={btnCls} onClick={allowWrite}>Allow two-way sync</button>
+      </div>
+    )
+  }
+  return (
+    <div className={box}>
+      <p className="text-[11px] text-amber-900">
+        {state.import
+          ? `This table only copies FROM its sheet “${state.import.spreadsheet_name ?? ""}” — the bot’s changes won’t reach it.`
+          : state.export
+            ? "New rows go to the sheet, but changed rows don’t."
+            : "Not linked to a Google Sheet — changes stay in the Data Store only."}
+      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {state.import ? (
+          <button type="button" disabled={busy} className={btnCls}
+            onClick={() => void act({ action: "convert_import" }, "POST", "That sheet now updates both ways")}>
+            {busy ? "Working…" : "Make it two-way"}
+          </button>
+        ) : (
+          <button type="button" disabled={busy} className={btnCls}
+            onClick={() => void act({ direction: "sync", create_new: true }, "PUT", "New Google Sheet created and linked both ways")}>
+            {busy ? "Creating…" : "Create a new Google Sheet"}
+          </button>
+        )}
+        <a href={`/data/${tableId}`} target="_blank" rel="noopener noreferrer" className={btnCls}>Link an existing sheet</a>
+      </div>
+    </div>
+  )
+}
+
+/** The step's last few results (node-activity API) — so "it does nothing"
+ *  shows why: no row matched, the values were already set, or the error. */
+function UtrActivity({ chatbotId, nodeKey }: { chatbotId: string; nodeKey: string }) {
+  interface Item { at: string; who: string; result: "updated" | "unchanged" | "created" | "not_found" | "error"; detail: string }
+  const [items, setItems] = useState<Item[] | null>(null)
+  const [tick, setTick] = useState(0)
+  const load = () => setTick((t) => t + 1)
+  useEffect(() => {
+    let live = true
+    fetch(`/api/chatbot/${chatbotId}/node-activity?node_key=${encodeURIComponent(nodeKey)}`)
+      .then((res) => (res.ok ? res.json() : { items: [] }))
+      .then((d: { items?: Item[] }) => { if (live) setItems(d.items ?? []) })
+      .catch((err) => {
+        console.error("[update-table-row] activity failed:", err)
+        if (live) setItems([])
+      })
+    return () => { live = false }
+  }, [chatbotId, nodeKey, tick])
+
+  const LABEL: Record<Item["result"], string> = {
+    updated: "Updated", unchanged: "Already had these values", created: "New row created", not_found: "No row matched", error: "Failed",
+  }
+  const TONE: Record<Item["result"], string> = {
+    updated: "text-emerald-700", unchanged: "text-slate-600", created: "text-emerald-700", not_found: "text-amber-800", error: "text-rose-700",
+  }
+  const fmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
+  return (
+    <div className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-slate-700">Recent results</span>
+        <button type="button" onClick={() => void load()} className="text-[10px] font-medium text-indigo-600 hover:underline">Refresh</button>
+      </div>
+      {items === null ? (
+        <p className="text-[10px] text-slate-500">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="text-[10px] text-slate-500">Not run yet. After a customer reaches this step, what happened shows here.</p>
+      ) : (
+        <ul className="space-y-1">
+          {items.map((it, i) => (
+            <li key={i} className="text-[10.5px] leading-snug">
+              <span className={cn("font-semibold", TONE[it.result])}>{LABEL[it.result]}</span>
+              <span className="text-slate-500"> · {it.who} · {fmt.format(new Date(it.at))}</span>
+              {it.detail && <span className="block break-words text-slate-600">{it.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {items?.some((it) => it.result === "not_found") && (
+        <p className="text-[10px] text-amber-900">“No row matched”: check “Find rows where” with the Test box below, using that customer’s number.</p>
+      )}
+    </div>
+  )
+}
+
 function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const routeParams = useParams<{ id?: string }>();
+  const chatbotId = typeof routeParams?.id === "string" ? routeParams.id : "";
   const vars = getFlowVars(allNodes, nodeKey);
   const tableId = String(cfg.table_id ?? "");
   const which = (cfg.which === "oldest" || cfg.which === "all" ? cfg.which : "latest") as "latest" | "oldest" | "all";
@@ -3910,6 +4084,10 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
           </div>
 
           {summary && <p className="rounded-lg bg-teal-50 px-2.5 py-2 text-[11px] text-teal-800">{summary} The row’s columns are then available as {"{{vars.row_<column>}}"}.</p>}
+
+          <UtrSheetCard tableId={tableId} />
+
+          {chatbotId && <UtrActivity chatbotId={chatbotId} nodeKey={nodeKey} />}
 
           {!noConditions && (
             <div className="space-y-1.5 rounded-lg border border-dashed border-slate-300 p-2.5">

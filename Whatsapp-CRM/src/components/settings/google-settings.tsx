@@ -32,6 +32,7 @@ import { GmailIcon, GoogleBusinessIcon, GoogleCalendarIcon, GoogleContactsIcon, 
 import { GoogleContactsImport } from './google-contacts-import'
 import { GoogleFormsLinks } from './google-forms-links'
 import { GOOGLE_SERVICES, LEVEL_TEXT, type GoogleServiceId, type ServiceState } from '@/lib/google/services'
+import { connectGoogle } from '@/lib/google/connect-popup'
 
 interface Check { id: string; label: string; ok: boolean | null; detail: string }
 
@@ -215,7 +216,13 @@ export function GoogleSettings() {
 
   function connect(ids: readonly GoogleServiceId[], switching = false) {
     if (ids.length === 0) return
-    window.location.href = `/api/google/connect?services=${ids.join(',')}${switching ? '&switch=1' : ''}`
+    // In its own window; this page refreshes when Google is done.
+    connectGoogle(`/api/google/connect?services=${ids.join(',')}${switching ? '&switch=1' : ''}`, (r) => {
+      if (r.outcome === 'connected') toast.success('Google connected')
+      else if (r.outcome === 'partial') toast.warning(r.reason || 'Google did not allow everything that was asked.')
+      else if (r.outcome === 'error') toast.error(r.reason || 'Google was not connected.')
+      if (r.outcome !== 'closed') void load()
+    })
   }
 
   const toggleService = (id: GoogleServiceId, enabled: boolean) =>

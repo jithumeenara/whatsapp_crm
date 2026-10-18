@@ -162,6 +162,18 @@ export function normaliseConditions(
   return { conditions: out, nothing }
 }
 
+/**
+ * "is" with a phone number on both sides compares the numbers, not the
+ * text: a sheet's "9947840578" is the chatting number "+919947840578".
+ * Choosing "is" instead of "is the same number as" was the easiest way to
+ * make a step quietly find nothing. Returns the 10-digit key when the value
+ * is plainly a phone number, else null (then "is" stays exact text).
+ */
+export function equalsAsPhone(value: string | undefined): string | null {
+  const v = (value ?? '').trim()
+  return /^[+0-9 ()-]+$/.test(v) ? phoneKey(v) : null
+}
+
 function likeEscape(v: string): string {
   return v.replace(/[\\%_]/g, (m) => `\\${m}`)
 }
@@ -170,8 +182,12 @@ function conditionSql(c: RowCondition): Prisma.Sql {
   if (c.never) return Prisma.sql`false`
   const cell = Prisma.sql`coalesce(data ->> ${c.field_key}, '')`
   switch (c.op) {
-    case 'equals':
-      return Prisma.sql`lower(btrim(${cell})) = lower(${c.value ?? ''})`
+    case 'equals': {
+      const exact = Prisma.sql`lower(btrim(${cell})) = lower(${c.value ?? ''})`
+      const key = equalsAsPhone(c.value)
+      if (!key) return exact
+      return Prisma.sql`(${exact} OR (btrim(${cell}) ~ '^[+0-9 ()-]+$' AND right(regexp_replace(${cell}, '\\D', '', 'g'), 10) = ${key}))`
+    }
     case 'contains':
       return Prisma.sql`${cell} ILIKE ${'%' + likeEscape(c.value ?? '') + '%'}`
     case 'phone':

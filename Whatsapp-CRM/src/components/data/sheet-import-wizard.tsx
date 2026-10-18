@@ -27,6 +27,7 @@ import { GoogleSheetsIcon } from "@/components/shared/google-icons"
 import { ApiDisabledCard, GoogleSheetList, type ApiDisabled } from "@/components/shared/google-sheet-chooser"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { pickGoogleSpreadsheet } from "@/lib/google/picker-client"
+import { connectGoogle } from "@/lib/google/connect-popup"
 
 interface Field { field_key: string; label: string; field_type: string }
 interface Column { header: string; target: string; type?: string; label?: string; options?: string[] }
@@ -455,9 +456,14 @@ export function SheetImportWizard({
                   {twoWayBlocked && (
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 px-3 py-2.5 text-[12px] text-amber-900">
                       <span>Two-way sync needs permission to change your sheets.</span>
-                      <a href={connectWrite} className="rounded-lg bg-[#1A73E8] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1765CC]">
+                      <button type="button"
+                        onClick={() => connectGoogle(connectWrite, (r) => {
+                          if (r.outcome === "connected" || r.outcome === "partial") setPreview((p) => (p ? { ...p, can_write: true } : p))
+                          else if (r.outcome === "error") toast.error(r.reason || "Google was not connected.")
+                        })}
+                        className="rounded-lg bg-[#1A73E8] px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-[#1765CC]">
                         Allow two-way sync
-                      </a>
+                      </button>
                     </div>
                   )}
                 </div>

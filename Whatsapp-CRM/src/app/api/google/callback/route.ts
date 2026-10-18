@@ -29,10 +29,11 @@ function safeReturnTo(v: unknown): string | null {
   return typeof v === 'string' && /^\/(?!\/)[A-Za-z0-9/_-]{0,200}$/.test(v) ? v : null
 }
 
-function back(origin: string, outcome: string, detail?: string, returnTo?: string | null) {
-  const q = new URLSearchParams(returnTo ? { google: outcome } : { tab: 'google', google: outcome })
+function back(origin: string, outcome: string, detail?: string, returnTo?: string | null, popup?: boolean) {
+  const q = new URLSearchParams(popup || returnTo ? { google: outcome } : { tab: 'google', google: outcome })
   if (detail) q.set('reason', detail.slice(0, 300))
-  const res = NextResponse.redirect(`${origin}${returnTo ?? '/settings'}?${q}`)
+  // A pop-up ends on /google-done, which tells the CRM tab and closes.
+  const res = NextResponse.redirect(`${origin}${popup ? '/google-done' : returnTo ?? '/settings'}?${q}`)
   res.cookies.set(GOOGLE_OAUTH_COOKIE, '', { path: '/api/google', maxAge: 0 })
   return res
 }
@@ -55,6 +56,8 @@ interface Pending {
   switching?: boolean
   /** Started from a page (a Data Store table): go back there. */
   returnTo?: string | null
+  /** Started in a pop-up window. */
+  popup?: boolean
 }
 
 export async function GET(req: NextRequest) {
@@ -79,16 +82,16 @@ export async function GET(req: NextRequest) {
       pending.userId !== ctx.userId ||
       Date.now() - pending.at > 10 * 60_000
     ) {
-      return back(origin, 'error', 'The sign-in could not be verified. Try again.', returnTo)
+      return back(origin, 'error', 'The sign-in could not be verified. Try again.', returnTo, pending.popup === true)
     }
 
     const googleError = params.get('error')
-    if (googleError) return back(origin, 'error', googleError === 'access_denied' ? 'Google access was not allowed.' : googleError, returnTo)
+    if (googleError) return back(origin, 'error', googleError === 'access_denied' ? 'Google access was not allowed.' : googleError, returnTo, pending.popup === true)
     const code = params.get('code')
-    if (!code) return back(origin, 'error', 'Google did not return a sign-in code.', returnTo)
+    if (!code) return back(origin, 'error', 'Google did not return a sign-in code.', returnTo, pending.popup === true)
 
     const conn = await loadGoogleConnection(ctx.accountId)
-    if (!conn) return back(origin, 'error', 'Save the Google app details first.', returnTo)
+    if (!conn) return back(origin, 'error', 'Save the Google app details first.', returnTo, pending.popup === true)
 
     const tokens = await exchangeGoogleCode({
       clientId: conn.client_id,
@@ -98,7 +101,7 @@ export async function GET(req: NextRequest) {
       verifier: pending.verifier,
     })
     if (!tokens.refresh_token && !conn.refresh_token) {
-      return back(origin, 'error', 'Google did not allow offline access. Remove the app at myaccount.google.com/permissions and connect again.', returnTo)
+      return back(origin, 'error', 'Google did not allow offline access. Remove the app at myaccount.google.com/permissions and connect again.', returnTo, pending.popup === true)
     }
 
     const email = await googleEmail(tokens.access_token)
@@ -148,10 +151,11 @@ export async function GET(req: NextRequest) {
         nowOn.length > 0 ? 'partial' : 'error',
         `Google did not allow everything for: ${names(missing)}. Connect again and keep every checkbox ticked on Google's screen.`,
         returnTo,
+        pending.popup === true,
       )
     }
-    return back(origin, 'connected', names(nowOn), returnTo)
+    return back(origin, 'connected', names(nowOn), returnTo, pending.popup === true)
   } catch (err) {
-    return back(origin, 'error', err instanceof Error ? err.message : 'Could not connect Google.', returnTo)
+    return back(origin, 'error', err instanceof Error ? err.message : 'Could not connect Google.', returnTo, pending.popup === true)
   }
 }

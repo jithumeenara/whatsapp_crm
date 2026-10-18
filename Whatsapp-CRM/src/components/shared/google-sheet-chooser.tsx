@@ -17,6 +17,8 @@ import { createPortal } from "react-dom"
 import { ArrowRight, ExternalLink, Loader2, RefreshCw, Search, X } from "lucide-react"
 import { GoogleDriveIcon, GoogleSheetsIcon } from "@/components/shared/google-icons"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { connectGoogle } from "@/lib/google/connect-popup"
+import { toast } from "sonner"
 
 export interface ChosenSheet {
   id: string
@@ -163,9 +165,14 @@ export function GoogleSheetList({
             ? "Allow the CRM to list your sheets, and to keep the ones you link to a table in step both ways. It only ever changes a sheet you link here."
             : "Allow the CRM to list and read your sheets once. It can only read — it never changes or deletes anything in Google."}
         </p>
-        <a href={href} className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A73E8] px-5 text-[13.5px] font-semibold text-white shadow-sm hover:bg-[#1765CC]">
+        <button type="button"
+          onClick={() => connectGoogle(href, (r) => {
+            if (r.outcome === "error") toast.error(r.reason || "Google was not connected.")
+            if (r.outcome !== "closed") void load(search)
+          })}
+          className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A73E8] px-5 text-[13.5px] font-semibold text-white shadow-sm hover:bg-[#1765CC]">
           Allow access to my sheets <ArrowRight className="h-4 w-4" />
-        </a>
+        </button>
         {onPickInGoogle && canPickHere && (
           <button type="button" onClick={onPickInGoogle} disabled={pickBusy} className="mt-3 text-[12.5px] font-medium text-slate-500 hover:text-slate-800 disabled:opacity-50">
             {pickBusy ? "Working…" : "or choose one file in Google’s window"}
