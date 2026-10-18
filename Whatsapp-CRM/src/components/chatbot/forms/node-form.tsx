@@ -88,6 +88,8 @@ function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string
       for (const t of tokens) keys.add(`flow_${t}`);
     }
   }
+  // The message that started this chat — set for every run (trigger-vars.ts).
+  keys.add("trigger_message");
   return [...keys];
 }
 

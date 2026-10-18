@@ -670,12 +670,19 @@ export function startSimulation(
   nodes: ChatbotBuilderNode[],
   entryNodeId: string | null,
 ): PlaygroundState {
+  // A sample of the message that started the chat (trigger-vars.ts in the
+  // engine): the start step's keyword when it has one, otherwise "Hi".
+  const entry = nodes.find((n) => n.node_key === entryNodeId)
+  const keyword = typeof entry?.config.trigger_keyword === 'string' ? entry.config.trigger_keyword.split(',')[0].trim() : ''
   const initial: PlaygroundState = {
     msgs: [],
     vars: {
       'contact.name': 'Demo User',
       'contact.phone': '+1234567890',
       'contact.email': 'demo@example.com',
+      trigger_message: keyword || 'Hi',
+      trigger_type: 'text',
+      trigger_channel: 'whatsapp',
     },
     currentKey: entryNodeId,
     waiting: false,

@@ -13,8 +13,12 @@
  *  - http_request                 → response_var
  *  - send_flow, wait_flow_submit,
  *    start (on Flow submitted)    → flow_<field> for each Flow field
+ *  - update_table_row             → row_found and row_<column> it sets
  *
- * Contact details are always available, in their own group.
+ * Contact details and the message that started the chat
+ * (trigger_message, trigger_type, trigger_channel — set when the run
+ * starts, src/lib/flows/trigger-vars.ts) are always available, in one
+ * last group.
  */
 
 import type { ChatbotBuilderNode } from './types'
@@ -57,6 +61,14 @@ function keysFor(node: ChatbotBuilderNode): string[] {
       return flowKeys(c.available_vars)
     case 'start':
       return c.trigger_on === 'flow_submitted' ? flowKeys(c.available_vars) : []
+    case 'update_table_row':
+      return [
+        'row_found',
+        ...(Array.isArray(c.sets) ? (c.sets as Array<Record<string, unknown>>) : [])
+          .map((x) => str(x.field_key))
+          .filter((k) => /^[a-zA-Z0-9_]+$/.test(k))
+          .map((k) => `row_${k}`),
+      ]
     default:
       return []
   }
@@ -73,6 +85,10 @@ export const CONTACT_VARIABLES: VariableOption[] = [
   { key: 'contact.phone', token: '{{contact.phone}}' },
   { key: 'contact.email', token: '{{contact.email}}' },
   { key: 'contact.company', token: '{{contact.company}}' },
+  // What the customer sent to start this chat (trigger-vars.ts).
+  { key: 'trigger_message', token: '{{vars.trigger_message}}' },
+  { key: 'trigger_type', token: '{{vars.trigger_type}}' },
+  { key: 'trigger_channel', token: '{{vars.trigger_channel}}' },
 ]
 
 /** Steps that fill variables, in canvas order, each with its variables;
@@ -92,7 +108,7 @@ export function variablesByNode(nodes: ChatbotBuilderNode[]): VariableGroup[] {
       groups.push({ id: node.node_key, label: nodeDisplayName(node), vars })
     }
   }
-  groups.push({ id: '__contact', label: 'Contact details', vars: CONTACT_VARIABLES })
+  groups.push({ id: '__contact', label: 'Contact & chat trigger', vars: CONTACT_VARIABLES })
   return groups
 }
 

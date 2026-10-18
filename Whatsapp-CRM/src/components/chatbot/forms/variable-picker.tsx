@@ -56,7 +56,7 @@ export function VariablePicker({ allNodes, idPrefix }: { allNodes: ChatbotBuilde
         <span className="flex-1 text-[11px] font-semibold text-teal-800">
           Variables
           <span className="ml-1 font-normal text-teal-700">
-            ({fromSteps} from steps + contact details)
+            ({fromSteps} from steps + contact &amp; chat trigger)
           </span>
         </span>
         <ChevronDown className={cn("h-3.5 w-3.5 text-teal-700 transition-transform", open && "rotate-180")} />

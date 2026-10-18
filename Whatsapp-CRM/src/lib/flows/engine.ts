@@ -101,6 +101,7 @@ import {
   type FlowFallbackPolicy,
 } from "./types";
 import { afterRecordCreated } from "@/lib/data-store/record-events";
+import { triggerVars, carriedTriggerVars } from "@/lib/flows/trigger-vars";
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -2875,6 +2876,8 @@ The assistant could not generate a reply: ${detail}`,
                 conversation_id: run.conversation_id,
                 status: "active",
                 current_node_key: linkedFlow.entry_node_id,
+                // The linked bot knows what started the conversation too.
+                vars: carriedTriggerVars(run.vars) as Prisma.InputJsonValue,
               },
             });
             const linkedRun = toFlowRunRow(inserted);
@@ -3619,11 +3622,13 @@ async function startNewRun(
         conversation_id: input.conversationId,
         status: "active",
         current_node_key: flow.entry_node_id,
-        // Started by a submitted WhatsApp Flow: what they filled in is
-        // there from the first node, as {{vars.flow_<field>}}.
-        ...(input.message.kind === "flow_reply"
-          ? { vars: flowVarsFromResponse(input.message.response) as Prisma.InputJsonValue }
-          : {}),
+        // The message that started it ({{vars.trigger_message}}, …,
+        // trigger-vars.ts) and, when a submitted WhatsApp Flow started
+        // it, what they filled in ({{vars.flow_<field>}}).
+        vars: {
+          ...triggerVars(input.message, input.channel ?? null),
+          ...(input.message.kind === "flow_reply" ? flowVarsFromResponse(input.message.response) : {}),
+        } as Prisma.InputJsonValue,
       },
     });
     run = toFlowRunRow(inserted);
