@@ -1,6 +1,7 @@
 "use client"
 
 import { Suspense, useState, useCallback, useEffect, useRef } from "react"
+import { everyWhileVisible } from "@/lib/visible-interval"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types"
 import { useRealtime } from "@/hooks/use-realtime"
@@ -159,6 +160,14 @@ function InboxV2Content() {
     document.addEventListener("visibilitychange", onVisibility)
     return () => document.removeEventListener("visibilitychange", onVisibility)
   }, [])
+
+  // Safety net: while the live connection is down (a blocked websocket, a
+  // server restart), the open chat re-reads every 15 s so ticks and replies
+  // still arrive. Rests when the tab is hidden; stops once live again.
+  useEffect(() => {
+    if (isConnected) return
+    return everyWhileVisible(() => setResyncToken((n) => n + 1), 15_000)
+  }, [isConnected])
 
   const handleManualRefresh = useCallback(() => setResyncToken((n) => n + 1), [])
 

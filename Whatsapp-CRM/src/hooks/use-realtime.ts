@@ -191,17 +191,20 @@ export function useRealtime({
       socket.off("call", handleCall);
       socket.off("presence", handlePresence);
       socket.off("offer", handleOffer);
-      socket.emit("leave_account", accountId);
+      // No "leave_account" here. The socket is shared by every component
+      // using this hook (the Inbox, the call popup, the alerts); leaving
+      // the room when one of them unmounted cut the others off silently —
+      // still connected, so nothing reconnected — and ticks and replies
+      // stopped arriving until a reload. The room is fixed by the socket's
+      // ticket on the server; only this component's listeners go.
       setIsConnected(false);
     };
   }, [accountId, enabled]);
 
+  // Kept for callers; it no longer leaves the shared room (see cleanup above).
   const unsubscribe = useCallback(() => {
-    if (sharedSocket && accountId) {
-      sharedSocket.emit("leave_account", accountId);
-      setIsConnected(false);
-    }
-  }, [accountId]);
+    setIsConnected(false);
+  }, []);
 
   return { isConnected, unsubscribe };
 }

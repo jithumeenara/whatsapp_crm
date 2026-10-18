@@ -166,9 +166,12 @@ app.prepare().then(() => {
     socket.on("join_account", () => {
       if (accountId) socket.join(`account:${accountId}`);
     });
-    socket.on("leave_account", () => {
-      if (accountId) socket.leave(`account:${accountId}`);
-    });
+    // Ignored. The page shares one socket between several listeners and
+    // used to send this whenever one of them closed, which silently cut off
+    // all the others (no ticks, no replies until a reload). Tabs still on
+    // the old page keep sending it until they reload, so the server must
+    // not act on it. The room is the ticket's; nothing else changes it.
+    socket.on("leave_account", () => {});
   });
 
   // Visitors chatting from a business's website. A namespace of its own,
