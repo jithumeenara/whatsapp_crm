@@ -3433,8 +3433,9 @@ function SendToNumberForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 }
 
 // ─── update_table_row ──────────────────────────────────────────────────
-// Change a column on this customer's row in a Data Store table. Reads like
-// a sentence: Table · find the row by · which row · set column to value.
+// Find any rows in a Data Store table by your own conditions and change
+// any of their columns. Reads like a sentence: Table · find rows where ·
+// which row · set · if nothing matches.
 
 interface UtrField {
   field_key: string;
@@ -3444,8 +3445,23 @@ interface UtrField {
 }
 type UtrMode = "value" | "today" | "now" | "yes" | "no" | "clear";
 interface UtrSet { field_key: string; mode: UtrMode; value?: string }
+type UtrOp = "equals" | "phone" | "contains" | "empty" | "not_empty";
+interface UtrCond { field_key: string; op: UtrOp; value?: string }
 
 const UTR_NOT_WRITABLE = ["password", "file", "image", "signature", "section_header", "html_block", "relation"];
+const UTR_NOT_SEARCHABLE = ["password", "file", "image", "signature", "section_header", "html_block"];
+const UTR_OPS: Array<{ value: UtrOp; label: string }> = [
+  { value: "equals", label: "is" },
+  { value: "phone", label: "is the same number as" },
+  { value: "contains", label: "contains" },
+  { value: "empty", label: "is empty" },
+  { value: "not_empty", label: "is not empty" },
+];
+const UTR_QUICK: Array<{ label: string; token: string }> = [
+  { label: "Chatting number", token: "{{contact.phone}}" },
+  { label: "Contact name", token: "{{contact.name}}" },
+  { label: "Contact email", token: "{{contact.email}}" },
+];
 
 function utrOptions(f: UtrField | undefined): string[] {
   if (!f) return [];
@@ -3454,11 +3470,22 @@ function utrOptions(f: UtrField | undefined): string[] {
   return items.map((i) => String(i.value ?? i.label ?? "")).filter(Boolean);
 }
 
+function isPhoneLike(f: UtrField): boolean {
+  return f.field_type === "phone" || /phone|mobile|whatsapp/i.test(f.label);
+}
+
 function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const vars = getFlowVars(allNodes, nodeKey);
   const tableId = String(cfg.table_id ?? "");
-  const matchField = String(cfg.match_field ?? "");
   const which = (cfg.which === "oldest" || cfg.which === "all" ? cfg.which : "latest") as "latest" | "oldest" | "all";
+  const ifNotFound = cfg.if_not_found === "create" ? "create" : "branch";
+  // The first version stored one phone column as match_field.
+  const conds: UtrCond[] = Array.isArray(cfg.conditions)
+    ? (cfg.conditions as UtrCond[])
+    : cfg.match_field
+      ? [{ field_key: String(cfg.match_field), op: "phone", value: "{{contact.phone}}" }]
+      : [];
+  const onlyThisChat = typeof cfg.only_this_chat === "boolean" ? cfg.only_this_chat : conds.length === 0 && !!tableId;
   const sets: UtrSet[] = Array.isArray(cfg.sets) && (cfg.sets as unknown[]).length > 0
     ? (cfg.sets as UtrSet[])
     : [{ field_key: "", mode: "value", value: "" }];
@@ -3466,7 +3493,7 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   const [tables, setTables] = useState<Array<{ id: string; name: string }> | null>(null);
   const [fields, setFields] = useState<UtrField[]>([]);
   const [loadingFields, setLoadingFields] = useState(false);
-  const [testPhone, setTestPhone] = useState("");
+  const [testValues, setTestValues] = useState<Record<number, string>>({});
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
@@ -3497,37 +3524,53 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
     return () => { live = false; };
   }, [tableId]);
 
-  const phoneFields = fields.filter((f) => f.field_type === "phone" || /phone|mobile|whatsapp|number/i.test(f.label));
   const writable = fields.filter((f) => !UTR_NOT_WRITABLE.includes(f.field_type));
+  const searchable = fields.filter((f) => !UTR_NOT_SEARCHABLE.includes(f.field_type));
   const byKey = new Map(fields.map((f) => [f.field_key, f]));
 
   function chooseTable(id: string) {
     setTestResult(null);
-    // The phone column is picked for you once the columns arrive (below).
-    onChange({ ...cfg, table_id: id, match_field: "", sets: [{ field_key: "", mode: "value", value: "" }] });
+    setTestValues({});
+    // A first condition is suggested once the columns arrive (below).
+    onChange({ ...cfg, table_id: id, match_field: "", conditions: [], only_this_chat: false, sets: [{ field_key: "", mode: "value", value: "" }] });
   }
-  // A new table: pick its phone column for the user.
+  // A new table: suggest "phone column is the chatting number" when it has one.
   useEffect(() => {
-    if (!tableId || matchField || fields.length === 0) return;
-    const phone = fields.find((f) => f.field_type === "phone") ?? fields.find((f) => /phone|mobile|whatsapp/i.test(f.label));
-    if (phone) onChange({ ...cfg, match_field: phone.field_key });
+    if (!tableId || fields.length === 0 || !Array.isArray(cfg.conditions) || (cfg.conditions as unknown[]).length > 0 || cfg.only_this_chat) return;
+    const phone = fields.find((f) => f.field_type === "phone") ?? fields.find(isPhoneLike);
+    if (phone) onChange({ ...cfg, conditions: [{ field_key: phone.field_key, op: "phone", value: "{{contact.phone}}" }] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields]);
 
-  function setAt(i: number, patch: Partial<UtrSet>) {
-    const next = sets.map((s, j) => (j === i ? { ...s, ...patch } : s));
-    onChange({ ...cfg, sets: next });
+  function setConds(next: UtrCond[]) {
+    setTestResult(null);
+    onChange({ ...cfg, match_field: "", conditions: next });
   }
+  function condAt(i: number, patch: Partial<UtrCond>) {
+    setConds(conds.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  }
+  function setAt(i: number, patch: Partial<UtrSet>) {
+    onChange({ ...cfg, sets: sets.map((s, j) => (j === i ? { ...s, ...patch } : s)) });
+  }
+
+  // Typed values only matter when nothing else ties the row to this
+  // customer (their number, or "only rows saved for this chat").
+  const tiedToCustomer = onlyThisChat || conds.some((c) => c.op === "phone" && (c.value ?? "").includes("{{contact.phone}}"));
+  const usesTyped = !tiedToCustomer && conds.some((c) => /\{\{\s*vars\./.test(c.value ?? ""));
+  const noConditions = conds.filter((c) => c.field_key).length === 0;
 
   async function test() {
     if (!tableId || testing) return;
     setTesting(true);
     setTestResult(null);
     try {
+      const conditions = conds
+        .filter((c) => c.field_key)
+        .map((c, i) => ({ ...c, value: /\{\{/.test(c.value ?? "") ? testValues[i] ?? "" : c.value ?? "" }));
       const res = await fetch(`/api/data-tables/${tableId}/find-row`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: testPhone, match_field: matchField, which }),
+        body: JSON.stringify({ conditions, which }),
       });
       const d = (await res.json().catch(() => ({}))) as {
         error?: string; note?: string; found?: number;
@@ -3535,10 +3578,10 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
       };
       if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
       if (d.note) setTestResult(d.note);
-      else if (!d.found) setTestResult("No row for this number — the bot would take the “Not found” path.");
+      else if (!d.found) setTestResult(ifNotFound === "create" ? "No row matches — the bot would create a new one." : "No row matches — the bot would take the “Not found” path.");
       else {
         const first = d.rows?.[0]?.preview.map((p) => `${p.label}: ${p.value || "—"}`).join(" · ") ?? "";
-        setTestResult(`${d.found} row${d.found === 1 ? "" : "s"} for this number. Would change ${which === "all" ? `${Math.min(d.found, 20)}` : `the ${which} one`}: ${first}`);
+        setTestResult(`${d.found} row${d.found === 1 ? "" : "s"} match. Would change ${which === "all" ? `${Math.min(d.found, 20)}` : `the ${which} one`}: ${first}`);
       }
     } catch (err) {
       console.error("[update-table-row] test failed:", err);
@@ -3553,8 +3596,14 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
     if (!tableId || !s) return null;
     const label = byKey.get(s.field_key)?.label ?? s.field_key;
     const v = s.mode === "value" ? `“${s.value ?? ""}”` : s.mode === "yes" ? "Yes" : s.mode === "no" ? "No" : s.mode === "clear" ? "empty" : s.mode === "today" ? "today’s date" : "the date and time now";
-    const rowWords = which === "all" ? "every row" : which === "oldest" ? "oldest row" : "latest row";
-    return `${label} becomes ${v} on this customer’s ${rowWords}${sets.filter((x) => x.field_key).length > 1 ? ", with the other columns below" : ""}.`;
+    const where = conds.filter((c) => c.field_key).map((c) => {
+      const col = byKey.get(c.field_key)?.label ?? c.field_key;
+      const op = UTR_OPS.find((o) => o.value === c.op)?.label ?? "is";
+      return c.op === "empty" || c.op === "not_empty" ? `${col} ${op}` : `${col} ${op} ${c.value === "{{contact.phone}}" ? "the chatting number" : `“${c.value ?? ""}”`}`;
+    });
+    const scope = [...where, ...(onlyThisChat ? ["saved for this chat"] : [])].join(" and ");
+    const rowWords = which === "all" ? "every matching row" : which === "oldest" ? "the oldest matching row" : "the latest matching row";
+    return `${label} becomes ${v} on ${rowWords}${scope ? ` (${scope})` : ""}.${ifNotFound === "create" ? " If none matches, a new row is made." : ""}`;
   })();
 
   return (
@@ -3572,25 +3621,90 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
       {tableId && (
         <>
-          <Field
-            label="Find the customer’s row by"
-            hint="Their WhatsApp number is matched on the last 10 digits (+91, 0 and spaces don’t matter). Rows the bot or AI saved for them are always found too."
-          >
-            <Select value={matchField || "__contact"} onValueChange={(v) => onChange({ ...cfg, match_field: v === "__contact" ? "" : String(v ?? "") })}>
-              <SelectTrigger className="h-8 text-xs" aria-label="Phone column">
-                <SelectValue placeholder={loadingFields ? "Loading…" : "Choose…"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__contact">Only rows the bot saved for this chat</SelectItem>
-                {(phoneFields.length > 0 ? phoneFields : fields).map((f) => (
-                  <SelectItem key={f.field_key} value={f.field_key}>{f.label} = chatting number</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-slate-700">Find rows where</span>
+            {conds.map((c, i) => {
+              const needsValue = c.op !== "empty" && c.op !== "not_empty";
+              const choices = utrOptions(byKey.get(c.field_key));
+              return (
+                <div key={i} className="space-y-1.5 rounded-lg border border-slate-200 p-2.5">
+                  {i > 0 && <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">and</span>}
+                  <div className="flex items-center gap-1.5">
+                    <Select value={c.field_key} onValueChange={(v) => {
+                      const f = byKey.get(String(v ?? ""));
+                      condAt(i, { field_key: String(v ?? ""), op: f && isPhoneLike(f) ? "phone" : "equals", value: f && isPhoneLike(f) ? "{{contact.phone}}" : "" });
+                    }}>
+                      <SelectTrigger className="h-8 flex-1 text-xs" aria-label={`Condition ${i + 1} column`}>
+                        <SelectValue placeholder={loadingFields ? "Loading…" : "Column…"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {searchable.map((f) => <SelectItem key={f.field_key} value={f.field_key}>{f.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <button type="button" onClick={() => setConds(conds.filter((_, j) => j !== i))}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label={`Remove condition ${i + 1}`}>
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                    </button>
+                  </div>
+                  <Select value={c.op} onValueChange={(v) => condAt(i, { op: (String(v ?? "equals") as UtrOp) })}>
+                    <SelectTrigger className="h-8 w-full text-xs" aria-label={`Condition ${i + 1} comparison`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {UTR_OPS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {needsValue && (
+                    <>
+                      <Input className="h-8 text-xs" value={c.value ?? ""} aria-label={`Condition ${i + 1} value`}
+                        onChange={(e) => condAt(i, { value: e.target.value })}
+                        placeholder={c.op === "phone" ? "{{contact.phone}} or a number" : "A value, or {{vars.answer}}"} />
+                      <div className="flex flex-wrap gap-1">
+                        {UTR_QUICK.map((q) => (
+                          <button key={q.token} type="button" onClick={() => condAt(i, { value: q.token })}
+                            className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", c.value === q.token ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-indigo-200")}>
+                            {q.label}
+                          </button>
+                        ))}
+                        {choices.map((ch) => (
+                          <button key={ch} type="button" onClick={() => condAt(i, { value: ch })}
+                            className={cn("rounded-full border px-2 py-0.5 text-[10px] font-medium", c.value === ch ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-indigo-200")}>
+                            {ch}
+                          </button>
+                        ))}
+                      </div>
+                      <VarChips vars={vars} onInsert={(v) => condAt(i, { value: v })} />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {conds.length < 5 && (
+              <button type="button" onClick={() => setConds([...conds, { field_key: "", op: "equals", value: "" }])}
+                className="flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline">
+                <Plus className="h-3 w-3" aria-hidden /> Add condition
+              </button>
+            )}
+            <label className="flex cursor-pointer items-start gap-2 pt-1">
+              <input type="checkbox" className="mt-0.5 h-3.5 w-3.5 accent-indigo-600" checked={onlyThisChat}
+                onChange={(e) => onChange({ ...cfg, only_this_chat: e.target.checked, conditions: conds })} />
+              <span className="text-[11px] text-slate-700">
+                Only rows saved for this chat
+                <span className="block text-[10px] text-slate-500">Rows this bot or the AI saved while talking to this customer.</span>
+              </span>
+            </label>
+            {noConditions && !onlyThisChat && (
+              <p className="text-[10px] text-rose-700">Add a condition or tick “Only rows saved for this chat” — a step never changes a whole table.</p>
+            )}
+            {usesTyped && (
+              <p className="rounded-md bg-amber-50 px-2 py-1.5 text-[10px] text-amber-900">
+                A condition uses something the customer typed. Anyone who sends a matching value can change that row — add “Chatting number” as a second condition if only the owner should.
+              </p>
+            )}
+          </div>
 
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-slate-700">If the customer has more than one row</span>
+            <span className="text-xs font-medium text-slate-700">If more than one row matches</span>
             <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Which row">
               {([["latest", "Latest"], ["oldest", "Oldest"], ["all", "All (up to 20)"]] as const).map(([v, label]) => (
                 <button key={v} type="button" role="radio" aria-checked={which === v}
@@ -3657,20 +3771,20 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 
                   {s.field_key && choices.length > 0 && (
                     <div className="flex flex-wrap gap-1">
-                      {choices.map((c) => (
-                        <button key={c} type="button" onClick={() => setAt(i, { mode: "value", value: c })}
-                          className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium", s.mode === "value" && s.value === c ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-indigo-200")}>
-                          {c}
+                      {choices.map((ch) => (
+                        <button key={ch} type="button" onClick={() => setAt(i, { mode: "value", value: ch })}
+                          className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium", s.mode === "value" && s.value === ch ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-indigo-200")}>
+                          {ch}
                         </button>
                       ))}
                     </div>
                   )}
 
-                  {s.field_key && !isBool && (s.mode === "value") && (
+                  {s.field_key && !isBool && s.mode === "value" && (
                     <>
                       <Input className="h-8 text-xs" value={s.value ?? ""} aria-label={`Value for ${f?.label ?? "column"}`}
                         onChange={(e) => setAt(i, { mode: "value", value: e.target.value })}
-                        placeholder={choices.length ? "Or type a value…" : isDate ? "2026-10-18 or {{vars.date}}" : "Confirmed or {{vars.answer}}"} />
+                        placeholder={choices.length ? "Or type a value…" : isDate ? "2026-10-18 or {{vars.date}}" : "A value, or {{vars.answer}}"} />
                       <VarChips vars={vars} onInsert={(v) => setAt(i, { mode: "value", value: (s.value ?? "") + v })} />
                     </>
                   )}
@@ -3691,20 +3805,43 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
             </button>
           </div>
 
-          {summary && <p className="rounded-lg bg-teal-50 px-2.5 py-2 text-[11px] text-teal-800">{summary} The found row’s columns are then available as {"{{vars.row_<column>}}"}.</p>}
-
-          <div className="space-y-1.5 rounded-lg border border-dashed border-slate-300 p-2.5">
-            <span className="text-xs font-medium text-slate-700">Test with a number</span>
-            <div className="flex gap-1.5">
-              <Input className="h-8 flex-1 text-xs" value={testPhone} onChange={(e) => setTestPhone(e.target.value)}
-                placeholder="+91 94950 43668" inputMode="tel" autoComplete="off" aria-label="Number to test" />
-              <button type="button" onClick={() => void test()} disabled={testing || !testPhone.trim()}
-                className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                {testing ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null} Find row
-              </button>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-700">If no row matches</span>
+            <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="If no row matches">
+              {([["branch", "Go to “Not found”"], ["create", "Create a new row"]] as const).map(([v, label]) => (
+                <button key={v} type="button" role="radio" aria-checked={ifNotFound === v}
+                  onClick={() => onChange({ ...cfg, if_not_found: v })}
+                  className={cn(
+                    "rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors",
+                    ifNotFound === v ? "border-indigo-500 bg-indigo-50 text-indigo-600" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:text-slate-900",
+                  )}>
+                  {label}
+                </button>
+              ))}
             </div>
-            <p className="text-[10px] text-slate-500" aria-live="polite">{testResult ?? "Shows which row would change. Nothing is saved."}</p>
+            {ifNotFound === "create" && (
+              <p className="text-[10px] text-slate-500">The new row gets the “is” values from the conditions and the columns set above.</p>
+            )}
           </div>
+
+          {summary && <p className="rounded-lg bg-teal-50 px-2.5 py-2 text-[11px] text-teal-800">{summary} The row’s columns are then available as {"{{vars.row_<column>}}"}.</p>}
+
+          {!noConditions && (
+            <div className="space-y-1.5 rounded-lg border border-dashed border-slate-300 p-2.5">
+              <span className="text-xs font-medium text-slate-700">Test</span>
+              {conds.map((c, i) => (c.field_key && /\{\{/.test(c.value ?? "") ? (
+                <Input key={i} className="h-8 text-xs" value={testValues[i] ?? ""} autoComplete="off"
+                  onChange={(e) => setTestValues((t) => ({ ...t, [i]: e.target.value }))}
+                  aria-label={`Test value for ${byKey.get(c.field_key)?.label ?? c.field_key}`}
+                  placeholder={`${byKey.get(c.field_key)?.label ?? c.field_key}: ${c.value === "{{contact.phone}}" ? "+91 94950 43668" : "a sample value"}`} />
+              ) : null))}
+              <button type="button" onClick={() => void test()} disabled={testing}
+                className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                {testing ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null} Find matching rows
+              </button>
+              <p className="text-[10px] text-slate-500" aria-live="polite">{testResult ?? "Shows which row would change. Nothing is saved."}</p>
+            </div>
+          )}
         </>
       )}
 
@@ -3721,7 +3858,7 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
         allNodes={allNodes}
         currentKey={nodeKey}
         onChange={(v) => onChange({ ...cfg, not_found_node_key: v })}
-        hint="No row for this number, or the table changed. Empty: carries on to the next node."
+        hint="No row matched, or the table changed. Empty: carries on to the next node."
       />
     </div>
   );

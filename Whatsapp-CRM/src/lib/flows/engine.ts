@@ -2490,29 +2490,37 @@ The assistant could not generate a reply: ${detail}`,
       continue;
     }
 
-    // update_table_row — change a column on this customer's row in a Data
-    // Store table (src/lib/data-store/contact-rows.ts). The row is found by
-    // the number WhatsApp says is writing, never by anything typed, so a
-    // customer can only ever change their own rows. "Updated" goes to
-    // next_node_key; nothing found (or a problem) to not_found_node_key,
-    // or on along next_node_key when that is not set — never stuck.
+    // update_table_row — find rows in a Data Store table by the builder's own
+    // conditions and change the chosen columns (src/lib/data-store/contact-rows.ts).
+    // "Updated" (or created) goes to next_node_key; nothing found or a
+    // problem to not_found_node_key, or on along next_node_key when that
+    // is not set — the customer is never left stuck.
     if (node.node_type === "update_table_row") {
       const cfg = node.config as {
         table_id?: string;
+        conditions?: Array<{ field_key?: string; op?: string; value?: string }>;
         match_field?: string;
+        only_this_chat?: boolean;
         which?: string;
         sets?: Array<{ field_key?: string; mode?: string; value?: string }>;
+        if_not_found?: string;
         next_node_key?: string;
         not_found_node_key?: string;
       };
-      const notFound = cfg.not_found_node_key || cfg.next_node_key || "";
-      let nextKey = notFound;
+      let nextKey = cfg.not_found_node_key || cfg.next_node_key || "";
       try {
         if (!cfg.table_id) throw new Error("No table chosen");
         const contact = await getContact();
-        const phone = contact?.phone && !isPlaceholderPhone(contact.phone) ? contact.phone : null;
+        const rows = await import("@/lib/data-store/contact-rows");
+        const { businessTimezone } = await import("@/lib/ai/human-date");
         const which = cfg.which === "oldest" || cfg.which === "all" ? cfg.which : "latest";
         const MODES = ["value", "today", "now", "yes", "no", "clear"] as const;
+        const conditions = rows.conditionsFromConfig(cfg).map((c) => ({
+          ...c,
+          value: interpolateWithContact(c.value, run.vars, contact),
+        }));
+        // The first version had no conditions and meant "rows saved for this chat".
+        const onlyThisChat = cfg.only_this_chat ?? (conditions.length === 0);
         const sets = (cfg.sets ?? [])
           .filter((x) => x.field_key)
           .map((x) => ({
@@ -2520,22 +2528,21 @@ The assistant could not generate a reply: ${detail}`,
             mode: (MODES as readonly string[]).includes(x.mode ?? "") ? (x.mode as (typeof MODES)[number]) : "value",
             value: interpolateWithContact(x.value ?? "", run.vars, contact),
           }));
-        const { updateContactRows } = await import("@/lib/data-store/contact-rows");
-        const { businessTimezone } = await import("@/lib/ai/human-date");
-        const result = await updateContactRows({
+        const result = await rows.updateRows({
           accountId: run.account_id,
           tableId: cfg.table_id,
+          conditions,
+          onlyThisChat,
           contactId: run.contact_id ?? null,
-          contactPhone: phone,
-          matchField: cfg.match_field || null,
           which,
           sets,
+          createIfMissing: cfg.if_not_found === "create",
           timeZone: await businessTimezone(run.account_id),
         });
         if (result.error) throw new Error(result.error);
         if (result.row) {
           // The row as it is now, for the next messages: {{vars.row_<column>}}.
-          const newVars: Record<string, unknown> = { ...run.vars, row_found: "yes" };
+          const newVars: Record<string, unknown> = { ...run.vars, row_found: result.created ? "created" : "yes" };
           for (const [k, v] of Object.entries(result.row)) {
             if (/^[a-zA-Z0-9_]+$/.test(k) && v !== null && v !== undefined && typeof v !== "object") newVars[`row_${k}`] = String(v);
           }
@@ -2545,8 +2552,9 @@ The assistant could not generate a reply: ${detail}`,
           await logEvent(run.id, "node_entered", node.node_key, {
             node_type: "update_table_row",
             found: result.found,
+            created: result.created ?? undefined,
             changes: result.updated.map((u) => u.change),
-            unchanged: result.updated.length === 0 ? "already had these values" : undefined,
+            unchanged: !result.created && result.updated.length === 0 ? "already had these values" : undefined,
           });
         } else {
           await logEvent(run.id, "node_entered", node.node_key, { node_type: "update_table_row", found: 0, outcome: "not_found" });

@@ -877,12 +877,24 @@ function validateNode(
     case "update_table_row": {
       const cfg = node.config as {
         table_id?: string;
+        conditions?: Array<{ field_key?: string; op?: string; value?: string }>;
+        match_field?: string;
+        only_this_chat?: boolean;
         sets?: Array<{ field_key?: string; mode?: string; value?: string }>;
         next_node_key?: string;
         not_found_node_key?: string;
       };
       if (!cfg.table_id?.trim()) {
         issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "table_id", message: "Update table row needs a table." });
+      }
+      const conds = (cfg.conditions ?? []).filter((c) => c.field_key);
+      // A step never changes a whole table: a condition, the first
+      // version's phone column, or "only rows saved for this chat".
+      if (Array.isArray(cfg.conditions) && conds.length === 0 && !cfg.only_this_chat && !cfg.match_field) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "conditions", message: "Update table row needs a condition, or “Only rows saved for this chat”." });
+      }
+      if (conds.some((c) => (c.op ?? "equals") !== "empty" && c.op !== "not_empty" && !(c.value ?? "").trim())) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "conditions", message: "Update table row has a condition with no value." });
       }
       const sets = (cfg.sets ?? []).filter((x) => x.field_key);
       if (sets.length === 0) {

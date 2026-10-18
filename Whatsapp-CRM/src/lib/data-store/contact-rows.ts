@@ -1,19 +1,26 @@
 /**
- * "This customer's row" in a Data Store table — found, and changed, for the
- * chatbot's "Update table row" step.
+ * Find rows in a Data Store table by your own conditions, and change them —
+ * the chatbot's "Update table row" step.
  *
- * A row is the customer's when the bot or the assistant saved it for them
- * (contact_id), or when its phone column holds their number. Rows that came
- * from Excel or a Google Sheet have only the phone column, so both count.
+ * Everything is the bot builder's choice:
+ *   - which rows: conditions on any columns (equals, same phone number,
+ *     contains, empty, not empty), all of which must hold, and/or "only
+ *     rows saved for this chat" (contact_id);
+ *   - which of them: the latest, the oldest or all (up to 20);
+ *   - what to write: any columns, to text, a variable, today, now, yes,
+ *     no or empty;
+ *   - when nothing matches: the "Not found" path, or a new row.
  *
- * Numbers are compared on their last ten digits after dropping everything
- * else: "+91 94950 43668", "09495043668" and "9495043668" are one number.
- * Not eight — two different people's numbers share the last eight digits
- * far too often. A number shorter than ten digits matches nothing.
+ * Phone numbers are compared on their last ten digits, so "+91 94950
+ * 43668", "09495043668" and "9495043668" are one number — never on eight,
+ * which two different people share far too often.
  *
- * The number always comes from the conversation (WhatsApp tells us who is
- * writing), never from what the customer types, so nobody can change
- * somebody else's row.
+ * A condition's value can come from what the customer typed. That lets a
+ * bot find a row by a registration number, and it also means whoever
+ * knows that number can change that row; the builder says so when a
+ * condition uses a variable. Matching on the chatting number
+ * ({{contact.phone}}) or "only rows saved for this chat" cannot be steered
+ * by typing.
  */
 
 import { Prisma } from '@prisma/client'
@@ -21,15 +28,27 @@ import { prisma } from '@/lib/db'
 
 export type WhichRow = 'latest' | 'oldest' | 'all'
 export const MAX_ROWS = 20
+export const MAX_CONDITIONS = 5
 
 /** Field types a step may not write: secrets, files and layout. */
 const NOT_WRITABLE = new Set(['password', 'file', 'image', 'signature', 'section_header', 'html_block', 'relation'])
+/** Field types a condition may not read. */
+const NOT_SEARCHABLE = new Set(['password', 'file', 'image', 'signature', 'section_header', 'html_block'])
 
 export type SetMode = 'value' | 'today' | 'now' | 'yes' | 'no' | 'clear'
 export interface ColumnSet {
   field_key: string
   mode: SetMode
   /** For mode 'value' — already interpolated by the caller. */
+  value?: string
+}
+
+export type MatchOp = 'equals' | 'phone' | 'contains' | 'empty' | 'not_empty'
+export const MATCH_OPS: readonly MatchOp[] = ['equals', 'phone', 'contains', 'empty', 'not_empty']
+export interface RowCondition {
+  field_key: string
+  op: MatchOp
+  /** Already interpolated by the caller. Unused for empty / not_empty. */
   value?: string
 }
 
@@ -102,6 +121,61 @@ export function buildPatch(
   return { patch }
 }
 
+/**
+ * The conditions as they will be searched, checked against the table's
+ * fields. A condition whose value came out empty (a variable the customer
+ * never filled in) or a phone value with fewer than ten digits matches
+ * nothing rather than everything — 'nothing' is reported so the bot takes
+ * its "Not found" path.
+ */
+export function normaliseConditions(
+  fields: readonly FieldLite[],
+  conditions: readonly RowCondition[],
+  onlyThisChat: boolean,
+): { conditions: RowCondition[]; nothing: boolean } | { error: string } {
+  const byKey = new Map(fields.map((f) => [f.field_key, f]))
+  const out: RowCondition[] = []
+  let nothing = false
+  for (const c of conditions.slice(0, MAX_CONDITIONS)) {
+    if (!c.field_key) continue
+    const f = byKey.get(c.field_key)
+    if (!f) return { error: `Column "${c.field_key}" is not in this table.` }
+    if (NOT_SEARCHABLE.has(f.field_type)) return { error: `Column "${f.label}" can't be searched.` }
+    if (!MATCH_OPS.includes(c.op)) return { error: `Unknown comparison "${c.op}".` }
+    const value = (c.value ?? '').trim().slice(0, 500)
+    if (c.op === 'equals' || c.op === 'contains') {
+      if (!value) nothing = true
+    } else if (c.op === 'phone') {
+      if (!phoneKey(value)) nothing = true
+    }
+    out.push({ field_key: c.field_key, op: c.op, value })
+  }
+  // With no condition and not limited to this chat, a step would change
+  // rows of the whole table — refused.
+  if (out.length === 0 && !onlyThisChat) return { error: 'Add a condition, or limit it to rows saved for this chat.' }
+  return { conditions: out, nothing }
+}
+
+function likeEscape(v: string): string {
+  return v.replace(/[\\%_]/g, (m) => `\\${m}`)
+}
+
+function conditionSql(c: RowCondition): Prisma.Sql {
+  const cell = Prisma.sql`coalesce(data ->> ${c.field_key}, '')`
+  switch (c.op) {
+    case 'equals':
+      return Prisma.sql`lower(btrim(${cell})) = lower(${c.value ?? ''})`
+    case 'contains':
+      return Prisma.sql`${cell} ILIKE ${'%' + likeEscape(c.value ?? '') + '%'}`
+    case 'phone':
+      return Prisma.sql`right(regexp_replace(${cell}, '\\D', '', 'g'), 10) = ${phoneKey(c.value) ?? '-'}`
+    case 'empty':
+      return Prisma.sql`btrim(${cell}) = ''`
+    case 'not_empty':
+      return Prisma.sql`btrim(${cell}) <> ''`
+  }
+}
+
 export interface FoundRow {
   id: string
   data: Record<string, unknown>
@@ -109,34 +183,29 @@ export interface FoundRow {
 }
 
 /**
- * This customer's rows in a table, newest first (at most 200 looked at).
- * `matchField` is the phone column; empty means "rows saved for this
- * contact" only. The table must already be checked against the account.
+ * Rows matching every condition (and, when asked, saved for this chat),
+ * newest first, at most 200 looked at. Conditions must already be
+ * normalised against the table; the table checked against the account.
  */
-export async function findContactRows(args: {
+export async function findRows(args: {
   accountId: string
   tableId: string
-  contactId: string | null
-  contactPhone: string | null
-  matchField: string | null
+  conditions: readonly RowCondition[]
+  /** Set to limit to rows saved for this contact. */
+  onlyContactId: string | null
 }): Promise<FoundRow[]> {
-  const key = phoneKey(args.contactPhone)
-  const byContact = args.contactId ? Prisma.sql`contact_id = ${args.contactId}::uuid` : Prisma.sql`false`
-  const byPhone =
-    args.matchField && key
-      ? Prisma.sql`right(regexp_replace(coalesce(data ->> ${args.matchField}, ''), '\\D', '', 'g'), 10) = ${key}`
-      : Prisma.sql`false`
+  const parts: Prisma.Sql[] = args.conditions.map(conditionSql)
+  if (args.onlyContactId) parts.push(Prisma.sql`contact_id = ${args.onlyContactId}::uuid`)
+  if (parts.length === 0) return []
   const rows = await prisma.$queryRaw<Array<{ id: string; data: unknown; created_at: Date }>>(Prisma.sql`
     SELECT id, data, created_at
     FROM data_records
     WHERE table_id = ${args.tableId}::uuid
       AND account_id = ${args.accountId}::uuid
-      AND (${byContact} OR ${byPhone})
+      AND ${Prisma.join(parts, ' AND ')}
     ORDER BY created_at DESC
     LIMIT 200
   `)
-  // A cell with fewer than ten digits never matches: right(…, 10) of it is
-  // shorter than the ten-digit key. The SQL above is the whole rule.
   return rows.map((r) => ({
     id: r.id,
     data: (r.data && typeof r.data === 'object' ? r.data : {}) as Record<string, unknown>,
@@ -156,56 +225,95 @@ function fmt(v: unknown): string {
   return String(v)
 }
 
+/** A new row from what the conditions say plus the columns being set:
+ *  "Registration ID = R-104" and "Status → Confirmed". */
+export function rowForCreate(conditions: readonly RowCondition[], patch: Record<string, unknown>): Record<string, unknown> {
+  const data: Record<string, unknown> = {}
+  for (const c of conditions) {
+    if ((c.op === 'equals' || c.op === 'phone') && c.value) data[c.field_key] = c.value
+  }
+  return { ...data, ...patch }
+}
+
 export interface UpdateRowsResult {
-  /** Rows found for this customer before picking. */
+  /** Rows that matched, before picking. */
   found: number
   updated: Array<{ id: string; change: string }>
-  /** The (first) changed row after the change, for {{vars.row_<column>}}. */
+  /** A row was created because nothing matched. */
+  created: string | null
+  /** The (first) row after the change, for {{vars.row_<column>}}. */
   row: Record<string, unknown> | null
   error?: string
 }
 
 /**
- * Finds this customer's row(s) and writes the chosen columns — only those;
- * the rest of the row is left as it is. Writing the same value twice
- * changes nothing, so a customer pressing "Confirm" twice is harmless.
- * Afterwards the same things happen as for an edit by staff: the AI's
- * knowledge refreshes, a two-way Google Sheet follows, and the
- * record.updated webhook fires.
+ * Finds the rows and writes the chosen columns — only those; the rest of
+ * each row is left as it is. Writing the same value twice changes nothing,
+ * so a customer pressing "Confirm" twice is harmless. Afterwards the same
+ * things happen as for an edit by staff: the AI's knowledge refreshes, a
+ * two-way Google Sheet follows, and the record.updated webhook fires.
  */
-export async function updateContactRows(args: {
+export async function updateRows(args: {
   accountId: string
   tableId: string
+  conditions: readonly RowCondition[]
+  /** Limit to rows saved for this chat (needs contactId). */
+  onlyThisChat: boolean
   contactId: string | null
-  contactPhone: string | null
-  matchField: string | null
   which: WhichRow
   sets: readonly ColumnSet[]
+  /** Nothing matched: make a new row instead. */
+  createIfMissing: boolean
   timeZone: string
   now?: Date
 }): Promise<UpdateRowsResult> {
+  const none = { found: 0, updated: [], created: null, row: null }
   const table = await prisma.dataTable.findFirst({
     where: { id: args.tableId, account_id: args.accountId },
     select: { id: true, name: true, fields: { select: { field_key: true, label: true, field_type: true } } },
   })
-  if (!table) return { found: 0, updated: [], row: null, error: 'Table not found in this account' }
-  if (args.matchField && !table.fields.some((f) => f.field_key === args.matchField)) {
-    return { found: 0, updated: [], row: null, error: `Column "${args.matchField}" is not in this table` }
-  }
+  if (!table) return { ...none, error: 'Table not found in this account' }
+  const conds = normaliseConditions(table.fields, args.conditions, args.onlyThisChat)
+  if ('error' in conds) return { ...none, error: conds.error }
   const built = buildPatch(table.fields, args.sets, args.now ?? new Date(), args.timeZone)
-  if ('error' in built) return { found: 0, updated: [], row: null, error: built.error }
+  if ('error' in built) return { ...none, error: built.error }
 
-  const rows = await findContactRows({
-    accountId: args.accountId,
-    tableId: table.id,
-    contactId: args.contactId,
-    contactPhone: args.contactPhone,
-    matchField: args.matchField,
-  })
+  // "Only rows saved for this chat" with no chat behind it matches nothing.
+  const blocked = conds.nothing || (args.onlyThisChat && !args.contactId)
+  const rows = blocked
+    ? []
+    : await findRows({
+        accountId: args.accountId,
+        tableId: table.id,
+        conditions: conds.conditions,
+        onlyContactId: args.onlyThisChat ? args.contactId : null,
+      })
+
+  const [{ scheduleKnowledgeRefresh }, events, { dispatchWebhooks }] = await Promise.all([
+    import('@/lib/ai/knowledge-refresh'),
+    import('./record-events'),
+    import('@/lib/webhooks/deliver'),
+  ])
+
+  if (rows.length === 0) {
+    if (!args.createIfMissing || conds.nothing) return none
+    const data = rowForCreate(conds.conditions, built.patch)
+    const created = await prisma.dataRecord.create({
+      data: {
+        table_id: table.id,
+        account_id: args.accountId,
+        contact_id: args.contactId,
+        data: data as Prisma.InputJsonValue,
+        source: 'chatbot',
+      },
+    })
+    events.afterRecordCreated({ ...created, source: 'chatbot' })
+    return { found: 0, updated: [], created: created.id, row: data }
+  }
+
   const chosen = pickRows(rows, args.which)
   const updated: UpdateRowsResult['updated'] = []
   let first: Record<string, unknown> | null = null
-
   for (const r of chosen) {
     const next = { ...r.data, ...built.patch }
     first ??= next
@@ -221,13 +329,8 @@ export async function updateContactRows(args: {
   }
 
   if (updated.length > 0) {
-    const [{ scheduleKnowledgeRefresh }, { afterRecordsChanged }, { dispatchWebhooks }] = await Promise.all([
-      import('@/lib/ai/knowledge-refresh'),
-      import('./record-events'),
-      import('@/lib/webhooks/deliver'),
-    ])
     scheduleKnowledgeRefresh(args.accountId, table.id)
-    afterRecordsChanged(table.id, args.accountId)
+    events.afterRecordsChanged(table.id, args.accountId)
     const at = (args.now ?? new Date()).toISOString()
     for (const u of updated) {
       const r = chosen.find((c) => c.id === u.id)
@@ -239,5 +342,27 @@ export async function updateContactRows(args: {
       }, table.name)
     }
   }
-  return { found: rows.length, updated, row: first }
+  return { found: rows.length, updated, created: null, row: first }
+}
+
+/**
+ * The step's saved config, read the same way by the engine and the
+ * builder's test: conditions, or the first version's single phone column
+ * (match_field) as "column = chatting number".
+ */
+export function conditionsFromConfig(cfg: {
+  conditions?: Array<{ field_key?: string; op?: string; value?: string }>
+  match_field?: string
+}): Array<{ field_key: string; op: MatchOp; value: string }> {
+  if (Array.isArray(cfg.conditions) && cfg.conditions.length > 0) {
+    return cfg.conditions
+      .filter((c) => c && c.field_key)
+      .map((c) => ({
+        field_key: String(c.field_key),
+        op: (MATCH_OPS as readonly string[]).includes(c.op ?? '') ? (c.op as MatchOp) : 'equals',
+        value: typeof c.value === 'string' ? c.value : '',
+      }))
+  }
+  if (cfg.match_field) return [{ field_key: cfg.match_field, op: 'phone', value: '{{contact.phone}}' }]
+  return []
 }
