@@ -13,6 +13,7 @@ import { ContactForm } from "@/components/contacts/contact-form"
 import { ContactDetailViewV2 } from "@/components/contacts/contact-detail-view-v2"
 import { ImportModal } from "@/components/contacts/import-modal"
 import { MergeContactsDialog } from "@/components/contacts/merge-contacts-dialog"
+import { FindDuplicatesDialog } from "@/components/contacts/find-duplicates-dialog"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
 import { formatDistanceToNow } from "date-fns"
@@ -384,6 +385,7 @@ export default function ContactsV2() {
     return () => document.removeEventListener("mousedown", onDown)
   }, [])
 
+  const [dupOpen, setDupOpen] = useState(false)
   const loadContacts = useCallback(async () => {
     setCheckedIds(new Set())
     setLoading(true)
@@ -518,6 +520,15 @@ export default function ContactsV2() {
                 Delete {checkedIds.size}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => setDupOpen(true)}
+              aria-label="Find duplicates"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"
+            >
+              <GitMerge className="h-3.5 w-3.5" aria-hidden />
+              <span className="hidden sm:inline">Find duplicates</span>
+            </button>
             <button
               type="button"
               onClick={() => setImportOpen(true)}
@@ -1007,6 +1018,8 @@ export default function ContactsV2() {
           onConfirm={() => handleDelete(deleteId)}
         />
       )}
+
+      <FindDuplicatesDialog open={dupOpen} onOpenChange={setDupOpen} onMerged={() => { void loadContacts() }} />
 
       {/* Merge contacts dialog (IG·04) */}
       {mergeTarget && (

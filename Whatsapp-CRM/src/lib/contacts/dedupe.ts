@@ -28,7 +28,19 @@ export async function findExistingContact(
     },
   });
 
-  return candidates.find((c) => phonesMatch(c.phone, phone)) ?? null;
+  const found = candidates.find((c) => phonesMatch(c.phone, phone)) ?? null;
+  // A contact merged into another keeps its number; whatever arrives for
+  // it belongs to the contact it was merged into (followed a few steps,
+  // in case that one was merged on in turn).
+  let current = found as (ExistingContact & { merged_into_contact_id?: string | null }) | null;
+  for (let hop = 0; current?.merged_into_contact_id && hop < 5; hop++) {
+    const next = await prisma.contact.findFirst({
+      where: { id: current.merged_into_contact_id, account_id: accountId },
+    });
+    if (!next) break;
+    current = next;
+  }
+  return current;
 }
 
 export function isExactMatch(existing: ExistingContact, phone: string): boolean {
