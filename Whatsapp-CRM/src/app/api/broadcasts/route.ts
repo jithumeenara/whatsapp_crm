@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sendableContactWhere } from "@/lib/broadcasts/sendable";
 import { Prisma } from "@prisma/client";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import type { AccountContext } from "@/lib/auth/account";
@@ -244,17 +245,15 @@ async function resolveAudience(
   // marks that one recipient "failed" instead of excluding it from the
   // audience count/preview entirely.
   //
-  // The one exception: contacts whose `phone` is the "email:<address>"
-  // placeholder (created by the Email channel webhook for contacts with no
-  // real phone number — Contact.phone has no NULL option in the schema).
-  // Unlike a real-but-unvalidated number, this can never succeed on
-  // WhatsApp under any circumstance, so it's excluded up front rather than
-  // padding the audience count with a guaranteed failure.
-  const excludeEmailPlaceholder = { NOT: { phone: { startsWith: "email:" } } } as const;
+  // The exceptions are contacts who can never or must never receive one
+  // (src/lib/broadcasts/sendable.ts): placeholder "numbers" (email-only
+  // contacts, website visitors), anyone who opted out, blocked contacts
+  // and merged duplicates. Excluded up front, so the count matches the send.
+  const sendable = sendableContactWhere(ctx.accountId);
 
   if (audience.type === "all") {
     contacts = await db.contact.findMany({
-      where: { account_id: ctx.accountId, ...excludeEmailPlaceholder },
+      where: sendable,
     });
   } else if (
     audience.type === "tags" &&
@@ -268,7 +267,7 @@ async function resolveAudience(
     const uniqueContactIds = [...new Set(contactTags.map((ct) => ct.contact_id))];
     if (uniqueContactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: uniqueContactIds }, account_id: ctx.accountId, ...excludeEmailPlaceholder },
+        where: { id: { in: uniqueContactIds }, ...sendable },
       });
     }
   } else if (audience.type === "custom_field" && audience.customField) {
@@ -285,18 +284,18 @@ async function resolveAudience(
     const contactIds = [...new Set(matches.map((m) => m.contact_id))];
     if (contactIds.length > 0) {
       contacts = await db.contact.findMany({
-        where: { id: { in: contactIds }, account_id: ctx.accountId, ...excludeEmailPlaceholder },
+        where: { id: { in: contactIds }, ...sendable },
       });
     }
   } else if (audience.type === "csv" && audience.csvContacts) {
     const upserted = await upsertCsvContacts(ctx, audience.csvContacts);
     const upsertedIds = upserted.map((c) => c.id);
     contacts = upsertedIds.length > 0
-      ? await db.contact.findMany({ where: { id: { in: upsertedIds }, account_id: ctx.accountId } })
+      ? await db.contact.findMany({ where: { id: { in: upsertedIds }, ...sendable } })
       : [];
   } else if (audience.type === "contacts" && audience.contactIds && audience.contactIds.length > 0) {
     contacts = await db.contact.findMany({
-      where: { id: { in: audience.contactIds }, account_id: ctx.accountId, ...excludeEmailPlaceholder },
+      where: { id: { in: audience.contactIds }, ...sendable },
     });
   }
 
@@ -411,7 +410,12 @@ async function upsertCsvContacts(
       }
     }
     if (contactTagRows.length > 0) {
-      await db.contactTag.createMany({ data: contactTagRows, skipDuplicates: true });
+      const { addTagsToContacts } = await import("@/lib/contacts/tag-events");
+      await addTagsToContacts({
+        accountId: ctx.accountId,
+        pairs: contactTagRows.map((r) => ({ contactId: r.contact_id, tagId: r.tag_id })),
+        source: "import",
+      });
     }
   }
 

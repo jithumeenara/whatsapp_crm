@@ -30,6 +30,10 @@ export interface AutomationContext {
   conversation_id?: string
   vars?: Record<string, unknown>
   tag_id?: string
+  /** Where the tag came from (inbox, chatbot, automation, import, …). */
+  tag_source?: string
+  /** How many tag-added events led here — stops automation loops. */
+  tag_hop?: number
   agent_id?: string
 }
 
@@ -300,12 +304,15 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'add_tag': {
       const cfg = step.step_config as TagStepConfig
       if (!args.contactId || !cfg.tag_id) throw new Error('add_tag needs contact + tag_id')
-      await prisma.contactTag.upsert({
-        where: { contact_id_tag_id: { contact_id: args.contactId, tag_id: cfg.tag_id } },
-        create: { contact_id: args.contactId, tag_id: cfg.tag_id },
-        update: {},
+      const { addTagsToContact } = await import('@/lib/contacts/tag-events')
+      const added = await addTagsToContact({
+        accountId: args.automation.account_id,
+        contactId: args.contactId,
+        tagIds: [cfg.tag_id],
+        source: 'automation',
+        hop: args.context.tag_hop ?? 0,
       })
-      return `tag ${cfg.tag_id} added`
+      return added.length ? `tag ${cfg.tag_id} added` : `tag ${cfg.tag_id} already present (or not this account's)`
     }
 
     case 'remove_tag': {
@@ -450,7 +457,12 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   return conv.id
 }
 
-function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
+export function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
+  // A "Tag added" automation names one tag; any other tag is not its event.
+  if (automation.trigger_type === 'tag_added') {
+    const want = (automation.trigger_config as { tag_id?: unknown } | null)?.tag_id
+    return typeof want === 'string' && want !== '' && ctx?.tag_id === want
+  }
   // comment_keyword_match (IG·01, gated scaffolding) reuses the exact same
   // keyword-matching logic as keyword_match — comments and DM text are
   // matched identically, only the webhook field that produced ctx differs.

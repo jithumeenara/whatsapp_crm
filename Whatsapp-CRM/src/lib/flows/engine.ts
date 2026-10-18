@@ -1475,16 +1475,8 @@ async function advanceFromNodeKey(
       const cfg = node.config as unknown as SetTagNodeConfig;
       try {
         if (cfg.mode === "add") {
-          await prisma.contactTag.upsert({
-            where: {
-              contact_id_tag_id: {
-                contact_id: run.contact_id!,
-                tag_id: cfg.tag_id,
-              },
-            },
-            create: { contact_id: run.contact_id!, tag_id: cfg.tag_id },
-            update: {},
-          });
+          const { addTagsToContact } = await import("@/lib/contacts/tag-events");
+          await addTagsToContact({ accountId: run.account_id, contactId: run.contact_id!, tagIds: [cfg.tag_id], source: "chatbot" });
         } else {
           await prisma.contactTag.deleteMany({
             where: {
@@ -2640,16 +2632,8 @@ The assistant could not generate a reply: ${detail}`,
                   select: { id: true },
                 });
               }
-              await prisma.contactTag.upsert({
-                where: {
-                  contact_id_tag_id: {
-                    contact_id: run.contact_id,
-                    tag_id: tag.id,
-                  },
-                },
-                create: { contact_id: run.contact_id, tag_id: tag.id },
-                update: {},
-              });
+              const { addTagsToContact } = await import("@/lib/contacts/tag-events");
+              await addTagsToContact({ accountId: run.account_id, contactId: run.contact_id, tagIds: [tag.id], source: "chatbot" });
             }
 
           } else if (action === "create_followup") {

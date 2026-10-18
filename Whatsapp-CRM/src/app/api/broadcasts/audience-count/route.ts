@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { sendableContactWhere } from "@/lib/broadcasts/sendable"
 
 interface AudienceCountBody {
   type: string
@@ -27,20 +28,39 @@ export async function POST(req: NextRequest) {
     if (body.type === "csv") {
       return NextResponse.json({ count: body.csvContacts?.length ?? 0 })
     }
-    if (body.type === "contacts") {
-      return NextResponse.json({ count: body.contactIds?.length ?? 0 })
-    }
+    // Every count below uses the same rule as the send itself
+    // (src/lib/broadcasts/sendable.ts), inside this account only.
+    const sendable = sendableContactWhere(ctx.accountId)
 
-    let baseIds: Set<string> | null = null
-
-    if (body.type === "all") {
-      // null means "all" — handled after exclude
-    } else if (body.type === "tags" && body.tagIds && body.tagIds.length > 0) {
+    let excludeIds: string[] = []
+    if (body.excludeTagIds && body.excludeTagIds.length > 0) {
       const rows = await db.contactTag.findMany({
-        where: { tag_id: { in: body.tagIds } },
+        where: { tag_id: { in: body.excludeTagIds.slice(0, 200) } },
         select: { contact_id: true },
       })
-      baseIds = new Set(rows.map((r) => r.contact_id))
+      excludeIds = [...new Set(rows.map((r) => r.contact_id))]
+    }
+    const notExcluded = excludeIds.length ? { id: { notIn: excludeIds } } : {}
+
+    if (body.type === "contacts") {
+      const ids = (body.contactIds ?? []).filter((id) => typeof id === "string").slice(0, 10_000)
+      if (ids.length === 0) return NextResponse.json({ count: 0 })
+      const count = await db.contact.count({ where: { AND: [sendable, { id: { in: ids } }, notExcluded] } })
+      return NextResponse.json({ count })
+    }
+
+    if (body.type === "all") {
+      const count = await db.contact.count({ where: { AND: [sendable, notExcluded] } })
+      return NextResponse.json({ count })
+    }
+
+    let baseIds: string[]
+    if (body.type === "tags" && body.tagIds && body.tagIds.length > 0) {
+      const rows = await db.contactTag.findMany({
+        where: { tag_id: { in: body.tagIds.slice(0, 200) } },
+        select: { contact_id: true },
+      })
+      baseIds = [...new Set(rows.map((r) => r.contact_id))]
     } else if (body.type === "custom_field" && body.customField?.fieldId && body.customField.value) {
       const { fieldId, operator, value } = body.customField
       let valueFilter: unknown
@@ -52,41 +72,13 @@ export async function POST(req: NextRequest) {
         where: { custom_field_id: fieldId, value: valueFilter as never },
         select: { contact_id: true },
       })
-      baseIds = new Set(rows.map((r) => r.contact_id))
+      baseIds = [...new Set(rows.map((r) => r.contact_id))]
     } else {
       return NextResponse.json({ count: null })
     }
 
-    let excludeSet: Set<string> | null = null
-    if (body.excludeTagIds && body.excludeTagIds.length > 0) {
-      const rows = await db.contactTag.findMany({
-        where: { tag_id: { in: body.excludeTagIds } },
-        select: { contact_id: true },
-      })
-      excludeSet = new Set(rows.map((r) => r.contact_id))
-    }
-
-    // Broadcasts are WhatsApp-only — contacts whose `phone` is the
-    // "email:<address>" placeholder (Email-channel contacts with no real
-    // phone number) can never receive one, so keep this preview count in
-    // sync with resolveAudience()'s exclusion in the actual send route.
-    if (baseIds) {
-      const placeholderRows = await db.contact.findMany({
-        where: { id: { in: [...baseIds] }, phone: { startsWith: "email:" } },
-        select: { id: true },
-      })
-      for (const row of placeholderRows) baseIds.delete(row.id)
-
-      const effective = excludeSet
-        ? [...baseIds].filter((id) => !excludeSet!.has(id)).length
-        : baseIds.size
-      return NextResponse.json({ count: effective })
-    }
-
-    const total = await db.contact.count({
-      where: { account_id: ctx.accountId, NOT: { phone: { startsWith: "email:" } } },
-    })
-    const count = excludeSet ? Math.max(0, total - excludeSet.size) : total
+    if (baseIds.length === 0) return NextResponse.json({ count: 0 })
+    const count = await db.contact.count({ where: { AND: [sendable, { id: { in: baseIds } }, notExcluded] } })
     return NextResponse.json({ count })
   } catch (err) {
     return toErrorResponse(err)

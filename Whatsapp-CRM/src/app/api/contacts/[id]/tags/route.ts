@@ -1,5 +1,6 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { addTagsToContact } from "@/lib/contacts/tag-events"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -55,14 +56,16 @@ export async function PUT(
     }
 
     const body = await req.json().catch(() => null)
-    const tagIds: string[] = Array.isArray(body?.tag_ids) ? body.tag_ids : []
+    const tagIds: string[] = Array.isArray(body?.tag_ids)
+      ? (body.tag_ids as unknown[]).filter((t): t is string => typeof t === "string").slice(0, 200)
+      : []
 
-    await prisma.contactTag.deleteMany({ where: { contact_id: id } })
+    // Tags no longer in the list go; the rest are added through the one
+    // path that checks they are this account's and fires "Tag added" for
+    // the ones that are new.
+    await prisma.contactTag.deleteMany({ where: { contact_id: id, tag_id: { notIn: tagIds } } })
     if (tagIds.length > 0) {
-      await prisma.contactTag.createMany({
-        data: tagIds.map((tag_id) => ({ contact_id: id, tag_id })),
-        skipDuplicates: true,
-      })
+      await addTagsToContact({ accountId: ctx.accountId, contactId: id, tagIds, source: "inbox" })
     }
 
     return NextResponse.json({ ok: true })
@@ -98,11 +101,14 @@ export async function POST(
       return NextResponse.json({ error: "tag_id is required" }, { status: 400 })
     }
 
-    await prisma.contactTag.upsert({
-      where: { contact_id_tag_id: { contact_id: id, tag_id: tagId } },
-      create: { contact_id: id, tag_id: tagId },
-      update: {},
-    })
+    if (typeof tagId !== "string") {
+      return NextResponse.json({ error: "tag_id is required" }, { status: 400 })
+    }
+    const owned = await prisma.tag.findFirst({ where: { id: tagId, account_id: ctx.accountId }, select: { id: true } })
+    if (!owned) {
+      return NextResponse.json({ error: "That tag does not exist." }, { status: 404 })
+    }
+    await addTagsToContact({ accountId: ctx.accountId, contactId: id, tagIds: [tagId], source: "inbox" })
 
     return NextResponse.json({ ok: true }, { status: 201 })
   } catch (err) {

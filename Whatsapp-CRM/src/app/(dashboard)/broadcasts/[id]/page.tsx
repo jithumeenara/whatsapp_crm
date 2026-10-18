@@ -175,7 +175,12 @@ export default function BroadcastDetailPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error((data as { error?: string }).error ?? "Failed to retry")
       setBroadcast((b) => b ? { ...b, status: "sending" } : b)
-      toast.success(`Retrying ${(data as { retrying?: number }).retrying ?? "failed"} recipients in background`)
+      const d = data as { retrying?: number; skipped?: { cannot_receive?: number; template?: number; too_soon?: number } }
+      const held = (d.skipped?.cannot_receive ?? 0) + (d.skipped?.template ?? 0) + (d.skipped?.too_soon ?? 0)
+      toast.success(
+        `Retrying ${d.retrying ?? 0} recipient${d.retrying === 1 ? "" : "s"} in the background` +
+          (held ? ` — ${held} left out (can't receive, template problem, or WhatsApp's daily limit for that person)` : ""),
+      )
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Retry failed")
     } finally {

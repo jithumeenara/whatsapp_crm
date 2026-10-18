@@ -7,6 +7,8 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { checkMetaWebhookSignature, logSignatureCheck } from '@/lib/whatsapp/webhook-signature'
 import { whatsappWebhookSecrets } from '@/lib/whatsapp/webhook-secrets'
 import { noteDelivered, noteRejected } from '@/lib/whatsapp/webhook-health'
+import { attributeBroadcastReply } from '@/lib/broadcasts/replies'
+import { failureText } from '@/lib/whatsapp/meta-error-codes'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { autoReplyToMessage } from '@/lib/ai/auto-reply'
 import { sendNewContactAlert } from '@/lib/contacts/new-contact-alert'
@@ -155,6 +157,8 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        /** On a "failed" status: why (131049, 131050, …). */
+        errors?: Array<{ code?: number; title?: string; message?: string }>
       }>
     }
     field: string
@@ -481,6 +485,7 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{ code?: number; title?: string; message?: string }>
 }) {
   // 1) Mirror onto messages (legacy behavior)
   try {
@@ -514,6 +519,9 @@ async function handleStatusUpdate(status: {
   if (status.status === 'sent') update.sent_at = tsIso
   if (status.status === 'delivered') update.delivered_at = tsIso
   if (status.status === 'read') update.read_at = tsIso
+  // A failure Meta reports later keeps its reason — "(code 131049)" and
+  // the like — so the report can say why, and a retry knows whether to.
+  if (status.status === 'failed') update.error_message = failureText(status.errors)
 
   try {
     await prisma.broadcastRecipient.update({
@@ -531,41 +539,6 @@ async function handleStatusUpdate(status: {
     await refreshBroadcastCounts(recipient.broadcast_id)
   } catch (err) {
     console.error('Error refreshing broadcast counts:', err)
-  }
-}
-
-/**
- * If an inbound message's sender is on a still-unreplied
- * broadcast_recipients row, flip it to `replied` so the reply count
- * advances on the parent broadcast.
- *
- * Runs on a best-effort basis — failures here must not break the
- * main inbound-message flow, so errors are swallowed with a log.
- */
-async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
-  try {
-    // Most recent outbound broadcast in this account that hasn't
-    // been replied to yet.
-    const rec = await prisma.broadcastRecipient.findFirst({
-      where: {
-        contact_id: contactId,
-        status: { in: ['sent', 'delivered', 'read'] },
-        broadcast: { account_id: accountId },
-      },
-      orderBy: { created_at: 'desc' },
-      select: { id: true, status: true },
-    })
-
-    if (!rec) return
-
-    const updated = await prisma.broadcastRecipient.update({
-      where: { id: rec.id },
-      data: { status: 'replied', replied_at: new Date() },
-      select: { broadcast_id: true },
-    })
-    await refreshBroadcastCounts(updated.broadcast_id)
-  } catch (err) {
-    console.error('flagBroadcastReplyIfAny failed:', err)
   }
 }
 
@@ -990,7 +963,8 @@ async function processMessage(
   }
 
   // If this contact was a recent broadcast recipient, flag the reply.
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  // A reply to a broadcast, if it came within the reply window.
+  await attributeBroadcastReply(accountId, contactRecord.id)
 
   // ============================================================
   // Auto lead creation — if enabled, create a lead for brand-new

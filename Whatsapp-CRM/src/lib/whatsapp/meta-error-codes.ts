@@ -17,6 +17,8 @@ export type MetaErrorCategory =
   | 'rate_limited'
   | 'recipient_unreachable'
   | 'recipient_opted_out'
+  | 'marketing_limit'
+  | 'template_problem'
   | 'unknown'
 
 export interface ClassifiedMetaError {
@@ -40,12 +42,20 @@ export interface ClassifiedMetaError {
  *                       Only this one recipient is affected.
  *   131050           — recipient has opted out of marketing messages.
  *                       Only this one recipient is affected.
+ *   131049           — Meta held back a marketing message: this person
+ *                       already got their share from businesses. Not a
+ *                       fault; retry no sooner than a day later.
+ *   132000–132069    — the template itself (missing, paused, wrong
+ *                       parameters, rejected). Fix the template; a retry
+ *                       of the same send fails the same way.
  */
 export function classifyMetaErrorCode(code?: number, subcode?: number): MetaErrorCategory {
   if (code === 190) return 'auth_expired'
   if (code === 131056 || code === 130429 || code === 131048 || code === 80007) return 'rate_limited'
   if (code === 131026 || code === 131030) return 'recipient_unreachable'
   if (code === 131050) return 'recipient_opted_out'
+  if (code === 131049) return 'marketing_limit'
+  if (code !== undefined && code >= 132000 && code <= 132069) return 'template_problem'
   void subcode // reserved for future finer-grained classification
   return 'unknown'
 }
@@ -68,4 +78,25 @@ export function classifyMetaError(message: string): ClassifiedMetaError {
     subcode,
     message,
   }
+}
+
+/** What a "Retry failed" may do with a recipient that failed this way. */
+export type RetryRule = 'now' | 'after_24h' | 'never'
+
+export function retryRule(category: MetaErrorCategory): RetryRule {
+  if (category === 'recipient_unreachable' || category === 'recipient_opted_out' || category === 'template_problem') return 'never'
+  if (category === 'marketing_limit') return 'after_24h'
+  return 'now'
+}
+
+/**
+ * The reason for a failure Meta reports later (a status webhook's
+ * `errors`), in the same "… (code X)" form a failed send carries, so one
+ * classifier reads both.
+ */
+export function failureText(errors: ReadonlyArray<{ code?: number; title?: string; message?: string }> | undefined): string {
+  const e = errors?.[0]
+  if (!e || (e.code === undefined && !e.title && !e.message)) return 'Not delivered (WhatsApp gave no reason)'
+  const words = (e.title || e.message || 'Not delivered').trim().slice(0, 300)
+  return e.code !== undefined ? `${words} (code ${e.code})` : words
 }

@@ -362,11 +362,8 @@ async function processLeadgenChange(
   // rather than a separate "maybe Instagram" tag that would just add noise.
   const adTag = await prisma.tag.findFirst({ where: { account_id: accountId, name: tagName } })
     ?? await prisma.tag.create({ data: { account_id: accountId, user_id: ownerUserId, name: tagName, color: tagColor } })
-  await prisma.contactTag.upsert({
-    where: { contact_id_tag_id: { contact_id: contact.id, tag_id: adTag.id } },
-    create: { contact_id: contact.id, tag_id: adTag.id },
-    update: {},
-  })
+  const { addTagsToContact } = await import("@/lib/contacts/tag-events")
+  await addTagsToContact({ accountId, contactId: contact.id, tagIds: [adTag.id], source: "ad_lead" })
 
   // Real automation trigger — a brand-new contact from an ad ads now
   // participates in "New Contact Created" automations exactly like a

@@ -3,12 +3,15 @@ import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
 import { runBroadcast } from "@/lib/broadcasts/run-broadcast";
 import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
+import { pickRetryable } from "@/lib/broadcasts/retry-rules";
 
 /**
  * POST /api/broadcasts/[id]/retry
  *
- * Resets all failed recipients back to "pending" and re-runs the
- * broadcast send loop in the background. Returns 202 immediately.
+ * Resets the failed recipients worth a second try back to "pending" and
+ * re-runs the send loop in the background (202). The rest — can't receive,
+ * opted out, template problem, or Meta's marketing limit within a day —
+ * are counted in `skipped`, never resent.
  */
 export async function POST(
   req: NextRequest,
@@ -30,18 +33,30 @@ export async function POST(
       return NextResponse.json({ error: "Broadcast is already sending" }, { status: 409 });
     }
 
-    // Count failed recipients to reset
-    const failedCount = await ctx.db.broadcastRecipient.count({
+    // Only the failures worth a second try (src/lib/broadcasts/retry-rules.ts):
+    // not people who cannot or must not get it, not a template Meta refuses,
+    // and Meta's marketing limit only after a day.
+    const failed = await ctx.db.broadcastRecipient.findMany({
       where: { broadcast_id: id, status: "failed" },
+      select: { id: true, error_message: true, sent_at: true, created_at: true },
     });
-
-    if (failedCount === 0) {
+    if (failed.length === 0) {
       return NextResponse.json({ error: "No failed recipients to retry" }, { status: 400 });
     }
+    const pick = pickRetryable(failed);
+    if (pick.retry.length === 0) {
+      const why = [
+        pick.skipped.too_soon ? `${pick.skipped.too_soon} hit WhatsApp's daily marketing limit for that person — try again tomorrow` : "",
+        pick.skipped.cannot_receive ? `${pick.skipped.cannot_receive} cannot receive WhatsApp messages or opted out` : "",
+        pick.skipped.template ? `${pick.skipped.template} failed because of the template — fix it in Templates` : "",
+      ].filter(Boolean);
+      return NextResponse.json({ error: `Nothing to retry now: ${why.join("; ")}.`, skipped: pick.skipped }, { status: 400 });
+    }
+    const failedCount = pick.retry.length;
 
-    // Reset failed recipients to pending
+    // Reset just those to pending
     await ctx.db.broadcastRecipient.updateMany({
-      where: { broadcast_id: id, status: "failed" },
+      where: { broadcast_id: id, status: "failed", id: { in: pick.retry } },
       data: { status: "pending", error_message: null, sent_at: null, whatsapp_message_id: null },
     });
 
@@ -61,7 +76,7 @@ export async function POST(
       });
     });
 
-    return NextResponse.json({ ok: true, retrying: failedCount }, { status: 202 });
+    return NextResponse.json({ ok: true, retrying: failedCount, skipped: pick.skipped }, { status: 202 });
   } catch (err) {
     return toErrorResponse(err);
   }
