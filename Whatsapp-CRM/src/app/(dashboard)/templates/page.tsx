@@ -1,15 +1,19 @@
 "use client"
 import Link from "next/link";
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
   FileText, RefreshCw, Plus, AlertTriangle, ArrowLeft, ChevronRight,
   ImageIcon, VideoIcon, FileIcon, Type, Phone, Link2,
   MessageSquareText, Trash2, Copy, Smartphone, Workflow, Pencil, Eye, X,
-  UploadCloud, CheckCircle2,
+  UploadCloud, CheckCircle2, Bold, Italic, Strikethrough, List, ListOrdered,
 } from "lucide-react"
 import type { MessageTemplate, TemplateButton } from "@/types"
+import { WhatsAppText } from "@/components/whatsapp-text"
+import { CountryCodeSelect } from "@/components/shared/country-code-select"
+import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from "@/lib/country-codes"
+import { toggleList, toggleWrap, type Edit } from "@/lib/whatsapp/format-edit"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -174,7 +178,7 @@ function WAPreview({ headerType, headerContent, bodyText, footerText, buttons, b
               {headerType === "image"    && <div className="h-[90px] bg-slate-200 flex items-center justify-center gap-1"><ImageIcon className="h-5 w-5 text-slate-400" /><span className="text-[10px] text-slate-400">Image</span></div>}
               {headerType === "video"    && <div className="h-[90px] bg-slate-700 flex items-center justify-center gap-1"><VideoIcon className="h-5 w-5 text-slate-300" /><span className="text-[10px] text-slate-300">Video</span></div>}
               {headerType === "document" && <div className="flex items-center gap-2 bg-slate-100 px-2.5 py-2"><FileIcon className="h-4 w-4 text-rose-400" /><span className="text-[10px] text-slate-500">Document</span></div>}
-              {bodyText && <div className={cn("px-2.5 py-2", !headerType && "pt-2.5")}><p className="text-[10px] text-[#111] whitespace-pre-wrap break-words leading-relaxed">{body}</p></div>}
+              {bodyText && <div className={cn("px-2.5 py-2", !headerType && "pt-2.5")}><p className="text-[10px] text-[#111] whitespace-pre-wrap break-words leading-relaxed"><WhatsAppText text={body} /></p></div>}
               {footerText && <div className="px-2.5 pb-1.5"><p className="text-[10px] text-[#999]">{footerText}</p></div>}
               <div className="flex justify-end px-2.5 pb-2"><span className="text-[10px] text-[#999]">10:30 AM ✓✓</span></div>
               {buttons.length > 0 && (
@@ -282,6 +286,53 @@ function FlowButtonFields({ btn, onChange }: {
 
 // ─── Button row ───────────────────────────────────────────────────────────────
 
+/**
+ * The Call button's number in two parts — country (with its flag) and the
+ * number — stored as one E.164 string ("+919876543210"), which is what
+ * Meta wants. A number pasted with its own +code picks the country.
+ */
+function PhoneButtonField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [iso, setIso] = useState(() => splitE164(value)?.iso ?? DEFAULT_COUNTRY_ISO)
+  const dial = COUNTRY_CODES.find(c => c.iso === iso)?.dial ?? "+91"
+  const local = value.startsWith(dial) ? value.slice(dial.length) : value.replace(/^\+/, "")
+  const id = `phone-btn-${useId()}`
+
+  function typeNumber(raw: string) {
+    // Pasted with a country code ("+971 50 …" or "00971…"): take the country from it.
+    if (/^\s*(\+|00)/.test(raw)) {
+      const e164 = `+${raw.trim().replace(/^00/, "").replace(/\D/g, "")}`
+      const split = splitE164(e164)
+      if (split) { setIso(split.iso); onChange(e164); return }
+    }
+    const digits = raw.replace(/\D/g, "").replace(/^0+/, "")
+    onChange(digits ? `${dial}${digits}` : "")
+  }
+  function chooseCountry(next: string) {
+    setIso(next)
+    const nextDial = COUNTRY_CODES.find(c => c.iso === next)?.dial ?? "+91"
+    const digits = local.replace(/\D/g, "")
+    onChange(digits ? `${nextDial}${digits}` : "")
+  }
+
+  const digits = local.replace(/\D/g, "")
+  const tooShort = digits.length > 0 && digits.length < 6
+  return (
+    <div>
+      <label htmlFor={id} className="mb-1 block text-[11px] text-slate-500">Phone number</label>
+      <div className="flex gap-2">
+        <CountryCodeSelect variant="field" value={iso} onChange={chooseCountry} className="w-[112px] shrink-0" id={`${id}-country`} />
+        <input id={id} type="tel" inputMode="tel" autoComplete="off" value={digits}
+          onChange={e => typeNumber(e.target.value)}
+          placeholder="98765 43210" maxLength={20}
+          className={cn(INPUT_SM, "min-w-0 flex-1 tabular-nums")} />
+      </div>
+      {tooShort
+        ? <p className="mt-1 text-[10px] text-rose-600">That number looks too short.</p>
+        : digits && <p className="mt-1 text-[10px] text-slate-400">Customers will call {dial} {digits}</p>}
+    </div>
+  )
+}
+
 function ButtonRow({ btn, onChange, onRemove }: {
   btn: TemplateButton; onChange: (b: TemplateButton) => void; onRemove: () => void
 }) {
@@ -330,11 +381,7 @@ function ButtonRow({ btn, onChange, onRemove }: {
         </div>
       )}
       {btn.type === "PHONE_NUMBER" && (
-        <div>
-          <label className="mb-1 block text-[11px] text-slate-500">Phone Number</label>
-          <input autoComplete="off" value={phoneBtn.phone_number} onChange={e => onChange({ ...btn, phone_number: e.target.value } as TemplateButton)}
-            placeholder="+91 98765 43210" className={INPUT_SM} />
-        </div>
+        <PhoneButtonField value={phoneBtn.phone_number ?? ""} onChange={v => onChange({ ...btn, phone_number: v } as TemplateButton)} />
       )}
       {btn.type === "COPY_CODE" && (
         <div>
@@ -405,6 +452,22 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
       setButtons([makeButton("FLOW")])
     }
     setStep(2)
+  }
+
+  // Bold / italic / strike / lists — WhatsApp's own markers in the text
+  // (src/lib/whatsapp/format-edit.ts); the preview shows them formatted.
+  function formatBody(fn: (value: string, start: number, end: number) => Edit) {
+    const ta = bodyRef.current; if (!ta) return
+    const r = fn(ta.value, ta.selectionStart ?? ta.value.length, ta.selectionEnd ?? ta.value.length)
+    if (r.value.length > 1024) { toast.error("The body can be at most 1024 characters."); return }
+    setBodyText(r.value)
+    setTimeout(() => { ta.focus(); ta.setSelectionRange(r.start, r.end) }, 0)
+  }
+  function onBodyKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!(e.ctrlKey || e.metaKey)) return
+    const k = e.key.toLowerCase()
+    if (k === "b") { e.preventDefault(); formatBody((v, a, b) => toggleWrap(v, a, b, "*")) }
+    else if (k === "i") { e.preventDefault(); formatBody((v, a, b) => toggleWrap(v, a, b, "_")) }
   }
 
   function insertBodyVar() {
@@ -791,8 +854,25 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
               <div>
                 <label className="mb-2 block text-[12px] font-semibold text-slate-700">Body</label>
                 <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Text formatting">
+                    {([
+                      { icon: Bold,          label: "Bold (Ctrl+B)",   fn: (v: string, a: number, b: number) => toggleWrap(v, a, b, "*") },
+                      { icon: Italic,        label: "Italic (Ctrl+I)", fn: (v: string, a: number, b: number) => toggleWrap(v, a, b, "_") },
+                      { icon: Strikethrough, label: "Strikethrough",   fn: (v: string, a: number, b: number) => toggleWrap(v, a, b, "~") },
+                      { icon: ListOrdered,   label: "Numbered list",   fn: (v: string, a: number, b: number) => toggleList(v, a, b, "numbered") },
+                      { icon: List,          label: "Bulleted list",   fn: (v: string, a: number, b: number) => toggleList(v, a, b, "bulleted") },
+                    ]).map(({ icon: Icon, label, fn }) => (
+                      <button key={label} type="button" title={label} aria-label={label}
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => formatBody(fn)}
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors">
+                        <Icon className="h-4 w-4" aria-hidden />
+                      </button>
+                    ))}
+                    <span className="ml-1 text-[11px] text-slate-400">Select text, then a button. The preview shows it as WhatsApp will.</span>
+                  </div>
                   <div className="relative">
-                    <textarea autoComplete="off" ref={bodyRef} value={bodyText} onChange={e => setBodyText(e.target.value)}
+                    <textarea autoComplete="off" ref={bodyRef} value={bodyText} onChange={e => setBodyText(e.target.value)} onKeyDown={onBodyKeyDown}
                       placeholder={"Hi {{1}}, your order {{2}} has been confirmed!\nExpected delivery: {{3}}."}
                       rows={5} maxLength={1024} className={cn(INPUT, "resize-none leading-relaxed")} />
                     <span className="absolute bottom-3 right-3 text-[11px] text-slate-400">{bodyText.length}/1024</span>
@@ -951,7 +1031,7 @@ function TemplateCanvas({ onBack, onCreated, editTemplate }: {
                 )}
                 <div>
                   <p className="text-[11px] text-slate-400 mb-0.5">Body</p>
-                  <p className="text-[13px] text-slate-700 whitespace-pre-wrap leading-relaxed">{bodyText || "—"}</p>
+                  <p className="text-[13px] text-slate-700 whitespace-pre-wrap leading-relaxed">{bodyText ? <WhatsAppText text={bodyText} /> : "—"}</p>
                 </div>
                 {footerText && (
                   <div>
