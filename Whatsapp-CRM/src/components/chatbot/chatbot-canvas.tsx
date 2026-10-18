@@ -157,6 +157,8 @@ function deriveEdges(nodes: ChatbotBuilderNode[]): Edge[] {
         }
       } else if (node.node_type === "http_request") {
         targetKey = h.id === "error" ? (cfg.error_node_key as string) : (cfg.next_node_key as string);
+      } else if (node.node_type === "update_table_row") {
+        targetKey = h.id === "not_found" ? (cfg.not_found_node_key as string) : (cfg.next_node_key as string);
       } else if (node.node_type === "switch_case") {
         const cases = (cfg.cases as Array<Record<string, unknown>>) ?? [];
         if (h.id === "default") targetKey = cfg.default_next as string;
@@ -222,6 +224,8 @@ function applyNodeTarget(
       cfg.sections = sections;
     } else if (n.node_type === "http_request") {
       if (sourceHandle === "error") cfg.error_node_key = targetKey; else cfg.next_node_key = targetKey;
+    } else if (n.node_type === "update_table_row") {
+      if (sourceHandle === "not_found") cfg.not_found_node_key = targetKey; else cfg.next_node_key = targetKey;
     } else if (n.node_type === "switch_case") {
       const cases = JSON.parse(JSON.stringify(cfg.cases ?? [])) as Array<Record<string, unknown>>;
       if (sourceHandle === "default") cfg.default_next = targetKey;
@@ -261,6 +265,9 @@ function getHandleTarget(node: ChatbotBuilderNode, handleId: string): string {
   if (node.node_type === "http_request") {
     return ((handleId === "error" ? cfg.error_node_key : cfg.next_node_key) as string) ?? "";
   }
+  if (node.node_type === "update_table_row") {
+    return ((handleId === "not_found" ? cfg.not_found_node_key : cfg.next_node_key) as string) ?? "";
+  }
   if (node.node_type === "switch_case") {
     if (handleId === "default") return (cfg.default_next as string) ?? "";
     const idx = parseInt(handleId.replace(/^case_/, ""), 10);
@@ -277,7 +284,7 @@ function getHandleTarget(node: ChatbotBuilderNode, handleId: string): string {
 // node's own content but not silently share a wire or a variable slot with
 // the original.
 const CONNECTION_FIELD_NAMES = new Set([
-  "next_node_key", "true_next", "false_next", "error_node_key", "default_next",
+  "next_node_key", "true_next", "false_next", "error_node_key", "default_next", "not_found_node_key",
 ]);
 const VARIABLE_FIELD_NAMES = new Set(["save_reply_to", "var_key"]);
 

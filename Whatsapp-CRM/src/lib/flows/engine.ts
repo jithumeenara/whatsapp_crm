@@ -169,6 +169,7 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "join" ||
     node_type === "ai_reply" ||
     node_type === "save_to_table" ||
+    node_type === "update_table_row" ||
     node_type === "crm_action" ||
     node_type === "switch_case" ||
     node_type === "send_to_number"
@@ -2486,6 +2487,77 @@ The assistant could not generate a reply: ${detail}`,
         }
       }
       currentKey = cfg.next_node_key ?? "";
+      continue;
+    }
+
+    // update_table_row — change a column on this customer's row in a Data
+    // Store table (src/lib/data-store/contact-rows.ts). The row is found by
+    // the number WhatsApp says is writing, never by anything typed, so a
+    // customer can only ever change their own rows. "Updated" goes to
+    // next_node_key; nothing found (or a problem) to not_found_node_key,
+    // or on along next_node_key when that is not set — never stuck.
+    if (node.node_type === "update_table_row") {
+      const cfg = node.config as {
+        table_id?: string;
+        match_field?: string;
+        which?: string;
+        sets?: Array<{ field_key?: string; mode?: string; value?: string }>;
+        next_node_key?: string;
+        not_found_node_key?: string;
+      };
+      const notFound = cfg.not_found_node_key || cfg.next_node_key || "";
+      let nextKey = notFound;
+      try {
+        if (!cfg.table_id) throw new Error("No table chosen");
+        const contact = await getContact();
+        const phone = contact?.phone && !isPlaceholderPhone(contact.phone) ? contact.phone : null;
+        const which = cfg.which === "oldest" || cfg.which === "all" ? cfg.which : "latest";
+        const MODES = ["value", "today", "now", "yes", "no", "clear"] as const;
+        const sets = (cfg.sets ?? [])
+          .filter((x) => x.field_key)
+          .map((x) => ({
+            field_key: String(x.field_key),
+            mode: (MODES as readonly string[]).includes(x.mode ?? "") ? (x.mode as (typeof MODES)[number]) : "value",
+            value: interpolateWithContact(x.value ?? "", run.vars, contact),
+          }));
+        const { updateContactRows } = await import("@/lib/data-store/contact-rows");
+        const { businessTimezone } = await import("@/lib/ai/human-date");
+        const result = await updateContactRows({
+          accountId: run.account_id,
+          tableId: cfg.table_id,
+          contactId: run.contact_id ?? null,
+          contactPhone: phone,
+          matchField: cfg.match_field || null,
+          which,
+          sets,
+          timeZone: await businessTimezone(run.account_id),
+        });
+        if (result.error) throw new Error(result.error);
+        if (result.row) {
+          // The row as it is now, for the next messages: {{vars.row_<column>}}.
+          const newVars: Record<string, unknown> = { ...run.vars, row_found: "yes" };
+          for (const [k, v] of Object.entries(result.row)) {
+            if (/^[a-zA-Z0-9_]+$/.test(k) && v !== null && v !== undefined && typeof v !== "object") newVars[`row_${k}`] = String(v);
+          }
+          await prisma.flowRun.update({ where: { id: run.id }, data: { vars: newVars as Record<string, string> } });
+          run = { ...run, vars: newVars };
+          nextKey = cfg.next_node_key ?? "";
+          await logEvent(run.id, "node_entered", node.node_key, {
+            node_type: "update_table_row",
+            found: result.found,
+            changes: result.updated.map((u) => u.change),
+            unchanged: result.updated.length === 0 ? "already had these values" : undefined,
+          });
+        } else {
+          await logEvent(run.id, "node_entered", node.node_key, { node_type: "update_table_row", found: 0, outcome: "not_found" });
+        }
+      } catch (err) {
+        await logEvent(run.id, "error", node.node_key, {
+          reason: "update_table_row_failed",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      currentKey = nextKey;
       continue;
     }
 

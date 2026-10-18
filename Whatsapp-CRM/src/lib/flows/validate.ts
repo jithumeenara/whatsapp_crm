@@ -874,6 +874,34 @@ function validateNode(
       break;
     }
 
+    case "update_table_row": {
+      const cfg = node.config as {
+        table_id?: string;
+        sets?: Array<{ field_key?: string; mode?: string; value?: string }>;
+        next_node_key?: string;
+        not_found_node_key?: string;
+      };
+      if (!cfg.table_id?.trim()) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "table_id", message: "Update table row needs a table." });
+      }
+      const sets = (cfg.sets ?? []).filter((x) => x.field_key);
+      if (sets.length === 0) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "sets", message: "Update table row needs at least one column to change." });
+      }
+      if (sets.some((x) => (x.mode ?? "value") === "value" && !(x.value ?? "").trim())) {
+        issues.push({ severity: "warning", scope: "node", node_key: node.node_key, field: "sets", message: "Update table row writes an empty value — choose \"Clear\" if that is meant." });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: "Update table row must point to a next node (updated path)." });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "next_node_key", message: `Update table row points to non-existent node "${cfg.next_node_key}".` });
+      }
+      if (cfg.not_found_node_key && !knownKeys.has(cfg.not_found_node_key)) {
+        issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: "not_found_node_key", message: `Update table row "not found" path points to non-existent node "${cfg.not_found_node_key}".` });
+      }
+      break;
+    }
+
     case "crm_action": {
       const cfg = node.config as { action?: string; segment_id?: string; next_node_key?: string };
       const VALID_ACTIONS = ["create_lead", "add_to_segment", "create_followup", "create_task"];
@@ -1064,6 +1092,13 @@ function outgoingEdges(node: NodeInput): string[] {
       const out: string[] = [];
       if (cfg.next_node_key) out.push(cfg.next_node_key);
       if (cfg.error_node_key) out.push(cfg.error_node_key);
+      return out;
+    }
+    case "update_table_row": {
+      const cfg = node.config as { next_node_key?: string; not_found_node_key?: string };
+      const out: string[] = [];
+      if (cfg.next_node_key) out.push(cfg.next_node_key);
+      if (cfg.not_found_node_key) out.push(cfg.not_found_node_key);
       return out;
     }
     case "switch_case": {

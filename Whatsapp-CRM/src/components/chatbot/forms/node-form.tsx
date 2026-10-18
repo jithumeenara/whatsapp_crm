@@ -70,6 +70,13 @@ function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string
       if (typeof n.config.save_reply_to === "string" && n.config.save_reply_to) {
         keys.add(n.config.save_reply_to);
       }
+    } else if (n.node_type === "update_table_row") {
+      // The found row's columns: {{vars.row_<column>}} (flows engine).
+      keys.add("row_found");
+      const sets = Array.isArray(n.config.sets) ? (n.config.sets as Array<Record<string, unknown>>) : [];
+      for (const s of sets) {
+        if (typeof s.field_key === "string" && /^[a-zA-Z0-9_]+$/.test(s.field_key)) keys.add(`row_${s.field_key}`);
+      }
     } else if (
       n.node_type === "send_flow" ||
       n.node_type === "wait_flow_submit" ||
@@ -3425,6 +3432,301 @@ function SendToNumberForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   )
 }
 
+// ─── update_table_row ──────────────────────────────────────────────────
+// Change a column on this customer's row in a Data Store table. Reads like
+// a sentence: Table · find the row by · which row · set column to value.
+
+interface UtrField {
+  field_key: string;
+  label: string;
+  field_type: string;
+  options?: unknown;
+}
+type UtrMode = "value" | "today" | "now" | "yes" | "no" | "clear";
+interface UtrSet { field_key: string; mode: UtrMode; value?: string }
+
+const UTR_NOT_WRITABLE = ["password", "file", "image", "signature", "section_header", "html_block", "relation"];
+
+function utrOptions(f: UtrField | undefined): string[] {
+  if (!f) return [];
+  const o = f.options as { select_items?: Array<{ value?: string; label?: string }> } | Array<{ value?: string; label?: string }> | null | undefined;
+  const items = Array.isArray(o) ? o : o?.select_items ?? [];
+  return items.map((i) => String(i.value ?? i.label ?? "")).filter(Boolean);
+}
+
+function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const vars = getFlowVars(allNodes, nodeKey);
+  const tableId = String(cfg.table_id ?? "");
+  const matchField = String(cfg.match_field ?? "");
+  const which = (cfg.which === "oldest" || cfg.which === "all" ? cfg.which : "latest") as "latest" | "oldest" | "all";
+  const sets: UtrSet[] = Array.isArray(cfg.sets) && (cfg.sets as unknown[]).length > 0
+    ? (cfg.sets as UtrSet[])
+    : [{ field_key: "", mode: "value", value: "" }];
+
+  const [tables, setTables] = useState<Array<{ id: string; name: string }> | null>(null);
+  const [fields, setFields] = useState<UtrField[]>([]);
+  const [loadingFields, setLoadingFields] = useState(false);
+  const [testPhone, setTestPhone] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/data-tables", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { tables?: Array<{ id: string; name: string }> }) => { if (live) setTables(d.tables ?? []); })
+      .catch((err) => {
+        console.error("[update-table-row] tables failed to load:", err);
+        if (live) { setTables([]); toast.error("Could not load your tables"); }
+      });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!tableId) return;
+    let live = true;
+    setLoadingFields(true);
+    fetch(`/api/data-tables/${tableId}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((d: { table?: { fields?: UtrField[] } }) => { if (live) setFields(d.table?.fields ?? []); })
+      .catch((err) => {
+        console.error("[update-table-row] fields failed to load:", err);
+        if (live) { setFields([]); toast.error("Could not load that table's columns"); }
+      })
+      .finally(() => { if (live) setLoadingFields(false); });
+    return () => { live = false; };
+  }, [tableId]);
+
+  const phoneFields = fields.filter((f) => f.field_type === "phone" || /phone|mobile|whatsapp|number/i.test(f.label));
+  const writable = fields.filter((f) => !UTR_NOT_WRITABLE.includes(f.field_type));
+  const byKey = new Map(fields.map((f) => [f.field_key, f]));
+
+  function chooseTable(id: string) {
+    setTestResult(null);
+    // The phone column is picked for you once the columns arrive (below).
+    onChange({ ...cfg, table_id: id, match_field: "", sets: [{ field_key: "", mode: "value", value: "" }] });
+  }
+  // A new table: pick its phone column for the user.
+  useEffect(() => {
+    if (!tableId || matchField || fields.length === 0) return;
+    const phone = fields.find((f) => f.field_type === "phone") ?? fields.find((f) => /phone|mobile|whatsapp/i.test(f.label));
+    if (phone) onChange({ ...cfg, match_field: phone.field_key });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields]);
+
+  function setAt(i: number, patch: Partial<UtrSet>) {
+    const next = sets.map((s, j) => (j === i ? { ...s, ...patch } : s));
+    onChange({ ...cfg, sets: next });
+  }
+
+  async function test() {
+    if (!tableId || testing) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch(`/api/data-tables/${tableId}/find-row`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: testPhone, match_field: matchField, which }),
+      });
+      const d = (await res.json().catch(() => ({}))) as {
+        error?: string; note?: string; found?: number;
+        rows?: Array<{ preview: Array<{ label: string; value: string }> }>;
+      };
+      if (!res.ok) throw new Error(d.error || `Request failed (${res.status})`);
+      if (d.note) setTestResult(d.note);
+      else if (!d.found) setTestResult("No row for this number — the bot would take the “Not found” path.");
+      else {
+        const first = d.rows?.[0]?.preview.map((p) => `${p.label}: ${p.value || "—"}`).join(" · ") ?? "";
+        setTestResult(`${d.found} row${d.found === 1 ? "" : "s"} for this number. Would change ${which === "all" ? `${Math.min(d.found, 20)}` : `the ${which} one`}: ${first}`);
+      }
+    } catch (err) {
+      console.error("[update-table-row] test failed:", err);
+      toast.error(err instanceof Error ? err.message : "Test failed");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const summary = (() => {
+    const s = sets.find((x) => x.field_key);
+    if (!tableId || !s) return null;
+    const label = byKey.get(s.field_key)?.label ?? s.field_key;
+    const v = s.mode === "value" ? `“${s.value ?? ""}”` : s.mode === "yes" ? "Yes" : s.mode === "no" ? "No" : s.mode === "clear" ? "empty" : s.mode === "today" ? "today’s date" : "the date and time now";
+    const rowWords = which === "all" ? "every row" : which === "oldest" ? "oldest row" : "latest row";
+    return `${label} becomes ${v} on this customer’s ${rowWords}${sets.filter((x) => x.field_key).length > 1 ? ", with the other columns below" : ""}.`;
+  })();
+
+  return (
+    <div className="space-y-4">
+      <Field label="Table">
+        <Select value={tableId} onValueChange={(v) => chooseTable(String(v ?? ""))}>
+          <SelectTrigger className="h-8 text-xs" aria-label="Table">
+            <SelectValue placeholder={tables === null ? "Loading…" : tables.length === 0 ? "No tables yet" : "Choose a table…"} />
+          </SelectTrigger>
+          <SelectContent>
+            {(tables ?? []).map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {tableId && (
+        <>
+          <Field
+            label="Find the customer’s row by"
+            hint="Their WhatsApp number is matched on the last 10 digits (+91, 0 and spaces don’t matter). Rows the bot or AI saved for them are always found too."
+          >
+            <Select value={matchField || "__contact"} onValueChange={(v) => onChange({ ...cfg, match_field: v === "__contact" ? "" : String(v ?? "") })}>
+              <SelectTrigger className="h-8 text-xs" aria-label="Phone column">
+                <SelectValue placeholder={loadingFields ? "Loading…" : "Choose…"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__contact">Only rows the bot saved for this chat</SelectItem>
+                {(phoneFields.length > 0 ? phoneFields : fields).map((f) => (
+                  <SelectItem key={f.field_key} value={f.field_key}>{f.label} = chatting number</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-700">If the customer has more than one row</span>
+            <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Which row">
+              {([["latest", "Latest"], ["oldest", "Oldest"], ["all", "All (up to 20)"]] as const).map(([v, label]) => (
+                <button key={v} type="button" role="radio" aria-checked={which === v}
+                  onClick={() => onChange({ ...cfg, which: v })}
+                  className={cn(
+                    "rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors",
+                    which === v ? "border-indigo-500 bg-indigo-50 text-indigo-600" : "border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-200 hover:text-slate-900",
+                  )}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <span className="text-xs font-medium text-slate-700">Set</span>
+            {sets.map((s, i) => {
+              const f = byKey.get(s.field_key);
+              const choices = utrOptions(f);
+              const isDate = f?.field_type === "date" || f?.field_type === "datetime";
+              const isBool = f?.field_type === "boolean";
+              return (
+                <div key={i} className="space-y-2 rounded-lg border border-slate-200 p-2.5">
+                  <div className="flex items-center gap-1.5">
+                    <Select value={s.field_key} onValueChange={(v) => {
+                      const nf = byKey.get(String(v ?? ""));
+                      const mode: UtrMode = nf?.field_type === "boolean" ? "yes" : nf?.field_type === "date" || nf?.field_type === "datetime" ? "today" : "value";
+                      setAt(i, { field_key: String(v ?? ""), mode, value: "" });
+                    }}>
+                      <SelectTrigger className="h-8 flex-1 text-xs" aria-label={`Column ${i + 1}`}>
+                        <SelectValue placeholder={loadingFields ? "Loading…" : "Column…"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {writable.map((wf) => <SelectItem key={wf.field_key} value={wf.field_key}>{wf.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    {sets.length > 1 && (
+                      <button type="button" onClick={() => onChange({ ...cfg, sets: sets.filter((_, j) => j !== i) })}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label={`Remove column ${i + 1}`}>
+                        <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                    )}
+                  </div>
+
+                  {s.field_key && (isBool ? (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(["yes", "no", "clear"] as const).map((m) => (
+                        <button key={m} type="button" onClick={() => setAt(i, { mode: m })}
+                          className={cn("rounded-lg border px-2 py-1.5 text-[11px] font-medium", s.mode === m ? "border-indigo-500 bg-indigo-50 text-indigo-600" : "border-slate-200 bg-slate-50 text-slate-500")}>
+                          {m === "yes" ? "Yes" : m === "no" ? "No" : "Empty"}
+                        </button>
+                      ))}
+                    </div>
+                  ) : isDate ? (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(["today", "now", "value"] as const).map((m) => (
+                        <button key={m} type="button" onClick={() => setAt(i, { mode: m })}
+                          className={cn("rounded-lg border px-2 py-1.5 text-[11px] font-medium", s.mode === m ? "border-indigo-500 bg-indigo-50 text-indigo-600" : "border-slate-200 bg-slate-50 text-slate-500")}>
+                          {m === "today" ? "Today" : m === "now" ? "Now" : "Other…"}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null)}
+
+                  {s.field_key && choices.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {choices.map((c) => (
+                        <button key={c} type="button" onClick={() => setAt(i, { mode: "value", value: c })}
+                          className={cn("rounded-full border px-2.5 py-1 text-[11px] font-medium", s.mode === "value" && s.value === c ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-200 text-slate-600 hover:border-indigo-200")}>
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {s.field_key && !isBool && (s.mode === "value") && (
+                    <>
+                      <Input className="h-8 text-xs" value={s.value ?? ""} aria-label={`Value for ${f?.label ?? "column"}`}
+                        onChange={(e) => setAt(i, { mode: "value", value: e.target.value })}
+                        placeholder={choices.length ? "Or type a value…" : isDate ? "2026-10-18 or {{vars.date}}" : "Confirmed or {{vars.answer}}"} />
+                      <VarChips vars={vars} onInsert={(v) => setAt(i, { mode: "value", value: (s.value ?? "") + v })} />
+                    </>
+                  )}
+                  {s.field_key && !isBool && !isDate && s.mode === "value" && (
+                    <button type="button" onClick={() => setAt(i, { mode: "clear", value: "" })} className="text-[10px] text-slate-500 hover:underline">
+                      Make it empty instead
+                    </button>
+                  )}
+                  {s.mode === "clear" && !isBool && (
+                    <p className="text-[10px] text-slate-500">Will be emptied. <button type="button" className="text-indigo-600 hover:underline" onClick={() => setAt(i, { mode: "value" })}>Write a value instead</button></p>
+                  )}
+                </div>
+              );
+            })}
+            <button type="button" onClick={() => onChange({ ...cfg, sets: [...sets, { field_key: "", mode: "value", value: "" }] })}
+              className="flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline">
+              <Plus className="h-3 w-3" aria-hidden /> Add another column
+            </button>
+          </div>
+
+          {summary && <p className="rounded-lg bg-teal-50 px-2.5 py-2 text-[11px] text-teal-800">{summary} The found row’s columns are then available as {"{{vars.row_<column>}}"}.</p>}
+
+          <div className="space-y-1.5 rounded-lg border border-dashed border-slate-300 p-2.5">
+            <span className="text-xs font-medium text-slate-700">Test with a number</span>
+            <div className="flex gap-1.5">
+              <Input className="h-8 flex-1 text-xs" value={testPhone} onChange={(e) => setTestPhone(e.target.value)}
+                placeholder="+91 94950 43668" inputMode="tel" autoComplete="off" aria-label="Number to test" />
+              <button type="button" onClick={() => void test()} disabled={testing || !testPhone.trim()}
+                className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                {testing ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : null} Find row
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500" aria-live="polite">{testResult ?? "Shows which row would change. Nothing is saved."}</p>
+          </div>
+        </>
+      )}
+
+      <NodeSelect
+        label="✓ Updated → next node"
+        value={String(cfg.next_node_key ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, next_node_key: v })}
+      />
+      <NodeSelect
+        label="✗ Not found → node (optional)"
+        value={String(cfg.not_found_node_key ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, not_found_node_key: v })}
+        hint="No row for this number, or the table changed. Empty: carries on to the next node."
+      />
+    </div>
+  );
+}
+
 // ─── Dispatcher ──────────────────────────────────────────────────
 
 interface FormProps {
@@ -3465,6 +3767,7 @@ export function NodeForm({ node, allNodes, onChange }: NodeFormProps) {
     set_tag:        SetTagForm,
     update_contact: UpdateContactForm,
     crm_action:     CrmActionForm,
+    update_table_row: UpdateTableRowForm,
     handoff:        HandoffForm,
     end:            EndForm,
     link_chatbot:   LinkChatbotForm,

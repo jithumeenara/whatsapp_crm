@@ -486,6 +486,29 @@ export function runUntilInteractive(
         break
       }
 
+      case 'update_table_row': {
+        // Test bot: says what would change and takes the "Updated" path.
+        // Nothing is written — the simulator never touches real data.
+        const sets = Array.isArray(cfg.sets) ? (cfg.sets as Array<Record<string, unknown>>) : []
+        const what = sets
+          .filter((x) => typeof x.field_key === 'string' && x.field_key)
+          .map((x) => {
+            const mode = typeof x.mode === 'string' ? x.mode : 'value'
+            const v = mode === 'value' ? `"${interp(typeof x.value === 'string' ? x.value : '', state.vars)}"` : mode
+            return `${String(x.field_key)} = ${v}`
+          })
+          .join(', ')
+        const which = cfg.which === 'all' ? 'every matching row' : cfg.which === 'oldest' ? 'oldest row' : 'latest row'
+        state.msgs.push({
+          id: uid(),
+          role: 'system',
+          text: `✏️ Would set ${what || '(nothing chosen)'} on this customer's ${which} — test only, nothing saved`,
+        })
+        state.vars.row_found = 'yes'
+        key = next(cfg.next_node_key)
+        break
+      }
+
       case 'join': {
         // Transparent pass-through — multiple branches converge here,
         // simulator just advances to next_node_key.

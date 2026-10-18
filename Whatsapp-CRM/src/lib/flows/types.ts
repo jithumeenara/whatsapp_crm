@@ -271,7 +271,8 @@ export type FlowNodeType =
   | "wait_flow_submit"
   | "http_request"
   | "switch_case"
-  | "send_to_number";
+  | "send_to_number"
+  | "update_table_row";
 
 // ============================================================
 // Triggers (matches `flows.trigger_type` + `trigger_config`)

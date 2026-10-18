@@ -23,6 +23,7 @@ import {
   Briefcase,
   Waypoints,
   ShoppingBag,
+  TableProperties,
 } from 'lucide-react'
 import type { ChatbotNodeType } from './types'
 
@@ -215,6 +216,14 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     bg: 'bg-blue-50',
     group: 'CRM Actions',
   },
+  update_table_row: {
+    label: 'Update Table Row',
+    description: "Change a column on this customer's row in a Data Store table (e.g. Status to Confirmed)",
+    icon: TableProperties,
+    color: 'text-teal-700',
+    bg: 'bg-teal-50',
+    group: 'CRM Actions',
+  },
   crm_action: {
     label: 'CRM Action',
     description: 'Create a lead, add to segment, create a follow-up, or add a task for this contact',
@@ -342,7 +351,7 @@ export const PALETTE_NODES: ChatbotNodeType[] = [
   'collect_input', 'wait_flow_submit',
   'condition', 'switch_case', 'join', 'delay', 'set_variable',
   'ai_reply', 'http_request',
-  'set_tag', 'update_contact', 'crm_action',
+  'set_tag', 'update_contact', 'update_table_row', 'crm_action',
   'handoff', 'link_chatbot', 'end',
 ]
 
@@ -396,6 +405,11 @@ export function getSourceHandles(
       }
       return rows.length > 0 ? rows : [{ id: 'row_0' }]
     }
+    case 'update_table_row':
+      return [
+        { id: 'next', label: '✓ Updated' },
+        { id: 'not_found', label: '✗ Not found' },
+      ]
     case 'http_request': {
       const handles: Array<{ id: string; label?: string }> = [{ id: 'next', label: 'Success' }]
       if (config.error_node_key) handles.push({ id: 'error', label: 'Error' })
@@ -514,6 +528,16 @@ export function summarizeChatbotNode(
       const field = typeof config.field === 'string' ? config.field : ''
       const val = t(config.value, 30)
       return field ? `${field} = ${val ?? '…'}` : null
+    }
+    case 'update_table_row': {
+      const sets = Array.isArray(config.sets) ? (config.sets as Array<Record<string, unknown>>) : []
+      const first = sets.find((x) => typeof x.field_key === 'string' && x.field_key)
+      if (!config.table_id || !first) return 'Choose a table and a column'
+      const mode = typeof first.mode === 'string' ? first.mode : 'value'
+      const val = mode === 'value' ? `"${t(first.value, 20) ?? ''}"` : mode === 'yes' ? 'Yes' : mode === 'no' ? 'No' : mode === 'clear' ? '(empty)' : mode === 'today' ? 'today' : 'now'
+      const more = sets.length > 1 ? ` +${sets.length - 1}` : ''
+      const which = config.which === 'all' ? 'all rows' : config.which === 'oldest' ? 'oldest row' : 'latest row'
+      return `${String(first.field_key)} → ${val}${more} · ${which}`
     }
     case 'crm_action': {
       const action = typeof config.action === 'string' ? config.action : ''

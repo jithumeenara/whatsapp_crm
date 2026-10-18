@@ -28,6 +28,7 @@ export type ChatbotNodeType =
   | 'switch_case'
   | 'send_to_number'
   | 'send_catalog'
+  | 'update_table_row'
 
 // ─── Shared primitives ──────────────────────────────────────────
 
@@ -308,6 +309,21 @@ export interface SendCatalogNodeCfg {
   next_node_key: string
 }
 
+/** Change a column on this customer's row in a Data Store table
+ *  (src/lib/data-store/contact-rows.ts). */
+export interface UpdateTableRowNodeCfg {
+  table_id: string
+  /** Phone column that holds the customer's number; '' = only rows the
+   *  bot or the assistant saved for this contact. */
+  match_field: string
+  which: 'latest' | 'oldest' | 'all'
+  sets: Array<{ field_key: string; mode: 'value' | 'today' | 'now' | 'yes' | 'no' | 'clear'; value?: string }>
+  /** Row found and changed. */
+  next_node_key: string
+  /** No row for this customer (or a problem). Empty = carry on along next. */
+  not_found_node_key?: string
+}
+
 export interface JoinNodeCfg {
   /** Optional label to describe what flows are converging here */
   label?: string
@@ -371,6 +387,7 @@ export type ChatbotNodeConfig =
   | ({ node_type: 'switch_case' } & SwitchCaseNodeCfg)
   | ({ node_type: 'send_to_number' } & SendToNumberNodeCfg)
   | ({ node_type: 'send_catalog' } & SendCatalogNodeCfg)
+  | ({ node_type: 'update_table_row' } & UpdateTableRowNodeCfg)
 
 // ─── Builder node (client state) ───────────────────────────────
 
@@ -410,7 +427,7 @@ export const CHATBOT_NODE_TYPES = [
   'collect_input', 'condition', 'ai_reply', 'http_request', 'delay',
   'set_variable', 'set_tag', 'update_contact', 'crm_action', 'handoff', 'end',
   'link_chatbot', 'send_flow', 'wait_flow_submit', 'send_template', 'join', 'switch_case', 'send_to_number',
-  'send_catalog',
+  'send_catalog', 'update_table_row',
 ] as const satisfies readonly ChatbotNodeType[]
 
 export function isChatbotNodeType(v: unknown): v is ChatbotNodeType {
@@ -452,5 +469,6 @@ export function defaultConfigFor(type: ChatbotNodeType): Record<string, unknown>
     }
     case 'send_to_number': return { phone: '', text: '', next_node_key: '' }
     case 'send_catalog':  return { mode: 'catalog', body_text: '', header_text: '', footer_text: '', product_retailer_id: '', product_retailer_ids: [], next_node_key: '' }
+    case 'update_table_row': return { table_id: '', match_field: '', which: 'latest', sets: [{ field_key: '', mode: 'value', value: '' }], next_node_key: '', not_found_node_key: '' }
   }
 }
