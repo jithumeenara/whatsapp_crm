@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
-  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, BellRing, Check, ChevronLeft, ChevronRight, Columns3, Database,
+  ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, BellRing, Check, ChevronLeft, ChevronRight, Database,
   Download, Loader2, MoreHorizontal, Pencil, Plus, RefreshCw, Rows3, Rows4, Search, Settings2, Share2,
   SlidersHorizontal, Trash2, Upload, X,
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock, CalendarClock, ToggleLeft,
@@ -27,7 +27,7 @@ import {
   HeartPulse, Sheet, Split, LayoutGrid, Table2, FileDown, Users,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { chipFieldKeys, chipTone, choiceLabel, initials, pageList, pickSubtitleField, pickTitleField, quickFilterFields, statCards, toCsv } from "@/lib/data-store/table-view"
+import { chipFieldKeys, chipTone, choiceLabel, prettyValue, initials, pageList, pickSubtitleField, pickTitleField, quickFilterFields, statCards, toCsv } from "@/lib/data-store/table-view"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
@@ -549,7 +549,7 @@ export default function DataTablePage() {
     return (
       <span className="flex flex-wrap gap-1">
         {list.slice(0, 3).map((v, i) => {
-          const label = formatValue(f, Array.isArray(raw) ? [v] : v) || String(v)
+          const label = prettyValue(formatValue(f, Array.isArray(raw) ? [v] : v) || String(v))
           return (
             <span key={i} title={label} className={cn("inline-block max-w-[180px] truncate rounded-full px-2 py-0.5 text-[11.5px] font-medium ring-1", chipTone(label))}>
               {label}
@@ -687,39 +687,70 @@ export default function DataTablePage() {
           </div>
         </div>
 
-        {/* ── At a glance: total, the biggest groups, how spread ─────── */}
-        {!loading && records.length > 0 && stats.length > 1 && (
-          <div className="flex gap-2.5 overflow-x-auto px-4 pb-3 sm:px-6 [scrollbar-width:none]">
-            {stats.map((c) => {
-              const active = !!c.filter && filters[c.filter.field_key]?.kind === "choice" && (filters[c.filter.field_key] as { value: string }).value === c.filter.value
-              const tone = {
-                total: "bg-primary/10 text-primary",
-                a: "bg-emerald-50 text-emerald-700",
-                b: "bg-amber-50 text-amber-700",
-                c: "bg-violet-50 text-violet-700",
-              }[c.tone]
-              const Icon = c.tone === "total" ? Users : c.tone === "c" ? MapPin : Calendar
-              const body = (
-                <>
-                  <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", tone)}><Icon className="h-4.5 w-4.5" aria-hidden /></span>
-                  <span className="min-w-0 text-left">
-                    <span className="block text-[18px] font-semibold leading-tight tabular-nums text-slate-900">{c.value}</span>
-                    <span className="block max-w-[140px] truncate text-[11.5px] text-slate-500" title={c.label}>{c.label}</span>
-                  </span>
-                </>
-              )
-              return c.filter ? (
-                <button key={c.key} type="button" aria-pressed={active}
-                  onClick={() => setQuick(c.filter!.field_key, active ? null : c.filter!.value)}
-                  title={active ? "Show all again" : `Show only ${c.label}`}
-                  className={cn("flex min-w-[148px] shrink-0 items-center gap-3 rounded-2xl border px-3.5 py-2.5 transition-all hover:-translate-y-px hover:shadow-sm",
-                    active ? "border-primary/40 bg-primary/5 ring-2 ring-primary/15" : "border-slate-200 bg-white")}>
-                  {body}
-                </button>
-              ) : (
-                <div key={c.key} className="flex min-w-[148px] shrink-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5">{body}</div>
-              )
-            })}
+        {/* ── At a glance (left) and the quick filters (right), one row ── */}
+        {!loading && records.length > 0 && (stats.length > 1 || quick.length > 0) && (
+          <div className="flex flex-col gap-2.5 px-4 pb-3 sm:px-6 min-[900px]:flex-row min-[900px]:items-center">
+            {stats.length > 1 && (
+              <div className="flex min-w-0 gap-2 overflow-x-auto [scrollbar-width:none]">
+                {stats.map((c) => {
+                  const active = !!c.filter && filters[c.filter.field_key]?.kind === "choice" && (filters[c.filter.field_key] as { value: string }).value === c.filter.value
+                  const tone = {
+                    total: "bg-primary/10 text-primary",
+                    a: "bg-emerald-50 text-emerald-700",
+                    b: "bg-amber-50 text-amber-700",
+                    c: "bg-violet-50 text-violet-700",
+                  }[c.tone]
+                  const Icon = c.tone === "total" ? Users : c.tone === "c" ? MapPin : Calendar
+                  const label = prettyValue(c.label)
+                  const body = (
+                    <>
+                      <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg", tone)}><Icon className="h-4 w-4" aria-hidden /></span>
+                      <span className="min-w-0 text-left">
+                        <span className="block text-[16px] font-semibold leading-tight tabular-nums text-slate-900">{c.value}</span>
+                        <span className="block max-w-[110px] truncate text-[11px] text-slate-500" title={label}>{label}</span>
+                      </span>
+                    </>
+                  )
+                  const box = "flex min-w-[104px] shrink-0 items-center gap-2 rounded-xl border px-2.5 py-2"
+                  return c.filter ? (
+                    <button key={c.key} type="button" aria-pressed={active}
+                      onClick={() => setQuick(c.filter!.field_key, active ? null : c.filter!.value)}
+                      title={active ? "Show all again" : `Show only ${label}`}
+                      className={cn(box, "transition-all hover:-translate-y-px hover:shadow-sm",
+                        active ? "border-primary/40 bg-primary/5 ring-2 ring-primary/15" : "border-slate-200 bg-white")}>
+                      {body}
+                    </button>
+                  ) : (
+                    // The "how many places" card gives way first when space is short.
+                    <div key={c.key} className={cn(box, "border-slate-200 bg-white", c.tone === "c" && "hidden xl:flex")}>{body}</div>
+                  )
+                })}
+              </div>
+            )}
+            {quick.length > 0 && (
+              <div className="flex flex-wrap gap-2 min-[900px]:ml-auto min-[900px]:flex-nowrap min-[900px]:justify-end">
+                {quick.map((f) => {
+                  const cur = filters[f.field_key]
+                  const value = cur?.kind === "choice" ? cur.value : "__all__"
+                  const opts = optionsFor(f, searched, fields, filters)
+                  return (
+                    <Select key={f.field_key} value={value} onValueChange={(v) => setQuick(f.field_key, !v || v === "__all__" ? null : String(v))}>
+                      <SelectTrigger aria-label={`Filter by ${f.label}`}
+                        className={cn("h-10 w-auto min-w-[116px] max-w-[180px] rounded-xl text-left text-[12.5px]", value !== "__all__" ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 bg-white")}>
+                        <span className="flex min-w-0 flex-col leading-tight">
+                          <span className="truncate text-[10px] font-medium uppercase tracking-wide text-slate-400">{f.label}</span>
+                          <span className="truncate"><SelectValue /></span>
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All</SelectItem>
+                        {opts.map((o) => <SelectItem key={o.value} value={o.value}>{prettyValue(o.label)} ({o.count})</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -745,9 +776,11 @@ export default function DataTablePage() {
             </button>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-2 sm:px-6">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          // One line: search, Filter, Table/Cards, and everything else under ⋯
+          // — so the table below gets the height.
+          <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2 sm:px-6">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
               <input
                 id="records-search"
                 autoComplete="off"
@@ -765,114 +798,84 @@ export default function DataTablePage() {
               )}
             </div>
 
-            {quick.map((f) => {
-              const cur = filters[f.field_key]
-              const value = cur?.kind === "choice" ? cur.value : "__all__"
-              const opts = optionsFor(f, searched, fields, filters)
-              return (
-                <Select key={f.field_key} value={value} onValueChange={(v) => setQuick(f.field_key, !v || v === "__all__" ? null : String(v))}>
-                  <SelectTrigger aria-label={`Filter by ${f.label}`}
-                    className={cn("h-9 w-auto min-w-[128px] max-w-[200px] rounded-lg text-left text-[12.5px]", value !== "__all__" ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 bg-white")}>
-                    <span className="flex min-w-0 flex-col leading-tight">
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{f.label}</span>
-                      <span className="truncate"><SelectValue /></span>
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All</SelectItem>
-                    {opts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label} ({o.count})</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              )
-            })}
-
             {canFilter && (
               <button
                 onClick={() => setFiltersOpen((v) => !v)}
                 aria-expanded={filtersOpen}
+                aria-label="More filters"
+                title="More filters"
                 className={cn(
-                  "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors",
+                  "flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors",
                   activeFilters > 0 || filtersOpen ? "bg-primary/10 text-primary" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
                 )}
               >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                Filter
+                <SlidersHorizontal className="h-4 w-4" aria-hidden />
+                <span className="hidden md:inline">Filter</span>
                 {activeFilters > 0 && (
                   <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">{activeFilters}</span>
                 )}
               </button>
             )}
 
-            {presentSources.length > 1 && (
-              <Menu label={sourceFilter ? sourceLabel(sourceFilter) : "Source"} icon={<ListChecks className="h-3.5 w-3.5" />} active={!!sourceFilter} width="w-52">
-                {(close) => (
-                  <>
-                    {[{ key: "", label: "All sources" }, ...presentSources.map((s) => ({ key: s, label: RECORD_SOURCE_LABELS[s] }))].map((o) => (
-                      <button key={o.key || "all"} type="button" onClick={() => { setSourceFilter(o.key); close() }}
-                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[13px] text-slate-700 hover:bg-slate-50">
-                        {o.label}
-                        {sourceFilter === o.key && <Check className="h-3.5 w-3.5 text-primary" />}
-                      </button>
-                    ))}
-                  </>
-                )}
-              </Menu>
-            )}
-
-            <div className="flex-1" />
-
-            <div className="flex rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="View">
+            <div className="flex shrink-0 rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="View">
               {([["table", "Table", Table2], ["cards", "Cards", LayoutGrid]] as const).map(([v, label, Icon]) => (
                 <button key={v} type="button" role="radio" aria-checked={prefs.view === v} aria-label={label} title={label} onClick={() => updatePrefs({ view: v })}
-                  className={cn("flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
+                  className={cn("flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
                     prefs.view === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800")}>
-                  <Icon className="h-3.5 w-3.5" aria-hidden /> <span className="hidden sm:inline">{label}</span>
+                  <Icon className="h-3.5 w-3.5" aria-hidden /> <span className="hidden lg:inline">{label}</span>
                 </button>
               ))}
             </div>
-            <button
-              type="button"
-              onClick={() => exportCsv(false)}
-              disabled={sorted.length === 0}
-              title="Download the rows shown as a CSV file (opens in Excel)"
-              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
-            >
-              <FileDown className="h-3.5 w-3.5" aria-hidden /> <span className="hidden sm:inline">Export</span>
-            </button>
 
-            <Menu label="Columns" iconOnly icon={<Columns3 className="h-3.5 w-3.5" />} badge={prefs.hidden.length || undefined} align="right" width="w-64">
-              {() => (
-                <div className="max-h-80 overflow-y-auto">
-                  <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">Show columns</p>
-                  {[
-                    ...columnFields.map((f) => ({ key: f.field_key, label: f.label })),
-                    ...(hasCustomers ? [{ key: SYS.customer, label: "Customer" }] : []),
-                    { key: SYS.source, label: "Source" },
-                    { key: SYS.added, label: "Added" },
-                  ].map((c) => (
-                    <label key={c.key} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50">
-                      <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} className="h-4 w-4 accent-[var(--primary)]" />
-                      <span className="truncate">{c.label}</span>
-                    </label>
-                  ))}
-                  {prefs.hidden.length > 0 && (
-                    <button type="button" onClick={() => updatePrefs({ hidden: [] })}
-                      className="mt-1 w-full rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium text-primary hover:bg-primary/5">
-                      Show all
-                    </button>
+            <Menu label="View options" iconOnly icon={<MoreHorizontal className="h-4 w-4" />} align="right" width="w-72"
+              badge={(prefs.hidden.length > 0 ? 1 : 0) + (sourceFilter ? 1 : 0) || undefined} active={!!sourceFilter || prefs.hidden.length > 0}>
+              {(close) => (
+                <div className="space-y-1">
+                  <MenuItem icon={<FileDown className="h-4 w-4" />} onClick={() => { close(); exportCsv(false) }}>
+                    Export {sorted.length} row{sorted.length === 1 ? "" : "s"} (CSV)
+                  </MenuItem>
+                  <MenuItem icon={prefs.density === "compact" ? <Rows3 className="h-4 w-4" /> : <Rows4 className="h-4 w-4" />}
+                    onClick={() => updatePrefs({ density: prefs.density === "compact" ? "comfortable" : "compact" })}>
+                    {prefs.density === "compact" ? "Roomier rows" : "Compact rows"}
+                  </MenuItem>
+
+                  {presentSources.length > 1 && (
+                    <div className="border-t border-slate-100 pt-1">
+                      <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">Source</p>
+                      {[{ key: "", label: "All sources" }, ...presentSources.map((src) => ({ key: src, label: RECORD_SOURCE_LABELS[src] }))].map((o) => (
+                        <button key={o.key || "all"} type="button" onClick={() => setSourceFilter(o.key)}
+                          className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-[13px] text-slate-700 hover:bg-slate-50">
+                          {o.label}
+                          {sourceFilter === o.key && <Check className="h-3.5 w-3.5 text-primary" aria-hidden />}
+                        </button>
+                      ))}
+                    </div>
                   )}
+
+                  <div className="border-t border-slate-100 pt-1">
+                    <div className="flex items-center justify-between px-2.5 pb-1 pt-1.5">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Columns</p>
+                      {prefs.hidden.length > 0 && (
+                        <button type="button" onClick={() => updatePrefs({ hidden: [] })} className="text-[11.5px] font-medium text-primary hover:underline">Show all</button>
+                      )}
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      {[
+                        ...columnFields.map((f) => ({ key: f.field_key, label: f.label })),
+                        ...(hasCustomers ? [{ key: SYS.customer, label: "Customer" }] : []),
+                        { key: SYS.source, label: "Source" },
+                        { key: SYS.added, label: "Added" },
+                      ].map((c) => (
+                        <label key={c.key} className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50">
+                          <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} className="h-4 w-4 accent-[var(--primary)]" />
+                          <span className="truncate">{c.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </Menu>
-            <button
-              type="button"
-              onClick={() => updatePrefs({ density: prefs.density === "compact" ? "comfortable" : "compact" })}
-              title={prefs.density === "compact" ? "Roomier rows" : "Compact rows"}
-              aria-label={prefs.density === "compact" ? "Roomier rows" : "Compact rows"}
-              className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
-            >
-              {prefs.density === "compact" ? <Rows3 className="h-4 w-4" /> : <Rows4 className="h-4 w-4" />}
-            </button>
           </div>
         )}
 

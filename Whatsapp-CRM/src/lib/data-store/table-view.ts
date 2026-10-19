@@ -178,3 +178,14 @@ export function pageList(current: number, count: number): Array<number | '…'> 
   out.push(count)
   return out
 }
+
+/**
+ * How a stored value reads on screen: "october" → "October",
+ * "sub-staff" → "Sub-staff". Only plain lower-case Latin text is touched;
+ * "MDP", "iPhone", Malayalam and anything already capitalised stay as typed.
+ * Display only — the data is never changed.
+ */
+export function prettyValue(v: string): string {
+  const s = String(v ?? '')
+  return /^[a-z][a-z0-9 .,'&()/-]*$/.test(s) ? s.charAt(0).toUpperCase() + s.slice(1) : s
+}

@@ -76,3 +76,14 @@ describe('chips', () => {
     expect(keys.has('month')).toBe(true)
   })
 })
+
+describe('values as they read', () => {
+  it('capitalises plain lower-case text only', async () => {
+    const { prettyValue } = await import('./table-view')
+    expect(prettyValue('october')).toBe('October')
+    expect(prettyValue('sub-staff')).toBe('Sub-staff')
+    expect(prettyValue('MDP')).toBe('MDP')
+    expect(prettyValue('iPhone')).toBe('iPhone')
+    expect(prettyValue('ഡ്രൈവർ')).toBe('ഡ്രൈവർ')
+  })
+})
