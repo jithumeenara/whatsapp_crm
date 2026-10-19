@@ -382,34 +382,67 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
     declaration: {
       name: 'my_registrations',
       description:
-        "This customer's own registrations and bookings, with what they gave and what is still " +
-        'blank. Use it when they ask what they signed up for, and before changing anything.',
+        "This customer's own registrations and bookings — made in this chat, and those made " +
+        "elsewhere (website, phone call, the office's Google Sheet) under this customer's own " +
+        'WhatsApp number — with what they gave and what is still blank. Use it when they ask ' +
+        'what they signed up for or about its status, and before changing anything.',
       parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     async run(_args, ctx) {
       const tz = await businessTimezone(ctx.accountId)
-      const records = await prisma.dataRecord.findMany({
-        where: { account_id: ctx.accountId, contact_id: ctx.contactId },
-        orderBy: { created_at: 'desc' },
-        take: MAX_ROWS,
-        select: { id: true, table_id: true, data: true, created_at: true },
+      const [records, forms] = await Promise.all([
+        prisma.dataRecord.findMany({
+          where: { account_id: ctx.accountId, contact_id: ctx.contactId },
+          orderBy: { created_at: 'desc' },
+          take: MAX_ROWS,
+          select: { id: true, table_id: true, data: true, created_at: true },
+        }),
+        listRegistrationForms(ctx.accountId),
+      ])
+      // Made elsewhere under this customer's own number (registration-lookup.ts).
+      const { registrationsByPhone, redactSensitive } = await import('./registration-lookup')
+      const elsewhere = await registrationsByPhone({
+        accountId: ctx.accountId,
+        contactId: ctx.contactId,
+        tables: forms.map((f) => ({
+          table_id: f.table_id,
+          name: f.name,
+          labels: new Map([...f.required_fields, ...f.optional_fields].map((x) => [x.key, x.label])),
+        })),
+      }).catch((err) => {
+        console.error('[my_registrations] lookup by number failed:', err instanceof Error ? err.message : err)
+        return []
       })
-      if (records.length === 0) return { found: false }
+      const ownIds = new Set(records.map((r) => r.id))
+      const others = elsewhere.filter((r) => !ownIds.has(r.registration_id))
+      if (records.length === 0 && others.length === 0) return { found: false }
 
-      const forms = await listRegistrationForms(ctx.accountId)
       return {
         found: true,
-        registrations: records.map((r) => {
-          const form = forms.find((f) => f.table_id === r.table_id)
-          const data = (r.data as Record<string, unknown>) ?? {}
-          return {
-            registration_id: r.id,
-            form: form?.name ?? 'Registration',
-            registered_on: humanDate(r.created_at, tz),
-            details: data,
-            still_missing: form ? blanksIn(data, form.optional_fields) : [],
-          }
-        }),
+        registrations: [
+          ...records.map((r) => {
+            const form = forms.find((f) => f.table_id === r.table_id)
+            const data = (r.data as Record<string, unknown>) ?? {}
+            const labels = new Map([...(form?.required_fields ?? []), ...(form?.optional_fields ?? [])].map((x) => [x.key, x.label]))
+            return {
+              registration_id: r.id,
+              form: form?.name ?? 'Registration',
+              registered_on: humanDate(r.created_at, tz),
+              details: redactSensitive(data, (k) => labels.get(k) ?? k),
+              still_missing: form ? blanksIn(data, form.optional_fields) : [],
+              can_change_in_chat: true,
+            }
+          }),
+          ...others.map((r) => ({
+            registration_id: r.registration_id,
+            form: r.form,
+            where: r.where,
+            registered_on: r.registered_on ? humanDate(r.registered_on, tz) : null,
+            details: r.details,
+            can_change_in_chat: false,
+            note: 'Registered outside this chat (website, phone or the office). Tell them its details and status; to change it, offer to pass the request to the team.',
+          })),
+        ].slice(0, MAX_ROWS * 2),
       }
     },
   },
