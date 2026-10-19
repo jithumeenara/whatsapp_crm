@@ -119,8 +119,14 @@ async function fromTables(args: {
   return out.slice(0, MAX_ROWS)
 }
 
-/** Rows typed straight into the sheets these tables route to. */
-async function fromSheets(args: { accountId: string; key: string; tableIds: readonly string[] }): Promise<FoundRegistration[]> {
+interface SheetStats { sheets: number; tabs: number; problem: string | null }
+
+/** Rows in the sheets these tables route to — typed in by the office, or
+ *  put there by the CRM for a record the table no longer has. */
+async function fromSheets(
+  args: { accountId: string; key: string; tableIds: readonly string[]; knownIds: ReadonlySet<string> },
+  stats: SheetStats,
+): Promise<FoundRegistration[]> {
   if (args.tableIds.length === 0) return []
   const routes = await prisma.sheetRoute.findMany({
     where: { account_id: args.accountId, table_id: { in: [...args.tableIds] }, enabled: true },
@@ -139,16 +145,19 @@ async function fromSheets(args: { accountId: string; key: string; tableIds: read
   let token: string
   try {
     token = await googleAccessToken(args.accountId)
-  } catch {
+  } catch (err) {
+    stats.problem = `Google not connected: ${err instanceof Error ? err.message : String(err)}`
     return []
   }
   const out: FoundRegistration[] = []
   for (const [id, savedName] of [...sheets.entries()].slice(0, MAX_SHEETS)) {
     try {
       const info = await getSpreadsheet(token, id)
+      stats.sheets++
       for (const tab of info.tabs.slice(0, MAX_TABS)) {
         if (tab.title.toLowerCase() === 'deleted') continue
         const table = await readTab(token, id, tab.title)
+        stats.tabs++
         // The header row: the first row with three or more names in it.
         const h = table.findIndex((r) => r.filter((c) => String(c ?? '').trim()).length >= 3)
         if (h < 0) continue
@@ -156,7 +165,10 @@ async function fromSheets(args: { accountId: string; key: string; tableIds: read
         const crmCol = headers.findIndex((x) => x.toLowerCase() === 'crm id')
         for (let i = h + 1; i < table.length && out.length < MAX_ROWS; i++) {
           const row = table[i] ?? []
-          if (crmCol >= 0 && String(row[crmCol] ?? '').trim()) continue
+          // A row the CRM put there is skipped only when that record was
+          // found already — not when the table no longer has it.
+          const crmId = crmCol >= 0 ? String(row[crmCol] ?? '').trim() : ''
+          if (crmId && args.knownIds.has(crmId)) continue
           if (!rowHasPhone(row, args.key)) continue
           const details: Record<string, unknown> = {}
           headers.forEach((name, c) => {
@@ -175,6 +187,7 @@ async function fromSheets(args: { accountId: string; key: string; tableIds: read
         if (out.length >= MAX_ROWS) return out
       }
     } catch (err) {
+      stats.problem = `sheet ${id} unreadable: ${err instanceof Error ? err.message : String(err)}`
       console.warn('[registration-lookup] sheet unreadable:', id, err instanceof Error ? err.message : err)
     }
   }
@@ -190,19 +203,29 @@ export async function registrationsByPhone(args: {
   accountId: string
   contactId: string
   tables: ReadonlyArray<{ table_id: string; name: string; labels: Map<string, string> }>
+  /** Records already found (saved by this chat) — not counted twice. */
+  knownIds?: readonly string[]
 }): Promise<FoundRegistration[]> {
   const key = await contactPhoneKey(args.accountId, args.contactId)
-  if (!key) return []
+  if (!key) {
+    console.info('[registration-lookup] no phone number on this contact — only chat-saved rows are checked')
+    return []
+  }
   const cacheKey = `${args.accountId}:${args.contactId}:${key}`
   const hit = cache.get(cacheKey)
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.rows
-  const [a, b] = await Promise.all([
-    fromTables({ ...args, key }).catch((err) => {
-      console.error('[registration-lookup] tables failed:', err instanceof Error ? err.message : err)
-      return [] as FoundRegistration[]
-    }),
-    fromSheets({ accountId: args.accountId, key, tableIds: args.tables.map((t) => t.table_id) }).catch(() => [] as FoundRegistration[]),
-  ])
+  const a = await fromTables({ ...args, key }).catch((err) => {
+    console.error('[registration-lookup] tables failed:', err instanceof Error ? err.message : err)
+    return [] as FoundRegistration[]
+  })
+  const known = new Set([...(args.knownIds ?? []), ...a.map((r) => r.registration_id)])
+  const stats: SheetStats = { sheets: 0, tabs: 0, problem: null }
+  const b = await fromSheets({ accountId: args.accountId, key, tableIds: args.tables.map((t) => t.table_id), knownIds: known }, stats).catch((err) => {
+    stats.problem = err instanceof Error ? err.message : String(err)
+    return [] as FoundRegistration[]
+  })
+  // One line per lookup, so "it said I'm not registered" can be traced.
+  console.info(`[registration-lookup] number …${key.slice(-4)}: table rows ${a.length}, sheet rows ${b.length} (sheets read ${stats.sheets}, tabs ${stats.tabs})${stats.problem ? ` — ${stats.problem}` : ''}`)
   const rows = [...a, ...b].slice(0, MAX_ROWS)
   cache.set(cacheKey, { at: Date.now(), rows })
   return rows

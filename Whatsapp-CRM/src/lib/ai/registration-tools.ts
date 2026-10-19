@@ -404,6 +404,7 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
       const elsewhere = await registrationsByPhone({
         accountId: ctx.accountId,
         contactId: ctx.contactId,
+        knownIds: records.map((r) => r.id),
         tables: forms.map((f) => ({
           table_id: f.table_id,
           name: f.name,

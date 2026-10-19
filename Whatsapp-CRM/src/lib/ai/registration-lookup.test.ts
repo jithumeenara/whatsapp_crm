@@ -88,6 +88,11 @@ describe("my_registrations — registrations not made through this chat", () => 
 
   it("finds a row typed straight into the training's Google Sheet", async () => {
     h.state.routes = [{ spreadsheet_id: "S1", spreadsheet_name: "MDP 2026" }];
+    // The CRM's own row (CRM ID rec-123) is found in the table, so the
+    // sheet's copy of it must not be counted a second time.
+    h.state.byPhoneRows = [
+      { id: "rec-123", table_id: "t1", data: { name: "Anil (from CRM)", wa: "9446437835" }, created_at: new Date("2026-10-03T10:00:00Z"), source: "chatbot" },
+    ];
     h.state.sheetRows = {
       "Master Template": [
         ["Sl No.", "Name of participants", "WhatsApp No.", "Aadhaar No", "Status", "CRM ID"],
@@ -98,13 +103,39 @@ describe("my_registrations — registrations not made through this chat", () => 
     };
     const r = await run();
     const regs = r.registrations as Array<Record<string, unknown>>;
-    expect(regs).toHaveLength(1);
-    expect(regs[0].details).toMatchObject({ "Name of participants": "Anil Kumar K P", Status: "Confirmed" });
-    expect(JSON.stringify(regs)).not.toMatch(/priyadarsan|9999 8888 7777|rec-123/);
-    expect(String(regs[0].where)).toMatch(/MDP 2026/);
+    expect(regs).toHaveLength(2);
+    expect(regs.filter((x) => JSON.stringify(x).includes("Anil (from CRM)"))).toHaveLength(1);
+    const fromSheet = regs.find((x) => String(x.where ?? "").includes("MDP 2026"))!;
+    expect(fromSheet.details).toMatchObject({ "Name of participants": "Anil Kumar K P", Status: "Confirmed" });
+    expect(JSON.stringify(regs)).not.toMatch(/priyadarsan|9999 8888 7777/);
   });
 
   it("says plainly when there is nothing for this number", async () => {
     expect((await run()).found).toBe(false);
+  });
+});
+
+describe("a row the CRM routed to the sheet, whose record is no longer in the table", () => {
+  /**
+   * Bug (19 Oct 2026, ACSTI, after f386289): my_registrations ran, found
+   * nothing. The participant's sheet row had been put there by Sheet
+   * routing (it carries a CRM ID), so the sheet lookup skipped it as "the
+   * table will have it" — but the table no longer did. A CRM ID is only a
+   * reason to skip a row when that record was actually found.
+   */
+  it("still finds it", async () => {
+    h.state.routes = [{ id: "r1", spreadsheet_id: "S1", spreadsheet_name: "MDP 2026 November 23 to 25" }];
+    h.state.sheetRows = {
+      "Master Template": [
+        ["Sl No.", "Name of participants", "Designation", "WhatsApp No.", "Status", "CRM ID"],
+        ["36", "JIthu L R", "Secretary", "8590551176", "Registered", "rec-gone"],
+      ],
+    };
+    const contact = await import("@/lib/db");
+    (contact.prisma.contact as unknown as { findFirst: () => Promise<unknown> }).findFirst = () => Promise.resolve({ phone: "918590551176" });
+    const r = await run();
+    expect(r.found).toBe(true);
+    expect(JSON.stringify(r)).toContain("JIthu L R");
+    expect(JSON.stringify(r)).not.toContain("rec-gone");
   });
 });
