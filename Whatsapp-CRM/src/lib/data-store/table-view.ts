@@ -96,42 +96,79 @@ export function chipFieldKeys(fields: readonly DataField[], records: readonly Da
   )
 }
 
+export type StatTone = 'total' | 'a' | 'b' | 'c' | 'd' | 'e'
+
 export interface StatCard {
   key: string
   label: string
   value: number
+  /** Share of all rows, 0–1, for a group card's bar. */
+  share?: number
   /** Clicking narrows the table to this. */
   filter?: { field_key: string; value: string }
-  tone: 'total' | 'a' | 'b' | 'c'
+  tone: StatTone
+}
+
+/** What the person chose for the cards (Customize). Empty = automatic. */
+export interface StatChoice {
+  /** The column the group cards count by. */
+  groupField?: string
+  /** Which of its values get a card, in order (at most 4). */
+  values?: string[]
+  /** The "how many different …" card: a column, or null for none. */
+  spreadField?: string | null
+}
+
+export const STAT_MAX_VALUES = 4
+const GROUP_TONES: StatTone[] = ['a', 'b', 'd', 'e']
+
+function countsFor(f: DataField, records: readonly DataRecord[]): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const r of records) for (const v of values((r.data as Record<string, unknown>)[f.field_key])) m.set(v, (m.get(v) ?? 0) + 1)
+  return m
+}
+
+/** The columns cards can count by, each with its values, biggest first. */
+export function statGroupOptions(fields: readonly DataField[], records: readonly DataRecord[]): Array<{ field: DataField; values: Array<{ value: string; label: string; count: number }> }> {
+  return filterableFields([...fields], [...records])
+    .filter((f) => f.kind === 'choice')
+    .map((f) => ({
+      field: f.field,
+      values: [...countsFor(f.field, records).entries()]
+        .map(([value, count]) => ({ value, label: choiceLabel(f.field, value), count }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    }))
+    .filter((o) => o.values.length > 0)
 }
 
 /**
- * The cards above the table: the total, the biggest groups of the first
- * choice column that splits the rows into a few groups (months, statuses),
- * and how many different values a second such column has (districts).
+ * The cards above the table: the total, groups of one choice column
+ * (chosen, or the first that splits the rows into a few groups — months,
+ * statuses), and how many different values another column has (districts).
  */
-export function statCards(fields: readonly DataField[], records: readonly DataRecord[]): StatCard[] {
+export function statCards(fields: readonly DataField[], records: readonly DataRecord[], choice: StatChoice = {}): StatCard[] {
   const cards: StatCard[] = [{ key: 'total', label: 'Total', value: records.length, tone: 'total' }]
   if (records.length === 0) return cards
-  const choice = filterableFields([...fields], [...records]).filter((f) => f.kind === 'choice').map((f) => f.field)
-  const countsOf = (f: DataField) => {
-    const m = new Map<string, number>()
-    for (const r of records) for (const v of values((r.data as Record<string, unknown>)[f.field_key])) m.set(v, (m.get(v) ?? 0) + 1)
-    return m
-  }
-  const grouping = choice.find((f) => {
-    const n = countsOf(f).size
-    return n >= 2 && n <= 12
-  })
+  const options = statGroupOptions(fields, records)
+  const chosen = choice.groupField ? options.find((o) => o.field.field_key === choice.groupField) : undefined
+  const grouping = chosen ?? options.find((o) => o.values.length >= 2 && o.values.length <= 12)
   if (grouping) {
-    const top = [...countsOf(grouping).entries()].sort((a, b) => b[1] - a[1]).slice(0, 2)
-    top.forEach(([v, n], i) => cards.push({ key: `g:${v}`, label: choiceLabel(grouping, v), value: n, filter: { field_key: grouping.field_key, value: v }, tone: i === 0 ? 'a' : 'b' }))
+    const picked = chosen && choice.values?.length
+      ? choice.values.slice(0, STAT_MAX_VALUES).map((v) => grouping.values.find((x) => x.value === v) ?? { value: v, label: choiceLabel(grouping.field, v), count: 0 })
+      : grouping.values.slice(0, chosen ? STAT_MAX_VALUES : 2)
+    picked.forEach((v, i) => cards.push({
+      key: `g:${v.value}`, label: v.label, value: v.count, share: v.count / records.length,
+      filter: { field_key: grouping.field.field_key, value: v.value }, tone: GROUP_TONES[i % GROUP_TONES.length],
+    }))
   }
-  // "How many places": a district / state / country column first, else any other choice column.
-  const others = choice.filter((f) => f.field_key !== grouping?.field_key && countsOf(f).size >= 2)
-  const spread = others.find((f) => ['district', 'state', 'country'].includes(f.field_type)) ?? others[0]
-  if (spread) cards.push({ key: `d:${spread.field_key}`, label: plural(spread.label), value: countsOf(spread).size, tone: 'c' })
-  return cards.slice(0, 4)
+  if (choice.spreadField === null) return cards
+  // "How many places": the chosen column, else district / state / country, else any other.
+  const others = options.filter((o) => o.field.field_key !== grouping?.field.field_key && o.values.length >= 2)
+  const spread = choice.spreadField
+    ? options.find((o) => o.field.field_key === choice.spreadField)
+    : others.find((o) => ['district', 'state', 'country'].includes(o.field.field_type)) ?? others[0]
+  if (spread) cards.push({ key: `d:${spread.field.field_key}`, label: plural(spread.field.label), value: spread.values.length, tone: 'c' })
+  return cards
 }
 
 function plural(label: string): string {

@@ -87,3 +87,21 @@ describe('values as they read', () => {
     expect(prettyValue('ഡ്രൈവർ')).toBe('ഡ്രൈവർ')
   })
 })
+
+describe('customised stat cards', () => {
+  it('counts by the chosen column and values, with each value’s share', async () => {
+    const { statCards } = await import('./table-view')
+    const cards = statCards(fields, rows, { groupField: 'group', values: ['Supervisory Cadre', 'Sub-staff', 'Nobody'], spreadField: null })
+    expect(cards.map((c) => [c.label, c.value])).toEqual([['Total', 3], ['Supervisory Cadre', 1], ['Sub-staff', 2], ['Nobody', 0]])
+    expect(cards[2].share).toBeCloseTo(2 / 3)
+    expect(cards[2].filter).toEqual({ field_key: 'group', value: 'Sub-staff' })
+  })
+  it('a chosen column with no values chosen shows its biggest four', async () => {
+    const { statCards } = await import('./table-view')
+    expect(statCards(fields, rows, { groupField: 'district' }).map((c) => c.label)).toEqual(['Total', 'Malappuram', 'Kozhikode', 'months'])
+  })
+  it('a chosen "how many" column', async () => {
+    const { statCards } = await import('./table-view')
+    expect(statCards(fields, rows, { spreadField: 'group' }).at(-1)).toMatchObject({ label: 'Target Groups', value: 2 })
+  })
+})

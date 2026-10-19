@@ -27,7 +27,8 @@ import {
   HeartPulse, Sheet, Split, LayoutGrid, Table2, FileDown, Users,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { chipFieldKeys, chipTone, choiceLabel, prettyValue, initials, pageList, pickSubtitleField, pickTitleField, quickFilterFields, statCards, toCsv } from "@/lib/data-store/table-view"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { STAT_MAX_VALUES, choiceLabel, prettyValue, statGroupOptions, type StatChoice, initials, pageList, pickSubtitleField, pickTitleField, quickFilterFields, statCards, toCsv } from "@/lib/data-store/table-view"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
@@ -120,7 +121,7 @@ function stamp(iso: string): string {
 
 // ── View preferences, per table, in this browser only ───────────────────
 type ViewMode = "table" | "cards"
-interface ViewPrefs { hidden: string[]; density: Density; pageSize: number; view: ViewMode }
+interface ViewPrefs { hidden: string[]; density: Density; pageSize: number; view: ViewMode; stats?: StatChoice }
 
 function readPrefs(tableId: string): ViewPrefs {
   try {
@@ -132,6 +133,13 @@ function readPrefs(tableId: string): ViewPrefs {
       pageSize: PAGE_SIZES.includes(p.pageSize as (typeof PAGE_SIZES)[number]) ? (p.pageSize as number) : 25,
       // A phone starts on cards: a wide grid is a sideways scroll there.
       view: p.view === "cards" || p.view === "table" ? p.view : window.innerWidth < 640 ? "cards" : "table",
+      stats: p.stats && typeof p.stats === "object"
+        ? {
+            groupField: typeof p.stats.groupField === "string" ? p.stats.groupField : undefined,
+            values: Array.isArray(p.stats.values) ? p.stats.values.filter((v): v is string => typeof v === "string").slice(0, STAT_MAX_VALUES) : undefined,
+            spreadField: p.stats.spreadField === null ? null : typeof p.stats.spreadField === "string" ? p.stats.spreadField : undefined,
+          }
+        : undefined,
     }
   } catch {
     return { hidden: [], density: "comfortable", pageSize: 25, view: "table" }
@@ -507,9 +515,9 @@ export default function DataTablePage() {
 
   // Presentation, chosen from this table's own fields (table-view.ts).
   const titleField = useMemo(() => pickTitleField(columnFields, records), [columnFields, records])
-  const chipKeys = useMemo(() => chipFieldKeys(fields, records), [fields, records])
-  const subField = useMemo(() => pickSubtitleField(columnFields, titleField, chipKeys), [columnFields, titleField, chipKeys])
-  const stats = useMemo(() => statCards(columnFields, records), [columnFields, records])
+  const subField = useMemo(() => pickSubtitleField(columnFields, titleField), [columnFields, titleField])
+  const stats = useMemo(() => statCards(columnFields, records, prefs.stats), [columnFields, records, prefs.stats])
+  const statOptions = useMemo(() => statGroupOptions(columnFields, records), [columnFields, records])
   const quick = useMemo(() => quickFilterFields(columnFields, records), [columnFields, records])
 
   function setQuick(key: string, value: string | null) {
@@ -541,24 +549,6 @@ export default function DataTablePage() {
     a.click()
     URL.revokeObjectURL(url)
     toast.success(`${rows.length} row${rows.length === 1 ? "" : "s"} exported`)
-  }
-
-  function chip(f: DataField, raw: unknown) {
-    const list = (Array.isArray(raw) ? raw : [raw]).filter((v) => v !== null && v !== undefined && v !== "")
-    if (list.length === 0) return <span className="text-slate-300">—</span>
-    return (
-      <span className="flex flex-wrap gap-1">
-        {list.slice(0, 3).map((v, i) => {
-          const label = prettyValue(formatValue(f, Array.isArray(raw) ? [v] : v) || String(v))
-          return (
-            <span key={i} title={label} className={cn("inline-block max-w-[180px] truncate rounded-full px-2 py-0.5 text-[11.5px] font-medium ring-1", chipTone(label))}>
-              {label}
-            </span>
-          )
-        })}
-        {list.length > 3 && <span className="text-[11px] text-slate-400">+{list.length - 3}</span>}
-      </span>
-    )
   }
 
   function nameCell(rec: DataRecord) {
@@ -690,28 +680,33 @@ export default function DataTablePage() {
         {/* ── At a glance (left) and the quick filters (right), one row ── */}
         {!loading && records.length > 0 && (stats.length > 1 || quick.length > 0) && (
           <div className="flex flex-col gap-2.5 px-4 pb-3 sm:px-6 min-[900px]:flex-row min-[900px]:items-center">
-            {stats.length > 1 && (
-              <div className="flex min-w-0 gap-2 overflow-x-auto [scrollbar-width:none]">
+            {stats.length > 0 && (
+              <div className="flex min-w-0 items-stretch gap-2 overflow-x-auto [scrollbar-width:none]">
                 {stats.map((c) => {
                   const active = !!c.filter && filters[c.filter.field_key]?.kind === "choice" && (filters[c.filter.field_key] as { value: string }).value === c.filter.value
-                  const tone = {
-                    total: "bg-primary/10 text-primary",
-                    a: "bg-emerald-50 text-emerald-700",
-                    b: "bg-amber-50 text-amber-700",
-                    c: "bg-violet-50 text-violet-700",
-                  }[c.tone]
-                  const Icon = c.tone === "total" ? Users : c.tone === "c" ? MapPin : Calendar
+                  const dot = { total: "bg-primary", a: "bg-emerald-500", b: "bg-amber-500", c: "bg-violet-500", d: "bg-sky-500", e: "bg-rose-500" }[c.tone]
                   const label = prettyValue(c.label)
+                  const pct = c.share !== undefined ? Math.round(c.share * 100) : null
                   const body = (
                     <>
-                      <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg", tone)}><Icon className="h-4 w-4" aria-hidden /></span>
-                      <span className="min-w-0 text-left">
-                        <span className="block text-[16px] font-semibold leading-tight tabular-nums text-slate-900">{c.value}</span>
-                        <span className="block max-w-[110px] truncate text-[11px] text-slate-500" title={label}>{label}</span>
+                      <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-slate-500">
+                        {c.tone === "total" ? <Users className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                          : c.tone === "c" ? <MapPin className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden />
+                          : <span className={cn("h-2 w-2 shrink-0 rounded-full", dot)} aria-hidden />}
+                        <span className="truncate" title={label}>{label}</span>
                       </span>
+                      <span className="mt-0.5 flex items-baseline gap-1.5">
+                        <span className="text-[19px] font-semibold leading-none tabular-nums text-slate-900">{c.value}</span>
+                        {pct !== null && <span className="text-[10.5px] font-medium tabular-nums text-slate-400">{pct}%</span>}
+                      </span>
+                      {pct !== null && (
+                        <span className="absolute inset-x-0 bottom-0 h-[3px] bg-slate-100" aria-hidden>
+                          <span className={cn("block h-full rounded-r-full", dot)} style={{ width: `${Math.max(3, pct)}%` }} />
+                        </span>
+                      )}
                     </>
                   )
-                  const box = "flex min-w-[104px] shrink-0 items-center gap-2 rounded-xl border px-2.5 py-2"
+                  const box = "relative flex min-w-[112px] max-w-[190px] shrink-0 flex-col justify-center overflow-hidden rounded-xl border px-3 py-2 text-left"
                   return c.filter ? (
                     <button key={c.key} type="button" aria-pressed={active}
                       onClick={() => setQuick(c.filter!.field_key, active ? null : c.filter!.value)}
@@ -721,10 +716,13 @@ export default function DataTablePage() {
                       {body}
                     </button>
                   ) : (
-                    // The "how many places" card gives way first when space is short.
+                    // The "how many" card gives way first when space is short.
                     <div key={c.key} className={cn(box, "border-slate-200 bg-white", c.tone === "c" && "hidden xl:flex")}>{body}</div>
                   )
                 })}
+                {statOptions.length > 0 && (
+                  <StatCustomizer options={statOptions} choice={prefs.stats ?? {}} onChange={(stats) => updatePrefs({ stats })} />
+                )}
               </div>
             )}
             {quick.length > 0 && (
@@ -779,7 +777,7 @@ export default function DataTablePage() {
           // One line: search, Filter, Table/Cards, and everything else under ⋯
           // — so the table below gets the height.
           <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2 sm:px-6">
-            <div className="relative min-w-0 flex-1">
+            <div className="relative min-w-0 flex-1 sm:max-w-xs">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
               <input
                 id="records-search"
@@ -797,6 +795,8 @@ export default function DataTablePage() {
                 </button>
               )}
             </div>
+
+            <div className="hidden flex-1 sm:block" />
 
             {canFilter && (
               <button
@@ -936,10 +936,9 @@ export default function DataTablePage() {
                       const data = rec.data as Record<string, unknown>
                       const selected = selectedIds.has(rec.id)
                       const sub = subField ? formatValue(subField, data[subField.field_key]) : ""
-                      const chipsHere = shownFields.filter((f) => chipKeys.has(f.field_key) && formatValue(f, data[f.field_key])).slice(0, 3)
                       const facts = shownFields
-                        .filter((f) => f.field_key !== titleField?.field_key && f.field_key !== subField?.field_key && !chipKeys.has(f.field_key) && formatValue(f, data[f.field_key]))
-                        .slice(0, 4)
+                        .filter((f) => f.field_key !== titleField?.field_key && f.field_key !== subField?.field_key && formatValue(f, data[f.field_key]))
+                        .slice(0, 6)
                       return (
                         <li key={rec.id} className={cn("group relative min-w-0 rounded-2xl border bg-white p-3.5 shadow-sm transition-all hover:-translate-y-px hover:shadow-md",
                           selected ? "border-primary/40 ring-2 ring-primary/15" : "border-slate-200")}>
@@ -950,15 +949,12 @@ export default function DataTablePage() {
                               {nameCell(rec)}
                             </span>
                             {sub && <span className="mt-1 block truncate pl-[42px] text-[12px] text-slate-500">{sub}</span>}
-                            {chipsHere.length > 0 && (
-                              <span className="mt-2.5 flex flex-wrap gap-1">{chipsHere.map((f) => <span key={f.field_key}>{chip(f, data[f.field_key])}</span>)}</span>
-                            )}
                             {facts.length > 0 && (
                               <span className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-slate-100 pt-2.5">
                                 {facts.map((f) => (
                                   <span key={f.field_key} className="min-w-0">
                                     <span className="block truncate text-[10.5px] text-slate-400">{f.label}</span>
-                                    <span className="block truncate text-[12.5px] text-slate-700">{formatValue(f, data[f.field_key])}</span>
+                                    <span className="block truncate text-[12.5px] text-slate-700">{prettyValue(formatValue(f, data[f.field_key]))}</span>
                                   </span>
                                 ))}
                               </span>
@@ -1011,7 +1007,7 @@ export default function DataTablePage() {
                             />
                           </td>
                           {shownFields.map((f) => {
-                            const text = formatValue(f, data[f.field_key])
+                            const text = prettyValue(formatValue(f, data[f.field_key]))
                             const mono = f.field_type === "phone" || f.field_type === "email" || f.field_type === "url"
                             return (
                               <td
@@ -1021,8 +1017,6 @@ export default function DataTablePage() {
                               >
                                 {titleField && f.field_key === titleField.field_key ? (
                                   nameCell(rec)
-                                ) : chipKeys.has(f.field_key) ? (
-                                  chip(f, data[f.field_key])
                                 ) : f.field_type === "boolean" && text ? (
                                   <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium", data[f.field_key] ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>
                                     {text}
@@ -1163,7 +1157,6 @@ export default function DataTablePage() {
         <RecordDetailModal
           record={viewingRecord}
           fields={fields}
-          chipKeys={chipKeys}
           onClose={() => setViewingRecord(null)}
           onEdit={() => {
             setEditingRecord(viewingRecord)
@@ -1244,6 +1237,85 @@ export default function DataTablePage() {
         onCancel={() => setConfirmBulkDelete(false)}
       />
     </div>
+  )
+}
+
+/** Which cards to show above the table — saved in this browser, per table. */
+function StatCustomizer({ options, choice, onChange }: {
+  options: Array<{ field: DataField; values: Array<{ value: string; label: string; count: number }> }>
+  choice: StatChoice
+  onChange: (c: StatChoice | undefined) => void
+}) {
+  const group = options.find((o) => o.field.field_key === choice.groupField)
+  const picked = choice.values ?? []
+  const toggle = (v: string) => {
+    const next = picked.includes(v) ? picked.filter((x) => x !== v) : [...picked, v].slice(0, STAT_MAX_VALUES)
+    onChange({ ...choice, values: next })
+  }
+  return (
+    <Popover>
+      <PopoverTrigger aria-label="Customize cards" title="Customize cards"
+        className="grid w-10 shrink-0 place-items-center rounded-xl border border-dashed border-slate-300 text-slate-400 transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary">
+        <Settings2 className="h-4 w-4" aria-hidden />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[min(20rem,calc(100vw-2rem))] gap-0 p-0">
+        <div className="border-b border-slate-100 px-3.5 py-2.5">
+          <p className="text-[13px] font-semibold text-slate-800">Cards</p>
+          <p className="text-[11.5px] text-slate-500">Choose what the cards above the table count.</p>
+        </div>
+        <div className="max-h-[60dvh] space-y-3 overflow-y-auto px-3.5 py-3">
+          <label className="block space-y-1">
+            <span className="text-[11.5px] font-medium text-slate-600">Count rows by</span>
+            <Select value={choice.groupField ?? "__auto__"} onValueChange={(v) => {
+              const k = String(v ?? "__auto__")
+              onChange(k === "__auto__" ? { ...choice, groupField: undefined, values: undefined } : { ...choice, groupField: k, values: options.find((o) => o.field.field_key === k)?.values.slice(0, STAT_MAX_VALUES).map((x) => x.value) })
+            }}>
+              <SelectTrigger className="h-9 w-full text-[12.5px]" aria-label="Count rows by"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__auto__">Automatic</SelectItem>
+                {options.map((o) => <SelectItem key={o.field.field_key} value={o.field.field_key}>{o.field.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </label>
+          {group && (
+            <div className="space-y-1">
+              <p className="text-[11.5px] font-medium text-slate-600">Cards for <span className="tabular-nums text-slate-400">({picked.length}/{STAT_MAX_VALUES})</span></p>
+              <ul className="max-h-48 overflow-y-auto rounded-lg border border-slate-200">
+                {group.values.map((v) => {
+                  const on = picked.includes(v.value)
+                  return (
+                    <li key={v.value}>
+                      <label className={cn("flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-[12.5px] hover:bg-slate-50", !on && picked.length >= STAT_MAX_VALUES && "opacity-50")}>
+                        <input type="checkbox" className="h-4 w-4 accent-[var(--primary)]" checked={on} disabled={!on && picked.length >= STAT_MAX_VALUES} onChange={() => toggle(v.value)} />
+                        <span className="min-w-0 flex-1 truncate text-slate-700">{prettyValue(v.label)}</span>
+                        <span className="text-[11px] tabular-nums text-slate-400">{v.count}</span>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+          <label className="block space-y-1">
+            <span className="text-[11.5px] font-medium text-slate-600">Also show how many different</span>
+            <Select value={choice.spreadField === null ? "__none__" : choice.spreadField ?? "__auto__"} onValueChange={(v) => {
+              const k = String(v ?? "__auto__")
+              onChange({ ...choice, spreadField: k === "__none__" ? null : k === "__auto__" ? undefined : k })
+            }}>
+              <SelectTrigger className="h-9 w-full text-[12.5px]" aria-label="Also show how many different"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__auto__">Automatic</SelectItem>
+                <SelectItem value="__none__">Don’t show</SelectItem>
+                {options.map((o) => <SelectItem key={o.field.field_key} value={o.field.field_key}>{o.field.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+        <div className="flex justify-end border-t border-slate-100 px-3.5 py-2">
+          <button type="button" onClick={() => onChange(undefined)} className="text-[12px] font-medium text-slate-500 hover:text-slate-800 hover:underline">Reset to automatic</button>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 

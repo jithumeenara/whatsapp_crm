@@ -12,7 +12,7 @@ import type { DataField, DataRecord, FieldType } from '@/lib/data-store/types';
 import { getSelectItems } from '@/lib/data-store/types';
 import { sourceLabel } from '@/lib/data-store/sources';
 import { cn } from '@/lib/utils';
-import { chipTone, initials, pickSubtitleField, pickTitleField } from '@/lib/data-store/table-view';
+import { initials, pickTitleField, prettyValue } from '@/lib/data-store/table-view';
 
 /**
  * One record, read rather than edited.
@@ -48,10 +48,6 @@ const FIELD_TYPE_ICONS: Partial<Record<FieldType, React.ComponentType<{ classNam
 /** Holds no record data — never shown here. */
 const NON_DATA_TYPES = new Set<FieldType>(['section_header', 'html_block']);
 
-/** Types whose value needs room to breathe, and which read badly in a
- *  half-width column. Everything else pairs up. */
-const WIDE_TYPES = new Set<FieldType>(['textarea', 'address', 'url', 'image', 'signature', 'file']);
-
 /** Types worth a copy button: things people paste elsewhere. A name or a
  *  date is read, not copied. */
 const COPYABLE_TYPES = new Set<FieldType>(['phone', 'email', 'url', 'number', 'text']);
@@ -82,7 +78,8 @@ function formatFullValue(field: DataField, value: unknown): string {
   }
   if (field.field_type === 'time') return String(value);
   if (Array.isArray(value)) return (value as unknown[]).join(', ');
-  return String(value);
+  // "october" reads "October", as in the table; the data is not changed.
+  return prettyValue(String(value));
 }
 
 function fileNameFromUrl(url: string): string {
@@ -253,15 +250,12 @@ export function RecordDetailModal({
   onClose,
   onEdit,
   onDelete,
-  chipKeys,
 }: {
   record: DataRecord;
   fields: DataField[];
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  /** Choice columns, shown as coloured chips in the header card. */
-  chipKeys?: Set<string>;
 }) {
   const data = record.data as Record<string, unknown>;
   const visibleFields = fields.filter((f) => !NON_DATA_TYPES.has(f.field_type));
@@ -269,14 +263,8 @@ export function RecordDetailModal({
   // The record's own name in the title, the same field the grid leads with.
   const titleField = pickTitleField(visibleFields, [record]);
   const title = titleField && !isEmptyValue(data[titleField.field_key]) ? String(data[titleField.field_key]).slice(0, 60) : 'Record';
-  const subField = pickSubtitleField(visibleFields, titleField, chipKeys);
-  const subtitle = subField && !isEmptyValue(data[subField.field_key]) ? formatFullValue(subField, data[subField.field_key]) : '';
-  const chips = visibleFields
-    .filter((f) => chipKeys?.has(f.field_key) && !isEmptyValue(data[f.field_key]))
-    .slice(0, 3);
-  // Shown above as chips, so not again as tiles.
-  const shownAsChip = new Set(chips.map((f) => f.field_key));
-  const rest = visibleFields.filter((f) => f.field_key !== titleField?.field_key && !shownAsChip.has(f.field_key));
+  // Every other field below, in full — nothing pulled up into the header.
+  const rest = visibleFields.filter((f) => f.field_key !== titleField?.field_key);
   const filled = visibleFields.filter((f) => !isEmptyValue(data[f.field_key])).length;
   const when = (iso: string) =>
     new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -314,31 +302,17 @@ export function RecordDetailModal({
                 {initials(title)}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[16px] font-semibold text-slate-900" title={title}>{title}</p>
-                {subtitle && <p className="truncate text-[12.5px] text-slate-600">{subtitle}</p>}
+                <p className="break-words text-[16px] font-semibold leading-snug text-slate-900">{title}</p>
+                {record.source && <p className="text-[12px] text-slate-500">Added via {sourceLabel(record.source)}</p>}
               </div>
             </div>
-            {chips.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {chips.map((f) => {
-                  const list = Array.isArray(data[f.field_key]) ? (data[f.field_key] as unknown[]) : [data[f.field_key]];
-                  return list.map((v, i) => {
-                    const label = labelForChoice(f, String(v));
-                    return (
-                      <span key={`${f.field_key}-${i}`} title={f.label} className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ring-1', chipTone(label))}>
-                        {label}
-                      </span>
-                    );
-                  });
-                })}
-              </div>
-            )}
           </div>
 
           {rest.length === 0 ? (
             <p className="py-6 text-center text-[13px] text-slate-400">No other fields.</p>
           ) : (
-            <div className="grid gap-2.5 sm:grid-cols-2">
+            // One column: every value in full, never squeezed into half the panel.
+            <div className="grid gap-2">
               {rest.map((f) => {
                 const Icon = FIELD_TYPE_ICONS[f.field_type] ?? Type;
                 const value = data[f.field_key];
@@ -347,17 +321,14 @@ export function RecordDetailModal({
                 return (
                   <div
                     key={f.id}
-                    className={cn(
-                      'group/field flex min-w-0 items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-3',
-                      WIDE_TYPES.has(f.field_type) && 'sm:col-span-2',
-                    )}
+                    className="group/field flex min-w-0 items-start gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
                   >
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-50 text-slate-500" aria-hidden>
                       <Icon className="h-4 w-4" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1 text-[11px] text-slate-500">
-                        <span className="truncate">{f.label}</span>
+                      <div className="flex items-start gap-1 text-[11px] leading-snug text-slate-500">
+                        <span className="min-w-0 break-words">{f.label}</span>
                         {copyable && <CopyButton text={formatFullValue(f, value)} />}
                       </div>
                       <div className="mt-0.5 min-w-0">
