@@ -97,6 +97,16 @@ export function normaliseStepConfig(cfg: SheetStepConfig) {
   return { action, addMode, which, match, days, deleteMode, mapping, conditions, dateColumn: (cfg.date_column ?? '').trim() }
 }
 
+/** Why a step has nothing to write — in words that say what to do. */
+function nothingToWrite(mapping: readonly ColumnMapping[], missing: readonly string[]): Error {
+  if (mapping.length === 0) return new Error('Map at least one column — press “Map columns”.')
+  if (missing.length === mapping.length) {
+    const names = missing.slice(0, 4).map((m) => `“${m}”`).join(', ')
+    return new Error(`None of the mapped columns (${names}${missing.length > 4 ? '…' : ''}) are in this tab — it was mapped on another tab, or the columns were renamed. Press “Map columns” and map them again.`)
+  }
+  return new Error('Nothing to write: every mapped value came out empty (a variable is not set yet).')
+}
+
 function isBlank(values: readonly string[]): boolean {
   return values.every((v) => !String(v ?? '').trim())
 }
@@ -156,7 +166,7 @@ export async function runSheetStep(
     }
     const built = buildRow(headers, n.mapping, resolve)
     for (const m of built.missing) warnings.push(`Column “${m}” is not in the sheet any more — skipped.`)
-    if (isBlank(built.values)) throw new Error('Nothing to write: every mapped value came out empty.')
+    if (isBlank(built.values)) throw nothingToWrite(n.mapping, built.missing)
     let rowNumber = table.length + 1
     if (!opts.dryRun) {
       await api.append(tab, [built.values])
@@ -174,7 +184,7 @@ export async function runSheetStep(
     if (chosen.length === 0) return done({ outcome: 'not_found', found, rows: [], vars: {}, reason: 'No row matched.' })
     const built = buildRow(headers, n.mapping, resolve)
     for (const m of built.missing) warnings.push(`Column “${m}” is not in the sheet any more — skipped.`)
-    if (built.cells.size === 0) throw new Error('Nothing to write: every mapped value came out empty.')
+    if (built.cells.size === 0) throw nothingToWrite(n.mapping, built.missing)
     const apply = (values: readonly string[]) => {
       const next = headers.map((_, i) => String(values[i] ?? ''))
       for (const [col, v] of built.cells) next[col] = v

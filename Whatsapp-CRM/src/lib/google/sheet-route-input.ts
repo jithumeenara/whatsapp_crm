@@ -3,7 +3,7 @@
  * field by field on the server. Nothing from the body is stored as it came.
  */
 
-import { ROUTE_OPS, type RouteCondition, type RouteField, type RouteOp } from './sheet-route-rules'
+import { ROUTE_OPS, SPECIAL_COLUMNS, type RouteCondition, type RouteField, type RouteOp } from './sheet-route-rules'
 
 export interface RuleInput {
   name: string
@@ -53,7 +53,8 @@ export function parseRuleInput(body: unknown, fields: readonly RouteField[]): { 
     const needs = !['empty', 'not_empty'].includes(c.op)
     if (needs && !c.value && !(c.op === 'date_between' && c.value2)) return { error: 'A condition has no value.' }
   }
-  const keys = new Set(fields.map((f) => f.field_key))
+  // Fields, plus the two columns that are not fields: Serial number, Date added.
+  const keys = new Set([...fields.map((f) => f.field_key), ...SPECIAL_COLUMNS.map((c) => c.field_key)])
   const columns = (Array.isArray(b.columns) ? b.columns : [])
     .slice(0, 200)
     .map((c) => (c && typeof c === 'object' ? (c as Record<string, unknown>) : {}))

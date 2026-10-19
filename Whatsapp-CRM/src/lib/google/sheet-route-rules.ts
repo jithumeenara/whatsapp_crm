@@ -247,11 +247,21 @@ export function routableFields(fields: readonly RouteField[]): RouteField[] {
   return fields.filter((f) => !NOT_SYNCED.has(f.field_type))
 }
 
+/** Columns that are not a field: a running number, and when the row was added. */
+export const SERIAL_KEY = '__serial'
+export const CREATED_KEY = '__created'
+export const SPECIAL_COLUMNS: ReadonlyArray<{ field_key: string; label: string }> = [
+  { field_key: SERIAL_KEY, label: 'Serial number (1, 2, 3…)' },
+  { field_key: CREATED_KEY, label: 'Date added' },
+]
+/** Stands for "the next serial number" until the tab is read. */
+export const SERIAL_MARK = '\u0000serial'
+
 /** Header row for a rule: its chosen columns (or every field), then "CRM ID". */
 export function ruleHeaders(rule: RouteRule, fields: readonly RouteField[]): { headers: string[]; keys: string[] } {
   const usable = routableFields(fields)
   const cols = rule.columns.length
-    ? rule.columns.filter((c) => usable.some((f) => f.field_key === c.field_key))
+    ? rule.columns.filter((c) => usable.some((f) => f.field_key === c.field_key) || SPECIAL_COLUMNS.some((s) => s.field_key === c.field_key))
     : usable.map((f) => ({ field_key: f.field_key, header: f.label }))
   const seen = new Set<string>()
   const headers: string[] = []
@@ -267,9 +277,14 @@ export function ruleHeaders(rule: RouteRule, fields: readonly RouteField[]): { h
 }
 
 /** The row's cells for a rule's headers; select codes shown as their labels. */
-export function ruleRow(keys: readonly string[], rec: RouteRecord, fields: readonly RouteField[]): string[] {
+export function ruleRow(keys: readonly string[], rec: RouteRecord, fields: readonly RouteField[], timeZone = 'UTC'): string[] {
   const byKey = new Map(fields.map((f) => [f.field_key, f]))
   const cells = keys.map((k) => {
+    if (k === SERIAL_KEY) return SERIAL_MARK
+    if (k === CREATED_KEY) {
+      // The business's own date, not the server's.
+      return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(rec.created_at))
+    }
     const f = byKey.get(k)
     const raw = rec.data?.[k]
     const list = Array.isArray(raw) ? raw : [raw]
@@ -310,11 +325,12 @@ export function destinationsFor(args: {
   nowWall: number
   /** split_into = 'sheet': group → the spreadsheet already made for it. */
   sheetForGroup?: (ruleId: string, group: string) => string | null
+  timeZone?: string
 }): Destination[] {
   const fieldMap = new Map(args.fields.map((f) => [f.field_key, f]))
   return chooseRules(args.rules, args.rec, fieldMap, args.mode, args.nowWall).map((rule) => {
     const { headers, keys } = ruleHeaders(rule, args.fields)
-    const row = ruleRow(keys, args.rec, args.fields)
+    const row = ruleRow(keys, args.rec, args.fields, args.timeZone)
     const group = rule.split_template && rule.split_template.trim() ? renderGroup(rule.split_template, args.rec, args.fields) : null
     let spreadsheet_id: string | null = rule.spreadsheet_id
     let tab = safeTabTitle(rule.tab_title || 'Sheet1')
@@ -379,18 +395,37 @@ export interface TabWrite {
 }
 
 /**
+ * Which row holds the column names. Usually row 1; a template with a title
+ * or a logo row above its table has them lower down. The first of the top
+ * ten rows naming the most of the rule's columns wins.
+ */
+export function findHeaderRow(table: readonly (readonly string[])[], headers: readonly string[]): number {
+  const norm = (s: string) => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ')
+  const wanted = new Set(headers.map(norm).filter((h) => h && h !== norm(ID_HEADER)))
+  let best = 0
+  let bestScore = 0
+  for (let i = 0; i < Math.min(10, table.length); i++) {
+    const score = (table[i] ?? []).filter((c) => wanted.has(norm(c))).length
+    if (score > bestScore) { best = i; bestScore = score }
+  }
+  return best
+}
+
+/**
  * One tab's changes for a batch of rows, found by their "CRM ID" — never
  * by row number from an earlier read. Columns are matched by name, so a
  * person reordering or inserting columns in the sheet breaks nothing;
  * columns this rule needs and the tab lacks are added at the end.
+ * `headerIndex`: the header row (findHeaderRow), 0 = row 1.
  */
 export function planTabWrite(
   table: readonly (readonly string[])[],
   upserts: ReadonlyArray<{ id: string; headers: readonly string[]; row: readonly string[] }>,
   removeIds: readonly string[],
+  headerIndex = 0,
 ): TabWrite {
   const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
-  const current = (table[0] ?? []).map((h) => String(h ?? ''))
+  const current = (table[headerIndex] ?? []).map((h) => String(h ?? ''))
   const blank = current.every((h) => !h.trim())
   const header = blank ? [] : [...current]
   for (const u of upserts) {
@@ -402,12 +437,25 @@ export function planTabWrite(
   const idCol = col(ID_HEADER)
 
   const rowsOf = new Map<string, number[]>()
-  for (let i = 1; i < table.length; i++) {
+  for (let i = headerIndex + 1; i < table.length; i++) {
     const id = String(table[i]?.[idCol] ?? '').trim()
     if (!id) continue
     const list = rowsOf.get(id) ?? []
     list.push(i + 1)
     rowsOf.set(id, list)
+  }
+
+  // A serial-number column carries on from the highest number already there.
+  const serialCols = new Set<number>()
+  for (const u of upserts) u.headers.forEach((h, i) => { if (u.row[i] === SERIAL_MARK) serialCols.add(col(h)) })
+  const nextSerial = new Map<number, number>()
+  for (const c of serialCols) {
+    let max = 0
+    for (let i = headerIndex + 1; i < table.length; i++) {
+      const n = Number(String(table[i]?.[c] ?? '').trim())
+      if (Number.isInteger(n) && n > max) max = n
+    }
+    nextSerial.set(c, max + 1)
   }
 
   const out: TabWrite = { header: changed ? header : null, cells: [], appends: [], deletes: [], added: [] }
@@ -419,13 +467,22 @@ export function planTabWrite(
       u.headers.forEach((h, i) => {
         const c = col(h)
         const v = String(u.row[i] ?? '')
+        // A row keeps the serial number it was given.
+        if (v === SERIAL_MARK) return
         if (c >= 0 && String(now[c] ?? '') !== v) out.cells.push({ row: r, col: c, value: v })
       })
     } else {
       const line = header.map(() => '')
       u.headers.forEach((h, i) => {
         const c = col(h)
-        if (c >= 0) line[c] = String(u.row[i] ?? '')
+        if (c < 0) return
+        let v = String(u.row[i] ?? '')
+        if (v === SERIAL_MARK) {
+          const n = nextSerial.get(c) ?? 1
+          nextSerial.set(c, n + 1)
+          v = String(n)
+        }
+        line[c] = v
       })
       out.appends.push(line)
       out.added.push(u.id)

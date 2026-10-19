@@ -79,11 +79,25 @@ export async function readTab(token: string, spreadsheetId: string, title: strin
   return (data.values ?? []).map((row) => row.map((v) => (v == null ? '' : String(v))))
 }
 
-export async function appendRows(token: string, spreadsheetId: string, title: string, rows: string[][]): Promise<void> {
+/**
+ * Rows after the tab's table. `fromRow`: where the table starts (its
+ * header row) when there are title rows above it. `fillEmptyRows`: write
+ * into the empty rows already below the table (keeping their borders and
+ * dropdowns) instead of inserting new rows — Google still adds rows when
+ * none are left.
+ */
+export async function appendRows(
+  token: string,
+  spreadsheetId: string,
+  title: string,
+  rows: string[][],
+  opts: { fromRow?: number; fillEmptyRows?: boolean } = {},
+): Promise<void> {
   if (rows.length === 0) return
+  const range = opts.fromRow && opts.fromRow > 1 ? `${tabRange(title)}!A${opts.fromRow}` : tabRange(title)
   await call(
     token,
-    `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(tabRange(title))}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=${opts.fillEmptyRows ? 'OVERWRITE' : 'INSERT_ROWS'}`,
     { method: 'POST', body: JSON.stringify({ values: rows }) },
   )
 }
@@ -191,10 +205,10 @@ export async function ensureTab(
   }
 }
 
-/** Row 1 set to these headers, RAW. */
-export async function writeHeaderRow(token: string, spreadsheetId: string, title: string, headers: readonly string[]): Promise<void> {
+/** The header row (row 1 unless given) set to these headers, RAW. */
+export async function writeHeaderRow(token: string, spreadsheetId: string, title: string, headers: readonly string[], row = 1): Promise<void> {
   if (headers.length === 0) return
-  await call(token, `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(`${tabRange(title)}!A1`)}?valueInputOption=RAW`, {
+  await call(token, `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(`${tabRange(title)}!A${Math.max(1, row)}`)}?valueInputOption=RAW`, {
     method: 'PUT',
     body: JSON.stringify({ values: [headers.map((h) => String(h))] }),
   })

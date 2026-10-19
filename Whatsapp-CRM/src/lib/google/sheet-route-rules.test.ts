@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  chooseRules, conditionHolds, describeConditions, destinationsFor, planTabWrite, previewRouting, renderGroup, ruleHeaders, type RouteField, type RouteRecord, type RouteRule,
+  chooseRules, conditionHolds, CREATED_KEY, describeConditions, destinationsFor, findHeaderRow, planTabWrite, ruleRow, SERIAL_MARK, previewRouting, renderGroup, ruleHeaders, type RouteField, type RouteRecord, type RouteRule,
 } from './sheet-route-rules'
 
 const fields: RouteField[] = [
@@ -146,5 +146,40 @@ describe('writing a tab by CRM ID', () => {
   it('running it again changes nothing (idempotent — retries never duplicate)', () => {
     const w = planTabWrite(tab, [{ id: 'r1', headers: ['Name', 'Status', 'CRM ID'], row: ['Anu', 'New', 'r1'] }], [])
     expect(w).toEqual({ header: null, cells: [], appends: [], deletes: [], added: [] })
+  })
+})
+
+describe('writing into an existing template tab', () => {
+  const template = [
+    ['MDP November 2026 — participants'],
+    [],
+    ['Sl No.', 'Name of participants', 'Designation', 'WhatsApp No.', 'Gender'],
+    ['34', 'Akbar basha', 'Director', '9447277983', 'Male'],
+    ['35', 'priyadarsan', 'Director', '9446152239', 'Male'],
+  ]
+  const headers = ['Sl No.', 'Name of participants', 'WhatsApp No.', 'CRM ID']
+  it('finds the header row below a title', () => {
+    expect(findHeaderRow(template, headers)).toBe(2)
+    expect(findHeaderRow([['Name', 'CRM ID']], ['Name', 'CRM ID'])).toBe(0)
+  })
+  it('a serial number carries on from the last one; mapped columns land under their own names', () => {
+    const w = planTabWrite(template, [
+      { id: 'r1', headers, row: [SERIAL_MARK, 'Jithu', '8590551176', 'r1'] },
+      { id: 'r2', headers, row: [SERIAL_MARK, 'Anu', '9947840578', 'r2'] },
+    ], [], 2)
+    expect(w.header).toEqual(['Sl No.', 'Name of participants', 'Designation', 'WhatsApp No.', 'Gender', 'CRM ID'])
+    expect(w.appends).toEqual([
+      ['36', 'Jithu', '', '8590551176', '', 'r1'],
+      ['37', 'Anu', '', '9947840578', '', 'r2'],
+    ])
+  })
+  it('an update never renumbers the row', () => {
+    const t = [['Sl No.', 'Name', 'CRM ID'], ['36', 'Jithu', 'r1']]
+    const w = planTabWrite(t, [{ id: 'r1', headers: ['Sl No.', 'Name', 'CRM ID'], row: [SERIAL_MARK, 'Jithu K', 'r1'] }], [])
+    expect(w.cells).toEqual([{ row: 2, col: 1, value: 'Jithu K' }])
+  })
+  it('"Date added" is the business day, not UTC', () => {
+    const row = ruleRow([CREATED_KEY], { id: 'x', data: {}, created_at: '2026-10-18T20:00:00Z' }, [], 'Asia/Kolkata')
+    expect(row[0]).toBe('2026-10-19')
   })
 })

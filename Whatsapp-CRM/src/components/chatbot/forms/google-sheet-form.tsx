@@ -476,6 +476,23 @@ export function GoogleSheetForm({ cfg, onChange, vars, activity }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
 
+  // Another tab chosen: what was mapped to the old tab's columns is kept
+  // only where the new tab has that column — never left pointing at
+  // columns that are not there (the step would have nothing to write).
+  const tabChanged = useRef(false);
+  useEffect(() => {
+    if (!preview || !tabChanged.current || preview.tab !== tab) return;
+    tabChanged.current = false;
+    const has = (c: string) => preview.headers.some((h) => h.trim().toLowerCase() === c.trim().toLowerCase());
+    const keptMap = mapping.filter((m) => has(m.column));
+    const keptConds = conds.filter((c) => !c.column || has(c.column));
+    const dropped = mapping.length - keptMap.length + conds.length - keptConds.length;
+    if (dropped === 0) return;
+    onChange({ ...cfg, mapping: keptMap, conditions: keptConds, date_column: dateColumn && has(dateColumn) ? dateColumn : "" });
+    toast.message(`${dropped} column${dropped === 1 ? " is" : "s are"} not in “${tab}” — map ${dropped === 1 ? "it" : "them"} again for this tab.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+
   function chooseSheet(id: string, name: string, t = "") {
     setPreview(null);
     setTestResult(null);
@@ -595,7 +612,7 @@ export function GoogleSheetForm({ cfg, onChange, vars, activity }: {
                 className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"><RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} aria-hidden /></button>
             </div>
             {preview && preview.tabs.length > 0 && (
-              <Select value={tab || null} onValueChange={(v) => { setTestResult(null); onChange({ ...cfg, sheet_title: String(v ?? "") }); }}>
+              <Select value={tab || null} onValueChange={(v) => { setTestResult(null); tabChanged.current = true; onChange({ ...cfg, sheet_title: String(v ?? "") }); }}>
                 <SelectTrigger className="h-8 w-full text-xs" aria-label="Tab"><SelectValue placeholder="Tab…" /></SelectTrigger>
                 <SelectContent>
                   {preview.tabs.filter((t) => t.title !== "Deleted" || tab === "Deleted").map((t) => <SelectItem key={t.title} value={t.title}>{t.title}</SelectItem>)}

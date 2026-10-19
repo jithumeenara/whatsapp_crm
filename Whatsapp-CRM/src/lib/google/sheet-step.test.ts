@@ -173,3 +173,24 @@ describe('business time', () => {
     expect(t.nowLabel).toBe('2026-10-19 01:30')
   })
 })
+
+/**
+ * Bug (19 Oct 2026): the builder's Test for "Add row" and "Update" said
+ * "Nothing to write: every mapped value came out empty" when the mapping
+ * was made on another tab — none of its columns are in this one — or
+ * when nothing was mapped. Delete (no mapping) worked, so it looked random.
+ */
+describe('Google Sheet step — says why there is nothing to write', () => {
+  it('mapping from another tab: names the columns and says to map again', async () => {
+    const s = fakeSheet(base())
+    await expect(runSheetStep(s.api, cfg({ action: 'update', conditions: [{ column: 'Reg No', op: 'equals', value: 'R-1' }], mapping: [{ column: 'month', value: 'x' }, { column: 'Training Programe', value: 'y' }] }), resolve, opts))
+      .rejects.toThrow(/None of the mapped columns.*month.*Map columns/)
+    await expect(runSheetStep(s.api, cfg({ action: 'add', mapping: [{ column: 'month', value: 'x' }] }), resolve, opts))
+      .rejects.toThrow(/None of the mapped columns/)
+  })
+  it('nothing mapped: says to map a column', async () => {
+    const s = fakeSheet(base())
+    await expect(runSheetStep(s.api, cfg({ action: 'update', conditions: [{ column: 'Reg No', op: 'equals', value: 'R-1' }], mapping: [] }), resolve, opts))
+      .rejects.toThrow(/Map at least one column/)
+  })
+})

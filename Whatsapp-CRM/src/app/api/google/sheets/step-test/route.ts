@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
         if (typeof v === 'string') samples.set(k.trim().toLowerCase(), v.slice(0, 500))
       }
     }
-    // A token with no sample becomes empty — the same as an unset variable.
-    const resolve = (t: string) => t.replace(/\{\{[^}]+\}\}/g, (tok) => samples.get(tok.toLowerCase()) ?? '')
+    // A token with no sample shows as ‹name›, so the test says what would be
+    // written instead of "nothing to write". (In a condition it matches no row.)
+    const resolve = (t: string) => t.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (tok, inner: string) => samples.get(tok.toLowerCase()) ?? `‹${inner.replace(/^(vars|contact)\./, '')}›`)
     const result = await runGoogleSheetStep({ accountId: ctx.accountId, cfg, resolve, timeZone: await businessTimezone(ctx.accountId), dryRun: true })
     return NextResponse.json({
       outcome: result.outcome, found: result.found, reason: result.reason ?? null, warnings: result.warnings, tab: result.tab,

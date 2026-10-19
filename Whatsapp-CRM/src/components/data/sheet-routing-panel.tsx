@@ -28,6 +28,12 @@ import { apiFetch, errorText } from "@/lib/api-fetch"
 import { connectGoogle } from "@/lib/google/connect-popup"
 import { everyWhileVisible } from "@/lib/visible-interval"
 import { cn } from "@/lib/utils"
+import { autoMatch } from "@/lib/google/sheet-rows"
+
+const SPECIALS = [
+  { field_key: "__serial", label: "Serial number (1, 2, 3…)" },
+  { field_key: "__created", label: "Date added" },
+]
 
 type Op = "is" | "is_not" | "contains" | "one_of" | "empty" | "not_empty" | "in_month" | "date_between" | "gt" | "lt"
 interface Cond { field_key: string; op: Op; value?: string; value2?: string }
@@ -567,7 +573,62 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
   }
 
   const tokenFields = usable.slice(0, 12)
-  const allColumns = draft.columns.length === 0
+  // Columns: every field / chosen and renamed / matched to the tab's own column names.
+  const [colMode, setColMode] = useState<"all" | "choose" | "match">(() => {
+    if (draft.columns.length === 0) return "all"
+    const renamed = draft.columns.some((c) => c.field_key.startsWith("__") || c.header !== (byKey.get(c.field_key)?.label ?? c.header))
+    return renamed ? "match" : "choose"
+  })
+  const [sheetHeaders, setSheetHeaders] = useState<string[] | null>(null)
+  useEffect(() => {
+    if (colMode !== "match" || !draft.spreadsheet_id || draft.split_template) return
+    let live = true
+    const t = setTimeout(() => {
+      setSheetHeaders(null)
+      apiFetch(`/api/google/sheets/preview?picked=1&spreadsheet=${encodeURIComponent(draft.spreadsheet_id)}&tab=${encodeURIComponent(draft.tab_title)}`)
+        .then((r) => r.json())
+        .then((d: { tab?: string; headers?: string[] }) => {
+          if (!live) return
+          // The preview falls back to the first tab when this one does not exist.
+          const same = (d.tab ?? "").trim().toLowerCase() === draft.tab_title.trim().toLowerCase()
+          setSheetHeaders(same ? (d.headers ?? []).filter((h) => h.trim() && !/^column \d+$/i.test(h) && h.trim().toLowerCase() !== "crm id") : [])
+        })
+        .catch((err) => {
+          console.error("[sheet-routing] headers failed:", err)
+          if (live) { setSheetHeaders([]); toast.error(errorText(err, "Could not read that tab")) }
+        })
+    }, 400)
+    return () => { live = false; clearTimeout(t) }
+  }, [colMode, draft.spreadsheet_id, draft.tab_title, draft.split_template])
+
+  function chooseColMode(m: "all" | "choose" | "match") {
+    setColMode(m)
+    if (m === "choose") set({ columns: usable.map((f) => ({ field_key: f.field_key, header: f.label })) })
+    else set({ columns: [] })
+  }
+  function matchColumn(header: string, key: string) {
+    if (!sheetHeaders) return
+    const map = new Map(draft.columns.map((c) => [c.header, c.field_key]))
+    if (key === "__none") map.delete(header)
+    else map.set(header, key)
+    // Kept in the sheet's own order.
+    set({ columns: sheetHeaders.filter((h) => map.has(h)).map((h) => ({ header: h, field_key: map.get(h)! })) })
+  }
+  function autoMatchColumns() {
+    if (!sheetHeaders) return
+    const taken = new Set(draft.columns.map((c) => c.field_key))
+    const open = sheetHeaders.filter((h) => !draft.columns.some((c) => c.header === h))
+    const guess = autoMatch(open, [
+      ...SPECIALS.map((x) => ({ value: x.field_key, label: x.label, keys: x.field_key === "__serial" ? ["sl no", "sl. no", "s no", "serial", "serial no"] : ["date added", "registered on"] })),
+      ...usable.map((f) => ({ value: f.field_key, label: f.label, keys: [f.field_key] })),
+    ].filter((o) => !taken.has(o.value)))
+    const n = Object.keys(guess).length
+    const map = new Map(draft.columns.map((c) => [c.header, c.field_key]))
+    for (const [h, k] of Object.entries(guess)) map.set(h, k)
+    set({ columns: sheetHeaders.filter((h) => map.has(h)).map((h) => ({ header: h, field_key: map.get(h)! })) })
+    if (n) toast.success(`Matched ${n} column${n === 1 ? "" : "s"} — check them before saving.`)
+    else toast.message("No obvious matches. Choose them yourself.")
+  }
 
   return (
     <div className="space-y-5">
@@ -721,17 +782,55 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
       </section>
 
       <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-[12px] font-medium text-slate-700">Columns</h3>
-          <button type="button" onClick={() => set({ columns: allColumns ? usable.map((f) => ({ field_key: f.field_key, header: f.label })) : [] })}
-            className="text-[11.5px] font-medium text-indigo-600 hover:underline">{allColumns ? "Choose columns" : "Use every field"}</button>
+        <h3 className="text-[12px] font-medium text-slate-700">Columns</h3>
+        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" role="radiogroup" aria-label="Columns">
+          {([["all", "Every field"], ["choose", "Choose"], ["match", "Match my sheet"]] as const).map(([v, label]) => (
+            <button key={v} type="button" role="radio" aria-checked={colMode === v} onClick={() => chooseColMode(v)}
+              className={cn("rounded-lg px-1.5 py-1.5 text-[11.5px] font-medium", colMode === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800")}>{label}</button>
+          ))}
         </div>
-        {allColumns ? (
+        {colMode === "all" && (
           <p className="text-[11.5px] text-slate-500">Every field, in the table’s order, plus a “CRM ID” column the CRM uses to find the row again.</p>
-        ) : (
+        )}
+        {colMode === "match" && (
+          draft.split_template ? (
+            <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11.5px] text-amber-900">Matching needs one fixed tab — turn off “A separate tab for each group”.</p>
+          ) : sheetHeaders === null ? (
+            <p className="flex items-center gap-1.5 text-[11.5px] text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden /> Reading the columns of “{draft.tab_title}”…</p>
+          ) : sheetHeaders.length === 0 ? (
+            <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11.5px] text-amber-900">“{draft.tab_title}” has no column names yet (or is not in this sheet). Choose an existing tab above, or use “Every field”.</p>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={autoMatchColumns}><Wand2 aria-hidden /> Auto-match</Button>
+                <span className="text-[11.5px] tabular-nums text-slate-500">{draft.columns.length} of {sheetHeaders.length} filled</span>
+              </div>
+              <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+                {sheetHeaders.map((h) => {
+                  const cur = draft.columns.find((c) => c.header === h)?.field_key ?? "__none"
+                  return (
+                    <li key={h} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] items-center gap-2 px-2.5 py-1.5">
+                      <span className="truncate text-[12px] font-medium text-slate-700" title={h}>{h}</span>
+                      <Select value={cur} onValueChange={(v) => matchColumn(h, String(v ?? "__none"))}>
+                        <SelectTrigger className={cn("h-8 w-full min-w-0 text-[12px]", cur === "__none" && "text-slate-400")} aria-label={`What goes in ${h}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none">Leave empty</SelectItem>
+                          {SPECIALS.map((x) => <SelectItem key={x.field_key} value={x.field_key}>{x.label}</SelectItem>)}
+                          {usable.map((f) => <SelectItem key={f.field_key} value={f.field_key}>{f.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </li>
+                  )
+                })}
+              </ul>
+              <p className="text-[11px] text-slate-500">New rows go in the first empty row under your table, keeping its borders and dropdowns. A “CRM ID” column is added at the end so an edited row is found again — you may hide it.</p>
+            </div>
+          )
+        )}
+        {colMode === "choose" && (
           <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
             {draft.columns.map((c, i) => (
-              <li key={c.field_key} className="flex items-center gap-1.5 px-2 py-1.5">
+              <li key={`${c.field_key}-${i}`} className="flex items-center gap-1.5 px-2 py-1.5">
                 <Input value={c.header} onChange={(e) => set({ columns: draft.columns.map((x, j) => (j === i ? { ...x, header: e.target.value } : x)) })}
                   className="h-8 min-w-0 flex-1 text-[12px]" aria-label={`Header for ${byKey.get(c.field_key)?.label ?? c.field_key}`} maxLength={100} />
                 <button type="button" disabled={i === 0} onClick={() => { const n = [...draft.columns]; [n[i - 1], n[i]] = [n[i], n[i - 1]]; set({ columns: n }) }} aria-label="Move up" className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100 disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" aria-hidden /></button>
@@ -739,9 +838,9 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
                 <button type="button" onClick={() => set({ columns: draft.columns.filter((_, j) => j !== i) })} aria-label="Leave this column out" className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" aria-hidden /></button>
               </li>
             ))}
-            {usable.filter((f) => !draft.columns.some((c) => c.field_key === f.field_key)).length > 0 && (
+            {[...SPECIALS, ...usable].filter((f) => !draft.columns.some((c) => c.field_key === f.field_key)).length > 0 && (
               <li className="flex flex-wrap gap-1 px-2 py-2">
-                {usable.filter((f) => !draft.columns.some((c) => c.field_key === f.field_key)).map((f) => (
+                {[...SPECIALS, ...usable].filter((f) => !draft.columns.some((c) => c.field_key === f.field_key)).map((f) => (
                   <button key={f.field_key} type="button" onClick={() => set({ columns: [...draft.columns, { field_key: f.field_key, header: f.label }] })}
                     className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] text-slate-600 hover:border-indigo-300">+ {f.label}</button>
                 ))}

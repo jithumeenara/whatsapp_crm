@@ -29,7 +29,7 @@ import { googleAccessToken } from './oauth'
 import { appendRows, createSpreadsheet, deleteRows, ensureTab, isTransientSheetsError, readTab, writeCells, writeHeaderRow, SheetsApiError } from './sheets'
 import { sheetLockKey, withSheetLock } from './sheet-lock'
 import { findColumn, safeTabTitle } from './sheet-rows'
-import { destinationsFor, planTabWrite, type RouteField, type RouteRule } from './sheet-route-rules'
+import { destinationsFor, findHeaderRow, planTabWrite, type RouteField, type RouteRule } from './sheet-route-rules'
 import { businessNow } from './sheet-step'
 
 const MAX_ATTEMPTS = 8
@@ -196,7 +196,8 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
     return
   }
   const { businessTimezone } = await import('@/lib/ai/human-date')
-  const now = businessNow(await businessTimezone(accountId))
+  const timeZone = await businessTimezone(accountId)
+  const now = businessNow(timeZone)
   const { isGoogleServiceEnabled } = await import('./oauth')
   const canEditAny = await isGoogleServiceEnabled(accountId, 'sheets_sync').catch(() => false)
 
@@ -272,7 +273,7 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
       try {
         const dests = rec
           ? destinationsFor({
-            rules, fields: fields as RouteField[], mode: state?.mode === 'all' ? 'all' : 'first', nowWall: now.nowWall,
+            rules, fields: fields as RouteField[], mode: state?.mode === 'all' ? 'all' : 'first', nowWall: now.nowWall, timeZone,
             rec: { id: rec.id, data: (rec.data ?? {}) as Record<string, unknown>, created_at: rec.created_at },
             sheetForGroup: (ruleId, group) => sheetFor.get(`${ruleId}\u0000${group}`) ?? null,
           })
@@ -328,10 +329,18 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
         const write = await withSheetLock(sheetLockKey(op.spreadsheetId, op.tab), async () => {
           const { sheetId } = await ensureTab(token, op.spreadsheetId, op.tab, [])
           const table = await readTab(token, op.spreadsheetId, op.tab)
-          const plan = planTabWrite(table, live.upserts.map((u) => ({ id: u.recordId, headers: u.headers, row: u.row })), live.removes.map((r) => r.recordId))
-          if (plan.header) await writeHeaderRow(token, op.spreadsheetId, op.tab, plan.header)
+          // A template may have a title above its table: its header row is found by name.
+          const headerIndex = findHeaderRow(table, [...new Set(live.upserts.flatMap((u) => u.headers))])
+          const plan = planTabWrite(table, live.upserts.map((u) => ({ id: u.recordId, headers: u.headers, row: u.row })), live.removes.map((r) => r.recordId), headerIndex)
+          if (plan.header) await writeHeaderRow(token, op.spreadsheetId, op.tab, plan.header, headerIndex + 1)
           if (plan.cells.length) await writeCells(token, op.spreadsheetId, op.tab, plan.cells)
-          if (plan.appends.length) await appendRows(token, op.spreadsheetId, op.tab, plan.appends)
+          // New rows go into the first row below everything in the tab (the
+          // read ends at its last filled row), so a template's ready-made
+          // rows — borders, dropdowns — are filled, and nothing filled is
+          // ever written over.
+          if (plan.appends.length) {
+            await appendRows(token, op.spreadsheetId, op.tab, plan.appends, { fromRow: Math.max(table.length, headerIndex + 1) + 1, fillEmptyRows: true })
+          }
           // Deleted last: the rows above were found by the same read.
           if (plan.deletes.length) await deleteRows(token, op.spreadsheetId, sheetId, plan.deletes)
           return plan

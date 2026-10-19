@@ -47,3 +47,14 @@ describe('a rule from plain words (AI answer checked)', () => {
     expect(parseAiRule('Sorry, I cannot help with that.', fields)).toBeNull()
   })
 })
+
+describe('columns matched to a template sheet', () => {
+  it('keeps Serial number and Date added, in the sheet’s order, under the sheet’s own names', () => {
+    const r = parseRuleInput({ name: 'x', spreadsheet_id: SHEET, columns: [
+      { field_key: '__serial', header: 'Sl No.' }, { field_key: 'group', header: 'Designation' }, { field_key: '__created', header: 'Date' }, { field_key: '__evil', header: 'x' },
+    ] }, fields)
+    expect('rule' in r && r.rule.columns).toEqual([
+      { field_key: '__serial', header: 'Sl No.' }, { field_key: 'group', header: 'Designation' }, { field_key: '__created', header: 'Date' },
+    ])
+  })
+})
