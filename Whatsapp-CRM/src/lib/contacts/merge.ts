@@ -56,6 +56,10 @@ export async function mergeContacts(args: {
   }
   if (!survivor.instagram_id && merged.instagram_id) mergedFields.instagram_id = merged.instagram_id
   if (!survivor.facebook_id && merged.facebook_id) mergedFields.facebook_id = merged.facebook_id
+  // Their Telegram chat follows them (migration 140); taken off the merged
+  // record first, inside the transaction, since an id may be on one only.
+  const moveTelegram = !survivor.telegram_id && Boolean(merged.telegram_id)
+  if (moveTelegram) mergedFields.telegram_id = merged.telegram_id
   // The person stays opted out if either record had opted out.
   if (merged.opt_in_status === 'opted_out' && survivor.opt_in_status !== 'opted_out') {
     mergedFields.opt_in_status = 'opted_out'
@@ -137,6 +141,7 @@ export async function mergeContacts(args: {
     }
     counts.list_memberships = memberships.length
 
+    if (moveTelegram) await tx.contact.update({ where: { id: merged.id }, data: { telegram_id: null } })
     await tx.contact.update({ where: { id: survivor.id }, data: mergedFields })
     await tx.contact.update({ where: { id: merged.id }, data: { merged_into_contact_id: survivor.id } })
     await tx.contactMerge.create({

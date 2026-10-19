@@ -4,11 +4,12 @@
  * that is sent.
  *
  * Left out: numbers that are not numbers (email-only contacts, website
- * visitors), anyone who said they want no more messages, blocked contacts,
+ * visitors, Telegram users who have not shared a number), anyone who said they want no more messages, blocked contacts,
  * and contacts merged into another one.
  */
 
 import type { Prisma } from '@prisma/client'
+import { isPlaceholderPhone } from '@/lib/contacts/validate'
 
 export interface SendableFields {
   phone: string | null
@@ -23,13 +24,13 @@ export function sendableContactWhere(accountId: string): Prisma.ContactWhereInpu
     merged_into_contact_id: null,
     blocked_at: null,
     opt_in_status: { not: 'opted_out' },
-    NOT: [{ phone: { startsWith: 'email:' } }, { phone: { startsWith: 'web:' } }],
+    NOT: [{ phone: { startsWith: 'email:' } }, { phone: { startsWith: 'web:' } }, { phone: { startsWith: 'tg:' } }],
   }
 }
 
 export function isSendableContact(c: SendableFields): boolean {
   const phone = c.phone ?? ''
-  if (!phone || phone.startsWith('email:') || phone.startsWith('web:')) return false
+  if (!phone || isPlaceholderPhone(phone)) return false
   if (c.opt_in_status === 'opted_out') return false
   if (c.blocked_at) return false
   if (c.merged_into_contact_id) return false

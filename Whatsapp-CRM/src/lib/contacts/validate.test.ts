@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkEmail, checkPhone, isEmailPlaceholderPhone } from './validate'
+import { checkEmail, checkPhone, isEmailPlaceholderPhone, isPlaceholderPhone } from './validate'
 
 describe('checkPhone', () => {
   it('accepts numbers as people type them and keeps the +', () => {
@@ -35,5 +35,12 @@ describe('isEmailPlaceholderPhone', () => {
     expect(isEmailPlaceholderPhone('email:someone@example.com')).toBe(true)
     expect(isEmailPlaceholderPhone('+919876543210')).toBe(false)
     expect(isEmailPlaceholderPhone(null)).toBe(false)
+  })
+})
+
+describe('Telegram placeholder', () => {
+  it('tg:<id> is not a phone number', () => {
+    expect(isPlaceholderPhone('tg:7012345678')).toBe(true)
+    expect(isPlaceholderPhone('+917012345678')).toBe(false)
   })
 })

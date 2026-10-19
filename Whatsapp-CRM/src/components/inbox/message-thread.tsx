@@ -1033,6 +1033,8 @@ export function MessageThread({
   const isEmailConversation = ((conversation as { channel?: string })?.channel ?? "whatsapp") === "email";
   // A website chat has no provider window: the team can answer whenever.
   const isWebsiteConversation = (conversation as { channel?: string })?.channel === "website";
+  // Website and Telegram chats have no 24-hour window to count down.
+  const hasNoWindow = isWebsiteConversation || (conversation as { channel?: string })?.channel === "telegram";
   const latestEmailSubject =
     [...messages].reverse().find((m) => m.email_subject)?.email_subject ?? null;
   const messageGroups = groupMessagesByDate(displayMessages);
@@ -1218,7 +1220,7 @@ export function MessageThread({
               }
             />
             {/* WhatsApp's 24-hour window means nothing for email. */}
-            {sessionInfo.remaining && !isEmailConversation && !isWebsiteConversation && (
+            {sessionInfo.remaining && !isEmailConversation && !hasNoWindow && (
               <span className={cn(
                 "shrink-0 text-[11px] leading-none",
                 sessionInfo.expired ? "text-red-400" : "text-slate-400"
@@ -1357,7 +1359,7 @@ export function MessageThread({
       ) : (
       <MessageComposer
         conversationId={conversation.id}
-        sessionExpired={sessionInfo.expired && !isWebsiteConversation}
+        sessionExpired={sessionInfo.expired && !hasNoWindow}
         channel={(conversation as { channel?: string })?.channel}
         onSend={handleSend}
         onSendMedia={handleSendMedia}

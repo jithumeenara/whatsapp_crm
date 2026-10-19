@@ -114,6 +114,12 @@ export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_mes
     return { whatsapp_message_id: row.message_id ?? row.id }
   }
 
+  if (channel === 'telegram') {
+    const { sendToTelegram } = await import('@/lib/telegram/outbound')
+    const row = await sendToTelegram({ accountId: args.accountId, conversationId: args.conversationId, senderType: 'bot', text: args.text })
+    return { whatsapp_message_id: row.message_id ?? row.id }
+  }
+
   return sendViaMeta({ ...args, kind: 'text' })
 }
 

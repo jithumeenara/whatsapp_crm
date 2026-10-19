@@ -71,8 +71,18 @@ const WEBSITE_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
   'send_template', 'send_flow', 'wait_flow_submit', 'send_catalog',
 ])
 
+/**
+ * Telegram: text, buttons and list rows (as inline buttons), link
+ * buttons, images and files all have a Telegram equivalent. Same
+ * Meta-only gaps as the website.
+ */
+const TELEGRAM_INCOMPATIBLE: Set<ChatbotNodeType> = new Set([
+  'send_template', 'send_flow', 'wait_flow_submit', 'send_catalog',
+])
+
 export const CHANNEL_INCOMPATIBLE_NODES: Record<string, Set<ChatbotNodeType>> = {
   website: WEBSITE_INCOMPATIBLE,
+  telegram: TELEGRAM_INCOMPATIBLE,
   instagram: INSTAGRAM_INCOMPATIBLE,
   sms: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
   email: TEXT_ONLY_CHANNEL_INCOMPATIBLE,
@@ -87,6 +97,7 @@ export const CHANNEL_LABEL: Record<string, string> = {
   email: 'Email',
   rcs: 'RCS',
   website: 'Website',
+  telegram: 'Telegram',
 }
 
 // ─── Visual metadata per node type ─────────────────────────────

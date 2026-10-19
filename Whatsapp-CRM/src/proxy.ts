@@ -48,6 +48,7 @@ const PUBLIC_PREFIXES = [
   '/api/invitations/',
   '/api/whatsapp/webhook',
   '/api/instagram/webhook',   // Meta Instagram webhook — server-to-server, no session cookie
+  '/api/telegram/webhook/',   // Telegram bot updates — server-to-server, checked by its secret header
   '/api/facebook/webhook',    // Meta Facebook Messenger webhook — server-to-server, no session cookie
   '/api/flows/data-exchange/', // Meta WhatsApp Flows data-exchange (server-to-server, RSA-encrypted)
   // Microsoft Graph new-mail notifications. Checked in the route by a

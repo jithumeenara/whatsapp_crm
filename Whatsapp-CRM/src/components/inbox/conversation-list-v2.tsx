@@ -7,6 +7,7 @@ import { formatDistanceToNow } from "date-fns"
 import { ScheduledContactsOverview } from "./scheduled-contacts-overview"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { WhatsAppQrButton } from "@/components/shared/whatsapp-qr-button"
+import { TelegramIcon } from "@/components/icons/brand-icons"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -44,7 +45,7 @@ function FacebookIcon({ className }: { className?: string }) {
   )
 }
 
-type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website"
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website" | "telegram"
 
 const CHANNEL_OPTIONS: { value: ChannelFilter; label: string; icon: React.ReactNode }[] = [
   { value: "all",       label: "All",       icon: <MessageSquare className="h-3.5 w-3.5" /> },
@@ -55,6 +56,7 @@ const CHANNEL_OPTIONS: { value: ChannelFilter; label: string; icon: React.ReactN
   { value: "email",     label: "Email",     icon: <Mail className="h-3.5 w-3.5 text-sky-500" /> },
   { value: "rcs",       label: "RCS",       icon: <Radio className="h-3.5 w-3.5 text-violet-500" /> },
   { value: "website",   label: "Website",   icon: <Globe className="h-3.5 w-3.5 text-orange-700" /> },
+  { value: "telegram",  label: "Telegram",  icon: <TelegramIcon className="h-3.5 w-3.5" /> },
 ]
 
 /** Icon shown inside the small badge on a conversation's avatar — same set as CHANNEL_OPTIONS, minus "all". */
@@ -66,6 +68,7 @@ function channelIcon(channel: string, className: string) {
     case "email":     return <Mail className={cn(className, "text-sky-500")} />
     case "rcs":       return <Radio className={cn(className, "text-violet-500")} />
     case "website":   return <Globe className={cn(className, "text-orange-700")} />
+    case "telegram":  return <TelegramIcon className={className} />
     default:          return <WhatsAppIcon className={className} />
   }
 }
@@ -91,6 +94,7 @@ const CHANNEL_LOOK: Record<string, { label: string; avatar: string; pill: string
   email:     { label: "Email",     avatar: "from-sky-400 to-sky-600",        pill: "bg-sky-50 text-sky-700 ring-sky-100" },
   rcs:       { label: "RCS",       avatar: "from-violet-400 to-violet-600",  pill: "bg-violet-50 text-violet-700 ring-violet-100" },
   website:   { label: "Website",   avatar: "from-amber-400 to-orange-600",   pill: "bg-orange-50 text-orange-700 ring-orange-100" },
+  telegram:  { label: "Telegram",  avatar: "from-[#2AABEE] to-[#1d8fc6]",    pill: "bg-cyan-50 text-cyan-800 ring-cyan-100" },
 }
 
 function channelLook(channel?: string | null) {

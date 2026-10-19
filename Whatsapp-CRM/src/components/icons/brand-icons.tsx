@@ -43,3 +43,23 @@ export function InstagramIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+
+/** Telegram's official mark: the paper plane on its blue gradient circle. */
+export function TelegramIcon({ className }: { className?: string }) {
+  const gradId = useId()
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id={gradId} x1="0.5" y1="0" x2="0.5" y2="1">
+          <stop offset="0%" stopColor="#2AABEE" />
+          <stop offset="100%" stopColor="#229ED9" />
+        </linearGradient>
+      </defs>
+      <circle cx="12" cy="12" r="12" fill={`url(#${gradId})`} />
+      <path
+        fill="#fff"
+        d="M5.432 11.873c3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663z"
+      />
+    </svg>
+  )
+}

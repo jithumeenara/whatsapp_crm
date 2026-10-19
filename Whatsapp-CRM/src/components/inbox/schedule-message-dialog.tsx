@@ -55,14 +55,14 @@ interface ScheduleMessageDialogProps {
   /** When set, edits this existing scheduled message instead of creating a new one. */
   editItem?: ScheduledMessage | null
   onScheduled?: () => void
-  /** 'website': a plain message — a website chat has no 24-hour window
-   *  and cannot show a WhatsApp template. */
+  /** 'website' / 'telegram': a plain message — these chats have no
+   *  24-hour window and cannot show a WhatsApp template. */
   channel?: string
 }
 
 export function ScheduleMessageDialog({ open, onOpenChange, conversationId, editItem, onScheduled, channel }: ScheduleMessageDialogProps) {
   const isEdit = !!editItem
-  const textMode = channel === 'website'
+  const textMode = channel === 'website' || channel === 'telegram'
   const [messageText, setMessageText] = useState('')
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [selected, setSelected] = useState<SelectedTemplate | null>(null)
@@ -201,7 +201,7 @@ export function ScheduleMessageDialog({ open, onOpenChange, conversationId, edit
               {isEdit
                 ? 'Changes restart this message’s progress.'
                 : textMode
-                  ? 'Send a message to this website chat later, or on a repeating schedule.'
+                  ? `Send a message to this ${channel === 'telegram' ? 'Telegram' : 'website'} chat later, or on a repeating schedule.`
                   : 'Send an approved template later, or on a repeating schedule.'}
             </p>
           </DialogHeader>

@@ -23,7 +23,7 @@ const DEFAULT_CLOSE_REASONS: ListItem[] = [
   { icon: "📋", label: "Duplicate" }, { icon: "📝", label: "Other" },
 ]
 const DEFAULT_LEAD_SOURCES: ListItem[] = [
-  { icon: "", label: "WhatsApp" }, { icon: "", label: "Instagram" },
+  { icon: "", label: "WhatsApp" }, { icon: "", label: "Instagram" }, { icon: "", label: "Telegram" },
   { icon: "🌐", label: "Website" }, { icon: "📣", label: "Campaign" },
   { icon: "🔗", label: "Referral" }, { icon: "👤", label: "Manual" },
   { icon: "📝", label: "Other" },

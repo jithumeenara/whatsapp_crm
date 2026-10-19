@@ -50,7 +50,8 @@ export async function PATCH(
       where: { id: existing.conversation_id, account_id: ctx.accountId },
       select: { channel: true },
     })
-    const isWebsite = conversation?.channel === "website"
+    // Telegram chats too.
+    const isWebsite = conversation?.channel === "website" || conversation?.channel === "telegram"
     let websiteText: string | null = null
     if (isWebsite) {
       const checked = websiteScheduleText(body.content_text)

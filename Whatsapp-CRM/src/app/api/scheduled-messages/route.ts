@@ -126,8 +126,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 })
     }
 
-    // A website chat has no 24-hour window and no templates: plain text.
-    const isWebsite = conversation.channel === "website"
+    // Website and Telegram chats have no 24-hour window and no templates: plain text.
+    const isWebsite = conversation.channel === "website" || conversation.channel === "telegram"
     let websiteText: string | null = null
     if (isWebsite) {
       const checked = websiteScheduleText(body.content_text)

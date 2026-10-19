@@ -318,7 +318,7 @@ function InboxV2Content() {
 
         {/* Right: contact sidebar — only on xl screens */}
         <div className="hidden xl:block shrink-0">
-          <ContactSidebarV2 contact={activeContact} channel={activeConversation?.channel ?? "whatsapp"} />
+          <ContactSidebarV2 contact={activeContact} channel={activeConversation?.channel ?? "whatsapp"} conversationId={activeConversation?.id ?? null} />
         </div>
       </div>
     </div>

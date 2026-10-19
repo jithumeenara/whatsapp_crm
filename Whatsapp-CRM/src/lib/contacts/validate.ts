@@ -18,10 +18,11 @@ export function isEmailPlaceholderPhone(phone: string | null | undefined): boole
 
 /** Any contact whose `phone` is not a phone number: email-only contacts
  *  ("email:<address>") and website chat visitors ("web:<visitor id>",
- *  migration 130). Use this, not a prefix check, wherever a number is
+ *  migration 130) and Telegram users who have not shared a number
+ *  ("tg:<telegram id>", migration 140). Use this, not a prefix check, wherever a number is
  *  shown, dialled, messaged or exported. */
 export function isPlaceholderPhone(phone: string | null | undefined): boolean {
-  return typeof phone === 'string' && (phone.startsWith('email:') || phone.startsWith('web:'))
+  return typeof phone === 'string' && (phone.startsWith('email:') || phone.startsWith('web:') || phone.startsWith('tg:'))
 }
 
 /**

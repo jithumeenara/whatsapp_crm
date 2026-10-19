@@ -1,3 +1,4 @@
+import { isPlaceholderPhone } from "@/lib/contacts/validate"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { findDuplicateGroups } from "@/lib/contacts/duplicates"
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
         contacts: g.contacts.map((c) => ({
           id: c.id,
           name: c.name,
-          phone: c.phone && !c.phone.startsWith("email:") && !c.phone.startsWith("web:") ? c.phone : null,
+          phone: c.phone && !isPlaceholderPhone(c.phone) ? c.phone : null,
           email: c.email,
           conversations: c.activity ?? 0,
           last_message_at: last.get(c.id) ?? null,

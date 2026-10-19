@@ -209,7 +209,7 @@ export interface Conversation {
   user_id: string;
   contact_id: string;
   status: ConversationStatus;
-  channel?: string; // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
+  channel?: string; // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website' | 'telegram'
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
@@ -843,6 +843,7 @@ export type LeadStatus =
 export type LeadSource =
   | 'whatsapp'
   | 'instagram'
+  | 'telegram'
   | 'website'
   | 'campaign'
   | 'referral'

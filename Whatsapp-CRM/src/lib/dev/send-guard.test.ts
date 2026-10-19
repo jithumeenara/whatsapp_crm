@@ -29,6 +29,19 @@ describe('nothing leaves a development machine', () => {
     expect(json.messages[0].id).toMatch(/^wamid\.DEV_BLOCKED_/)
   })
 
+  it('stops Telegram sends but lets the bot connect', async () => {
+    const tg = (m: string) => `https://api.telegram.org/bot123:ABC/${m}`
+    for (const m of ['sendMessage', 'sendPhoto', 'sendDocument', 'copyMessage', 'forwardMessage']) {
+      expect(blockedSend(tg(m), 'POST', '{}', DEV), m).not.toBeNull()
+    }
+    for (const m of ['getMe', 'setWebhook', 'getFile', 'answerCallbackQuery']) {
+      expect(blockedSend(tg(m), 'POST', '{}', DEV), m).toBeNull()
+    }
+    const json = (await blockedSend(tg('sendMessage'), 'POST', '{}', DEV)!.reply().json()) as { ok: boolean; result: { message_id: number } }
+    expect(json.ok).toBe(true)
+    expect(typeof json.result.message_id).toBe('number')
+  })
+
   it('lets reads and everything else through', () => {
     expect(blockedSend(WA, 'GET', undefined, DEV)).toBeNull()
     expect(blockedSend('https://graph.facebook.com/v21.0/1234567890/message_templates', 'POST', '{}', DEV)).toBeNull()

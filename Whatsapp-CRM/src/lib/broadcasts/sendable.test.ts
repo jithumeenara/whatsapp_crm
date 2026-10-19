@@ -33,7 +33,13 @@ describe('who may receive a broadcast', () => {
       merged_into_contact_id: null,
       blocked_at: null,
       opt_in_status: { not: 'opted_out' },
-      NOT: [{ phone: { startsWith: 'email:' } }, { phone: { startsWith: 'web:' } }],
+      NOT: [{ phone: { startsWith: 'email:' } }, { phone: { startsWith: 'web:' } }, { phone: { startsWith: 'tg:' } }],
     })
+  })
+
+  // A Telegram user's placeholder is tg:<their Telegram id> — ten digits
+  // that would pass as a phone number and reach a stranger on WhatsApp.
+  it('never a Telegram user who has not shared a number', () => {
+    expect(isSendableContact({ ...base, phone: 'tg:7012345678' })).toBe(false)
   })
 })

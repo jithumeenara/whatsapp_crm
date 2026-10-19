@@ -400,6 +400,8 @@ export async function POST(request: Request) {
       message_type,
       content_text,
       media_url,
+      media_mime_type,
+      media_filename,
       template_name,
       template_language,
       template_params,
@@ -497,6 +499,53 @@ export async function POST(request: Request) {
         media: isMedia ? { url: media_url, mimeType: message_type === 'image' ? 'image/*' : null } : null,
       })
       return NextResponse.json({ success: true, message_id: saved.id })
+    }
+
+    // Telegram: no 24-hour window and no templates. Text, plus a file from
+    // the file manager (uploaded to Telegram) or a public https link.
+    if (convChannel === 'telegram') {
+      const text = typeof content_text === 'string' ? content_text.trim() : ''
+      const isMedia = ['image', 'document', 'video', 'audio'].includes(message_type)
+      if (message_type !== 'text' && !isMedia) {
+        return NextResponse.json({ error: 'Telegram takes text and files only — no templates or catalogs.' }, { status: 400 })
+      }
+      if (isMedia && !(typeof media_url === 'string' && (media_url.startsWith('https://') || media_url.startsWith('/api/files/')))) {
+        return NextResponse.json({ error: 'Only files from the file manager or a public https link can be sent on Telegram.' }, { status: 400 })
+      }
+      const askForNumber = body.telegram_ask_number === true
+      if (!text && !isMedia && !askForNumber) {
+        return NextResponse.json({ error: 'content_text is required for text messages' }, { status: 400 })
+      }
+      if (text.length > 20_000) {
+        return NextResponse.json({ error: 'The message is too long (20,000 characters).' }, { status: 400 })
+      }
+      try {
+        const { sendToTelegram } = await import('@/lib/telegram/outbound')
+        const saved = await sendToTelegram({
+          accountId,
+          conversationId: conversation_id,
+          senderType: 'agent',
+          senderId: userId,
+          // The Inbox sends a file's name as its text — on Telegram that is
+          // the file's name, not a caption.
+          text: isMedia ? '' : text || (askForNumber ? 'Please share your phone number with the button below.' : ''),
+          contentType: isMedia ? message_type : 'text',
+          media: isMedia
+            ? {
+                url: media_url,
+                mimeType: typeof media_mime_type === 'string' ? media_mime_type : message_type === 'image' ? 'image/jpeg' : null,
+                filename: (typeof media_filename === 'string' ? media_filename : text).slice(0, 200) || null,
+              }
+            : null,
+          askForNumber,
+        })
+        return NextResponse.json({ success: true, message_id: saved.id })
+      } catch (err) {
+        console.error('[send] telegram failed:', err)
+        const { TelegramApiError, TelegramSendError } = await import('@/lib/telegram/outbound')
+        const known = err instanceof TelegramApiError || err instanceof TelegramSendError
+        return NextResponse.json({ error: known ? (err as Error).message : 'Could not send on Telegram.' }, { status: 502 })
+      }
     }
 
     if (convChannel === 'email') {

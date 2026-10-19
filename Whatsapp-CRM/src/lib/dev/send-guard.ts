@@ -17,6 +17,7 @@
  *   Outlook / Microsoft 365          graph.microsoft.com/…/sendMail, /reply, /forward, /send
  *   SendGrid                         api.sendgrid.com/v3/mail/send
  *   MSG91 SMS                        api.msg91.com/…/sendsms
+ *   Telegram                         api.telegram.org/bot…/send*, copyMessage, forwardMessage
  *
  * Switched on by APP_ENV=development in the laptop's .env.local — and by
  * nothing else. Production servers are never touched by this file: a
@@ -68,6 +69,11 @@ const RULES: Array<{ name: string; match: RegExp; reply: () => Response }> = [
     name: 'SMS send',
     match: /^https:\/\/api\.msg91\.com\/api\/v\d+\/sendsms/,
     reply: () => Response.json({ type: 'success', message: 'dev-blocked' }),
+  },
+  {
+    name: 'Telegram send',
+    match: /^https:\/\/api\.telegram\.org\/bot[^/]+\/(send[A-Za-z]+|copyMessages?|forwardMessages?)(\?|$)/,
+    reply: () => Response.json({ ok: true, result: { message_id: Math.floor(Date.now() / 1000) } }),
   },
 ]
 

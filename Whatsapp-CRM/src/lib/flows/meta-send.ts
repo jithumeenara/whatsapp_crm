@@ -325,6 +325,27 @@ async function websiteSend(
   return { whatsapp_message_id: row.message_id ?? row.id }
 }
 
+// ── Telegram ─────────────────────────────────────────────────────────
+// Through the customer's Telegram chat (src/lib/telegram/outbound.ts).
+// Buttons and list rows become Telegram's inline buttons, so a chatbot
+// built for WhatsApp works unchanged. Loaded lazily: most accounts have
+// no Telegram bot.
+
+async function telegramSend(
+  args: { accountId: string; conversationId: string },
+  content: { text: string; buttons?: Array<{ id: string; title: string }>; media?: { url: string; mimeType?: string | null; filename?: string | null } | null; contentType?: string; link?: { label: string; url: string } | null },
+): Promise<{ whatsapp_message_id: string }> {
+  const { sendToTelegram } = await import('@/lib/telegram/outbound')
+  const row = await sendToTelegram({ accountId: args.accountId, conversationId: args.conversationId, senderType: 'bot', ...content })
+  return { whatsapp_message_id: row.message_id ?? row.id }
+}
+
+/** WhatsApp-only message kinds have no meaning on these channels. */
+function notOnChannel(channel: string | null, what: string): void {
+  if (channel === 'website') throw new Error(`${what} cannot be sent to a website chat. Use a text, buttons or list step instead.`)
+  if (channel === 'telegram') throw new Error(`${what} cannot be sent on Telegram. Use a text, buttons or list step instead.`)
+}
+
 function withHeaderFooter(body: string, header?: string, footer?: string): string {
   return [header?.trim(), body?.trim(), footer?.trim()].filter(Boolean).join('\n\n')
 }
@@ -385,6 +406,7 @@ export async function engineSendText(
   if (channel === 'rcs') return engineSendTextRcs(args)
   if (channel === 'email') return engineSendTextEmail(args)
   if (channel === 'website') return websiteSend(args, { text: args.text })
+  if (channel === 'telegram') return telegramSend(args, { text: args.text })
 
   // Safety net: if channel is NULL, check if contact phone looks like an IGSID
   // (pure numeric, no '+' prefix — won't collide with valid E.164 numbers)
@@ -425,6 +447,13 @@ export async function engineSendMedia(
     SELECT channel FROM conversations WHERE id = ${args.conversationId}::uuid LIMIT 1
   `.catch(() => [] as { channel: string | null }[])
   if (convRows[0]?.channel === 'instagram') return engineSendIgMedia(args)
+  if (convRows[0]?.channel === 'telegram') {
+    return telegramSend(args, {
+      text: args.caption ?? '',
+      contentType: args.kind === 'image' ? 'image' : args.kind === 'video' ? 'video' : args.kind === 'audio' ? 'audio' : 'document',
+      media: { url: args.link, mimeType: args.kind === 'image' ? 'image/jpeg' : args.kind === 'video' ? 'video/mp4' : args.kind === 'audio' ? 'audio/mpeg' : null, filename: args.filename ?? null },
+    })
+  }
   if (convRows[0]?.channel === 'website') {
     // Only a public https file can be shown to a visitor; an upload kept
     // behind sign-in (/api/files/…) is sent as its caption alone rather
@@ -570,9 +599,7 @@ async function engineSendIgMedia(
 export async function engineSendTemplate(
   args: SendTemplateEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  if ((await channelOf(args.conversationId)) === 'website') {
-    throw new Error('WhatsApp templates cannot be sent to a website chat. Use a text, buttons or list step instead.')
-  }
+  notOnChannel(await channelOf(args.conversationId), 'WhatsApp templates')
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
@@ -689,9 +716,7 @@ interface SendCatalogEngineArgs {
 export async function engineSendCatalog(
   args: SendCatalogEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  if ((await channelOf(args.conversationId)) === 'website') {
-    throw new Error('WhatsApp catalog messages cannot be sent to a website chat. Use a text, buttons or list step instead.')
-  }
+  notOnChannel(await channelOf(args.conversationId), 'WhatsApp catalog messages')
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
 
@@ -814,9 +839,7 @@ async function flowNeedsEndpoint(accountId: string, metaFlowId: string): Promise
 export async function engineSendFlow(
   args: SendFlowEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
-  if ((await channelOf(args.conversationId)) === 'website') {
-    throw new Error('WhatsApp Flows forms cannot be sent to a website chat. Use a text, buttons or list step instead.')
-  }
+  notOnChannel(await channelOf(args.conversationId), 'WhatsApp Flows forms')
   const { contact, sanitized, config } = await resolveContactAndConfig(args.accountId, args.contactId, args.conversationId)
   const accessToken = decrypt(config.access_token)
   // An explicit answer beats a guess. A Flow authored in Meta's own Flow
@@ -915,6 +938,13 @@ export async function engineSendInteractiveButtons(
   `.catch(() => [] as { channel: string | null }[])
   if (convRows[0]?.channel === 'instagram') {
     return engineSendIgButtonTemplate(args)
+  }
+  if (convRows[0]?.channel === 'telegram') {
+    return telegramSend(args, {
+      text: withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+      buttons: args.buttons.map((b) => ({ id: b.id, title: b.title })),
+      media: args.headerMediaUrl && args.headerMediaType === 'image' ? { url: args.headerMediaUrl, mimeType: 'image/jpeg' } : null,
+    })
   }
   if (convRows[0]?.channel === 'website') {
     return websiteSend(args, {
@@ -1017,6 +1047,12 @@ export async function engineSendInteractiveList(
       buttons: args.sections.flatMap((section) => section.rows).map((r) => ({ id: r.id, title: r.title })),
     })
   }
+  if (convRows[0]?.channel === 'telegram') {
+    return telegramSend(args, {
+      text: withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+      buttons: args.sections.flatMap((section) => section.rows).map((r) => ({ id: r.id, title: r.title })),
+    })
+  }
   return sendInteractiveViaMeta({ ...args, kind: 'list' })
 }
 
@@ -1065,6 +1101,12 @@ export async function engineSendCtaUrlButton(
   }
   if (convRows[0]?.channel === 'website') {
     return websiteSend(args, {
+      text: withHeaderFooter(args.bodyText, args.headerText, args.footerText),
+      link: { label: args.displayText, url: args.url },
+    })
+  }
+  if (convRows[0]?.channel === 'telegram') {
+    return telegramSend(args, {
       text: withHeaderFooter(args.bodyText, args.headerText, args.footerText),
       link: { label: args.displayText, url: args.url },
     })
@@ -1123,9 +1165,10 @@ export async function engineSendVoiceNote(args: {
   transcript: string
 }): Promise<{ whatsapp_message_id: string }> {
   // A website window plays no voice notes; the visitor reads the words.
-  if ((await channelOf(args.conversationId)) === 'website') {
-    return websiteSend(args, { text: args.transcript })
-  }
+  // Telegram gets the words too — the audio is made for WhatsApp's format.
+  const voiceChannel = await channelOf(args.conversationId)
+  if (voiceChannel === 'website') return websiteSend(args, { text: args.transcript })
+  if (voiceChannel === 'telegram') return telegramSend(args, { text: args.transcript })
   const { contact, sanitized, config } = await resolveContactAndConfig(
     args.accountId,
     args.contactId,

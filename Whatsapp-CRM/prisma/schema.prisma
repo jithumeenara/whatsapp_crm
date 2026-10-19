@@ -400,6 +400,9 @@ model Contact {
   /// "web:<id>" placeholder in `phone` can never share trailing digits
   /// with a real number in findExistingContact's suffix match.
   web_visitor_id         String?
+  /// Telegram user id (migration 140). Telegram gives no phone number
+  /// unless the customer shares it; `phone` is then "tg:<id>".
+  telegram_id            String?
   /// Tri-state: "unknown" (default — most creation paths have no explicit
   /// consent signal), "opted_in" (an inbound message on any channel, or an
   /// explicit action like a Lead Ads form submission, is itself consent),
@@ -471,6 +474,7 @@ model Contact {
   @@unique([account_id, instagram_id], name: "contacts_account_instagram_id")
   @@unique([account_id, facebook_id], name: "contacts_account_facebook_id")
   @@unique([account_id, web_visitor_id], name: "contacts_account_web_visitor_id")
+  @@unique([account_id, telegram_id], name: "contacts_account_telegram_id")
   @@map("contacts")
 }
 
@@ -604,6 +608,9 @@ model Conversation {
 
   // Channel that originated this conversation
   channel String @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
+  /// Telegram Business chats only (migration 140): replies go out through
+  /// this connection, as the business's own account.
+  telegram_business_connection_id String?
 
   /// When the assistant last read this thread to decide whether it was
   /// a lead — whichever way it answered. Here rather than on the lead,
@@ -734,6 +741,8 @@ model Message {
   /// a chatbot step sent, so the visitor still sees them after a reload —
   /// { buttons?: [{ id, title }], link?: { label, url } }.
   web_meta             Json?
+  /// Telegram only (migration 140): { file_id?, buttons?: [{ id, title, cb }] }.
+  telegram_meta        Json?
   // Set only for a message a Broadcast campaign sent — previously broadcasts
   // never wrote a Message row at all (only broadcast_recipients), so a sent
   // campaign was completely invisible in that contact's Inbox thread. This
@@ -3716,4 +3725,25 @@ model BroadcastSettings {
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
   @@map("broadcast_settings")
+}
+
+/// A business's Telegram bot (migration 140): one per account.
+model TelegramBot {
+  id                   String    @id @default(uuid()) @db.Uuid
+  account_id           String    @unique @db.Uuid
+  user_id              String    @db.Uuid
+  bot_user_id          String
+  username             String
+  display_name         String?
+  token_enc            String
+  webhook_secret       String
+  status               String    @default("connected")
+  last_error           String?
+  last_update_at       DateTime? @db.Timestamptz(6)
+  /// [{ id, user_id, user_name, enabled, connected_at }] — Telegram Business accounts.
+  business_connections Json      @default("[]")
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@map("telegram_bots")
 }

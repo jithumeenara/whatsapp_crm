@@ -49,11 +49,11 @@ export async function sweepStaffWaits(now: Date = new Date()): Promise<number> {
     const oldest = new Date(now.getTime() - GIVE_UP_AFTER_MS)
     // WhatsApp and the website chat. The website used to be left out, so a
     // visitor answered once by a colleague who then went quiet was never
-    // answered again by anyone.
+    // answered again by anyone. Telegram the same way.
     const conversations = await prisma.conversation.findMany({
       where: {
         account_id: { in: accounts.map((a) => a.account_id) },
-        channel: { in: ['whatsapp', 'website'] },
+        channel: { in: ['whatsapp', 'website', 'telegram'] },
         last_message_at: { gte: oldest, lte: newest },
       },
       select: { id: true, account_id: true, user_id: true, contact_id: true, channel: true },
@@ -83,6 +83,7 @@ export async function sweepStaffWaits(now: Date = new Date()): Promise<number> {
       if (!text || !c.contact_id) continue
 
       const isWebsite = c.channel === 'website'
+      const isTelegram = c.channel === 'telegram'
       // The website chat's own daily ceiling applies here as well.
       if (isWebsite) {
         const limit = await widgetLimitForConversation(c.id)
@@ -97,9 +98,9 @@ export async function sweepStaffWaits(now: Date = new Date()): Promise<number> {
           conversationId: c.id,
           contactId: c.contact_id,
           message: text,
-          channel: isWebsite ? 'website' : 'whatsapp',
-          wasVoice: !isWebsite && !last.content_text && Boolean(last.transcript),
-          providerMessageId: isWebsite ? undefined : last.message_id ?? undefined,
+          channel: isWebsite ? 'website' : isTelegram ? 'telegram' : 'whatsapp',
+          wasVoice: !isWebsite && !isTelegram && !last.content_text && Boolean(last.transcript),
+          providerMessageId: isWebsite || isTelegram ? undefined : last.message_id ?? undefined,
           afterStaffWait: true,
         })
         if (outcome === 'replied' || outcome === 'handed_off') answered++

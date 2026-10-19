@@ -7,6 +7,8 @@ import { isPlaceholderPhone, usablePhone } from "@/lib/contacts/validate"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { readableTextColor } from "@/lib/readable-color"
+import { TelegramIcon } from "@/components/icons/brand-icons"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -23,7 +25,9 @@ const ROLE_LABELS: Record<string, string> = {
 
 interface Props {
   contact: Contact | null
-  channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs'
+  channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website' | 'telegram'
+  /** The open conversation — Telegram's "Ask for number" sends in it. */
+  conversationId?: string | null
 }
 
 const AVATAR_GRADIENTS = [
@@ -50,8 +54,29 @@ function colorForNewTag(name: string) {
   return TAG_COLOR_PALETTE[s % TAG_COLOR_PALETTE.length]
 }
 
-export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
+export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId = null }: Props) {
   const [copied, setCopied] = useState(false)
+  const [askingNumber, setAskingNumber] = useState(false)
+
+  // Telegram never shows a person's number; the bot asks with Telegram's
+  // own "Share my number" button, and the reply fills it in.
+  async function askForNumber() {
+    if (!conversationId || askingNumber) return
+    setAskingNumber(true)
+    try {
+      await apiFetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId, message_type: "text", content_text: "", telegram_ask_number: true }),
+      })
+      toast.success("Asked for their number — it appears here when they share it")
+    } catch (err) {
+      console.error("[contact sidebar] ask for number failed:", err)
+      toast.error(errorText(err, "Could not send the request."))
+    } finally {
+      setAskingNumber(false)
+    }
+  }
   const [notes, setNotes] = useState<ContactNote[]>([])
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([])
   const [allTags, setAllTags] = useState<Tag[]>([])
@@ -262,6 +287,10 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
             <span className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-violet-500 shadow-md ring-2 ring-white">
               <Radio className="h-3.5 w-3.5 text-white" />
             </span>
+          ) : channel === "telegram" ? (
+            <span title="Telegram" className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-md ring-2 ring-white">
+              <TelegramIcon className="h-7 w-7" />
+            </span>
           ) : channel === "website" ? (
             <span title="Website chat" className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-orange-500 shadow-md ring-2 ring-white">
               <Globe className="h-3.5 w-3.5 text-white" />
@@ -299,6 +328,11 @@ export function ContactSidebarV2({ contact, channel = "whatsapp" }: Props) {
               className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-sky-500 py-2 text-[12px] font-semibold text-white hover:bg-sky-600 transition-colors">
               <Mail className="h-3.5 w-3.5" /> Email
             </a>
+          ) : channel === "telegram" && conversationId ? (
+            <button type="button" onClick={() => void askForNumber()} disabled={askingNumber}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#1B78AD] py-2 text-[12px] font-semibold text-white hover:bg-[#166592] disabled:opacity-60 transition-colors">
+              <Phone className="h-3.5 w-3.5" /> {askingNumber ? "Asking…" : "Ask for number"}
+            </button>
           ) : null}
           <a href={`/contacts?open=${contact.id}`}
             title="Edit contact"

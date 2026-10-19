@@ -27,6 +27,7 @@ import { NewFollowUpDialog } from "@/components/leads/new-follow-up-dialog"
 import { ContactPicker, type PickedContact } from "@/components/leads/contact-picker"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { readableTextColor } from "@/lib/readable-color"
+import { TelegramIcon } from "@/components/icons/brand-icons"
 
 // ---- types ----
 
@@ -50,7 +51,7 @@ const KERALA_DISTRICTS = [
   "Kottayam","Idukki","Ernakulam","Thrissur","Palakkad",
   "Malappuram","Kozhikode","Wayanad","Kannur","Kasaragod",
 ]
-const SOURCES = ["whatsapp","instagram","website","campaign","referral","manual"]
+const SOURCES = ["whatsapp","instagram","telegram","website","campaign","referral","manual"]
 
 interface TabDef { key: string; label: string; color: string; icon?: React.ReactNode }
 
@@ -266,6 +267,7 @@ const PLATFORM_OVERRIDES: Record<string, { icon: React.ReactNode; bg: string; te
   whatsapp: { icon: <WhatsAppIcon className="h-3 w-3" />, bg: "bg-emerald-50", text: "text-emerald-700" },
   chatbot:  { icon: <Bot className="h-3 w-3" />,          bg: "bg-emerald-50", text: "text-emerald-700" },
   instagram:{ icon: <InstagramIcon className="h-3 w-3" />, bg: "bg-pink-50",   text: "text-pink-700"   },
+  telegram: { icon: <TelegramIcon className="h-3 w-3" />,  bg: "bg-sky-50",    text: "text-sky-800"    },
   website:  { icon: <Globe className="h-3 w-3" />,         bg: "bg-blue-50",   text: "text-blue-700"   },
   campaign: { icon: <Megaphone className="h-3 w-3" />,     bg: "bg-violet-50", text: "text-violet-700" },
   referral: { icon: <Share2 className="h-3 w-3" />,        bg: "bg-amber-50",  text: "text-amber-700"  },
@@ -289,6 +291,7 @@ function SourceBadge({ source, sources }: { source?: string | null; sources?: { 
     PLATFORM_OVERRIDES[slug] ??
     (slug.includes("whatsapp") ? PLATFORM_OVERRIDES.whatsapp :
      slug.includes("instagram") ? PLATFORM_OVERRIDES.instagram :
+     slug.includes("telegram")  ? PLATFORM_OVERRIDES.telegram :
      slug.includes("website")   ? PLATFORM_OVERRIDES.website :
      slug.includes("campaign")  ? PLATFORM_OVERRIDES.campaign :
      slug.includes("referral")  ? PLATFORM_OVERRIDES.referral :

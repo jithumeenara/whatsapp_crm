@@ -31,6 +31,7 @@ import {
   WhatsAppIcon,
   FacebookIcon,
   InstagramIcon,
+  TelegramIcon,
 } from '@/components/icons/brand-icons';
 import { EmbeddedSignupButton } from '@/components/settings/embedded-signup-button';
 
@@ -38,6 +39,7 @@ type ChannelKey =
   | 'whatsapp'
   | 'instagram'
   | 'facebook'
+  | 'telegram'
   | 'sms'
   | 'email'
   | 'rcs'
@@ -63,6 +65,10 @@ const FacebookConfig = dynamic(
     import('@/components/settings/facebook-config').then(
       (m) => m.FacebookConfig
     ),
+  { ssr: false, loading: () => <PanelLoader /> }
+);
+const TelegramConfig = dynamic(
+  () => import('@/components/settings/telegram-config').then((m) => m.TelegramConfig),
   { ssr: false, loading: () => <PanelLoader /> }
 );
 const SmsConfig = dynamic(
@@ -133,6 +139,12 @@ const CHANNELS: Record<
     hasProfile: boolean;
     Config: ComponentType<{ defaultConnectMethod?: 'quick' | 'manual' }>;
     Profile?: ComponentType;
+    /** Channel-specific wording for the "requirements" and "how it works"
+     *  sections of the connect page; others use the Meta-style default. */
+    guide?: {
+      requirements: Array<{ title: string; copy: string }>;
+      steps: Array<{ title: string; copy: string }>;
+    };
   }
 > = {
   whatsapp: {
@@ -170,6 +182,30 @@ const CHANNELS: Record<
     hasProfile: true,
     Config: FacebookConfig,
     Profile: FacebookBusinessProfile,
+  },
+  telegram: {
+    label: 'Telegram',
+    icon: TelegramIcon,
+    accent: '#229ED9',
+    pale: '#EAF6FD',
+    provider: 'Telegram',
+    description:
+      'Connect a Telegram bot and answer Telegram chats from the same inbox — with your chatbots, the AI assistant and your team.',
+    hasProfile: false,
+    Config: TelegramConfig,
+    guide: {
+      requirements: [
+        { title: 'A Telegram account', copy: 'Any personal account — the bot is made from it in the Telegram app.' },
+        { title: 'A bot from @BotFather', copy: 'Free, made in two minutes with /newbot. No phone number needed for the bot.' },
+        { title: 'No business verification', copy: 'Telegram bots need no review — connect and start chatting the same day.' },
+      ],
+      steps: [
+        { title: 'Open @BotFather', copy: 'Search @BotFather in Telegram and press Start.' },
+        { title: 'Create your bot', copy: 'Send /newbot, pick a name and a username.' },
+        { title: 'Copy the token', copy: 'BotFather sends a token like 1234567890:AAH…' },
+        { title: 'Paste and connect', copy: 'Paste it here — chats start arriving in the Inbox.' },
+      ],
+    },
   },
   sms: {
     label: 'SMS',
@@ -256,6 +292,10 @@ async function checkChannelConnected(key: ChannelKey): Promise<boolean> {
       }
       case 'rcs': {
         const r = await fetch('/api/rcs/config').then((x) => x.json());
+        return !!r.connected;
+      }
+      case 'telegram': {
+        const r = await fetch('/api/telegram/config').then((x) => x.json());
         return !!r.connected;
       }
       case 'website':
@@ -545,6 +585,9 @@ export function ChannelsTab() {
               Make sure you have the following to get started.
             </p>
             <div className="mt-6 space-y-4">
+              {current.guide ? current.guide.requirements.map((r) => (
+                <Requirement key={r.title} title={r.title} copy={r.copy} />
+              )) : (<>
               <Requirement
                 title={`A ${current.provider} account with admin access`}
                 copy="You'll use this account to connect your business channel."
@@ -557,6 +600,7 @@ export function ChannelsTab() {
                 title="Business verification"
                 copy="Some provider features require a verified business."
               />
+              </>)}
             </div>
           </div>
           <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-[42px] bg-[#F0EEFF] shadow-[0_20px_35px_rgba(99,91,255,0.2)]">
@@ -570,6 +614,15 @@ export function ChannelsTab() {
           Follow these simple steps to connect {current.label}.
         </p>
         <div className="mt-7 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {current.guide ? current.guide.steps.map((s, i) => (
+            <Step
+              key={s.title}
+              number={String(i + 1)}
+              icon={[Icon, Settings2, IdCard, Check][i] ?? Check}
+              title={s.title}
+              copy={s.copy}
+            />
+          )) : (<>
           <Step
             number="1"
             icon={FacebookIcon}
@@ -594,6 +647,7 @@ export function ChannelsTab() {
             title="Start messaging"
             copy="You are ready to chat with customers."
           />
+          </>)}
         </div>
       </section>
       <section className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-[#E7E5FF] bg-[linear-gradient(90deg,#F7F6FF,#FBFBFF)] p-5 sm:flex-row sm:items-center">

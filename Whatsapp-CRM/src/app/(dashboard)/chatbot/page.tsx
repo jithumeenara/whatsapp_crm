@@ -15,6 +15,7 @@ import { useRealtime } from "@/hooks/use-realtime"
 import { Switch } from "@/components/ui/switch"
 import { AiFallbackBanner } from "@/components/chatbot/ai-fallback-banner"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { TelegramIcon } from "@/components/icons/brand-icons"
 
 interface Chatbot {
   id: string
@@ -25,7 +26,7 @@ interface Chatbot {
   status: string
   execution_count: number
   created_at: string
-  channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
+  channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website' | 'telegram'
   /** Dead ends and unreachable steps, worst first. Computed server-side
    *  so the list can warn without loading every node's config. */
   issues?: { level: 'breaks' | 'warns'; nodeKey: string | null; message: string }[]
@@ -113,6 +114,7 @@ const CHANNEL_META: Record<string, { label: string; icon: React.ReactNode; badge
   email:     { label: "Email",     icon: <Mail className="h-3 w-3" />,          badgeIcon: <Mail className="h-2.5 w-2.5" /> },
   rcs:       { label: "RCS",       icon: <Radio className="h-3 w-3" />,         badgeIcon: <Radio className="h-2.5 w-2.5" /> },
   website:   { label: "Website",   icon: <Globe className="h-3 w-3 text-teal-700" />, badgeIcon: <Globe className="h-2.5 w-2.5" /> },
+  telegram:  { label: "Telegram",  icon: <TelegramIcon className="h-3 w-3" />, badgeIcon: <TelegramIcon className="h-2.5 w-2.5" /> },
 }
 
 function ChannelBadge({ channel }: Readonly<{ channel?: string }>) {
@@ -130,7 +132,7 @@ function getKeywords(bot: Chatbot): string[] {
   return bot.trigger_config?.keywords?.filter(Boolean) ?? []
 }
 
-type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website"
+type ChannelFilter = "all" | "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website" | "telegram"
 
 /** Stable keys for fixed-length placeholder rows. Using the array index
  *  as a React key is fine only while a list never reorders; naming the
@@ -206,7 +208,7 @@ export default function ChatbotV2() {
     },
   })
 
-  async function createNew(channel: "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website") {
+  async function createNew(channel: "whatsapp" | "instagram" | "facebook" | "sms" | "email" | "rcs" | "website" | "telegram") {
     setShowPlatformPicker(false)
     setCreating(true)
     try {
@@ -741,7 +743,7 @@ export default function ChatbotV2() {
               </button>
               {channelFilterOpen && (
                 <div className="absolute right-0 top-9 z-20 w-44 rounded-xl border border-slate-100 bg-white shadow-xl py-1">
-                  {(["all", "whatsapp", "instagram", "facebook", "sms", "email", "rcs", "website"] as ChannelFilter[]).map((ch) => (
+                  {(["all", "whatsapp", "instagram", "facebook", "sms", "email", "rcs", "website", "telegram"] as ChannelFilter[]).map((ch) => (
                     <button
                       key={ch}
                       type="button"
@@ -953,6 +955,21 @@ export default function ChatbotV2() {
                   <div>
                     <p className="text-[12px] font-bold text-slate-800">Website</p>
                     <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Text, buttons,<br />lists & links</p>
+                  </div>
+                </button>
+
+                {/* Telegram */}
+                <button
+                  type="button"
+                  onClick={() => createNew("telegram")}
+                  className="group flex flex-col items-center gap-2.5 rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-sky-400 hover:bg-sky-50/40 transition-all"
+                >
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 group-hover:bg-sky-100 transition-colors shadow-sm">
+                    <TelegramIcon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-[12px] font-bold text-slate-800">Telegram</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 leading-relaxed">Text, buttons,<br />lists & files</p>
                   </div>
                 </button>
               </div>

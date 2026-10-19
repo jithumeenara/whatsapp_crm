@@ -18,6 +18,7 @@
  * (usablePhone), and it identifies nobody.
  */
 
+import { isPlaceholderPhone } from '@/lib/contacts/validate'
 import { prisma } from '@/lib/db'
 import { checkEmail, checkPhone } from './validate'
 
@@ -129,6 +130,6 @@ export async function isAnonymousVisitor(contactId: string): Promise<boolean> {
     .findUnique({ where: { id: contactId }, select: { phone: true, alternate_phone: true } })
     .catch(() => null)
   if (!contact) return true
-  const ownPhone = contact.phone && !contact.phone.startsWith('web:') && !contact.phone.startsWith('email:')
+  const ownPhone = contact.phone && !isPlaceholderPhone(contact.phone)
   return !ownPhone && !contact.alternate_phone?.trim()
 }

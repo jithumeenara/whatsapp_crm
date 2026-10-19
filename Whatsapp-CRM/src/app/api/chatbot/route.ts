@@ -30,7 +30,7 @@ async function ensureChannelColumn() {
 /** GET /api/chatbot — list all chatbots for the caller's account */
 /** The channels a chatbot can be built for — every inbound channel the
  *  flow engine dispatches (flows.channel; see dispatchInboundToFlows). */
-const CHATBOT_CHANNELS: readonly string[] = ['whatsapp', 'instagram', 'facebook', 'sms', 'email', 'rcs', 'website']
+const CHATBOT_CHANNELS: readonly string[] = ['whatsapp', 'instagram', 'facebook', 'sms', 'email', 'rcs', 'website', 'telegram']
 
 export async function GET() {
   try {

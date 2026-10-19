@@ -7,9 +7,11 @@
  *   - one's alternate number equal to another's number;
  *   - the same email, ignoring case.
  * The same name alone never groups — two people share names all the time.
- * Website-visitor and email-only placeholders ("web:…", "email:…") are not
+ * Website-visitor and email-only placeholders ("web:…", "email:…", "tg:…") are not
  * phone numbers. Nothing here merges; a person confirms each group.
  */
+
+import { isPlaceholderPhone } from './validate'
 
 export interface DupContact {
   id: string
@@ -31,7 +33,7 @@ export interface DupGroup {
 }
 
 function phoneKey(v: string | null | undefined): string | null {
-  if (!v || v.startsWith('email:') || v.startsWith('web:')) return null
+  if (!v || isPlaceholderPhone(v)) return null
   const d = v.replace(/\D/g, '')
   // 10–15 digits is a phone number; an Instagram/Facebook id stored in the
   // phone field is longer, and is not compared.

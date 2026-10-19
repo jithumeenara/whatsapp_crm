@@ -159,7 +159,8 @@ export default function LeadDetailPage() {
   // Counted from WhatsApp messages only; a website chat has no window.
   const whatsappMessages = useMemo(() => messages.filter((m) => !m.channel || m.channel === "whatsapp"), [messages])
   const whatsappSessionExpired = useSessionWindow(whatsappMessages).expired
-  const isWebsiteChat = conversationChannel === "website"
+  // Website and Telegram chats: no 24-hour window, no WhatsApp templates.
+  const isWebsiteChat = conversationChannel === "website" || conversationChannel === "telegram"
   const sessionExpired = whatsappSessionExpired && !isWebsiteChat
 
   const loadLead = useCallback(() => {
@@ -192,9 +193,9 @@ export default function LeadDetailPage() {
         setMessages(msgs)
         // The latest WhatsApp or website chat — a lead from the website
         // chat window is answered there.
-        const lastChat = [...msgs].reverse().find((m) => !m.channel || m.channel === "whatsapp" || m.channel === "website")
+        const lastChat = [...msgs].reverse().find((m) => !m.channel || m.channel === "whatsapp" || m.channel === "website" || m.channel === "telegram")
         setConversationId(lastChat?.conversation_id ?? null)
-        setConversationChannel(lastChat?.channel === "website" ? "website" : "whatsapp")
+        setConversationChannel(lastChat?.channel === "website" || lastChat?.channel === "telegram" ? lastChat.channel : "whatsapp")
       })
       .catch(() => {})
       .finally(() => setChatLoading(false))
