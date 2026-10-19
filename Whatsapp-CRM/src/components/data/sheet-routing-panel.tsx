@@ -30,6 +30,7 @@ import { everyWhileVisible } from "@/lib/visible-interval"
 import { cn } from "@/lib/utils"
 import { autoMatch } from "@/lib/google/sheet-rows"
 
+const NEW_TAB = "__new_tab__"
 const SPECIALS = [
   { field_key: "__serial", label: "Serial number (1, 2, 3…)" },
   { field_key: "__created", label: "Date added" },
@@ -482,6 +483,10 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
   const byKey = useMemo(() => new Map(fields.map((f) => [f.field_key, f])), [fields])
   const [choosing, setChoosing] = useState(false)
   const [tabs, setTabs] = useState<string[]>([])
+  const [tabsLoading, setTabsLoading] = useState(false)
+  const [newTab, setNewTab] = useState(false)
+  const existingTab = tabs.find((t) => t.toLowerCase() === draft.tab_title.trim().toLowerCase()) ?? ""
+  const isExistingTab = !!existingTab
   const [saving, setSaving] = useState(false)
   const [count, setCount] = useState<Preview | null>(null)
   const [creating, setCreating] = useState(false)
@@ -492,14 +497,25 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
   useEffect(() => {
     if (!draft.spreadsheet_id) return
     let live = true
+    const t = setTimeout(() => setTabsLoading(true), 0)
     apiFetch(`/api/google/sheets/preview?picked=1&spreadsheet=${encodeURIComponent(draft.spreadsheet_id)}`)
       .then((r) => r.json())
       .then((d: { tabs?: Array<{ title: string }>; title?: string }) => {
         if (!live) return
-        setTabs((d.tabs ?? []).map((t) => t.title))
+        const list = (d.tabs ?? []).map((x) => x.title).filter((x) => x && x !== "Deleted")
+        setTabs(list)
+        // A new rule still on the default name: the sheet's first tab instead
+        // of making a "Sheet1" nobody asked for.
+        if (!draft.id && draft.tab_title === "Sheet1" && list.length && !list.includes("Sheet1")) onChange({ ...draft, tab_title: list[0] })
       })
-      .catch((err) => console.error("[sheet-routing] tabs failed:", err))
-    return () => { live = false }
+      .catch((err) => {
+        console.error("[sheet-routing] tabs failed:", err)
+        if (live) toast.error(errorText(err, "Could not read the sheet’s tabs"))
+      })
+      .finally(() => { if (live) setTabsLoading(false) })
+    return () => { live = false; clearTimeout(t) }
+    // Only when another sheet is chosen — not on every edit of the rule.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.spreadsheet_id])
 
   // How many rows this rule takes, as it is edited (debounced; newest answer wins).
@@ -601,10 +617,20 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
     return () => { live = false; clearTimeout(t) }
   }, [colMode, draft.spreadsheet_id, draft.tab_title, draft.split_template])
 
+  // Once the chosen tab's columns are read, match them once on their own.
+  const autoMatchNext = useRef(false)
+  useEffect(() => {
+    if (!autoMatchNext.current || !sheetHeaders || sheetHeaders.length === 0) return
+    autoMatchNext.current = false
+    autoMatchColumns()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sheetHeaders])
+
   function chooseColMode(m: "all" | "choose" | "match") {
     setColMode(m)
     if (m === "choose") set({ columns: usable.map((f) => ({ field_key: f.field_key, header: f.label })) })
     else set({ columns: [] })
+    if (m === "match") autoMatchNext.current = true
   }
   function matchColumn(header: string, key: string) {
     if (!sheetHeaders) return
@@ -772,12 +798,36 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
             </div>
           </div>
         ) : (
-          <label className="block space-y-1">
+          <div className="space-y-1">
             <span className="text-[11.5px] text-slate-600">Tab</span>
-            <Input value={draft.tab_title} onChange={(e) => set({ tab_title: e.target.value })} maxLength={100} list={`tabs-${tableId}`} autoComplete="off" className="h-9 text-[12.5px]" />
-            <datalist id={`tabs-${tableId}`}>{tabs.map((t) => <option key={t} value={t} />)}</datalist>
-            <span className="block text-[11px] text-slate-500">{tabs.some((t) => t.toLowerCase() === draft.tab_title.trim().toLowerCase()) ? "An existing tab." : "A new tab — made with its header row."}</span>
-          </label>
+            {/* The sheet's real tabs in a list (a typed box only ever showed
+                the tabs matching what was already typed), or a new one. */}
+            <Select value={newTab || !isExistingTab ? NEW_TAB : existingTab} onValueChange={(v) => {
+              const t = String(v ?? "")
+              if (t === NEW_TAB) { setNewTab(true); if (isExistingTab) set({ tab_title: "" }) }
+              else {
+                setNewTab(false)
+                // An existing tab has its own column names: map to them.
+                if (!draft.split_template) { setColMode("match"); autoMatchNext.current = true; set({ tab_title: t, columns: [] }) }
+                else set({ tab_title: t })
+              }
+            }}>
+              <SelectTrigger className="h-9 w-full text-[12.5px]" aria-label="Tab">
+                <SelectValue placeholder={tabsLoading ? "Reading the tabs…" : "Choose a tab…"} />
+              </SelectTrigger>
+              <SelectContent>
+                {tabs.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                <SelectItem value={NEW_TAB}>+ A new tab…</SelectItem>
+              </SelectContent>
+            </Select>
+            {(newTab || !isExistingTab) && (
+              <Input value={draft.tab_title} onChange={(e) => set({ tab_title: e.target.value })} maxLength={100} autoComplete="off" name="new-tab"
+                placeholder="Name of the new tab…" aria-label="Name of the new tab" className="h-9 text-[12.5px]" />
+            )}
+            <span className="block text-[11px] text-slate-500">
+              {tabsLoading ? "Reading the sheet’s tabs…" : isExistingTab && !newTab ? `${tabs.length} tab${tabs.length === 1 ? "" : "s"} in this sheet — rows go into “${existingTab}”.` : "A new tab — made with its header row the first time a row goes there."}
+            </span>
+          </div>
         )}
       </section>
 
