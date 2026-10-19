@@ -58,3 +58,12 @@ describe('columns matched to a template sheet', () => {
     ])
   })
 })
+
+describe('fixed text columns', () => {
+  it('keeps a fixed column with its text, drops one without text', () => {
+    const r = parseRuleInput({ name: 'x', spreadsheet_id: SHEET, columns: [
+      { field_key: '__fixed', header: 'Gender', value: ' Male ' }, { field_key: '__fixed', header: 'Status', value: '' },
+    ] }, fields)
+    expect('rule' in r && r.rule.columns).toEqual([{ field_key: '__fixed', header: 'Gender', value: 'Male' }])
+  })
+})

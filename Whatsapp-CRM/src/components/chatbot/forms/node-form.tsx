@@ -44,7 +44,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { RichTextArea } from "./rich-text-area";
-import { GoogleSheetForm } from "./google-sheet-form";
+import { GoogleSheetForm, SourceValue, valueOptions } from "./google-sheet-form";
+import { isReservedVarKey, isValidVarKey, toVarKey } from "@/lib/chatbot/var-key";
 import { VariablePicker } from "./variable-picker";
 import type { ChatbotBuilderNode, ChatbotNodeType } from "@/lib/chatbot/types";
 import { NODE_META, NODE_NAME_MAX, nodeDisplayName } from "@/lib/chatbot/node-meta";
@@ -1772,64 +1773,56 @@ function DelayForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
 }
 
 function SetVariableForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  // Variables made elsewhere in this chatbot — offered as values here.
   const vars = getFlowVars(allNodes, nodeKey);
-  const assignments = Array.isArray(cfg.assignments)
-    ? (cfg.assignments as Array<Record<string, unknown>>)
-    : [];
-  const update = (i: number, key: string, val: string) => {
-    onChange({
-      ...cfg,
-      assignments: assignments.map((a, idx) => (idx === i ? { ...a, [key]: val } : a)),
-    });
-  };
-  const add = () =>
-    onChange({ ...cfg, assignments: [...assignments, { var_key: "", value: "" }] });
-  const remove = (i: number) =>
-    onChange({ ...cfg, assignments: assignments.filter((_, idx) => idx !== i) });
+  const assignments = Array.isArray(cfg.assignments) && (cfg.assignments as unknown[]).length > 0
+    ? (cfg.assignments as Array<{ var_key?: string; value?: string }>)
+    : [{ var_key: "", value: "" }];
+  const setAt = (i: number, patch: { var_key?: string; value?: string }) =>
+    onChange({ ...cfg, assignments: assignments.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
+  const options = valueOptions(vars, false);
+  const keys = assignments.map((a) => a.var_key ?? "");
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        <p className="text-xs font-medium text-slate-700">Assignments</p>
-        {assignments.map((a, i) => (
-          <div key={i} className="space-y-1">
-            <div className="flex gap-1.5">
-              <Input
-                className="h-7 flex-1 font-mono text-xs"
-                value={String(a.var_key ?? "")}
-                onChange={(e) => update(i, "var_key", e.target.value)}
-                placeholder="var_key"
-              />
-              <span className="flex items-center text-xs text-slate-500">=</span>
-              <Input
-                className="h-7 flex-1 text-xs"
-                value={String(a.value ?? "")}
-                onChange={(e) => update(i, "value", e.target.value)}
-                placeholder="value or {{vars.x}}"
-              />
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        A variable holds a value the next steps can use — in a message, a condition, or a Google Sheet column.
+      </p>
+      {assignments.map((a, i) => {
+        const key = a.var_key ?? "";
+        const dup = key && keys.indexOf(key) !== i;
+        const bad = key && !isValidVarKey(key);
+        return (
+          <div key={i} className="space-y-2 rounded-xl border border-slate-200 bg-white p-2.5">
+            <div className="flex items-center gap-1.5">
+              <Input className="h-8 min-w-0 flex-1 text-xs" value={key} autoComplete="off" name={`var-${i}`}
+                aria-label={`Variable ${i + 1} name`} placeholder="Name, e.g. course"
+                onChange={(e) => setAt(i, { var_key: e.target.value })}
+                onBlur={(e) => { const k = toVarKey(e.target.value); if (k !== key) setAt(i, { var_key: k }); }} />
               {assignments.length > 1 && (
-                <button
-                  onClick={() => remove(i)}
-                  className="text-slate-500 hover:text-rose-500"
-                 aria-label="Delete">
-                  <Trash2 className="h-3.5 w-3.5" />
+                <button type="button" onClick={() => onChange({ ...cfg, assignments: assignments.filter((_, j) => j !== i) })}
+                  aria-label={`Remove variable ${i + 1}`} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
                 </button>
               )}
             </div>
-            <VarChips
-              vars={vars}
-              onInsert={(v) => update(i, "value", String(a.value ?? "") + v)}
-            />
+            <SourceValue label={key || `Variable ${i + 1}`} value={a.value ?? ""} options={options} usedElsewhere={new Set()}
+              onChange={(v) => setAt(i, { value: v })} />
+            {key && !bad && (
+              <p className="text-[10.5px] text-slate-500">
+                Use it as <code className="rounded bg-slate-100 px-1 font-mono text-[10px] text-teal-700">{`{{vars.${key}}}`}</code>
+                {isReservedVarKey(key) && <span className="text-amber-700"> — the chatbot also fills this name itself; choose another.</span>}
+              </p>
+            )}
+            {bad && <p className="text-[10.5px] text-rose-700">Letters, digits and _ only — it becomes “{toVarKey(key) || "…"}”.</p>}
+            {dup && <p className="text-[10.5px] text-amber-700">Already above — the later one wins.</p>}
           </div>
-        ))}
-        <button
-          type="button"
-          className="flex h-7 w-full items-center justify-center gap-1 rounded-md border border-slate-200 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
-          onClick={add}
-        >
-          <Plus className="h-3.5 w-3.5" /> Add assignment
-        </button>
-      </div>
+        );
+      })}
+      <button type="button" onClick={() => onChange({ ...cfg, assignments: [...assignments, { var_key: "", value: "" }] })}
+        className="flex h-8 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 text-xs text-slate-600 transition-colors hover:bg-slate-50">
+        <Plus className="h-3.5 w-3.5" aria-hidden /> Add another variable
+      </button>
       <NodeSelect
         label="Next node"
         value={String(cfg.next_node_key ?? "")}

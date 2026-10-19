@@ -58,8 +58,12 @@ export function parseRuleInput(body: unknown, fields: readonly RouteField[]): { 
   const columns = (Array.isArray(b.columns) ? b.columns : [])
     .slice(0, 200)
     .map((c) => (c && typeof c === 'object' ? (c as Record<string, unknown>) : {}))
-    .filter((c) => keys.has(String(c.field_key ?? '')))
-    .map((c) => ({ field_key: String(c.field_key), header: str(c.header, 100) || String(c.field_key) }))
+    .filter((c) => keys.has(String(c.field_key ?? '')) || (c.field_key === '__fixed' && str(c.value, 500) !== ''))
+    .map((c) => ({
+      field_key: String(c.field_key),
+      header: str(c.header, 100) || String(c.field_key),
+      ...(c.field_key === '__fixed' ? { value: str(c.value, 500) } : {}),
+    }))
   const split = str(b.split_template, 200)
   if (split && !/\{\{[^}]+\}\}/.test(split)) return { error: 'The split name needs at least one {{Field}}, e.g. {{Month}}.' }
   return {

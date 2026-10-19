@@ -183,3 +183,12 @@ describe('writing into an existing template tab', () => {
     expect(row[0]).toBe('2026-10-19')
   })
 })
+
+describe('a column with the same text in every row', () => {
+  it('writes the fixed text (e.g. a dropdown choice) under that column', () => {
+    const r = rule({ columns: [{ field_key: 'name', header: 'Name' }, { field_key: '__fixed', header: 'Status', value: 'Registered' }] })
+    const [d] = destinationsFor({ rules: [r], rec: rec({ name: 'Anu' }, 'R1'), fields, mode: 'first', nowWall: now })
+    expect(d.headers).toEqual(['Name', 'Status', 'CRM ID'])
+    expect(d.row).toEqual(['Anu', 'Registered', 'R1'])
+  })
+})

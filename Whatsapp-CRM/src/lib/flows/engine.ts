@@ -1669,8 +1669,13 @@ async function advanceFromNodeKey(
       const cfg = node.config as { assignments?: Array<{ var_key: string; value: string }>; next_node_key?: string };
       const newVars: Record<string, unknown> = { ...run.vars };
       const contactForVars = await getContact();
+      // {{today}} / {{now}} are the business's own date and time.
+      const { businessNow, withDateTokens } = await import("@/lib/google/sheet-step");
+      const { businessTimezone } = await import("@/lib/ai/human-date");
+      const fill = withDateTokens((t) => interpolateWithContact(t, newVars, contactForVars), businessNow(await businessTimezone(run.account_id)));
       for (const a of cfg.assignments ?? []) {
-        if (a.var_key) newVars[a.var_key] = interpolateWithContact(a.value ?? "", run.vars, contactForVars);
+        // Later lines may use earlier ones: {{vars.first}} works in the second.
+        if (a.var_key) newVars[a.var_key] = fill(a.value ?? "");
       }
       await prisma.flowRun.update({ where: { id: run.id }, data: { vars: newVars as Record<string, string> } });
       run = { ...run, vars: newVars };

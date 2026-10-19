@@ -797,6 +797,9 @@ function validateNode(
       assignments.forEach((a, i) => {
         if (!a.var_key?.trim()) {
           issues.push({ severity: "error", scope: "node", node_key: node.node_key, field: `assignments.${i}.var_key`, message: `Assignment ${i + 1} needs a variable name.` });
+        } else if (!/^[a-zA-Z0-9_]{1,40}$/.test(a.var_key)) {
+          // Saved by the old form; {{vars.…}} can only read letters, digits and _.
+          issues.push({ severity: "warning", scope: "node", node_key: node.node_key, field: `assignments.${i}.var_key`, message: `Variable “${a.var_key}” has spaces or symbols — {{vars.${a.var_key}}} will stay empty. Use letters, digits and _ only.` });
         }
       });
       if (!cfg.next_node_key) {

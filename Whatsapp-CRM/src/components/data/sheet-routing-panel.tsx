@@ -53,7 +53,7 @@ interface Route {
   tab_title: string
   split_template: string | null
   split_into: "tab" | "sheet"
-  columns: Array<{ field_key: string; header: string }>
+  columns: Array<{ field_key: string; header: string; value?: string }>
   move_on_edit: boolean
   delivered_count: number
   in_sheet: number
@@ -596,6 +596,8 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
     return renamed ? "match" : "choose"
   })
   const [sheetHeaders, setSheetHeaders] = useState<string[] | null>(null)
+  // The tab's own dropdown choices, by column name.
+  const [sheetChoices, setSheetChoices] = useState<Record<string, string[]>>({})
   useEffect(() => {
     if (colMode !== "match" || !draft.spreadsheet_id || draft.split_template) return
     let live = true
@@ -603,11 +605,15 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
       setSheetHeaders(null)
       apiFetch(`/api/google/sheets/preview?picked=1&spreadsheet=${encodeURIComponent(draft.spreadsheet_id)}&tab=${encodeURIComponent(draft.tab_title)}`)
         .then((r) => r.json())
-        .then((d: { tab?: string; headers?: string[] }) => {
+        .then((d: { tab?: string; headers?: string[]; dropdowns?: Record<string, string[]> }) => {
           if (!live) return
           // The preview falls back to the first tab when this one does not exist.
           const same = (d.tab ?? "").trim().toLowerCase() === draft.tab_title.trim().toLowerCase()
-          setSheetHeaders(same ? (d.headers ?? []).filter((h) => h.trim() && !/^column \d+$/i.test(h) && h.trim().toLowerCase() !== "crm id") : [])
+          const all = d.headers ?? []
+          const choices: Record<string, string[]> = {}
+          all.forEach((h, i) => { const c = d.dropdowns?.[String(i)]; if (c?.length) choices[h] = c })
+          setSheetChoices(choices)
+          setSheetHeaders(same ? all.filter((h) => h.trim() && !/^column \d+$/i.test(h) && h.trim().toLowerCase() !== "crm id") : [])
         })
         .catch((err) => {
           console.error("[sheet-routing] headers failed:", err)
@@ -632,13 +638,13 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
     else set({ columns: [] })
     if (m === "match") autoMatchNext.current = true
   }
-  function matchColumn(header: string, key: string) {
+  function matchColumn(header: string, key: string, value?: string) {
     if (!sheetHeaders) return
-    const map = new Map(draft.columns.map((c) => [c.header, c.field_key]))
+    const map = new Map(draft.columns.map((c) => [c.header, c]))
     if (key === "__none") map.delete(header)
-    else map.set(header, key)
+    else map.set(header, key === "__fixed" ? { header, field_key: key, value: value ?? map.get(header)?.value ?? "" } : { header, field_key: key })
     // Kept in the sheet's own order.
-    set({ columns: sheetHeaders.filter((h) => map.has(h)).map((h) => ({ header: h, field_key: map.get(h)! })) })
+    set({ columns: sheetHeaders.filter((h) => map.has(h)).map((h) => map.get(h)!) })
   }
   function autoMatchColumns() {
     if (!sheetHeaders) return
@@ -649,9 +655,9 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
       ...usable.map((f) => ({ value: f.field_key, label: f.label, keys: [f.field_key] })),
     ].filter((o) => !taken.has(o.value)))
     const n = Object.keys(guess).length
-    const map = new Map(draft.columns.map((c) => [c.header, c.field_key]))
-    for (const [h, k] of Object.entries(guess)) map.set(h, k)
-    set({ columns: sheetHeaders.filter((h) => map.has(h)).map((h) => ({ header: h, field_key: map.get(h)! })) })
+    const map = new Map(draft.columns.map((c) => [c.header, c]))
+    for (const [h, k] of Object.entries(guess)) map.set(h, { header: h, field_key: k })
+    set({ columns: sheetHeaders.filter((h) => map.has(h)).map((h) => map.get(h)!) })
     if (n) toast.success(`Matched ${n} column${n === 1 ? "" : "s"} — check them before saving.`)
     else toast.message("No obvious matches. Choose them yourself.")
   }
@@ -857,18 +863,32 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
               </div>
               <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
                 {sheetHeaders.map((h) => {
-                  const cur = draft.columns.find((c) => c.header === h)?.field_key ?? "__none"
+                  const colNow = draft.columns.find((c) => c.header === h)
+                  const cur = colNow?.field_key ?? "__none"
+                  const choices = sheetChoices[h] ?? []
                   return (
-                    <li key={h} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] items-center gap-2 px-2.5 py-1.5">
-                      <span className="truncate text-[12px] font-medium text-slate-700" title={h}>{h}</span>
-                      <Select value={cur} onValueChange={(v) => matchColumn(h, String(v ?? "__none"))}>
-                        <SelectTrigger className={cn("h-8 w-full min-w-0 text-[12px]", cur === "__none" && "text-slate-400")} aria-label={`What goes in ${h}`}><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none">Leave empty</SelectItem>
-                          {SPECIALS.map((x) => <SelectItem key={x.field_key} value={x.field_key}>{x.label}</SelectItem>)}
-                          {usable.map((f) => <SelectItem key={f.field_key} value={f.field_key}>{f.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                    <li key={h} className="space-y-1.5 px-2.5 py-1.5">
+                      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] items-center gap-2">
+                        <span className="truncate text-[12px] font-medium text-slate-700" title={h}>{h}{choices.length > 0 && <span className="ml-1 text-[10px] font-normal text-slate-400">· list</span>}</span>
+                        <Select value={cur} onValueChange={(v) => matchColumn(h, String(v ?? "__none"))}>
+                          <SelectTrigger className={cn("h-8 w-full min-w-0 text-[12px]", cur === "__none" && "text-slate-400")} aria-label={`What goes in ${h}`}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none">Leave empty</SelectItem>
+                            <SelectItem value="__fixed">{choices.length ? "Choose from its list…" : "Fixed text…"}</SelectItem>
+                            {SPECIALS.map((x) => <SelectItem key={x.field_key} value={x.field_key}>{x.label}</SelectItem>)}
+                            {usable.map((f) => <SelectItem key={f.field_key} value={f.field_key}>{f.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {cur === "__fixed" && (choices.length > 0 ? (
+                        <Select value={colNow?.value || null} onValueChange={(v) => matchColumn(h, "__fixed", String(v ?? ""))}>
+                          <SelectTrigger className="h-8 w-full text-[12px]" aria-label={`${h}: choice`}><SelectValue placeholder="Choose…" /></SelectTrigger>
+                          <SelectContent>{choices.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                        </Select>
+                      ) : (
+                        <Input value={colNow?.value ?? ""} onChange={(e) => matchColumn(h, "__fixed", e.target.value)} maxLength={500} autoComplete="off" name={`fixed-${h}`}
+                          className="h-8 text-[12px]" aria-label={`${h}: text`} placeholder="The same text in every row…" />
+                      ))}
                     </li>
                   )
                 })}

@@ -132,7 +132,7 @@ function Section({ title, children, aside }: { title: string; children: React.Re
 }
 
 /** What to write in one column: a searchable list, or custom text. */
-function ValuePicker({ value, options, usedElsewhere, onChange, label, choices }: {
+export function ValuePicker({ value, options, usedElsewhere, onChange, label, choices, listOnly }: {
   value: string;
   options: ValueOption[];
   usedElsewhere: Set<string>;
@@ -140,11 +140,13 @@ function ValuePicker({ value, options, usedElsewhere, onChange, label, choices }
   label: string;
   /** The sheet's own dropdown choices for this column. */
   choices?: string[];
+  /** Only the list — text and dropdown choices have their own tabs (SourceValue). */
+  listOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const known = options.find((o) => o.value === value);
-  const [custom, setCustom] = useState(!!value && !known);
+  const [custom, setCustom] = useState(!listOnly && !!value && !known);
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -198,7 +200,7 @@ function ValuePicker({ value, options, usedElsewhere, onChange, label, choices }
             className="w-full bg-transparent text-[13px] text-slate-700 placeholder:text-slate-400 focus:outline-none" />
         </div>
         <div className="max-h-72 overflow-y-auto py-1">
-          {choices && choices.length > 0 && !q && (
+          {!listOnly && choices && choices.length > 0 && !q && (
             <div>
               <p className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">The sheet’s choices</p>
               {choices.slice(0, 20).map((c) => (
@@ -224,11 +226,61 @@ function ValuePicker({ value, options, usedElsewhere, onChange, label, choices }
           {visible.length === 0 && <p className="px-3 py-4 text-center text-[12px] text-slate-400">Nothing matches. Use custom text.</p>}
         </div>
         <div className="flex gap-1 border-t border-slate-100 p-1.5">
-          <button type="button" onClick={() => pick("", true)} className="flex-1 rounded-md px-2 py-1.5 text-left text-[12px] font-medium text-indigo-700 hover:bg-indigo-50">Custom text…</button>
+          {!listOnly && <button type="button" onClick={() => pick("", true)} className="flex-1 rounded-md px-2 py-1.5 text-left text-[12px] font-medium text-indigo-700 hover:bg-indigo-50">Custom text…</button>}
           {value && <button type="button" onClick={() => pick("")} className="rounded-md px-2 py-1.5 text-[12px] text-slate-500 hover:bg-slate-100">Leave empty</button>}
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+type Source = "chat" | "text" | "list";
+
+/**
+ * Where one value comes from, said with three tabs instead of hidden in a
+ * list: something from the chat (answers, contact, trigger, dates), text
+ * typed here, or — for a sheet column that is a dropdown — one of that
+ * dropdown's own choices.
+ */
+export function SourceValue({ value, onChange, options, usedElsewhere, choices, label }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: ValueOption[];
+  usedElsewhere: Set<string>;
+  choices?: string[];
+  label: string;
+}) {
+  const hasList = !!choices && choices.length > 0;
+  const known = options.some((o) => o.value === value);
+  const [source, setSource] = useState<Source>(() =>
+    hasList && choices!.includes(value) ? "list" : value && !known ? "text" : "chat");
+  const tabs: Array<[Source, string]> = [["chat", "From chat"], ["text", "Text"], ...(hasList ? [["list", "From list"] as [Source, string]] : [])];
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <div className="flex gap-1" role="radiogroup" aria-label={`${label}: where the value comes from`}>
+        {tabs.map(([v, text]) => (
+          <button key={v} type="button" role="radio" aria-checked={source === v}
+            onClick={() => { if (source !== v) { setSource(v); onChange(""); } }}
+            className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-medium transition-colors",
+              source === v ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>
+            {text}
+          </button>
+        ))}
+      </div>
+      {source === "chat" && (
+        <ValuePicker label={label} value={value} options={options} usedElsewhere={usedElsewhere} onChange={onChange} listOnly />
+      )}
+      {source === "text" && (
+        <Input className="h-8 text-xs" value={value} onChange={(e) => onChange(e.target.value)} autoComplete="off" name={`text-${label}`}
+          aria-label={`${label}: text`} placeholder="Type the value… ({{vars.x}} works too)" />
+      )}
+      {source === "list" && hasList && (
+        <Select value={value || null} onValueChange={(v) => onChange(String(v ?? ""))}>
+          <SelectTrigger className="h-8 w-full min-w-0 text-xs" aria-label={`${label}: choice`}><SelectValue placeholder="Choose…" /></SelectTrigger>
+          <SelectContent>{choices!.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+        </Select>
+      )}
+    </div>
   );
 }
 
@@ -309,7 +361,7 @@ function MappingDialog({ open, onClose, headers, sample, dropdowns, mapping, opt
                       <p className="truncate text-[13px] font-medium text-slate-800">{col}</p>
                       <p className="truncate text-[11px] text-slate-400">{i < 0 ? "New column" : s ? `e.g. ${s}` : "Empty so far"}</p>
                     </div>
-                    <ValuePicker label={col} value={draft[col] ?? ""} options={options} usedElsewhere={usedBy(col)}
+                    <SourceValue label={col} value={draft[col] ?? ""} options={options} usedElsewhere={usedBy(col)}
                       choices={i >= 0 ? dropdowns[String(i)] : undefined}
                       onChange={(v) => setDraft((d) => ({ ...d, [col]: v }))} />
                   </li>
@@ -682,7 +734,7 @@ export function GoogleSheetForm({ cfg, onChange, vars, activity }: {
                       <SelectContent>{OPS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                     </Select>
                     {needsValue && (
-                      <ValuePicker label={`Condition ${i + 1} value`} value={c.value} options={options.filter((o) => o.value !== CLEAR_TOKEN)}
+                      <SourceValue key={c.column} label={`Condition ${i + 1} value`} value={c.value} options={options.filter((o) => o.value !== CLEAR_TOKEN)}
                         usedElsewhere={new Set()} onChange={(v) => condAt(i, { value: v })}
                         choices={preview ? preview.dropdowns[String(preview.headers.indexOf(c.column))] : undefined} />
                     )}

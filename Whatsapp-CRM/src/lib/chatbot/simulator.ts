@@ -363,7 +363,9 @@ export function runUntilInteractive(
           : []
         for (const a of assignments) {
           const k = typeof a.var_key === 'string' ? a.var_key : ''
-          const v = interp(typeof a.value === 'string' ? a.value : '', state.vars)
+          const today = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+          const raw = (typeof a.value === 'string' ? a.value : '').replace(/\{\{today\}\}/gi, today).replace(/\{\{now\}\}/gi, new Date().toLocaleString())
+          const v = interp(raw, state.vars)
           if (k) state.vars[k] = v
         }
         key = next(cfg.next_node_key)

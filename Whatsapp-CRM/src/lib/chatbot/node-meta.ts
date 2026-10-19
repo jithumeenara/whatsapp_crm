@@ -194,8 +194,8 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     group: 'Logic',
   },
   set_variable: {
-    label: 'Set Variable',
-    description: 'Create or update flow variables for use in later nodes',
+    label: 'Define variable',
+    description: 'Make a variable and give it a value — text, something from the chat, or a date — for later steps',
     icon: Code2,
     color: 'text-slate-500',
     bg: 'bg-muted',
@@ -531,8 +531,8 @@ export function summarizeChatbotNode(
         ? (config.assignments as Array<Record<string, unknown>>)
         : []
       return assignments.length
-        ? assignments.map((a) => `${a.var_key} = ${a.value}`).slice(0, 2).join(', ')
-        : null
+        ? assignments.filter((a) => a.var_key).map((a) => `${a.var_key} = ${t(a.value, 18) ?? '…'}`).slice(0, 2).join(', ') + (assignments.length > 2 ? ` +${assignments.length - 2}` : '')
+        : 'Name a variable'
     }
     case 'set_tag': {
       const mode = config.mode === 'remove' ? 'Remove' : 'Add'

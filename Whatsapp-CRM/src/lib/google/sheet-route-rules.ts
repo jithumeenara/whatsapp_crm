@@ -39,6 +39,8 @@ export interface RouteField {
 export interface RouteColumn {
   field_key: string
   header: string
+  /** field_key = '__fixed': the same text in every row (e.g. a dropdown's "Male"). */
+  value?: string
 }
 
 export interface RouteRule {
@@ -250,6 +252,8 @@ export function routableFields(fields: readonly RouteField[]): RouteField[] {
 /** Columns that are not a field: a running number, and when the row was added. */
 export const SERIAL_KEY = '__serial'
 export const CREATED_KEY = '__created'
+/** A column that gets the same text in every row. */
+export const FIXED_KEY = '__fixed'
 export const SPECIAL_COLUMNS: ReadonlyArray<{ field_key: string; label: string }> = [
   { field_key: SERIAL_KEY, label: 'Serial number (1, 2, 3…)' },
   { field_key: CREATED_KEY, label: 'Date added' },
@@ -261,7 +265,10 @@ export const SERIAL_MARK = '\u0000serial'
 export function ruleHeaders(rule: RouteRule, fields: readonly RouteField[]): { headers: string[]; keys: string[] } {
   const usable = routableFields(fields)
   const cols = rule.columns.length
-    ? rule.columns.filter((c) => usable.some((f) => f.field_key === c.field_key) || SPECIAL_COLUMNS.some((s) => s.field_key === c.field_key))
+    ? rule.columns
+        .filter((c) => usable.some((f) => f.field_key === c.field_key) || SPECIAL_COLUMNS.some((s) => s.field_key === c.field_key) || c.field_key === FIXED_KEY)
+        // A fixed column carries its text in its key, so ruleRow needs nothing else.
+        .map((c) => (c.field_key === FIXED_KEY ? { ...c, field_key: `${FIXED_KEY}:${c.value ?? ''}` } : c))
     : usable.map((f) => ({ field_key: f.field_key, header: f.label }))
   const seen = new Set<string>()
   const headers: string[] = []
@@ -281,6 +288,7 @@ export function ruleRow(keys: readonly string[], rec: RouteRecord, fields: reado
   const byKey = new Map(fields.map((f) => [f.field_key, f]))
   const cells = keys.map((k) => {
     if (k === SERIAL_KEY) return SERIAL_MARK
+    if (k.startsWith(`${FIXED_KEY}:`)) return k.slice(FIXED_KEY.length + 1)
     if (k === CREATED_KEY) {
       // The business's own date, not the server's.
       return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(rec.created_at))
