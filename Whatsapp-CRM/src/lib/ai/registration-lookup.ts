@@ -19,6 +19,7 @@
  * identity-document / bank / password columns are never returned.
  */
 
+import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { isPlaceholderPhone } from '@/lib/contacts/validate'
 
@@ -78,11 +79,13 @@ export async function contactPhoneKey(accountId: string, contactId: string): Pro
   return d.length >= 10 ? d.slice(-10) : null
 }
 
-/** Rows in these tables, not saved by this chat, that carry this number. */
-async function fromTables(args: {
+/** Rows in these tables that carry this number — not saved by this chat
+ *  when a contactId is given (the admin assistant gives none). */
+export async function findTableRowsByPhone(args: {
   accountId: string
-  contactId: string
+  contactId?: string | null
   key: string
+  limit?: number
   tables: ReadonlyArray<{ table_id: string; name: string; labels: Map<string, string> }>
 }): Promise<FoundRegistration[]> {
   if (args.tables.length === 0) return []
@@ -91,7 +94,7 @@ async function fromTables(args: {
     SELECT id, table_id, data, created_at FROM data_records
     WHERE account_id = ${args.accountId}::uuid
       AND table_id = ANY(${ids}::uuid[])
-      AND contact_id IS DISTINCT FROM ${args.contactId}::uuid
+      ${args.contactId ? Prisma.sql`AND contact_id IS DISTINCT FROM ${args.contactId}::uuid` : Prisma.empty}
       AND EXISTS (
         SELECT 1 FROM jsonb_each_text(data) e
         WHERE btrim(e.value) ~ '^[+0-9 ()-]{10,20}$'
@@ -99,7 +102,7 @@ async function fromTables(args: {
           AND right(regexp_replace(e.value, '\\D', '', 'g'), 10) = ${args.key}
       )
     ORDER BY created_at DESC
-    LIMIT ${MAX_ROWS * 2}`
+    LIMIT ${(args.limit ?? MAX_ROWS) * 2}`
   const out: FoundRegistration[] = []
   for (const r of rows) {
     const data = (r.data && typeof r.data === 'object' ? r.data : {}) as Record<string, unknown>
@@ -116,14 +119,14 @@ async function fromTables(args: {
       can_change_in_chat: false,
     })
   }
-  return out.slice(0, MAX_ROWS)
+  return out.slice(0, args.limit ?? MAX_ROWS)
 }
 
-interface SheetStats { sheets: number; tabs: number; problem: string | null }
+export interface SheetStats { sheets: number; tabs: number; problem: string | null }
 
 /** Rows in the sheets these tables route to — typed in by the office, or
  *  put there by the CRM for a record the table no longer has. */
-async function fromSheets(
+export async function findSheetRowsByPhone(
   args: { accountId: string; key: string; tableIds: readonly string[]; knownIds: ReadonlySet<string> },
   stats: SheetStats,
 ): Promise<FoundRegistration[]> {
@@ -222,13 +225,13 @@ export async function registrationsByPhone(args: {
   const cacheKey = `${args.accountId}:${args.contactId}:${key}`
   const hit = cache.get(cacheKey)
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.rows
-  const a = await fromTables({ ...args, key }).catch((err) => {
+  const a = await findTableRowsByPhone({ ...args, key }).catch((err) => {
     console.error('[registration-lookup] tables failed:', err instanceof Error ? err.message : err)
     return [] as FoundRegistration[]
   })
   const known = new Set([...(args.knownIds ?? []), ...a.map((r) => r.registration_id)])
   const stats: SheetStats = { sheets: 0, tabs: 0, problem: null }
-  const b = await fromSheets({ accountId: args.accountId, key, tableIds: args.tables.map((t) => t.table_id), knownIds: known }, stats).catch((err) => {
+  const b = await findSheetRowsByPhone({ accountId: args.accountId, key, tableIds: args.tables.map((t) => t.table_id), knownIds: known }, stats).catch((err) => {
     stats.problem = err instanceof Error ? err.message : String(err)
     return [] as FoundRegistration[]
   })

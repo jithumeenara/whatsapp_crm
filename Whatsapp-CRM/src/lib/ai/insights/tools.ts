@@ -405,6 +405,64 @@ const TOOLS: Record<string, ToolImpl> = {
     },
   },
 
+  find_by_phone: {
+    declaration: {
+      name: 'find_by_phone',
+      description:
+        'Everything held for one phone number, in one lookup: rows in every Data Store table (registrations, bookings, orders…), rows in the Google Sheets those tables route to, the contact, and their enquiries. Use it whenever a question names a phone or WhatsApp number — never read tables one by one to find a person.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          phone: { type: SchemaType.STRING, description: 'The phone number as given — any format; the last 10 digits are matched.' },
+        },
+        required: ['phone'],
+      },
+    },
+    async run(args, ctx) {
+      const digits = String(args.phone ?? '').replace(/\D/g, '')
+      if (digits.length < 10 || digits.length > 13) return { error: 'Give a phone number with at least 10 digits.' }
+      const key = digits.slice(-10)
+      const { findTableRowsByPhone, findSheetRowsByPhone } = await import('../registration-lookup')
+      const tables = await prisma.dataTable.findMany({
+        where: { account_id: ctx.accountId },
+        select: { id: true, name: true, fields: { select: { field_key: true, label: true, field_type: true } } },
+      })
+      const secret = new Set(tables.flatMap((t) => t.fields.filter((f) => f.field_type === 'password').map((f) => f.field_key)))
+      const shaped = tables.map((t) => ({ table_id: t.id, name: t.name, labels: new Map(t.fields.map((f) => [f.field_key, f.label])) }))
+      const rows = await findTableRowsByPhone({ accountId: ctx.accountId, key, tables: shaped, limit: 10 })
+      const stats = { sheets: 0, tabs: 0, problem: null as string | null }
+      const sheetRows = await findSheetRowsByPhone(
+        { accountId: ctx.accountId, key, tableIds: tables.map((t) => t.id), knownIds: new Set(rows.map((r) => r.registration_id)) },
+        stats,
+      ).catch(() => [])
+      const [contacts, leads] = await Promise.all([
+        prisma.contact.findMany({
+          where: { account_id: ctx.accountId, OR: [{ phone: { endsWith: key } }, { phone_normalized: { endsWith: key } }] },
+          select: { name: true, phone: true, created_at: true },
+          take: 3,
+        }),
+        prisma.lead.findMany({
+          where: { account_id: ctx.accountId, contact: { phone: { endsWith: key } } },
+          select: { title: true, status: true, source: true, created_at: true },
+          orderBy: { created_at: 'desc' },
+          take: 5,
+        }),
+      ])
+      const labelled = (t: (typeof shaped)[number] | undefined, details: Record<string, unknown>) =>
+        Object.fromEntries(Object.entries(details).filter(([k]) => !secret.has(k)).map(([k, v]) => [t?.labels.get(k) ?? k, v]))
+      return {
+        number_ending: key.slice(-4),
+        registrations: [
+          ...rows.map((r) => ({ in: r.form, added: r.registered_on, details: labelled(shaped.find((t) => t.name === r.form), r.details) })),
+          ...sheetRows.map((r) => ({ in: r.where, details: r.details })),
+        ],
+        contacts,
+        enquiries: leads,
+        ...(stats.problem ? { note: `Some sheets could not be read: ${stats.problem}` } : {}),
+      }
+    },
+  },
+
   list_chatbots: {
     declaration: {
       name: 'list_chatbots',

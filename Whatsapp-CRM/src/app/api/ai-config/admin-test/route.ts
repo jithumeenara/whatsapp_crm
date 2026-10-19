@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI, FinishReason, type Content } from '@google/generative-ai'
+import { GoogleGenerativeAI, FinishReason, FunctionCallingMode, type Content } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
@@ -37,7 +37,7 @@ const MAX_TOOL_ROUNDS = 4
 
 const BASE_SYSTEM_PROMPT = `You are the internal data assistant for this WhatsApp CRM account. You are talking to an owner or admin of the business, not to a customer.
 
-Answer questions about their CRM data by calling the provided tools. Never invent a number: if a tool didn't return it, say you don't have it. If a question needs data no tool provides, say so plainly and suggest the closest thing you can actually answer.
+Answer questions about their CRM data by calling the provided tools. When a question names a phone or WhatsApp number, call find_by_phone once — it searches every table, sheet, contact and enquiry for that number. Never invent a number: if a tool didn't return it, say you don't have it. If a question needs data no tool provides, say so plainly and suggest the closest thing you can actually answer.
 
 Formatting: when a result has more than two rows, present it as a Markdown table with clear column headers. Put the single most important number in a short sentence before or after the table. Keep answers brief — this is an operations dashboard, not an essay.
 
@@ -179,6 +179,23 @@ export async function POST(req: Request) {
       contents.push({ role: 'user', parts: responseParts })
 
       result = await model.generateContent({ contents })
+      addUsage(result.response.usageMetadata)
+    }
+
+    // Out of lookups and still asking for more: answer from what has been
+    // read so far, rather than leaving the admin with an error and nothing.
+    const stillCalling = result.response.functionCalls()?.length
+    if (stillCalling) {
+      const lastTurn = result.response.candidates?.[0]?.content
+      if (lastTurn) contents.push(lastTurn)
+      contents.push({
+        role: 'user',
+        parts: [{ text: 'No more lookups are possible for this question. Answer now from the results above; say plainly what you could not find.' }],
+      })
+      result = await model.generateContent({
+        contents,
+        toolConfig: { functionCallingConfig: { mode: FunctionCallingMode.NONE } },
+      })
       addUsage(result.response.usageMetadata)
     }
 
