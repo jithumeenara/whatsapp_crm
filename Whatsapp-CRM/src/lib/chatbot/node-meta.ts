@@ -24,6 +24,7 @@ import {
   Waypoints,
   ShoppingBag,
   TableProperties,
+  Sheet,
 } from 'lucide-react'
 import type { ChatbotNodeType } from './types'
 
@@ -224,6 +225,14 @@ export const NODE_META: Record<ChatbotNodeType, NodeMeta> = {
     bg: 'bg-teal-50',
     group: 'CRM Actions',
   },
+  google_sheet: {
+    label: 'Google Sheet',
+    description: 'Add, update or delete rows in a Google Sheet — mapped by column name',
+    icon: Sheet,
+    color: 'text-emerald-700',
+    bg: 'bg-emerald-50',
+    group: 'CRM Actions',
+  },
   crm_action: {
     label: 'CRM Action',
     description: 'Create a lead, add to segment, create a follow-up, or add a task for this contact',
@@ -351,7 +360,7 @@ export const PALETTE_NODES: ChatbotNodeType[] = [
   'collect_input', 'wait_flow_submit',
   'condition', 'switch_case', 'join', 'delay', 'set_variable',
   'ai_reply', 'http_request',
-  'set_tag', 'update_contact', 'update_table_row', 'crm_action',
+  'set_tag', 'update_contact', 'update_table_row', 'google_sheet', 'crm_action',
   'handoff', 'link_chatbot', 'end',
 ]
 
@@ -408,6 +417,11 @@ export function getSourceHandles(
     case 'update_table_row':
       return [
         { id: 'next', label: '✓ Updated' },
+        { id: 'not_found', label: '✗ Not found' },
+      ]
+    case 'google_sheet':
+      return [
+        { id: 'next', label: '✓ Done' },
         { id: 'not_found', label: '✗ Not found' },
       ]
     case 'http_request': {
@@ -538,6 +552,15 @@ export function summarizeChatbotNode(
       const more = sets.length > 1 ? ` +${sets.length - 1}` : ''
       const which = config.which === 'all' ? 'all rows' : config.which === 'oldest' ? 'oldest row' : 'latest row'
       return `${String(first.field_key)} → ${val}${more} · ${which}`
+    }
+    case 'google_sheet': {
+      const sheet = t(config.spreadsheet_name, 24) ?? (config.spreadsheet_id ? 'Sheet' : null)
+      if (!sheet) return 'Choose a Google Sheet'
+      const tab = t(config.sheet_title, 16)
+      const where = tab ? `${sheet} › ${tab}` : sheet
+      const verb = config.action === 'update' ? 'Update' : config.action === 'delete' ? (config.delete_mode === 'delete' ? 'Delete' : 'Archive') : 'Add row'
+      const n = Array.isArray(config.mapping) ? (config.mapping as unknown[]).length : 0
+      return config.action === 'delete' ? `${verb} · ${where}` : `${verb} · ${where}${n ? ` · ${n} col${n === 1 ? '' : 's'}` : ''}`
     }
     case 'crm_action': {
       const action = typeof config.action === 'string' ? config.action : ''

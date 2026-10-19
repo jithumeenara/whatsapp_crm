@@ -509,6 +509,27 @@ export function runUntilInteractive(
         break
       }
 
+      case 'google_sheet': {
+        // Test bot: says what the step would do and takes the "Done" path.
+        // Nothing is written — the simulator never touches a real sheet.
+        const mapping = Array.isArray(cfg.mapping) ? (cfg.mapping as Array<Record<string, unknown>>) : []
+        const what = mapping
+          .filter((m) => typeof m.column === 'string' && m.column)
+          .slice(0, 4)
+          .map((m) => `${String(m.column)} = "${interp(typeof m.value === 'string' ? m.value : '', state.vars)}"`)
+          .join(', ')
+        const sheet = typeof cfg.spreadsheet_name === 'string' && cfg.spreadsheet_name ? cfg.spreadsheet_name : 'the sheet'
+        const verb = cfg.action === 'update' ? 'update the matching row with' : cfg.action === 'delete' ? (cfg.delete_mode === 'delete' ? 'delete the matching row' : 'move the matching row to “Deleted”') : 'add a row:'
+        state.msgs.push({
+          id: uid(),
+          role: 'system',
+          text: `📗 Would ${verb} ${cfg.action === 'delete' ? '' : what || '(nothing mapped)'} in ${sheet} — test only, nothing saved`,
+        })
+        state.vars.sheet_status = cfg.action === 'delete' ? 'deleted' : cfg.action === 'update' ? 'updated' : 'added'
+        key = next(cfg.next_node_key)
+        break
+      }
+
       case 'join': {
         // Transparent pass-through — multiple branches converge here,
         // simulator just advances to next_node_key.

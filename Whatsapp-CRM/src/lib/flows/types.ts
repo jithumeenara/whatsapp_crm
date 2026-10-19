@@ -272,7 +272,8 @@ export type FlowNodeType =
   | "http_request"
   | "switch_case"
   | "send_to_number"
-  | "update_table_row";
+  | "update_table_row"
+  | "google_sheet";
 
 // ============================================================
 // Triggers (matches `flows.trigger_type` + `trigger_config`)

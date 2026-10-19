@@ -29,6 +29,7 @@ export type ChatbotNodeType =
   | 'send_to_number'
   | 'send_catalog'
   | 'update_table_row'
+  | 'google_sheet'
 
 // ─── Shared primitives ──────────────────────────────────────────
 
@@ -324,6 +325,27 @@ export interface UpdateTableRowNodeCfg {
   not_found_node_key?: string
 }
 
+/** Add, update or delete rows straight in a Google Sheet (sheet-step.ts). */
+export interface GoogleSheetNodeCfg {
+  spreadsheet_id: string
+  spreadsheet_name?: string
+  sheet_title: string
+  action: 'add' | 'update' | 'delete'
+  /** Sheet column ← template ({{vars.x}}, {{contact.phone}}, {{today}}, text). */
+  mapping: Array<{ column: string; value: string }>
+  /** add: always, only when no row matches, or update the row that matches. */
+  add_mode?: 'always' | 'if_missing' | 'upsert'
+  conditions: Array<{ column: string; op: 'equals' | 'phone' | 'contains' | 'empty' | 'not_empty'; value: string }>
+  match?: 'all' | 'any'
+  which?: 'latest' | 'oldest' | 'all'
+  /** Decides "latest" and "older than"; '' = by position in the sheet. */
+  date_column?: string
+  older_than_days?: number
+  delete_mode?: 'archive' | 'delete'
+  next_node_key: string
+  not_found_node_key?: string
+}
+
 export interface JoinNodeCfg {
   /** Optional label to describe what flows are converging here */
   label?: string
@@ -388,6 +410,7 @@ export type ChatbotNodeConfig =
   | ({ node_type: 'send_to_number' } & SendToNumberNodeCfg)
   | ({ node_type: 'send_catalog' } & SendCatalogNodeCfg)
   | ({ node_type: 'update_table_row' } & UpdateTableRowNodeCfg)
+  | ({ node_type: 'google_sheet' } & GoogleSheetNodeCfg)
 
 // ─── Builder node (client state) ───────────────────────────────
 
@@ -427,7 +450,7 @@ export const CHATBOT_NODE_TYPES = [
   'collect_input', 'condition', 'ai_reply', 'http_request', 'delay',
   'set_variable', 'set_tag', 'update_contact', 'crm_action', 'handoff', 'end',
   'link_chatbot', 'send_flow', 'wait_flow_submit', 'send_template', 'join', 'switch_case', 'send_to_number',
-  'send_catalog', 'update_table_row',
+  'send_catalog', 'update_table_row', 'google_sheet',
 ] as const satisfies readonly ChatbotNodeType[]
 
 export function isChatbotNodeType(v: unknown): v is ChatbotNodeType {
@@ -469,6 +492,7 @@ export function defaultConfigFor(type: ChatbotNodeType): Record<string, unknown>
     }
     case 'send_to_number': return { phone: '', text: '', next_node_key: '' }
     case 'send_catalog':  return { mode: 'catalog', body_text: '', header_text: '', footer_text: '', product_retailer_id: '', product_retailer_ids: [], next_node_key: '' }
+    case 'google_sheet': return { spreadsheet_id: '', spreadsheet_name: '', sheet_title: '', action: 'add', mapping: [], add_mode: 'always', conditions: [], match: 'all', which: 'latest', date_column: '', older_than_days: 0, delete_mode: 'archive', next_node_key: '', not_found_node_key: '' }
     case 'update_table_row': return { table_id: '', match_field: '', which: 'latest', sets: [{ field_key: '', mode: 'value', value: '' }], next_node_key: '', not_found_node_key: '' }
   }
 }

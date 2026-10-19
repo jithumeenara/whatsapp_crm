@@ -69,6 +69,10 @@ export function afterRecordsChanged(tableId: string, accountId: string): void {
   void import('@/lib/google/sheet-two-way')
     .then((m) => m.syncTableSoon(tableId, accountId))
     .catch((err) => console.error('[google-sheet] sync hook failed:', err instanceof Error ? err.message : err))
+  // Sheet routing rules: the row reaches its sheet(s) within seconds.
+  void import('@/lib/google/sheet-routing')
+    .then((m) => m.routeTableSoon(tableId, accountId))
+    .catch((err) => console.error('[sheet-routing] hook failed:', err instanceof Error ? err.message : err))
 }
 
 export function afterRecordCreated(record: CreatedRecord): void {

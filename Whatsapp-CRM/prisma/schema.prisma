@@ -1967,6 +1967,112 @@ model GoogleSheetRow {
   @@map("google_sheet_rows")
 }
 
+/// Sheet routing (migration 139): per Data Store table, first match only
+/// or every match, and how far the change scan has read.
+model SheetRouteTable {
+  table_id    String    @id @db.Uuid
+  account_id  String    @db.Uuid
+  mode        String    @default("first")
+  cursor_at   DateTime  @default(now()) @db.Timestamptz(6)
+  cursor_id   String?   @db.Uuid
+  last_run_at DateTime? @db.Timestamptz(6)
+  last_error  String?
+  created_at  DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([account_id])
+  @@map("sheet_route_tables")
+}
+
+/// One routing rule: conditions → a spreadsheet tab (or a tab / sheet per
+/// group from split_template), with its own delivery report.
+model SheetRoute {
+  id                String    @id @default(uuid()) @db.Uuid
+  account_id        String    @db.Uuid
+  table_id          String    @db.Uuid
+  name              String
+  position          Int       @default(0)
+  enabled           Boolean   @default(true)
+  is_fallback       Boolean   @default(false)
+  match             String    @default("all")
+  conditions        Json      @default("[]")
+  spreadsheet_id    String
+  spreadsheet_name  String?
+  tab_title         String    @default("Sheet1")
+  split_template    String?
+  split_into        String    @default("tab")
+  /// [{ field_key, header }] in sheet order; empty = every field.
+  columns           Json      @default("[]")
+  move_on_edit      Boolean   @default(true)
+  delivered_count   Int       @default(0)
+  last_delivered_at DateTime? @db.Timestamptz(6)
+  last_error        String?
+  last_error_at     DateTime? @db.Timestamptz(6)
+  created_at        DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  rows    SheetRouteRow[]
+  targets SheetRouteTarget[]
+
+  @@index([table_id, position])
+  @@index([account_id])
+  @@map("sheet_routes")
+}
+
+/// Where a record's row is now, per rule. No relation to DataRecord: the
+/// record may have been deleted — then this is how its row is found.
+model SheetRouteRow {
+  route_id       String   @db.Uuid
+  record_id      String   @db.Uuid
+  account_id     String   @db.Uuid
+  table_id       String   @db.Uuid
+  spreadsheet_id String
+  tab_title      String
+  row_hash       String   @default("")
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
+
+  route SheetRoute @relation(fields: [route_id], references: [id], onDelete: Cascade)
+
+  @@id([route_id, record_id])
+  @@index([table_id, record_id])
+  @@map("sheet_route_rows")
+}
+
+/// split_into = 'sheet': the spreadsheet made for each group, made once.
+model SheetRouteTarget {
+  route_id         String   @db.Uuid
+  group_key        String
+  spreadsheet_id   String
+  spreadsheet_name String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  route SheetRoute @relation(fields: [route_id], references: [id], onDelete: Cascade)
+
+  @@id([route_id, group_key])
+  @@map("sheet_route_targets")
+}
+
+/// The Google Sheets queue: 'record' = route this record again; 'append'
+/// = a chatbot step's row Google refused for a moment, sent later.
+model SheetJob {
+  id         String   @id @default(uuid()) @db.Uuid
+  account_id String   @db.Uuid
+  kind       String
+  table_id   String?  @db.Uuid
+  record_id  String?  @db.Uuid
+  payload    Json     @default("{}")
+  status     String   @default("pending")
+  attempts   Int      @default(0)
+  run_after  DateTime @default(now()) @db.Timestamptz(6)
+  last_error String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status, run_after], map: "sheet_jobs_due_idx")
+  @@index([table_id, status], map: "sheet_jobs_table_idx")
+  @@map("sheet_jobs")
+}
+
 /// A chat window installed on a business's website (migration 130).
 /// public_key is what the install snippet carries — not a secret.
 model WebChatWidget {

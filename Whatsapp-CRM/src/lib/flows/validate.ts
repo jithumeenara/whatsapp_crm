@@ -914,6 +914,36 @@ function validateNode(
       break;
     }
 
+    case "google_sheet": {
+      const cfg = node.config as {
+        spreadsheet_id?: string;
+        action?: string;
+        add_mode?: string;
+        mapping?: Array<{ column?: string; value?: string }>;
+        conditions?: Array<{ column?: string; op?: string; value?: string }>;
+        older_than_days?: number;
+        date_column?: string;
+        next_node_key?: string;
+        not_found_node_key?: string;
+      };
+      const say = (field: string, message: string, severity: "error" | "warning" = "error") =>
+        issues.push({ severity, scope: "node", node_key: node.node_key, field, message });
+      if (!cfg.spreadsheet_id?.trim()) say("spreadsheet_id", "Google Sheet step needs a sheet.");
+      const action = cfg.action === "update" || cfg.action === "delete" ? cfg.action : "add";
+      const mapping = (cfg.mapping ?? []).filter((m) => m.column && (m.value ?? "").trim());
+      if (action !== "delete" && mapping.length === 0) say("mapping", "Google Sheet step: map at least one column.");
+      const conds = (cfg.conditions ?? []).filter((c) => c.column);
+      const needsFind = action !== "add" || (cfg.add_mode === "if_missing" || cfg.add_mode === "upsert");
+      // A step never touches a whole sheet: it needs a condition.
+      if (needsFind && conds.length === 0) say("conditions", "Google Sheet step needs a condition to find the row (e.g. Phone is the customer's number).");
+      if (conds.some((c) => (c.op ?? "equals") !== "empty" && c.op !== "not_empty" && !(c.value ?? "").trim())) say("conditions", "Google Sheet step has a condition with no value.");
+      if (action === "delete" && Number(cfg.older_than_days) > 0 && !cfg.date_column?.trim()) say("date_column", "“Older than” needs the date column.");
+      if (!cfg.next_node_key) say("next_node_key", "Google Sheet step must point to a next node (Done path).");
+      else if (!knownKeys.has(cfg.next_node_key)) say("next_node_key", `Google Sheet step points to non-existent node "${cfg.next_node_key}".`);
+      if (cfg.not_found_node_key && !knownKeys.has(cfg.not_found_node_key)) say("not_found_node_key", `Google Sheet step "not found" path points to non-existent node "${cfg.not_found_node_key}".`);
+      break;
+    }
+
     case "crm_action": {
       const cfg = node.config as { action?: string; segment_id?: string; next_node_key?: string };
       const VALID_ACTIONS = ["create_lead", "add_to_segment", "create_followup", "create_task"];
@@ -1106,7 +1136,8 @@ function outgoingEdges(node: NodeInput): string[] {
       if (cfg.error_node_key) out.push(cfg.error_node_key);
       return out;
     }
-    case "update_table_row": {
+    case "update_table_row":
+    case "google_sheet": {
       const cfg = node.config as { next_node_key?: string; not_found_node_key?: string };
       const out: string[] = [];
       if (cfg.next_node_key) out.push(cfg.next_node_key);

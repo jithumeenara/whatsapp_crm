@@ -44,6 +44,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { RichTextArea } from "./rich-text-area";
+import { GoogleSheetForm } from "./google-sheet-form";
 import { VariablePicker } from "./variable-picker";
 import type { ChatbotBuilderNode, ChatbotNodeType } from "@/lib/chatbot/types";
 import { NODE_META, NODE_NAME_MAX, nodeDisplayName } from "@/lib/chatbot/node-meta";
@@ -79,6 +80,14 @@ function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string
       for (const s of sets) {
         if (typeof s.field_key === "string" && /^[a-zA-Z0-9_]+$/.test(s.field_key)) keys.add(`row_${s.field_key}`);
       }
+    } else if (n.node_type === "google_sheet") {
+      // The row it added, found or changed: {{vars.sheet_<column>}}.
+      keys.add("sheet_status");
+      const mapping = Array.isArray(n.config.mapping) ? (n.config.mapping as Array<Record<string, unknown>>) : [];
+      for (const m of mapping) {
+        const slug = String(m.column ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+        if (slug) keys.add(`sheet_${slug}`);
+      }
     } else if (
       n.node_type === "send_flow" ||
       n.node_type === "wait_flow_submit" ||
@@ -92,6 +101,7 @@ function getFlowVars(allNodes: ChatbotBuilderNode[], currentKey: string): string
   }
   // The message that started this chat — set for every run (trigger-vars.ts).
   keys.add("trigger_message");
+  keys.add("trigger_channel");
   return [...keys];
 }
 
@@ -3762,7 +3772,7 @@ function UtrSheetCard({ tableId }: { tableId: string }) {
 /** The step's last few results (node-activity API) — so "it does nothing"
  *  shows why: no row matched, the values were already set, or the error. */
 function UtrActivity({ chatbotId, nodeKey }: { chatbotId: string; nodeKey: string }) {
-  interface Item { at: string; who: string; result: "updated" | "unchanged" | "created" | "not_found" | "error"; detail: string }
+  interface Item { at: string; who: string; result: "updated" | "unchanged" | "created" | "not_found" | "error" | "deleted" | "queued" | "exists"; detail: string }
   const [items, setItems] = useState<Item[] | null>(null)
   const [tick, setTick] = useState(0)
   const load = () => setTick((t) => t + 1)
@@ -3780,9 +3790,11 @@ function UtrActivity({ chatbotId, nodeKey }: { chatbotId: string; nodeKey: strin
 
   const LABEL: Record<Item["result"], string> = {
     updated: "Updated", unchanged: "Already had these values", created: "New row created", not_found: "No row matched", error: "Failed",
+    deleted: "Deleted", queued: "Google busy — queued", exists: "Already there — not added",
   }
   const TONE: Record<Item["result"], string> = {
     updated: "text-emerald-700", unchanged: "text-slate-600", created: "text-emerald-700", not_found: "text-amber-800", error: "text-rose-700",
+    deleted: "text-slate-700", queued: "text-amber-800", exists: "text-slate-600",
   }
   const fmt = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })
   return (
@@ -4227,6 +4239,34 @@ function UpdateTableRowForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
   );
 }
 
+// ─── google_sheet ────────────────────────────────────────────────
+
+function GoogleSheetStepForm({ cfg, allNodes, nodeKey, onChange }: FormProps) {
+  const routeParams = useParams<{ id?: string }>();
+  const chatbotId = typeof routeParams?.id === "string" ? routeParams.id : "";
+  return (
+    <div className="space-y-4">
+      <GoogleSheetForm cfg={cfg} onChange={onChange} vars={getFlowVars(allNodes, nodeKey)}
+        activity={chatbotId ? <UtrActivity chatbotId={chatbotId} nodeKey={nodeKey} /> : null} />
+      <NodeSelect
+        label="✓ Done → next node"
+        value={String(cfg.next_node_key ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, next_node_key: v })}
+      />
+      <NodeSelect
+        label="✗ Not found → node (optional)"
+        value={String(cfg.not_found_node_key ?? "")}
+        allNodes={allNodes}
+        currentKey={nodeKey}
+        onChange={(v) => onChange({ ...cfg, not_found_node_key: v })}
+        hint="No row matched, or the sheet could not be reached. Empty: carries on to the next node."
+      />
+    </div>
+  );
+}
+
 // ─── Dispatcher ──────────────────────────────────────────────────
 
 interface FormProps {
@@ -4268,6 +4308,7 @@ export function NodeForm({ node, allNodes, onChange }: NodeFormProps) {
     update_contact: UpdateContactForm,
     crm_action:     CrmActionForm,
     update_table_row: UpdateTableRowForm,
+    google_sheet:   GoogleSheetStepForm,
     handoff:        HandoffForm,
     end:            EndForm,
     link_chatbot:   LinkChatbotForm,

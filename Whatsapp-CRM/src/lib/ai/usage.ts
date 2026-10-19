@@ -24,6 +24,8 @@ export type UsageFeature =
   /// "Improve" in the composer: an agent's typed message rewritten to
   /// read professional. Its own line so its cost is not hidden in chat.
   | 'message_polish'
+  /// Sheet routing: a rule drafted from a sentence (Data Store → Sheet routing).
+  | 'sheet_rule'
   | 'validation'
   /// The one call made when the assistant cannot answer: is this a
   /// lead, what is it about, can we help, how urgent, did they name a

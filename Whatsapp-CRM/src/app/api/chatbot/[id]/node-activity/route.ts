@@ -44,9 +44,22 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         const p = (e.payload ?? {}) as Record<string, unknown>
         const contact = e.flow_run?.contact
         const who = contact?.name || (contact?.phone && !contact.phone.includes(':') ? contact.phone : null) || 'A customer'
-        let result: 'updated' | 'unchanged' | 'created' | 'not_found' | 'error'
+        let result: 'updated' | 'unchanged' | 'created' | 'not_found' | 'error' | 'deleted' | 'queued' | 'exists'
         let detail = ''
-        if (e.event_type === 'error') {
+        if (p.node_type === 'google_sheet' && e.event_type !== 'error') {
+          // The Google Sheet step: its own outcome, the row(s) it touched.
+          const o = String(p.outcome ?? '')
+          result = o === 'added' ? 'created' : o === 'updated' ? 'updated' : o === 'deleted' ? 'deleted' : o === 'queued' ? 'queued'
+            : o === 'exists' ? 'exists' : o === 'not_found' ? 'not_found' : 'unchanged'
+          const rows = Array.isArray(p.rows) ? (p.rows as Array<{ row?: number; before?: Record<string, string>; after?: Record<string, string> }>) : []
+          const first = rows[0]
+          const show = (o2?: Record<string, string>) => Object.entries(o2 ?? {}).filter(([, v]) => v).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ')
+          const parts: string[] = []
+          if (typeof p.reason === 'string') parts.push(p.reason)
+          if (first) parts.push(`${rows.length > 1 ? `${rows.length} rows — ` : first.row ? `Row ${first.row} — ` : ''}${show(first.after ?? first.before)}`)
+          if (Array.isArray(p.warnings)) parts.push(...(p.warnings as unknown[]).map(String))
+          detail = parts.join(' · ')
+        } else if (e.event_type === 'error') {
           result = 'error'
           detail = String(p.error ?? p.reason ?? 'Something went wrong')
         } else if (p.created) {

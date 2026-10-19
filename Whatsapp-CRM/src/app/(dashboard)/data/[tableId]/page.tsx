@@ -24,7 +24,7 @@ import {
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock, CalendarClock, ToggleLeft,
   ChevronDown, ListChecks, CircleDot, Globe, MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon,
   PenLine, EyeOff, Heading, Code2,
-  HeartPulse, Sheet,
+  HeartPulse, Sheet, Split,
 } from "lucide-react"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
@@ -40,6 +40,7 @@ import { PublicFormPanel } from "@/components/data/public-form-panel"
 import { SidePanel } from "@/components/data/side-panel"
 import { DataHealthPanel } from "@/components/data/data-health-panel"
 import { GoogleSheetPanel } from "@/components/data/google-sheet-panel"
+import { SheetRoutingPanel } from "@/components/data/sheet-routing-panel"
 import { LinkedFieldsCard } from "@/components/data/linked-fields-card"
 import { parseFormConfig } from "@/lib/data-store/public-form"
 import { RECORD_SOURCE_LABELS, isRecordSource, sourceLabel, type RecordSource } from "@/lib/data-store/sources"
@@ -232,6 +233,7 @@ export default function DataTablePage() {
   const [fieldPanelOpen, setFieldPanelOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [routingOpen, setRoutingOpen] = useState(false)
   // Back from Google's permission screen (Import → "Allow access"):
   // reopen the sheet panel and say how it went, then tidy the URL.
   useEffect(() => {
@@ -541,6 +543,9 @@ export default function DataTablePage() {
                   <MenuItem icon={<HeartPulse className="h-4 w-4" />} onClick={() => { close(); setHealthOpen(true) }}>Data health</MenuItem>
                   {isAdmin && (
                     <MenuItem icon={<Sheet className="h-4 w-4" />} onClick={() => { close(); setSheetOpen(true) }}>Google Sheet</MenuItem>
+                  )}
+                  {isAdmin && (
+                    <MenuItem icon={<Split className="h-4 w-4" />} onClick={() => { close(); setRoutingOpen(true) }}>Sheet routing</MenuItem>
                   )}
                   {isAdmin && (
                     <div className="sm:hidden">
@@ -949,6 +954,10 @@ export default function DataTablePage() {
 
       {sheetOpen && table && (
         <GoogleSheetPanel tableId={tableId} tableName={table.name} onClose={() => setSheetOpen(false)} onImported={() => void load()} />
+      )}
+
+      {routingOpen && table && (
+        <SheetRoutingPanel tableId={tableId} tableName={table.name} onClose={() => setRoutingOpen(false)} />
       )}
 
       {alertsOpen && table && (

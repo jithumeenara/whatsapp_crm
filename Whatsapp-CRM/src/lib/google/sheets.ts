@@ -160,3 +160,47 @@ export async function createSpreadsheet(token: string, title: string, tabTitle: 
 export function spreadsheetUrl(spreadsheetId: string, sheetId?: number): string {
   return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit${sheetId !== undefined ? `#gid=${sheetId}` : ''}`
 }
+
+/**
+ * The tab's gid, adding the tab when the spreadsheet lacks it (and, when
+ * it is new, its header row). Two callers racing to add the same tab is
+ * fine: Google refuses the second, which then finds the first's.
+ */
+export async function ensureTab(
+  token: string,
+  spreadsheetId: string,
+  title: string,
+  headers: readonly string[] = [],
+): Promise<{ sheetId: number; created: boolean }> {
+  const find = async () => (await getSpreadsheet(token, spreadsheetId)).tabs.find((t) => t.title.toLowerCase() === title.toLowerCase())
+  const existing = await find()
+  if (existing) return { sheetId: existing.sheetId, created: false }
+  try {
+    const data = await call<{ replies?: Array<{ addSheet?: { properties?: { sheetId?: number } } }> }>(
+      token,
+      `${API}/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
+      { method: 'POST', body: JSON.stringify({ requests: [{ addSheet: { properties: { title } } }] }) },
+    )
+    const sheetId = data.replies?.[0]?.addSheet?.properties?.sheetId ?? 0
+    if (headers.length) await writeHeaderRow(token, spreadsheetId, title, headers)
+    return { sheetId, created: true }
+  } catch (err) {
+    const again = await find().catch(() => undefined)
+    if (again) return { sheetId: again.sheetId, created: false }
+    throw err
+  }
+}
+
+/** Row 1 set to these headers, RAW. */
+export async function writeHeaderRow(token: string, spreadsheetId: string, title: string, headers: readonly string[]): Promise<void> {
+  if (headers.length === 0) return
+  await call(token, `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(`${tabRange(title)}!A1`)}?valueInputOption=RAW`, {
+    method: 'PUT',
+    body: JSON.stringify({ values: [headers.map((h) => String(h))] }),
+  })
+}
+
+/** Google said "busy" (429), had a hiccup (5xx), or could not be reached. */
+export function isTransientSheetsError(err: unknown): boolean {
+  return err instanceof SheetsApiError && (err.status === 0 || err.status === 429 || err.status >= 500)
+}

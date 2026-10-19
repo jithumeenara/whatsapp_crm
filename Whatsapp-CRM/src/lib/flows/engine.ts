@@ -172,6 +172,7 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "ai_reply" ||
     node_type === "save_to_table" ||
     node_type === "update_table_row" ||
+    node_type === "google_sheet" ||
     node_type === "crm_action" ||
     node_type === "switch_case" ||
     node_type === "send_to_number"
@@ -2577,6 +2578,54 @@ The assistant could not generate a reply: ${detail}`,
       } catch (err) {
         await logEvent(run.id, "error", node.node_key, {
           reason: "update_table_row_failed",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      currentKey = nextKey;
+      continue;
+    }
+
+    // google_sheet — add, update or delete rows straight in a Google Sheet
+    // (src/lib/google/sheet-step.ts). Done → next_node_key; nothing found
+    // or a problem → not_found_node_key, or on along next_node_key when
+    // that is not set — the customer is never left stuck.
+    if (node.node_type === "google_sheet") {
+      const cfg = node.config as import("@/lib/google/sheet-step").SheetStepConfig;
+      let nextKey = cfg.not_found_node_key || cfg.next_node_key || "";
+      try {
+        const contact = await getContact();
+        const { runGoogleSheetStep } = await import("@/lib/google/sheet-step");
+        const { businessTimezone } = await import("@/lib/ai/human-date");
+        const vars = run.vars;
+        const result = await runGoogleSheetStep({
+          accountId: run.account_id,
+          cfg,
+          resolve: (t) => interpolateWithContact(t, vars, contact),
+          timeZone: await businessTimezone(run.account_id),
+        });
+        // Earlier sheet_* values are dropped, so a "not found" never leaves
+        // the previous customer's row behind in {{vars.sheet_name}}.
+        const kept = Object.fromEntries(Object.entries(run.vars).filter(([k]) => !k.startsWith("sheet_")));
+        const newVars: Record<string, unknown> = { ...kept, ...result.vars };
+        await prisma.flowRun.update({ where: { id: run.id }, data: { vars: newVars as Record<string, string> } });
+        run = { ...run, vars: newVars };
+        const ok = result.outcome !== "not_found";
+        if (ok) nextKey = cfg.next_node_key ?? "";
+        await logEvent(run.id, "node_entered", node.node_key, {
+          node_type: "google_sheet",
+          outcome: result.queued ? "queued" : result.outcome,
+          found: result.found,
+          tab: result.tab,
+          ...(result.reason ? { reason: result.reason } : {}),
+          ...(result.warnings.length ? { warnings: result.warnings } : {}),
+          // What was added, changed or removed — deleted rows in full, so
+          // they can be put back from the run log too.
+          rows: result.rows.slice(0, 20),
+        });
+      } catch (err) {
+        await logEvent(run.id, "error", node.node_key, {
+          node_type: "google_sheet",
+          reason: "google_sheet_failed",
           error: err instanceof Error ? err.message : String(err),
         });
       }

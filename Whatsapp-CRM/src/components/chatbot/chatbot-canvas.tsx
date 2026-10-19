@@ -157,7 +157,7 @@ function deriveEdges(nodes: ChatbotBuilderNode[]): Edge[] {
         }
       } else if (node.node_type === "http_request") {
         targetKey = h.id === "error" ? (cfg.error_node_key as string) : (cfg.next_node_key as string);
-      } else if (node.node_type === "update_table_row") {
+      } else if (node.node_type === "update_table_row" || node.node_type === "google_sheet") {
         targetKey = h.id === "not_found" ? (cfg.not_found_node_key as string) : (cfg.next_node_key as string);
       } else if (node.node_type === "switch_case") {
         const cases = (cfg.cases as Array<Record<string, unknown>>) ?? [];
@@ -224,7 +224,7 @@ function applyNodeTarget(
       cfg.sections = sections;
     } else if (n.node_type === "http_request") {
       if (sourceHandle === "error") cfg.error_node_key = targetKey; else cfg.next_node_key = targetKey;
-    } else if (n.node_type === "update_table_row") {
+    } else if (n.node_type === "update_table_row" || n.node_type === "google_sheet") {
       if (sourceHandle === "not_found") cfg.not_found_node_key = targetKey; else cfg.next_node_key = targetKey;
     } else if (n.node_type === "switch_case") {
       const cases = JSON.parse(JSON.stringify(cfg.cases ?? [])) as Array<Record<string, unknown>>;
@@ -265,7 +265,7 @@ function getHandleTarget(node: ChatbotBuilderNode, handleId: string): string {
   if (node.node_type === "http_request") {
     return ((handleId === "error" ? cfg.error_node_key : cfg.next_node_key) as string) ?? "";
   }
-  if (node.node_type === "update_table_row") {
+  if (node.node_type === "update_table_row" || node.node_type === "google_sheet") {
     return ((handleId === "not_found" ? cfg.not_found_node_key : cfg.next_node_key) as string) ?? "";
   }
   if (node.node_type === "switch_case") {

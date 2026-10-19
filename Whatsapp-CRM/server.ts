@@ -12,6 +12,7 @@ import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
+import { sweepSheetRouting } from "./src/lib/google/sheet-routing";
 import { sweepGoogleHealth } from "./src/lib/google/oauth";
 import { sweepGmailInboxes } from "./src/lib/google/gmail";
 import { sweepGoogleCalendars } from "./src/lib/google/calendar";
@@ -283,6 +284,12 @@ app.prepare().then(() => {
   every(() => {
     sweepTwoWaySheets().catch((err) => {
       console.error("[sheet-sync] sweep failed:", err);
+    });
+    // Sheet routing: rows changed by any writer, deleted rows, and the
+    // retry queue (src/lib/google/sheet-routing.ts). One query when no
+    // table has routing rules.
+    sweepSheetRouting().catch((err) => {
+      console.error("[sheet-routing] sweep failed:", err);
     });
   }, 60_000);
 
