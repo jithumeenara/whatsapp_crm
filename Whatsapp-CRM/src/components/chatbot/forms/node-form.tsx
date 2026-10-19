@@ -178,7 +178,7 @@ function NodeSelect({
         value={value || "__none__"}
         onValueChange={(v) => onChange(!v || v === "__none__" ? "" : v)}
       >
-        <SelectTrigger className="h-8 text-xs">
+        <SelectTrigger className="h-8 text-xs" aria-label={label}>
           <SelectValue placeholder="Select a node…" />
         </SelectTrigger>
         <SelectContent>

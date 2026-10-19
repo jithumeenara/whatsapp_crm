@@ -187,8 +187,15 @@ function Menu({
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className={cn("absolute top-10 z-40 rounded-xl border border-slate-200 bg-white p-1 shadow-xl", width, align === "right" ? "right-0" : "left-0")}>
+          <div className="fixed inset-0 z-30 bg-slate-900/20 sm:bg-transparent" onClick={() => setOpen(false)} />
+          {/* On a phone a sheet from the bottom — a dropdown beside a button
+              near the screen's edge opened off-screen. */}
+          <div className={cn(
+            "fixed inset-x-3 bottom-3 z-40 max-h-[70dvh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl",
+            "sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-10 sm:max-h-none sm:rounded-xl sm:p-1 sm:shadow-xl",
+            width.split(" ").map((w) => `sm:${w}`).join(" "),
+            align === "right" ? "sm:right-0" : "sm:left-0",
+          )}>
             {children(() => setOpen(false))}
           </div>
         </>
@@ -559,7 +566,7 @@ export default function DataTablePage() {
     const name = titleField ? formatValue(titleField, data[titleField.field_key]) : ""
     return (
       <span className="flex min-w-0 flex-1 items-center gap-2.5 text-[13px]">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-[11.5px] font-semibold text-primary">{initials(name || "?")}</span>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-[11.5px] font-semibold text-slate-700 ring-1 ring-slate-200" aria-hidden>{initials(name || "?")}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium text-slate-800" title={name}>{name || <span className="text-slate-300">—</span>}</span>
         </span>
@@ -670,7 +677,7 @@ export default function DataTablePage() {
             </Menu>
             <input autoComplete="off" ref={importRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) { void handleImport(f); e.target.value = "" } }} />
-            <button
+            <button aria-label="Add record"
               onClick={() => { setEditingRecord(null); setFormOpen(true) }}
               className="flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.98]"
             >

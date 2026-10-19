@@ -287,7 +287,7 @@ export function RecordDetailModal({
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
         showCloseButton={false}
-        className="top-0 right-0 left-auto grid h-dvh max-h-dvh w-full max-w-full translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none p-0 data-open:slide-in-from-right-8 data-open:zoom-in-100 data-closed:slide-out-to-right-8 data-closed:zoom-out-100 sm:max-w-[440px] sm:rounded-l-2xl"
+        className="top-0 right-0 left-auto grid h-dvh max-h-dvh w-full max-w-full translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none bg-white p-0 text-slate-800 data-open:slide-in-from-right-8 data-open:zoom-in-100 data-closed:slide-out-to-right-8 data-closed:zoom-out-100 sm:max-w-[440px] sm:rounded-l-2xl"
       >
         <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b border-slate-100 px-5 py-4 text-left">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary" aria-hidden>
@@ -310,7 +310,7 @@ export function RecordDetailModal({
           {/* Who this is */}
           <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 ring-1 ring-primary/15">
             <div className="flex items-center gap-3">
-              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[15px] font-semibold text-primary shadow-sm ring-1 ring-primary/15">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[15px] font-semibold text-slate-800 shadow-sm ring-1 ring-slate-200" aria-hidden>
                 {initials(title)}
               </span>
               <div className="min-w-0 flex-1">
