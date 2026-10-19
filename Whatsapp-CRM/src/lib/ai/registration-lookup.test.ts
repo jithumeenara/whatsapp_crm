@@ -52,7 +52,8 @@ vi.mock("@/lib/google/sheets", async () => {
     ...real,
     getSpreadsheet: (_t: string, id: string) =>
       Promise.resolve({ id, title: "MDP 2026", tabs: Object.keys(h.state.sheetRows).map((title, i) => ({ sheetId: i, title })) }),
-    readTab: (_t: string, _id: string, tab: string) => Promise.resolve(h.state.sheetRows[tab] ?? []),
+    readTab: (_t: string, _id: string, tab: string) =>
+      tab === "Dashboard" ? Promise.reject(new Error("Invalid range: 'Dashboard'")) : Promise.resolve(h.state.sheetRows[tab] ?? []),
   };
 });
 
@@ -63,9 +64,12 @@ import { clearRegistrationLookupCache } from "./registration-lookup";
 const CTX = { accountId: "acct-1", contactId: "contact-1" };
 const run = () => REGISTRATION_TOOLS.my_registrations.run({}, CTX) as Promise<Record<string, unknown>>;
 
-beforeEach(() => {
+beforeEach(async () => {
   invalidateRegistrationForms(CTX.accountId);
   clearRegistrationLookupCache();
+  // Each test starts as the same customer; one test below changes it.
+  const db = await import("@/lib/db");
+  (db.prisma.contact as unknown as { findFirst: () => Promise<unknown> }).findFirst = () => Promise.resolve({ phone: "+919446437835" });
   h.state.byPhoneRows = [];
   h.state.sheetRows = {};
   h.state.routes = [];
@@ -137,5 +141,24 @@ describe("a row the CRM routed to the sheet, whose record is no longer in the ta
     expect(r.found).toBe(true);
     expect(JSON.stringify(r)).toContain("JIthu L R");
     expect(JSON.stringify(r)).not.toContain("rec-gone");
+  });
+});
+
+describe("a sheet with a tab Google will not read as rows", () => {
+  /**
+   * Seen on ACSTI (19 Oct 2026): a "Dashboard" tab answered "Invalid range",
+   * and that one error stopped every later tab of the same sheet from being
+   * read — a participant on the "november" tab would not have been found.
+   */
+  it("skips that tab and reads the ones after it", async () => {
+    h.state.routes = [{ id: "r1", spreadsheet_id: "S1", spreadsheet_name: "MDP 2026" }];
+    h.state.sheetRows = {
+      "Master Template": [["Sl No.", "Name", "WhatsApp No.", "Status"], ["1", "Someone", "9847000000", "Paid"]],
+      Dashboard: [],
+      november: [["month", "Name of Participant", "Whatsapp no", "Status"], ["november", "Anil Kumar K P", "+91 94464 37835", "Registered"]],
+    };
+    const r = await run();
+    expect(r.found).toBe(true);
+    expect(JSON.stringify(r)).toContain("Anil Kumar K P");
   });
 });

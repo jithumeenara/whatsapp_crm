@@ -53,19 +53,21 @@ export function tabRange(title: string): string {
 export interface SpreadsheetInfo {
   id: string
   title: string
-  tabs: Array<{ sheetId: number; title: string }>
+  /** sheetType: GRID for ordinary rows and columns; OBJECT (a chart) and
+   *  DATA_SOURCE (connected data) have no cells to read. */
+  tabs: Array<{ sheetId: number; title: string; sheetType?: string }>
 }
 
 export async function getSpreadsheet(token: string, spreadsheetId: string): Promise<SpreadsheetInfo> {
-  const data = await call<{ properties?: { title?: string }; sheets?: Array<{ properties?: { sheetId?: number; title?: string } }> }>(
+  const data = await call<{ properties?: { title?: string }; sheets?: Array<{ properties?: { sheetId?: number; title?: string; sheetType?: string } }> }>(
     token,
-    `${API}/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties(sheetId,title)`,
+    `${API}/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties(sheetId,title,sheetType)`,
   )
   return {
     id: spreadsheetId,
     title: data.properties?.title ?? 'Spreadsheet',
     tabs: (data.sheets ?? [])
-      .map((s) => ({ sheetId: s.properties?.sheetId ?? 0, title: s.properties?.title ?? '' }))
+      .map((s) => ({ sheetId: s.properties?.sheetId ?? 0, title: s.properties?.title ?? '', sheetType: s.properties?.sheetType }))
       .filter((t) => t.title),
   }
 }

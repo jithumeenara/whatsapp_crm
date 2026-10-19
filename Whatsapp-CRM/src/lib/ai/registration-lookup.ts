@@ -154,9 +154,17 @@ async function fromSheets(
     try {
       const info = await getSpreadsheet(token, id)
       stats.sheets++
-      for (const tab of info.tabs.slice(0, MAX_TABS)) {
-        if (tab.title.toLowerCase() === 'deleted') continue
-        const table = await readTab(token, id, tab.title)
+      // Only ordinary tabs: a chart or connected-data tab has no rows.
+      const tabs = info.tabs.filter((t) => (!t.sheetType || t.sheetType === 'GRID') && t.title.toLowerCase() !== 'deleted')
+      for (const tab of tabs.slice(0, MAX_TABS)) {
+        let table: string[][]
+        try {
+          table = await readTab(token, id, tab.title)
+        } catch (err) {
+          // One unreadable tab (a dashboard) must not stop the tabs after it.
+          stats.problem = `tab “${tab.title}” skipped: ${err instanceof Error ? err.message : String(err)}`
+          continue
+        }
         stats.tabs++
         // The header row: the first row with three or more names in it.
         const h = table.findIndex((r) => r.filter((c) => String(c ?? '').trim()).length >= 3)
