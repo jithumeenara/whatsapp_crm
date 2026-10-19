@@ -24,15 +24,17 @@ import {
   Type, AlignLeft, Hash, Mail, KeyRound, Phone, Link2, Calendar, Clock, CalendarClock, ToggleLeft,
   ChevronDown, ListChecks, CircleDot, Globe, MapPin, Home, Link as LinkIcon, Paperclip, ImageIcon,
   PenLine, EyeOff, Heading, Code2,
-  HeartPulse, Sheet, Split,
+  HeartPulse, Sheet, Split, LayoutGrid, Table2, FileDown, Users,
 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { chipFieldKeys, chipTone, choiceLabel, initials, pageList, pickSubtitleField, pickTitleField, quickFilterFields, statCards, toCsv } from "@/lib/data-store/table-view"
 import { toast } from "sonner"
 import { RecordForm } from "@/components/data/record-form"
 import { FieldEditor } from "@/components/data/field-editor"
 import { RecordDetailModal } from "@/components/data/record-detail-modal"
 import { AiRegistrationToggle } from "@/components/data/ai-registration-toggle"
 import { RecordFilters } from "@/components/data/record-filters"
-import { applyFilters, activeFilterCount, filterableFields, type FilterMap } from "@/lib/data-store/filters"
+import { applyFilters, activeFilterCount, filterableFields, optionsFor, type FilterMap } from "@/lib/data-store/filters"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { TableAiChip } from "@/components/data/table-ai-chip"
 import { RecordAlertsPanel } from "@/components/data/record-alerts-panel"
@@ -93,7 +95,10 @@ type Sort = { key: string; dir: "asc" | "desc" } | null
 function formatValue(field: DataField, value: unknown): string {
   if (value === null || value === undefined || value === "") return ""
   if (field.field_type === "boolean") return value ? "Yes" : "No"
-  if (Array.isArray(value)) return value.map((v) => (typeof v === "object" && v ? String((v as { label?: unknown }).label ?? "") : String(v))).join(", ")
+  // A choice shows its label ("September"), not the code it is stored as.
+  const label = (v: unknown) => (typeof v === "object" && v ? String((v as { label?: unknown }).label ?? "") : choiceLabel(field, String(v)))
+  if (Array.isArray(value)) return value.map(label).join(", ")
+  if (["select", "radio", "multiselect"].includes(field.field_type) && typeof value !== "object") return label(value)
   if (typeof value === "object") {
     const v = value as { label?: unknown; name?: unknown }
     return String(v.label ?? v.name ?? "")
@@ -114,7 +119,8 @@ function stamp(iso: string): string {
 }
 
 // ── View preferences, per table, in this browser only ───────────────────
-interface ViewPrefs { hidden: string[]; density: Density; pageSize: number }
+type ViewMode = "table" | "cards"
+interface ViewPrefs { hidden: string[]; density: Density; pageSize: number; view: ViewMode }
 
 function readPrefs(tableId: string): ViewPrefs {
   try {
@@ -124,9 +130,11 @@ function readPrefs(tableId: string): ViewPrefs {
       hidden: Array.isArray(p.hidden) ? p.hidden.filter((k): k is string => typeof k === "string") : [],
       density: p.density === "compact" ? "compact" : "comfortable",
       pageSize: PAGE_SIZES.includes(p.pageSize as (typeof PAGE_SIZES)[number]) ? (p.pageSize as number) : 25,
+      // A phone starts on cards: a wide grid is a sideways scroll there.
+      view: p.view === "cards" || p.view === "table" ? p.view : window.innerWidth < 640 ? "cards" : "table",
     }
   } catch {
-    return { hidden: [], density: "comfortable", pageSize: 25 }
+    return { hidden: [], density: "comfortable", pageSize: 25, view: "table" }
   }
 }
 
@@ -221,7 +229,7 @@ export default function DataTablePage() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sourceFilter, setSourceFilter] = useState("")
   const [sort, setSort] = useState<Sort>(null)
-  const [prefs, setPrefs] = useState<ViewPrefs>({ hidden: [], density: "comfortable", pageSize: 25 })
+  const [prefs, setPrefs] = useState<ViewPrefs>({ hidden: [], density: "comfortable", pageSize: 25, view: "table" })
   const [page, setPage] = useState(1)
   const [formOpen, setFormOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState<DataRecord | null>(null)
@@ -286,6 +294,34 @@ export default function DataTablePage() {
   }, [tableId, router])
 
   useEffect(() => { load() }, [load])
+
+  // The search and the open record live in the address, so a link or a
+  // reload brings back the same view (?q=…&r=<record id>).
+  const urlRead = useRef(false)
+  useEffect(() => {
+    if (urlRead.current || loading) return
+    urlRead.current = true
+    const q = new URLSearchParams(window.location.search)
+    const t = setTimeout(() => {
+      if (q.get("q")) setSearch(q.get("q") ?? "")
+      const rid = q.get("r")
+      if (rid) {
+        const rec = records.find((x) => x.id === rid)
+        if (rec) setViewingRecord(rec)
+      }
+    }, 0)
+    return () => clearTimeout(t)
+  }, [loading, records])
+  useEffect(() => {
+    if (!urlRead.current) return
+    const q = new URLSearchParams(window.location.search)
+    if (search.trim()) q.set("q", search.trim())
+    else q.delete("q")
+    if (viewingRecord) q.set("r", viewingRecord.id)
+    else q.delete("r")
+    const next = `${window.location.pathname}${q.toString() ? `?${q}` : ""}`
+    if (next !== `${window.location.pathname}${window.location.search}`) window.history.replaceState(null, "", next)
+  }, [search, viewingRecord])
 
   function updatePrefs(patch: Partial<ViewPrefs>) {
     setPrefs((p) => {
@@ -462,6 +498,75 @@ export default function DataTablePage() {
 
   const cellY = prefs.density === "compact" ? "py-1.5" : "py-2.5"
 
+  // Presentation, chosen from this table's own fields (table-view.ts).
+  const titleField = useMemo(() => pickTitleField(columnFields, records), [columnFields, records])
+  const chipKeys = useMemo(() => chipFieldKeys(fields, records), [fields, records])
+  const subField = useMemo(() => pickSubtitleField(columnFields, titleField, chipKeys), [columnFields, titleField, chipKeys])
+  const stats = useMemo(() => statCards(columnFields, records), [columnFields, records])
+  const quick = useMemo(() => quickFilterFields(columnFields, records), [columnFields, records])
+
+  function setQuick(key: string, value: string | null) {
+    setFilters((prev) => {
+      const next = { ...prev }
+      if (!value) delete next[key]
+      else next[key] = { kind: "choice", value }
+      return next
+    })
+  }
+
+  /** The rows on screen (or the selected ones) as a CSV file. */
+  function exportCsv(onlySelected: boolean) {
+    const rows = onlySelected ? sorted.filter((r) => selectedIds.has(r.id)) : sorted
+    const cols = shownFields
+    const csv = toCsv(
+      [...cols.map((f) => f.label), "Source", "Added"],
+      rows.map((r) => [
+        ...cols.map((f) => formatValue(f, (r.data as Record<string, unknown>)[f.field_key])),
+        sourceLabel(r.source),
+        stamp(r.created_at),
+      ]),
+    )
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `${(table?.name ?? "records").replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "records"}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success(`${rows.length} row${rows.length === 1 ? "" : "s"} exported`)
+  }
+
+  function chip(f: DataField, raw: unknown) {
+    const list = (Array.isArray(raw) ? raw : [raw]).filter((v) => v !== null && v !== undefined && v !== "")
+    if (list.length === 0) return <span className="text-slate-300">—</span>
+    return (
+      <span className="flex flex-wrap gap-1">
+        {list.slice(0, 3).map((v, i) => {
+          const label = formatValue(f, Array.isArray(raw) ? [v] : v) || String(v)
+          return (
+            <span key={i} title={label} className={cn("inline-block max-w-[180px] truncate rounded-full px-2 py-0.5 text-[11.5px] font-medium ring-1", chipTone(label))}>
+              {label}
+            </span>
+          )
+        })}
+        {list.length > 3 && <span className="text-[11px] text-slate-400">+{list.length - 3}</span>}
+      </span>
+    )
+  }
+
+  function nameCell(rec: DataRecord) {
+    const data = rec.data as Record<string, unknown>
+    const name = titleField ? formatValue(titleField, data[titleField.field_key]) : ""
+    return (
+      <span className="flex min-w-0 flex-1 items-center gap-2.5 text-[13px]">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary/10 text-[11.5px] font-semibold text-primary">{initials(name || "?")}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-medium text-slate-800" title={name}>{name || <span className="text-slate-300">—</span>}</span>
+        </span>
+      </span>
+    )
+  }
+
   function headerCell(sortKey: string, label: string, Icon?: React.ComponentType<{ className?: string }>) {
     const active = sort?.key === sortKey
     const SortIcon = !active ? ArrowUpDown : sort?.dir === "asc" ? ArrowUp : ArrowDown
@@ -575,12 +680,54 @@ export default function DataTablePage() {
           </div>
         </div>
 
+        {/* ── At a glance: total, the biggest groups, how spread ─────── */}
+        {!loading && records.length > 0 && stats.length > 1 && (
+          <div className="flex gap-2.5 overflow-x-auto px-4 pb-3 sm:px-6 [scrollbar-width:none]">
+            {stats.map((c) => {
+              const active = !!c.filter && filters[c.filter.field_key]?.kind === "choice" && (filters[c.filter.field_key] as { value: string }).value === c.filter.value
+              const tone = {
+                total: "bg-primary/10 text-primary",
+                a: "bg-emerald-50 text-emerald-700",
+                b: "bg-amber-50 text-amber-700",
+                c: "bg-violet-50 text-violet-700",
+              }[c.tone]
+              const Icon = c.tone === "total" ? Users : c.tone === "c" ? MapPin : Calendar
+              const body = (
+                <>
+                  <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", tone)}><Icon className="h-4.5 w-4.5" aria-hidden /></span>
+                  <span className="min-w-0 text-left">
+                    <span className="block text-[18px] font-semibold leading-tight tabular-nums text-slate-900">{c.value}</span>
+                    <span className="block max-w-[140px] truncate text-[11.5px] text-slate-500" title={c.label}>{c.label}</span>
+                  </span>
+                </>
+              )
+              return c.filter ? (
+                <button key={c.key} type="button" aria-pressed={active}
+                  onClick={() => setQuick(c.filter!.field_key, active ? null : c.filter!.value)}
+                  title={active ? "Show all again" : `Show only ${c.label}`}
+                  className={cn("flex min-w-[148px] shrink-0 items-center gap-3 rounded-2xl border px-3.5 py-2.5 transition-all hover:-translate-y-px hover:shadow-sm",
+                    active ? "border-primary/40 bg-primary/5 ring-2 ring-primary/15" : "border-slate-200 bg-white")}>
+                  {body}
+                </button>
+              ) : (
+                <div key={c.key} className="flex min-w-[148px] shrink-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5">{body}</div>
+              )
+            })}
+          </div>
+        )}
+
         {/* ── Tool row, or what to do with the selected rows ────────── */}
         {selectedIds.size > 0 ? (
           <div className="flex h-12 items-center gap-3 border-t border-slate-100 bg-primary/5 px-4 sm:px-6">
             <span className="text-[13px] font-medium text-slate-800">{selectedIds.size} selected</span>
             <button onClick={() => setSelectedIds(new Set())} className="text-[12.5px] text-slate-500 hover:text-slate-800">Clear</button>
             <div className="flex-1" />
+            <button
+              onClick={() => exportCsv(true)}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12.5px] font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <FileDown className="h-3.5 w-3.5" aria-hidden /> Export
+            </button>
             <button
               onClick={() => setConfirmBulkDelete(true)}
               disabled={bulkDeleting}
@@ -610,6 +757,27 @@ export default function DataTablePage() {
                 </button>
               )}
             </div>
+
+            {quick.map((f) => {
+              const cur = filters[f.field_key]
+              const value = cur?.kind === "choice" ? cur.value : "__all__"
+              const opts = optionsFor(f, searched, fields, filters)
+              return (
+                <Select key={f.field_key} value={value} onValueChange={(v) => setQuick(f.field_key, !v || v === "__all__" ? null : String(v))}>
+                  <SelectTrigger aria-label={`Filter by ${f.label}`}
+                    className={cn("h-9 w-auto min-w-[128px] max-w-[200px] rounded-lg text-left text-[12.5px]", value !== "__all__" ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 bg-white")}>
+                    <span className="flex min-w-0 flex-col leading-tight">
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{f.label}</span>
+                      <span className="truncate"><SelectValue /></span>
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All</SelectItem>
+                    {opts.map((o) => <SelectItem key={o.value} value={o.value}>{o.label} ({o.count})</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              )
+            })}
 
             {canFilter && (
               <button
@@ -646,7 +814,26 @@ export default function DataTablePage() {
 
             <div className="flex-1" />
 
-            <Menu label="Columns" icon={<Columns3 className="h-3.5 w-3.5" />} badge={prefs.hidden.length || undefined} align="right" width="w-64">
+            <div className="flex rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="View">
+              {([["table", "Table", Table2], ["cards", "Cards", LayoutGrid]] as const).map(([v, label, Icon]) => (
+                <button key={v} type="button" role="radio" aria-checked={prefs.view === v} aria-label={label} title={label} onClick={() => updatePrefs({ view: v })}
+                  className={cn("flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
+                    prefs.view === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800")}>
+                  <Icon className="h-3.5 w-3.5" aria-hidden /> <span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => exportCsv(false)}
+              disabled={sorted.length === 0}
+              title="Download the rows shown as a CSV file (opens in Excel)"
+              className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-40"
+            >
+              <FileDown className="h-3.5 w-3.5" aria-hidden /> <span className="hidden sm:inline">Export</span>
+            </button>
+
+            <Menu label="Columns" iconOnly icon={<Columns3 className="h-3.5 w-3.5" />} badge={prefs.hidden.length || undefined} align="right" width="w-64">
               {() => (
                 <div className="max-h-80 overflow-y-auto">
                   <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-400">Show columns</p>
@@ -726,6 +913,53 @@ export default function DataTablePage() {
             />
           ) : (
             <>
+              {prefs.view === "cards" ? (
+                <div className="min-h-0 flex-1 overflow-auto bg-slate-50/60 p-3">
+                  {pageRecords.length > 0 && (
+                    <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 px-1 text-[12px] text-slate-500">
+                      <input type="checkbox" checked={allPageSelected} onChange={toggleSelectAll} className="h-4 w-4 accent-[var(--primary)]" />
+                      Select all on this page
+                    </label>
+                  )}
+                  <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {pageRecords.map((rec) => {
+                      const data = rec.data as Record<string, unknown>
+                      const selected = selectedIds.has(rec.id)
+                      const sub = subField ? formatValue(subField, data[subField.field_key]) : ""
+                      const chipsHere = shownFields.filter((f) => chipKeys.has(f.field_key) && formatValue(f, data[f.field_key])).slice(0, 3)
+                      const facts = shownFields
+                        .filter((f) => f.field_key !== titleField?.field_key && f.field_key !== subField?.field_key && !chipKeys.has(f.field_key) && formatValue(f, data[f.field_key]))
+                        .slice(0, 4)
+                      return (
+                        <li key={rec.id} className={cn("group relative min-w-0 rounded-2xl border bg-white p-3.5 shadow-sm transition-all hover:-translate-y-px hover:shadow-md",
+                          selected ? "border-primary/40 ring-2 ring-primary/15" : "border-slate-200")}>
+                          <input type="checkbox" checked={selected} onChange={() => toggleSelectOne(rec.id)} aria-label="Select this record"
+                            className="absolute right-3 top-3 h-4 w-4 cursor-pointer accent-[var(--primary)]" />
+                          <button type="button" onClick={() => setViewingRecord(rec)} className="block w-full min-w-0 text-left">
+                            <span className="flex min-w-0 items-center gap-2.5 pr-6">
+                              {nameCell(rec)}
+                            </span>
+                            {sub && <span className="mt-1 block truncate pl-[42px] text-[12px] text-slate-500">{sub}</span>}
+                            {chipsHere.length > 0 && (
+                              <span className="mt-2.5 flex flex-wrap gap-1">{chipsHere.map((f) => <span key={f.field_key}>{chip(f, data[f.field_key])}</span>)}</span>
+                            )}
+                            {facts.length > 0 && (
+                              <span className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-slate-100 pt-2.5">
+                                {facts.map((f) => (
+                                  <span key={f.field_key} className="min-w-0">
+                                    <span className="block truncate text-[10.5px] text-slate-400">{f.label}</span>
+                                    <span className="block truncate text-[12.5px] text-slate-700">{formatValue(f, data[f.field_key])}</span>
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+              ) : (
               <div className="min-h-0 flex-1 overflow-auto">
                 <table className="w-full border-separate border-spacing-0 text-[13px]">
                   <thead>
@@ -775,7 +1009,11 @@ export default function DataTablePage() {
                                 onClick={() => setViewingRecord(rec)}
                                 className={cn("max-w-[260px] cursor-pointer border-b border-slate-100 px-3 text-slate-700", cellY, selected ? "" : "group-hover:bg-slate-50")}
                               >
-                                {f.field_type === "boolean" && text ? (
+                                {titleField && f.field_key === titleField.field_key ? (
+                                  nameCell(rec)
+                                ) : chipKeys.has(f.field_key) ? (
+                                  chip(f, data[f.field_key])
+                                ) : f.field_type === "boolean" && text ? (
                                   <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium", data[f.field_key] ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>
                                     {text}
                                   </span>
@@ -849,6 +1087,7 @@ export default function DataTablePage() {
                   </tbody>
                 </table>
               </div>
+              )}
 
               {/* ── Footer ─────────────────────────────────────────── */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-2">
@@ -870,17 +1109,25 @@ export default function DataTablePage() {
                     </select>
                   </label>
                   {pageCount > 1 && (
-                    <div className="flex items-center gap-0.5">
+                    <nav className="flex items-center gap-1" aria-label="Pages">
                       <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1} aria-label="Previous page"
-                        className="grid h-7 w-7 place-items-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent">
+                        className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-30">
                         <ChevronLeft className="h-4 w-4" />
                       </button>
-                      <span className="px-1 text-[12px] font-medium tabular-nums text-slate-600">{currentPage} / {pageCount}</span>
+                      {pageList(currentPage, pageCount).map((n, i) => n === "…" ? (
+                        <span key={`gap-${i}`} className="px-1 text-[12px] text-slate-400">…</span>
+                      ) : (
+                        <button key={n} type="button" onClick={() => setPage(n)} aria-current={n === currentPage ? "page" : undefined}
+                          className={cn("h-8 min-w-8 rounded-lg px-2 text-[12.5px] font-medium tabular-nums transition-colors",
+                            n === currentPage ? "bg-primary text-primary-foreground shadow-sm" : "text-slate-600 hover:bg-slate-100")}>
+                          {n}
+                        </button>
+                      ))}
                       <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage >= pageCount} aria-label="Next page"
-                        className="grid h-7 w-7 place-items-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent">
+                        className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-30">
                         <ChevronRight className="h-4 w-4" />
                       </button>
-                    </div>
+                    </nav>
                   )}
                 </div>
               </div>
@@ -906,6 +1153,7 @@ export default function DataTablePage() {
         <RecordDetailModal
           record={viewingRecord}
           fields={fields}
+          chipKeys={chipKeys}
           onClose={() => setViewingRecord(null)}
           onEdit={() => {
             setEditingRecord(viewingRecord)

@@ -12,6 +12,7 @@ import type { DataField, DataRecord, FieldType } from '@/lib/data-store/types';
 import { getSelectItems } from '@/lib/data-store/types';
 import { sourceLabel } from '@/lib/data-store/sources';
 import { cn } from '@/lib/utils';
+import { chipTone, initials, pickSubtitleField, pickTitleField } from '@/lib/data-store/table-view';
 
 /**
  * One record, read rather than edited.
@@ -252,98 +253,93 @@ export function RecordDetailModal({
   onClose,
   onEdit,
   onDelete,
+  chipKeys,
 }: {
   record: DataRecord;
   fields: DataField[];
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  /** Choice columns, shown as coloured chips in the header card. */
+  chipKeys?: Set<string>;
 }) {
   const data = record.data as Record<string, unknown>;
   const visibleFields = fields.filter((f) => !NON_DATA_TYPES.has(f.field_type));
 
-  // The record's own name in the title, rather than "Record Details"
-  // over eleven fields one of which is the name. The first non-empty
-  // text field is what the grid already leads with, so the dialog and
-  // the row agree about what this record is called.
-  const titleField = visibleFields.find(
-    (f) => (f.field_type === 'text' || f.field_type === 'textarea') && !isEmptyValue(data[f.field_key]),
-  );
-  const title = titleField ? String(data[titleField.field_key]).slice(0, 60) : 'Record';
-
+  // The record's own name in the title, the same field the grid leads with.
+  const titleField = pickTitleField(visibleFields, [record]);
+  const title = titleField && !isEmptyValue(data[titleField.field_key]) ? String(data[titleField.field_key]).slice(0, 60) : 'Record';
+  const subField = pickSubtitleField(visibleFields, titleField, chipKeys);
+  const subtitle = subField && !isEmptyValue(data[subField.field_key]) ? formatFullValue(subField, data[subField.field_key]) : '';
+  const chips = visibleFields
+    .filter((f) => chipKeys?.has(f.field_key) && !isEmptyValue(data[f.field_key]))
+    .slice(0, 3);
+  // Shown above as chips, so not again as tiles.
+  const shownAsChip = new Set(chips.map((f) => f.field_key));
+  const rest = visibleFields.filter((f) => f.field_key !== titleField?.field_key && !shownAsChip.has(f.field_key));
   const filled = visibleFields.filter((f) => !isEmptyValue(data[f.field_key])).length;
+  const when = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   return (
-    // The app's own dialog, rather than a hand-rolled `fixed inset-0`.
-    // What that was missing is not decoration: no enter/exit animation,
-    // no focus trap, no Escape, and no portal — so it stacked wrongly
-    // against anything else on the page. Tab used to walk straight out
-    // of the open modal into the table behind it.
+    // The app's own dialog (focus trap, Escape, portal), shaped as a panel
+    // from the right so the table stays in view beside it on a wide screen.
     <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
       <DialogContent
         showCloseButton={false}
-        className="grid max-h-[88dvh] w-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        className="top-0 right-0 left-auto grid h-dvh max-h-dvh w-full max-w-full translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-none p-0 data-open:slide-in-from-right-8 data-open:zoom-in-100 data-closed:slide-out-to-right-8 data-closed:zoom-out-100 sm:max-w-[440px] sm:rounded-l-2xl"
       >
-        <DialogHeader className="flex-row items-start gap-3 space-y-0 border-b border-slate-100 px-6 py-4 text-left">
+        <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b border-slate-100 px-5 py-4 text-left">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary" aria-hidden>
+            <ListChecks className="h-5 w-5" />
+          </span>
           <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate text-[16px] font-semibold leading-snug text-slate-900">
-              {title}
-            </DialogTitle>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-slate-400">
-              <span>
-                {filled} of {visibleFields.length} filled
-              </span>
-              <span className="text-slate-300">·</span>
-              <span>
-                Added{' '}
-                {new Date(record.created_at).toLocaleString(undefined, {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
-                {record.source ? ` via ${sourceLabel(record.source)}` : ''}
-              </span>
-              {record.updated_at !== record.created_at && (
-                <>
-                  <span className="text-slate-300">·</span>
-                  <span>
-                    Updated{' '}
-                    {new Date(record.updated_at).toLocaleString(undefined, {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </span>
-                </>
-              )}
-              {record.contact && (
-                <>
-                  <span className="text-slate-300">·</span>
-                  <span className="text-slate-500">
-                    {record.contact.name || 'Customer'} · {record.contact.phone}
-                  </span>
-                </>
-              )}
-            </p>
+            <DialogTitle className="text-[15px] font-semibold text-slate-900">Record details</DialogTitle>
+            <p className="text-[11.5px] text-slate-500">{filled} of {visibleFields.length} fields filled</p>
           </div>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-4 w-4" />
           </button>
         </DialogHeader>
 
-        <div className="min-h-0 overflow-y-auto px-6 py-5">
-          {visibleFields.length === 0 ? (
-            <p className="py-6 text-center text-[13px] text-slate-400">No fields to show.</p>
+        <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
+          {/* Who this is */}
+          <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4 ring-1 ring-primary/15">
+            <div className="flex items-center gap-3">
+              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-[15px] font-semibold text-primary shadow-sm ring-1 ring-primary/15">
+                {initials(title)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[16px] font-semibold text-slate-900" title={title}>{title}</p>
+                {subtitle && <p className="truncate text-[12.5px] text-slate-600">{subtitle}</p>}
+              </div>
+            </div>
+            {chips.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {chips.map((f) => {
+                  const list = Array.isArray(data[f.field_key]) ? (data[f.field_key] as unknown[]) : [data[f.field_key]];
+                  return list.map((v, i) => {
+                    const label = labelForChoice(f, String(v));
+                    return (
+                      <span key={`${f.field_key}-${i}`} title={f.label} className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-[11.5px] font-medium ring-1', chipTone(label))}>
+                        {label}
+                      </span>
+                    );
+                  });
+                })}
+              </div>
+            )}
+          </div>
+
+          {rest.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-slate-400">No other fields.</p>
           ) : (
-            <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-              {visibleFields.map((f) => {
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {rest.map((f) => {
                 const Icon = FIELD_TYPE_ICONS[f.field_type] ?? Type;
                 const value = data[f.field_key];
                 const copyable =
@@ -352,46 +348,71 @@ export function RecordDetailModal({
                   <div
                     key={f.id}
                     className={cn(
-                      'group/field flex min-w-0 flex-col gap-1 border-b border-slate-50 pb-3 last:border-0',
+                      'group/field flex min-w-0 items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-3',
                       WIDE_TYPES.has(f.field_type) && 'sm:col-span-2',
                     )}
                   >
-                    <div className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-400">
-                      <Icon className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{f.label}</span>
-                      {copyable && <CopyButton text={formatFullValue(f, value)} />}
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-slate-50 text-slate-500" aria-hidden>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                        <span className="truncate">{f.label}</span>
+                        {copyable && <CopyButton text={formatFullValue(f, value)} />}
+                      </div>
+                      <div className="mt-0.5 min-w-0">
+                        <FieldValue field={f} value={value} />
+                      </div>
                     </div>
-                    <FieldValue field={f} value={value} />
                   </div>
                 );
               })}
             </div>
           )}
+
+          {/* When and where it came from */}
+          <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+            <p className="text-[12px] font-medium text-slate-700">Created &amp; updated</p>
+            <div className="grid gap-2 text-[12px] sm:grid-cols-2">
+              <div>
+                <p className="text-[11px] text-slate-500">Created</p>
+                <p className="tabular-nums text-slate-800">{when(record.created_at)}</p>
+                {record.source && <p className="text-[11px] text-slate-500">via {sourceLabel(record.source)}</p>}
+              </div>
+              <div>
+                <p className="text-[11px] text-slate-500">Updated</p>
+                <p className="tabular-nums text-slate-800">{record.updated_at !== record.created_at ? when(record.updated_at) : '—'}</p>
+              </div>
+            </div>
+            {record.contact && (
+              <p className="text-[12px] text-slate-600">
+                Customer: <span className="font-medium text-slate-800">{record.contact.name || 'Customer'}</span>{' '}
+                <span className="tabular-nums text-slate-500">{record.contact.phone}</span>
+              </p>
+            )}
+            <div className="group/field flex items-center gap-1 text-[11px] text-slate-500">
+              Record ID <code translate="no" className="rounded bg-white px-1.5 py-0.5 font-mono text-[10.5px] text-slate-600 ring-1 ring-slate-200">{record.id.slice(0, 8)}</code>
+              <CopyButton text={record.id} />
+            </div>
+          </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-6 py-3.5">
+        <div className="flex items-center gap-2 border-t border-slate-100 px-5 py-3.5">
           <button
             onClick={onDelete}
-            className="flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-rose-700 transition-colors hover:bg-rose-50"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 px-3 text-[13px] font-medium text-rose-700 transition-colors hover:bg-rose-50"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
             Delete
           </button>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3.5 text-[13px] font-medium text-slate-700 transition-colors hover:bg-slate-50"
-            >
-              Close
-            </button>
-            <button
-              onClick={onEdit}
-              className="flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 text-[13px] font-medium text-white transition-colors hover:bg-indigo-700"
-            >
-              <Edit2 className="h-3.5 w-3.5" />
-              Edit
-            </button>
-          </div>
+          <div className="flex-1" />
+          <button
+            onClick={onEdit}
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-[13px] font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <Edit2 className="h-3.5 w-3.5" aria-hidden />
+            Edit
+          </button>
         </div>
       </DialogContent>
     </Dialog>
