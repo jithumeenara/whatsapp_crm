@@ -46,7 +46,7 @@ import { GoogleSheetPanel } from "@/components/data/google-sheet-panel"
 import { SheetRoutingPanel } from "@/components/data/sheet-routing-panel"
 import { LinkedFieldsCard } from "@/components/data/linked-fields-card"
 import { parseFormConfig } from "@/lib/data-store/public-form"
-import { RECORD_SOURCE_LABELS, isRecordSource, sourceLabel, type RecordSource } from "@/lib/data-store/sources"
+import { RECORD_SOURCE_LABELS, isRecordSource, sourceLabel } from "@/lib/data-store/sources"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
 import { cn } from "@/lib/utils"
@@ -63,22 +63,6 @@ const FIELD_TYPE_ICONS: Record<FieldType, React.ComponentType<{ className?: stri
 
 /** Columns that hold no value and never belong in a grid. */
 const NOT_A_COLUMN = new Set<string>(["section_header", "html_block"])
-
-/** One colour per channel, so a glance down the Source column says
- *  where the week's sign-ups came from. */
-const SOURCE_STYLE: Record<RecordSource, string> = {
-  manual: "bg-slate-100 text-slate-600",
-  api: "bg-slate-100 text-slate-600",
-  import: "bg-slate-100 text-slate-500",
-  whatsapp_ai: "bg-emerald-50 text-emerald-700",
-  chatbot: "bg-teal-50 text-teal-700",
-  whatsapp_flow: "bg-green-50 text-green-700",
-  web_form: "bg-sky-50 text-sky-700",
-  payment: "bg-amber-50 text-amber-700",
-  integration: "bg-violet-50 text-violet-700",
-  google_sheet: "bg-lime-50 text-lime-700",
-  google_form: "bg-purple-50 text-purple-700",
-}
 
 /** The system columns, keyed so they can be hidden and sorted like fields. */
 const SYS = { customer: "__customer", source: "__source", added: "__added" } as const
@@ -153,7 +137,7 @@ function writePrefs(tableId: string, prefs: ViewPrefs) {
 // ── Small building blocks ───────────────────────────────────────────────
 /** A button-triggered panel that closes on a click elsewhere or Escape. */
 function Menu({
-  label, icon, badge, active, align = "left", children, width = "w-60", iconOnly,
+  label, icon, badge, active, align = "left", children, width = "w-60", iconOnly, toolbar, hint,
 }: {
   label: string
   icon: React.ReactNode
@@ -162,6 +146,10 @@ function Menu({
   align?: "left" | "right"
   width?: string
   iconOnly?: boolean
+  /** Same look as the other tool-row controls: 36px, bordered; a badge is a corner dot. */
+  toolbar?: boolean
+  /** Said in the tooltip, e.g. what the dot means. */
+  hint?: string
   children: (close: () => void) => React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -177,21 +165,28 @@ function Menu({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label={label}
-        title={label}
+        aria-haspopup="menu"
+        aria-label={hint ? `${label} — ${hint}` : label}
+        title={hint ? `${label} — ${hint}` : label}
         className={cn(
-          "flex h-8 items-center gap-1.5 rounded-lg text-[12.5px] font-medium transition-colors",
-          iconOnly ? "w-8 justify-center" : "px-2.5",
-          active || open ? "bg-primary/10 text-primary" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          "relative flex items-center gap-1.5 rounded-lg text-[12.5px] font-medium transition-colors",
+          toolbar
+            ? cn("h-9 border bg-white", iconOnly ? "w-9 justify-center" : "px-3",
+                open ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900")
+            : cn("h-8", iconOnly ? "w-8 justify-center" : "px-2.5",
+                active || open ? "bg-primary/10 text-primary" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"),
         )}
       >
         {icon}
         {!iconOnly && <span className="hidden sm:inline">{label}</span>}
-        {!!badge && (
+        {!!badge && (toolbar ? (
+          // A dot in the corner: the square stays a square, the meaning is in the tooltip.
+          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-primary ring-2 ring-white" aria-hidden />
+        ) : (
           <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
             {badge}
           </span>
-        )}
+        ))}
       </button>
       {open && (
         <>
@@ -200,7 +195,7 @@ function Menu({
               near the screen's edge opened off-screen. */}
           <div className={cn(
             "fixed inset-x-3 bottom-3 z-40 max-h-[70dvh] overflow-y-auto overscroll-contain rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl",
-            "sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-10 sm:max-h-none sm:rounded-xl sm:p-1 sm:shadow-xl",
+            toolbar ? "sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-11 sm:max-h-[min(70dvh,32rem)] sm:rounded-xl sm:p-1 sm:shadow-xl" : "sm:absolute sm:inset-x-auto sm:bottom-auto sm:top-10 sm:max-h-none sm:rounded-xl sm:p-1 sm:shadow-xl",
             width.split(" ").map((w) => `sm:${w}`).join(" "),
             align === "right" ? "sm:right-0" : "sm:left-0",
           )}>
@@ -805,8 +800,8 @@ export default function DataTablePage() {
                 aria-label="More filters"
                 title="More filters"
                 className={cn(
-                  "flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors",
-                  activeFilters > 0 || filtersOpen ? "bg-primary/10 text-primary" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                  "flex h-9 shrink-0 items-center gap-1.5 rounded-lg border bg-white px-3 text-[12.5px] font-medium transition-colors",
+                  activeFilters > 0 || filtersOpen ? "border-primary/40 bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900",
                 )}
               >
                 <SlidersHorizontal className="h-4 w-4" aria-hidden />
@@ -817,22 +812,25 @@ export default function DataTablePage() {
               </button>
             )}
 
-            <div className="flex shrink-0 rounded-lg bg-slate-100 p-0.5" role="radiogroup" aria-label="View">
+            <div className="flex h-9 shrink-0 rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="radiogroup" aria-label="View">
               {([["table", "Table", Table2], ["cards", "Cards", LayoutGrid]] as const).map(([v, label, Icon]) => (
                 <button key={v} type="button" role="radio" aria-checked={prefs.view === v} aria-label={label} title={label} onClick={() => updatePrefs({ view: v })}
-                  className={cn("flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium transition-colors",
-                    prefs.view === v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800")}>
+                  className={cn("flex h-full items-center gap-1.5 rounded-md px-2.5 text-[12.5px] font-medium transition-colors",
+                    prefs.view === v ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800")}>
                   <Icon className="h-3.5 w-3.5" aria-hidden /> <span className="hidden lg:inline">{label}</span>
                 </button>
               ))}
             </div>
 
-            <Menu label="View options" iconOnly icon={<MoreHorizontal className="h-4 w-4" />} align="right" width="w-72"
-              badge={(prefs.hidden.length > 0 ? 1 : 0) + (sourceFilter ? 1 : 0) || undefined} active={!!sourceFilter || prefs.hidden.length > 0}>
+            <Menu label="View options" iconOnly toolbar icon={<MoreHorizontal className="h-4 w-4" />} align="right" width="w-72"
+              badge={(prefs.hidden.length > 0 ? 1 : 0) + (sourceFilter ? 1 : 0) || undefined}
+              hint={[prefs.hidden.length > 0 ? `${prefs.hidden.length} column${prefs.hidden.length === 1 ? "" : "s"} hidden` : "", sourceFilter ? `source: ${sourceLabel(sourceFilter)}` : ""].filter(Boolean).join(", ") || undefined}>
               {(close) => (
                 <div className="space-y-1">
                   <MenuItem icon={<FileDown className="h-4 w-4" />} onClick={() => { close(); exportCsv(false) }}>
-                    Export {sorted.length} row{sorted.length === 1 ? "" : "s"} (CSV)
+                    <span className="flex flex-1 items-center justify-between gap-3 whitespace-nowrap">
+                      Export CSV <span className="text-[11.5px] tabular-nums text-slate-400">{sorted.length} row{sorted.length === 1 ? "" : "s"}</span>
+                    </span>
                   </MenuItem>
                   <MenuItem icon={prefs.density === "compact" ? <Rows3 className="h-4 w-4" /> : <Rows4 className="h-4 w-4" />}
                     onClick={() => updatePrefs({ density: prefs.density === "compact" ? "comfortable" : "compact" })}>
@@ -1048,9 +1046,7 @@ export default function DataTablePage() {
                           {showSource && (
                             <td onClick={() => setViewingRecord(rec)} className={cn("cursor-pointer whitespace-nowrap border-b border-slate-100 px-3", cellY, selected ? "" : "group-hover:bg-slate-50")}>
                               {isRecordSource(rec.source) ? (
-                                <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11.5px] font-medium", SOURCE_STYLE[rec.source])}>
-                                  {RECORD_SOURCE_LABELS[rec.source]}
-                                </span>
+                                <span className="text-slate-600">{RECORD_SOURCE_LABELS[rec.source]}</span>
                               ) : (
                                 <span className="text-slate-300">—</span>
                               )}
