@@ -463,6 +463,8 @@ export const REGISTRATION_INSTRUCTION = [
   '- As soon as you have all of them, call submit_registration. Do not collect optional details first — saving early means a customer who stops replying is still registered.',
   '- After it saves, confirm it, then offer the optional details by name and let them answer yes or no. If they say no, thank them and stop asking.',
   '- If a save comes back with problems, they are the exact things to ask again. Read them out in your own words; never show field keys or error text to the customer.',
+  '- When they ask whether they are registered, or about the status of a registration or booking, call my_registrations before answering. It also finds registrations made on the website, by phone or by the office under their WhatsApp number. Never say they are not registered without calling it first.',
+  '- A registration it returns with can_change_in_chat false was made outside this chat: tell them its details and status, and offer to pass any change to the team.',
   '- You can only see and change this customer’s own registrations.',
   '- If a save comes back saying it is full, say so and do not try again. Offer a later date or a callback.',
   '- If a save comes back saying they are already registered, say so in your own words and do not try again. Offer to change or cancel the existing one instead.',

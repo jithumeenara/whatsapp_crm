@@ -123,7 +123,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
     declaration: {
       name: 'my_enquiries',
       description:
-        "The status of this customer's own enquiries or applications with us. Use this whenever they ask about their application, enquiry, registration, admission status, or what is happening with their request. Returns nothing if they have never submitted one.",
+        "The status of this customer's own enquiries or applications with us (follow-up status of an enquiry). For registrations, bookings or sign-ups use my_registrations — this also returns those when there is no enquiry.",
       parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     async run(_args, ctx) {
@@ -138,7 +138,15 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         take: MAX_ROWS,
       })
       if (leads.length === 0) {
-        return { found: false, note: 'This customer has no enquiry on record. Do not invent one — offer to take their details.' }
+        // "Am I registered?" asked through this tool: an enquiry is not the
+        // only record a customer can have. Their registrations — from this
+        // chat, the website, a phone call or the office's sheet — are
+        // looked up too, so a registered customer is never told "nothing".
+        const regs = (await REGISTRATION_TOOLS.my_registrations.run({}, ctx).catch(() => null)) as { found?: boolean; registrations?: unknown[] } | null
+        if (regs?.found) {
+          return { found: true, enquiries: [], registrations: regs.registrations, note: 'No enquiry, but these registrations are theirs.' }
+        }
+        return { found: false, note: 'This customer has no enquiry or registration on record. Do not invent one — offer to take their details.' }
       }
       return {
         found: true,
