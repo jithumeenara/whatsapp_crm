@@ -5,6 +5,7 @@ import type { Prisma } from '@prisma/client'
 import { parseRuleInput } from '@/lib/google/sheet-route-input'
 import { describeConditions, type RouteField } from '@/lib/google/sheet-route-rules'
 import { spreadsheetUrl } from '@/lib/google/sheets'
+import { isGoogleServiceEnabled } from '@/lib/google/oauth'
 
 /**
  * Sheet routing for one Data Store table (admins).
@@ -39,11 +40,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       ? await prisma.sheetRouteRow.groupBy({ by: ['route_id'], where: { route_id: { in: routes.map((r) => r.id) } }, _count: { _all: true } })
       : []
     const count = (s: string) => queue.find((q) => q.status === s)?._count._all ?? 0
+    // Writing to a sheet the CRM did not create needs "edit Google Sheets"
+    // (spreadsheets scope); "browse" only lets it read them.
+    const writeAccess = await isGoogleServiceEnabled(ctx.accountId, 'sheets_sync').catch(() => false)
     const fields = table.fields as RouteField[]
     return NextResponse.json({
       table: { id: table.id, name: table.name },
       mode: state?.mode === 'all' ? 'all' : 'first',
       last_run_at: state?.last_run_at ?? null,
+      write_access: writeAccess,
       fields: table.fields.map((f) => ({ field_key: f.field_key, label: f.label, field_type: f.field_type, options: f.options })),
       queue: { pending: count('pending') + count('running'), failed: count('failed'), last_error: failed?.last_error ?? null },
       routes: routes.map((r) => ({

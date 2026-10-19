@@ -197,6 +197,8 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
   }
   const { businessTimezone } = await import('@/lib/ai/human-date')
   const now = businessNow(await businessTimezone(accountId))
+  const { isGoogleServiceEnabled } = await import('./oauth')
+  const canEditAny = await isGoogleServiceEnabled(accountId, 'sheets_sync').catch(() => false)
 
   // ── Chatbot rows Google refused earlier ──
   const appends = jobs.filter((j) => j.kind === 'append')
@@ -354,7 +356,11 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
           }).catch(() => {})
         }
       } catch (err) {
-        const msg = errText(err)
+        let msg = errText(err)
+        // Google hides a sheet the CRM may not edit as "not found" / "no access".
+        if (err instanceof SheetsApiError && (err.status === 403 || err.status === 404) && !canEditAny) {
+          msg = 'Google does not let the CRM edit this sheet yet. In Sheet routing press “Allow editing” (Google permission to edit sheets), then Retry.'
+        }
         for (const u of [...live.upserts, ...live.removes]) failedJobs.set(u.job.id, msg)
         const ruleIds = new Set([...live.upserts.map((u) => u.ruleId), ...live.removes.map((r) => r.ruleId)])
         if (!isTransientSheetsError(err)) {

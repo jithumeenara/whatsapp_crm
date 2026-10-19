@@ -54,6 +54,7 @@ interface Route {
   last_error: string | null
 }
 interface State {
+  write_access?: boolean
   mode: "first" | "all"
   fields: Field[]
   routes: Route[]
@@ -276,6 +277,16 @@ export function SheetRoutingPanel({ tableId, tableName, onClose }: { tableId: st
 
         {state && (
           <>
+            {state.write_access === false && (
+              <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-[12.5px] text-amber-900" role="status">
+                <p className="flex items-start gap-1.5"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden /> Google has not allowed the CRM to edit your sheets yet, so rows cannot be written to a sheet you chose from your Drive. Allow it once:</p>
+                <Button type="button" size="sm" onClick={() => connectGoogle(`/api/google/connect?services=sheets_sync&return=${encodeURIComponent(`/data/${tableId}`)}`, (r) => {
+                  if (r.outcome === "error") toast.error(r.reason || "Google was not connected.")
+                  if (r.outcome !== "closed") void load()
+                })}>Allow editing Google Sheets</Button>
+              </div>
+            )}
+
             <p className="text-[12.5px] leading-relaxed text-slate-600">
               Each new or changed row goes to the Google Sheet its rule says — from forms, chatbots, the AI, imports, payments, or by hand. If a row changes so it fits another rule, it moves there.
             </p>
