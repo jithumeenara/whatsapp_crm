@@ -27,16 +27,35 @@ export function friendlyTelegramError(status: number, description: string): stri
 
 type Body = Record<string, unknown> | FormData
 
+/** Failures where the connection never opened, so nothing reached Telegram
+ *  and trying again cannot send a message twice. A reset or a timeout
+ *  after connecting is not here: that message may already be delivered. */
+const NEVER_CONNECTED = new Set(['ECONNREFUSED', 'ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH', 'EAI_AGAIN', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT'])
+
+/** Node's fetch says only "fetch failed"; the reason is in err.cause. */
+function networkCode(err: unknown): string {
+  const cause = (err as { cause?: { code?: unknown; errors?: Array<{ code?: unknown }> } } | null)?.cause
+  if (typeof cause?.code === 'string') return cause.code
+  const inner = cause?.errors?.find((e) => typeof e?.code === 'string')?.code
+  if (typeof inner === 'string') return inner
+  return err instanceof Error && err.name === 'TimeoutError' ? 'TIMEOUT' : ''
+}
+
 export async function tgCall<T>(token: string, method: string, body: Body = {}): Promise<T> {
-  let res: Response
-  try {
-    res = await fetch(`${API}/bot${token}/${method}`, {
-      method: 'POST',
-      ...(body instanceof FormData ? { body } : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(20_000),
-    })
-  } catch (err) {
-    throw new TelegramApiError(`Could not reach Telegram: ${err instanceof Error ? err.message : String(err)}`, 0)
+  let res: Response | null = null
+  for (let attempt = 1; !res; attempt++) {
+    try {
+      res = await fetch(`${API}/bot${token}/${method}`, {
+        method: 'POST',
+        ...(body instanceof FormData ? { body } : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+        signal: AbortSignal.timeout(20_000),
+      })
+    } catch (err) {
+      const code = networkCode(err)
+      if (attempt === 1 && NEVER_CONNECTED.has(code)) continue
+      console.error(`[telegram] ${method} could not reach Telegram (${code || 'no code'}):`, err instanceof Error ? err.message : err)
+      throw new TelegramApiError(`Could not reach Telegram${code ? ` (${code})` : ''} — the server could not connect to api.telegram.org. Try again in a minute.`, 0)
+    }
   }
   const data = (await res.json().catch(() => ({}))) as { ok?: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } }
   if (res.ok && data.ok) return data.result as T
