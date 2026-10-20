@@ -11,6 +11,7 @@ import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
 import { sweepAdminChatBriefs } from "./src/lib/admin-chat/brief-sweep";
+import { sweepAutoTags } from "./src/lib/ai/auto-tag";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
 import { sweepSheetRouting } from "./src/lib/google/sheet-routing";
@@ -252,6 +253,14 @@ app.prepare().then(() => {
       console.error("[admin-chat] brief sweep failed:", err);
     });
   }, 5 * 60_000);
+
+  // AI tagging: tags added (or suggested) by meaning, a minute after the
+  // customer's latest message (src/lib/ai/auto-tag.ts).
+  every(() => {
+    sweepAutoTags().catch((err) => {
+      console.error("[auto-tag] sweep failed:", err);
+    });
+  }, 60_000);
 
   // "Gmail — full inbox": new mail into the Inbox, read from Gmail's
   // change history every minute (src/lib/google/gmail.ts).

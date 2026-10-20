@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { toast } from 'sonner';
-import { Plus, X, Loader2, Tag as TagIcon, Trash2 } from 'lucide-react';
+import { Plus, X, Loader2, Tag as TagIcon, Trash2, Sparkles } from 'lucide-react';
+import { AiTagDialog } from '@/components/settings/ai-tag-dialog';
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -32,7 +33,10 @@ const PRESET_COLORS = [
 ];
 
 export function TagManager() {
-  const { userId, loading: authLoading } = useAuth();
+  const { userId, loading: authLoading, isOwner, isAdmin } = useAuth();
+  // useAuth's flags are exact: an owner is not "isAdmin".
+  const canSetAi = isOwner || isAdmin;
+  const [aiTag, setAiTag] = useState<Tag | null>(null);
   const reduceMotion = useReducedMotion();
 
   const [loading, setLoading] = useState(true);
@@ -174,6 +178,22 @@ export function TagManager() {
               >
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: tag.color }} />
                 {tag.name}
+                {tag.ai_mode && tag.ai_mode !== 'off' && (
+                  <span className="rounded-full bg-white/70 px-1.5 text-[10px] font-semibold text-indigo-700" title={tag.ai_mode === 'auto' ? 'The AI adds this tag' : 'The AI suggests this tag'}>
+                    AI {tag.ai_mode === 'auto' ? 'auto' : 'suggest'}
+                  </span>
+                )}
+                {canSetAi && (
+                  <button
+                    type="button"
+                    onClick={() => setAiTag(tag)}
+                    className="rounded-full p-0.5 hover:bg-black/5"
+                    aria-label={`AI settings for ${tag.name}`}
+                    title="Let the AI add this tag by meaning"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                  </button>
+                )}
                 <button
                   onClick={() => confirmDelete(tag)}
                   className="ml-0.5 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/5"
@@ -256,6 +276,17 @@ export function TagManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {aiTag && (
+        <AiTagDialog
+          tag={aiTag}
+          onClose={() => setAiTag(null)}
+          onSaved={(t) => {
+            setTags((prev) => prev.map((x) => (x.id === t.id ? { ...x, ...t } : x)));
+            setAiTag(null);
+          }}
+        />
+      )}
 
       <ConfirmIconDialog
         open={deleteDialogOpen}

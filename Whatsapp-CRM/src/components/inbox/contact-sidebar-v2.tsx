@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import type { Contact, ContactNote, Tag } from "@/types"
-import { Phone, Copy, Check, Plus, ExternalLink, Tag as TagIcon, FileText, X, User, Mail, MessageSquare, Radio, Search, Globe } from "lucide-react"
+import { Phone, Copy, Check, Plus, ExternalLink, Tag as TagIcon, FileText, X, User, Mail, MessageSquare, Radio, Search, Globe, Sparkles } from "lucide-react"
 import { isPlaceholderPhone, usablePhone } from "@/lib/contacts/validate"
 import { format } from "date-fns"
 import { toast } from "sonner"
@@ -111,14 +111,52 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
 
   useEffect(() => { fetchContactData() }, [fetchContactData])
 
+  // What the AI made of the conversation: tags it suggests (a person
+  // decides) and the ones it added — each with the customer's own words.
+  type AiTag = { id: string; tag_id: string; tag_name: string; tag_color: string; evidence: string; confidence: string; reason: string | null }
+  const [aiSuggestions, setAiSuggestions] = useState<AiTag[]>([])
+  const [aiApplied, setAiApplied] = useState<AiTag[]>([])
+  const [aiBusy, setAiBusy] = useState<string | null>(null)
+  const loadAiTags = useCallback(async (id: string, isCurrent: () => boolean = () => true) => {
+    try {
+      const res = await fetch(`/api/contacts/${id}/ai-tags`)
+      if (!res.ok) return
+      const body = (await res.json()) as { suggestions?: AiTag[]; applied?: AiTag[] }
+      if (!isCurrent()) return
+      setAiSuggestions(Array.isArray(body.suggestions) ? body.suggestions : [])
+      setAiApplied(Array.isArray(body.applied) ? body.applied : [])
+    } catch (err) {
+      console.warn("[contact sidebar] AI tags failed:", err)
+    }
+  }, [])
+  async function decideAiTag(s: AiTag, action: "accept" | "dismiss") {
+    if (!contact || aiBusy) return
+    setAiBusy(s.id)
+    try {
+      await apiFetch(`/api/contacts/${contact.id}/ai-tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision_id: s.id, action }),
+      })
+      toast.success(action === "accept" ? `Tagged ${s.tag_name}` : "Suggestion dismissed")
+      await Promise.all([loadAiTags(contact.id), fetchContactData()])
+    } catch (err) {
+      console.error("[contact sidebar] AI tag decision failed:", err)
+      toast.error(errorText(err, "Could not save."))
+    } finally {
+      setAiBusy(null)
+    }
+  }
+
   // Every channel this person is on — one contact, a link to each chat.
   // Re-read when the open chat changes contact (a Telegram number joining
   // a known WhatsApp contact).
   const [channelLinks, setChannelLinks] = useState<Array<{ channel: string; conversation_id: string }>>([])
   const contactId = contact?.id ?? null
   useEffect(() => {
-    if (!contactId) { setChannelLinks([]); return }
+    if (!contactId) { setChannelLinks([]); setAiSuggestions([]); setAiApplied([]); return }
     let current = true
+    void loadAiTags(contactId, () => current)
     fetch(`/api/contacts/${contactId}/channels`)
       .then((r) => (r.ok ? r.json() : { channels: [] }))
       .then((body: { channels?: Array<{ channel: string; conversation_id: string }> }) => {
@@ -126,7 +164,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
       })
       .catch((err) => console.warn("[contact sidebar] channels failed:", err))
     return () => { current = false }
-  }, [contactId, conversationId])
+  }, [contactId, conversationId, loadAiTags])
   // Reset the picker's search when switching between contacts/conversations.
   useEffect(() => { setTagPickerOpen(false); setTagQuery("") }, [contact?.id])
 
@@ -416,10 +454,14 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
             <p className="text-[12px] text-slate-400 italic">No tags</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {tags.map((t) => (
+              {tags.map((t) => {
+                const byAi = aiApplied.find((a) => a.tag_id === t.id)
+                return (
                 <span key={t.contact_tag_id}
+                  title={byAi ? `Added by AI — "${byAi.evidence}"` : undefined}
                   className="group/tag flex items-center gap-1 rounded-full pl-2.5 pr-1.5 py-1 text-[11px] font-semibold"
                   style={{ background: t.color + "20", color: readableTextColor(t.color) }}>
+                  {byAi && <Sparkles className="h-2.5 w-2.5" aria-label="Added by AI" />}
                   {t.name}
                   <button type="button" onClick={() => handleRemoveTag(t.id)} disabled={tagBusyId === t.id}
                     aria-label={`Remove ${t.name} tag`}
@@ -427,6 +469,32 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
                     <X className="h-2.5 w-2.5" />
                   </button>
                 </span>
+                )
+              })}
+            </div>
+          )}
+
+          {aiSuggestions.length > 0 && (
+            <div className="mt-2.5 space-y-1.5" aria-live="polite">
+              {aiSuggestions.map((sg) => (
+                <div key={sg.id} className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-2">
+                  <div className="flex items-center gap-1.5 text-[11.5px] text-slate-700">
+                    <Sparkles className="h-3 w-3 shrink-0 text-indigo-600" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      AI suggests <b style={{ color: readableTextColor(sg.tag_color) }}>{sg.tag_name}</b>
+                    </span>
+                    <button type="button" onClick={() => void decideAiTag(sg, "accept")} disabled={aiBusy === sg.id}
+                      className="rounded-md bg-indigo-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                      Add
+                    </button>
+                    <button type="button" onClick={() => void decideAiTag(sg, "dismiss")} disabled={aiBusy === sg.id}
+                      aria-label={`Dismiss the ${sg.tag_name} suggestion`}
+                      className="flex h-5 w-5 items-center justify-center rounded-md text-slate-500 hover:bg-white disabled:opacity-50">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <p className="mt-0.5 break-words pl-[18px] text-[11px] italic text-slate-500">“{sg.evidence}”</p>
+                </div>
               ))}
             </div>
           )}

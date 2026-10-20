@@ -168,6 +168,11 @@ export interface Tag {
   name: string;
   color: string;
   created_at: string;
+  /** May the AI add this tag by meaning (migration 144). */
+  ai_mode?: 'off' | 'suggest' | 'auto';
+  ai_description?: string | null;
+  ai_avoid?: string | null;
+  ai_examples?: string[];
 }
 
 export interface ContactTag {

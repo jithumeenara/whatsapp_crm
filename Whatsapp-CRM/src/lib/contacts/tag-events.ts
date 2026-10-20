@@ -18,7 +18,7 @@
 
 import { prisma } from '@/lib/db'
 
-export type TagSource = 'inbox' | 'api' | 'chatbot' | 'automation' | 'import' | 'ad_lead' | 'broadcast' | 'system' | 'admin_chat'
+export type TagSource = 'inbox' | 'api' | 'chatbot' | 'automation' | 'import' | 'ad_lead' | 'broadcast' | 'system' | 'admin_chat' | 'ai'
 
 /** An automation adding a tag that fires an automation adding a tag… */
 export const MAX_TAG_HOPS = 3
@@ -126,8 +126,33 @@ export async function removeTagsFromContact(args: {
   if (hop <= MAX_TAG_HOPS) {
     for (const tagId of removed) fireTagEvent('tag_removed', args.accountId, args.contactId, tagId, args.source, hop)
   }
+  // A person took the tag off: the AI must never put it back on this contact.
+  if (args.source === 'inbox' || args.source === 'api') {
+    void rememberPersonRemoved(args.accountId, args.contactId, removed)
+  }
   fireEventBroadcasts('tag_removed', args.accountId, removed.map((tagId) => ({ contactId: args.contactId, tagId })))
   return removed
+}
+
+async function rememberPersonRemoved(accountId: string, contactId: string, tagIds: string[]): Promise<void> {
+  try {
+    for (const tagId of tagIds) {
+      const marked = await prisma.aiTagDecision.updateMany({
+        where: { contact_id: contactId, tag_id: tagId, outcome: { in: ['applied', 'accepted', 'suggested'] } },
+        data: { outcome: 'removed_by_person' },
+      })
+      if (marked.count === 0) {
+        const aiOn = await prisma.tag.count({ where: { id: tagId, account_id: accountId, ai_mode: { not: 'off' } } })
+        if (aiOn > 0) {
+          await prisma.aiTagDecision.create({
+            data: { account_id: accountId, contact_id: contactId, tag_id: tagId, confidence: 'low', evidence: '(removed by a person)', outcome: 'removed_by_person' },
+          })
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[tags] could not remember a removal for the AI:', err instanceof Error ? err.message : err)
+  }
 }
 
 function fireTagEvent(
