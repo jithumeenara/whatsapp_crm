@@ -10,6 +10,7 @@ import { sweepScheduledBroadcasts } from "./src/lib/broadcasts/sweep";
 import { sweepWebsiteKnowledge } from "./src/lib/ai/knowledge-sweep";
 import { sweepIdleConversations } from "./src/lib/ai/idle-close";
 import { sweepStaffWaits } from "./src/lib/ai/staff-wait-sweep";
+import { sweepAdminChatBriefs } from "./src/lib/admin-chat/brief-sweep";
 import { sweepGoogleSheetImports } from "./src/lib/google/sheet-sync";
 import { sweepTwoWaySheets } from "./src/lib/google/sheet-two-way";
 import { sweepSheetRouting } from "./src/lib/google/sheet-routing";
@@ -243,6 +244,14 @@ app.prepare().then(() => {
       console.error("[staff-wait] sweep interval failed:", err);
     });
   }, 60_000);
+
+  // Admin Chat: morning briefs and "chats are piling up" alerts to the
+  // admins who switched them on (src/lib/admin-chat/brief-sweep.ts).
+  every(() => {
+    sweepAdminChatBriefs().catch((err) => {
+      console.error("[admin-chat] brief sweep failed:", err);
+    });
+  }, 5 * 60_000);
 
   // "Gmail — full inbox": new mail into the Inbox, read from Gmail's
   // change history every minute (src/lib/google/gmail.ts).

@@ -23,6 +23,10 @@ export type AuditEvent =
   | 'session_ended'
   | 'refused'
   | 'all_sessions_ended'
+  | 'brief_sent'
+  | 'alert_sent'
+  | 'brief_off'
+  | 'alerts_off'
 
 export async function writeAudit(args: {
   accountId: string

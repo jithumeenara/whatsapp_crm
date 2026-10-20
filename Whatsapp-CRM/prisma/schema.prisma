@@ -3755,6 +3755,10 @@ model AdminChatSettings {
   keyword      String   @default("ADMIN")
   idle_minutes Int      @default(15)
   max_minutes  Int      @default(60)
+  /// Utility template for briefs/alerts outside WhatsApp's 24-hour window (migration 142).
+  brief_template_name     String?
+  brief_template_language String?
+  alert_waiting_threshold Int     @default(10)
   updated_by   String?  @db.Uuid
   created_at   DateTime @default(now()) @db.Timestamptz(6)
   updated_at   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
@@ -3782,6 +3786,12 @@ model AdminChatMember {
   failed_attempts   Int       @default(0)
   locked_until      DateTime? @db.Timestamptz(6)
   last_totp_step    BigInt?
+  brief_enabled     Boolean   @default(false)
+  brief_minute      Int       @default(540)
+  last_brief_date   DateTime? @db.Date
+  alerts_enabled    Boolean   @default(false)
+  last_alert_at     DateTime? @db.Timestamptz(6)
+  last_inbound_at   DateTime? @db.Timestamptz(6)
   created_by        String    @db.Uuid
   created_at        DateTime  @default(now()) @db.Timestamptz(6)
   updated_at        DateTime  @default(now()) @updatedAt @db.Timestamptz(6)

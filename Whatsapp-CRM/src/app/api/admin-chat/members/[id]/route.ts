@@ -50,6 +50,9 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         allowed_days: fields.allowedDays,
         start_minute: fields.startMinute,
         end_minute: fields.endMinute,
+        brief_enabled: fields.briefEnabled,
+        brief_minute: fields.briefMinute,
+        alerts_enabled: fields.alertsEnabled,
       },
     })
     await writeAudit({

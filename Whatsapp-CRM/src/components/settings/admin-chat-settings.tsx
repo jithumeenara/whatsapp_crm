@@ -55,10 +55,22 @@ interface Member {
   verify_expires_at: string | null
   locked_until: string | null
   mfa_ready: boolean
+  brief_enabled: boolean
+  brief_minute: number
+  alerts_enabled: boolean
+  last_brief_date: string | null
 }
 
 interface State {
-  settings: { enabled: boolean; keyword: string; idle_minutes: number; max_minutes: number }
+  settings: {
+    enabled: boolean
+    keyword: string
+    idle_minutes: number
+    max_minutes: number
+    alert_waiting_threshold: number
+    brief_template: { name: string; language: string | null } | null
+  }
+  templates: Array<{ name: string; language: string | null; body: string }>
   timezone: string
   max_members: number
   me_has_totp: boolean
@@ -94,6 +106,10 @@ const EVENT_LABEL: Record<string, string> = {
   session_ended: 'Session ended',
   refused: 'Refused',
   all_sessions_ended: 'All sessions ended',
+  brief_sent: 'Daily brief sent',
+  alert_sent: 'Alert sent',
+  brief_off: 'Turned off daily briefs',
+  alerts_off: 'Turned off alerts',
 }
 
 const toTime = (m: number) => (m >= 1440 ? '23:59' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`)
@@ -200,6 +216,9 @@ interface Draft {
   allowed_days: string[]
   start: string
   end: string
+  brief_enabled: boolean
+  brief_time: string
+  alerts_enabled: boolean
 }
 
 function MemberDialog({
@@ -229,6 +248,9 @@ function MemberDialog({
         allowed_days: editing.allowed_days,
         start: toTime(editing.start_minute),
         end: toTime(editing.end_minute),
+        brief_enabled: editing.brief_enabled,
+        brief_time: toTime(editing.brief_minute),
+        alerts_enabled: editing.alerts_enabled,
       }
     }
     const first = data.candidates.find((c) => c.mfa_ready) ?? data.candidates[0]
@@ -242,6 +264,9 @@ function MemberDialog({
       allowed_days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
       start: '09:00',
       end: '19:00',
+      brief_enabled: true,
+      brief_time: '09:00',
+      alerts_enabled: false,
     }
   })
   const [askCode, setAskCode] = useState(false)
@@ -254,6 +279,7 @@ function MemberDialog({
     draft.allowed_days.length > 0 &&
     draft.valid_from <= draft.valid_until &&
     fromTime(draft.start) < fromTime(draft.end) &&
+    (!draft.brief_enabled || (fromTime(draft.brief_time) >= fromTime(draft.start) && fromTime(draft.brief_time) < fromTime(draft.end))) &&
     (draft.channel === 'telegram' || draft.phone.replace(/\D/g, '').length >= 10)
 
   async function save(code: string) {
@@ -265,6 +291,9 @@ function MemberDialog({
       allowed_days: draft.allowed_days,
       start_minute: fromTime(draft.start),
       end_minute: fromTime(draft.end),
+      brief_enabled: draft.brief_enabled,
+      brief_minute: Math.min(1439, fromTime(draft.brief_time)),
+      alerts_enabled: draft.alerts_enabled,
       totp_code: code,
     }
     if (editing) {
@@ -377,7 +406,7 @@ function MemberDialog({
                 </label>
               ))}
             </fieldset>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="ac-from" className="text-[12px] font-semibold text-slate-700">First day</label>
                 <Input id="ac-from" type="date" value={draft.valid_from} onChange={(e) => set('valid_from', e.target.value)} className="h-10" />
@@ -406,7 +435,7 @@ function MemberDialog({
                 })}
               </div>
             </fieldset>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="ac-start" className="text-[12px] font-semibold text-slate-700">From</label>
                 <Input id="ac-start" type="time" value={draft.start} onChange={(e) => set('start', e.target.value)} className="h-10" />
@@ -416,6 +445,31 @@ function MemberDialog({
                 <Input id="ac-end" type="time" value={draft.end} onChange={(e) => set('end', e.target.value)} className="h-10" />
               </div>
             </div>
+            <fieldset className="space-y-2">
+              <legend className="text-[12px] font-semibold text-slate-700">Updates in their chat</legend>
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 p-3">
+                <label className="flex cursor-pointer items-center gap-2 text-[13px] text-slate-800">
+                  <input type="checkbox" checked={draft.brief_enabled} onChange={(e) => set('brief_enabled', e.target.checked)} />
+                  Daily brief at
+                </label>
+                <Input
+                  type="time"
+                  aria-label="Daily brief time"
+                  value={draft.brief_time}
+                  disabled={!draft.brief_enabled}
+                  onChange={(e) => set('brief_time', e.target.value)}
+                  className="h-9 w-40"
+                />
+                <p className="w-full text-[11.5px] text-slate-500">Counts only — new chats, leads and messages yesterday; waiting and unassigned now. Must be inside their hours.</p>
+              </div>
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-[13px] text-slate-800">
+                <input type="checkbox" className="mt-0.5" checked={draft.alerts_enabled} onChange={(e) => set('alerts_enabled', e.target.checked)} />
+                <span>
+                  Alert when chats pile up
+                  <span className="block text-[11.5px] text-slate-500">When the chats waiting for the team reach the line set under Briefs and alerts; at most every 3 hours.</span>
+                </span>
+              </label>
+            </fieldset>
           </div>
           <DialogFooter className="bg-white border-slate-200">
             <Button type="button" variant="outline" onClick={onClose}>
@@ -442,6 +496,7 @@ export function AdminChatSettings() {
   const [dialog, setDialog] = useState<{ open: boolean; editing: Member | null }>({ open: false, editing: null })
   const [verify, setVerify] = useState<null | { code: string; minutes: number; channel: Channel; phone: string | null; name: string }>(null)
   const [rules, setRules] = useState({ keyword: 'ADMIN', idle: '15', max: '60' })
+  const [updates, setUpdates] = useState({ threshold: '10', template: '' })
   const [busy, setBusy] = useState('')
 
   const load = useCallback(async () => {
@@ -450,6 +505,10 @@ export function AdminChatSettings() {
       const body = (await res.json()) as State
       setData(body)
       setRules({ keyword: body.settings.keyword, idle: String(body.settings.idle_minutes), max: String(body.settings.max_minutes) })
+      setUpdates({
+        threshold: String(body.settings.alert_waiting_threshold),
+        template: body.settings.brief_template ? `${body.settings.brief_template.name}|${body.settings.brief_template.language ?? ''}` : '',
+      })
       setLoadError('')
     } catch (err) {
       console.error('[admin chat] load failed:', err)
@@ -676,6 +735,8 @@ export function AdminChatSettings() {
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">Active</span>
                         )}
                         {!m.mfa_ready && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">Authenticator off</span>}
+                        {m.brief_enabled && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">Brief {toTime(m.brief_minute)}</span>}
+                        {m.alerts_enabled && <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">Alerts</span>}
                       </div>
                       <p className="mt-0.5 text-[12px] text-slate-500">
                         {m.channel === 'whatsapp' ? (m.phone ? `+${m.phone}` : 'WhatsApp') : m.telegram_linked ? 'Telegram linked' : 'Telegram'} ·{' '}
@@ -729,7 +790,7 @@ export function AdminChatSettings() {
               <label htmlFor="ac-keyword" className="text-[12px] font-semibold text-slate-700">Keyword</label>
               <Input id="ac-keyword" name="admin-keyword" autoComplete="off" autoCapitalize="characters" maxLength={20} value={rules.keyword} onChange={(e) => setRules((r) => ({ ...r, keyword: e.target.value.replace(/\s/g, '') }))} className="h-10 font-mono uppercase" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
               <div className="space-y-1.5">
                 <label htmlFor="ac-idle" className="text-[12px] font-semibold text-slate-700">Close when idle (min)</label>
                 <Input id="ac-idle" type="number" min={5} max={60} value={rules.idle} onChange={(e) => setRules((r) => ({ ...r, idle: e.target.value }))} className="h-10" />
@@ -775,6 +836,59 @@ export function AdminChatSettings() {
           )}
         </section>
       </div>
+
+      {/* Briefs and alerts */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h3 className="text-[14px] font-semibold text-slate-800">Briefs and alerts</h3>
+        <p className="mt-0.5 text-[12px] text-slate-500">
+          Switched on per admin (Change). Telegram always delivers. WhatsApp delivers as a normal message within 24 hours of the admin’s last message to you; after that only an approved template can go.
+        </p>
+        <form
+          className="mt-4 grid gap-3 sm:grid-cols-[180px_1fr_auto] sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const [name, language] = updates.template.split('|')
+            setPending({
+              title: 'Save briefs and alerts',
+              run: (code) =>
+                putSettings(
+                  { alert_waiting_threshold: Number(updates.threshold), brief_template: name ? { name, language: language || null } : null, totp_code: code },
+                  'Briefs and alerts saved',
+                ),
+            })
+          }}
+        >
+          <div className="space-y-1.5">
+            <label htmlFor="ac-threshold" className="text-[12px] font-semibold text-slate-700">Alert at (chats waiting)</label>
+            <Input id="ac-threshold" type="number" min={1} max={1000} value={updates.threshold} onChange={(e) => setUpdates((u) => ({ ...u, threshold: e.target.value }))} className="h-10" />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="ac-template" className="text-[12px] font-semibold text-slate-700">WhatsApp template (outside 24 hours)</label>
+            <select
+              id="ac-template"
+              value={updates.template}
+              onChange={(e) => setUpdates((u) => ({ ...u, template: e.target.value }))}
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-800"
+            >
+              <option value="">None — WhatsApp briefs only within 24 hours</option>
+              {data.templates.map((t) => (
+                <option key={`${t.name}|${t.language ?? ''}`} value={`${t.name}|${t.language ?? ''}`}>
+                  {t.name}{t.language ? ` (${t.language})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button type="submit" variant="outline" disabled={!data.me_has_totp}>
+            Save
+          </Button>
+        </form>
+        {data.templates.length === 0 && (
+          <p className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-[12px] leading-5 text-slate-600">
+            No suitable template yet. In Templates, create a <b>Utility</b> template with two variables and get it approved, for example:{' '}
+            <span className="font-mono">Daily update for {'{{1}}'}: {'{{2}}'}. Reply {s.keyword} for details.</span>
+          </p>
+        )}
+      </section>
 
       {/* Activity */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

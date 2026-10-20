@@ -13,6 +13,9 @@ export interface MemberFields {
   allowedDays: string[]
   startMinute: number
   endMinute: number
+  briefEnabled: boolean
+  briefMinute: number
+  alertsEnabled: boolean
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -33,5 +36,21 @@ export function parseMemberFields(body: Record<string, unknown>): MemberFields {
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > 1440 || start >= end) {
     throw new MemberFieldError('The start time must be before the end time.')
   }
-  return { scope, validFrom: from, validUntil: until, allowedDays: [...new Set(days)], startMinute: start, endMinute: end }
+  const briefMinute = body.brief_minute === undefined ? 540 : Number(body.brief_minute)
+  if (!Number.isInteger(briefMinute) || briefMinute < 0 || briefMinute > 1439) throw new MemberFieldError('Choose a time for the daily brief.')
+  const briefEnabled = body.brief_enabled === true
+  if (briefEnabled && (briefMinute < start || briefMinute >= end)) {
+    throw new MemberFieldError('The daily brief time must be inside their allowed hours.')
+  }
+  return {
+    scope,
+    validFrom: from,
+    validUntil: until,
+    allowedDays: [...new Set(days)],
+    startMinute: start,
+    endMinute: end,
+    briefEnabled,
+    briefMinute,
+    alertsEnabled: body.alerts_enabled === true,
+  }
 }

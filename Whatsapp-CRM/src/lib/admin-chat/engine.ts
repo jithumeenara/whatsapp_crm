@@ -125,6 +125,20 @@ export async function handleAdminChatInbound(m: AdminChatInbound): Promise<boole
 
   const member = await findMember(m.accountId, m.channel, m.senderKey)
   if (!member) return false
+  // Their last message to the business: WhatsApp lets briefs and alerts go
+  // as plain text for 24 hours after it (brief-sweep.ts).
+  void prisma.adminChatMember.update({ where: { id: member.id }, data: { last_inbound_at: new Date() } }).catch(() => {})
+
+  // Each admin can stop their own briefs or alerts at any time.
+  const optOut = text.trim().toUpperCase().replace(/\s+/g, ' ')
+  if (optOut === 'BRIEF OFF' || optOut === 'ALERTS OFF') {
+    if (!(await claim(m.accountId, m.messageKey))) return true
+    const briefs = optOut === 'BRIEF OFF'
+    await prisma.adminChatMember.update({ where: { id: member.id }, data: briefs ? { brief_enabled: false } : { alerts_enabled: false } })
+    void writeAudit({ accountId: m.accountId, event: briefs ? 'brief_off' : 'alerts_off', memberId: member.id })
+    await m.reply(briefs ? '🔕 Daily briefs stopped. The owner can switch them on again in the CRM.' : '🔕 Alerts stopped. The owner can switch them on again in the CRM.')
+    return true
+  }
 
   const now = new Date()
   let session = await prisma.adminChatSession.findFirst({
@@ -197,6 +211,7 @@ async function handleVerify(m: AdminChatInbound, code: string): Promise<boolean>
     data: {
       status: 'active',
       verified_at: new Date(),
+      last_inbound_at: new Date(),
       verify_code_hash: null,
       verify_expires_at: null,
       ...(m.channel === 'telegram' ? { telegram_id: m.senderKey } : {}),

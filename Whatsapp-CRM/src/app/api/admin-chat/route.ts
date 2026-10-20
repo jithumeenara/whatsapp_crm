@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { requireStepUp, StepUpError } from '@/lib/admin-chat/step-up'
 import { writeAudit, verifyAuditChain } from '@/lib/admin-chat/audit'
 import { MAX_MEMBERS } from '@/lib/admin-chat/rules'
+import { templateVariableCount } from '@/lib/admin-chat/brief-rules'
 import { businessTimezone } from '@/lib/ai/human-date'
 
 /**
@@ -44,6 +45,15 @@ export async function GET() {
       businessTimezone(ctx.accountId),
       verifyAuditChain(ctx.accountId),
     ])
+    // Templates a brief can go out in when WhatsApp's 24-hour window is
+    // closed: approved, Utility, with exactly two body variables.
+    const templates = (
+      await prisma.messageTemplate.findMany({
+        where: { account_id: ctx.accountId, status: 'APPROVED' },
+        select: { name: true, language: true, category: true, body_text: true },
+        orderBy: { name: 'asc' },
+      })
+    ).filter((t) => t.category.toUpperCase() === 'UTILITY' && templateVariableCount(t.body_text) === 2)
     const nameOf = new Map(people.map((p) => [p.user_id, p.full_name || p.user?.email || 'Team member']))
     return NextResponse.json({
       settings: {
@@ -51,7 +61,10 @@ export async function GET() {
         keyword: settings?.keyword ?? 'ADMIN',
         idle_minutes: settings?.idle_minutes ?? 15,
         max_minutes: settings?.max_minutes ?? 60,
+        alert_waiting_threshold: settings?.alert_waiting_threshold ?? 10,
+        brief_template: settings?.brief_template_name ? { name: settings.brief_template_name, language: settings.brief_template_language } : null,
       },
+      templates: templates.map((t) => ({ name: t.name, language: t.language, body: t.body_text.slice(0, 300) })),
       timezone: zone,
       max_members: MAX_MEMBERS,
       me_has_totp: people.find((p) => p.user_id === ctx.userId)?.user?.mfa_method === 'totp',
@@ -73,6 +86,10 @@ export async function GET() {
         allowed_days: m.allowed_days,
         start_minute: m.start_minute,
         end_minute: m.end_minute,
+        brief_enabled: m.brief_enabled,
+        brief_minute: m.brief_minute,
+        alerts_enabled: m.alerts_enabled,
+        last_brief_date: m.last_brief_date ? m.last_brief_date.toISOString().slice(0, 10) : null,
         verify_pending: m.status === 'pending',
         verify_expires_at: m.verify_expires_at,
         locked_until: m.locked_until,
@@ -104,7 +121,39 @@ export async function PUT(req: Request) {
   try {
     const ctx = await requireRole('admin')
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
-    const data: { enabled?: boolean; keyword?: string; idle_minutes?: number; max_minutes?: number } = {}
+    const data: {
+      enabled?: boolean
+      keyword?: string
+      idle_minutes?: number
+      max_minutes?: number
+      alert_waiting_threshold?: number
+      brief_template_name?: string | null
+      brief_template_language?: string | null
+    } = {}
+    if (body.alert_waiting_threshold !== undefined) {
+      const n = Number(body.alert_waiting_threshold)
+      if (!Number.isInteger(n) || n < 1 || n > 1000) return NextResponse.json({ error: 'The alert line must be 1–1000 chats.' }, { status: 400 })
+      data.alert_waiting_threshold = n
+    }
+    if (body.brief_template !== undefined) {
+      if (body.brief_template === null) {
+        data.brief_template_name = null
+        data.brief_template_language = null
+      } else {
+        const t = body.brief_template as { name?: unknown; language?: unknown }
+        const name = typeof t?.name === 'string' ? t.name : ''
+        const language = typeof t?.language === 'string' ? t.language : null
+        const row = await prisma.messageTemplate.findFirst({
+          where: { account_id: ctx.accountId, name, ...(language ? { language } : {}), status: 'APPROVED' },
+          select: { category: true, body_text: true },
+        })
+        if (!row || row.category.toUpperCase() !== 'UTILITY' || templateVariableCount(row.body_text) !== 2) {
+          return NextResponse.json({ error: 'Choose an approved Utility template with two variables (name and summary).' }, { status: 400 })
+        }
+        data.brief_template_name = name
+        data.brief_template_language = language
+      }
+    }
     if (body.enabled !== undefined) {
       if (typeof body.enabled !== 'boolean') return NextResponse.json({ error: 'enabled must be true or false.' }, { status: 400 })
       data.enabled = body.enabled

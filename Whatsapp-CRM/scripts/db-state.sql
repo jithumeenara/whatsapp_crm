@@ -101,7 +101,8 @@ FROM (VALUES
   ('138_broadcast_automation_and_compliance', to_regclass('broadcast_settings') IS NOT NULL),
   ('139_sheet_routing',                to_regclass('sheet_jobs') IS NOT NULL),
   ('140_telegram_channel',             to_regclass('telegram_bots') IS NOT NULL),
-  ('141_admin_chat',                   to_regclass('admin_chat_audit') IS NOT NULL)
+  ('141_admin_chat',                   to_regclass('admin_chat_audit') IS NOT NULL),
+  ('142_admin_chat_briefs',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'admin_chat_members' AND column_name = 'brief_enabled'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 
