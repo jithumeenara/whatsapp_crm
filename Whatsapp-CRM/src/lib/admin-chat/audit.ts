@@ -27,6 +27,12 @@ export type AuditEvent =
   | 'alert_sent'
   | 'brief_off'
   | 'alerts_off'
+  | 'action_proposed'
+  | 'action_awaiting_web'
+  | 'action_rejected'
+  | 'action_done'
+  | 'action_failed'
+  | 'action_undone'
 
 export async function writeAudit(args: {
   accountId: string

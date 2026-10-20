@@ -43,6 +43,9 @@ import {
 import { writeAudit } from './audit'
 import { notifyAdmins } from './notify'
 import { MAX_SPOKEN_CHARS, speakForAdmin, transcribeForAdmin } from './voice'
+import { parseActionReply } from './action-rules'
+import { confirmFromChat, rejectFromChat, undoFromChat } from './actions'
+import { actionToolsFor } from './action-tools'
 
 export type AdminChannel = 'whatsapp' | 'telegram'
 
@@ -211,6 +214,26 @@ export async function handleAdminChatInbound(m: AdminChatInbound): Promise<boole
   }
 
   if (session.state === 'awaiting_code') return checkCode(m, member, session.id)
+
+  // YES <code> / NO / UNDO for an action — only for admins allowed actions,
+  // and only typed (a code is never taken by voice).
+  const actionReply = member.scope === 'actions' && !viaVoice ? parseActionReply(question) : null
+  if (actionReply) {
+    const zone = await businessTimezone(m.accountId)
+    const window = windowCheck(member, localNow(zone, new Date()))
+    const who = await stillAdmin(m.accountId, member.user_id)
+    if (!window.ok || !who.ok) {
+      await endSession(session.id, window.ok ? 'not_admin' : 'window')
+      await m.reply('🔒 Session closed — nothing was changed.')
+      return true
+    }
+    const ctx = { accountId: m.accountId, memberId: member.id, userId: member.user_id, sessionId: session.id }
+    const text =
+      actionReply.kind === 'yes' ? await confirmFromChat(ctx, actionReply.code) : actionReply.kind === 'no' ? await rejectFromChat(ctx) : await undoFromChat(ctx)
+    await prisma.adminChatSession.update({ where: { id: session.id }, data: { last_activity_at: new Date() } })
+    await m.reply(text)
+    return true
+  }
   return answer(m, member, session, question, viaVoice)
 }
 
@@ -388,13 +411,17 @@ async function answer(
   }
 
   const history = (Array.isArray(session.history) ? session.history : []) as Array<{ role: 'user' | 'model'; text: string }>
-  const allowedTools = member.scope === 'lookup' ? TOOL_NAMES : TOOL_NAMES.filter((t) => !(PERSONAL_DATA_TOOLS as readonly string[]).includes(t))
+  const allowedTools = member.scope === 'reports' ? TOOL_NAMES.filter((t) => !(PERSONAL_DATA_TOOLS as readonly string[]).includes(t)) : TOOL_NAMES
+  const actionTools = member.scope === 'actions' ? actionToolsFor({ accountId: m.accountId, memberId: member.id, userId: member.user_id, sessionId: session.id }) : null
   const extraInstruction = [
     `This conversation is in ${CHANNEL_NAME[m.channel]}, on the admin's phone. Write for a chat: no tables and no Markdown headings; short lines; *bold* for key numbers; at most 10 list items, then say how many more there are and that the full list is in the CRM.`,
     'Answer only about this business and its CRM data. For anything else, say this chat is only for the business’s CRM.',
-    member.scope === 'lookup'
-      ? 'Never write out full phone numbers, emails, ID or bank numbers — they are masked before sending anyway.'
-      : 'This admin may see counts and summaries only — no names, numbers or details of individual people.',
+    member.scope === 'reports'
+      ? 'This admin may see counts and summaries only — no names, numbers or details of individual people.'
+      : 'Never write out full phone numbers, emails, ID or bank numbers — they are masked before sending anyway.',
+    ...(actionTools
+      ? ['When the admin asks you to DO something (follow-up, tag, assign a chat, create a lead, send a template, prepare a broadcast), call the matching propose_ tool once. It only proposes; say plainly what will happen. Never claim it is done.']
+      : ['This admin cannot change anything from the chat; if asked to, say it must be done in the CRM.']),
     'Reply in the language the admin wrote in (Malayalam or English).',
     ...(viaVoice ? [`The admin asked by voice and will also hear the answer: keep it under ${MAX_SPOKEN_CHARS} characters, in plain sentences, no lists of numbers.`] : []),
   ].join('\n')
@@ -402,7 +429,15 @@ async function answer(
   let reply: string
   let tools: string[] = []
   try {
-    const result = await answerAdminQuestion({ accountId: m.accountId, message: question, history, allowedTools, extraInstruction, feature: 'admin_chat' })
+    const result = await answerAdminQuestion({
+      accountId: m.accountId,
+      message: question,
+      history,
+      allowedTools,
+      extraInstruction,
+      feature: 'admin_chat',
+      ...(actionTools ? { extraTools: actionTools } : {}),
+    })
     reply = result.reply
     tools = result.toolsUsed
   } catch (err) {
@@ -411,6 +446,10 @@ async function answer(
   }
   reply = maskSensitive(reply).replace(/^#{1,6}\s+/gm, '')
   if (reply.length > MAX_REPLY) reply = `${reply.slice(0, MAX_REPLY)}…\n(cut short — open the CRM for the rest)`
+  // The confirmation line comes from here, not the model: the code is never
+  // in the model's hands, and the summary is exactly what will run.
+  const proposal = actionTools?.proposals[0]
+  if (proposal) reply = `${reply}\n\n👉 *${maskSensitive(proposal.summary)}*\nReply *YES ${proposal.code}* to do it, or *NO*. (5 minutes)`
 
   const nextHistory = [...history, { role: 'user' as const, text: maskSensitive(question).slice(0, 500) }, { role: 'model' as const, text: reply.slice(0, 1500) }].slice(-HISTORY_TURNS * 2)
   await prisma.adminChatSession.update({

@@ -8,7 +8,7 @@
  * here — never by anything the model said.
  */
 
-import { GoogleGenerativeAI, FinishReason, FunctionCallingMode, type Content } from '@google/generative-ai'
+import { GoogleGenerativeAI, FinishReason, FunctionCallingMode, type Content, type FunctionDeclaration } from '@google/generative-ai'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
@@ -55,6 +55,8 @@ export async function answerAdminQuestion(args: {
   /** Added after the account's own instructions (e.g. chat formatting). */
   extraInstruction?: string
   feature?: UsageFeature
+  /** More tools for this turn only (Admin Chat's propose_* actions). */
+  extraTools?: { declarations: FunctionDeclaration[]; names: string[]; run: (name: string, args: Record<string, unknown>) => Promise<unknown> }
 }): Promise<AdminAnswer> {
   const { accountId, message } = args
   const config = await prisma.aiConfig.findUnique({ where: { account_id: accountId } })
@@ -83,7 +85,11 @@ export async function answerAdminQuestion(args: {
     .join('\n\n')
 
   const allowed = args.allowedTools ? new Set(args.allowedTools) : null
-  const declarations = allowed ? TOOL_DECLARATIONS.filter((d) => allowed.has(d.name)) : TOOL_DECLARATIONS
+  const declarations = [
+    ...(allowed ? TOOL_DECLARATIONS.filter((d) => allowed.has(d.name)) : TOOL_DECLARATIONS),
+    ...(args.extraTools?.declarations ?? []),
+  ]
+  const extraNames = new Set(args.extraTools?.names ?? [])
 
   const genAI = new GoogleGenerativeAI(decrypt(geminiEntry.api_key))
   const model = genAI.getGenerativeModel(
@@ -133,10 +139,13 @@ export async function answerAdminQuestion(args: {
       const responseParts = []
       for (const call of calls) {
         toolsUsed.push(call.name)
+        const callArgs = (call.args ?? {}) as Record<string, unknown>
         const output =
-          allowed && !allowed.has(call.name)
-            ? { error: `The tool "${call.name}" is not available in this chat.` }
-            : await runTool(call.name, (call.args ?? {}) as Record<string, unknown>, { accountId })
+          extraNames.has(call.name) && args.extraTools
+            ? await args.extraTools.run(call.name, callArgs)
+            : allowed && !allowed.has(call.name)
+              ? { error: `The tool "${call.name}" is not available in this chat.` }
+              : await runTool(call.name, callArgs, { accountId })
         responseParts.push({
           functionResponse: {
             name: call.name,

@@ -3846,3 +3846,29 @@ model AdminChatAudit {
   @@index([account_id, id(sort: Desc)], map: "admin_chat_audit_account")
   @@map("admin_chat_audit")
 }
+
+/// Admin Chat phase 4 (migration 143): an action proposed in the chat, confirmed with a code.
+model AdminChatAction {
+  id                   String    @id @default(uuid()) @db.Uuid
+  account_id           String    @db.Uuid
+  member_id            String    @db.Uuid
+  session_id           String?   @db.Uuid
+  requested_by         String    @db.Uuid
+  kind                 String
+  payload              Json      @default("{}")
+  summary              String
+  status               String    @default("proposed")
+  confirm_code_hash    String?
+  expires_at           DateTime  @db.Timestamptz(6)
+  needs_other_approver Boolean   @default(false)
+  approved_by          String?   @db.Uuid
+  recipients           Int?
+  result               Json?
+  error                String?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  done_at              DateTime? @db.Timestamptz(6)
+
+  @@index([member_id, created_at(sort: Desc)], map: "admin_chat_actions_member")
+  @@index([account_id, status, created_at(sort: Desc)], map: "admin_chat_actions_account")
+  @@map("admin_chat_actions")
+}

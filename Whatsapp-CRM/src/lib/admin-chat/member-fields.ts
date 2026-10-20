@@ -7,7 +7,7 @@ export class MemberFieldError extends Error {
 }
 
 export interface MemberFields {
-  scope: 'reports' | 'lookup'
+  scope: 'reports' | 'lookup' | 'actions'
   validFrom: Date
   validUntil: Date
   allowedDays: string[]
@@ -22,7 +22,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/
 const MAX_DAYS = 366
 
 export function parseMemberFields(body: Record<string, unknown>): MemberFields {
-  const scope = body.scope === 'lookup' ? 'lookup' : body.scope === 'reports' || body.scope === undefined ? 'reports' : null
+  const scope = body.scope === 'lookup' || body.scope === 'actions' ? body.scope : body.scope === 'reports' || body.scope === undefined ? 'reports' : null
   if (!scope) throw new MemberFieldError('Choose what this admin may see.')
   const from = typeof body.valid_from === 'string' && DATE.test(body.valid_from) ? new Date(`${body.valid_from}T00:00:00Z`) : null
   const until = typeof body.valid_until === 'string' && DATE.test(body.valid_until) ? new Date(`${body.valid_until}T00:00:00Z`) : null

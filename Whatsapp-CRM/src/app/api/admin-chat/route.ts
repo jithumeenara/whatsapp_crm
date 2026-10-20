@@ -45,6 +45,11 @@ export async function GET() {
       businessTimezone(ctx.accountId),
       verifyAuditChain(ctx.accountId),
     ])
+    const approvals = await prisma.adminChatAction.findMany({
+      where: { account_id: ctx.accountId, status: 'awaiting_web', expires_at: { gt: new Date() } },
+      orderBy: { created_at: 'asc' },
+      select: { id: true, kind: true, summary: true, requested_by: true, needs_other_approver: true, recipients: true, created_at: true, expires_at: true },
+    })
     // Templates a brief can go out in when WhatsApp's 24-hour window is
     // closed: approved, Utility, with exactly two body variables.
     const templates = (
@@ -104,6 +109,18 @@ export async function GET() {
         created_at: a.created_at,
       })),
       audit_chain: chain,
+      me: ctx.userId,
+      approvals: approvals.map((a) => ({
+        id: a.id,
+        kind: a.kind,
+        summary: a.summary,
+        requested_by: a.requested_by,
+        requested_by_name: nameOf.get(a.requested_by) ?? 'An admin',
+        needs_other_approver: a.needs_other_approver,
+        recipients: a.recipients,
+        created_at: a.created_at,
+        expires_at: a.expires_at,
+      })),
       candidates: people.map((p) => ({
         user_id: p.user_id,
         name: p.full_name || p.user?.email || 'Team member',

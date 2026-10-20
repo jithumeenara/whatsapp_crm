@@ -36,7 +36,7 @@ import { apiFetch, errorText } from '@/lib/api-fetch'
 import { cn } from '@/lib/utils'
 
 type Channel = 'whatsapp' | 'telegram'
-type Scope = 'reports' | 'lookup'
+type Scope = 'reports' | 'lookup' | 'actions'
 
 interface Member {
   id: string
@@ -80,6 +80,18 @@ interface State {
   audit: Array<{ id: string; event: string; name: string | null; detail: Record<string, unknown>; created_at: string }>
   audit_chain: { ok: boolean; rows: number; brokenAtId: string | null }
   candidates: Array<{ user_id: string; name: string; role: string; phone: string | null; mfa_ready: boolean }>
+  me: string
+  approvals: Array<{
+    id: string
+    kind: string
+    summary: string
+    requested_by: string
+    requested_by_name: string
+    needs_other_approver: boolean
+    recipients: number | null
+    created_at: string
+    expires_at: string
+  }>
 }
 
 const DAYS = [
@@ -110,6 +122,12 @@ const EVENT_LABEL: Record<string, string> = {
   alert_sent: 'Alert sent',
   brief_off: 'Turned off daily briefs',
   alerts_off: 'Turned off alerts',
+  action_proposed: 'Action proposed',
+  action_awaiting_web: 'Waiting for approval in the CRM',
+  action_rejected: 'Action cancelled',
+  action_done: 'Action done',
+  action_failed: 'Action failed',
+  action_undone: 'Action undone',
 }
 
 const toTime = (m: number) => (m >= 1440 ? '23:59' : `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`)
@@ -395,6 +413,7 @@ function MemberDialog({
                 [
                   ['reports', 'Reports only', 'Counts and summaries — no names or numbers of people.'],
                   ['lookup', 'Reports and find a customer', 'Also look up a person; phone numbers and emails are masked.'],
+                  ['actions', 'Reports, find and actions', 'Also add follow-ups, tags, leads and assign chats after a YES; templates and broadcast drafts are confirmed in the CRM too.'],
                 ] as const
               ).map(([value, label, hint]) => (
                 <label key={value} className={cn('flex cursor-pointer gap-2.5 rounded-xl border p-3', draft.scope === value ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200')}>
@@ -577,6 +596,34 @@ export function AdminChatSettings() {
     }
   }
 
+  function approve(a: State['approvals'][number]) {
+    setPending({
+      title: 'Approve this action',
+      run: async (code) => {
+        const res = await apiFetch(`/api/admin-chat/actions/${a.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: 'approve', totp_code: code }) })
+        const body = (await res.json()) as { summary?: string }
+        toast.success(`Done: ${body.summary ?? a.summary}`)
+        setPending(null)
+        await load()
+      },
+    })
+  }
+
+  async function reject(a: State['approvals'][number]) {
+    if (busy) return
+    setBusy(`rej-${a.id}`)
+    try {
+      await apiFetch(`/api/admin-chat/actions/${a.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: 'reject' }) })
+      toast.success('Rejected — nothing was done')
+      await load()
+    } catch (err) {
+      console.error('[admin chat] reject failed:', err)
+      toast.error(errorText(err, 'Could not reject.'))
+    } finally {
+      setBusy('')
+    }
+  }
+
   function newCode(m: Member) {
     setPending({
       title: 'New verification code',
@@ -629,7 +676,7 @@ export function AdminChatSettings() {
               </span>
             </div>
             <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-500">
-              Up to {data.max_members} admins ask about the business — leads, enquiries, chats, registrations — from their own WhatsApp or Telegram, after typing their authenticator code. Read-only: nothing is changed from a chat.
+              Up to {data.max_members} admins ask about the business — leads, enquiries, chats, registrations — from their own WhatsApp or Telegram, after typing their authenticator code. Changes (for admins allowed actions) need a YES in the chat, and anything that reaches customers is approved here too.
             </p>
           </div>
           <Switch
@@ -700,6 +747,42 @@ export function AdminChatSettings() {
         </section>
       )}
 
+      {/* Waiting for approval */}
+      {data.approvals.length > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5" aria-live="polite">
+          <h3 className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-800">
+            <LockKeyhole className="h-4 w-4 text-amber-700" aria-hidden="true" /> Waiting for approval ({data.approvals.length})
+          </h3>
+          <p className="mt-0.5 text-[12px] text-slate-600">Asked for in Admin Chat. Approving needs your authenticator code.</p>
+          <ul className="mt-3 space-y-2">
+            {data.approvals.map((a) => {
+              const mine = a.requested_by === data.me
+              const canApprove = a.needs_other_approver ? !mine : mine
+              return (
+                <li key={a.id} className="flex flex-col gap-2 rounded-xl border border-amber-100 bg-white p-3.5 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-[13px] font-semibold text-slate-800">{a.summary}</p>
+                    <p className="mt-0.5 text-[11.5px] text-slate-500">
+                      Asked by {a.requested_by_name} · {fmt(a.created_at)} · expires {fmt(a.expires_at)}
+                      {a.needs_other_approver ? ' · needs another owner or admin' : ''}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <Button type="button" className="h-8 px-3 text-[12px]" disabled={!canApprove || !data.me_has_totp} onClick={() => approve(a)}
+                      title={canApprove ? undefined : a.needs_other_approver ? 'Another owner or admin must approve this' : 'Only the admin who asked can confirm this'}>
+                      Approve
+                    </Button>
+                    <Button type="button" variant="destructive" className="h-8 px-3 text-[12px]" disabled={busy === `rej-${a.id}`} onClick={() => void reject(a)}>
+                      Reject
+                    </Button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+
       {/* Admins */}
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -740,7 +823,7 @@ export function AdminChatSettings() {
                       </div>
                       <p className="mt-0.5 text-[12px] text-slate-500">
                         {m.channel === 'whatsapp' ? (m.phone ? `+${m.phone}` : 'WhatsApp') : m.telegram_linked ? 'Telegram linked' : 'Telegram'} ·{' '}
-                        {m.scope === 'lookup' ? 'Reports + find a customer' : 'Reports only'}
+                        {m.scope === 'actions' ? 'Reports, find and actions' : m.scope === 'lookup' ? 'Reports + find a customer' : 'Reports only'}
                       </p>
                       <p className="mt-0.5 flex items-center gap-1 text-[12px] text-slate-500">
                         <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />

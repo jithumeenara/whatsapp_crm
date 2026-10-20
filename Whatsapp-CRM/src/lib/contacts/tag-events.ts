@@ -18,7 +18,7 @@
 
 import { prisma } from '@/lib/db'
 
-export type TagSource = 'inbox' | 'api' | 'chatbot' | 'automation' | 'import' | 'ad_lead' | 'broadcast' | 'system'
+export type TagSource = 'inbox' | 'api' | 'chatbot' | 'automation' | 'import' | 'ad_lead' | 'broadcast' | 'system' | 'admin_chat'
 
 /** An automation adding a tag that fires an automation adding a tag… */
 export const MAX_TAG_HOPS = 3
