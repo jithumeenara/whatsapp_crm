@@ -49,6 +49,29 @@ interface BulkBody {
   /** A user id, or null to return leads to the pool. */
   assigned_to?: string | null
   score?: string
+  /** Supervisors: share the selected leads out in turn across a team
+   *  (empty team = every agent and supervisor). */
+  spread?: { team_user_ids?: unknown }
+  /** With an assignment: the customer's open chat goes to the same person. */
+  also_assign_chat?: boolean
+}
+
+/** The customer's open chats follow their lead to its new owner. */
+async function moveChats(accountId: string, contactIds: Array<{ contactId: string; userId: string }>, actorUserId: string, reason: string) {
+  const { recordAssignment } = await import('@/lib/agents/assign')
+  for (const { contactId, userId } of contactIds) {
+    const chats = await prisma.conversation.findMany({
+      where: { account_id: accountId, contact_id: contactId, status: { not: 'closed' }, // NOT { = x } would skip unassigned chats (NULL), the very ones to move.
+        OR: [{ assigned_agent_id: null }, { assigned_agent_id: { not: userId } }] },
+      select: { id: true, assigned_agent_id: true },
+    })
+    for (const chat of chats) {
+      const moved = await prisma.conversation.updateMany({ where: { id: chat.id, assigned_agent_id: chat.assigned_agent_id }, data: { assigned_agent_id: userId } })
+      if (moved.count > 0) {
+        await recordAssignment({ accountId, recordType: 'conversation', recordId: chat.id, previousUserId: chat.assigned_agent_id, newUserId: userId, actorUserId, source: 'bulk', reason })
+      }
+    }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -71,6 +94,41 @@ export async function POST(req: NextRequest) {
       { error: `That is more than ${MAX_IDS} leads. Narrow the list with a filter first.` },
       { status: 400 },
     )
+  }
+
+  // ── Spread across a team, in turn ───────────────────────────────────
+  if (body.spread !== undefined) {
+    if (!canViewAllLeads(ctx.role)) {
+      return NextResponse.json({ error: 'Only a supervisor can share leads out.' }, { status: 403 })
+    }
+    const team = Array.isArray(body.spread?.team_user_ids) ? body.spread.team_user_ids.filter((v): v is string => typeof v === 'string') : []
+    const { findAgents } = await import('@/lib/flows/agent-routing')
+    const { takeTurn } = await import('@/lib/agents/rotation')
+    const { recordAssignment } = await import('@/lib/agents/assign')
+    const all = await findAgents({ accountId: ctx.accountId })
+    const pool = team.length ? all.filter((a) => team.includes(a.userId)) : all.filter((a) => a.role === 'agent' || a.role === 'supervisor')
+    if (pool.length === 0) return NextResponse.json({ error: 'Nobody in that team can take leads.' }, { status: 400 })
+    const leads = await prisma.lead.findMany({ where: { id: { in: ids }, account_id: ctx.accountId }, select: { id: true, contact_id: true, assigned_to: true }, orderBy: { created_at: 'asc' } })
+    if (leads.length === 0) return NextResponse.json({ error: 'None of those leads were found.', updated: 0 }, { status: 404 })
+    const given: Record<string, number> = {}
+    const chats: Array<{ contactId: string; userId: string }> = []
+    for (const lead of leads) {
+      // A deliberate share-out by a person: presence and hours are not checked.
+      const next = await takeTurn(ctx.accountId, 'bulk-spread', pool)
+      if (!next) break
+      const reason = `${next.fullName} — shared out in turn by a supervisor (${pool.length} in the team)`
+      const r = await prisma.lead.updateMany({ where: { id: lead.id, account_id: ctx.accountId }, data: { assigned_to: next.userId, claimed_at: new Date() } })
+      if (r.count === 0) continue
+      given[next.fullName] = (given[next.fullName] ?? 0) + 1
+      await prisma.leadActivity
+        .create({ data: { lead_id: lead.id, account_id: ctx.accountId, user_id: ctx.userId, type: 'assigned', title: `Assigned to ${next.fullName}`, description: reason } })
+        .catch(() => {})
+      await recordAssignment({ accountId: ctx.accountId, recordType: 'lead', recordId: lead.id, previousUserId: lead.assigned_to, newUserId: next.userId, actorUserId: ctx.userId, source: 'bulk', method: 'round_robin', reason })
+      if (body.also_assign_chat !== false && lead.contact_id) chats.push({ contactId: lead.contact_id, userId: next.userId })
+    }
+    await moveChats(ctx.accountId, chats, ctx.userId, 'with their lead — shared out in turn').catch((err) => console.error('[leads] spread chats failed:', err))
+    const updated = Object.values(given).reduce((a, b) => a + b, 0)
+    return NextResponse.json({ updated, skipped: ids.length - updated, given })
   }
 
   const data: Record<string, unknown> = {}
@@ -128,6 +186,19 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await prisma.lead.updateMany({ where, data })
+
+    // An assignment: recorded with who did it, and the chat follows when asked.
+    if (body.assigned_to !== undefined && body.status === undefined) {
+      const { recordAssignment } = await import('@/lib/agents/assign')
+      const reason = body.assigned_to ? `assigned in bulk by a ${ctx.role === 'agent' ? 'teammate' : 'manager'}` : 'returned to the pool in bulk'
+      for (const lead of touched) {
+        await recordAssignment({ accountId: ctx.accountId, recordType: 'lead', recordId: lead.id, previousUserId: lead.assigned_to, newUserId: body.assigned_to ?? null, actorUserId: ctx.userId, source: 'bulk', method: 'specific', reason })
+      }
+      if (body.assigned_to && body.also_assign_chat) {
+        await moveChats(ctx.accountId, touched.filter((l) => l.contact_id).map((l) => ({ contactId: l.contact_id as string, userId: body.assigned_to as string })), ctx.userId, 'with their lead — assigned in bulk')
+          .catch((err) => console.error('[leads] bulk chats failed:', err))
+      }
+    }
 
     // One activity row per lead, in one insert. The timeline is what
     // somebody reads to understand a lead's history, and a change that

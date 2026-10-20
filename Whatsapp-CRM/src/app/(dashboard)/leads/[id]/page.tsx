@@ -9,6 +9,7 @@ import {
   FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate, Sparkles,
 } from "lucide-react"
 import { toast } from "sonner"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
 import { outcomeOf, OUTCOME_COLOR, OUTCOME_LABEL } from "@/lib/leads/outcome"
 import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-lead-dialog"
@@ -145,7 +146,21 @@ export default function LeadDetailPage() {
   const [drafting, setDrafting] = useState(false)
   const [sending, setSending] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
-  const { userId } = useAuth()
+  const { userId, canViewAllLeads } = useAuth()
+  // Managers hand a lead to anyone on the team (and the chat with it).
+  const [teamMembers, setTeamMembers] = useState<Array<{ user_id: string; full_name: string | null; email: string | null; role?: string }>>([])
+  const [assigning, setAssigning] = useState(false)
+  useEffect(() => {
+    if (!canViewAllLeads) return
+    let current = true
+    fetch("/api/account/members", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { members: [] }))
+      .then((j: { members?: Array<{ user_id: string; full_name: string | null; email: string | null; role?: string }> }) => {
+        if (current) setTeamMembers((j.members ?? []).filter((m) => m.role !== "viewer"))
+      })
+      .catch((err) => console.warn("[lead] members failed:", err))
+    return () => { current = false }
+  }, [canViewAllLeads])
   const [picking, setPicking] = useState(false)
   const [filePickerOpen, setFilePickerOpen] = useState(false)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
@@ -662,6 +677,40 @@ export default function LeadDetailPage() {
                     {copied === phone ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-slate-500" />}
                   </button>
                 </>
+              )}
+              {canViewAllLeads && teamMembers.length > 0 && (
+                <select
+                  aria-label="Assign this lead to"
+                  disabled={assigning}
+                  value={lead.assigned_to ?? ""}
+                  onChange={async (e) => {
+                    const to = e.target.value || null
+                    if (assigning || to === (lead.assigned_to ?? null)) return
+                    setAssigning(true)
+                    try {
+                      await apiFetch("/api/leads/bulk", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ids: [lead.id], assigned_to: to, also_assign_chat: true }),
+                      })
+                      const who = teamMembers.find((m) => m.user_id === to)
+                      toast.success(to ? `Assigned to ${who?.full_name || who?.email || "them"}` : "Returned to the pool")
+                      loadLead()
+                      loadChat()
+                    } catch (err) {
+                      console.error("[lead] assign failed:", err)
+                      toast.error(errorText(err, "Could not assign this lead."))
+                    } finally {
+                      setAssigning(false)
+                    }
+                  }}
+                  className="h-9 max-w-[12rem] rounded-xl border border-slate-200 bg-white px-2 text-[12px] text-slate-700"
+                >
+                  <option value="">Unassigned (pool)</option>
+                  {teamMembers.map((m) => (
+                    <option key={m.user_id} value={m.user_id}>{m.full_name || m.email}</option>
+                  ))}
+                </select>
               )}
               <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact"
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50">

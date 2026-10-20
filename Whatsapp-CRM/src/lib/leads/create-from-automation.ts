@@ -49,7 +49,17 @@ export interface CreateLeadConfig {
   source?: string
   score?: string
   assign_to?: string
+  assign_method?: 'pool' | 'specific' | 'round_robin' | 'least_busy'
+  team_user_ids?: string[]
+  also_assign_chat?: boolean
+  sticky?: boolean
   skip_if_open_lead?: boolean
+}
+
+/** Older automations stored only assign_to ('pool' or a user id). */
+export function leadAssignMethod(config: Pick<CreateLeadConfig, 'assign_method' | 'assign_to'>): 'pool' | 'specific' | 'round_robin' | 'least_busy' {
+  if (config.assign_method) return config.assign_method
+  return config.assign_to && config.assign_to !== 'pool' ? 'specific' : 'pool'
 }
 
 export interface CreateLeadOutcome {
@@ -70,6 +80,8 @@ export async function createLeadFromAutomation(args: {
    *  tag-based trigger, where there is nothing to match against. */
   message: string
   config: CreateLeadConfig
+  /** The turn queue for round robin (e.g. "automation:<id>:lead"). */
+  queueScope?: string
 }): Promise<CreateLeadOutcome> {
   const { config } = args
   const mode = normalizeCreateLeadMode(config.match_mode)
@@ -130,6 +142,39 @@ export async function createLeadFromAutomation(args: {
   })
   if (!contact) return { created: false, detail: 'skipped — contact not found' }
 
+  // ── Who gets it ──────────────────────────────────────────────────
+  const method = leadAssignMethod(config)
+  let assignee: { userId: string; reason: string } | null = null
+  let poolReason: string | null = null
+  if (method !== 'pool') {
+    const { chooseAssignee } = await import('@/lib/agents/assign')
+    // The person already handling this customer's chat keeps them, if they
+    // are here — a returning customer is not handed to a stranger.
+    if (config.sticky !== false) {
+      const chat = await prisma.conversation.findFirst({
+        where: { account_id: args.accountId, contact_id: args.contactId, status: { not: 'closed' }, assigned_agent_id: { not: null } },
+        orderBy: { last_message_at: 'desc' },
+        select: { assigned_agent_id: true },
+      })
+      if (chat?.assigned_agent_id) {
+        const { findAgents } = await import('@/lib/flows/agent-routing')
+        const owner = (await findAgents({ accountId: args.accountId })).find((a) => a.userId === chat.assigned_agent_id)
+        if (owner && owner.online && owner.onShift) assignee = { userId: owner.userId, reason: `${owner.fullName} — already handling this customer's chat` }
+      }
+    }
+    if (!assignee) {
+      const choice = await chooseAssignee({
+        accountId: args.accountId,
+        method: method === 'specific' ? 'specific' : method,
+        userId: config.assign_to ?? null,
+        teamUserIds: config.team_user_ids ?? null,
+        scope: args.queueScope ?? 'lead-automation',
+      })
+      if (choice.userId) assignee = { userId: choice.userId, reason: choice.reason }
+      else poolReason = choice.reason
+    }
+  }
+
   const lead = await prisma.lead.create({
     data: {
       account_id: args.accountId,
@@ -139,12 +184,27 @@ export async function createLeadFromAutomation(args: {
       source: config.source?.trim() || 'whatsapp',
       status: 'new',
       ...(config.score?.trim() ? { score: config.score.trim() } : {}),
-      ...(config.assign_to && config.assign_to !== 'pool'
-        ? { assigned_to: config.assign_to, claimed_at: new Date() }
-        : {}),
+      ...(assignee ? { assigned_to: assignee.userId, claimed_at: new Date() } : {}),
     },
     select: { id: true },
   })
+
+  if (assignee) {
+    await announceAutoAssignment({
+      accountId: args.accountId,
+      leadId: lead.id,
+      contactId: args.contactId,
+      contactLabel: contact.name || contact.phone,
+      userId: assignee.userId,
+      reason: assignee.reason,
+      method,
+      alsoChat: config.also_assign_chat !== false,
+    })
+  } else if (poolReason) {
+    await prisma.leadActivity
+      .create({ data: { account_id: args.accountId, lead_id: lead.id, contact_id: args.contactId, type: 'note', title: 'Left in New Leads', description: poolReason } })
+      .catch(() => {})
+  }
 
   const why =
     mode === 'ai'
@@ -165,6 +225,51 @@ export async function createLeadFromAutomation(args: {
     .catch(() => {})
 
   return { created: true, detail: `lead created — ${why}`, leadId: lead.id }
+}
+
+/**
+ * The assignment, made visible: on the lead's timeline (with the reason),
+ * in the assignment log, as a push to the person, and — when asked — the
+ * customer's open chat goes to the same person.
+ */
+async function announceAutoAssignment(args: {
+  accountId: string
+  leadId: string
+  contactId: string
+  contactLabel: string
+  userId: string
+  reason: string
+  method: string
+  alsoChat: boolean
+}) {
+  const { recordAssignment } = await import('@/lib/agents/assign')
+  await prisma.leadActivity
+    .create({ data: { account_id: args.accountId, lead_id: args.leadId, contact_id: args.contactId, type: 'assigned', title: 'Assigned automatically', description: args.reason } })
+    .catch(() => {})
+  await recordAssignment({ accountId: args.accountId, recordType: 'lead', recordId: args.leadId, previousUserId: null, newUserId: args.userId, source: 'automation', method: args.method, reason: args.reason })
+
+  if (args.alsoChat) {
+    const chats = await prisma.conversation.findMany({
+      where: { account_id: args.accountId, contact_id: args.contactId, status: { not: 'closed' }, // NOT { = x } would skip unassigned chats (NULL), the very ones to move.
+        OR: [{ assigned_agent_id: null }, { assigned_agent_id: { not: args.userId } }] },
+      select: { id: true, assigned_agent_id: true },
+    })
+    for (const chat of chats) {
+      // Only if nobody else took it meanwhile.
+      const moved = await prisma.conversation.updateMany({ where: { id: chat.id, assigned_agent_id: chat.assigned_agent_id }, data: { assigned_agent_id: args.userId } })
+      if (moved.count > 0) {
+        await recordAssignment({ accountId: args.accountId, recordType: 'conversation', recordId: chat.id, previousUserId: chat.assigned_agent_id, newUserId: args.userId, source: 'automation', method: args.method, reason: `with their lead — ${args.reason}` })
+        const updated = await prisma.conversation.findUnique({ where: { id: chat.id } })
+        if (updated) {
+          const { emitToAccount } = await import('@/lib/socket')
+          emitToAccount(args.accountId, 'conversation', { eventType: 'UPDATE', new: updated, old: {} })
+        }
+      }
+    }
+  }
+
+  const { sendPushToUser } = await import('@/lib/push')
+  void sendPushToUser(args.userId, { title: 'New lead for you', body: args.contactLabel, tag: `lead-${args.leadId}`, data: { url: `/leads/${args.leadId}` } }).catch(() => {})
 }
 
 /**

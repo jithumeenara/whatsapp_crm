@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import {
   PhoneOff, Phone, Calendar, CheckCircle2, MessageSquare,
-  TrendingUp, ChevronDown, ChevronRight,
+  TrendingUp, ChevronDown, ChevronRight, UserCheck,
 } from 'lucide-react'
 import type { LeadActivity } from '@/types'
 
@@ -18,6 +18,7 @@ const ACTIVITY_ICONS: Record<string, React.ReactNode> = {
   note:         <MessageSquare className="size-3.5 text-slate-400" />,
   call:         <PhoneOff className="size-3.5 text-rose-500" />,
   closed:       <CheckCircle2 className="size-3.5 text-emerald-500" />,
+  assigned:     <UserCheck className="size-3.5 text-sky-600" />,
 }
 
 const ICON_BG: Record<string, string> = {
@@ -27,6 +28,7 @@ const ICON_BG: Record<string, string> = {
   note:         'bg-slate-50 border-slate-200',
   call:         'bg-rose-50 border-rose-100',
   closed:       'bg-emerald-50 border-emerald-100',
+  assigned:     'bg-sky-50 border-sky-100',
 }
 
 function fmtDT(iso: string) {

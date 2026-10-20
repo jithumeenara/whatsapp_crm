@@ -1445,6 +1445,21 @@ function LeadsV2() {
     }
   }
 
+  // Managers: "Assign to" anyone on the team, or share the selection out in turn.
+  const [teamMembers, setTeamMembers] = useState<Array<{ user_id: string; full_name: string | null; email: string | null; role?: string }>>([])
+  const [bulkWithChats, setBulkWithChats] = useState(true)
+  useEffect(() => {
+    if (!canViewAllLeads) return
+    let current = true
+    fetch("/api/account/members", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { members: [] }))
+      .then((j: { members?: Array<{ user_id: string; full_name: string | null; email: string | null; role?: string }> }) => {
+        if (current) setTeamMembers((j.members ?? []).filter((m) => m.role !== "viewer"))
+      })
+      .catch((err) => console.warn("[leads] members failed:", err))
+    return () => { current = false }
+  }, [canViewAllLeads])
+
   async function applyBulk(patch: Record<string, unknown>, what: string) {
     if (selectedIds.size === 0 || bulkBusy) return
     setBulkBusy(true)
@@ -1456,10 +1471,13 @@ function LeadsV2() {
       })
       const data = await res.json().catch(() => null)
       if (!res.ok) throw new Error(data?.error ?? `Could not apply that (${res.status})`)
+      const given = data.given as Record<string, number> | undefined
       toast.success(
-        data.skipped > 0
-          ? `${data.updated} ${what} — ${data.skipped} skipped, not yours to change`
-          : `${data.updated} ${what}`,
+        given
+          ? `${data.updated} shared out: ${Object.entries(given).map(([n, c]) => `${n} ${c}`).join(", ")}`
+          : data.skipped > 0
+            ? `${data.updated} ${what} — ${data.skipped} skipped, not yours to change`
+            : `${data.updated} ${what}`,
       )
       setSelectedIds(new Set())
       await loadData()
@@ -1805,6 +1823,35 @@ function LeadsV2() {
               >
                 Return to pool
               </BulkButton>
+            )}
+            {canViewAllLeads && teamMembers.length > 0 && (
+              <>
+                <select
+                  aria-label="Assign the selected leads to"
+                  disabled={bulkBusy}
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (!v) return
+                    if (v === "__spread") void applyBulk({ spread: {}, also_assign_chat: bulkWithChats }, "shared out")
+                    else {
+                      const who = teamMembers.find((m) => m.user_id === v)
+                      void applyBulk({ assigned_to: v, also_assign_chat: bulkWithChats }, `assigned to ${who?.full_name || who?.email || "them"}`)
+                    }
+                  }}
+                  className="h-7 max-w-[11rem] rounded-md border border-indigo-200 bg-white px-1.5 text-[11.5px] text-slate-700"
+                >
+                  <option value="">Assign to…</option>
+                  <option value="__spread">Share out in turn (agents &amp; supervisors)</option>
+                  {teamMembers.map((m) => (
+                    <option key={m.user_id} value={m.user_id}>{m.full_name || m.email}</option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-1 text-[11px] text-indigo-700">
+                  <input type="checkbox" checked={bulkWithChats} onChange={(e) => setBulkWithChats(e.target.checked)} className="accent-indigo-600" />
+                  with their chats
+                </label>
+              </>
             )}
 
             {/* Answering the assistant, on the tab where its guesses

@@ -70,11 +70,17 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       break
     case 'assign_conversation':
+      if (c.mode !== undefined && !['specific', 'round_robin', 'least_busy'].includes(String(c.mode))) {
+        issues.push({ path: `${path}.mode`, message: 'mode must be specific, round_robin or least_busy' })
+      }
       if (c.mode === 'specific' && !nonEmpty(c.agent_id)) {
         issues.push({
           path: `${path}.agent_id`,
           message: 'agent is required when mode is "specific"',
         })
+      }
+      if (c.team_user_ids !== undefined && !(Array.isArray(c.team_user_ids) && c.team_user_ids.every((v) => typeof v === 'string'))) {
+        issues.push({ path: `${path}.team_user_ids`, message: 'team must be a list of people' })
       }
       break
     case 'update_contact_field':
@@ -130,6 +136,15 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       break
     case 'create_lead': {
+      if (c.assign_method !== undefined && !['pool', 'specific', 'round_robin', 'least_busy'].includes(String(c.assign_method))) {
+        issues.push({ path: `${path}.assign_method`, message: 'who gets it must be pool, specific, round_robin or least_busy' })
+      }
+      if (c.assign_method === 'specific' && (!nonEmpty(c.assign_to) || c.assign_to === 'pool')) {
+        issues.push({ path: `${path}.assign_to`, message: 'choose the person who gets the lead' })
+      }
+      if (c.team_user_ids !== undefined && !(Array.isArray(c.team_user_ids) && c.team_user_ids.every((v) => typeof v === 'string'))) {
+        issues.push({ path: `${path}.team_user_ids`, message: 'team must be a list of people' })
+      }
       // No keywords is legal and means "whatever reached this step".
       // The one combination that cannot work is a matching mode that
       // needs words with no words to match.

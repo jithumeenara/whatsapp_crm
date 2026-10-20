@@ -430,6 +430,36 @@ function AgentSelect({
   )
 }
 
+/** Who takes turns. Nobody ticked = every agent and supervisor. */
+function TeamPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const { members } = useResources()
+  if (members.length === 0) return <p className="text-[11px] text-slate-400">Everyone with an agent or supervisor role.</p>
+  return (
+    <div className="space-y-1">
+      <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 bg-white p-2">
+        {members.map((m) => {
+          const on = value.includes(m.user_id)
+          return (
+            <label key={m.user_id} className="flex cursor-pointer items-center gap-2 text-xs text-slate-700">
+              <input
+                type="checkbox"
+                checked={on}
+                onChange={() => onChange(on ? value.filter((v) => v !== m.user_id) : [...value, m.user_id])}
+                className="accent-violet-600"
+              />
+              {m.full_name || m.email || m.user_id}
+            </label>
+          )
+        })}
+      </div>
+      <p className="text-[11px] text-slate-400">
+        {value.length === 0 ? 'Nobody ticked: every agent and supervisor takes a turn.' : `${value.length} ${value.length === 1 ? 'person' : 'people'} take turns.`}{' '}
+        Only people signed in and within their working hours get one; if nobody is, it waits unassigned and the reason is recorded.
+      </p>
+    </div>
+  )
+}
+
 /** Template dropdown showing approved templates by name + language,
  *  storing both template_name and language. Falls back to manual name +
  *  language inputs when no approved templates are synced yet. */
@@ -1145,16 +1175,21 @@ function StepEditor({
               onChange={(e) => set({ mode: e.target.value })}
               className="w-full rounded-md border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm text-slate-800"
             >
-              <option value="round_robin">Round-robin</option>
-              <option value="specific">Specific agent</option>
+              <option value="round_robin">Round robin — the team takes turns</option>
+              <option value="least_busy">Least busy — fewest open chats</option>
+              <option value="specific">Specific person</option>
             </select>
           </FieldBlock>
-          {cfg.mode === "specific" && (
+          {cfg.mode === "specific" ? (
             <FieldBlock label="Agent">
               <AgentSelect
                 value={(cfg.agent_id as string) ?? ""}
                 onChange={(v) => set({ agent_id: v })}
               />
+            </FieldBlock>
+          ) : (
+            <FieldBlock label="Team">
+              <TeamPicker value={(cfg.team_user_ids as string[]) ?? []} onChange={(v) => set({ team_user_ids: v })} />
             </FieldBlock>
           )}
         </>
@@ -1405,17 +1440,51 @@ function CreateLeadFields({
 
       <FieldBlock label="Who gets it">
         <select
-          value={(cfg.assign_to as string) ?? "pool"}
-          onChange={(e) => set({ assign_to: e.target.value })}
+          value={(cfg.assign_method as string) ?? (cfg.assign_to && cfg.assign_to !== "pool" ? "specific" : "pool")}
+          onChange={(e) => set({ assign_method: e.target.value })}
           className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-violet-400"
         >
           <option value="pool">Leave in New Leads for anyone to claim</option>
+          <option value="round_robin">Round robin — the team takes turns</option>
+          <option value="least_busy">Least busy — fewest open chats</option>
+          <option value="specific">A specific person</option>
         </select>
         <p className="mt-1 text-[11px] text-slate-400">
-          Assigning to a specific agent is done from the lead itself — an automation that
-          silently hands work to one person is work nobody else can see.
+          Every automatic assignment is shown on the lead with the reason, and the person gets a notification.
         </p>
       </FieldBlock>
+      {((cfg.assign_method as string) ?? (cfg.assign_to && cfg.assign_to !== "pool" ? "specific" : "pool")) === "specific" && (
+        <FieldBlock label="Person">
+          <AgentSelect value={cfg.assign_to && cfg.assign_to !== "pool" ? (cfg.assign_to as string) : ""} onChange={(v) => set({ assign_to: v })} />
+        </FieldBlock>
+      )}
+      {["round_robin", "least_busy"].includes((cfg.assign_method as string) ?? "") && (
+        <FieldBlock label="Team">
+          <TeamPicker value={(cfg.team_user_ids as string[]) ?? []} onChange={(v) => set({ team_user_ids: v })} />
+        </FieldBlock>
+      )}
+      {((cfg.assign_method as string) ?? (cfg.assign_to && cfg.assign_to !== "pool" ? "specific" : "pool")) !== "pool" && (
+        <>
+          <label className="mt-1 flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={cfg.sticky !== false}
+              onChange={(e) => set({ sticky: e.target.checked })}
+              className="mt-0.5 accent-violet-600"
+            />
+            <span className="text-[11px] text-slate-600">Keep with the person already handling this customer&rsquo;s chat (if they are available)</span>
+          </label>
+          <label className="mt-1 flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={cfg.also_assign_chat !== false}
+              onChange={(e) => set({ also_assign_chat: e.target.checked })}
+              className="mt-0.5 accent-violet-600"
+            />
+            <span className="text-[11px] text-slate-600">Give the customer&rsquo;s chat to the same person</span>
+          </label>
+        </>
+      )}
 
       <label className="mt-1 flex items-start gap-2">
         <input

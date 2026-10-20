@@ -437,6 +437,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         conversationId: args.context.conversation_id?.toString() ?? null,
         message: (args.context.message_text ?? '').toString(),
         config: cfg,
+        queueScope: `automation:${args.automation.id}:lead`,
       })
       // A step that decided not to fire is a success, not a failure —
       // "no keyword match" is the rule working. Throwing would mark the

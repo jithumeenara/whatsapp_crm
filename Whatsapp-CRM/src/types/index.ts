@@ -750,8 +750,16 @@ export interface CreateLeadStepConfig {
   source?: string;
   score?: string;
   /** 'pool' leaves it unassigned for anyone to claim; an agent id
-   *  assigns it outright. */
+   *  assigns it outright (with assign_method 'specific' or unset). */
   assign_to?: string;
+  /** Who gets the lead. Unset = read assign_to as before. */
+  assign_method?: 'pool' | 'specific' | 'round_robin' | 'least_busy';
+  /** Round robin / least busy among these people; empty = all agents and supervisors. */
+  team_user_ids?: string[];
+  /** Give the customer's open chat to the same person. Default on. */
+  also_assign_chat?: boolean;
+  /** Keep with whoever is already handling this customer's chat, if they are available. Default on. */
+  sticky?: boolean;
   /** Skip if this contact already has an open lead. On by default —
    *  a second lead for somebody an agent is already working is not a
    *  new opportunity, it is a duplicate. */
