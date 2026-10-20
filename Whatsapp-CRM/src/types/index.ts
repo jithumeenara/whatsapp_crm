@@ -142,12 +142,16 @@ export interface Contact {
   updated_at: string;
   /** Channels this contact has been seen on, e.g. ["whatsapp", "instagram"] */
   channels?: string[];
+  /** The latest chat on each channel (Contacts list links). */
+  channel_links?: Array<{ channel: string; conversation_id: string }>;
   /** Instagram-scoped (IGSID) / Facebook-Messenger-scoped (PSID) platform
    *  IDs — dedicated columns, never derived from `phone`. Used by the
    *  Merge Contacts flow (IG·04) to show which channels a contact has an
    *  identity on. */
   instagram_id?: string | null;
   facebook_id?: string | null;
+  /** Telegram user id — the same person's Telegram chat (migration 140). */
+  telegram_id?: string | null;
   /** Set once this contact has been absorbed by a "Merge with…" action —
    *  the row stays in the DB but is excluded from normal contact lists. */
   merged_into_contact_id?: string | null;

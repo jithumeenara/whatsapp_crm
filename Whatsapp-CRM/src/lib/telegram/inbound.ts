@@ -38,6 +38,12 @@ import { sendToTelegram } from './outbound'
 
 const TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 }
 
+/** The contact fields the Inbox list and contact panel use (as /api/conversations sends them). */
+const CONTACT_FOR_INBOX = {
+  id: true, name: true, phone: true, avatar_url: true, email: true, company: true, created_at: true,
+  detected_language: true, alternate_phone: true, preferred_language: true, telegram_id: true,
+} as const
+
 export function telegramPlaceholderPhone(telegramId: string): string {
   return `tg:${telegramId}`
 }
@@ -119,7 +125,7 @@ async function takeVerifiedNumber(bot: LiveBot, contactId: string, phone: string
   }
   const current = await prisma.contact.findFirst({ where: { id: contactId, account_id: bot.accountId }, select: { phone: true } })
   if (current?.phone?.startsWith('tg:')) {
-    await prisma.contact.update({ where: { id: contactId }, data: { phone: `+${digits}`, phone_normalized: digits } }).catch((err) => {
+    await prisma.contact.update({ where: { id: contactId }, data: { phone: digits, phone_normalized: digits } }).catch((err) => {
       console.warn('[telegram] could not save the shared number:', err instanceof Error ? err.message : err)
     })
   }
@@ -266,6 +272,9 @@ async function react(bot: LiveBot, thread: Thread, msg: { text: string; key: str
       ...(conversation.status === 'closed' ? { status: 'open' } : {}),
       ...(releaseOwner ? { assigned_agent_id: null } : {}),
     },
+    // The contact rides along: a shared number or a join with a known
+    // contact shows in the open Inbox at once, without a reload.
+    include: { contact: { select: CONTACT_FOR_INBOX } },
   })
   emitToAccount(accountId, 'conversation', { eventType: 'UPDATE', new: updated, old: {} })
 

@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
         take: limit,
         include: {
           tags: { include: { tag: true } },
-          conversations: { select: { channel: true }, distinct: ["channel"] },
+          conversations: { select: { id: true, channel: true }, distinct: ["channel"], orderBy: { last_message_at: "desc" } },
         },
       }),
       prisma.contact.count({ where }),
@@ -87,6 +87,8 @@ export async function GET(req: NextRequest) {
       ...c,
       tags: contactTags.map((ct) => ct.tag),
       channels: [...new Set(conversations.map((cv) => cv.channel))],
+      // The latest chat on each channel — the Contacts list links to it.
+      channel_links: conversations.map((cv) => ({ channel: cv.channel ?? "whatsapp", conversation_id: cv.id })),
     }))
 
     return NextResponse.json({ contacts: shaped, total })

@@ -9,6 +9,7 @@ import { toast } from "sonner"
 import { readableTextColor } from "@/lib/readable-color"
 import { TelegramIcon } from "@/components/icons/brand-icons"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { ChannelLinks } from "@/components/contacts/channel-links"
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -107,6 +108,23 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
   }, [contact])
 
   useEffect(() => { fetchContactData() }, [fetchContactData])
+
+  // Every channel this person is on — one contact, a link to each chat.
+  // Re-read when the open chat changes contact (a Telegram number joining
+  // a known WhatsApp contact).
+  const [channelLinks, setChannelLinks] = useState<Array<{ channel: string; conversation_id: string }>>([])
+  const contactId = contact?.id ?? null
+  useEffect(() => {
+    if (!contactId) { setChannelLinks([]); return }
+    let current = true
+    fetch(`/api/contacts/${contactId}/channels`)
+      .then((r) => (r.ok ? r.json() : { channels: [] }))
+      .then((body: { channels?: Array<{ channel: string; conversation_id: string }> }) => {
+        if (current) setChannelLinks(Array.isArray(body.channels) ? body.channels : [])
+      })
+      .catch((err) => console.warn("[contact sidebar] channels failed:", err))
+    return () => { current = false }
+  }, [contactId, conversationId])
   // Reset the picker's search when switching between contacts/conversations.
   useEffect(() => { setTagPickerOpen(false); setTagQuery("") }, [contact?.id])
 
@@ -344,6 +362,14 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
 
       {/* Scrollable info area */}
       <div className="flex-1 overflow-y-auto scroll-styled">
+
+        {/* Channels */}
+        {channelLinks.length > 0 && (
+          <div className="px-4 py-3 border-b border-slate-100">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Channels</p>
+            <ChannelLinks links={channelLinks} currentConversationId={conversationId} />
+          </div>
+        )}
 
         {/* Info rows */}
         {infoRows.length > 0 && (

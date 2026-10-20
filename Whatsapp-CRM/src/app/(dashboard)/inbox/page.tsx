@@ -130,6 +130,9 @@ function InboxV2Content() {
         }
         if (activeConversation && conv.id === activeConversation.id) {
           setActiveConversation((prev) => (prev ? { ...prev, ...conv } : prev))
+          // A Telegram customer shared their number, or the chat joined a
+          // known contact — the panel shows it now, not after a reload.
+          if (conv.contact) setActiveContact(conv.contact)
         }
       }
     },

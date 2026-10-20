@@ -31,6 +31,7 @@ function channelChips(c: Contact) {
   const chips: string[] = []
   if (c.phone && !isPlaceholderPhone(c.phone)) chips.push("WhatsApp")
   if (c.instagram_id) chips.push("Instagram")
+  if (c.telegram_id) chips.push("Telegram")
   if (c.facebook_id) chips.push("Facebook")
   return chips
 }

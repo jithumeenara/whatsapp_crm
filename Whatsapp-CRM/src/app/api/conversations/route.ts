@@ -52,6 +52,8 @@ const CONTACT_FOR_LIST = {
   // A website visitor's number and chosen language (contact panel).
   alternate_phone: true,
   preferred_language: true,
+  // Shows "Telegram: linked" in the contact panel.
+  telegram_id: true,
 } as const
 
 /**
