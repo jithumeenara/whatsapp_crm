@@ -421,7 +421,9 @@ export async function POST(request: Request) {
       )
     }
 
-    if (message_type === 'text' && !content_text) {
+    // Telegram's "Ask for number" may come without text — the Telegram
+    // branch below supplies the request's wording.
+    if (message_type === 'text' && !content_text && body.telegram_ask_number !== true) {
       return NextResponse.json(
         { error: 'content_text is required for text messages' },
         { status: 400 }
@@ -470,6 +472,9 @@ export async function POST(request: Request) {
     // Resolved before the phone check below — Email contacts are identified
     // by email, not phone, so the phone requirement must not apply to them.
     const convChannel = (conversation as { channel?: string }).channel ?? 'whatsapp'
+    if (body.telegram_ask_number === true && convChannel !== 'telegram') {
+      return NextResponse.json({ error: '"Ask for number" works only in a Telegram chat.' }, { status: 400 })
+    }
 
     // Website chat: no provider and no 24-hour window. The reply is
     // recorded and pushed to the visitor's open window; a closed window
