@@ -633,6 +633,27 @@ async function processMessage(
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
 
+  // Admin Chat first: an enrolled admin's keyword, code or question is
+  // answered there and never becomes a contact, lead or chat.
+  if (message.type === 'text' && message.text?.body) {
+    const { handleAdminChatInbound } = await import('@/lib/admin-chat/engine')
+    const consumed = await handleAdminChatInbound({
+      accountId,
+      channel: 'whatsapp',
+      senderKey: senderPhone,
+      text: message.text.body,
+      messageKey: `wa:${message.id}`,
+      reply: async (text) => {
+        const { sendTextMessage } = await import('@/lib/whatsapp/meta-api')
+        await sendTextMessage({ phoneNumberId, accessToken, to: message.from, text })
+      },
+    }).catch((err) => {
+      console.error('[admin-chat] whatsapp handling failed:', err)
+      return false
+    })
+    if (consumed) return
+  }
+
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
     accountId,

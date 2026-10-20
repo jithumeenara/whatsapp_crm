@@ -73,6 +73,7 @@ interface UsageResponse {
 const FEATURE_META: Record<string, { label: string; Icon: typeof MessageSquare }> = {
   chat_customer: { label: 'Chat (Customer)', Icon: MessageSquare },
   chat_admin: { label: 'Chat (Admin)', Icon: Database },
+  admin_chat: { label: 'Admin Chat (WhatsApp/Telegram)', Icon: Database },
   test: { label: 'Test AI', Icon: Send },
   embedding: { label: 'Training', Icon: BookOpen },
   translation: { label: 'Translation', Icon: Languages },

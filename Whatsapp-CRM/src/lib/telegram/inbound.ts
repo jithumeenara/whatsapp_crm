@@ -30,7 +30,9 @@ import { autoCreateLead } from '@/lib/leads/auto-create'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact } from '@/lib/contacts/dedupe'
 import { mergeContacts } from '@/lib/contacts/merge'
-import { answerCallbackQuery } from './api'
+import { handleAdminChatInbound } from '@/lib/admin-chat/engine'
+import { answerCallbackQuery, tgCall } from './api'
+import { toTelegramHtml } from './format'
 import { buttonFor, verifyStartPayload } from './links'
 import { displayName, mediaLabel, parseUpdate, type TelegramEvent, type TelegramUser } from './parse'
 import { startLinkSecret, TELEGRAM_CHANNEL, type LiveBot } from './store'
@@ -144,6 +146,28 @@ export async function handleTelegramUpdate(bot: LiveBot, raw: unknown): Promise<
   if (event.kind === 'button') {
     await answerCallbackQuery(bot.token, event.callbackQueryId).catch(() => {})
     return handleButton(bot, event)
+  }
+  // Admin Chat first (private chats with the bot itself, text only): an
+  // enrolled admin's keyword, code or question never becomes a contact.
+  if (event.text && !event.businessConnectionId && !event.media && !event.contact) {
+    const consumed = await handleAdminChatInbound({
+      accountId: bot.accountId,
+      channel: 'telegram',
+      senderKey: event.from.id,
+      text: event.text,
+      messageKey: `tg:${event.chatId}:${event.messageId}`,
+      // protect_content: no forwarding or saving of what Admin Chat says.
+      reply: async (text) => {
+        await tgCall(bot.token, 'sendMessage', { chat_id: event.chatId, text: toTelegramHtml(text), parse_mode: 'HTML', protect_content: true })
+      },
+      forgetCodeMessage: async () => {
+        await tgCall(bot.token, 'deleteMessage', { chat_id: event.chatId, message_id: event.messageId })
+      },
+    }).catch((err) => {
+      console.error('[admin-chat] telegram handling failed:', err)
+      return false
+    })
+    if (consumed) return { handled: true, reason: 'admin_chat' }
   }
   return handleMessage(bot, event)
 }

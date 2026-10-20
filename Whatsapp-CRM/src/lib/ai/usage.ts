@@ -18,6 +18,8 @@ import { prisma } from '@/lib/db'
 export type UsageFeature =
   | 'chat_customer'
   | 'chat_admin'
+  /// Admin Chat: an admin's question from WhatsApp or Telegram.
+  | 'admin_chat'
   | 'test'
   | 'embedding'
   | 'translation'

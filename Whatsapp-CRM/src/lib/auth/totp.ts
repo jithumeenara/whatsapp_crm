@@ -91,6 +91,22 @@ export function verifyTotp(base32Secret: string, token: string, window = 1): boo
   return false
 }
 
+/** Like verifyTotp, but returns the time step that matched — so a caller
+ *  can refuse the same code twice (store the step, pass it back as
+ *  `lastUsedStep`). Null when the code is wrong or already used. */
+export function matchTotpStep(base32Secret: string, token: string, now: Date = new Date(), lastUsedStep: number | null = null, window = 1): number | null {
+  const clean = token.replace(/\D/g, "")
+  if (clean.length !== DIGITS) return null
+  const secret = base32Decode(base32Secret)
+  const counter = Math.floor(now.getTime() / 1000 / STEP_SECONDS)
+  for (let errorWindow = -window; errorWindow <= window; errorWindow++) {
+    const step = counter + errorWindow
+    if (lastUsedStep !== null && step <= lastUsedStep) continue
+    if (timingSafeEqual(hotp(secret, step), clean)) return step
+  }
+  return null
+}
+
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false
   const bufA = Buffer.from(a)

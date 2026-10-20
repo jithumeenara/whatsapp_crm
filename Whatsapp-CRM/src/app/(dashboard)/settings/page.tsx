@@ -25,6 +25,7 @@ import { ApiKeysPanel } from "@/components/settings/api-keys-panel"
 import { WebhooksPanel } from "@/components/settings/webhooks-panel"
 import { GoogleSettings } from "@/components/settings/google-settings"
 import { ChannelsTab } from "@/components/settings/channels-tab"
+import { AdminChatSettings } from "@/components/settings/admin-chat-settings"
 import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
 import { AdsTab } from "@/components/settings/ads-tab"
 import { CatalogTab } from "@/components/settings/catalog-tab"
@@ -83,6 +84,9 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
     tabs: [
       { key: "members",      label: "Members",       icon: Users,    adminOnly: true },
       { key: "ai",           label: "AI Config",     icon: Bot,      adminOnly: true },
+      // Admins ask the CRM about the business from their own WhatsApp or
+      // Telegram, behind their authenticator code.
+      { key: "admin-chat",   label: "Admin Chat",    icon: ShieldCheck, adminOnly: true, aliases: ["Owner chat", "Admin WhatsApp", "Admin Telegram", "MFA chat", "Reports on WhatsApp"] },
       // Private sheets for the AI, and Data Store tables in and out of
       // Google Sheets. Admin: the same people who manage AI knowledge.
       { key: "google",       label: "Google",        icon: Sheet,    adminOnly: true, aliases: ["Google Sheets", "Google Drive", "Sheets", "Spreadsheet"] },
@@ -109,6 +113,7 @@ const TAB_TITLES: Record<string, string> = {
   contact: "Contact",
   members: "Members",
   ai: "AI Config",
+  "admin-chat": "Admin Chat",
   database: "Database",
   notifications: "Notifications",
   "api-keys": "API Keys",
@@ -127,6 +132,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   contact: "How contacts get captured, tagged, enriched with custom fields, and converted into leads",
   members: "People with access to this account — roles control what each teammate can do",
   ai: "Configure Google Gemini for AI-powered chatbot replies",
+  "admin-chat": "Let up to five admins ask about the business from their own WhatsApp or Telegram, behind their authenticator code",
   database: "Backup and restore the whole database",
   notifications: "Browser push alerts for new conversations, assignments, follow-ups and tasks — even when this tab is in the background",
   "api-keys": "Secret keys so external apps can read and write Data Store records via the REST API",
@@ -229,6 +235,7 @@ function SettingsContent() {
       case "leads":            return <LeadsSettingsV2 />
       case "members":          return isAdmin ? <MembersTab /> : null
       case "ai":               return isAdmin ? <AiConfig /> : null
+      case "admin-chat":       return isAdmin ? <AdminChatSettings /> : null
       case "google":           return isAdmin ? <GoogleSettings /> : null
       case "database":         return isAdmin ? <DatabasePanel /> : null
       case "notifications":    return <NotificationsPanel />
