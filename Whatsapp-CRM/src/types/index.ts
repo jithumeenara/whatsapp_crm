@@ -664,8 +664,10 @@ export interface TagStepConfig {
 }
 
 export interface AssignConversationStepConfig {
-  mode: 'specific' | 'round_robin';
+  mode: 'specific' | 'round_robin' | 'least_busy';
   agent_id?: string;
+  /** Round robin / least busy within these people; empty = all agents and supervisors. */
+  team_user_ids?: string[];
 }
 
 export interface UpdateContactFieldStepConfig {

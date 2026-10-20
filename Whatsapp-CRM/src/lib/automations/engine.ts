@@ -332,15 +332,29 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'assign_conversation': {
       const cfg = step.step_config as AssignConversationStepConfig
       if (!args.contactId) throw new Error('assign_conversation needs a contact')
-      let agentId = cfg.agent_id
-      if (cfg.mode === 'round_robin') {
-        const profile = await prisma.profile.findFirst({
-          where: { account_id: args.automation.account_id },
-          select: { user_id: true },
+      // Round robin used to take the account's first profile every time —
+      // one person (often the owner, even a viewer) got every chat. Now the
+      // team takes turns, among people signed in and on shift (assign.ts).
+      const { chooseAssignee, recordAssignment } = await import('@/lib/agents/assign')
+      const choice = await chooseAssignee({
+        accountId: args.automation.account_id,
+        method: cfg.mode === 'round_robin' || cfg.mode === 'least_busy' ? cfg.mode : 'specific',
+        userId: cfg.agent_id ?? null,
+        teamUserIds: cfg.team_user_ids ?? null,
+        scope: `automation:${args.automation.id}`,
+      })
+      const agentId = choice.userId
+      if (!agentId) return choice.reason
+      const convs = await prisma.conversation.findMany({
+        where: { account_id: args.automation.account_id, contact_id: args.contactId, status: { not: 'closed' } },
+        select: { id: true, assigned_agent_id: true },
+      }).catch(() => [] as Array<{ id: string; assigned_agent_id: string | null }>)
+      for (const c of convs) {
+        void recordAssignment({
+          accountId: args.automation.account_id, recordType: 'conversation', recordId: c.id,
+          previousUserId: c.assigned_agent_id, newUserId: agentId, source: 'automation', method: cfg.mode, reason: choice.reason,
         })
-        agentId = profile?.user_id
       }
-      if (!agentId) return 'no agent resolved'
       await prisma.conversation.updateMany({
         where: { account_id: args.automation.account_id, contact_id: args.contactId },
         data: { assigned_agent_id: agentId },
@@ -360,7 +374,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
           data: { type: 'assignment' },
         })
       } catch { /* ignore push errors */ }
-      return `assigned to ${agentId}`
+      return choice.reason
     }
 
     case 'update_contact_field': {

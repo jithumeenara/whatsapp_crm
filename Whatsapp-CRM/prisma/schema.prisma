@@ -509,6 +509,11 @@ model Tag {
   user_id    String   @db.Uuid
   name       String
   color      String   @default("#3b82f6")
+  /// May the AI add this tag by meaning: 'off' | 'suggest' | 'auto' (migration 144).
+  ai_mode        String   @default("off")
+  ai_description String?
+  ai_avoid       String?
+  ai_examples    String[] @default([])
   created_at DateTime @default(now()) @db.Timestamptz(6)
 
   account  Account      @relation(fields: [account_id], references: [id], onDelete: Cascade)
@@ -610,6 +615,9 @@ model Conversation {
   channel String @default("whatsapp") // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website'
   /// Telegram Business chats only (migration 140): replies go out through
   /// this connection, as the business's own account.
+  /// AI tagging (migration 144): when it last read this chat, and how many times.
+  ai_tagged_at DateTime? @db.Timestamptz(6)
+  ai_tag_runs  Int       @default(0)
   telegram_business_connection_id String?
 
   /// When the assistant last read this thread to decide whether it was
@@ -3871,4 +3879,56 @@ model AdminChatAction {
   @@index([member_id, created_at(sort: Desc)], map: "admin_chat_actions_member")
   @@index([account_id, status, created_at(sort: Desc)], map: "admin_chat_actions_account")
   @@map("admin_chat_actions")
+}
+
+/// Whose turn it is, per account and queue (migration 144).
+model AssignmentRotation {
+  account_id   String   @db.Uuid
+  scope        String
+  last_user_id String?  @db.Uuid
+  turn         Int      @default(0)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([account_id, scope])
+  @@map("assignment_rotations")
+}
+
+/// Every automatic or bulk assignment, with the reason (migration 144).
+model AssignmentEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  account_id       String   @db.Uuid
+  record_type      String
+  record_id        String   @db.Uuid
+  previous_user_id String?  @db.Uuid
+  new_user_id      String?  @db.Uuid
+  actor_user_id    String?  @db.Uuid
+  source           String
+  method           String?
+  reason           String
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([record_type, record_id, created_at(sort: Desc)], map: "assignment_events_record")
+  @@index([account_id, created_at(sort: Desc)], map: "assignment_events_account")
+  @@map("assignment_events")
+}
+
+/// One AI tagging decision (migration 144).
+model AiTagDecision {
+  id              String   @id @default(uuid()) @db.Uuid
+  account_id      String   @db.Uuid
+  contact_id      String   @db.Uuid
+  conversation_id String?  @db.Uuid
+  tag_id          String   @db.Uuid
+  confidence      String
+  evidence        String
+  reason          String?
+  outcome         String
+  decided_by      String?  @db.Uuid
+  model           String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([contact_id, tag_id], map: "ai_tag_decisions_contact")
+  @@index([account_id, outcome, created_at(sort: Desc)], map: "ai_tag_decisions_pending")
+  @@map("ai_tag_decisions")
 }

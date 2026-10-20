@@ -263,13 +263,12 @@ export async function pickAgent(args: {
   }
 
   if (args.strategy === 'round_robin') {
-    // Longest since last seen first. Over a stream of handoffs this
-    // spreads work without needing a stored pointer, which would have to
-    // be kept correct as people join and leave.
-    const sorted = [...eligible].sort(
-      (a, b) => (a.lastSeenAt?.getTime() ?? 0) - (b.lastSeenAt?.getTime() ?? 0),
-    )
-    return { agent: sorted[0], reason: `next in turn (${sorted[0].fullName})` }
+    // A real turn (src/lib/agents/rotation.ts). "Longest since last seen"
+    // was used before, but everyone signed in is seen every minute, so it
+    // was close to random and could hand one person several in a row.
+    const { takeTurn } = await import('@/lib/agents/rotation')
+    const next = await takeTurn(args.accountId, 'chatbot-handoff', eligible)
+    if (next) return { agent: next, reason: `next in turn (${next.fullName})` }
   }
 
   // least_busy — ties broken by who has been idle longest, so two agents
