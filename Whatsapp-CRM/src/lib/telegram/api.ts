@@ -7,7 +7,15 @@
  * Inbox through /api/telegram/media/<message>, never by their Telegram URL.
  */
 
+import dns from 'node:dns'
+
 const API = 'https://api.telegram.org'
+
+// A VPS often has an IPv6 address that cannot reach the internet: on the
+// ACSTI server `curl -6 api.telegram.org` failed at once while IPv4 answered
+// in 0.3 s, and every send that happened to try IPv6 first failed with
+// "fetch failed". IPv4 first, IPv6 still tried after it.
+dns.setDefaultResultOrder('ipv4first')
 
 export class TelegramApiError extends Error {
   constructor(message: string, readonly status: number, readonly retryAfter: number | null = null) {

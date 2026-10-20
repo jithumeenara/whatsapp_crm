@@ -34,3 +34,12 @@ describe('reaching Telegram', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })
+
+// 20 Oct, on the VPS: `curl -4` reached api.telegram.org in 0.28 s, `curl -6`
+// failed at once. Whenever the address list put IPv6 first, a send failed.
+describe('address order', () => {
+  it('prefers IPv4 once the Telegram client is loaded', async () => {
+    const dns = await import('node:dns')
+    expect(dns.getDefaultResultOrder()).toBe('ipv4first')
+  })
+})
