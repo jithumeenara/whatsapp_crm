@@ -7,7 +7,7 @@ import { isPlaceholderPhone, usablePhone } from "@/lib/contacts/validate"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { readableTextColor } from "@/lib/readable-color"
-import { TelegramIcon } from "@/components/icons/brand-icons"
+import { TelegramIcon, WhatsAppIcon } from "@/components/icons/brand-icons"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { ChannelLinks } from "@/components/contacts/channel-links"
 
@@ -29,6 +29,8 @@ interface Props {
   channel?: string // 'whatsapp' | 'instagram' | 'facebook' | 'sms' | 'email' | 'rcs' | 'website' | 'telegram'
   /** The open conversation — Telegram's "Ask for number" sends in it. */
   conversationId?: string | null
+  /** Switch the Inbox to another of this contact's chats (Channels). */
+  onOpenConversation?: (conversationId: string) => void
 }
 
 const AVATAR_GRADIENTS = [
@@ -55,7 +57,7 @@ function colorForNewTag(name: string) {
   return TAG_COLOR_PALETTE[s % TAG_COLOR_PALETTE.length]
 }
 
-export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId = null }: Props) {
+export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId = null, onOpenConversation }: Props) {
   const [copied, setCopied] = useState(false)
   const [askingNumber, setAskingNumber] = useState(false)
 
@@ -314,8 +316,8 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
               <Globe className="h-3.5 w-3.5 text-white" />
             </span>
           ) : (
-            <span className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#25d366] shadow-md ring-2 ring-white">
-              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M11.997 2.003A9.995 9.995 0 0 0 2 12c0 1.751.455 3.395 1.249 4.83L2 22l5.33-1.218A9.968 9.968 0 0 0 12 22c5.514 0 10-4.486 10-10S17.514 2 12 2h-.003zm5.884 14.211c-.246.688-1.228 1.264-1.721 1.345-.451.075-.999.108-1.611-.104-.373-.128-.851-.297-1.463-.574-2.576-1.114-4.26-3.699-4.389-3.871-.124-.164-1.013-1.345-1.013-2.567 0-1.222.641-1.823.869-2.072.228-.248.497-.31.662-.31.166 0 .33.002.476.01.153.008.358-.058.56.428.208.503.707 1.735.768 1.86.061.126.102.273.02.44-.083.166-.124.272-.248.418-.124.148-.261.329-.372.441-.124.124-.253.259-.109.509.145.248.641 1.057 1.376 1.712.944.84 1.739 1.099 1.987 1.223.248.124.394.103.539-.063.145-.166.622-.726.789-.973.165-.248.33-.207.557-.124.228.083 1.44.679 1.686.803.248.124.414.185.475.289.062.103.062.597-.184 1.38z"/></svg>
+            <span title="WhatsApp" className="absolute -bottom-1.5 -right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-md ring-2 ring-white">
+              <WhatsAppIcon className="h-6 w-6" />
             </span>
           )}
         </div>
@@ -367,7 +369,7 @@ export function ContactSidebarV2({ contact, channel = "whatsapp", conversationId
         {channelLinks.length > 0 && (
           <div className="px-4 py-3 border-b border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Channels</p>
-            <ChannelLinks links={channelLinks} currentConversationId={conversationId} />
+            <ChannelLinks links={channelLinks} currentConversationId={conversationId} onOpen={onOpenConversation} />
           </div>
         )}
 

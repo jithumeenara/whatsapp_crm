@@ -10,6 +10,8 @@ import { MessageThread } from "@/components/inbox/message-thread"
 import { ContactSidebarV2 } from "@/components/inbox/contact-sidebar-v2"
 import { useMobileBar } from "@/components/layout-v2/dashboard-shell-v2"
 import { WifiOff } from "lucide-react"
+import { toast } from "sonner"
+import { apiFetch, errorText } from "@/lib/api-fetch"
 
 function InboxV2Content() {
   const router = useRouter()
@@ -231,6 +233,23 @@ function InboxV2Content() {
     [handleSelectConversation],
   )
 
+  // Contact panel → Channels: the same person's chat on another channel
+  // (WhatsApp ↔ Telegram…) opens here, in place.
+  const handleOpenOtherChannel = useCallback(
+    async (convId: string) => {
+      const known = conversations.find((c) => c.id === convId)
+      if (known) { handleSelectConversation(known); return }
+      try {
+        const res = await apiFetch(`/api/conversations/${convId}`)
+        handleSelectConversation((await res.json()) as Conversation)
+      } catch (err) {
+        console.error("[inbox] open other channel failed:", err)
+        toast.error(errorText(err, "Could not open that chat."))
+      }
+    },
+    [conversations, handleSelectConversation],
+  )
+
   const handleCloseConversation = useCallback(() => {
     setActiveConversation(null)
     setActiveContact(null)
@@ -321,7 +340,7 @@ function InboxV2Content() {
 
         {/* Right: contact sidebar — only on xl screens */}
         <div className="hidden xl:block shrink-0">
-          <ContactSidebarV2 contact={activeContact} channel={activeConversation?.channel ?? "whatsapp"} conversationId={activeConversation?.id ?? null} />
+          <ContactSidebarV2 contact={activeContact} channel={activeConversation?.channel ?? "whatsapp"} conversationId={activeConversation?.id ?? null} onOpenConversation={handleOpenOtherChannel} />
         </div>
       </div>
     </div>

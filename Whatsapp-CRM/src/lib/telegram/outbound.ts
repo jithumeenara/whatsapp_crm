@@ -3,8 +3,8 @@
  * chatbot steps, automations and the assistant.
  *
  * Sent first, recorded after: a message Telegram refused is not shown as
- * sent. Text goes as plain text (no parse mode, so a customer's "*" or "_"
- * is never read as formatting); chatbot buttons and list rows become
+ * sent. Text keeps WhatsApp's formatting (*bold*, _italic_…) as Telegram
+ * HTML, falling back to plain text if Telegram cannot read it; chatbot buttons and list rows become
  * Telegram's inline buttons; files from the CRM's own storage are uploaded,
  * public https links are passed to Telegram to fetch.
  */
@@ -18,6 +18,7 @@ import { emitToAccount } from '@/lib/socket'
 import { tgCall, TelegramApiError, type SentMessage } from './api'
 import { botForAccount, TELEGRAM_CHANNEL } from './store'
 import { inlineKeyboard, type ButtonSpec } from './links'
+import { toTelegramHtml } from './format'
 
 const UPLOADS_DIR = join(process.cwd(), 'uploads')
 /** Telegram's limit for a file a bot uploads. */
@@ -57,6 +58,19 @@ export function splitText(text: string, limit = TEXT_LIMIT): string[] {
   }
   if (rest || out.length === 0) out.push(rest)
   return out
+}
+
+/** Text in Telegram's HTML mode (WhatsApp's *bold* etc. converted); if
+ *  Telegram cannot read the markup, the same words go as plain text. */
+async function sendFormatted(token: string, method: string, body: Record<string, unknown>, textField: 'text' | 'caption', text: string): Promise<SentMessage> {
+  try {
+    return await tgCall<SentMessage>(token, method, { ...body, [textField]: toTelegramHtml(text), parse_mode: 'HTML' })
+  } catch (err) {
+    if (err instanceof TelegramApiError && err.status === 400 && /parse entities|unsupported start tag|can't find end/i.test(err.message)) {
+      return tgCall<SentMessage>(token, method, { ...body, [textField]: text })
+    }
+    throw err
+  }
 }
 
 function methodFor(mime: string | null | undefined, url: string): { method: string; field: string; kind: string } {
@@ -109,18 +123,22 @@ export async function sendToTelegram(args: TelegramSendArgs) {
       const form = new FormData()
       form.append('chat_id', chatId)
       form.append(field, new Blob([new Uint8Array(file.bytes)], { type: file.mime }), args.media.filename || file.name)
-      if (caption) form.append('caption', caption)
+      if (caption) {
+        form.append('caption', toTelegramHtml(caption))
+        form.append('parse_mode', 'HTML')
+      }
       if (replyMarkup) form.append('reply_markup', JSON.stringify(replyMarkup))
       if (via.business_connection_id) form.append('business_connection_id', via.business_connection_id)
       sent = await tgCall<SentMessage>(bot.token, method, form)
     } else if (/^https:\/\//i.test(args.media.url)) {
-      sent = await tgCall<SentMessage>(bot.token, method, { chat_id: chatId, [field]: args.media.url, ...(caption ? { caption } : {}), ...(replyMarkup ? { reply_markup: replyMarkup } : {}), ...via })
+      const body = { chat_id: chatId, [field]: args.media.url, ...(replyMarkup ? { reply_markup: replyMarkup } : {}), ...via }
+      sent = caption ? await sendFormatted(bot.token, method, body, 'caption', caption) : await tgCall<SentMessage>(bot.token, method, body)
     } else {
       throw new TelegramSendError('Only files from the file manager or a public https link can be sent on Telegram.')
     }
     // A caption too long for Telegram follows as its own message.
     if (!caption && text) {
-      for (const part of splitText(text)) await tgCall<SentMessage>(bot.token, 'sendMessage', { chat_id: chatId, text: part, ...via })
+      for (const part of splitText(text)) await sendFormatted(bot.token, 'sendMessage', { chat_id: chatId, ...via }, 'text', part)
     }
     return record(args, sent, chatId, { contentType: args.contentType ?? kind, meta })
   }
@@ -129,12 +147,11 @@ export async function sendToTelegram(args: TelegramSendArgs) {
   const parts = splitText(text)
   for (let i = 0; i < parts.length; i++) {
     const last = i === parts.length - 1
-    sent = await tgCall<SentMessage>(bot.token, 'sendMessage', {
+    sent = await sendFormatted(bot.token, 'sendMessage', {
       chat_id: chatId,
-      text: parts[i],
       ...(last && replyMarkup ? { reply_markup: replyMarkup } : {}),
       ...via,
-    })
+    }, 'text', parts[i])
   }
   return record(args, sent!, chatId, { contentType: args.contentType ?? (meta.length ? 'interactive' : 'text'), meta })
 }

@@ -82,9 +82,12 @@ export function ChannelMarks({ links }: { links: Array<{ channel: string; conver
 export function ChannelLinks({
   links,
   currentConversationId,
+  onOpen,
 }: {
   links: Array<{ channel: string; conversation_id: string }>
   currentConversationId?: string | null
+  /** In the Inbox: switch to that chat in place instead of navigating. */
+  onOpen?: (conversationId: string) => void
 }) {
   if (!links || links.length === 0) return null
   return (
@@ -102,6 +105,16 @@ export function ChannelLinks({
                 <ChannelMark channel={l.channel} className="h-5 w-5" />
                 {label}
               </span>
+            ) : onOpen ? (
+              <button
+                type="button"
+                onClick={() => onOpen(l.conversation_id)}
+                title={`Switch to the ${label} chat`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-2.5 text-[12px] font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
+              >
+                <ChannelMark channel={l.channel} className="h-5 w-5" />
+                {label}
+              </button>
             ) : (
               <Link
                 href={`/inbox?c=${l.conversation_id}`}
