@@ -31,7 +31,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact } from '@/lib/contacts/dedupe'
 import { mergeContacts } from '@/lib/contacts/merge'
 import { handleAdminChatInbound } from '@/lib/admin-chat/engine'
-import { answerCallbackQuery, tgCall } from './api'
+import { answerCallbackQuery, fileDownloadUrl, tgCall } from './api'
 import { toTelegramHtml } from './format'
 import { buttonFor, verifyStartPayload } from './links'
 import { displayName, mediaLabel, parseUpdate, type TelegramEvent, type TelegramUser } from './parse'
@@ -149,12 +149,14 @@ export async function handleTelegramUpdate(bot: LiveBot, raw: unknown): Promise<
   }
   // Admin Chat first (private chats with the bot itself, text only): an
   // enrolled admin's keyword, code or question never becomes a contact.
-  if (event.text && !event.businessConnectionId && !event.media && !event.contact) {
+  const voice = event.media && (event.media.kind === 'voice' || event.media.kind === 'audio') ? event.media : null
+  if ((event.text && !event.media) || voice) {
+    if (event.businessConnectionId || event.contact) return handleMessage(bot, event)
     const consumed = await handleAdminChatInbound({
       accountId: bot.accountId,
       channel: 'telegram',
       senderKey: event.from.id,
-      text: event.text,
+      text: voice ? '' : event.text,
       messageKey: `tg:${event.chatId}:${event.messageId}`,
       // protect_content: no forwarding or saving of what Admin Chat says.
       reply: async (text) => {
@@ -162,6 +164,23 @@ export async function handleTelegramUpdate(bot: LiveBot, raw: unknown): Promise<
       },
       forgetCodeMessage: async () => {
         await tgCall(bot.token, 'deleteMessage', { chat_id: event.chatId, message_id: event.messageId })
+      },
+      ...(voice
+        ? {
+            audio: async () => {
+              const { url } = await fileDownloadUrl(bot.token, voice.fileId)
+              const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+              if (!res.ok) throw new Error(`Telegram file download ${res.status}`)
+              return { buffer: Buffer.from(await res.arrayBuffer()), mimeType: voice.mimeType || 'audio/ogg' }
+            },
+          }
+        : {}),
+      replyVoice: async (mp3) => {
+        const form = new FormData()
+        form.append('chat_id', event.chatId)
+        form.append('audio', new Blob([new Uint8Array(mp3)], { type: 'audio/mpeg' }), 'reply.mp3')
+        form.append('protect_content', 'true')
+        await tgCall(bot.token, 'sendAudio', form)
       },
     }).catch((err) => {
       console.error('[admin-chat] telegram handling failed:', err)

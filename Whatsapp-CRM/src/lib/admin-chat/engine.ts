@@ -42,6 +42,7 @@ import {
 } from './rules'
 import { writeAudit } from './audit'
 import { notifyAdmins } from './notify'
+import { MAX_SPOKEN_CHARS, speakForAdmin, transcribeForAdmin } from './voice'
 
 export type AdminChannel = 'whatsapp' | 'telegram'
 
@@ -56,6 +57,11 @@ export interface AdminChatInbound {
   reply: (text: string) => Promise<void>
   /** Telegram: delete the message the admin typed their code in. */
   forgetCodeMessage?: () => Promise<void>
+  /** A voice note: loads its bytes only when it turns out to be a question
+   *  in an open session (a customer's voice note is never downloaded here). */
+  audio?: () => Promise<{ buffer: Buffer; mimeType: string }>
+  /** Sends an MP3 back as a voice/audio message on the same channel. */
+  replyVoice?: (mp3: Buffer) => Promise<void>
 }
 
 const MAX_REPLY = 3500
@@ -114,13 +120,13 @@ async function endSession(sessionId: string, reason: string) {
 
 export async function handleAdminChatInbound(m: AdminChatInbound): Promise<boolean> {
   const text = (m.text ?? '').trim()
-  if (!text || text.length > 2000) return false
+  if ((!text && !m.audio) || text.length > 2000) return false
   const settings = await prisma.adminChatSettings.findUnique({ where: { account_id: m.accountId } })
   if (!settings?.enabled) return false
 
   // ── Enrolment: the one-time code shown on the web, sent from the phone /
   //    Telegram account being added.
-  const verifyCode = parseVerifyCode(text)
+  const verifyCode = text ? parseVerifyCode(text) : null
   if (verifyCode) return handleVerify(m, verifyCode)
 
   const member = await findMember(m.accountId, m.channel, m.senderKey)
@@ -162,6 +168,8 @@ export async function handleAdminChatInbound(m: AdminChatInbound): Promise<boole
   }
 
   if (!session) {
+    // A voice note outside a session is an ordinary message.
+    if (!text) return false
     if (!isKeyword(text, settings.keyword)) {
       if (!endedNotice) return false // just a message; the normal flow takes it
       if (!(await claim(m.accountId, m.messageKey))) return true
@@ -174,7 +182,28 @@ export async function handleAdminChatInbound(m: AdminChatInbound): Promise<boole
 
   if (!(await claim(m.accountId, m.messageKey))) return true
 
-  if (isStop(text)) {
+  // A voice note in a session: heard first, then handled like typing.
+  let question = text
+  let viaVoice = false
+  if (!text && m.audio) {
+    if (session.state === 'awaiting_code') {
+      await m.reply('Type the 6-digit code from your authenticator app — codes are not taken by voice.')
+      return true
+    }
+    const audio = await m.audio().catch((err) => {
+      console.error('[admin-chat] voice download failed:', err instanceof Error ? err.message : err)
+      return null
+    })
+    const heard = audio ? await transcribeForAdmin(m.accountId, audio) : null
+    if (!heard) {
+      await m.reply('🎙️ Could not make out that voice note — please type the question.')
+      return true
+    }
+    question = heard
+    viaVoice = true
+  }
+
+  if (isStop(question)) {
     await endSession(session.id, 'stop')
     void writeAudit({ accountId: m.accountId, event: 'session_ended', memberId: member.id, sessionId: session.id, detail: { reason: 'stop' } })
     await m.reply('🔒 Admin Chat closed.')
@@ -182,7 +211,7 @@ export async function handleAdminChatInbound(m: AdminChatInbound): Promise<boole
   }
 
   if (session.state === 'awaiting_code') return checkCode(m, member, session.id)
-  return answer(m, member, session)
+  return answer(m, member, session, question, viaVoice)
 }
 
 async function handleVerify(m: AdminChatInbound, code: string): Promise<boolean> {
@@ -338,6 +367,8 @@ async function answer(
   m: AdminChatInbound,
   member: NonNullable<Member>,
   session: { id: string; history: Prisma.JsonValue; questions: number },
+  question: string,
+  viaVoice: boolean,
 ): Promise<boolean> {
   const now = new Date()
   // The allowed hours end a session too, not just the start.
@@ -365,12 +396,13 @@ async function answer(
       ? 'Never write out full phone numbers, emails, ID or bank numbers — they are masked before sending anyway.'
       : 'This admin may see counts and summaries only — no names, numbers or details of individual people.',
     'Reply in the language the admin wrote in (Malayalam or English).',
+    ...(viaVoice ? [`The admin asked by voice and will also hear the answer: keep it under ${MAX_SPOKEN_CHARS} characters, in plain sentences, no lists of numbers.`] : []),
   ].join('\n')
 
   let reply: string
   let tools: string[] = []
   try {
-    const result = await answerAdminQuestion({ accountId: m.accountId, message: m.text, history, allowedTools, extraInstruction, feature: 'admin_chat' })
+    const result = await answerAdminQuestion({ accountId: m.accountId, message: question, history, allowedTools, extraInstruction, feature: 'admin_chat' })
     reply = result.reply
     tools = result.toolsUsed
   } catch (err) {
@@ -380,7 +412,7 @@ async function answer(
   reply = maskSensitive(reply).replace(/^#{1,6}\s+/gm, '')
   if (reply.length > MAX_REPLY) reply = `${reply.slice(0, MAX_REPLY)}…\n(cut short — open the CRM for the rest)`
 
-  const nextHistory = [...history, { role: 'user' as const, text: maskSensitive(m.text).slice(0, 500) }, { role: 'model' as const, text: reply.slice(0, 1500) }].slice(-HISTORY_TURNS * 2)
+  const nextHistory = [...history, { role: 'user' as const, text: maskSensitive(question).slice(0, 500) }, { role: 'model' as const, text: reply.slice(0, 1500) }].slice(-HISTORY_TURNS * 2)
   await prisma.adminChatSession.update({
     where: { id: session.id },
     data: { last_activity_at: new Date(), questions: { increment: 1 }, history: nextHistory as unknown as Prisma.InputJsonValue },
@@ -390,8 +422,12 @@ async function answer(
     event: 'question',
     memberId: member.id,
     sessionId: session.id,
-    detail: { question: maskSensitive(m.text).slice(0, 300), tools, reply_chars: reply.length },
+    detail: { question: maskSensitive(question).slice(0, 300), tools, reply_chars: reply.length, ...(viaVoice ? { voice: true } : {}) },
   })
-  await m.reply(reply)
+  await m.reply(viaVoice ? `🎙️ _${maskSensitive(question).slice(0, 300)}_\n\n${reply}` : reply)
+  if (viaVoice && m.replyVoice) {
+    const mp3 = await speakForAdmin(m.accountId, reply)
+    if (mp3) await m.replyVoice(mp3).catch((err) => console.error('[admin-chat] voice reply failed:', err instanceof Error ? err.message : err))
+  }
   return true
 }

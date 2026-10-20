@@ -635,17 +635,33 @@ async function processMessage(
 
   // Admin Chat first: an enrolled admin's keyword, code or question is
   // answered there and never becomes a contact, lead or chat.
-  if (message.type === 'text' && message.text?.body) {
+  const adminAudioId = message.type === 'audio' ? message.audio?.id : undefined
+  if ((message.type === 'text' && message.text?.body) || adminAudioId) {
     const { handleAdminChatInbound } = await import('@/lib/admin-chat/engine')
     const consumed = await handleAdminChatInbound({
       accountId,
       channel: 'whatsapp',
       senderKey: senderPhone,
-      text: message.text.body,
+      text: message.text?.body ?? '',
       messageKey: `wa:${message.id}`,
       reply: async (text) => {
         const { sendTextMessage } = await import('@/lib/whatsapp/meta-api')
         await sendTextMessage({ phoneNumberId, accessToken, to: message.from, text })
+      },
+      ...(adminAudioId
+        ? {
+            audio: async () => {
+              const { getMediaUrl, downloadMedia } = await import('@/lib/whatsapp/meta-api')
+              const { url, mimeType } = await getMediaUrl({ mediaId: adminAudioId, accessToken })
+              const { buffer } = await downloadMedia({ downloadUrl: url, accessToken })
+              return { buffer, mimeType }
+            },
+          }
+        : {}),
+      replyVoice: async (mp3) => {
+        const { uploadMediaToMeta, sendMediaMessage } = await import('@/lib/whatsapp/meta-api')
+        const id = await uploadMediaToMeta({ phoneNumberId, accessToken, fileBuffer: mp3, mimeType: 'audio/mpeg', filename: 'reply.mp3' })
+        await sendMediaMessage({ phoneNumberId, accessToken, to: message.from, kind: 'audio', id })
       },
     }).catch((err) => {
       console.error('[admin-chat] whatsapp handling failed:', err)

@@ -655,7 +655,7 @@ export function AdminChatSettings() {
           {[
             ['1', `Send ${s.keyword}`, 'From their own phone, to your business WhatsApp or Telegram bot.'],
             ['2', 'Type the code', 'The 6-digit code from their authenticator app.'],
-            ['3', 'Ask', 'In Malayalam or English. Numbers are masked.'],
+            ['3', 'Ask', 'Typed or as a voice note, in Malayalam or English. Numbers are masked.'],
             ['4', 'STOP', `Or it closes after ${s.idle_minutes} min idle / ${s.max_minutes} min in all.`],
           ].map(([n, title, copy]) => (
             <li key={n} className="bg-white px-4 py-3">
