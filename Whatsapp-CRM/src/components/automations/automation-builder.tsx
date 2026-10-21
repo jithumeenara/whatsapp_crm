@@ -2,12 +2,15 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useState,
   type ReactNode,
 } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { apiFetch } from "@/lib/api-fetch"
 import { toast } from "sonner"
 import {
   ArrowLeft,
@@ -197,8 +200,12 @@ interface CatalogProductOption {
   image_url: string | null
 }
 
+type TagsState = "loading" | "ready" | "error"
+
 interface AutomationResources {
   tags: TagRecord[]
+  tagsState: TagsState
+  reloadTags: () => Promise<void>
   members: AccountMember[]
   templates: MessageTemplate[]
   products: CatalogProductOption[]
@@ -206,6 +213,8 @@ interface AutomationResources {
 
 const ResourcesContext = createContext<AutomationResources>({
   tags: [],
+  tagsState: "loading",
+  reloadTags: async () => {},
   members: [],
   templates: [],
   products: [],
@@ -215,23 +224,52 @@ function useResources(): AutomationResources {
   return useContext(ResourcesContext)
 }
 
+/** The account's tags, or null when they could not be loaded. */
+async function fetchTags(): Promise<TagRecord[] | null> {
+  try {
+    const res = await apiFetch("/api/tags", { cache: "no-store" })
+    const json = (await res.json()) as { tags?: TagRecord[] | null }
+    return Array.isArray(json.tags) ? json.tags : []
+  } catch (err) {
+    console.error("[automation builder] tags failed:", err)
+    return null
+  }
+}
+
 function ResourcesProvider({ children }: { children: ReactNode }) {
   const [tags, setTags] = useState<TagRecord[]>([])
   const [members, setMembers] = useState<AccountMember[]>([])
   const [templates, setTemplates] = useState<MessageTemplate[]>([])
   const [products, setProducts] = useState<CatalogProductOption[]>([])
 
+  const [tagsState, setTagsState] = useState<TagsState>("loading")
+
+  // Tags load on their own: a failing templates call must never leave the
+  // tag pickers empty.
+  const showTags = useCallback((list: TagRecord[] | null) => {
+    if (list) setTags(list)
+    setTagsState(list ? "ready" : "error")
+  }, [])
+  const reloadTags = useCallback(async () => {
+    setTagsState("loading")
+    showTags(await fetchTags())
+  }, [showTags])
+
   useEffect(() => {
     let cancelled = false
 
+    void fetchTags().then((list) => {
+      if (!cancelled) showTags(list)
+    })
+
     void (async () => {
-      const [tagsRes, templatesRes] = await Promise.all([
-        fetch("/api/tags", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/whatsapp/templates?status=APPROVED", { cache: "no-store" }).then((r) => r.json()),
-      ])
-      if (cancelled) return
-      setTags((tagsRes.tags as TagRecord[] | null) ?? [])
-      setTemplates((templatesRes.templates as MessageTemplate[] | null) ?? [])
+      try {
+        const res = await apiFetch("/api/whatsapp/templates?status=APPROVED", { cache: "no-store" })
+        const json = (await res.json()) as { templates?: MessageTemplate[] | null }
+        if (!cancelled) setTemplates(Array.isArray(json.templates) ? json.templates : [])
+      } catch (err) {
+        console.error("[automation builder] templates failed:", err)
+      }
     })()
 
     // Catalog products — absent (empty array) on accounts with no
@@ -265,10 +303,10 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [showTags])
 
   return (
-    <ResourcesContext.Provider value={{ tags, members, templates, products }}>
+    <ResourcesContext.Provider value={{ tags, tagsState, reloadTags, members, templates, products }}>
       {children}
     </ResourcesContext.Provider>
   )
@@ -277,8 +315,8 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 const SELECT_CLASS =
   "w-full rounded-md border border-slate-200 bg-slate-100 px-2 py-1.5 text-sm text-slate-800 focus:border-primary focus:outline-none"
 
-/** Tag dropdown by name + color, storing the tag's id. Falls back to a
- *  raw id input when no tags exist yet. */
+/** Tag dropdown by name + color, storing the tag's id. Never a raw id box:
+ *  while loading, with no tags, or on a failed load it says so instead. */
 function TagSelect({
   value,
   onChange,
@@ -286,15 +324,28 @@ function TagSelect({
   value: string
   onChange: (v: string) => void
 }) {
-  const { tags } = useResources()
+  const { tags, tagsState, reloadTags } = useResources()
+  if (tagsState === "loading" && tags.length === 0) {
+    return <p className="py-1.5 text-sm text-slate-500" aria-live="polite">Loading tags…</p>
+  }
+  if (tagsState === "error" && tags.length === 0) {
+    return (
+      <p className="py-1.5 text-sm text-rose-600" role="alert">
+        Could not load your tags.{" "}
+        <button type="button" onClick={() => void reloadTags()} className="font-medium underline underline-offset-2">
+          Try again
+        </button>
+      </p>
+    )
+  }
   if (tags.length === 0) {
     return (
-      <Input
-        placeholder="Tag id"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="bg-slate-100 text-slate-800"
-      />
+      <p className="py-1.5 text-sm text-slate-500">
+        No tags yet.{" "}
+        <Link href="/settings?tab=contact" className="font-medium text-primary underline underline-offset-2">
+          Create one in Settings → Contact → Tags
+        </Link>
+      </p>
     )
   }
   const selected = tags.find((t) => t.id === value)
