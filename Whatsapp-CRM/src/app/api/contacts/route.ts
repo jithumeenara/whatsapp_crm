@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { checkEmail, checkPhone } from "@/lib/contacts/validate"
 import { findExistingContact } from "@/lib/contacts/dedupe"
+import { parseTagMatch, tagAudienceWhere } from "@/lib/broadcasts/tag-audience"
 
 const PAGE_SIZE = 25
 
@@ -47,6 +48,9 @@ export async function GET(req: NextRequest) {
     const realPhoneOnly = searchParams.get("realPhoneOnly") === "true"
     const tagIdsParam = searchParams.get("tagIds")?.trim() ?? ""
     const tagIds = tagIdsParam ? tagIdsParam.split(",").filter(Boolean) : []
+    // The broadcast preview's "But not people who have" side.
+    const excludeParam = searchParams.get("excludeTagIds")?.trim() ?? ""
+    const excludeTagIds = excludeParam ? excludeParam.split(",").filter(Boolean) : []
     const page = Math.max(0, parseInt(searchParams.get("page") ?? "0", 10) || 0)
     const limit = Math.min(
       100,
@@ -77,8 +81,8 @@ export async function GET(req: NextRequest) {
       ...(realPhoneOnly
         ? { NOT: { phone: { startsWith: "email:" } } }
         : {}),
-      ...(tagIds.length > 0
-        ? { tags: { some: { tag_id: { in: tagIds } } } }
+      ...(tagIds.length > 0 || excludeTagIds.length > 0
+        ? tagAudienceWhere({ tagIds, tagMatch: parseTagMatch(searchParams.get("tagMatch")), excludeTagIds })
         : {}),
     }
 

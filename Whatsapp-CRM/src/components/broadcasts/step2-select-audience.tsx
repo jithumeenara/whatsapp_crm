@@ -36,6 +36,8 @@ interface SavedList {
 export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement';
   tagIds?: string[];
+  /** 'tags': any of tagIds (default) or all of them. */
+  tagMatch?: 'any' | 'all';
   customField?: { fieldId: string; operator: 'is' | 'is_not' | 'contains'; value: string };
   csvContacts?: ExcelContactRow[];
   contactIds?: string[];
@@ -233,6 +235,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   /* Tags */
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>(audience.tagIds ?? []);
+  // "Contains" any/all, and "Does not contain" — see tag-audience.ts.
+  const [tagMatch, setTagMatch] = useState<'any' | 'all'>(audience.tagMatch === 'all' ? 'all' : 'any');
+  const [excludeTagIds, setExcludeTagIds] = useState<string[]>(audience.type === 'tags' ? (audience.excludeTagIds ?? []) : []);
+  const [tagCount, setTagCount] = useState<number | null>(null);
+  const [tagCountError, setTagCountError] = useState('');
+  const tagCountSeq = useRef(0);
 
   /* Saved lists (list mode) — loaded the first time the tab is opened. */
   const [lists, setLists] = useState<SavedList[] | null>(null);
@@ -323,7 +331,11 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     try {
       const params = new URLSearchParams({ limit: String(PAGE), page: String(page), realPhoneOnly: 'true' });
       if (query) params.set('search', query);
-      if (mode === 'tags' && selectedTagIds.length > 0) params.set('tagIds', selectedTagIds.join(','));
+      if (mode === 'tags') {
+        if (selectedTagIds.length > 0) params.set('tagIds', selectedTagIds.join(','));
+        if (tagMatch === 'all') params.set('tagMatch', 'all');
+        if (excludeTagIds.length > 0) params.set('excludeTagIds', excludeTagIds.join(','));
+      }
       const res = await fetch(`/api/contacts?${params}`);
       if (!res.ok || seq !== loadSeq.current) return;
       const data = await res.json();
@@ -333,7 +345,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     } finally {
       if (seq === loadSeq.current) setLoadingContacts(false);
     }
-  }, [page, query, mode, selectedTagIds]);
+  }, [page, query, mode, selectedTagIds, tagMatch, excludeTagIds]);
 
   /* Fetch total contact count once */
   useEffect(() => {
@@ -344,6 +356,27 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   }, []);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
+
+  /* ── Live count for the tag rules (debounced; newest answer wins) ── */
+  useEffect(() => {
+    if (mode !== 'tags' || (selectedTagIds.length === 0 && excludeTagIds.length === 0)) return;
+    const seq = ++tagCountSeq.current;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiFetch('/api/broadcasts/audience-count', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'tags', tagIds: selectedTagIds, tagMatch, excludeTagIds }),
+        });
+        const j = (await res.json()) as { count?: number };
+        if (seq === tagCountSeq.current) { setTagCount(j.count ?? 0); setTagCountError(''); }
+      } catch (err) {
+        console.error('[broadcast audience] count failed:', err);
+        if (seq === tagCountSeq.current) setTagCountError(errorText(err, 'Could not count the audience.'));
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [mode, selectedTagIds, tagMatch, excludeTagIds]);
 
   /* ── Fetch tags ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -382,7 +415,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setQuery('');
     setSearch('');
     if (m === 'all') onUpdate(pickSpecific ? { type: 'contacts', contactIds: [...selectedIds] } : { type: 'all' });
-    else if (m === 'tags') onUpdate({ type: 'tags', tagIds: selectedTagIds });
+    else if (m === 'tags') pushTags(selectedTagIds, tagMatch, excludeTagIds);
     else if (m === 'list') onUpdate({ type: 'list', listId: selectedListId || undefined, label: selectedList?.name });
     else if (m === 'engagement') chooseEngagement(engKind, engDays);
     else onUpdate({ type: 'csv', csvContacts: excelContacts });
@@ -488,13 +521,52 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   }
 
   /* ── Tag toggle ──────────────────────────────────────────────── */
-  function toggleTag(id: string) {
-    const next = selectedTagIds.includes(id)
-      ? selectedTagIds.filter((t) => t !== id)
-      : [...selectedTagIds, id];
-    setSelectedTagIds(next);
+  function tagName(id: string): string {
+    return tags.find((t) => t.id === id)?.name ?? 'a tag';
+  }
+  /** The rule in plain words — shown under the pickers and on the review step. */
+  function tagSentence(include: string[], match: 'any' | 'all', exclude: string[]): string {
+    const names = (ids: string[], joiner: string) => ids.map((id) => `“${tagName(id)}”`).join(joiner);
+    const who = include.length === 0
+      ? 'Everyone'
+      : include.length === 1
+        ? `Everyone tagged ${names(include, '')}`
+        : match === 'all'
+          ? `Everyone tagged ${names(include, ' and ')}`
+          : `Everyone tagged ${names(include, ' or ')}`;
+    return exclude.length ? `${who}, except anyone tagged ${names(exclude, ' or ')}` : who;
+  }
+  function pushTags(include: string[], match: 'any' | 'all', exclude: string[]) {
+    setTagCount(null);
+    setTagCountError('');
+    onUpdate({
+      type: 'tags',
+      tagIds: include,
+      tagMatch: match,
+      excludeTagIds: exclude,
+      label: include.length || exclude.length ? tagSentence(include, match, exclude) : undefined,
+    });
+  }
+  /** A tag sits on one side at most: choosing it on one side takes it off the other. */
+  function toggleTag(id: string, side: 'include' | 'exclude' = 'include') {
+    let include = selectedTagIds;
+    let exclude = excludeTagIds;
+    if (side === 'include') {
+      include = include.includes(id) ? include.filter((t) => t !== id) : [...include, id];
+      exclude = exclude.filter((t) => t !== id);
+    } else {
+      exclude = exclude.includes(id) ? exclude.filter((t) => t !== id) : [...exclude, id];
+      include = include.filter((t) => t !== id);
+    }
+    setSelectedTagIds(include);
+    setExcludeTagIds(exclude);
     setPage(0);
-    onUpdate({ type: 'tags', tagIds: next });
+    pushTags(include, tagMatch, exclude);
+  }
+  function chooseTagMatch(match: 'any' | 'all') {
+    setTagMatch(match);
+    setPage(0);
+    pushTags(selectedTagIds, match, excludeTagIds);
   }
 
   /* ── Contact toggle ──────────────────────────────────────────── */
@@ -562,7 +634,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
 
   const isValid =
     (mode === 'all' && (!pickSpecific || selectedIds.size > 0)) ||
-    (mode === 'tags' && selectedTagIds.length > 0) ||
+    (mode === 'tags' && (selectedTagIds.length > 0 || excludeTagIds.length > 0) && !!tagCount && !tagCountError) ||
     (mode === 'list' && !!selectedList && selectedList.member_count > 0) ||
     (mode === 'engagement' && (engCount ?? 0) > 0) ||
     (mode === 'excel' && validationStatus === 'done' && sendCount > 0);
@@ -586,8 +658,9 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     }
 
     if (mode === 'tags') {
-      if (selectedTagIds.length === 0) return 'Select at least one tag';
-      return `Contacts with ${selectedTagIds.length} tag${plural(selectedTagIds.length)}`;
+      if (selectedTagIds.length === 0 && excludeTagIds.length === 0) return 'Choose at least one tag';
+      if (tagCount === null) return 'Counting…';
+      return `${tagCount.toLocaleString()} ${tagCount === 1 ? 'person' : 'people'} — ${tagSentence(selectedTagIds, tagMatch, excludeTagIds)}`;
     }
 
     // Excel import: the label walks the same path the user does —
@@ -710,28 +783,81 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
         </fieldset>
       )}
 
-      {/* ── Tag picker (tags mode) ── */}
+      {/* ── Tag rules (tags mode): Contains (any/all) + Does not contain ── */}
       {mode === 'tags' && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="mb-3 text-[12px] font-semibold text-slate-600 uppercase tracking-wide">Filter by tag</p>
+        <div className="space-y-3">
           {tags.length === 0 ? (
-            <p className="text-[13px] text-slate-400">No tags yet. Create tags in Settings.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {tags.map((t) => {
-                const on = selectedTagIds.includes(t.id);
-                return (
-                  <button key={t.id} type="button" onClick={() => toggleTag(t.id)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-all',
-                      on ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
-                    )}>
-                    <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />
-                    {t.name}
-                  </button>
-                );
-              })}
+            <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <p className="text-[13px] text-slate-500">No tags yet. Create tags in Settings → Contact → Tags.</p>
             </div>
+          ) : (
+            <>
+              <div role="group" aria-labelledby="tags-include" className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p id="tags-include" className="text-[13px] font-semibold text-slate-800">
+                    Send to people who have
+                  </p>
+                  <div role="radiogroup" aria-label="Match" className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-[12px] font-medium">
+                    {(['any', 'all'] as const).map((m) => (
+                      <button key={m} type="button" role="radio" aria-checked={tagMatch === m}
+                        onClick={() => chooseTagMatch(m)}
+                        className={cn('rounded-md px-3 py-1 transition-colors', tagMatch === m ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700')}>
+                        {m === 'any' ? 'Any of these tags' : 'All of these tags'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((t) => {
+                    const on = selectedTagIds.includes(t.id);
+                    return (
+                      <button key={t.id} type="button" aria-pressed={on} onClick={() => toggleTag(t.id, 'include')}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-all',
+                          on ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+                        )}>
+                        <span className="h-2 w-2 rounded-full" style={{ background: t.color }} aria-hidden />
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-[11.5px] text-slate-500">Leave empty to start from everyone.</p>
+              </div>
+
+              <div role="group" aria-labelledby="tags-exclude" className="rounded-xl border border-slate-200 bg-white p-4">
+                <p id="tags-exclude" className="mb-3 text-[13px] font-semibold text-slate-800">
+                  But not people who have <span className="font-normal text-slate-500">(any of these)</span>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {tags.map((t) => {
+                    const on = excludeTagIds.includes(t.id);
+                    return (
+                      <button key={t.id} type="button" aria-pressed={on} onClick={() => toggleTag(t.id, 'exclude')}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-medium transition-all',
+                          on ? 'border-rose-300 bg-rose-50 text-rose-700 line-through decoration-rose-400' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+                        )}>
+                        <span className="h-2 w-2 rounded-full" style={{ background: t.color }} aria-hidden />
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {(selectedTagIds.length > 0 || excludeTagIds.length > 0) && (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 px-4 py-3" aria-live="polite">
+                  <p className="text-[13px] text-slate-700">{tagSentence(selectedTagIds, tagMatch, excludeTagIds)}.</p>
+                  <p className="mt-1 text-[13px] font-semibold text-indigo-700">
+                    {tagCountError
+                      ? <span className="text-rose-700">{tagCountError}</span>
+                      : tagCount === null ? 'Counting…' : tagCount === 0 ? 'Nobody matches these rules.' : `${tagCount.toLocaleString()} ${tagCount === 1 ? 'person' : 'people'} will get this`}
+                  </p>
+                  <p className="mt-0.5 text-[11.5px] text-slate-500">People who opted out, blocked, archived or without a WhatsApp number are always left out.</p>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

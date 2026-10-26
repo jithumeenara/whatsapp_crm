@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import type { AccountContext } from "@/lib/auth/account";
 import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-sending";
+import { hasTagRules, parseTagMatch, tagAudienceWhere, tagRuleError, tagsBelongToAccount } from "@/lib/broadcasts/tag-audience";
 import { liveCounts } from "@/lib/broadcasts/counts";
 import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
 import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
@@ -123,6 +124,14 @@ export async function POST(request: NextRequest) {
       parent = { id: found.id, outcome: from.outcome };
     }
 
+    if (body.audience.type === "tags") {
+      const problem = tagRuleError(body.audience);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+      if (!(await tagsBelongToAccount(db, ctx.accountId, body.audience))) {
+        return NextResponse.json({ error: "A chosen tag no longer exists. Choose the tags again." }, { status: 400 });
+      }
+    }
+
     // ── Resolve audience ──────────────────────────────────────
     const contacts = await resolveAudience(ctx, body.audience);
 
@@ -172,6 +181,7 @@ export async function POST(request: NextRequest) {
         audience_filter: {
           type: body.audience.type,
           tagIds: body.audience.tagIds,
+          ...(body.audience.type === "tags" ? { tagMatch: parseTagMatch(body.audience.tagMatch) } : {}),
           customField: body.audience.customField,
           excludeTagIds: body.audience.excludeTagIds,
           ...(parent ? { fromBroadcast: { broadcastId: parent.id, outcome: parent.outcome } } : {}),
@@ -307,21 +317,12 @@ async function resolveAudience(
     contacts = await db.contact.findMany({
       where: sendable,
     });
-  } else if (
-    audience.type === "tags" &&
-    audience.tagIds &&
-    audience.tagIds.length > 0
-  ) {
-    const contactTags = await db.contactTag.findMany({
-      where: { tag_id: { in: audience.tagIds } },
-      select: { contact_id: true },
+  } else if (audience.type === "tags" && hasTagRules(audience)) {
+    // Contains (any/all) and Does not contain, in one query — the same
+    // rule the count uses (src/lib/broadcasts/tag-audience.ts).
+    contacts = await db.contact.findMany({
+      where: { AND: [sendable, tagAudienceWhere(audience)] },
     });
-    const uniqueContactIds = [...new Set(contactTags.map((ct) => ct.contact_id))];
-    if (uniqueContactIds.length > 0) {
-      contacts = await db.contact.findMany({
-        where: { id: { in: uniqueContactIds }, ...sendable },
-      });
-    }
   } else if (audience.type === "custom_field" && audience.customField) {
     const { fieldId, operator, value } = audience.customField;
     let valueFilter: unknown;
@@ -364,8 +365,8 @@ async function resolveAudience(
     });
   }
 
-  // Apply exclude tags.
-  if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
+  // Apply exclude tags (a tag audience already did, in its own query).
+  if (audience.type !== "tags" && Array.isArray(audience.excludeTagIds) && audience.excludeTagIds.length > 0) {
     const excludeRows = await db.contactTag.findMany({
       where: { tag_id: { in: audience.excludeTagIds } },
       select: { contact_id: true },

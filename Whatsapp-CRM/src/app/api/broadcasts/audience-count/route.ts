@@ -4,10 +4,12 @@ import { liveSendableContactWhere } from "@/lib/broadcasts/sendable"
 import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience"
 import { isOutcome } from "@/lib/broadcasts/outcomes"
 import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement"
+import { hasTagRules, tagAudienceWhere, tagRuleError, tagsBelongToAccount } from "@/lib/broadcasts/tag-audience"
 
 interface AudienceCountBody {
   type: string
   tagIds?: string[]
+  tagMatch?: "any" | "all"
   customField?: {
     fieldId: string
     operator: "is" | "is_not" | "contains"
@@ -38,8 +40,20 @@ export async function POST(req: NextRequest) {
     // (src/lib/broadcasts/sendable.ts), inside this account only.
     const sendable = liveSendableContactWhere(ctx.accountId)
 
+    // Contains (any/all) and Does not contain — the same rule as the send.
+    if (body.type === "tags") {
+      const problem = tagRuleError(body)
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 })
+      if (!hasTagRules(body)) return NextResponse.json({ count: 0 })
+      if (!(await tagsBelongToAccount(db, ctx.accountId, body))) {
+        return NextResponse.json({ error: "A chosen tag no longer exists. Choose the tags again." }, { status: 400 })
+      }
+      const count = await db.contact.count({ where: { AND: [sendable, tagAudienceWhere(body)] } })
+      return NextResponse.json({ count })
+    }
+
     let excludeIds: string[] = []
-    if (body.excludeTagIds && body.excludeTagIds.length > 0) {
+    if (Array.isArray(body.excludeTagIds) && body.excludeTagIds.length > 0) {
       const rows = await db.contactTag.findMany({
         where: { tag_id: { in: body.excludeTagIds.slice(0, 200) } },
         select: { contact_id: true },

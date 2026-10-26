@@ -16,6 +16,7 @@ function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boo
 interface AudienceConfig {
   type: string;
   tagIds?: string[];
+  tagMatch?: 'any' | 'all';
   csvContacts?: { phone: string; name?: string }[];
   contactIds?: string[];
   customField?: { fieldId: string; operator: string; value: string };
@@ -134,7 +135,7 @@ export function Step4ScheduleSend({
           // Everything that narrows the audience, so the estimate is the
           // number the send will reach (same rules on the server).
           body: JSON.stringify({
-            type: audience.type, tagIds: audience.tagIds, customField: audience.customField,
+            type: audience.type, tagIds: audience.tagIds, tagMatch: audience.tagMatch, customField: audience.customField,
             excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId,
             engagement: audience.engagement,
           }),
@@ -149,7 +150,7 @@ export function Step4ScheduleSend({
   const AudienceIcon = meta.icon;
 
   const audienceDetail =
-    audience.type === 'tags' ? `${audience.tagIds?.length ?? 0} tag${(audience.tagIds?.length ?? 0) !== 1 ? 's' : ''}` :
+    audience.type === 'tags' ? (audience.label ?? `${audience.tagIds?.length ?? 0} tag${(audience.tagIds?.length ?? 0) !== 1 ? 's' : ''}`) :
     audience.type === 'contacts' ? `${audience.contactIds?.length ?? 0} contact${(audience.contactIds?.length ?? 0) !== 1 ? 's' : ''}` :
     audience.label ?? null;
 

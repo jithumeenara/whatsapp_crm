@@ -20,6 +20,8 @@ export interface CustomFieldFilter {
 export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement';
   tagIds?: string[];
+  /** 'tags': people with any of tagIds (default) or all of them. */
+  tagMatch?: 'any' | 'all';
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string; tagNames?: string[]; company?: string; customFields?: Record<string, string> }[];
   contactIds?: string[];

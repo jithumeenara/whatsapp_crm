@@ -127,7 +127,7 @@ export default function NewBroadcastV2() {
   async function handleSend() {
     if (!template) return
     try {
-      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId, engagement: audience.engagement }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
+      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, tagMatch: audience.tagMatch, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId, engagement: audience.engagement }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
       toast.success(
         schedule.type === "now" ? "Broadcast sending…"
           : schedule.type === "once" ? "Broadcast scheduled"
@@ -147,7 +147,7 @@ export default function NewBroadcastV2() {
     const res = await fetch("/api/broadcasts/draft", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, header_media_url: headerMediaUrl || undefined, whatsapp_config_id: whatsappConfigId || undefined, audience_filter: { type: audience.type, tagIds: audience.tagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId } }),
+      body: JSON.stringify({ name: name.trim(), template_name: template.name, template_language: template.language ?? "en_US", template_variables: variables, header_media_url: headerMediaUrl || undefined, whatsapp_config_id: whatsappConfigId || undefined, audience_filter: { type: audience.type, tagIds: audience.tagIds, tagMatch: audience.tagMatch, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId } }),
     })
     if (!res.ok) { const b = await res.json().catch(() => ({})); toast.error(`Failed: ${b?.error ?? `HTTP ${res.status}`}`); return }
     toast.success("Draft saved"); router.push("/broadcasts")
