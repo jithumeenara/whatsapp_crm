@@ -81,7 +81,7 @@ function SignupContent() {
             <MessageSquare className="h-6 w-6 text-white" />
           </div>
           <h1 className="text-[22px] font-bold text-slate-900">Create Account</h1>
-          <p className="mt-1 text-[13px] text-slate-500">Start your WhatsApp CRM workspace</p>
+          <p className="mt-1 text-[13px] text-slate-500">Start your Lead Magnet CRM workspace</p>
         </div>
 
         <div className="rounded-2xl bg-white border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.08)] px-8 py-8">

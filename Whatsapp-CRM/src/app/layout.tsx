@@ -32,16 +32,18 @@ const anekMalayalam = Anek_Malayalam({
 
 export const metadata: Metadata = {
   title: {
-    default: "WhatsApp CRM Pro",
-    template: "%s — WhatsApp CRM Pro",
+    default: "Lead Magnet CRM",
+    template: "%s — Lead Magnet CRM",
   },
-  description: "Self-hosted WhatsApp CRM for teams.",
+  description: "Lead Magnet CRM — WhatsApp, Instagram, Telegram and website chats, leads and AI in one place.",
   robots: {
     index: false,
     follow: false,
   },
+  // The Lead Magnet mark (public/brand holds the full kit).
   icons: {
-    icon: [{ url: "/icon" }],
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/brand/favicon-32.png", sizes: "32x32", type: "image/png" }],
+    apple: [{ url: "/apple-icon.png", sizes: "180x180" }],
   },
   formatDetection: {
     email: false,

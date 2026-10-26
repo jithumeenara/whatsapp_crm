@@ -1,0 +1,12 @@
+<svg fill="#ffffff" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 256" role="img" aria-label="Lead Magnet CRM"><title>Lead Magnet CRM</title>
+  
+  <g fill="none" stroke-linecap="round" stroke-width="30">
+    <line x1="40" y1="204" x2="92" y2="130" stroke="#ffffff"/>
+    <line x1="86" y1="224" x2="170" y2="104" stroke="#ffffff"/>
+    <line x1="140" y1="226" x2="194" y2="149" stroke="#ffffff"/>
+  </g>
+  <circle cx="201" cy="58" r="25" fill="#ffffff"/>
+  <!-- Live text (Inter → Segoe UI → Arial). Outline it before print use. -->
+  <text x="262" y="148" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="96" font-weight="600" fill="#ffffff" letter-spacing="-1.5">Lead Magnet</text>
+  <text x="266" y="206" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="44" font-weight="700" fill="#ffffff" letter-spacing="10">CRM</text>
+</svg>

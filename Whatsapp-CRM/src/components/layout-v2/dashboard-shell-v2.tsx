@@ -11,6 +11,7 @@ import { ConfirmProvider } from "@/hooks/use-confirm";
 import { SidebarV2 } from "./sidebar-v2";
 import { Menu } from "lucide-react";
 import type React from "react";
+import { LeadMagnetLogo } from "@/components/brand/lead-magnet-mark";
 
 /**
  * Lets child pages hide the mobile shell top bar (e.g. inbox thread view)
@@ -174,7 +175,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
               >
                 <Menu className="h-5 w-5" />
               </button>
-              <span className="text-[14px] font-semibold text-slate-900">WhatsApp CRM</span>
+              <LeadMagnetLogo size="sm" />
             </header>
           )}
 

@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "WhatsApp CRM",
+  title: "Sign in",
   robots: { index: false },
 }
 

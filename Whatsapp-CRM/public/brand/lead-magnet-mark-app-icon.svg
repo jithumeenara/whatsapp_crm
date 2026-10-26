@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256"><title>Lead Magnet</title><rect width="256" height="256" rx="57.6" fill="#6D28D9"/><g transform="translate(18.67 21.55) scale(0.822)" fill="#ffffff">
+  
+  <!-- Three channels, slanted 35°, converging on one lead (the dot). -->
+  <g fill="none" stroke-linecap="round" stroke-width="30">
+    <line x1="40" y1="204" x2="92" y2="130" stroke="#ffffff"/>
+    <line x1="86" y1="224" x2="170" y2="104" stroke="#ffffff"/>
+    <line x1="140" y1="226" x2="194" y2="149" stroke="#ffffff"/>
+  </g>
+  <circle cx="201" cy="58" r="25" fill="#ffffff"/>
+</g></svg>

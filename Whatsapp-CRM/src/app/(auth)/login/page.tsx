@@ -4,8 +4,9 @@ import { Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
-import { MessageSquare, Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, KeyRound, Clock, CheckCircle2, CircleAlert } from "lucide-react"
+import { Eye, EyeOff, Lock, Mail, ShieldCheck, ArrowLeft, KeyRound, Clock, CheckCircle2, CircleAlert } from "lucide-react"
 import { TotpCountdown } from "@/components/auth/totp-countdown"
+import { LeadMagnetMark } from "@/components/brand/lead-magnet-mark"
 
 type Step = "credentials" | "mfa"
 type MfaMethod = "sms" | "whatsapp" | "totp"
@@ -123,10 +124,8 @@ function LoginContent() {
       <div className="w-full max-w-[400px]">
         {/* Logo */}
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg mb-3">
-            <MessageSquare className="h-6 w-6 text-white" />
-          </div>
-          <h1 className="text-[22px] font-bold text-slate-900">WhatsApp CRM</h1>
+          <LeadMagnetMark className="mb-3 h-14 w-14" />
+          <h1 className="text-[22px] font-bold text-slate-900">Lead Magnet <span className="text-violet-600">CRM</span></h1>
           <p className="mt-1 text-[13px] text-slate-500">
             {inviteToken ? "Sign in to accept your invitation" : "Sign in to your workspace"}
           </p>

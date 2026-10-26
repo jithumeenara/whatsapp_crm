@@ -11,7 +11,6 @@ import {
   ChevronRight,
   Crown,
   LogOut,
-  MessageSquare,
   Settings,
   Shield,
   User,
@@ -21,6 +20,7 @@ import {
 } from "lucide-react";
 import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
 import { NAV_SECTIONS } from '@/lib/navigation/sections';
+import { LeadMagnetLogo, LeadMagnetMark } from "@/components/brand/lead-magnet-mark"
 
 // ---- navigation ----
 //
@@ -145,17 +145,10 @@ export function SidebarV2({
         >
           <Link
             href="/dashboard"
-            aria-label="WhatsApp CRM — dashboard"
+            aria-label="Lead Magnet CRM — dashboard"
             className={cn("flex items-center gap-2.5 min-w-0", collapsed && "justify-center")}
           >
-            <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-lg bg-indigo-600 shadow-sm">
-              <MessageSquare className="h-4 w-4 text-white" strokeWidth={2} />
-            </div>
-            {!collapsed && (
-              <span className="text-[14px] font-semibold text-slate-900 tracking-tight truncate">
-                WhatsApp CRM
-              </span>
-            )}
+            {collapsed ? <LeadMagnetMark className="h-[30px] w-[30px] shrink-0" /> : <LeadMagnetLogo size="sm" />}
           </Link>
 
           {!collapsed && (

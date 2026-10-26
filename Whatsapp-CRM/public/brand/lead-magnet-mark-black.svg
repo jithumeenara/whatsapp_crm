@@ -1,0 +1,10 @@
+<svg fill="#000000" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Lead Magnet"><title>Lead Magnet</title>
+  
+  <!-- Three channels, slanted 35°, converging on one lead (the dot). -->
+  <g fill="none" stroke-linecap="round" stroke-width="30">
+    <line x1="40" y1="204" x2="92" y2="130" stroke="#000000"/>
+    <line x1="86" y1="224" x2="170" y2="104" stroke="#000000"/>
+    <line x1="140" y1="226" x2="194" y2="149" stroke="#000000"/>
+  </g>
+  <circle cx="201" cy="58" r="25" fill="#000000"/>
+</svg>
