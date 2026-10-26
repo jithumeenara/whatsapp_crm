@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
   registerPhoneNumber,
   subscribeWabaToApp,
@@ -509,8 +510,19 @@ export async function DELETE(request: Request) {
       )
     }
 
+    // Removing a number takes its payment settings with it and moves its
+    // chats to another number: the owner's decision only.
+    try {
+      await requireRole('owner')
+    } catch (err) {
+      return toErrorResponse(err)
+    }
+
     const { searchParams } = new URL(request.url)
     const requestedId = searchParams.get('id')
+    if (!requestedId && (await prisma.whatsAppConfig.count({ where: { account_id: accountId } })) > 1) {
+      return NextResponse.json({ error: 'Choose which number to remove.' }, { status: 400 })
+    }
 
     const target = requestedId
       ? await prisma.whatsAppConfig.findFirst({ where: { id: requestedId, account_id: accountId } })

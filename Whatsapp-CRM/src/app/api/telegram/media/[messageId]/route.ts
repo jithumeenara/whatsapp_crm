@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { botForAccount } from '@/lib/telegram/store'
 import { fileDownloadUrl, TelegramApiError } from '@/lib/telegram/api'
+import { attachmentHeaders } from '@/lib/files/account-files'
 
 /**
  * A photo or file a customer sent on Telegram, for the Inbox.
@@ -49,14 +50,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ message
     if (!upstream?.ok || !upstream.body) {
       return NextResponse.json({ error: 'Could not download the file from Telegram.' }, { status: 502 })
     }
-    const type = message.media_mime_type || upstream.headers.get('content-type') || 'application/octet-stream'
-    const name = (message.media_filename || 'file').replace(/["\r\n]/g, '')
+    const type = message.media_mime_type || upstream.headers.get('content-type')
     return new Response(upstream.body, {
       headers: {
-        'Content-Type': type,
-        'Content-Disposition': `inline; filename="${encodeURIComponent(name)}"`,
+        ...attachmentHeaders(type, message.media_filename || 'file'),
         'Cache-Control': 'private, max-age=3600',
-        'X-Content-Type-Options': 'nosniff',
         ...(upstream.headers.get('content-length') ? { 'Content-Length': upstream.headers.get('content-length')! } : {}),
       },
     })

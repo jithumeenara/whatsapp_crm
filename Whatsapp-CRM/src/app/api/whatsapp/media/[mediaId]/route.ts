@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
+import { attachmentHeaders } from '@/lib/files/account-files'
 
 /**
  * Media WhatsApp has permanently expired (Graph API error code 100.33 —
@@ -111,8 +112,9 @@ export async function GET(
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        'Content-Type': contentType || mediaInfo.mimeType || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=86400',
+        ...attachmentHeaders(contentType || mediaInfo.mimeType, `whatsapp-${mediaId}`),
+        // A customer's file: kept in this browser only, never a shared cache.
+        'Cache-Control': 'private, max-age=86400',
       },
     })
   } catch (error) {

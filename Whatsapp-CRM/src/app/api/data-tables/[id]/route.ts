@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { invalidateRegistrationForms } from '@/lib/ai/registration'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 async function requireOwner(tableId: string) {
   const session = await auth()
@@ -108,6 +109,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    // A table holds registrations, bookings, sheet links: deleting one
+    // takes all of them, so only an admin may.
+    try {
+      await requireRole('admin')
+    } catch (err) {
+      return toErrorResponse(err)
+    }
     const { id } = await params
     const guard = await requireOwner(id)
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })

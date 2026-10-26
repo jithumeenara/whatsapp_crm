@@ -62,6 +62,26 @@ export function servableMime(mime: string): boolean {
   return Object.prototype.hasOwnProperty.call(EXTENSION, mime) || ALSO_SERVED.has(mime)
 }
 
+/**
+ * Headers for sending a customer's attachment back to staff. The type a
+ * sender declares (a Telegram or WhatsApp document "text/html", an
+ * "image/svg+xml") is never trusted to render on the CRM's own origin:
+ * only types uploads are checked against go out as themselves, and only
+ * media and PDF open inline. Everything else is an opaque download.
+ */
+export function attachmentHeaders(declaredMime: string | null | undefined, filename: string): Record<string, string> {
+  const mime = (declaredMime || '').split(';')[0].trim().toLowerCase()
+  const type = servableMime(mime) ? mime : 'application/octet-stream'
+  const inline = /^(image|audio|video)\//.test(type) || type === 'application/pdf'
+  const name = encodeURIComponent((filename || 'file').replace(/["\r\n]/g, ''))
+  return {
+    'Content-Type': type,
+    'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${name}"`,
+    'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': 'sandbox',
+  }
+}
+
 export function isAllowedMime(mime: string): boolean {
   return Object.prototype.hasOwnProperty.call(MIME_CATEGORY, mime)
 }

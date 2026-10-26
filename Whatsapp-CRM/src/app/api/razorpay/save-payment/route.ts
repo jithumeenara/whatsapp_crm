@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { detectType } from "@/lib/integration-fetch"
+import { isRazorpayPaymentId, paymentRowFromRazorpay } from "@/lib/integrations/razorpay-payment"
 import { afterRecordCreated, afterRecordsChanged } from '@/lib/data-store/record-events'
 
 const RAZORPAY_API = "https://api.razorpay.com/v1"
@@ -20,9 +21,9 @@ export async function POST(req: NextRequest) {
       amount: number
       currency: string
     }
-    const { payment_id, order_id, integration_id, amount, currency } = body
+    const { payment_id, integration_id } = body
 
-    if (!payment_id || !integration_id) {
+    if (!isRazorpayPaymentId(payment_id) || !integration_id) {
       return NextResponse.json({ error: "payment_id and integration_id are required" }, { status: 400 })
     }
 
@@ -43,36 +44,13 @@ export async function POST(req: NextRequest) {
     const payRes = await fetch(`${RAZORPAY_API}/payments/${payment_id}`, {
       headers: { Authorization: auth },
     })
-    const payData = await payRes.json() as Record<string, unknown>
-
-    // Build a flat row from the payment object
-    const UNIX_TS_RE = /^\d{10}$/
-    const DATE_KEYS = ["_at", "date", "time", "created", "updated", "captured"]
-    const row: Record<string, string> = {}
-    for (const [k, v] of Object.entries(payData)) {
-      if (v === null || v === undefined || typeof v === "object") continue
-      const str = String(v)
-      // Convert Unix second-timestamps to ISO strings so date fields display correctly
-      const isDateKey = DATE_KEYS.some((d) => k.toLowerCase().includes(d))
-      if (isDateKey && UNIX_TS_RE.test(str)) {
-        row[k] = new Date(parseInt(str) * 1000).toISOString()
-      } else {
-        row[k] = str
-      }
+    const payData = (await payRes.json().catch(() => ({}))) as Record<string, unknown>
+    const verified = paymentRowFromRazorpay(payment_id, payRes.ok, payData)
+    if (!verified.ok) {
+      console.warn("[razorpay save-payment] refused:", payment_id, payRes.status, payData.status)
+      return NextResponse.json({ error: verified.error }, { status: 400 })
     }
-    // Also save notes as flat fields
-    if (payData.notes && typeof payData.notes === "object") {
-      for (const [k, v] of Object.entries(payData.notes as Record<string, unknown>)) {
-        if (v !== null && v !== undefined && typeof v !== "object") {
-          row[`note_${k}`] = String(v)
-        }
-      }
-    }
-    // Fallback values from the frontend if Razorpay API call failed
-    if (!row.id) row.id = payment_id
-    if (!row.order_id) row.order_id = order_id
-    if (!row.amount) row.amount = String(amount)
-    if (!row.currency) row.currency = currency
+    const row = verified.row
 
     // Find or create a "Razorpay Payments" table for this account
     const tableName = `${intg.name} Payments`

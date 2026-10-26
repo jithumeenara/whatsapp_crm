@@ -7,7 +7,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const ctx = await requireRole("agent")
+    const ctx = await requireRole("admin")
     const { id } = await params
     // Verify ownership — tag must belong to the caller's account
     const tag = await prisma.tag.findFirst({
