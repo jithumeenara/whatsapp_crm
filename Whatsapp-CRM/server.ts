@@ -33,6 +33,7 @@ import { verifyRealtimeTicket } from "./src/lib/realtime-ticket";
 import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
 import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
 import { installDevSendGuard, isDevelopment } from "./src/lib/dev/send-guard";
+import { singleFlight } from "./src/lib/jobs/single-flight";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";
@@ -193,7 +194,25 @@ app.prepare().then(() => {
   // laptop points at — so there they run only with DEV_RUN_JOBS=1.
   const runJobs = !isDevelopment(process.env) || process.env.DEV_RUN_JOBS === "1";
   if (!runJobs) console.warn("[DEV] Background jobs are off on this development server. DEV_RUN_JOBS=1 to run them.");
-  const every = (fn: () => void, ms: number) => (runJobs ? setInterval(fn, ms) : undefined);
+  // Each job starts a few seconds after the one before: started together,
+  // a dozen sweeps hit the database in the same second every minute and
+  // the Inbox's own requests queued behind them.
+  let jobSlot = 0;
+  const every = (fn: () => void, ms: number) => {
+    if (!runJobs) return undefined;
+    const offset = (jobSlot++ * 4_000) % Math.min(ms, 60_000);
+    return setTimeout(() => setInterval(fn, ms), offset);
+  };
+  // Sweeps without a guard of their own: a slow run is never overlapped.
+  const websiteKnowledgeOnce = singleFlight(sweepWebsiteKnowledge);
+  const gmailOnce = singleFlight(sweepGmailInboxes);
+  const calendarsOnce = singleFlight(sweepGoogleCalendars);
+  const sheetImportsOnce = singleFlight(sweepGoogleSheetImports);
+  const formsOnce = singleFlight(sweepGoogleForms);
+  const twoWayOnce = singleFlight(sweepTwoWaySheets);
+  const trainOnce = singleFlight(trainPendingKnowledge);
+  const staleOffersOnce = singleFlight(sweepStaleOffers);
+  const broadcastsOnce = singleFlight(sweepScheduledBroadcasts);
 
   // Scheduled/recurring conversation messages -- sends run from right here,
   // in this always-on process (PM2 keeps it alive), instead of depending on
@@ -210,7 +229,7 @@ app.prepare().then(() => {
   // above, just a separate sweep since broadcasts and per-conversation
   // scheduled messages are unrelated tables with different send loops.
   every(() => {
-    sweepScheduledBroadcasts().catch((err) => {
+    broadcastsOnce().catch((err) => {
       console.error("[broadcasts] sweep interval failed:", err);
     });
   }, 60_000);
@@ -221,7 +240,7 @@ app.prepare().then(() => {
   // touched after 24h, and a sheet edited now reaches the bot within
   // the hour, which is the granularity that was actually wanted.
   every(() => {
-    sweepWebsiteKnowledge().catch((err) => {
+    websiteKnowledgeOnce().catch((err) => {
       console.error("[ai-knowledge] website sweep failed:", err);
     });
   }, 60 * 60_000);
@@ -265,7 +284,7 @@ app.prepare().then(() => {
   // "Gmail — full inbox": new mail into the Inbox, read from Gmail's
   // change history every minute (src/lib/google/gmail.ts).
   every(() => {
-    sweepGmailInboxes().catch((err) => {
+    gmailOnce().catch((err) => {
       console.error("[gmail] inbox sweep failed:", err);
     });
   }, 60_000);
@@ -273,7 +292,7 @@ app.prepare().then(() => {
   // Google Calendar: follow-ups and tasks out to the calendar, and times
   // changed or events cancelled there back in (src/lib/google/calendar.ts).
   every(() => {
-    sweepGoogleCalendars().catch((err) => {
+    calendarsOnce().catch((err) => {
       console.error("[calendar] sweep failed:", err);
     });
   }, 5 * 60_000);
@@ -282,11 +301,11 @@ app.prepare().then(() => {
   // Store tables (src/lib/google/sheet-sync.ts). A no-op for an account
   // with no such link — the first query finds none.
   every(() => {
-    sweepGoogleSheetImports().catch((err) => {
+    sheetImportsOnce().catch((err) => {
       console.error("[google-sheet] import sweep failed:", err);
     });
     // Linked Google Forms: new responses into their tables.
-    sweepGoogleForms().catch((err) => {
+    formsOnce().catch((err) => {
       console.error("[google-forms] sweep failed:", err);
     });
     // The hub's health check: tokens still work, permissions still granted.
@@ -300,7 +319,7 @@ app.prepare().then(() => {
   // they sync within seconds — it is the safety net and the sheet-side
   // check for sheets without the script (src/lib/google/sheet-two-way.ts).
   every(() => {
-    sweepTwoWaySheets().catch((err) => {
+    twoWayOnce().catch((err) => {
       console.error("[sheet-sync] sweep failed:", err);
     });
     // Sheet routing: rows changed by any writer, deleted rows, and the
@@ -320,7 +339,7 @@ app.prepare().then(() => {
   // unchanged knowledge base costs one query and no provider calls —
   // syncKnowledgeEmbeddings skips every hash it has already seen.
   every(() => {
-    trainPendingKnowledge().catch((err) => {
+    trainOnce().catch((err) => {
       console.error("[auto-train] interval failed:", err);
     });
   }, 10 * 60_000);
@@ -351,7 +370,7 @@ app.prepare().then(() => {
   // trigger this themselves; this is for the night, when nobody is.
   // (/api/offers/cron was meant to, but sat behind the login check.)
   every(() => {
-    sweepStaleOffers().catch((err) => {
+    staleOffersOnce().catch((err) => {
       console.error("[offers] sweep failed:", err);
     });
   }, 60_000);

@@ -67,6 +67,7 @@ export interface FoundRegistration {
 }
 
 const cache = new Map<string, { at: number; rows: FoundRegistration[] }>()
+const CACHE_MAX = 1000
 export function clearRegistrationLookupCache(): void {
   cache.clear()
 }
@@ -225,6 +226,7 @@ export async function registrationsByPhone(args: {
   const cacheKey = `${args.accountId}:${args.contactId}:${key}`
   const hit = cache.get(cacheKey)
   if (hit && Date.now() - hit.at < CACHE_MS) return hit.rows
+  if (hit) cache.delete(cacheKey)
   const a = await findTableRowsByPhone({ ...args, key }).catch((err) => {
     console.error('[registration-lookup] tables failed:', err instanceof Error ? err.message : err)
     return [] as FoundRegistration[]
@@ -239,6 +241,12 @@ export async function registrationsByPhone(args: {
   console.info(`[registration-lookup] number …${key.slice(-4)}: table rows ${a.length}, sheet rows ${b.length} (sheets read ${stats.sheets}, tabs ${stats.tabs})${stats.problem ? ` — ${stats.problem}` : ''}`)
   const rows = [...a, ...b].slice(0, MAX_ROWS)
   cache.set(cacheKey, { at: Date.now(), rows })
+  // Bounded: one entry per customer who asked, kept for the whole life of
+  // the process, grew without end. The oldest goes first.
+  if (cache.size > CACHE_MAX) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
   return rows
 }
 

@@ -1310,6 +1310,11 @@ function LeadsV2() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  const insertReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (insertReloadTimer.current) clearTimeout(insertReloadTimer.current)
+  }, [])
+
   // Real-time: update the leads list instantly when any lead is patched
   useRealtime({
     channelName: "leads-list-realtime",
@@ -1319,8 +1324,14 @@ function LeadsV2() {
           prev.map((l) => l.id === event.new.id ? { ...l, ...event.new } : l)
         )
       } else if (event.eventType === "INSERT") {
-        // Reload to get the new lead with all includes (contact, assignee)
-        loadData()
+        // Reload to get the new lead with all includes (contact, assignee).
+        // A burst (Lead Ads, a broadcast's replies) waits a moment and
+        // reloads once, instead of three lists per lead per open tab.
+        if (insertReloadTimer.current) clearTimeout(insertReloadTimer.current)
+        insertReloadTimer.current = setTimeout(() => {
+          insertReloadTimer.current = null
+          loadData()
+        }, 1500)
       }
     }, [loadData]),
   })

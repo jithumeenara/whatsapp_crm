@@ -1,6 +1,5 @@
 "use client"
 
-import { BuildBadge } from "@/components/settings/build-badge"
 import { Suspense, useEffect, useMemo, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { motion, AnimatePresence, useReducedMotion } from "motion/react"
@@ -15,22 +14,29 @@ import {
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
 import { ProfileForm } from "@/components/settings/profile-form"
-import { ContactSettingsTab } from "@/components/settings/contact-settings-tab"
-import { LeadsSettingsV2 } from "@/components/settings/leads-settings-v2";
-import { MembersTab } from "@/components/settings/members-tab"
-import { AiConfig } from "@/components/settings/ai-config"
-import { DatabasePanel } from "@/components/settings/database-panel"
-import { NotificationsPanel } from "@/components/settings/notifications-panel"
-import { ApiKeysPanel } from "@/components/settings/api-keys-panel"
-import { WebhooksPanel } from "@/components/settings/webhooks-panel"
-import { GoogleSettings } from "@/components/settings/google-settings"
-import { ChannelsTab } from "@/components/settings/channels-tab"
-import { AdminChatSettings } from "@/components/settings/admin-chat-settings"
-import { PlatformMetaTab } from "@/components/settings/platform-meta-tab"
-import { AdsTab } from "@/components/settings/ads-tab"
-import { CatalogTab } from "@/components/settings/catalog-tab"
-import { PaymentsTab } from "@/components/settings/payments-tab"
-import { CallsTab } from "@/components/settings/calls-tab"
+import { BuildBadge } from "@/components/settings/build-badge"
+import dynamic from "next/dynamic"
+
+// Each tab's code loads when the tab is opened, not all eighteen up front.
+function PanelLoading() {
+  return <div className="h-64 animate-pulse rounded-2xl bg-slate-100 motion-reduce:animate-none" aria-busy="true" />
+}
+const ContactSettingsTab = dynamic(() => import("@/components/settings/contact-settings-tab").then((m) => m.ContactSettingsTab), { loading: PanelLoading })
+const LeadsSettingsV2 = dynamic(() => import("@/components/settings/leads-settings-v2").then((m) => m.LeadsSettingsV2), { loading: PanelLoading })
+const MembersTab = dynamic(() => import("@/components/settings/members-tab").then((m) => m.MembersTab), { loading: PanelLoading })
+const AiConfig = dynamic(() => import("@/components/settings/ai-config").then((m) => m.AiConfig), { loading: PanelLoading })
+const DatabasePanel = dynamic(() => import("@/components/settings/database-panel").then((m) => m.DatabasePanel), { loading: PanelLoading })
+const NotificationsPanel = dynamic(() => import("@/components/settings/notifications-panel").then((m) => m.NotificationsPanel), { loading: PanelLoading })
+const ApiKeysPanel = dynamic(() => import("@/components/settings/api-keys-panel").then((m) => m.ApiKeysPanel), { loading: PanelLoading })
+const WebhooksPanel = dynamic(() => import("@/components/settings/webhooks-panel").then((m) => m.WebhooksPanel), { loading: PanelLoading })
+const GoogleSettings = dynamic(() => import("@/components/settings/google-settings").then((m) => m.GoogleSettings), { loading: PanelLoading })
+const ChannelsTab = dynamic(() => import("@/components/settings/channels-tab").then((m) => m.ChannelsTab), { loading: PanelLoading })
+const AdminChatSettings = dynamic(() => import("@/components/settings/admin-chat-settings").then((m) => m.AdminChatSettings), { loading: PanelLoading })
+const PlatformMetaTab = dynamic(() => import("@/components/settings/platform-meta-tab").then((m) => m.PlatformMetaTab), { loading: PanelLoading })
+const AdsTab = dynamic(() => import("@/components/settings/ads-tab").then((m) => m.AdsTab), { loading: PanelLoading })
+const CatalogTab = dynamic(() => import("@/components/settings/catalog-tab").then((m) => m.CatalogTab), { loading: PanelLoading })
+const PaymentsTab = dynamic(() => import("@/components/settings/payments-tab").then((m) => m.PaymentsTab), { loading: PanelLoading })
+const CallsTab = dynamic(() => import("@/components/settings/calls-tab").then((m) => m.CallsTab), { loading: PanelLoading })
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 

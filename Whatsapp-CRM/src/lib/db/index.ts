@@ -8,4 +8,7 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+// Kept on globalThis in production too: server.ts (the sweeps) and Next's
+// compiled routes load this module separately in one process, and each
+// copy used to open its own connection pool.
+globalForPrisma.prisma = prisma;

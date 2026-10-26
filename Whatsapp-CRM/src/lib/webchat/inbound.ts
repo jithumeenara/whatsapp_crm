@@ -203,9 +203,10 @@ export async function receiveVisitorMessage(args: {
 
   // Everything below is the reaction to the message, not the receipt of
   // it: the visitor's request returns as soon as it is stored.
-  void react({ session, thread, text: args.text, reply: args.reply, messageKey: key }).catch((err) =>
-    console.error('[webchat] processing failed:', err instanceof Error ? err.message : err),
-  )
+  void react({ session, thread, text: args.text, reply: args.reply, messageKey: key }).catch((err) => {
+    console.error('[webchat] processing failed:', err instanceof Error ? err.message : err)
+    pushVisitorTyping(thread.conversationId, false)
+  })
   return { ok: true, message: visible, duplicate: false }
 }
 
@@ -264,8 +265,14 @@ async function react(args: {
   if (block.blocked) return
   if (await checkForFlood({ contactId: thread.contactId, conversationId: conversation.id }).catch(() => false)) return
 
+  // "Typing…" from here, while flows and automations are checked — it
+  // used to appear only after all of them, a silent pause first.
+  pushVisitorTyping(conversation.id, true)
+
+  // Two rows answer "is this their first message?" — no need to count all.
   const priorInbound = await prisma.message.count({
     where: { conversation_id: conversation.id, sender_type: 'customer' },
+    take: 2,
   })
   const isFirstInboundMessage = priorInbound <= 1
 
@@ -299,16 +306,19 @@ async function react(args: {
     if (triggerType === 'new_message_received' || triggerType === 'keyword_match') automationsMatched += result.matched
   }
 
-  if (flowResult.consumed || automationsMatched > 0) return
+  if (flowResult.consumed || automationsMatched > 0) {
+    pushVisitorTyping(conversation.id, false)
+    return
+  }
 
   // The daily ceiling. Counted across the account's website chats, which
   // is where a flood would land; WhatsApp and the rest are unaffected.
   if (await websiteAiLimitReached(accountId, session.widget.daily_ai_limit)) {
     console.warn(`[webchat] daily assistant limit (${session.widget.daily_ai_limit}) reached for account ${accountId}; left for the team`)
+    pushVisitorTyping(conversation.id, false)
     return
   }
 
-  pushVisitorTyping(conversation.id, true)
   try {
     const outcome = await autoReplyToMessage({
       accountId,

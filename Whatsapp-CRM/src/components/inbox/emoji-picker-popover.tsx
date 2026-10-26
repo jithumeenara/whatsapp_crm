@@ -1,7 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react'
+import dynamic from 'next/dynamic'
+import type { EmojiClickData, Theme } from 'emoji-picker-react'
+
+// The picker library is large; it loads the first time somebody opens it,
+// not with every Inbox and lead page.
+const EmojiPicker = dynamic(() => import('emoji-picker-react'), {
+  ssr: false,
+  loading: () => <div className="h-[400px] w-[320px] animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" />,
+})
 import { Smile } from 'lucide-react'
 
 interface EmojiPickerPopoverProps {
@@ -43,7 +51,7 @@ export function EmojiPickerPopover({ onSelect, disabled, side = 'top', label, bu
                 onSelect(data.emoji)
                 setOpen(false)
               }}
-              theme={Theme.LIGHT}
+              theme={"light" as Theme}
               autoFocusSearch
               width={320}
               height={400}

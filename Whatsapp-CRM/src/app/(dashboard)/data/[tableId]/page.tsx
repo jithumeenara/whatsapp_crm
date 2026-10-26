@@ -15,7 +15,7 @@
  * them; every value is cut to one line with the full text on hover.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, BellRing, Check, ChevronLeft, ChevronRight, Database,
@@ -285,20 +285,31 @@ export default function DataTablePage() {
       if (!tRes.ok) { router.push("/data"); return }
       const tData = await tRes.json()
       const rData = await rRes.json()
-      const all: DataRecord[] = rData.records ?? []
-      const count: number = rData.total ?? all.length
-      for (let p = 2; all.length < Math.min(count, LOAD_MAX) && p <= Math.ceil(LOAD_MAX / LOAD_PAGE); p++) {
-        const more = await fetch(`/api/data-tables/${tableId}/records?pageSize=${LOAD_PAGE}&page=${p}`)
-        if (!more.ok) break
-        const next = ((await more.json()).records ?? []) as DataRecord[]
-        if (next.length === 0) break
-        all.push(...next)
-      }
+      const first: DataRecord[] = rData.records ?? []
+      const count: number = rData.total ?? first.length
       setTable(tData.table)
       setFields(tData.table?.fields ?? [])
-      setRecords(all)
+      setRecords(first)
       setTotal(count)
       setPrefs(readPrefs(tableId))
+      // The first page shows at once; the rest arrive together behind it
+      // (they used to be fetched one after another, up to twenty, before
+      // anything appeared).
+      const pages = Math.min(Math.ceil(Math.min(count, LOAD_MAX) / LOAD_PAGE), Math.ceil(LOAD_MAX / LOAD_PAGE))
+      if (pages > 1 && first.length === LOAD_PAGE) {
+        void Promise.all(
+          Array.from({ length: pages - 1 }, (_, i) =>
+            fetch(`/api/data-tables/${tableId}/records?pageSize=${LOAD_PAGE}&page=${i + 2}`)
+              .then((r) => (r.ok ? r.json() : { records: [] }))
+              .then((b) => (b.records ?? []) as DataRecord[])
+              .catch(() => [] as DataRecord[]),
+          ),
+        ).then((rest) => {
+          const seen = new Set(first.map((r) => r.id))
+          const more = rest.flat().filter((r) => !seen.has(r.id) && (seen.add(r.id), true))
+          if (more.length) setRecords((prev) => (prev === first ? [...first, ...more] : prev))
+        })
+      }
     } catch { toast.error("Could not load this table") }
     finally { setLoading(false) }
   }, [tableId, router])
@@ -414,18 +425,23 @@ export default function DataTablePage() {
   // ── What is shown ─────────────────────────────────────────────────────
   // Search reads every column; the filter bar narrows one column at a
   // time; the source picker narrows by channel. They compose.
-  const needle = search.trim().toLowerCase()
-  const searched = records.filter((r) => {
-    if (sourceFilter && (r.source ?? "") !== sourceFilter) return false
-    if (!needle) return true
-    return (
-      Object.values(r.data as Record<string, unknown>).some((v) => String(v ?? "").toLowerCase().includes(needle)) ||
-      (r.contact?.name ?? "").toLowerCase().includes(needle) ||
-      (r.contact?.phone ?? "").includes(needle) ||
-      sourceLabel(r.source).toLowerCase().includes(needle)
-    )
-  })
-  const filtered = applyFilters(searched, fields, filters)
+  // Worked out again only when what it reads changes — not on every
+  // hover, menu or dialog — and typing stays smooth on a large table.
+  const deferredSearch = useDeferredValue(search)
+  const { searched, filtered } = useMemo(() => {
+    const needle = deferredSearch.trim().toLowerCase()
+    const searched = records.filter((r) => {
+      if (sourceFilter && (r.source ?? "") !== sourceFilter) return false
+      if (!needle) return true
+      return (
+        Object.values(r.data as Record<string, unknown>).some((v) => String(v ?? "").toLowerCase().includes(needle)) ||
+        (r.contact?.name ?? "").toLowerCase().includes(needle) ||
+        (r.contact?.phone ?? "").includes(needle) ||
+        sourceLabel(r.source).toLowerCase().includes(needle)
+      )
+    })
+    return { searched, filtered: applyFilters(searched, fields, filters) }
+  }, [records, deferredSearch, sourceFilter, fields, filters])
   const activeFilters = activeFilterCount(filters)
   const canFilter = filterableFields(fields, records).length > 0
   const presentSources = Array.from(new Set(records.map((r) => r.source).filter(isRecordSource)))

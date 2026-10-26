@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { memo, useCallback, useState, useEffect, useMemo, useRef } from "react"
 import type { Conversation, ConversationStatus } from "@/types"
 import { Search, X, MessageSquare, ChevronDown, Mail, Radio, CalendarClock, MoreVertical, Globe } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
@@ -234,7 +234,14 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
     return list
   }, [conversations, filter, channelFilter, search])
 
-  const totalUnread = conversations.reduce((s, c) => s + (c.unread_count ?? 0), 0)
+  const totalUnread = useMemo(() => conversations.reduce((s, c) => s + (c.unread_count ?? 0), 0), [conversations])
+
+  // Stable for the memoised rows; always calls the latest handler.
+  const onSelectRef = useRef(onSelect)
+  useEffect(() => {
+    onSelectRef.current = onSelect
+  })
+  const selectConversation = useCallback((conv: Conversation) => onSelectRef.current(conv), [])
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -407,65 +414,14 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
           </div>
         ) : (
           <div className="p-2 space-y-px">
-            {filtered.map((conv) => {
-              const isActive = conv.id === activeConversationId
-              const name = conv.contact?.name || conv.contact?.phone || "Unknown"
-              const ini = initials(conv.contact?.name, conv.contact?.phone)
-              const grad = channelLook(conv.channel).avatar
-              const hasUnread = (conv.unread_count ?? 0) > 0
-
-              return (
-                <button key={conv.id} type="button" onClick={() => onSelect(conv)}
-                  className={cn(
-                    "w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all group",
-                    isActive
-                      ? "bg-indigo-50 ring-1 ring-indigo-100"
-                      : "hover:bg-slate-50"
-                  )}>
-                  {/* Avatar */}
-                  <div className="relative shrink-0">
-                    {conv.contact?.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={conv.contact.avatar_url} alt={name}
-                        className={cn("h-11 w-11 rounded-2xl object-cover ring-2", STATUS_RING[conv.status])} />
-                    ) : (
-                      <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br text-white text-[13px] font-bold ring-2", grad, STATUS_RING[conv.status])}>
-                        {ini}
-                      </div>
-                    )}
-                    {/* Status dot — right side */}
-                    <span className={cn("absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white", STATUS_DOT[conv.status])} />
-                    {/* Channel badge — bottom left */}
-                    <ChannelBadge channel={conv.channel} />
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1">
-                      <p className={cn("text-[13px] truncate", hasUnread ? "font-bold text-slate-900" : "font-semibold text-slate-700")}>
-                        {name}
-                      </p>
-                      <span className="flex shrink-0 items-center gap-1.5">
-                        <ChannelPill channel={conv.channel} />
-                        <span className={cn("text-[11px]", hasUnread ? "font-semibold text-indigo-600" : "text-slate-400")}>
-                          {conv.last_message_at ? relTime(conv.last_message_at) : ""}
-                        </span>
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-1 mt-0.5">
-                      <p className={cn("text-[12px] truncate", hasUnread ? "text-slate-700 font-medium" : "text-slate-400")}>
-                        {conv.last_message_text || "No messages yet"}
-                      </p>
-                      {hasUnread && (
-                        <span className="shrink-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-bold text-white">
-                          {conv.unread_count > 99 ? "99+" : conv.unread_count}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
+            {filtered.map((conv) => (
+              <ConversationRow
+                key={conv.id}
+                conv={conv}
+                isActive={conv.id === activeConversationId}
+                onSelect={selectConversation}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -474,3 +430,72 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
     </div>
   )
 }
+
+/** One row. Redrawn only when its own conversation changes or it becomes
+ *  (in)active — every incoming message used to redraw the whole list. */
+const ConversationRow = memo(function ConversationRow({
+  conv,
+  isActive,
+  onSelect,
+}: {
+  conv: Conversation
+  isActive: boolean
+  onSelect: (conv: Conversation) => void
+}) {
+  const name = conv.contact?.name || conv.contact?.phone || "Unknown"
+  const ini = initials(conv.contact?.name, conv.contact?.phone)
+  const grad = channelLook(conv.channel).avatar
+  const hasUnread = (conv.unread_count ?? 0) > 0
+
+  return (
+    <button type="button" onClick={() => onSelect(conv)}
+      className={cn(
+        "w-full flex items-center gap-3 rounded-2xl px-3 py-3 text-left transition-all group",
+        isActive
+          ? "bg-indigo-50 ring-1 ring-indigo-100"
+          : "hover:bg-slate-50"
+      )}>
+      {/* Avatar */}
+      <div className="relative shrink-0">
+        {conv.contact?.avatar_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={conv.contact.avatar_url} alt={name}
+            className={cn("h-11 w-11 rounded-2xl object-cover ring-2", STATUS_RING[conv.status])} />
+        ) : (
+          <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br text-white text-[13px] font-bold ring-2", grad, STATUS_RING[conv.status])}>
+            {ini}
+          </div>
+        )}
+        {/* Status dot — right side */}
+        <span className={cn("absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white", STATUS_DOT[conv.status])} />
+        {/* Channel badge — bottom left */}
+        <ChannelBadge channel={conv.channel} />
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-1">
+          <p className={cn("text-[13px] truncate", hasUnread ? "font-bold text-slate-900" : "font-semibold text-slate-700")}>
+            {name}
+          </p>
+          <span className="flex shrink-0 items-center gap-1.5">
+            <ChannelPill channel={conv.channel} />
+            <span className={cn("text-[11px]", hasUnread ? "font-semibold text-indigo-600" : "text-slate-400")}>
+              {conv.last_message_at ? relTime(conv.last_message_at) : ""}
+            </span>
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-1 mt-0.5">
+          <p className={cn("text-[12px] truncate", hasUnread ? "text-slate-700 font-medium" : "text-slate-400")}>
+            {conv.last_message_text || "No messages yet"}
+          </p>
+          {hasUnread && (
+            <span className="shrink-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-bold text-white">
+              {conv.unread_count > 99 ? "99+" : conv.unread_count}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
+  )
+})

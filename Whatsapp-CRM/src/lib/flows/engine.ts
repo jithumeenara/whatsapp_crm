@@ -1761,9 +1761,15 @@ async function advanceFromNodeKey(
       const lastUserMessage =
         inboundMessage?.kind === "text" ? inboundMessage.text : "";
       try {
-        const aiConfig = await prisma.aiConfig.findUnique({
-          where: { account_id: run.account_id },
-        });
+        // The conversation's own channel, read alongside the settings: the
+        // customer context below said "whatsapp" even on a website chat.
+        const [aiConfig, replyConversation] = await Promise.all([
+          prisma.aiConfig.findUnique({ where: { account_id: run.account_id } }),
+          run.conversation_id
+            ? prisma.conversation.findUnique({ where: { id: run.conversation_id }, select: { channel: true } }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        const replyChannel = replyConversation?.channel ?? "whatsapp";
         if (!aiConfig) {
           await logEvent(run.id, "error", node.node_key, { reason: "ai_config_not_found" });
           await endRun(run.id, "failed", "ai_config_not_found");
@@ -1996,7 +2002,7 @@ async function advanceFromNodeKey(
             ? buildCustomerContext({
                 accountId: run.account_id,
                 contactId: run.contact_id,
-                currentChannel: "whatsapp",
+                currentChannel: replyChannel,
               }).catch(() => "")
             : Promise.resolve(""),
         ]);

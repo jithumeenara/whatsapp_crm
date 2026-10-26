@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
+
+/** Messages per page when a chat opens; older ones load on request. */
+const MESSAGE_PAGE = 100;
 import type React from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
@@ -227,6 +230,11 @@ export function MessageThread({
   const { userId } = useAuth();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Paging: a long chat opens on its newest messages.
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const prependFromBottomRef = useRef<number | null>(null);
+  const lastShownRef = useRef<string | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -320,13 +328,16 @@ export function MessageThread({
     (async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/conversations/${conversationId}/messages`);
+        const res = await fetch(`/api/conversations/${conversationId}/messages?limit=${MESSAGE_PAGE}`);
         if (cancelled) return;
         if (!res.ok) {
           console.error("Failed to fetch messages:", res.status);
         } else {
           const body = await res.json();
-          if (!cancelled) onMessagesLoadedRef.current(Array.isArray(body) ? body : (body.messages ?? []));
+          if (!cancelled) {
+            setHasOlder(res.headers.get("X-Has-More") === "1");
+            onMessagesLoadedRef.current(Array.isArray(body) ? body : (body.messages ?? []));
+          }
         }
       } catch (err) {
         if (!cancelled) console.error("Failed to fetch messages:", err);
@@ -475,14 +486,47 @@ export function MessageThread({
     }).catch((err) => console.error("Failed to reset unread_count:", err));
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages (or when switching in/out of the
-  // merged cross-channel view, which swaps the entire rendered list).
-  useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight;
+  // Scroll to the bottom when a message is added at the end, a chat opens
+  // or the merged view switches — not on a status tick or an edit, which
+  // used to yank somebody reading older messages back down. Older
+  // messages loaded above keep the reader where they were.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (prependFromBottomRef.current !== null) {
+      el.scrollTop = el.scrollHeight - prependFromBottomRef.current;
+      prependFromBottomRef.current = null;
+      return;
     }
-  }, [messages, mergedView, mergedMessages]);
+    const list = mergedView ? mergedMessages : messages;
+    const last = `${mergedView ? "m" : "s"}:${conversationId}:${list?.[list.length - 1]?.id ?? ""}`;
+    if (last === lastShownRef.current) return;
+    lastShownRef.current = last;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, mergedView, mergedMessages, conversationId]);
+
+  const loadOlder = useCallback(async () => {
+    const oldest = messages[0];
+    if (!conversationId || !oldest || loadingOlder) return;
+    setLoadingOlder(true);
+    try {
+      const res = await fetch(
+        `/api/conversations/${conversationId}/messages?limit=${MESSAGE_PAGE}&before=${encodeURIComponent(String(oldest.created_at))}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const older = (await res.json()) as Message[];
+      setHasOlder(res.headers.get("X-Has-More") === "1");
+      const el = scrollRef.current;
+      if (el) prependFromBottomRef.current = el.scrollHeight - el.scrollTop;
+      const seen = new Set(messages.map((m) => m.id));
+      onMessagesLoadedRef.current([...older.filter((m) => !seen.has(m.id)), ...messages]);
+    } catch (err) {
+      console.error("Failed to load older messages:", err);
+      toast.error("Could not load older messages.");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [conversationId, messages, loadingOlder]);
 
   const handleSend = useCallback(
     async (text: string, replyToId?: string) => {
@@ -1332,6 +1376,18 @@ export function MessageThread({
           mobile is one accidental sideways touch-scroll away from making
           every message look like its left edge is cut off. */}
       <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto scroll-styled px-3 py-3 sm:px-4 sm:py-4">
+        {hasOlder && !mergedView && !loading && (
+          <div className="mb-3 flex justify-center">
+            <button
+              type="button"
+              onClick={() => void loadOlder()}
+              disabled={loadingOlder}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[12px] font-medium text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-60"
+            >
+              {loadingOlder ? "Loading…" : "Load older messages"}
+            </button>
+          </div>
+        )}
         {messagesContent}
       </div>
 

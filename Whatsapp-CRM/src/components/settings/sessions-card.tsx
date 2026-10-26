@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { everyWhileVisible } from '@/lib/visible-interval';
 import { toast } from 'sonner';
 import { Loader2, LogOut, ShieldAlert, Monitor, Smartphone, MoreVertical, Settings, Clock } from 'lucide-react';
 
@@ -209,8 +210,8 @@ export function SessionsCard() {
 
   useEffect(() => {
     loadSessions();
-    const interval = setInterval(loadSessions, 30_000);
-    return () => clearInterval(interval);
+    // Rests while the tab is hidden (bug rule 5).
+    return everyWhileVisible(() => { void loadSessions(); }, 30_000);
   }, []);
 
   const onSignOut = async () => {

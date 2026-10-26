@@ -764,13 +764,16 @@ async function processMessage(
 
   // Determine whether this is the contact's very first inbound message
   // BEFORE we insert, so the count is accurate.
-  const priorCustomerMsgCount = await prisma.message.count({
+  // Any one earlier message answers it: counting them all read every
+  // message of a long chat on every inbound message.
+  const priorCustomerMsg = await prisma.message.findFirst({
     where: {
       conversation_id: conversation.id,
       sender_type: 'customer',
     },
+    select: { id: true },
   })
-  const isFirstInboundMessage = priorCustomerMsgCount === 0
+  const isFirstInboundMessage = !priorCustomerMsg
 
   // Click-to-WhatsApp ad attribution — Meta attaches this ONLY to the
   // referral object of the customer's first message in the thread, so

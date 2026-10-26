@@ -10,6 +10,7 @@ import "./globals.css";
 import "flag-icons/css/flag-icons.min.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { Providers } from "@/components/providers";
+import { auth } from "@/auth";
 import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from "@/lib/themes";
 import type { ThemeId } from "@/lib/themes";
 
@@ -65,7 +66,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const theme = await getThemeCookie();
+  const [theme, session] = await Promise.all([getThemeCookie(), auth().catch(() => null)]);
   // A development machine says so on every page (src/lib/dev/send-guard.ts).
   const isDevMachine = ["development", "dev", "local"].includes((process.env.APP_ENV ?? "").trim().toLowerCase());
 
@@ -83,7 +84,7 @@ export default async function RootLayout({
             <span className="fixed bottom-1 left-1 rounded-md bg-red-600 px-2 py-0.5 text-[10px] font-bold tracking-widest text-white shadow sm:static sm:mt-[3px] sm:rounded-t-none sm:rounded-b-md">DEV · nothing is sent</span>
           </div>
         )}
-        <Providers>
+        <Providers session={session}>
         <ThemeProvider>
           {children}
           <Toaster

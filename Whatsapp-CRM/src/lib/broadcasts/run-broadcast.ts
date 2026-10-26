@@ -149,7 +149,12 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
         // An event broadcast's recipient waits for its send_after
         // (events.ts); everyone else has none and goes now.
         where: { status: "pending", OR: [{ send_after: null }, { send_after: { lte: startedAt } }] },
-        include: { contact: true },
+        // Only what the send reads — not all ~50 contact columns per recipient.
+        include: {
+          contact: {
+            select: { id: true, name: true, phone: true, email: true, company: true, opt_in_status: true, blocked_at: true, merged_into_contact_id: true },
+          },
+        },
         orderBy: { created_at: "asc" },
       },
     },
@@ -289,11 +294,11 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   for (let i = 0; i < broadcast.recipients.length; i++) {
     const recipient = broadcast.recipients[i];
 
-    // Cancellation check before each message
-    const current = await prisma.broadcast.findFirst({
-      where: { id: broadcastId },
-      select: { status: true },
-    });
+    // Cancellation check every few messages (a few seconds apart at the
+    // send pace), not a query before every single one.
+    const current = i % 10 === 0
+      ? await prisma.broadcast.findFirst({ where: { id: broadcastId }, select: { status: true } })
+      : null;
     // Paused (an event broadcast) stops here and stays paused.
     if (current?.status === "paused") return;
     if (current?.status === "cancelling" || current?.status === "cancelled") {

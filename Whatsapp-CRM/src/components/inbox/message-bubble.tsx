@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, type CSSProperties } from "react";
+import { memo, useState, useEffect, useRef, type CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction, TemplateButton } from "@/types";
 import {
@@ -272,6 +272,8 @@ function MediaImage({ url, alt, mimeType }: { url: string; alt: string; mimeType
           src={src ?? ""}
           alt={alt}
           className="max-h-64 max-w-60 rounded-lg object-cover"
+          loading="lazy"
+          decoding="async"
           onError={() => setError(true)}
         />
         <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100">
@@ -300,6 +302,7 @@ function MediaVideo({ url, mimeType }: { url: string; mimeType?: string | null }
       <video
         src={url}
         controls
+        preload="metadata"
         className="max-h-64 max-w-60 rounded-lg"
         onError={() => setError(true)}
       />
@@ -1155,7 +1158,7 @@ function SystemNote({ message }: { message: Message }) {
   );
 }
 
-export function MessageBubble({
+function MessageBubbleView({
   message,
   reply,
   reactions,
@@ -1301,3 +1304,17 @@ export function MessageBubble({
     </div>
   );
 }
+
+/**
+ * Re-renders only when its own message, reply, reactions or labels change.
+ * A delivered/read tick or a new message used to redraw every bubble in
+ * the thread. onToggleReaction is a fresh closure each render; what it
+ * reads (the message and its reactions) is compared already.
+ */
+export const MessageBubble = memo(MessageBubbleView, (a, b) =>
+  a.message === b.message &&
+  a.reply === b.reply &&
+  a.reactions === b.reactions &&
+  a.currentUserId === b.currentUserId &&
+  a.agentName === b.agentName,
+);

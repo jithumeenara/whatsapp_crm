@@ -1,10 +1,16 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { ensureEmailColumns } from "@/lib/email/schema"
 
+/** Newest messages first, a page at a time, when the caller asks:
+ *  ?limit=100 and, for older ones, &before=<created_at of the oldest shown>.
+ *  Without limit the whole history comes back, as before. */
+const MAX_PAGE = 500
+
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -49,7 +55,15 @@ export async function GET(
     // messages otherwise render with no visibility into what buttons were
     // actually sent (quick-reply/URL/phone/etc.) — the inbox only showed
     // the body text, never the button labels the customer would have seen.
-    const messages = await ctx.db.$queryRaw<unknown[]>`
+    const askedLimit = Number(req.nextUrl.searchParams.get("limit"))
+    const limit = Number.isFinite(askedLimit) && askedLimit > 0 ? Math.min(Math.floor(askedLimit), MAX_PAGE) : null
+    const beforeRaw = req.nextUrl.searchParams.get("before")
+    const before = beforeRaw && !Number.isNaN(Date.parse(beforeRaw)) ? new Date(beforeRaw) : null
+    const beforeSql = before ? Prisma.sql`AND m.created_at < ${before}` : Prisma.empty
+    // A page is the newest `limit` rows, then turned back to oldest-first.
+    const orderSql = limit ? Prisma.sql`ORDER BY m.created_at DESC LIMIT ${limit}` : Prisma.sql`ORDER BY m.created_at ASC`
+
+    const rows = await ctx.db.$queryRaw<Array<Record<string, unknown>>>`
       SELECT m.id, m.conversation_id, m.sender_type, m.sender_id, m.content_type,
              m.content_text, m.media_url, m.media_mime_type, m.media_filename,
              m.template_name, m.message_id, m.status, m.broadcast_id,
@@ -63,10 +77,14 @@ export async function GET(
         LIMIT 1
       ) mt ON m.template_name IS NOT NULL
       WHERE m.conversation_id = ${conversationId}::uuid
-      ORDER BY m.created_at ASC
+      ${beforeSql}
+      ${orderSql}
     `
+    const messages = limit ? rows.reverse() : rows
 
-    return NextResponse.json(messages)
+    return NextResponse.json(messages, {
+      headers: limit ? { "X-Has-More": rows.length === limit ? "1" : "0" } : undefined,
+    })
   } catch (err) {
     return toErrorResponse(err)
   }

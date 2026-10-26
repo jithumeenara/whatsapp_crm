@@ -4,17 +4,18 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-} from "recharts"
+import dynamic from "next/dynamic"
+
+// The chart library loads after the numbers are on screen.
+const Sparkline = dynamic(() => import("@/components/dashboard/dashboard-charts").then((m) => m.Sparkline), { ssr: false })
+const TrendChart = dynamic(() => import("@/components/dashboard/dashboard-charts").then((m) => m.TrendChart), {
+  ssr: false,
+  loading: () => <div className="h-[260px] animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" />,
+})
+const ResponseChart = dynamic(() => import("@/components/dashboard/dashboard-charts").then((m) => m.ResponseChart), {
+  ssr: false,
+  loading: () => <div className="h-[190px] animate-pulse rounded-xl bg-slate-100 motion-reduce:animate-none" />,
+})
 import {
   MessageSquare,
   UserPlus,
@@ -76,17 +77,6 @@ const RANGES = [7, 30, 90] as const
 type RangeDays = (typeof RANGES)[number]
 
 const CARD = "rounded-2xl border border-slate-100 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.05)]"
-const TOOLTIP = {
-  contentStyle: {
-    background: "#fff",
-    border: "1px solid #e2e8f0",
-    borderRadius: "10px",
-    fontSize: "12px",
-    boxShadow: "0 6px 20px rgba(15,23,42,0.08)",
-  },
-  labelStyle: { color: "#475569", fontWeight: 600, marginBottom: 4 },
-}
-
 interface Overview {
   metrics: MetricsBundle
   series: ConversationsSeriesPoint[]
@@ -164,15 +154,7 @@ function KpiCard({
       <div className="pointer-events-none absolute bottom-3 right-3 h-12 w-28" aria-hidden="true">
         {/* A fixed size, like its box. Measured instead, it drew once at
             -1×-1 before the box existed and warned in the console. */}
-        <AreaChart width={112} height={48} data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }} accessibilityLayer={false} tabIndex={-1}>
-            <defs>
-              <linearGradient id={`spark-${id}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={t.stroke} stopOpacity={0.25} />
-                <stop offset="100%" stopColor={t.stroke} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area type="monotone" dataKey="v" stroke={t.stroke} strokeWidth={2} fill={`url(#spark-${id})`} dot={false} isAnimationActive={false} />
-          </AreaChart>
+        <Sparkline id={id} data={data} stroke={t.stroke} />
       </div>
     </div>
   )
@@ -506,26 +488,7 @@ export default function Dashboard() {
             ) : trend.every((p) => p.Incoming === 0 && p.Outgoing === 0) ? (
               <div className="flex h-[260px] items-center justify-center text-[13px] text-slate-400">No messages in this period</div>
             ) : (
-              <ResponsiveContainer width="100%" height={260} initialDimension={{ width: 1, height: 260 }}>
-                <AreaChart data={trend} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="trend-in" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity={0.18} />
-                      <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="trend-out" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.25} />
-                      <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} minTickGap={18} />
-                  <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip {...TOOLTIP} />
-                  <Area type="monotone" dataKey="Incoming" stroke="#6366f1" strokeWidth={2.5} fill="url(#trend-in)" dot={false} />
-                  <Area type="monotone" dataKey="Outgoing" stroke="var(--primary)" strokeWidth={2.5} fill="url(#trend-out)" dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+              <TrendChart trend={trend} />
             )}
             <div className="mt-3 flex gap-5">
               <span className="flex items-center gap-2 text-[12px] text-slate-600"><span className="h-2.5 w-2.5 rounded-full bg-indigo-500" />Incoming</span>
@@ -604,15 +567,7 @@ export default function Dashboard() {
                 {loading && !data ? (
                   <Skeleton className="h-[190px]" />
                 ) : (
-                  <ResponsiveContainer width="100%" height={190} initialDimension={{ width: 1, height: 190 }}>
-                    <BarChart data={rtData} margin={{ top: 6, right: 0, left: -22, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-                      <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickLine={false} axisLine={false} />
-                      <Tooltip {...TOOLTIP} formatter={(v) => [`${v} min`, "Avg first reply"]} cursor={{ fill: "#f8fafc" }} />
-                      <Bar dataKey="Minutes" fill="#6366f1" radius={[6, 6, 0, 0]} maxBarSize={30} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <ResponseChart data={rtData} />
                 )}
               </div>
             )}

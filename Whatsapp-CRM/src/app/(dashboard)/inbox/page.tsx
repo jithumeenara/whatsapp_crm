@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState, useCallback, useEffect, useRef } from "react"
+import { Suspense, useState, useCallback, useEffect, useRef, useSyncExternalStore } from "react"
 import { everyWhileVisible } from "@/lib/visible-interval"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types"
@@ -24,6 +24,7 @@ function InboxV2Content() {
   const [messages, setMessages] = useState<Message[]>([])
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(null)
   const [resyncToken, setResyncToken] = useState(0)
+  const wideScreen = useWideScreen()
   // Mobile: show list or thread
   const [mobileView, setMobileView] = useState<"list" | "thread">("list")
 
@@ -167,9 +168,17 @@ function InboxV2Content() {
     wasConnectedRef.current = isConnected
   }, [isConnected])
 
+  // Coming back to the tab reloads the lists only after a real absence:
+  // switching away for a few seconds used to download the whole Inbox and
+  // the open chat again. A dropped connection resyncs on reconnect above.
   useEffect(() => {
+    let hiddenAt = 0
     const onVisibility = () => {
-      if (document.visibilityState === "visible") setResyncToken((n) => n + 1)
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now()
+      } else if (hiddenAt && Date.now() - hiddenAt > 60_000) {
+        setResyncToken((n) => n + 1)
+      }
     }
     document.addEventListener("visibilitychange", onVisibility)
     return () => document.removeEventListener("visibilitychange", onVisibility)
@@ -349,11 +358,23 @@ function InboxV2Content() {
 
         {/* Right: contact sidebar — only on xl screens */}
         <div className="hidden xl:block shrink-0">
-          <ContactSidebarV2 contact={activeContact} channel={activeConversation?.channel ?? "whatsapp"} conversationId={activeConversation?.id ?? null} onOpenConversation={handleOpenOtherChannel} />
+          {wideScreen && <ContactSidebarV2 contact={activeContact} channel={activeConversation?.channel ?? "whatsapp"} conversationId={activeConversation?.id ?? null} onOpenConversation={handleOpenOtherChannel} />}
         </div>
       </div>
     </div>
   )
+}
+
+/** The contact panel's width breakpoint (xl). Below it the panel is hidden,
+ *  and used to fetch four things on every chat switch all the same. */
+const WIDE = "(min-width: 1280px)"
+function subscribeWide(onChange: () => void) {
+  const mq = window.matchMedia(WIDE)
+  mq.addEventListener("change", onChange)
+  return () => mq.removeEventListener("change", onChange)
+}
+function useWideScreen(): boolean {
+  return useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE).matches, () => false)
 }
 
 export default function InboxV2() {
