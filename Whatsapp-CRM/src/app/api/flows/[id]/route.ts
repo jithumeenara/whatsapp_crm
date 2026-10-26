@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -238,6 +239,12 @@ export async function DELETE(
 ) {
   const { id } = await context.params
   try {
+    // Takes the whole run history with it, so only an admin may.
+    try {
+      await requireRole('admin')
+    } catch (err) {
+      return toErrorResponse(err)
+    }
     const guard = await requireOwnership(id)
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 

@@ -22,7 +22,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { addTagsToContact, removeTagsFromContact } from '@/lib/contacts/tag-events'
-import { sendableContactWhere } from '@/lib/broadcasts/sendable'
+import { liveSendableContactWhere } from '@/lib/broadcasts/sendable'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import { sendPushToUser } from '@/lib/push'
 import { emitToAccount } from '@/lib/socket'
@@ -184,7 +184,7 @@ export async function proposeAction(ctx: ActionContext, kind: ActionKind, args: 
       const template = await prisma.messageTemplate.findFirst({ where: { account_id: ctx.accountId, name: { equals: name, mode: 'insensitive' }, status: 'APPROVED' } })
       if (!template) return { ok: false, error: `No approved template called "${name}".` }
       if (templateVariableCount(template.body_text) > 0) return { ok: false, error: 'From Admin Chat, a broadcast can use a template without variables. Prepare this one on the Broadcasts page.' }
-      recipients = await prisma.contact.count({ where: { ...sendableContactWhere(ctx.accountId), tags: { some: { tag_id: tag.id } } } })
+      recipients = await prisma.contact.count({ where: { ...liveSendableContactWhere(ctx.accountId), tags: { some: { tag_id: tag.id } } } })
       if (recipients === 0) return { ok: false, error: `Nobody with the tag "${tag.name}" can receive a broadcast.` }
       const already = await prisma.adminChatAction.aggregate({
         where: { account_id: ctx.accountId, kind: 'prepare_broadcast', status: { in: ['done', 'awaiting_web'] }, created_at: { gte: since } },

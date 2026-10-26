@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(req, "agent")
     const contacts = await ctx.db.contact.findMany({
-      where: { account_id: ctx.accountId, merged_into_contact_id: null },
+      where: { account_id: ctx.accountId, merged_into_contact_id: null, archived_at: null },
       select: { id: true, name: true, phone: true, alternate_phone: true, email: true, created_at: true },
       take: 50_000,
     })

@@ -67,7 +67,12 @@ export async function GET(
 
 /**
  * DELETE /api/contacts/[id]
- * Deletes a contact belonging to the current account.
+ * Archives a contact: hidden from lists, every conversation, lead, deal
+ * and payment kept. A message from them brings the contact back
+ * (migration 146 trigger); so does Restore (POST …/restore).
+ *
+ * DELETE /api/contacts/[id]?permanent=1 — owner only — removes the
+ * person and their history for good (a data-removal request).
  */
 export async function DELETE(
   req: NextRequest,
@@ -76,6 +81,7 @@ export async function DELETE(
   try {
     const ctx = await requireRoleOrApiKey(req, "agent")
     const { id } = await params
+    const permanent = req.nextUrl.searchParams.get("permanent") === "1"
 
     const contact = await prisma.contact.findFirst({
       where: { id, account_id: ctx.accountId },
@@ -83,6 +89,26 @@ export async function DELETE(
     })
     if (!contact) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    if (!permanent) {
+      await prisma.contact.updateMany({
+        where: { id, account_id: ctx.accountId, archived_at: null },
+        data: { archived_at: new Date(), archived_by: ctx.userId },
+      })
+      // Their leads leave open alerts and the Leads list on screen.
+      const leads = await prisma.lead.findMany({ where: { contact_id: id }, select: { id: true } })
+      for (const lead of leads) {
+        emitToAccount(ctx.accountId, 'lead', { eventType: 'DELETE', new: null, old: { id: lead.id } })
+      }
+      return NextResponse.json({ ok: true, archived: true })
+    }
+
+    if (ctx.role !== "owner") {
+      return NextResponse.json(
+        { error: "Only the account owner can delete a contact and its history for good. Archive it instead." },
+        { status: 403 },
+      )
     }
 
     // Collected inside the transaction, announced outside it.

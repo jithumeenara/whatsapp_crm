@@ -95,6 +95,9 @@ export async function GET(req: NextRequest) {
     const where = {
       account_id: ctx.accountId,
       ...(ctx.role === "agent" ? { assigned_agent_id: ctx.userId } : {}),
+      // An archived ("deleted") contact's chats leave the Inbox; a new
+      // message from them un-archives the contact and brings them back.
+      NOT: { contact: { archived_at: { not: null } } },
     }
 
     const conversations = await ctx.db.conversation.findMany({

@@ -28,6 +28,11 @@ export function sendableContactWhere(accountId: string): Prisma.ContactWhereInpu
   }
 }
 
+/** The same, leaving out archived ("deleted") contacts (migration 146). */
+export function liveSendableContactWhere(accountId: string): Prisma.ContactWhereInput {
+  return { AND: [sendableContactWhere(accountId), { archived_at: null }] }
+}
+
 export function isSendableContact(c: SendableFields): boolean {
   const phone = c.phone ?? ''
   if (!phone || isPlaceholderPhone(phone)) return false

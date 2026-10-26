@@ -419,6 +419,10 @@ model Contact {
   // at it (conversations, deals, leads, etc.) stays valid; UIs that list
   // live contacts filter WHERE merged_into_contact_id IS NULL.
   merged_into_contact_id String?   @db.Uuid
+  /// "Delete" archives (migration 146): hidden from lists, history kept.
+  /// A customer message on any channel clears it (database trigger).
+  archived_at            DateTime? @db.Timestamptz(6)
+  archived_by            String?   @db.Uuid
   /// Language this contact's messages were last detected in (chat
   /// translation feature) — a free-text language name, e.g. "Arabic",
   /// "Tamil". Updated whenever an inbound message from them is

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { checkEmail, checkPhone } from "@/lib/contacts/validate"
+import { findExistingContact } from "@/lib/contacts/dedupe"
 
 const PAGE_SIZE = 25
 
@@ -22,6 +23,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl
 
     const search = searchParams.get("search")?.trim() ?? ""
+    // ?archived=1 lists the archived ("deleted") contacts, to restore one.
+    const archived = searchParams.get("archived") === "1"
     const channel = searchParams.get("channel")?.trim() ?? ""   // e.g. "whatsapp" | "instagram"
     // Email-only contacts (created from an inbound email with no phone
     // number) get a "email:<address>" placeholder in `phone` — Contact.phone
@@ -47,6 +50,7 @@ export async function GET(req: NextRequest) {
       // conversations/deals to keep resolving correctly, but shouldn't
       // reappear in the normal contacts list.
       merged_into_contact_id: null,
+      archived_at: archived ? { not: null } : null,
       ...(search
         ? {
             OR: [
@@ -118,6 +122,17 @@ export async function POST(req: NextRequest) {
       const emailCheck = checkEmail(rawEmail)
       if (!emailCheck.ok) return NextResponse.json({ error: emailCheck.error }, { status: 400 })
       email = emailCheck.value
+    }
+
+    // The same number as an archived ("deleted") contact: bring that one
+    // back, history and all, rather than fail on the duplicate number.
+    const archivedTwin = await findExistingContact(ctx.accountId, phone)
+    if (archivedTwin && (archivedTwin as { archived_at?: Date | null }).archived_at) {
+      const restored = await prisma.contact.update({
+        where: { id: archivedTwin.id },
+        data: { archived_at: null, archived_by: null, ...(name ? { name } : {}), ...(email ? { email } : {}) },
+      })
+      return NextResponse.json({ contact: restored, restored: true }, { status: 200 })
     }
 
     const contact = await prisma.contact.create({

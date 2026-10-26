@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendableContactWhere } from "@/lib/broadcasts/sendable";
+import { liveSendableContactWhere } from "@/lib/broadcasts/sendable";
 import { Prisma } from "@prisma/client";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import type { AccountContext } from "@/lib/auth/account";
@@ -301,7 +301,7 @@ async function resolveAudience(
   // (src/lib/broadcasts/sendable.ts): placeholder "numbers" (email-only
   // contacts, website visitors), anyone who opted out, blocked contacts
   // and merged duplicates. Excluded up front, so the count matches the send.
-  const sendable = sendableContactWhere(ctx.accountId);
+  const sendable = liveSendableContactWhere(ctx.accountId);
 
   if (audience.type === "all") {
     contacts = await db.contact.findMany({

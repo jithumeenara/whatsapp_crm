@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { hasMinRole } from "@/lib/auth/roles";
 
 /**
  * GET /api/broadcasts/[id]
@@ -137,6 +138,15 @@ export async function DELETE(
       return NextResponse.json(
         { error: "Cannot delete a broadcast that is actively sending" },
         { status: 409 },
+      );
+    }
+
+    // A broadcast that went out holds every recipient's delivery record;
+    // deleting it takes them all. Drafts and scheduled ones are anyone's.
+    if (!["draft", "scheduled"].includes(broadcast.status) && !hasMinRole(ctx.role, "admin")) {
+      return NextResponse.json(
+        { error: "Only an admin can delete a broadcast that has been sent." },
+        { status: 403 },
       );
     }
 

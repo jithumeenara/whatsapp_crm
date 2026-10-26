@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import type { Contact, Tag } from "@/types"
 import {
-  Users, Search, Plus, Pencil, Trash2, ChevronLeft, ChevronRight,
+  Users, Search, Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Archive, ArchiveRestore,
   Phone, Mail, Upload, MoreHorizontal, MessageSquare, SortAsc,
   Tag as TagIcon, X, ChevronDown, GitMerge, Loader2,
 } from "lucide-react"
@@ -158,10 +158,11 @@ function DeleteConfirm({ contactId, contactName, deleting, onCancel, onConfirm }
               <Trash2 className="h-7 w-7 text-rose-500" />
             </div>
             <div>
-              <h2 className="text-[16px] font-bold text-slate-900">Delete Contact?</h2>
+              <h2 className="text-[16px] font-bold text-slate-900">Delete contact?</h2>
               <p className="mt-2 text-[13px] text-slate-500 leading-relaxed max-w-[280px]">
-                <span className="font-semibold text-slate-700">{contactName}</span> and everything
-                belonging to them will be permanently deleted.
+                <span className="font-semibold text-slate-700">{contactName}</span> leaves your lists
+                and the Inbox. Their history is kept: restore them from Archived, and they come back
+                by themselves if they message again.
               </p>
             </div>
           </div>
@@ -176,14 +177,13 @@ function DeleteConfirm({ contactId, contactName, deleting, onCancel, onConfirm }
           ) : impactFailed ? (
             <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3">
               <p className="text-[12px] leading-relaxed text-amber-900">
-                Could not check what is attached to this contact. Deleting will still remove every
-                conversation, message, lead, note, task and follow-up belonging to them — this just
-                could not say how many.
+                Could not check what is attached to this contact. Nothing is removed either way —
+                their conversations, leads and notes are kept with the archived contact.
               </p>
             </div>
           ) : lines.length > 0 ? (
             <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3">
-              <p className="text-[11.5px] font-semibold text-slate-600">This will also delete</p>
+              <p className="text-[11.5px] font-semibold text-slate-600">Kept with the archived contact</p>
               <ul className="mt-1.5 space-y-0.5">
                 {lines.map(([n, one, many]) => (
                   <li key={many} className="text-[12px] text-slate-600">
@@ -197,8 +197,7 @@ function DeleteConfirm({ contactId, contactName, deleting, onCancel, onConfirm }
                   <span className="font-semibold">
                     {impact.won_leads} of those {impact.won_leads === 1 ? "leads was" : "leads were"} won.
                   </span>{" "}
-                  Your conversion figures are counted from these — deleting them changes what the
-                  Reports screen has already shown.
+                  Their leads leave the Leads list while the contact is archived.
                 </p>
               )}
             </div>
@@ -256,11 +255,10 @@ function BulkDeleteConfirm({ count, deleting, onCancel, onConfirm }: {
               <Trash2 className="h-7 w-7 text-rose-500" />
             </div>
             <div>
-              <h2 className="text-[16px] font-bold text-slate-900">Delete {count} Contact{count !== 1 ? "s" : ""}?</h2>
+              <h2 className="text-[16px] font-bold text-slate-900">Delete {count} contact{count !== 1 ? "s" : ""}?</h2>
               <p className="mt-2 text-[13px] text-slate-500 leading-relaxed max-w-[260px]">
-                These <span className="font-semibold text-slate-700">{count} contacts</span> will be
-                permanently deleted, along with every conversation, message, lead, note, task and
-                follow-up belonging to them — including any leads already marked won.
+                These <span className="font-semibold text-slate-700">{count} contacts</span> leave your
+                lists and the Inbox. Their history is kept, and any of them can be restored from Archived.
               </p>
             </div>
           </div>
@@ -307,6 +305,9 @@ export default function ContactsV2() {
   const [createOpen, setCreateOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  // Archived ("deleted") contacts, to bring one back.
+  const [showArchived, setShowArchived] = useState(false)
+  const [restoringId, setRestoringId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
@@ -351,6 +352,7 @@ export default function ContactsV2() {
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
       if (searchQ) params.set("search", searchQ)
+      if (showArchived) params.set("archived", "1")
       const [cr, tr] = await Promise.all([
         fetch(`/api/contacts?${params}`).then((r) => r.json()),
         fetch("/api/tags").then((r) => r.json()),
@@ -364,7 +366,7 @@ export default function ContactsV2() {
     } finally {
       setLoading(false)
     }
-  }, [page, searchQ])
+  }, [page, searchQ, showArchived])
 
   useEffect(() => { loadContacts() }, [loadContacts])
 
@@ -383,7 +385,7 @@ export default function ContactsV2() {
         toast.error(body?.error ?? "Failed to delete contact")
         return
       }
-      toast.success("Contact deleted")
+      toast.success("Contact archived — restore it from Archived")
       setDeleteId(null)
       loadContacts()
     } catch {
@@ -393,11 +395,26 @@ export default function ContactsV2() {
     }
   }
 
+  async function handleRestore(id: string) {
+    if (restoringId) return
+    setRestoringId(id)
+    try {
+      await apiFetch(`/api/contacts/${id}/restore`, { method: "POST" })
+      toast.success("Contact restored")
+      loadContacts()
+    } catch (err) {
+      console.error("[contacts] restore failed:", err)
+      toast.error(errorText(err, "Could not restore the contact"))
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
   async function handleBulkDelete() {
     setBulkDeleting(true)
     try {
       await Promise.all([...checkedIds].map((id) => apiFetch(`/api/contacts/${id}`, { method: "DELETE" })))
-      toast.success(`${checkedIds.size} contact${checkedIds.size !== 1 ? "s" : ""} deleted`)
+      toast.success(`${checkedIds.size} contact${checkedIds.size !== 1 ? "s" : ""} archived`)
       setCheckedIds(new Set())
       setBulkDeleteConfirm(false)
       loadContacts()
@@ -479,6 +496,15 @@ export default function ContactsV2() {
                 Delete {checkedIds.size}
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => { setPage(0); setShowArchived((v) => !v) }}
+              aria-pressed={showArchived}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[13px] font-medium shadow-sm transition-colors ${showArchived ? "border-primary bg-primary/10 text-primary" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+            >
+              <Archive className="h-3.5 w-3.5" aria-hidden />
+              <span className="hidden sm:inline">{showArchived ? "Showing archived" : "Archived"}</span>
+            </button>
             <button
               type="button"
               onClick={() => setDupOpen(true)}
@@ -859,13 +885,24 @@ export default function ContactsV2() {
                                 <GitMerge className="h-3.5 w-3.5 text-slate-400" /> Merge with…
                               </button>
                               <div className="border-t border-slate-100 my-0.5" />
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setDeleteId(contact.id); setOpenMenuId(null) }}
-                                className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-rose-700 hover:bg-rose-50 transition-colors"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" /> Delete
-                              </button>
+                              {showArchived ? (
+                                <button
+                                  type="button"
+                                  disabled={restoringId === contact.id}
+                                  onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); void handleRestore(contact.id) }}
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-emerald-700 hover:bg-emerald-50 transition-colors disabled:opacity-50"
+                                >
+                                  <ArchiveRestore className="h-3.5 w-3.5" /> Restore
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setDeleteId(contact.id); setOpenMenuId(null) }}
+                                  className="flex w-full items-center gap-2 px-3 py-2.5 text-[13px] text-rose-700 hover:bg-rose-50 transition-colors"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                                </button>
+                              )}
                             </div>
                           </>
                         )}

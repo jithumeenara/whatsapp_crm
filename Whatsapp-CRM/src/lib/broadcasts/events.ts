@@ -18,7 +18,7 @@
 
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { sendableContactWhere } from './sendable'
+import { liveSendableContactWhere } from './sendable'
 
 export type TagEvent = 'tag_added' | 'tag_removed'
 
@@ -87,7 +87,7 @@ export async function enqueueEventRecipients(
   // Only people who can get a broadcast at all — not website visitors or
   // email-only contacts. Opt-outs are checked again at send time.
   const sendable = await prisma.contact.findMany({
-    where: { AND: [sendableContactWhere(accountId), { id: { in: [...contactIds] } }] },
+    where: { AND: [liveSendableContactWhere(accountId), { id: { in: [...contactIds] } }] },
     select: { id: true },
   })
   if (sendable.length === 0) return 0

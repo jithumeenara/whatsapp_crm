@@ -68,8 +68,19 @@ export async function reviveMember(args: {
     })
     await tx.user.update({ where: { id: args.userId }, data: { password_hash: args.passwordHash, session_invalidated_at: new Date() } })
     // The holding account held nothing but this person.
+    // Checked, not assumed: deleting an account takes everything in it, so
+    // one that has any contact, chat or other member is kept.
     if (profile && profile.account_id !== args.accountId) {
-      await tx.account.deleteMany({ where: { id: profile.account_id, owner_user_id: args.userId } })
+      const [contacts, conversations, others] = await Promise.all([
+        tx.contact.count({ where: { account_id: profile.account_id } }),
+        tx.conversation.count({ where: { account_id: profile.account_id } }),
+        tx.profile.count({ where: { account_id: profile.account_id } }),
+      ])
+      if (contacts === 0 && conversations === 0 && others === 0) {
+        await tx.account.deleteMany({ where: { id: profile.account_id, owner_user_id: args.userId } })
+      } else {
+        console.warn(`[revive-member] holding account ${profile.account_id} is not empty — kept`)
+      }
     }
   })
 }

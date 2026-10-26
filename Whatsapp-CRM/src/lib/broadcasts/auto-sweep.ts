@@ -19,7 +19,7 @@ import { prisma } from '@/lib/db'
 import { runBroadcast } from './run-broadcast'
 import { contactsInOutcome } from './outcome-audience'
 import { isOutcome } from './outcomes'
-import { sendableContactWhere } from './sendable'
+import { liveSendableContactWhere } from './sendable'
 import { followUpDue, inSendWindow } from './rules'
 import { getBroadcastSettings } from './settings'
 import { businessTimezone } from '@/lib/ai/human-date'
@@ -66,7 +66,7 @@ export async function sweepFollowUps(now: Date = new Date()): Promise<number> {
     // "Read, no reply".
     const ids = (await contactsInOutcome(prisma, f.account_id, f.parent_broadcast_id, f.parent_outcome)) ?? []
     const contacts = ids.length
-      ? await prisma.contact.findMany({ where: { AND: [sendableContactWhere(f.account_id), { id: { in: ids } }] }, select: { id: true } })
+      ? await prisma.contact.findMany({ where: { AND: [liveSendableContactWhere(f.account_id), { id: { in: ids } }] }, select: { id: true } })
       : []
     if (contacts.length > 0) {
       for (let i = 0; i < contacts.length; i += 500) {

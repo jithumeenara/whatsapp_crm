@@ -159,6 +159,10 @@ export async function GET(req: NextRequest) {
     }
     // Privileged users (supervisor+) see all leads in all tabs
 
+    // An archived ("deleted") contact's leads stay for the record but
+    // leave the lists and totals, as they did when a delete removed them.
+    where.NOT = { contact: { archived_at: { not: null } } }
+
     if (score) where.score = score
     if (district) where.district = district
 

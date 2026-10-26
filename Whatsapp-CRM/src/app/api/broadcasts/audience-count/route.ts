@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
-import { sendableContactWhere } from "@/lib/broadcasts/sendable"
+import { liveSendableContactWhere } from "@/lib/broadcasts/sendable"
 import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience"
 import { isOutcome } from "@/lib/broadcasts/outcomes"
 import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement"
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
     // Every count below uses the same rule as the send itself
     // (src/lib/broadcasts/sendable.ts), inside this account only.
-    const sendable = sendableContactWhere(ctx.accountId)
+    const sendable = liveSendableContactWhere(ctx.accountId)
 
     let excludeIds: string[] = []
     if (body.excludeTagIds && body.excludeTagIds.length > 0) {

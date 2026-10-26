@@ -48,8 +48,18 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const ctx = await requireRoleOrApiKey(req, 'admin')
     const { id } = await params
 
-    const exists = await prisma.pipeline.findFirst({ where: { id, account_id: ctx.accountId } })
+    const exists = await prisma.pipeline.findFirst({
+      where: { id, account_id: ctx.accountId },
+      select: { id: true, _count: { select: { deals: true } } },
+    })
     if (!exists) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    // Deleting a pipeline deleted every deal in it, values and all.
+    if (exists._count.deals > 0) {
+      return NextResponse.json(
+        { error: `This pipeline still has ${exists._count.deals} deal${exists._count.deals === 1 ? '' : 's'}. Move or close them first.` },
+        { status: 409 },
+      )
+    }
 
     await prisma.pipeline.delete({ where: { id } })
     return NextResponse.json({ ok: true })

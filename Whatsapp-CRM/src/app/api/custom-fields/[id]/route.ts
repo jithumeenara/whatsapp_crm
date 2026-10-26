@@ -4,7 +4,8 @@ import { NextResponse } from "next/server"
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const ctx = await requireRole("agent")
+    // Removes this field's value from every contact: an admin's decision.
+    const ctx = await requireRole("admin")
     const { id } = await params
     const existing = await prisma.customField.findFirst({
       where: { id, account_id: ctx.accountId },

@@ -46,7 +46,7 @@ export async function GET() {
     }),
     prisma.contact.count({ where: { account_id: accountId, opt_in_status: 'opted_in' } }),
     prisma.contact.findMany({
-      where: { account_id: accountId, merged_into_contact_id: null },
+      where: { account_id: accountId, merged_into_contact_id: null, archived_at: null },
       orderBy: { created_at: 'desc' },
       take: SCAN_LIMIT,
       select: { id: true, name: true, phone: true, phone_normalized: true, created_at: true },
