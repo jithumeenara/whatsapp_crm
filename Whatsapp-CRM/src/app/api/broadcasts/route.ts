@@ -5,6 +5,7 @@ import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/au
 import type { AccountContext } from "@/lib/auth/account";
 import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-sending";
 import { hasTagRules, parseTagMatch, tagAudienceWhere, tagRuleError, tagsBelongToAccount } from "@/lib/broadcasts/tag-audience";
+import { loadTableRule, phoneColumns, tableAudienceMatch, tableRuleError } from "@/lib/broadcasts/table-audience";
 import { liveCounts } from "@/lib/broadcasts/counts";
 import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
 import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
@@ -132,6 +133,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (body.audience.type === "table") {
+      const problem = tableRuleError(body.audience.table);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+      const loaded = await loadTableRule(ctx.accountId, body.audience.table!);
+      if ("error" in loaded) return NextResponse.json({ error: loaded.error }, { status: 400 });
+      const match = await tableAudienceMatch(ctx.accountId, body.audience.table!, phoneColumns(loaded.table.fields));
+      if (match.tooMany) {
+        return NextResponse.json({ error: "More than 20,000 people match this rule. Narrow it down (for example by batch or month)." }, { status: 400 });
+      }
+    }
+
     // ── Resolve audience ──────────────────────────────────────
     const contacts = await resolveAudience(ctx, body.audience);
 
@@ -182,6 +194,16 @@ export async function POST(request: NextRequest) {
           type: body.audience.type,
           tagIds: body.audience.tagIds,
           ...(body.audience.type === "tags" ? { tagMatch: parseTagMatch(body.audience.tagMatch) } : {}),
+          ...(body.audience.type === "table" && body.audience.table
+            ? {
+                table: {
+                  tableId: body.audience.table.tableId,
+                  fieldKey: body.audience.table.fieldKey,
+                  operator: body.audience.table.operator,
+                  value: typeof body.audience.table.value === "string" ? body.audience.table.value.slice(0, 200) : undefined,
+                },
+              }
+            : {}),
           customField: body.audience.customField,
           excludeTagIds: body.audience.excludeTagIds,
           ...(parent ? { fromBroadcast: { broadcastId: parent.id, outcome: parent.outcome } } : {}),
@@ -317,6 +339,16 @@ async function resolveAudience(
     contacts = await db.contact.findMany({
       where: sendable,
     });
+  } else if (audience.type === "table" && audience.table) {
+    // Rows of a Data Store table (or its synced Google Sheet) that meet
+    // the rule, reached by the chat that saved them or their phone number.
+    const loaded = await loadTableRule(ctx.accountId, audience.table);
+    if (!("error" in loaded)) {
+      const { contactIds } = await tableAudienceMatch(ctx.accountId, audience.table, phoneColumns(loaded.table.fields));
+      contacts = contactIds.length
+        ? await db.contact.findMany({ where: { AND: [sendable, { id: { in: contactIds } }] } })
+        : [];
+    }
   } else if (audience.type === "tags" && hasTagRules(audience)) {
     // Contains (any/all) and Does not contain, in one query — the same
     // rule the count uses (src/lib/broadcasts/tag-audience.ts).

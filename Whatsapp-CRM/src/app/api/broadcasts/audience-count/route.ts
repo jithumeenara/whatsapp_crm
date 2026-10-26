@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account"
 import { liveSendableContactWhere } from "@/lib/broadcasts/sendable"
 import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience"
 import { isOutcome } from "@/lib/broadcasts/outcomes"
 import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement"
 import { hasTagRules, tagAudienceWhere, tagRuleError, tagsBelongToAccount } from "@/lib/broadcasts/tag-audience"
+import { loadTableRule, phoneColumns, tableAudienceMatch, tableRuleError, tableSheetSync, type TableAudience } from "@/lib/broadcasts/table-audience"
 
 interface AudienceCountBody {
   type: string
@@ -21,6 +22,7 @@ interface AudienceCountBody {
   fromBroadcast?: { broadcastId: string; outcome: string }
   listId?: string
   engagement?: { kind?: string; days?: number }
+  table?: TableAudience
 }
 
 /**
@@ -30,6 +32,7 @@ interface AudienceCountBody {
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(req, "viewer")
+    assertPageAccess(ctx, "/broadcasts")
     const db = ctx.db
     const body = (await req.json()) as AudienceCountBody
 
@@ -39,6 +42,25 @@ export async function POST(req: NextRequest) {
     // Every count below uses the same rule as the send itself
     // (src/lib/broadcasts/sendable.ts), inside this account only.
     const sendable = liveSendableContactWhere(ctx.accountId)
+
+    // Rows of a table that meet one rule — the same rule as the send. Also
+    // says how many rows matched, how many of their numbers are no
+    // contact's, and when a linked Google Sheet last synced.
+    if (body.type === "table") {
+      const problem = tableRuleError(body.table)
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 })
+      const loaded = await loadTableRule(ctx.accountId, body.table!)
+      if ("error" in loaded) return NextResponse.json({ error: loaded.error }, { status: 400 })
+      const [match, sync] = await Promise.all([
+        tableAudienceMatch(ctx.accountId, body.table!, phoneColumns(loaded.table.fields)),
+        tableSheetSync(ctx.accountId, loaded.table.id),
+      ])
+      if (match.tooMany) return NextResponse.json({ error: "More than 20,000 people match this rule. Narrow it down (for example by batch or month)." }, { status: 400 })
+      const count = match.contactIds.length
+        ? await db.contact.count({ where: { AND: [sendable, { id: { in: match.contactIds } }] } })
+        : 0
+      return NextResponse.json({ count, rows: match.rows, notContacts: match.notContacts, sync })
+    }
 
     // Contains (any/all) and Does not contain — the same rule as the send.
     if (body.type === "tags") {

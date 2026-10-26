@@ -127,7 +127,7 @@ export default function NewBroadcastV2() {
   async function handleSend() {
     if (!template) return
     try {
-      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, tagIds: audience.tagIds, tagMatch: audience.tagMatch, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId, engagement: audience.engagement }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
+      const id = await createAndSendBroadcast({ name, template, audience: { type: audience.type, table: audience.table, tagIds: audience.tagIds, tagMatch: audience.tagMatch, customField: audience.customField, csvContacts: audience.csvContacts, contactIds: audience.contactIds, excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId, engagement: audience.engagement }, variables, headerMediaUrl: headerMediaUrl || undefined, schedule, whatsappConfigId: whatsappConfigId || undefined })
       toast.success(
         schedule.type === "now" ? "Broadcast sending…"
           : schedule.type === "once" ? "Broadcast scheduled"

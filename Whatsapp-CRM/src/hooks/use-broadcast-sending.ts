@@ -18,7 +18,9 @@ export interface CustomFieldFilter {
 }
 
 export interface AudienceConfig {
-  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement';
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement' | 'table';
+  /** 'table': rows of a Data Store table that meet one rule (table-audience.ts). */
+  table?: { tableId: string; fieldKey: string; operator: 'is' | 'is_not' | 'contains' | 'is_empty' | 'is_not_empty'; value?: string };
   tagIds?: string[];
   /** 'tags': people with any of tagIds (default) or all of them. */
   tagMatch?: 'any' | 'all';

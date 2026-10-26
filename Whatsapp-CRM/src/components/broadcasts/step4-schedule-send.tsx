@@ -17,6 +17,7 @@ interface AudienceConfig {
   type: string;
   tagIds?: string[];
   tagMatch?: 'any' | 'all';
+  table?: { tableId: string; fieldKey: string; operator: string; value?: string };
   csvContacts?: { phone: string; name?: string }[];
   contactIds?: string[];
   customField?: { fieldId: string; operator: string; value: string };
@@ -59,6 +60,7 @@ const AUDIENCE_META: Record<string, { label: string; icon: React.ElementType; co
   broadcast_outcome: { label: 'Follow-up to a group',  icon: Repeat,    color: 'text-indigo-700 bg-indigo-50' },
   list:         { label: 'Saved list',               icon: CheckCheck, color: 'text-emerald-700 bg-emerald-50' },
   engagement:   { label: 'By engagement',            icon: Users,     color: 'text-violet-700 bg-violet-50' },
+  table:        { label: 'From a table',              icon: Table2,    color: 'text-sky-700 bg-sky-50' },
   event:        { label: 'Event-based',              icon: Zap,       color: 'text-amber-800 bg-amber-50' },
 };
 
@@ -137,7 +139,7 @@ export function Step4ScheduleSend({
           body: JSON.stringify({
             type: audience.type, tagIds: audience.tagIds, tagMatch: audience.tagMatch, customField: audience.customField,
             excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId,
-            engagement: audience.engagement,
+            engagement: audience.engagement, table: audience.table,
           }),
         });
         if (res.ok) { const j = await res.json(); setEstimatedReach(j.count ?? 0); }

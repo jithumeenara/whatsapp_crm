@@ -8,15 +8,16 @@ import { Button } from '@/components/ui/button';
 import {
   Users, ArrowRight, ArrowLeft, X, Search, Phone,
   CheckCheck, Tag as TagIcon, FileSpreadsheet, Upload, AlertCircle, Trash2,
-  ShieldCheck, Loader2, CheckCircle2, XCircle, Download, ListChecks, Activity,
+  ShieldCheck, Loader2, CheckCircle2, XCircle, Download, ListChecks, Activity, Table2,
 } from 'lucide-react';
 import { apiFetch, errorText } from '@/lib/api-fetch';
+import { TableAudiencePicker, type TableRule } from './table-audience-picker';
 
 /* ── types ─────────────────────────────────────────────────────── */
 // 'pick' folded into 'all' -- the All WhatsApp tab itself now offers a
 // "send to everyone" vs "pick specific contacts" toggle instead of being
 // a separate tab (see pickSpecific state below).
-type AudienceMode = 'all' | 'tags' | 'excel' | 'list' | 'engagement';
+type AudienceMode = 'all' | 'tags' | 'excel' | 'list' | 'engagement' | 'table';
 
 const ENGAGEMENT_OPTIONS = [
   { kind: 'ignored', label: 'Got broadcasts but never replied' },
@@ -34,7 +35,9 @@ interface SavedList {
 }
 
 export interface AudienceConfig {
-  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement';
+  type: 'all' | 'tags' | 'custom_field' | 'csv' | 'contacts' | 'broadcast_outcome' | 'list' | 'engagement' | 'table';
+  /** 'table': people in a Data Store table whose column meets one rule. */
+  table?: TableRule;
   tagIds?: string[];
   /** 'tags': any of tagIds (default) or all of them. */
   tagMatch?: 'any' | 'all';
@@ -211,9 +214,14 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     if (audience.type === 'csv') return 'excel';
     if (audience.type === 'list') return 'list';
     if (audience.type === 'engagement') return 'engagement';
+    if (audience.type === 'table') return 'table';
     return 'all'; // 'contacts' lives under 'all' too, see pickSpecific
   };
   const [mode, setMode] = useState<AudienceMode>(initMode);
+  /* From a table: the rule, its sentence and its count (table-audience-picker). */
+  const [tableRule, setTableRule] = useState<TableRule | undefined>(audience.type === 'table' ? audience.table : undefined);
+  const [tableLabel, setTableLabel] = useState<string | undefined>(audience.type === 'table' ? audience.label : undefined);
+  const [tableCount, setTableCount] = useState<number | null>(null);
   /* Within the "All WhatsApp" tab: send to everyone, or hand-pick specific
    *  contacts (this is the former standalone "Pick Contacts" tab, folded
    *  in here instead of being a separate mode). */
@@ -418,6 +426,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     else if (m === 'tags') pushTags(selectedTagIds, tagMatch, excludeTagIds);
     else if (m === 'list') onUpdate({ type: 'list', listId: selectedListId || undefined, label: selectedList?.name });
     else if (m === 'engagement') chooseEngagement(engKind, engDays);
+    else if (m === 'table') onUpdate({ type: 'table', table: tableRule, label: tableLabel });
     else onUpdate({ type: 'csv', csvContacts: excelContacts });
   }
 
@@ -637,6 +646,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     (mode === 'tags' && (selectedTagIds.length > 0 || excludeTagIds.length > 0) && !!tagCount && !tagCountError) ||
     (mode === 'list' && !!selectedList && selectedList.member_count > 0) ||
     (mode === 'engagement' && (engCount ?? 0) > 0) ||
+    (mode === 'table' && !!tableRule && (tableCount ?? 0) > 0) ||
     (mode === 'excel' && validationStatus === 'done' && sendCount > 0);
 
   /* ── Summary label ───────────────────────────────────────────── */
@@ -650,6 +660,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     if (mode === 'engagement') {
       if (engCount === null) return 'Counting…';
       return `${engCount.toLocaleString()} ${engCount === 1 ? 'person' : 'people'} — ${ENGAGEMENT_OPTIONS.find((o) => o.kind === engKind)?.label.toLowerCase()} in the last ${engDays} days`;
+    }
+
+    if (mode === 'table') {
+      if (!tableRule) return 'Choose a table, a column and a rule';
+      if (tableCount === null) return 'Counting…';
+      return `${tableCount.toLocaleString()} ${tableCount === 1 ? 'person' : 'people'} — ${tableLabel ?? ''}`;
     }
 
     if (mode === 'list') {
@@ -695,13 +711,14 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       </div>
 
       {/* ── Mode tabs ── */}
-      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-slate-100 p-1 sm:grid-cols-3 lg:grid-cols-6">
         {([
           { key: 'all',   label: 'All WhatsApp',   icon: Users },
           { key: 'tags',  label: 'By Tag',          icon: TagIcon },
           { key: 'excel', label: 'Import Excel',    icon: FileSpreadsheet },
           { key: 'list',  label: 'Saved list',      icon: ListChecks },
           { key: 'engagement', label: 'Engagement', icon: Activity },
+          { key: 'table', label: 'From a table', icon: Table2 },
         ] as { key: AudienceMode; label: string; icon: React.ElementType }[]).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -719,6 +736,19 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           </button>
         ))}
       </div>
+
+      {/* ── From a table (table mode) ── */}
+      {mode === 'table' && (
+        <TableAudiencePicker
+          rule={tableRule}
+          onChange={(rule, label, count) => {
+            setTableRule(rule);
+            setTableLabel(label);
+            setTableCount(count);
+            onUpdate({ type: 'table', table: rule, label });
+          }}
+        />
+      )}
 
       {/* ── Engagement (engagement mode) ── */}
       {mode === 'engagement' && (
