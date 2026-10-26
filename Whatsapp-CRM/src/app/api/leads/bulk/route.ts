@@ -162,8 +162,14 @@ export async function POST(req: NextRequest) {
     data.claimed_at = body.assigned_to ? new Date() : null
     action = body.assigned_to ? 'assigned' : 'returned to the pool'
   } else if (body.score !== undefined) {
-    data.score = body.score
-    action = `score to ${body.score}`
+    // A score is a short label (hot/warm/cold or the account's own levels);
+    // anything else was written as-is, or crashed into a bare 500.
+    const score = typeof body.score === 'string' ? body.score.trim() : ''
+    if (!score || score.length > 40) {
+      return NextResponse.json({ error: 'Choose a score.' }, { status: 400 })
+    }
+    data.score = score
+    action = `score to ${score}`
   } else {
     return NextResponse.json({ error: 'Nothing to change.' }, { status: 400 })
   }

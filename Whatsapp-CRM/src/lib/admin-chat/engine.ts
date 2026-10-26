@@ -241,6 +241,10 @@ async function handleVerify(m: AdminChatInbound, code: string): Promise<boolean>
   // Guessing codes is slow: 5 tries per sender per 15 minutes.
   const limit = checkRateLimit(`admin-chat-verify:${m.accountId}:${m.senderKey}`, { limit: 5, windowMs: 15 * 60_000 })
   if (!limit.success) return false
+  // And across all senders: many Telegram accounts each guessing five
+  // times would otherwise multiply the guesses at a pending code.
+  const accountLimit = checkRateLimit(`admin-chat-verify-account:${m.accountId}`, { limit: 30, windowMs: 15 * 60_000 })
+  if (!accountLimit.success) return false
   const pending = await prisma.adminChatMember.findMany({
     where: {
       account_id: m.accountId,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { socialWebhookAllowed } from "@/lib/social/webhook-secrets"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
@@ -81,6 +82,10 @@ export async function POST(req: NextRequest) {
   try {
     const raw = await req.text()
     if (!raw.trim()) return NextResponse.json({ status: "ok" })
+    // Only Meta may post here: a forged event would land in an Inbox.
+    if (!(await socialWebhookAllowed(raw, req.headers.get("x-hub-signature-256"), "facebook"))) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
+    }
     const body = JSON.parse(raw) as FbWebhookBody
 
     if (body.object !== "page") {
@@ -166,7 +171,10 @@ async function processFacebookWebhook(body: FbWebhookBody) {
       `
       config = rows[0]
     }
-    if (!config) {
+    // Meta's own test payloads (page id "0") go to the first config; a real
+    // event for an unknown page is dropped — it used to land in whichever
+    // account happened to come first.
+    if (!config && pageId === "0") {
       const rows = await prisma.$queryRaw<RawConfig[]>`
         SELECT account_id, access_token, verify_token, page_id
         FROM facebook_config LIMIT 1

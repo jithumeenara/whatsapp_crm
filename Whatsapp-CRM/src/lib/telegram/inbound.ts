@@ -33,7 +33,7 @@ import { mergeContacts } from '@/lib/contacts/merge'
 import { handleAdminChatInbound } from '@/lib/admin-chat/engine'
 import { answerCallbackQuery, fileDownloadUrl, tgCall } from './api'
 import { toTelegramHtml } from './format'
-import { buttonFor, verifyStartPayload } from './links'
+import { buttonFor, isLegacyStartPayload, verifyStartPayload } from './links'
 import { displayName, mediaLabel, parseUpdate, type TelegramEvent, type TelegramUser } from './parse'
 import { startLinkSecret, TELEGRAM_CHANNEL, type LiveBot } from './store'
 import { sendToTelegram } from './outbound'
@@ -245,8 +245,18 @@ async function handleMessage(bot: LiveBot, event: Extract<TelegramEvent, { kind:
   if (event.startPayload) {
     const known = verifyStartPayload(event.startPayload, startLinkSecret(bot.accountId))
     if (known) {
-      const target = await prisma.contact.findFirst({ where: { id: known, account_id: bot.accountId }, select: { id: true } })
-      if (target && (await joinTo(bot, thread.contactId, target.id))) thread = { ...thread, contactId: target.id, contactCreated: false }
+      const target = await prisma.contact.findFirst({
+        where: { id: known, account_id: bot.accountId },
+        select: { id: true, telegram_id: true },
+      })
+      // A contact already on another Telegram account is never taken over
+      // by somebody who got hold of its link; an old (non-expiring) link
+      // only ever claims a contact with no Telegram yet.
+      const sender = String(event.from.id)
+      const free = !target?.telegram_id || target.telegram_id === sender
+      const allowed = target && (isLegacyStartPayload(event.startPayload) ? !target.telegram_id : free)
+      if (target && !allowed) console.warn(`[telegram] start link for a contact already on another Telegram account — not joined`)
+      if (target && allowed && (await joinTo(bot, thread.contactId, target.id))) thread = { ...thread, contactId: target.id, contactCreated: false }
     }
   }
 

@@ -77,10 +77,14 @@ export async function POST(request: Request) {
 
     const newStatus = linkStatus === 'paid' ? 'completed' : linkStatus === 'expired' || linkStatus === 'cancelled' ? 'failed' : payment.status
 
-    const updated = await prisma.whatsAppPayment.update({
-      where: { id: payment.id },
+    // Razorpay re-delivers a webhook it is unsure of. Only the delivery
+    // that actually changes the status counts — the customer is told once.
+    const changed = await prisma.whatsAppPayment.updateMany({
+      where: { id: payment.id, status: { not: newStatus } },
       data: { status: newStatus, gateway_transaction_id: gatewayTxnId ?? payment.gateway_transaction_id, raw_payload: event as unknown as object },
     })
+    if (changed.count === 0) return NextResponse.json({ success: true, duplicate: true })
+    const updated = await prisma.whatsAppPayment.findFirst({ where: { id: payment.id } })
 
     emitToAccount(payment.account_id, 'whatsapp_payment', { eventType: 'UPDATE', new: updated, old: {} })
 

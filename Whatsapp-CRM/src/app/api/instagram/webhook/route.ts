@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { socialWebhookAllowed } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
@@ -84,6 +85,10 @@ export async function POST(req: NextRequest) {
   try {
     const raw = await req.text()
     if (!raw.trim()) return NextResponse.json({ status: "ok" })
+    // Only Meta may post here: a forged event would land in an Inbox.
+    if (!(await socialWebhookAllowed(raw, req.headers.get("x-hub-signature-256"), "instagram"))) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
+    }
     const body = JSON.parse(raw) as IgWebhookBody
 
     if (body.object !== "instagram") {
@@ -194,8 +199,10 @@ async function processInstagramWebhook(body: IgWebhookBody) {
       config = rows[0]
     }
 
-    // Fallback: use first available config (handles Meta test payloads with id="0")
-    if (!config) {
+    // Fallback: the first config, for Meta's own test payloads (id="0")
+    // only. A real event for an unknown account is dropped — it used to
+    // land in whichever account happened to come first.
+    if (!config && entryAccountId === "0") {
       const rows = await prisma.$queryRaw<RawConfig[]>`
         SELECT account_id, access_token, verify_token, instagram_account_id, page_id
         FROM instagram_config

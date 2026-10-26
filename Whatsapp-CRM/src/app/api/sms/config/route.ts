@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
+import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { saveSmsConfig, testSmsConnection, registerTextBeeWebhook, deleteTextBeeWebhook, type SmsProvider } from "@/lib/messaging/channels/sms"
 import { decrypt } from "@/lib/whatsapp/encryption"
@@ -144,6 +145,12 @@ export async function DELETE() {
 
     const accountId = await resolveAccountId(session.user.id)
     if (!accountId) return NextResponse.json({ error: "Your profile is not linked to an account." }, { status: 403 })
+    // Disconnecting a channel is the owner's decision (any member could).
+    try {
+      await requireRole("owner")
+    } catch (err) {
+      return toErrorResponse(err)
+    }
 
     try {
       const existing = await prisma.smsConfig.findUnique({ where: { account_id: accountId } })

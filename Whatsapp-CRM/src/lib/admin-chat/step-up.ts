@@ -26,5 +26,14 @@ export async function requireStepUp(userId: string, code: unknown): Promise<void
   }
   const clean = typeof code === 'string' ? code.replace(/\s/g, '') : ''
   if (!/^\d{6}$/.test(clean)) throw new StepUpError('Enter the 6-digit code from your authenticator app.', 400)
-  if (matchTotpStep(decrypt(user.totp_secret), clean) === null) throw new StepUpError('That authenticator code is not right. Try the current one.', 400)
+  // Each code works once: one seen over a shoulder or captured from a
+  // request could otherwise be replayed within its 90 seconds.
+  const step = matchTotpStep(decrypt(user.totp_secret), clean, new Date(), usedSteps.get(userId) ?? null)
+  if (step === null) throw new StepUpError('That authenticator code is not right, or was already used. Try the next one.', 400)
+  usedSteps.delete(userId)
+  usedSteps.set(userId, step)
+  if (usedSteps.size > 500) usedSteps.delete(usedSteps.keys().next().value as string)
 }
+
+/** The last code step each person spent here (bounded, oldest out first). */
+const usedSteps = new Map<string, number>()

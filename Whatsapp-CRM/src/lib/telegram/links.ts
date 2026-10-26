@@ -15,22 +15,54 @@ function mac(secret: string, body: string): string {
   return crypto.createHmac('sha256', secret).update(`tg-start:${body}`).digest('base64url').slice(0, 16)
 }
 
-/** "c" + the contact id without dashes + a 16-character signature: 49 characters. */
-export function signStartPayload(contactId: string, secret: string): string {
+/** How long a start link works: a forwarded or screenshotted link
+ *  should not open somebody else's record for ever. */
+export const START_LINK_DAYS = 14
+
+const dayNow = (now: number) => Math.floor(now / 86_400_000)
+
+/**
+ * "d" + the contact id without dashes + the day it was made (4 base-36
+ * characters) + a 16-character signature over both: 53 characters.
+ */
+export function signStartPayload(contactId: string, secret: string, now: number = Date.now()): string {
   const hex = contactId.replace(/-/g, '').toLowerCase()
   if (!/^[0-9a-f]{32}$/.test(hex)) throw new Error('not a contact id')
-  return `c${hex}${mac(secret, hex)}`
+  const day = dayNow(now).toString(36).padStart(4, '0')
+  return `d${hex}${day}${mac(secret, hex + day)}`
 }
 
-/** The contact id a payload names, or null when it is not one this account signed. */
-export function verifyStartPayload(payload: string, secret: string): string | null {
-  if (!payload || payload.length !== 49 || !B64URL.test(payload) || payload[0] !== 'c') return null
-  const hex = payload.slice(1, 33)
-  const sig = payload.slice(33)
+/** The contact a payload names, or null when it is not one this account
+ *  signed or it has run out. */
+export function verifyStartPayload(payload: string, secret: string, now: number = Date.now()): string | null {
+  if (!payload || !B64URL.test(payload)) return null
+  let hex: string
+  let body: string
+  let sig: string
+  if (payload.length === 53 && payload[0] === 'd') {
+    hex = payload.slice(1, 33)
+    const day = payload.slice(33, 37)
+    body = hex + day
+    sig = payload.slice(37)
+    const made = parseInt(day, 36)
+    if (!Number.isFinite(made) || dayNow(now) - made > START_LINK_DAYS || made > dayNow(now) + 1) return null
+  } else if (payload.length === 49 && payload[0] === 'c') {
+    hex = payload.slice(1, 33)
+    body = hex
+    sig = payload.slice(33)
+  } else {
+    return null
+  }
   if (!/^[0-9a-f]{32}$/.test(hex)) return null
-  const want = mac(secret, hex)
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null
+  const want = mac(secret, body)
+  if (sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/** A link made before they expired: it may only claim a contact that has
+ *  no Telegram yet. */
+export function isLegacyStartPayload(payload: string): boolean {
+  return payload.length === 49 && payload[0] === 'c'
 }
 
 export function startLink(botUsername: string, payload?: string): string {
