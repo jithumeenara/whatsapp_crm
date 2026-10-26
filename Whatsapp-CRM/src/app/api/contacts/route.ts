@@ -25,6 +25,16 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search")?.trim() ?? ""
     // ?archived=1 lists the archived ("deleted") contacts, to restore one.
     const archived = searchParams.get("archived") === "1"
+    // Sorting happens here, over every contact — sorting in the browser
+    // only ever reordered the page on screen.
+    const SORTS = {
+      date_desc: { created_at: "desc" },
+      date_asc: { created_at: "asc" },
+      name_asc: { name: { sort: "asc", nulls: "last" } },
+      name_desc: { name: { sort: "desc", nulls: "last" } },
+    } as const
+    const sortParam = searchParams.get("sort") ?? "date_desc"
+    const orderBy = SORTS[(sortParam in SORTS ? sortParam : "date_desc") as keyof typeof SORTS]
     const channel = searchParams.get("channel")?.trim() ?? ""   // e.g. "whatsapp" | "instagram"
     // Email-only contacts (created from an inbound email with no phone
     // number) get a "email:<address>" placeholder in `phone` — Contact.phone
@@ -75,7 +85,7 @@ export async function GET(req: NextRequest) {
     const [contacts, total] = await Promise.all([
       prisma.contact.findMany({
         where,
-        orderBy: { created_at: "desc" },
+        orderBy: [orderBy, { id: "asc" }],
         skip,
         take: limit,
         include: {

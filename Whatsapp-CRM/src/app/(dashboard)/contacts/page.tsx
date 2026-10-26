@@ -1,7 +1,7 @@
 "use client"
 
 import { ChannelMarks } from "@/components/contacts/channel-links"
-import { useState, useEffect, useCallback, useRef, useMemo } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import type { Contact, Tag } from "@/types"
@@ -346,17 +346,27 @@ export default function ContactsV2() {
   }, [])
 
   const [dupOpen, setDupOpen] = useState(false)
+  // Only the newest request may fill the list (search, filter and page
+  // can change while one is still on its way).
+  const loadSeq = useRef(0)
   const loadContacts = useCallback(async () => {
+    const seq = ++loadSeq.current
     setCheckedIds(new Set())
     setLoading(true)
     try {
       const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) })
       if (searchQ) params.set("search", searchQ)
       if (showArchived) params.set("archived", "1")
+      // The tag filter and the order run on the server, over every
+      // contact. Done in the browser they only saw the 25 on screen, so
+      // "Not Paid" found nobody unless they happened to be on this page.
+      if (filterTagId) params.set("tagIds", filterTagId)
+      params.set("sort", sortKey)
       const [cr, tr] = await Promise.all([
         fetch(`/api/contacts?${params}`).then((r) => r.json()),
         fetch("/api/tags").then((r) => r.json()),
       ])
+      if (seq !== loadSeq.current) return
       const tagsArr: Tag[] = tr?.tags ?? []
       setContacts(cr.contacts ?? [])
       setTotal(cr.total ?? 0)
@@ -366,7 +376,7 @@ export default function ContactsV2() {
     } finally {
       setLoading(false)
     }
-  }, [page, searchQ, showArchived])
+  }, [page, searchQ, showArchived, filterTagId, sortKey])
 
   useEffect(() => { loadContacts() }, [loadContacts])
 
@@ -425,18 +435,8 @@ export default function ContactsV2() {
     }
   }
 
-  // Client-side sort + tag filter on the already-fetched page
-  const displayed = useMemo(() => {
-    let list = contacts
-    if (filterTagId) list = list.filter((c) => c.tags?.some((t) => t.id === filterTagId))
-    switch (sortKey) {
-      case "name_asc": list = [...list].sort((a, b) => (a.name ?? a.phone).localeCompare(b.name ?? b.phone)); break
-      case "name_desc": list = [...list].sort((a, b) => (b.name ?? b.phone).localeCompare(a.name ?? a.phone)); break
-      case "date_asc": list = [...list].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()); break
-      case "date_desc": list = [...list].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()); break
-    }
-    return list
-  }, [contacts, sortKey, filterTagId])
+  // Filtered and sorted by the server (loadContacts).
+  const displayed = contacts
 
   const allChecked = displayed.length > 0 && displayed.every((c) => checkedIds.has(c.id))
   const someChecked = displayed.some((c) => checkedIds.has(c.id))
@@ -584,7 +584,7 @@ export default function ContactsV2() {
                 <div className="absolute left-0 top-full mt-1 z-30 w-48 rounded-xl border border-slate-200 bg-white shadow-lg py-1">
                   <button
                     type="button"
-                    onClick={() => { setFilterTagId(null); setTagFilterOpen(false) }}
+                    onClick={() => { setPage(0); setFilterTagId(null); setTagFilterOpen(false) }}
                     className={cn(
                       "flex w-full items-center gap-2 px-3 py-2 text-[13px] hover:bg-slate-50",
                       !filterTagId ? "font-semibold text-indigo-600" : "text-slate-700"
@@ -596,7 +596,7 @@ export default function ContactsV2() {
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => { setFilterTagId(t.id); setTagFilterOpen(false) }}
+                      onClick={() => { setPage(0); setFilterTagId(t.id); setTagFilterOpen(false) }}
                       className={cn(
                         "flex w-full items-center gap-2 px-3 py-2 text-[13px] hover:bg-slate-50",
                         filterTagId === t.id ? "font-semibold text-indigo-600" : "text-slate-700"
@@ -630,7 +630,7 @@ export default function ContactsV2() {
                   <button
                     key={k}
                     type="button"
-                    onClick={() => { setSortKey(k); setSortOpen(false) }}
+                    onClick={() => { setPage(0); setSortKey(k); setSortOpen(false) }}
                     className={cn(
                       "flex w-full items-center justify-between gap-2 px-3 py-2 text-[13px] hover:bg-slate-50",
                       sortKey === k ? "font-semibold text-indigo-600" : "text-slate-700"
