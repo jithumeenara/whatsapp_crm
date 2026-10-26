@@ -91,7 +91,11 @@ interface UseRealtimeOptions {
 let sharedSocket: Socket | null = null;
 
 function getSocket(): Socket {
-  if (!sharedSocket || !sharedSocket.connected) {
+  // `active`, not `connected`: a socket still connecting (every component
+  // mounting at page load) or reconnecting after a blip is the one to
+  // share. Replacing it then opened a second, third, fourth connection
+  // per tab that never closed. A new one only when socket.io gave up.
+  if (!sharedSocket || !(sharedSocket.connected || sharedSocket.active)) {
     sharedSocket = connectAccountSocket();
   }
   return sharedSocket;

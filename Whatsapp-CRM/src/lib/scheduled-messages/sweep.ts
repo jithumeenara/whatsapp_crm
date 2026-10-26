@@ -16,6 +16,8 @@ const EXPIRY_GRACE_MS = 24 * 60 * 60_000
 // After this many consecutive send failures, stop retrying and surface it
 // as 'failed' with the error, instead of silently retrying forever.
 const MAX_ERROR_COUNT = 3
+// How long a sweep holds a row while sending it.
+const CLAIM_MS = 10 * 60_000
 
 export interface SweepResult {
   sent: number
@@ -60,6 +62,15 @@ export async function sweepScheduledMessages(): Promise<SweepResult> {
       expired++
       continue
     }
+
+    // Claim the row before sending ("twice is once"): another sweep that
+    // read it too finds it already moved on and leaves it. A send that
+    // fails is tried again once the claim runs out.
+    const claimed = await prisma.scheduledMessage.updateMany({
+      where: { id: sm.id, status: 'active', next_send_at: sm.next_send_at, sends_count: sm.sends_count },
+      data: { next_send_at: new Date(now.getTime() + CLAIM_MS) },
+    })
+    if (claimed.count === 0) continue
 
     try {
       // Recurring + stop_on_reply: skip (and end) if the customer has

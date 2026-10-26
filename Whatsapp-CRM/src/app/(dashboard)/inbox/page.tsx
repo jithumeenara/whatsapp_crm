@@ -96,12 +96,21 @@ function InboxV2Content() {
                 : c,
             ),
           )
-        } else {
+        } else if (!(newMsg as { broadcast_id?: string | null }).broadcast_id) {
+          // A broadcast message is not a new chat: one request per
+          // recipient flooded every open Inbox, and pulled in chats the
+          // campaign said to keep out. When it should show, its own
+          // conversation event brings it in.
           hydrateConversation(newMsg.conversation_id)
         }
       }
       if (event.eventType === "UPDATE") {
-        setMessages((prev) => prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m)))
+        // Status ticks arrive for every message in the account; only one
+        // in the open thread changes anything. Same array otherwise, so
+        // the thread does not re-render or jump to the bottom.
+        setMessages((prev) =>
+          prev.some((m) => m.id === newMsg.id) ? prev.map((m) => (m.id === newMsg.id ? { ...m, ...newMsg } : m)) : prev,
+        )
       }
     },
     [activeConversation, hydrateConversation],

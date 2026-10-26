@@ -66,8 +66,22 @@ export interface IdleCloseResult {
  * Never throws: it runs on a timer in the same process that serves
  * WhatsApp, and a bad tick must cost a log line rather than the server.
  */
+let sweeping = false
+
 export async function sweepIdleConversations(): Promise<IdleCloseResult> {
   const result: IdleCloseResult = { accountsChecked: 0, closed: 0, messaged: 0 }
+  // A slow pass (many goodbyes) must not overlap the next tick, or the
+  // same conversation is told goodbye twice.
+  if (sweeping) return result
+  sweeping = true
+  try {
+    return await sweepIdleOnce(result)
+  } finally {
+    sweeping = false
+  }
+}
+
+async function sweepIdleOnce(result: IdleCloseResult): Promise<IdleCloseResult> {
 
   let configs: Array<{
     account_id: string
