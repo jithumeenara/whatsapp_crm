@@ -2,6 +2,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
 import { dedupeByPhone, isUniqueViolation, normalizeKey } from "@/lib/contacts/dedupe"
+import { cleanImportRow, MAX_IMPORT_ROWS } from "@/lib/contacts/csv-import"
 
 interface ImportRow {
   phone: string
@@ -23,10 +24,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "contacts array required" }, { status: 400 })
     }
 
-    const rows: ImportRow[] = body.contacts
+    if (body.contacts.length > MAX_IMPORT_ROWS) {
+      return NextResponse.json({ error: `At most ${MAX_IMPORT_ROWS.toLocaleString()} contacts at a time. Split the file.` }, { status: 400 })
+    }
     let imported = 0
     let skipped = 0
     let failed = 0
+    // Every row checked again here (the browser's preview is a convenience):
+    // a real phone number, a valid email or none, known fields only.
+    const rows: ImportRow[] = []
+    for (const raw of body.contacts as unknown[]) {
+      const row = cleanImportRow(raw)
+      if (row) rows.push(row)
+      else failed++
+    }
 
     // 1) Dedupe within the file
     const { unique, duplicates: inFileDupes } = dedupeByPhone(rows)
