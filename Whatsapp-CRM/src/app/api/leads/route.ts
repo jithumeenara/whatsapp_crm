@@ -6,6 +6,7 @@ import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { findOrCreateContact } from '@/lib/contacts/find-or-create'
 import { normalizeEnteredPhone } from '@/lib/leads/new-follow-up'
+import { cleanContactDetails, hasContactDetails, saveContactDetails } from '@/lib/leads/contact-details'
 
 const PAGE_SIZE = 25
 
@@ -227,6 +228,9 @@ export async function POST(req: NextRequest) {
       force_create,  // when true: bypass duplicate check and always create
     } = body as Record<string, string | boolean | undefined>
     if (!title) return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    // Gender, age and address belong to the contact (checked before anything is saved).
+    const details = cleanContactDetails(body as Record<string, unknown>)
+    if ('error' in details) return NextResponse.json({ error: details.error }, { status: 400 })
 
     // ── Who the lead is for ─────────────────────────────────────────────────────
     // A picked contact must be one of this account's. A new number typed
@@ -347,8 +351,19 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    // The lead is saved either way; a failure here is said, not hidden.
+    let details_saved = true
+    if (lead.contact_id && hasContactDetails(details)) {
+      try {
+        await saveContactDetails(ctx.accountId, ctx.userId, lead.contact_id, details)
+      } catch (err) {
+        console.error('[leads] contact details not saved:', err instanceof Error ? err.message : err)
+        details_saved = false
+      }
+    }
+
     emitToAccount(ctx.accountId, 'lead', { eventType: 'INSERT', new: lead, old: {} })
-    return NextResponse.json(withCallablePhones({ lead }), { status: 201 })
+    return NextResponse.json({ ...withCallablePhones({ lead }), details_saved }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)
   }

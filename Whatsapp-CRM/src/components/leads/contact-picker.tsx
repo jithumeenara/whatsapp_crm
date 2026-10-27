@@ -2,6 +2,10 @@
 
 import { useRef, useState } from "react"
 import { Phone, Search, UserPlus, X } from "lucide-react"
+import { CountryCodeSelect } from "@/components/shared/country-code-select"
+import { DEFAULT_COUNTRY_ISO } from "@/lib/country-codes"
+import { loadDefaultCountry } from "@/lib/default-country"
+import { combinePhone, splitInternational } from "@/lib/phone-entry"
 
 export interface ContactOption {
   id: string
@@ -12,8 +16,14 @@ export interface ContactOption {
 
 export interface NewContactInput {
   name: string
+  /** The full number sent to the server (country code + number), or ''. */
   phone: string
   alternate_phone: string
+  /** The two boxes behind each number: the country, and what was typed. */
+  phone_iso?: string
+  phone_local?: string
+  alt_iso?: string
+  alt_local?: string
 }
 
 /** Either a contact on record, or the details of one to add. */
@@ -24,6 +34,33 @@ export type PickedContact =
 
 const INPUT =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
+
+/**
+ * A number as two boxes: the country (flag + code) and the number. A
+ * whole "+44 …" number typed or pasted moves its country into the first
+ * box.
+ */
+function PhoneField({
+  id, label, iso, local, required, placeholder, onChange,
+}: { id: string; label: string; iso: string; local: string; required?: boolean; placeholder: string; onChange: (iso: string, local: string) => void }) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-[11px] font-medium text-slate-600 mb-1">{label}</label>
+      <div className="flex gap-2">
+        <CountryCodeSelect id={`${id}-country`} variant="field" value={iso} onChange={(next) => onChange(next, local)} className="w-[112px] shrink-0" />
+        <input id={id} type="tel" inputMode="tel" autoComplete="off" required={required}
+          className={INPUT + " bg-white min-w-0 flex-1 tabular-nums"} placeholder={placeholder}
+          value={local} maxLength={20}
+          onChange={(e) => {
+            const v = e.target.value
+            const split = splitInternational(v)
+            if (split && split.local.replace(/\D/g, "").length >= 6) onChange(split.iso, split.local)
+            else onChange(iso, v)
+          }} />
+      </div>
+    </div>
+  )
+}
 
 /** Enough digits to be a phone number rather than part of a name. */
 function looksLikePhone(q: string) {
@@ -48,6 +85,11 @@ export function ContactPicker({
   const [showDropdown, setShowDropdown] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const seq = useRef(0)
+  /** The value as last rendered, for the late default-country answer. */
+  const latest = useRef<PickedContact>(value)
+  latest.current = value
+  /** Set once a country is chosen by hand: the late default never overrides it. */
+  const countryTouched = useRef(false)
 
   function search(v: string) {
     setQuery(v)
@@ -71,10 +113,25 @@ export function ContactPicker({
   }
 
   function startNew(prefill = "") {
-    const phone = looksLikePhone(prefill) ? prefill.trim() : ""
-    const name = phone ? "" : prefill.trim()
-    onChange({ kind: "new", contact: { name, phone, alternate_phone: "" } })
+    const typed = looksLikePhone(prefill) ? prefill.trim() : ""
+    const name = typed ? "" : prefill.trim()
+    const split = typed ? splitInternational(typed) : null
+    const iso = split?.iso ?? DEFAULT_COUNTRY_ISO
+    const local = split ? split.local : typed.replace(/\D/g, "")
+    countryTouched.current = false
+    const contact: NewContactInput = { name, phone: combinePhone(iso, local), alternate_phone: "", phone_iso: iso, phone_local: local, alt_iso: iso, alt_local: "" }
+    onChange({ kind: "new", contact })
     setShowDropdown(false)
+    // The account's own country, unless the number typed carried one.
+    if (!split) {
+      void loadDefaultCountry().then((def) => {
+        if (def === iso) return
+        const cur = latest.current
+        if (countryTouched.current || !cur || cur.kind !== "new" || cur.contact.phone_iso !== iso || cur.contact.alt_iso !== iso) return
+        const c = cur.contact
+        onChange({ kind: "new", contact: { ...c, phone_iso: def, alt_iso: def, phone: combinePhone(def, c.phone_local ?? ""), alternate_phone: combinePhone(def, c.alt_local ?? "") } })
+      })
+    }
   }
 
   function clear() {
@@ -133,25 +190,19 @@ export function ContactPicker({
           </button>
         </div>
         <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
-          <div>
-            <label htmlFor={`${idPrefix}-new-phone`} className="block text-[11px] font-medium text-slate-600 mb-1">Phone number *</label>
-            <input id={`${idPrefix}-new-phone`} type="tel" inputMode="tel" autoComplete="off" required
-              className={INPUT + " bg-white"} placeholder="9847012345"
-              value={c.phone} maxLength={20} onChange={(e) => set({ phone: e.target.value })} />
-          </div>
+          <PhoneField id={`${idPrefix}-new-phone`} label="Phone number *" required placeholder="98470 12345"
+            iso={c.phone_iso ?? DEFAULT_COUNTRY_ISO} local={c.phone_local ?? c.phone}
+            onChange={(iso, local) => { if (iso !== c.phone_iso) countryTouched.current = true; set({ phone_iso: iso, phone_local: local, phone: combinePhone(iso, local) }) }} />
           <div>
             <label htmlFor={`${idPrefix}-new-name`} className="block text-[11px] font-medium text-slate-600 mb-1">Name</label>
             <input id={`${idPrefix}-new-name`} autoComplete="off" className={INPUT + " bg-white"} placeholder="Full name"
               value={c.name} maxLength={120} onChange={(e) => set({ name: e.target.value })} />
           </div>
-          <div>
-            <label htmlFor={`${idPrefix}-new-alt`} className="block text-[11px] font-medium text-slate-600 mb-1">Alternate number</label>
-            <input id={`${idPrefix}-new-alt`} type="tel" inputMode="tel" autoComplete="off"
-              className={INPUT + " bg-white"} placeholder="Optional"
-              value={c.alternate_phone} maxLength={20} onChange={(e) => set({ alternate_phone: e.target.value })} />
-          </div>
+          <PhoneField id={`${idPrefix}-new-alt`} label="Alternate number" placeholder="Optional"
+            iso={c.alt_iso ?? c.phone_iso ?? DEFAULT_COUNTRY_ISO} local={c.alt_local ?? c.alternate_phone}
+            onChange={(iso, local) => { if (iso !== c.alt_iso) countryTouched.current = true; set({ alt_iso: iso, alt_local: local, alternate_phone: combinePhone(iso, local) }) }} />
           <p className="text-[11px] text-slate-500">
-            Ten-digit Indian numbers get +91 added. If this number is already saved, that contact is used.
+            If this number is already saved, that contact is used.
           </p>
         </div>
       </div>

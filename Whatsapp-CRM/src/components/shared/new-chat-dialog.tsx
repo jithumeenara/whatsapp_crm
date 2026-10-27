@@ -8,26 +8,7 @@ import { TemplatePicker, type TemplateSendValues } from "@/components/inbox/temp
 import { CountryCodeSelect } from "@/components/shared/country-code-select"
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from "@/lib/country-codes"
 import type { MessageTemplate } from "@/types"
-
-/** The account's starting country — its admin's — fetched once per page
- *  load, not on every open. A failed fetch is forgotten, so the next
- *  open tries again; meanwhile India. */
-let defaultCountry: Promise<string> | null = null
-function loadDefaultCountry(): Promise<string> {
-  if (!defaultCountry) {
-    defaultCountry = fetch("/api/conversations/new-chat", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const iso = typeof d?.default_country_iso === "string" ? d.default_country_iso : ""
-        return COUNTRY_CODES.some((c) => c.iso === iso) ? iso : DEFAULT_COUNTRY_ISO
-      })
-      .catch(() => {
-        defaultCountry = null
-        return DEFAULT_COUNTRY_ISO
-      })
-  }
-  return defaultCountry
-}
+import { loadDefaultCountry } from "@/lib/default-country"
 
 /** "+91 98765 43210" or "0091 98765…" typed or pasted into the number
  *  box: a whole international number, so its country is taken from it. */

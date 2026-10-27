@@ -334,10 +334,11 @@ function CreateLeadDialog({
     title: "", source: sourceOptions.find(s => s.label.toLowerCase() === "manual")?.label ?? sourceOptions[0]?.label ?? "manual",
     status: "new", score: (scoreOptions[1] ?? scoreOptions[0])?.label ?? "",
     lead_quality: "", district: "", place: "", notes: "",
+    gender: "", age: "", address: "",
   })
 
   function resetAll() {
-    setForm({ title: "", source: sourceOptions.find(s => s.label.toLowerCase() === "manual")?.label ?? sourceOptions[0]?.label ?? "manual", status: "new", score: (scoreOptions[1] ?? scoreOptions[0])?.label ?? "", lead_quality: "", district: "", place: "", notes: "" })
+    setForm({ title: "", source: sourceOptions.find(s => s.label.toLowerCase() === "manual")?.label ?? sourceOptions[0]?.label ?? "manual", status: "new", score: (scoreOptions[1] ?? scoreOptions[0])?.label ?? "", lead_quality: "", district: "", place: "", notes: "", gender: "", age: "", address: "" })
     setPicked(null)
     setDuplicateInfo(null); setPendingForm(null)
   }
@@ -370,11 +371,17 @@ function CreateLeadDialog({
           return
         }
       }
-      if (!res.ok) throw new Error("Failed")
-      toast.success("Lead created")
+      if (!res.ok) {
+        const data = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || "Failed to create lead")
+      }
+      const saved = await res.json().catch(() => null) as { details_saved?: boolean } | null
+      if (saved?.details_saved === false) toast.warning("Lead created, but gender, age and address were not saved on the contact. Add them from the contact page.")
+      else toast.success("Lead created")
       onSaved(); onClose(); resetAll()
-    } catch {
-      toast.error("Failed to create lead")
+    } catch (err) {
+      console.error("[new lead] create failed:", err)
+      toast.error(err instanceof Error && err.message ? err.message : "Failed to create lead")
     } finally {
       setSaving(false)
     }
@@ -521,6 +528,48 @@ function CreateLeadDialog({
               />
             </div>
           </div>
+
+          {picked && (
+            <div role="group" aria-labelledby="lead-person-heading" className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <p id="lead-person-heading" className="text-[12px] font-medium text-slate-600">
+                About the person <span className="font-normal text-slate-400">— saved on the contact</span>
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="lead-gender" className="block text-[12px] font-medium text-slate-600 mb-1.5">Gender</label>
+                  <select id="lead-gender"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
+                    value={form.gender}
+                    onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value }))}
+                  >
+                    <option value="">— select —</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="trans">Trans</option>
+                    <option value="prefer_not_to_say">Prefer not to say</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="lead-age" className="block text-[12px] font-medium text-slate-600 mb-1.5">Age</label>
+                  <input id="lead-age" type="number" inputMode="numeric" min={0} max={120} step={1} autoComplete="off"
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 tabular-nums focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none"
+                    placeholder="e.g. 34"
+                    value={form.age}
+                    onChange={(e) => setForm((f) => ({ ...f, age: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="lead-address" className="block text-[12px] font-medium text-slate-600 mb-1.5">Address</label>
+                <textarea id="lead-address" rows={2} maxLength={500} autoComplete="street-address"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none resize-none"
+                  placeholder="House, street, town, PIN"
+                  value={form.address}
+                  onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
 
 
           <div className="flex gap-3 pt-1">
