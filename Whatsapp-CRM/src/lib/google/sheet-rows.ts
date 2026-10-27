@@ -307,6 +307,24 @@ export function buildRow(
   return { values, cells, missing }
 }
 
+/** What a ready-made template row shows before anyone types in it: an
+ *  unticked checkbox, a formula's error or zero. */
+const TEMPLATE_FILLER = new Set(['', 'false', '0', '#n/a', '#ref!', '#value!', '#div/0!', '#error!', '#name?', '#num!', '#null!'])
+
+/**
+ * Where new rows go (1-based sheet row): just below the last row anyone
+ * filled. Google's own "end of table" counts a template's ready-made rows
+ * — checkboxes, formulas — as filled, so rows landed far below the people
+ * already listed. Rows below that hold only filler are reused; a row with
+ * anything typed in it, in any column, never is.
+ */
+export function firstFreeRow(table: readonly (readonly string[])[], headerIndex = 0): number {
+  for (let i = table.length - 1; i > headerIndex; i--) {
+    if ((table[i] ?? []).some((v) => !TEMPLATE_FILLER.has(String(v ?? '').trim().toLowerCase()))) return i + 2
+  }
+  return headerIndex + 2
+}
+
 /** "Mobile No." → "mobile_no" — for {{vars.sheet_mobile_no}}. */
 export function headerSlug(header: string): string {
   return normHeader(header).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40)

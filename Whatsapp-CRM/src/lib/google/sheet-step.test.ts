@@ -194,3 +194,48 @@ describe('Google Sheet step — says why there is nothing to write', () => {
       .rejects.toThrow(/Map at least one column/)
   })
 })
+
+describe('Google Sheet step — template rows that only look empty', () => {
+  // A registration template: rows 2–3 filled by people, rows 4–7 ready-made
+  // with an unticked checkbox and a formula error in columns nobody maps.
+  const template = () => ({
+    Leads: [
+      ['Sl No', 'Name', 'Phone', 'Paid', 'Code'],
+      ['1', 'fgh', '', 'FALSE', '#N/A'],
+      ['2', 'hy', '', 'FALSE', '#N/A'],
+      ['', '', '', 'FALSE', '#N/A'],
+      ['', '', '', 'FALSE', '#N/A'],
+      ['', '', '', 'FALSE', '#N/A'],
+      ['', '', '', 'FALSE', '#N/A'],
+    ],
+  })
+
+  it('fills the first empty-looking row under the people, not row 8', async () => {
+    const s = fakeSheet(template())
+    const r = await runSheetStep(s.api, cfg({ action: 'add', mapping: [{ column: 'Name', value: '{{vars.name}}' }, { column: 'Phone', value: '{{vars.phone}}' }] }), resolve, opts)
+    expect(r.rows[0].row).toBe(4)
+    expect(r.vars.sheet_row).toBe('4')
+    const rows = s.tabs.get('Leads')!.rows
+    expect(rows[3]).toEqual(['', 'Chinnu', '+919947840578', 'FALSE', '#N/A'])
+    expect(rows).toHaveLength(7)
+    expect(s.calls).toEqual(['cells:Leads'])
+  })
+
+  it('a row a person started (only an unmapped column typed) is never written into', async () => {
+    const t = template()
+    t.Leads[4] = ['', '', '', 'TRUE', '#N/A']
+    const s = fakeSheet(t)
+    const r = await runSheetStep(s.api, cfg({ action: 'add', mapping: [{ column: 'Name', value: 'X' }] }), resolve, opts)
+    expect(r.rows[0].row).toBe(6)
+    expect(s.tabs.get('Leads')!.rows[4][1]).toBe('')
+  })
+
+  it('no ready-made rows left: added below, as before', async () => {
+    const t = template()
+    t.Leads = t.Leads.slice(0, 3)
+    const s = fakeSheet(t)
+    const r = await runSheetStep(s.api, cfg({ action: 'add', mapping: [{ column: 'Name', value: 'X' }] }), resolve, opts)
+    expect(r.rows[0].row).toBe(4)
+    expect(s.calls).toEqual(['append:Leads'])
+  })
+})

@@ -28,7 +28,7 @@ import { prisma } from '@/lib/db'
 import { googleAccessToken } from './oauth'
 import { appendRows, createSpreadsheet, deleteRows, ensureTab, isTransientSheetsError, readTab, writeCells, writeHeaderRow, SheetsApiError } from './sheets'
 import { sheetLockKey, withSheetLock } from './sheet-lock'
-import { findColumn, safeTabTitle } from './sheet-rows'
+import { findColumn, firstFreeRow, safeTabTitle } from './sheet-rows'
 import { destinationsFor, findHeaderRow, planTabWrite, type RouteField, type RouteRule } from './sheet-route-rules'
 import { businessNow } from './sheet-step'
 
@@ -219,7 +219,8 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
         const tabs = (await getSpreadsheet(token, id)).tabs
         const tab = (p.tab && tabs.find((t) => t.title.toLowerCase() === String(p.tab).toLowerCase())?.title) || tabs[0]?.title
         if (!tab) throw new SheetsApiError('The spreadsheet has no tabs.', 400)
-        const header = ((await readTab(token, id, tab))[0] ?? []).map(String)
+        const table = await readTab(token, id, tab)
+        const header = (table[0] ?? []).map(String)
         const rows = group.map((j) => {
           const rec = ((j.payload ?? {}) as { record?: Record<string, string> }).record ?? {}
           const line = header.map(() => '')
@@ -229,7 +230,13 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
           }
           return line
         })
-        await appendRows(token, id, tab, rows)
+        // The template's unused rows first (only filled cells written, so
+        // its checkboxes and formulas stay), the rest below everything.
+        const free = firstFreeRow(table)
+        const into = rows.slice(0, Math.max(0, table.length + 1 - free))
+        const cells = into.flatMap((line, k) => line.flatMap((value, col) => (value.trim() ? [{ row: free + k, col, value }] : [])))
+        if (cells.length) await writeCells(token, id, tab, cells)
+        if (rows.length > into.length) await appendRows(token, id, tab, rows.slice(into.length))
       })
       await finish(group.map((j) => j.id))
     } catch (err) {

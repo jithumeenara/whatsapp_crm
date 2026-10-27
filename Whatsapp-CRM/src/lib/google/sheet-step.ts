@@ -17,7 +17,7 @@
  */
 
 import {
-  ARCHIVE_TAB, SHEET_STEP_MAX_ROWS, alignToHeaders, buildRow, checkConditions, findColumn, matchRows, olderThan,
+  ARCHIVE_TAB, SHEET_STEP_MAX_ROWS, alignToHeaders, buildRow, checkConditions, findColumn, firstFreeRow, matchRows, olderThan,
   pickSheetRows, relocate, rowObject, rowVars, type ColumnMapping, type SheetCondition, type SheetMatchMode,
   type SheetRow, type SheetWhich,
 } from './sheet-rows'
@@ -167,10 +167,12 @@ export async function runSheetStep(
     const built = buildRow(headers, n.mapping, resolve)
     for (const m of built.missing) warnings.push(`Column “${m}” is not in the sheet any more — skipped.`)
     if (isBlank(built.values)) throw nothingToWrite(n.mapping, built.missing)
-    let rowNumber = table.length + 1
+    // Into the template's first unused row when it has one (only the mapped
+    // cells, so its checkboxes and formulas stay); else below everything.
+    const rowNumber = firstFreeRow(table)
     if (!opts.dryRun) {
-      await api.append(tab, [built.values])
-      rowNumber = table.length + 1
+      if (rowNumber <= table.length) await api.writeCells(tab, [...built.cells].map(([col, value]) => ({ row: rowNumber, col, value })))
+      else await api.append(tab, [built.values])
     }
     return done({
       outcome: 'added', found, vars: rowVars(headers, { row: rowNumber, values: built.values }),
