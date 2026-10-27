@@ -386,6 +386,10 @@ model Contact {
   email                  String?
   company                String?
   gender                 String?
+  /// 0–120 (migration 148).
+  age                    Int?      @db.SmallInt
+  /// At most 500 characters (migration 148).
+  address                String?
   avatar_url             String?
   external_id            String? // dedup key for external integrations (HMS, LMS, etc.)
   // Dedicated per-platform identity columns — never reuse `phone` for these.

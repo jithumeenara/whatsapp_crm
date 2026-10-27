@@ -101,6 +101,8 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
   const [email, setEmail] = useState("")
   const [company, setCompany] = useState("")
   const [gender, setGender] = useState("")
+  const [age, setAge] = useState("")
+  const [address, setAddress] = useState("")
   const [optInStatus, setOptInStatus] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -148,6 +150,8 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
         setEmail(c.email ?? "")
         setCompany(c.company ?? "")
         setGender(c.gender ?? "")
+        setAge(c.age != null ? String(c.age) : "")
+        setAddress(c.address ?? "")
         setOptInStatus(c.opt_in_status ?? "unknown")
       }
       setAllTags(tr?.tags ?? [])
@@ -219,6 +223,8 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
           email: email.trim() || null,
           company: company.trim() || null,
           gender: gender || null,
+          age: age.trim(),
+          address,
           opt_in_status: optInStatus || null,
         }),
       })
@@ -458,6 +464,14 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
                       <option value="trans">Trans</option>
                       <option value="prefer_not_to_say">Prefer not to say</option>
                     </select>
+                  </div>
+                  <FieldInput label="Age" value={age} onChange={setAge} type="number" placeholder="e.g. 34"
+                    error={age.trim() && !/^\d{1,3}$/.test(age.trim()) || Number(age) > 120 ? "A whole number from 0 to 120." : null} />
+                  <div>
+                    <label htmlFor="contact-address" className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Address</label>
+                    <textarea id="contact-address" rows={2} maxLength={500} autoComplete="street-address" value={address} onChange={(e) => setAddress(e.target.value)}
+                      placeholder="House, street, town, PIN"
+                      className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[13px] text-slate-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none" />
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Consent</label>

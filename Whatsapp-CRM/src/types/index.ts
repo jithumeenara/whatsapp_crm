@@ -129,6 +129,9 @@ export interface Contact {
   email?: string;
   company?: string;
   gender?: string | null;
+  /** 0–120 (migration 148). */
+  age?: number | null;
+  address?: string | null;
   location?: string;
   avatar_url?: string;
   /** Tri-state: "unknown" (default), "opted_in", "opted_out" (reserved —

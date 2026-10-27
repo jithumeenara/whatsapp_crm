@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { checkEmail, checkPhone } from "@/lib/contacts/validate"
 import { findExistingContact } from "@/lib/contacts/dedupe"
+import { contactDetailsPatch } from "@/lib/leads/contact-details"
 import { parseTagMatch, tagAudienceWhere } from "@/lib/broadcasts/tag-audience"
 
 const PAGE_SIZE = 25
@@ -137,6 +138,8 @@ export async function POST(req: NextRequest) {
       if (!emailCheck.ok) return NextResponse.json({ error: emailCheck.error }, { status: 400 })
       email = emailCheck.value
     }
+    const details = contactDetailsPatch(body as Record<string, unknown>)
+    if ("error" in details) return NextResponse.json({ error: details.error }, { status: 400 })
 
     // The same number as an archived ("deleted") contact: bring that one
     // back, history and all, rather than fail on the duplicate number.
@@ -158,6 +161,9 @@ export async function POST(req: NextRequest) {
         email,
         company: company ?? null,
         avatar_url: avatar_url ?? null,
+        gender: details.gender ?? null,
+        age: details.age ?? null,
+        address: details.address ?? null,
         opt_in_source: "manual",
         opt_in_at: new Date(),
       },

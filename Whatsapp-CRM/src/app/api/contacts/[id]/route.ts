@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
 import { checkEmail, checkPhone, isPlaceholderPhone } from "@/lib/contacts/validate"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
+import { contactDetailsPatch } from "@/lib/leads/contact-details"
 import { emitToAccount } from "@/lib/socket"
 
 /**
@@ -240,11 +241,14 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 })
     }
 
-    const allowed = ["phone", "name", "email", "company", "avatar_url", "alternate_phone", "gender", "opt_in_status"] as const
+    const allowed = ["phone", "name", "email", "company", "avatar_url", "alternate_phone", "opt_in_status"] as const
     const data: Record<string, string | null> = {}
     for (const k of allowed) {
       if (k in body) data[k] = typeof body[k] === "string" ? body[k].trim() || null : body[k] ?? null
     }
+    // Gender, age and address: checked, an empty value clears.
+    const details = contactDetailsPatch(body as Record<string, unknown>)
+    if ("error" in details) return NextResponse.json({ error: details.error }, { status: 400 })
 
     // Phone and email are checked only when they change. What is already
     // stored stays saveable as it is — an Instagram contact's id, an
@@ -282,7 +286,7 @@ export async function PATCH(
     }
 
     try {
-      const updated = await prisma.contact.update({ where: { id }, data })
+      const updated = await prisma.contact.update({ where: { id }, data: { ...data, ...details } })
       return NextResponse.json({ contact: updated })
     } catch (err) {
       if (isUniqueViolation(err)) {

@@ -37,6 +37,9 @@ export function ContactForm({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
+  const [gender, setGender] = useState('');
+  const [age, setAge] = useState('');
+  const [address, setAddress] = useState('');
   const [saving, setSaving] = useState(false);
 
   const [dupMatch, setDupMatch] = useState<{ contact: ExistingContact; exact: boolean } | null>(null);
@@ -54,6 +57,9 @@ export function ContactForm({
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
+      setGender(contact?.gender ?? '');
+      setAge(contact?.age != null ? String(contact.age) : '');
+      setAddress(contact?.address ?? '');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
       fetchTags();
@@ -115,6 +121,7 @@ export function ContactForm({
       const m = checkEmail(email);
       if (!m.ok) { toast.error(m.error); return; }
     }
+    if (age.trim() && (!/^\d{1,3}$/.test(age.trim()) || Number(age) > 120)) { toast.error('Age must be a whole number from 0 to 120.'); return; }
     if (!isEdit && dupMatch?.exact) { toast.error('A contact with this phone number already exists'); return; }
 
     setSaving(true);
@@ -125,7 +132,7 @@ export function ContactForm({
         const res = await fetch(`/api/contacts/${contactId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), email: email.trim() || null, company: company.trim() || null }),
+          body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), email: email.trim() || null, company: company.trim() || null, gender, age: age.trim(), address }),
         });
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -135,7 +142,7 @@ export function ContactForm({
         const res = await fetch('/api/contacts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), email: email.trim() || null, company: company.trim() || null }),
+          body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), email: email.trim() || null, company: company.trim() || null, gender, age: age.trim(), address }),
         });
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
@@ -311,6 +318,33 @@ export function ContactForm({
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-colors"
                 />
               </div>
+            </div>
+
+            {/* About the person — gender, age, address */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="cf-gender" className="block text-[12px] font-semibold text-slate-700 mb-1.5">Gender</label>
+                <select id="cf-gender" value={gender} onChange={(e) => setGender(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-colors">
+                  <option value="">Not specified</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="trans">Trans</option>
+                  <option value="prefer_not_to_say">Prefer not to say</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="cf-age" className="block text-[12px] font-semibold text-slate-700 mb-1.5">Age</label>
+                <input id="cf-age" type="number" inputMode="numeric" min={0} max={120} step={1} autoComplete="off"
+                  value={age} onChange={(e) => setAge(e.target.value)} placeholder="e.g. 34"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-900 tabular-nums placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-colors" />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="cf-address" className="block text-[12px] font-semibold text-slate-700 mb-1.5">Address</label>
+              <textarea id="cf-address" rows={2} maxLength={500} autoComplete="street-address"
+                value={address} onChange={(e) => setAddress(e.target.value)} placeholder="House, street, town, PIN"
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition-colors" />
             </div>
 
             {/* Tags */}

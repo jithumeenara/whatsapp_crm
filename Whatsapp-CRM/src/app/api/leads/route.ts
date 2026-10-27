@@ -355,7 +355,7 @@ export async function POST(req: NextRequest) {
     let details_saved = true
     if (lead.contact_id && hasContactDetails(details)) {
       try {
-        await saveContactDetails(ctx.accountId, ctx.userId, lead.contact_id, details)
+        await saveContactDetails(ctx.accountId, lead.contact_id, details)
       } catch (err) {
         console.error('[leads] contact details not saved:', err instanceof Error ? err.message : err)
         details_saved = false

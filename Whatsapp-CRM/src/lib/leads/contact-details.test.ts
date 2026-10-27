@@ -20,3 +20,20 @@ describe('New lead — gender, age and address', () => {
     expect(cleanContactDetails({ address: { a: 1 } })).toEqual({})
   })
 })
+
+describe('editing a contact — gender, age and address', async () => {
+  const { contactDetailsPatch } = await import('./contact-details')
+
+  it('only the fields sent; an empty value clears', () => {
+    expect(contactDetailsPatch({ name: 'x' })).toEqual({})
+    expect(contactDetailsPatch({ age: '', address: '  ', gender: '' })).toEqual({ age: null, address: null, gender: null })
+    expect(contactDetailsPatch({ age: '41', address: 'Kollam' })).toEqual({ age: 41, address: 'Kollam' })
+    expect(contactDetailsPatch({ age: null })).toEqual({ age: null })
+  })
+
+  it('refuses what the database would refuse', () => {
+    expect(contactDetailsPatch({ age: '200' })).toHaveProperty('error')
+    expect(contactDetailsPatch({ gender: 'x' })).toHaveProperty('error')
+    expect(contactDetailsPatch({ address: 'a'.repeat(501) })).toHaveProperty('error')
+  })
+})

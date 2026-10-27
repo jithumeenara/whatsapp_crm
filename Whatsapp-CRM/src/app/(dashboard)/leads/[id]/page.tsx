@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { GenderBadge } from "@/components/contacts/gender-badge"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
 import { outcomeOf, OUTCOME_COLOR, OUTCOME_LABEL } from "@/lib/leads/outcome"
 import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-lead-dialog"
@@ -110,6 +111,9 @@ export default function LeadDetailPage() {
   // Editable Lead Details card — local draft + debounced/explicit save
   const [district, setDistrict] = useState("")
   const [place, setPlace] = useState("")
+  // The person's age and address live on the contact (migration 148).
+  const [age, setAge] = useState("")
+  const [address, setAddress] = useState("")
   const [savingDetails, setSavingDetails] = useState(false)
   const dirtyRef = useRef(false)
 
@@ -189,6 +193,8 @@ export default function LeadDetailPage() {
         if (!dirtyRef.current) {
           setDistrict(d.lead?.district ?? "")
           setPlace(d.lead?.place ?? "")
+          setAge(d.lead?.contact?.age != null ? String(d.lead.contact.age) : "")
+          setAddress(d.lead?.contact?.address ?? "")
         }
       })
       .catch(() => toast.error("Failed to load lead"))
@@ -321,11 +327,29 @@ export default function LeadDetailPage() {
   }, [id, loadLead])
 
   async function saveDetails() {
+    if (savingDetails) return
     setSavingDetails(true)
     dirtyRef.current = false
     const ok = await patchLead({ district: district || null, place: place || null })
+    // Age and address belong to the contact: saved there, only when changed.
+    let contactOk = true
+    const was = lead?.contact
+    if (contactId && (age.trim() !== (was?.age != null ? String(was.age) : "") || address.trim() !== (was?.address ?? "").trim())) {
+      try {
+        await apiFetch(`/api/contacts/${contactId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ age: age.trim(), address }),
+        })
+      } catch (err) {
+        console.error("[lead] contact details failed:", err)
+        toast.error(errorText(err, "Could not save age and address."))
+        dirtyRef.current = true
+        contactOk = false
+      }
+    }
     setSavingDetails(false)
-    if (ok) toast.success("Lead details saved")
+    if (ok && contactOk) { toast.success("Lead details saved"); loadLead() }
   }
 
   async function setScore(score: string) {
@@ -645,11 +669,12 @@ export default function LeadDetailPage() {
       <div className="flex-1 overflow-hidden grid grid-cols-1 xl:grid-cols-[1fr_420px]">
         <div className="overflow-y-auto p-6 space-y-4">
           {/* Contact hero card */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-wrap items-center gap-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-wrap items-start gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white text-xl font-black">
               {displayName.slice(0, 1).toUpperCase()}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1 space-y-2">
+              <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-[16px] font-bold text-slate-800 truncate">{displayName}</h1>
                 {lead.score && (
@@ -664,20 +689,29 @@ export default function LeadDetailPage() {
                   <MapPin className="h-3 w-3" /> {[lead.place, lead.district].filter(Boolean).join(", ")}
                 </p>
               )}
-            </div>
-
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+              </div>
               {phone && (
-                <>
-                  <span className="text-[14px] font-bold text-slate-800">{phone}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-bold text-slate-800 tabular-nums">{phone}</span>
                   <a href={`tel:${phone}`} className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-emerald-500 text-white text-[12px] font-semibold hover:bg-emerald-600">
                     <Phone className="h-3.5 w-3.5" /> Call
                   </a>
-                  <button onClick={() => copyPhone(phone)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50">
+                  <button onClick={() => copyPhone(phone)} aria-label="Copy number" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50">
                     {copied === phone ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-slate-500" />}
                   </button>
-                </>
+                </div>
               )}
+              {altPhone && (
+                <div className="flex items-center gap-2">
+                  <a href={`tel:${altPhone}`} className="flex items-center gap-1.5 text-[13px] text-slate-600 tabular-nums hover:text-indigo-600">
+                    <Phone className="h-3 w-3" /> {altPhone}
+                  </a>
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-semibold">Call Alt</span>
+                </div>
+              )}
+            </div>
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
               {canViewAllLeads && teamMembers.length > 0 && (
                 <select
                   aria-label="Assign this lead to"
@@ -712,18 +746,10 @@ export default function LeadDetailPage() {
                   ))}
                 </select>
               )}
-              <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact"
+              <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact" aria-label="Edit contact"
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50">
                 {contactEditLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
               </button>
-              {altPhone && (
-                <div className="w-full flex items-center gap-2 pt-1">
-                  <a href={`tel:${altPhone}`} className="flex items-center gap-1.5 text-[13px] text-slate-600 hover:text-indigo-600">
-                    <Phone className="h-3 w-3" /> {altPhone}
-                  </a>
-                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-semibold">Call Alt</span>
-                </div>
-              )}
             </div>
           </div>
 
@@ -746,7 +772,10 @@ export default function LeadDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Lead Details */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-4">Lead Details</p>
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead Details</p>
+                <GenderBadge gender={lead.contact?.gender} />
+              </div>
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">District</label>
@@ -762,6 +791,22 @@ export default function LeadDetailPage() {
                     placeholder="City / area"
                     className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
                 </div>
+                {contactId && (
+                  <div className="grid grid-cols-[6rem_1fr] gap-3">
+                    <div className="space-y-1.5">
+                      <label htmlFor="lead-age" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Age</label>
+                      <input id="lead-age" type="number" inputMode="numeric" min={0} max={120} step={1} autoComplete="off"
+                        value={age} onChange={(e) => { setAge(e.target.value); dirtyRef.current = true }} placeholder="—"
+                        className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      <label htmlFor="lead-address" className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Address</label>
+                      <input id="lead-address" autoComplete="street-address" maxLength={500}
+                        value={address} onChange={(e) => { setAddress(e.target.value); dirtyRef.current = true }} placeholder="House, street, town"
+                        className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-[13px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400" />
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Lead Score</label>
                   <div className="grid grid-cols-3 gap-2">

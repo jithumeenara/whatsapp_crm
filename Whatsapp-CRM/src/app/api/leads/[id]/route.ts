@@ -11,7 +11,7 @@ async function getLead(id: string, accountId: string) {
   return prisma.lead.findFirst({
     where: { id, account_id: accountId },
     include: {
-      contact: { select: { id: true, name: true, phone: true, alternate_phone: true, avatar_url: true } },
+      contact: { select: { id: true, name: true, phone: true, alternate_phone: true, avatar_url: true, gender: true, age: true, address: true } },
       assignee: { select: { id: true, email: true, profile: { select: { full_name: true, avatar_url: true } } } },
       activities: {
         orderBy: { created_at: 'desc' },
