@@ -4,13 +4,14 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react"
 import { toast } from "sonner"
 import {
-  FileText, RefreshCw, Plus, AlertTriangle, ArrowLeft, ChevronRight,
+  FileText, RefreshCw, Plus, AlertTriangle, Sparkles, ArrowLeft, ChevronRight,
   ImageIcon, VideoIcon, FileIcon, Type, Phone, Link2,
   MessageSquareText, Trash2, Copy, Smartphone, Workflow, Pencil, Eye, X,
   UploadCloud, CheckCircle2, Bold, Italic, Strikethrough, List, ListOrdered,
 } from "lucide-react"
 import type { MessageTemplate, TemplateButton } from "@/types"
 import { WhatsAppText } from "@/components/whatsapp-text"
+import { TemplateKitDialog } from "@/components/templates/template-kit-dialog"
 import { CountryCodeSelect } from "@/components/shared/country-code-select"
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from "@/lib/country-codes"
 import { toggleList, toggleWrap, type Edit } from "@/lib/whatsapp/format-edit"
@@ -1100,6 +1101,7 @@ export default function TemplatesV2() {
   const [editing,  setEditing]    = useState<MessageTemplate | null>(null)
   const [deleteId, setDeleteId]   = useState<string | null>(null)
   const [deleting, setDeleting]   = useState(false)
+  const [kitOpen,  setKitOpen]    = useState(false)
 
   async function load() {
     setLoading(true)
@@ -1150,6 +1152,7 @@ export default function TemplatesV2() {
 
   return (
     <div className="min-h-full">
+      <TemplateKitDialog open={kitOpen} onOpenChange={setKitOpen} onSubmitted={load} />
       {/* Header */}
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 sm:px-6 py-3.5">
         <div className="flex items-center justify-between gap-3">
@@ -1163,6 +1166,11 @@ export default function TemplatesV2() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button type="button" onClick={() => setKitOpen(true)} aria-label="Suggest templates with AI"
+              className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 sm:px-3 py-1.5 text-[12px] sm:text-[13px] font-medium text-violet-700 hover:bg-violet-100 transition-colors">
+              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span className="hidden sm:inline">Suggest templates</span>
+            </button>
             <button type="button" onClick={sync} disabled={syncing} aria-label="Sync from Meta"
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 sm:px-3 py-1.5 text-[12px] sm:text-[13px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors">
               <RefreshCw className={cn("h-3.5 w-3.5 shrink-0", syncing && "animate-spin")} />

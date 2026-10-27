@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { cleanMapping } from '@/lib/whatsapp/alert-fields'
 import { Prisma } from '@prisma/client'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
@@ -54,6 +55,9 @@ function buildUpsertData(
     footer_text: payload.footer_text ?? null,
     buttons: payload.buttons != null ? (payload.buttons as Prisma.InputJsonValue) : Prisma.JsonNull,
     sample_values: payload.sample_values != null ? (payload.sample_values as Prisma.InputJsonValue) : Prisma.JsonNull,
+    // A template from the AI kit says what each {{n}} carries in a staff
+    // alert (alert-fields.ts); kept only when it fits the body exactly.
+    ...kitFields(payload),
     status: extras.status,
     meta_template_id: extras.metaTemplateId,
     submission_error: extras.submissionError,
@@ -61,6 +65,19 @@ function buildUpsertData(
     rejection_reason: null,
     last_submitted_at: new Date(),
   }
+}
+
+/**
+ * What each {{n}} carries in a staff alert (from the AI kit). Kept only
+ * when it fits this body exactly; given nothing, the stored meanings are
+ * cleared — an edited body may have moved its variables (upsertTemplateRow
+ * keeps them when the body is unchanged).
+ */
+function kitFields(payload: TemplatePayload): { variable_fields: Prisma.InputJsonValue | typeof Prisma.DbNull } {
+  const raw = (payload as { variable_fields?: unknown }).variable_fields
+  const count = new Set([...payload.body_text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => m[1])).size
+  const fields = raw === undefined ? null : cleanMapping(raw, count)
+  return { variable_fields: fields && fields.length === count ? fields : Prisma.DbNull }
 }
 
 async function upsertTemplateRow(
@@ -83,10 +100,14 @@ async function upsertTemplateRow(
   // real WABA at all), so a plain findFirst sidesteps that mismatch.
   const existingRow = await prisma.messageTemplate.findFirst({
     where: { account_id: accountId, waba_id: extras.wabaId, name: payload.name, language: payload.language ?? 'en_US' },
-    select: { id: true },
+    select: { id: true, body_text: true },
   })
   if (existingRow) {
-    return prisma.messageTemplate.update({ where: { id: existingRow.id }, data })
+    // Resubmitted unchanged from the editor (which knows nothing of the
+    // kit's meanings): keep what was recorded.
+    const keep = (payload as { variable_fields?: unknown }).variable_fields === undefined && existingRow.body_text === payload.body_text
+    const { variable_fields, ...rest } = data
+    return prisma.messageTemplate.update({ where: { id: existingRow.id }, data: keep ? rest : { ...rest, variable_fields } })
   }
   return prisma.messageTemplate.create({ data })
 }

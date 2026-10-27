@@ -18,6 +18,8 @@ import { prisma } from '@/lib/db'
 export type UsageFeature =
   | 'chat_customer'
   | 'chat_admin'
+  /// The AI template kit (Templates → Suggest templates).
+  | 'template_kit'
   /// Admin Chat: an admin's question from WhatsApp or Telegram.
   | 'admin_chat'
   | 'test'
