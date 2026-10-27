@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/accordion';
 import { HandoverConsentSetting } from './handover-consent-setting';
 import { ImageReadingSetting } from './image-reading-setting';
+import { AlertTemplateFields } from '@/components/settings/alert-template-fields';
 
 /**
  * The settings that shape *how* the AI answers, as opposed to *what* it
@@ -487,12 +488,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                     {/* Said plainly, because getting this wrong produces an
                         alert that silently never arrives, which is the worst
                         possible failure for an alert. */}
-                    {props.handoffAlertTemplate ? (
-                      <AiHint>
-                        The template needs four variables, in this order: who wrote in, their
-                        number, what they said, and why the assistant stopped.
-                      </AiHint>
-                    ) : (
+                    {props.handoffAlertTemplate ? null : (
                       <AiNotice tone="warning">
                         Plain text only reaches a staff member who messaged this business number in
                         the last 24 hours. That is Meta&rsquo;s rule, not a setting: a number that
@@ -502,6 +498,7 @@ export function AdvancedFeatures(props: AdvancedFeaturesProps) {
                           ' No approved Utility templates on this account yet \u2014 create one in Meta, then Sync from Meta on the Templates page.'}
                       </AiNotice>
                     )}
+                    <AlertTemplateFields kind="handoff" templateName={props.handoffAlertTemplate || null} />
                   </div>
                 )}
               </div>

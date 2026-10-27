@@ -106,7 +106,8 @@ FROM (VALUES
   ('143_admin_chat_actions',           to_regclass('admin_chat_actions') IS NOT NULL),
   ('144_assignment_and_ai_tags',       to_regclass('ai_tag_decisions') IS NOT NULL),
   ('145_speed_indexes',                to_regclass('leads_account_created_idx') IS NOT NULL),
-  ('146_contact_archive',              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'archived_at'))
+  ('146_contact_archive',              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'archived_at')),
+  ('147_alert_template_fields',        EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'message_templates' AND column_name = 'variable_fields'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 

@@ -13,7 +13,8 @@
  */
 
 import { prisma } from '@/lib/db'
-import { sendStaffAlert, cleanNumbers, templateSafe } from '@/lib/whatsapp/staff-alert'
+import { sendStaffAlert, cleanNumbers, templateSafe, alertExtras } from '@/lib/whatsapp/staff-alert'
+import { mappingFor } from '@/lib/whatsapp/alert-fields'
 
 export interface NewContactAlertInput {
   accountId: string
@@ -23,6 +24,8 @@ export interface NewContactAlertInput {
   /** 'whatsapp' | 'instagram' | … — worth naming when an account runs
    *  more than one channel. */
   channel?: string
+  /** For the "link to the chat" a template may carry. */
+  conversationId?: string | null
 }
 
 /**
@@ -40,6 +43,7 @@ export async function sendNewContactAlert(input: NewContactAlertInput): Promise<
         new_contact_alert_enabled: true,
         new_contact_alert_numbers: true,
         new_contact_alert_template: true,
+        new_contact_alert_params: true,
       },
     })
     if (!config?.new_contact_alert_enabled) return
@@ -50,11 +54,15 @@ export async function sendNewContactAlert(input: NewContactAlertInput): Promise<
     const quote = templateSafe(input.firstMessage)
     const channel = input.channel ?? 'whatsapp'
 
+    const extras = config.new_contact_alert_template ? await alertExtras(input.accountId, input.conversationId) : {}
     await sendStaffAlert({
       accountId: input.accountId,
       numbers: config.new_contact_alert_numbers,
       template: config.new_contact_alert_template,
       templateParams: [who, phone, quote, channel],
+      kind: 'new_contact',
+      mapping: mappingFor(config.new_contact_alert_params, config.new_contact_alert_template),
+      values: { ...extras, customer_name: who, customer_phone: phone, customer_message: quote, channel },
       label: 'new-contact-alert',
       text: [
         '👋 A new contact just messaged.',

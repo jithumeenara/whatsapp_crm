@@ -27,6 +27,8 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { resolveAlertParams, type AlertField, type AlertKind } from '@/lib/whatsapp/alert-fields'
+import { businessTimezone } from '@/lib/ai/human-date'
 
 export interface StaffAlertResult {
   sent: number
@@ -42,8 +44,15 @@ export interface StaffAlertInput {
   /** The plain-text body, already written for a person to read. */
   text: string
   /** Template variables, in the template's own order. Ignored when no
-   *  template is configured. */
+   *  template is configured, or when `values` is given. */
   templateParams: string[]
+  /** The alert's named values (alert-fields.ts). When given, the
+   *  template's own variables decide what goes where: its named
+   *  variables, the business's mapping, or what the AI kit recorded. */
+  values?: Partial<Record<AlertField, string>>
+  kind?: AlertKind
+  /** What the business chose for {{1}}, {{2}}… in settings. */
+  mapping?: unknown
   /** Prefixes the log lines, so two callers are distinguishable. */
   label: string
 }
@@ -67,6 +76,48 @@ export function cleanNumbers(raw: unknown): string[] {
  *  error that says nothing about which parameter was at fault. */
 export function templateSafe(text: string, max = 180): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, max) || '(none)'
+}
+
+/** The template's body parameters: the alert's own values when given
+ *  (alert-fields.ts), otherwise the caller's fixed list. */
+function paramsFor(input: StaffAlertInput, body: string, templateFields: unknown) {
+  if (!input.values || !input.kind) return { body: input.templateParams.map((p) => templateSafe(p)) }
+  const p = resolveAlertParams({ body, values: input.values, kind: input.kind, mapping: input.mapping, templateFields })
+  if ('byName' in p) {
+    return { bodyByName: Object.fromEntries(Object.entries(p.byName).map(([k, v]) => [k, templateSafe(v)])) }
+  }
+  return { body: p.positional.map((v) => templateSafe(v)) }
+}
+
+/**
+ * The values every alert can offer besides its own: a link to the chat,
+ * the time in the business's zone, the business's name, the channel.
+ * Never throws — a missing extra becomes a dash in the alert.
+ */
+export async function alertExtras(
+  accountId: string,
+  conversationId?: string | null,
+): Promise<Partial<Record<AlertField, string>>> {
+  const out: Partial<Record<AlertField, string>> = {}
+  try {
+    const [account, conversation, zone] = await Promise.all([
+      prisma.account.findUnique({ where: { id: accountId }, select: { name: true } }),
+      conversationId
+        ? prisma.conversation.findFirst({ where: { id: conversationId, account_id: accountId }, select: { id: true, channel: true } })
+        : Promise.resolve(null),
+      businessTimezone(accountId),
+    ])
+    if (account?.name) out.business_name = account.name
+    if (conversation) {
+      out.channel = conversation.channel ?? 'whatsapp'
+      const base = (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || '').replace(/\/+$/, '')
+      if (/^https?:\/\//.test(base)) out.chat_link = `${base}/inbox?c=${conversation.id}`
+    }
+    out.time = new Intl.DateTimeFormat('en-IN', { timeZone: zone, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date())
+  } catch (err) {
+    console.warn('[staff-alert] extras unavailable:', err instanceof Error ? err.message : err)
+  }
+  return out
 }
 
 /**
@@ -120,7 +171,7 @@ export async function sendStaffAlert(input: StaffAlertInput): Promise<StaffAlert
           templateName: template.name,
           language: template.language ?? 'en_US',
           template,
-          messageParams: { body: input.templateParams.map((p) => templateSafe(p)) },
+          messageParams: paramsFor(input, template.body_text, (template as { variable_fields?: unknown }).variable_fields),
         })
       } else {
         await sendTextMessage({ phoneNumberId, accessToken, to, text: input.text })

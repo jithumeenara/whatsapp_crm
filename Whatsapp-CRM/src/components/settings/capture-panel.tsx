@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { MessageSquare, UserCheck, Loader2, BellRing, Plus, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { toast } from 'sonner'
+import { AlertTemplateFields } from '@/components/settings/alert-template-fields'
 
 const DEFAULT_CONFIRM =
   "Hi {{name}}! Is that your real name? Please reply *Yes* to confirm or *No* to enter a different name."
@@ -260,11 +261,12 @@ export function CapturePanel() {
               {/* Said plainly, because getting this wrong produces an
                   alert that silently never arrives — the worst possible
                   failure for an alert. */}
-              <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-[12px] leading-relaxed text-amber-800">
-                {config.new_contact_alert_template
-                  ? 'The template needs four variables, in this order: their name, their number, what they said, and the channel.'
-                  : 'Without a template, this only reaches a staff member who messaged this business number in the last 24 hours — that is Meta\u2019s rule, not a setting. A number that never writes in gets nothing, with no error. Name an approved Utility template to make alerts arrive every time.'}
-              </p>
+              {!config.new_contact_alert_template && (
+                <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-[12px] leading-relaxed text-amber-800">
+                  Without a template, this only reaches a staff member who messaged this business number in the last 24 hours — that is Meta&rsquo;s rule, not a setting. A number that never writes in gets nothing, with no error. Name an approved Utility template to make alerts arrive every time.
+                </p>
+              )}
+              <AlertTemplateFields kind="new_contact" templateName={config.new_contact_alert_template} />
             </div>
           )}
         </div>

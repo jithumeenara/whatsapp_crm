@@ -1248,6 +1248,7 @@ async function processMessage(
         contact: { name: contactRecord.name, phone: contactRecord.phone },
         firstMessage: contentText ?? message.text?.body ?? '',
         channel: 'whatsapp',
+        conversationId: conversation.id,
       })
     }
     if (isFirstInboundMessage) automationTriggers.unshift('first_inbound_message')

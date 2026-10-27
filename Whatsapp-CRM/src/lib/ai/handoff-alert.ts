@@ -15,7 +15,8 @@
  */
 
 import { prisma } from '@/lib/db'
-import { sendStaffAlert, cleanNumbers, templateSafe } from '@/lib/whatsapp/staff-alert'
+import { sendStaffAlert, cleanNumbers, templateSafe, alertExtras } from '@/lib/whatsapp/staff-alert'
+import { mappingFor } from '@/lib/whatsapp/alert-fields'
 
 export interface HandoffAlertInput {
   accountId: string
@@ -54,6 +55,7 @@ export async function sendHandoffAlert(input: HandoffAlertInput): Promise<Handof
         handoff_alert_numbers: true,
         handoff_alert_template: true,
         handoff_alert_reasons: true,
+        handoff_alert_params: true,
       },
     })
     if (!aiConfig?.handoff_alert_enabled) return { ...empty, skipped: 'disabled' }
@@ -74,11 +76,15 @@ export async function sendHandoffAlert(input: HandoffAlertInput): Promise<Handof
     const quote = templateSafe(input.customerMessage)
     const reason = input.reason.replace(/_/g, ' ')
 
+    const extras = aiConfig.handoff_alert_template ? await alertExtras(input.accountId, input.conversationId) : {}
     const { sent, failed } = await sendStaffAlert({
       accountId: input.accountId,
       numbers: aiConfig.handoff_alert_numbers,
       template: aiConfig.handoff_alert_template,
       templateParams: [who, phone, quote, reason],
+      kind: 'handoff',
+      mapping: mappingFor(aiConfig.handoff_alert_params, aiConfig.handoff_alert_template),
+      values: { ...extras, customer_name: who, customer_phone: phone, customer_message: quote, reason },
       label: 'handoff-alert',
       text: [
         '🔔 A customer needs a person.',
