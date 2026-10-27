@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { liveSendableContactWhere } from "@/lib/broadcasts/sendable";
+import { cleanName, nameUpdateFor, type NameChoice } from "@/lib/broadcasts/excel-row";
+import { MAX_IMPORT_ROWS } from "@/lib/contacts/csv-import";
+import { loadContactsByNumber } from "@/lib/contacts/import-existing";
 import { Prisma } from "@prisma/client";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import type { AccountContext } from "@/lib/auth/account";
@@ -130,6 +133,16 @@ export async function POST(request: NextRequest) {
       if (problem) return NextResponse.json({ error: problem }, { status: 400 });
       if (!(await tagsBelongToAccount(db, ctx.accountId, body.audience))) {
         return NextResponse.json({ error: "A chosen tag no longer exists. Choose the tags again." }, { status: 400 });
+      }
+    }
+
+    if (body.audience.type === "csv") {
+      const rows: unknown = body.audience.csvContacts;
+      if (!Array.isArray(rows) || rows.some((r) => !r || typeof (r as { phone?: unknown }).phone !== "string")) {
+        return NextResponse.json({ error: "The Excel list is not valid. Upload the file again." }, { status: 400 });
+      }
+      if (rows.length > MAX_IMPORT_ROWS) {
+        return NextResponse.json({ error: `At most ${MAX_IMPORT_ROWS.toLocaleString()} numbers in one Excel file.` }, { status: 400 });
       }
     }
 
@@ -425,6 +438,8 @@ interface CsvContactRow {
    *  value per contact (see the block below), so it shows up as a "Custom
    *  Field" option in the broadcast's variable-mapping step. */
   customFields?: Record<string, string>;
+  /** Already a contact with another name: 'file' takes the file's. */
+  nameChoice?: NameChoice;
 }
 
 async function upsertCsvContacts(
@@ -445,23 +460,37 @@ async function upsertCsvContacts(
   }
   if (uniqueByDigits.size === 0) return [];
 
-  // Build all phone variants we should match against: original, digits-only, +digits.
-  const phoneVariants = new Set<string>();
+  // Existing contacts, matched as the preview matched them (last ten
+  // digits, country codes respected) — so "9876543210" saved and
+  // "+91 98765 43210" in the file are one person, not a new duplicate.
+  const find = await loadContactsByNumber(ctx.accountId);
+  const byDigits = new Map<string, ContactRow>();
+  const renames: Array<{ id: string; from: string | null; to: string }> = [];
   for (const [digits, row] of uniqueByDigits) {
-    phoneVariants.add(row.phone);
-    phoneVariants.add(digits);
-    phoneVariants.add(`+${digits}`);
+    const c = find(row.phone);
+    if (!c) continue;
+    // An archived contact is not sent to, so its name is left as it is.
+    const to = c.archived_at ? null : nameUpdateFor(c.name, row);
+    if (to) renames.push({ id: c.id, from: c.name, to });
+    byDigits.set(digits, { ...c, name: to ?? c.name, user_id: ctx.userId, account_id: ctx.accountId });
   }
 
-  // Find any existing contacts whose stored phone matches any variant.
-  const existing = await db.contact.findMany({
-    where: { account_id: ctx.accountId, phone: { in: [...phoneVariants] } },
-  });
-
-  // Index existing contacts by their digits-only phone for O(1) lookup.
-  const byDigits = new Map<string, ContactRow>();
-  for (const c of existing) {
-    byDigits.set(digitsOnly(c.phone), c);
+  // The name each existing number keeps: a blank one takes the file's, a
+  // different one only when the person chose the file's — with a note.
+  if (renames.length > 0) {
+    const stamp = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date());
+    for (let i = 0; i < renames.length; i += 50) {
+      const batch = renames.slice(i, i + 50);
+      await db.$transaction(async (tx) => {
+        for (const r of batch) {
+          const done = await tx.contact.updateMany({ where: { id: r.id, account_id: ctx.accountId, merged_into_contact_id: null }, data: { name: r.to } });
+          if (done.count === 0) continue;
+          await tx.contactNote.create({
+            data: { account_id: ctx.accountId, contact_id: r.id, user_id: ctx.userId, note_text: `Name from a broadcast Excel file (${stamp}): ${r.from || "—"} → ${r.to}` },
+          });
+        }
+      });
+    }
   }
 
   // Only create contacts that have no match on digits-only phone.
@@ -471,8 +500,8 @@ async function upsertCsvContacts(
       user_id: ctx.userId,
       account_id: ctx.accountId,
       phone: row.phone,
-      name: row.name ?? null,
-      company: row.company ?? null,
+      name: cleanName(row.name) || null,
+      company: cleanName(row.company) || null,
       opt_in_source: "broadcast_csv",
       opt_in_at: new Date(),
     }));

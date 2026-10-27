@@ -16,4 +16,38 @@ export interface ExcelContactRow {
    * mapping step — e.g. a "Doctor" or "Appointment Date" column.
    */
   customFields?: Record<string, string>;
+  /** Already a contact with another name: which one it keeps. */
+  nameChoice?: NameChoice;
+}
+
+/**
+ * A number in the file that is already a contact: which name it keeps.
+ * 'saved' (the default) keeps the CRM's; 'file' takes the file's.
+ */
+export type NameChoice = 'saved' | 'file';
+
+const MAX_NAME = 100;
+
+/** Text only, spaces tidied, at most 100 characters. */
+export function cleanName(v: unknown): string {
+  return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, MAX_NAME) : '';
+}
+
+/** The file gives a name the CRM already has a different one for. */
+export function nameDiffers(saved: string | null | undefined, fromFile: string | null | undefined): boolean {
+  const a = cleanName(saved);
+  const b = cleanName(fromFile);
+  return !!a && !!b && a.toLowerCase() !== b.toLowerCase();
+}
+
+/**
+ * The name to save on an existing contact, or null to leave it. A blank
+ * saved name takes the file's; a different one is replaced only when the
+ * person chose the file's name for that number.
+ */
+export function nameUpdateFor(saved: string | null | undefined, row: { name?: unknown; nameChoice?: unknown }): string | null {
+  const fromFile = cleanName(row.name);
+  if (!fromFile) return null;
+  if (!cleanName(saved)) return fromFile;
+  return nameDiffers(saved, fromFile) && row.nameChoice === 'file' ? fromFile : null;
 }

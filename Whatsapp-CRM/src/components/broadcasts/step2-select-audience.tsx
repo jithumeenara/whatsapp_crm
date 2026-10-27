@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Tag, Contact } from '@/types';
-import type { ExcelContactRow } from '@/lib/broadcasts/excel-row';
+import { nameDiffers, type ExcelContactRow, type NameChoice } from '@/lib/broadcasts/excel-row';
+import { phoneKey } from '@/lib/contacts/csv-import';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
@@ -315,6 +316,12 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const [excelError, setExcelError]       = useState('');
   const [excelLoading, setExcelLoading]   = useState(false);
   const [isDragging, setIsDragging]       = useState(false);
+  /** Names already saved in the CRM, by number (last ten digits). */
+  const [savedNames, setSavedNames]       = useState<Record<string, string | null>>({});
+  const [savedNamesError, setSavedNamesError] = useState('');
+  /** Saved numbers that are archived — never sent to. */
+  const [archivedKeys, setArchivedKeys]   = useState<Set<string>>(new Set());
+  const savedSeq = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   /* WhatsApp validation */
@@ -438,6 +445,53 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     onUpdate(v ? { type: 'contacts', contactIds: [...selectedIds] } : { type: 'all' });
   }
 
+  /* ── Numbers already in the CRM: their saved names ───────────── */
+  // Newest file wins: a slow answer for a file since replaced is dropped.
+  const loadSavedNames = useCallback(async (rows: ExcelContactRow[]) => {
+    const seq = ++savedSeq.current;
+    setSavedNamesError('');
+    if (rows.length === 0) { setSavedNames({}); setArchivedKeys(new Set()); return; }
+    try {
+      const res = await apiFetch('/api/contacts/import/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phones: rows.map((c) => c.phone) }),
+      });
+      const j = (await res.json()) as { existing?: Record<string, { name: string | null; archived?: boolean }> };
+      if (seq !== savedSeq.current) return;
+      const out: Record<string, string | null> = {};
+      const archived = new Set<string>();
+      for (const [k, v] of Object.entries(j.existing ?? {})) { out[k] = v.name; if (v.archived) archived.add(k); }
+      setSavedNames(out);
+      setArchivedKeys(archived);
+    } catch (err) {
+      console.error('[broadcast excel] saved names failed:', err);
+      if (seq === savedSeq.current) setSavedNamesError(errorText(err, 'Could not check which numbers are already saved.'));
+    }
+  }, []);
+
+  // A file restored when coming back to this step: look its numbers up once.
+  const savedLoadedRef = useRef(false);
+  useEffect(() => {
+    if (savedLoadedRef.current || excelContacts.length === 0) return;
+    savedLoadedRef.current = true;
+    void loadSavedNames(excelContacts);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** What goes forward: every row before the check, then the checked ones. */
+  function sendable(rows: ExcelContactRow[]): ExcelContactRow[] {
+    if (validationStatus !== 'done') return rows;
+    return rows.filter((c) => { const st = validationMap.get(c.phone); return st === 'valid' || (includeUnknown && st === 'unknown'); });
+  }
+
+  /** Keep the saved name or take the file's, for these numbers. */
+  function chooseName(phones: Set<string>, choice: NameChoice) {
+    const next = excelContacts.map((c) => (phones.has(c.phone) ? { ...c, nameChoice: choice } : c));
+    setExcelContacts(next);
+    onUpdate({ type: 'csv', csvContacts: sendable(next) });
+  }
+
   /* ── Excel file handler ──────────────────────────────────────── */
   async function handleExcelFile(file: File) {
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
@@ -455,6 +509,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       setExcelContacts(contacts);
       setExcelFileName(file.name);
       onUpdate({ type: 'csv', csvContacts: contacts });
+      void loadSavedNames(contacts);
     } catch {
       setExcelError('Failed to read file. Make sure it is a valid Excel or CSV file.');
     } finally {
@@ -473,6 +528,10 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setExcelContacts([]);
     setExcelFileName('');
     setExcelError('');
+    savedSeq.current++;
+    setSavedNames({});
+    setArchivedKeys(new Set());
+    setSavedNamesError('');
     setValidationStatus('idle');
     setValidationMap(new Map());
     setValidationProgress(0);
@@ -628,6 +687,15 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     }
     return [...set];
   }, [excelContacts]);
+
+  const savedNameOf = (c: ExcelContactRow): string | null | undefined => savedNames[phoneKey(c.phone)];
+  const isSaved = (c: ExcelContactRow) => phoneKey(c.phone) in savedNames;
+  const differing = excelContacts.filter((c) => !archivedKeys.has(phoneKey(c.phone)) && nameDiffers(savedNameOf(c), c.name));
+  const differingToFile = differing.filter((c) => c.nameChoice === 'file').length;
+  const savedCount = excelContacts.filter(isSaved).length;
+  /** The name this number will carry after the send. */
+  const finalName = (c: ExcelContactRow): string =>
+    (nameDiffers(savedNameOf(c), c.name) ? (c.nameChoice === 'file' ? c.name : savedNameOf(c)) : (savedNameOf(c) || c.name)) || '';
 
   const validCount = validationStatus === 'done'
     ? excelContacts.filter((c) => validationMap.get(c.phone) === 'valid').length
@@ -1008,25 +1076,76 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                   </p>
                 </div>
               )}
+              {savedNamesError && (
+                <p role="alert" className="px-4 py-2 border-b border-slate-100 bg-rose-50 text-[12px] text-rose-700">{savedNamesError}</p>
+              )}
+              {savedCount > 0 && (
+                <div className="px-4 py-2.5 border-b border-slate-100 bg-amber-50/60 space-y-2">
+                  <p className="text-[12px] text-slate-700">
+                    <b>{savedCount}</b> number{plural(savedCount)} already saved in the CRM — the saved name is shown.
+                    {differing.length > 0 && <> <b>{differing.length}</b> {differing.length === 1 ? 'has' : 'have'} a different name in this file — choose which to keep.</>}
+                  </p>
+                  {differing.length > 0 && (
+                    <div role="group" aria-label="Name for numbers with a different name in the file" className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => chooseName(new Set(differing.map((c) => c.phone)), 'saved')}
+                        aria-pressed={differingToFile === 0}
+                        className={cn('rounded-lg border px-3 py-1.5 text-[12px] font-medium', differingToFile === 0 ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')}>
+                        Keep saved names
+                      </button>
+                      <button type="button" onClick={() => chooseName(new Set(differing.map((c) => c.phone)), 'file')}
+                        aria-pressed={differingToFile === differing.length}
+                        className={cn('rounded-lg border px-3 py-1.5 text-[12px] font-medium', differingToFile === differing.length ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300')}>
+                        Use names from the file
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Table header */}
-              <div className="grid grid-cols-4 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
+              <div className="grid grid-cols-5 gap-4 px-4 py-2 bg-slate-50 border-b border-slate-100">
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Phone</p>
-                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Name</p>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Name in file</p>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Saved in CRM</p>
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Business</p>
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Tag</p>
               </div>
-              {/* Rows (max 8 preview) */}
-              <div className="divide-y divide-slate-50 max-h-52 overflow-y-auto">
-                {excelContacts.slice(0, 50).map((c) => (
-                  <div key={c.phone} className="grid grid-cols-4 gap-4 px-4 py-2.5">
+              {/* Rows (max 50 preview) */}
+              <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
+                {excelContacts.slice(0, 50).map((c) => {
+                  const saved = savedNameOf(c);
+                  const differs = nameDiffers(saved, c.name);
+                  return (
+                  <div key={c.phone} className="grid grid-cols-5 gap-4 px-4 py-2.5 items-center">
                     <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
                     <p className="text-[13px] text-slate-500 truncate">{c.name || <span className="italic text-slate-300">—</span>}</p>
+                    <div className="min-w-0">
+                      {!isSaved(c) ? (
+                        <span className="text-[12px] italic text-slate-400">New contact</span>
+                      ) : archivedKeys.has(phoneKey(c.phone)) ? (
+                        <p className="text-[12px] text-slate-500 truncate">{saved || 'No name'} <span className="text-rose-600">· Archived — won’t be sent</span></p>
+                      ) : differs ? (
+                        <>
+                          <label htmlFor={`name-choice-${c.phone}`} className="sr-only">Name to keep for {c.phone}</label>
+                          <select id={`name-choice-${c.phone}`} value={c.nameChoice === 'file' ? 'file' : 'saved'}
+                            onChange={(e) => chooseName(new Set([c.phone]), e.target.value === 'file' ? 'file' : 'saved')}
+                            className="w-full rounded-md border border-amber-300 bg-white px-1.5 py-1 text-[12px] text-slate-700">
+                            <option value="saved">Keep: {saved}</option>
+                            <option value="file">Use: {c.name}</option>
+                          </select>
+                        </>
+                      ) : (
+                        <p className="text-[13px] font-medium text-slate-700 truncate">
+                          {saved || <span className="font-normal italic text-slate-400">{c.name ? 'None · gets file’s' : 'No name'}</span>}
+                        </p>
+                      )}
+                    </div>
                     <p className="text-[13px] text-slate-500 truncate">{c.company || <span className="italic text-slate-300">—</span>}</p>
                     <p className="text-[13px] text-slate-500 truncate">
                       {c.tagNames?.length ? c.tagNames.join(', ') : <span className="italic text-slate-300">—</span>}
                     </p>
                   </div>
-                ))}
+                  );
+                })}
                 {excelContacts.length > 50 && (
                   <div className="px-4 py-2 bg-slate-50">
                     <p className="text-[12px] text-slate-400">+{excelContacts.length - 50} more contacts not shown</p>
@@ -1121,7 +1240,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
                         rowTint(s, includeUnknown)
                       )}>
                         <p className="text-[13px] font-mono text-slate-700 truncate">{c.phone}</p>
-                        <p className="text-[13px] text-slate-500 truncate">{c.name || '—'}</p>
+                        <p className="text-[13px] text-slate-500 truncate">{finalName(c) || '—'}</p>
                         <p className="text-[13px] text-slate-500 truncate">{c.tagNames?.join(', ') || '—'}</p>
                         <span className={cn(
                           'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
