@@ -599,7 +599,9 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
   // The tab's own dropdown choices, by column name.
   const [sheetChoices, setSheetChoices] = useState<Record<string, string[]>>({})
   useEffect(() => {
-    if (colMode !== "match" || !draft.spreadsheet_id || draft.split_template) return
+    // Read in every mode for an existing tab: "Every field" / "Choose" warn
+    // about the columns they would add to it.
+    if (!draft.spreadsheet_id || draft.split_template || (colMode !== "match" && !isExistingTab)) return
     let live = true
     const t = setTimeout(() => {
       setSheetHeaders(null)
@@ -621,7 +623,15 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
         })
     }, 400)
     return () => { live = false; clearTimeout(t) }
-  }, [colMode, draft.spreadsheet_id, draft.tab_title, draft.split_template])
+  }, [colMode, draft.spreadsheet_id, draft.tab_title, draft.split_template, isExistingTab])
+
+  // Column names "Every field" / "Choose" would add to the end of an existing tab.
+  const addedColumns = useMemo(() => {
+    if (colMode === "match" || !sheetHeaders || sheetHeaders.length === 0) return []
+    const have = new Set(sheetHeaders.map((h) => h.trim().toLowerCase().replace(/\s+/g, " ")))
+    const wanted = colMode === "all" ? usable.map((f) => f.label) : draft.columns.map((c) => c.header)
+    return wanted.filter((h) => h.trim() && !have.has(h.trim().toLowerCase().replace(/\s+/g, " ")))
+  }, [colMode, sheetHeaders, usable, draft.columns])
 
   // Once the chosen tab's columns are read, match them once on their own.
   const autoMatchNext = useRef(false)
@@ -847,6 +857,17 @@ function RuleEditor({ tableId, fields, draft, onChange, onDone }: {
         </div>
         {colMode === "all" && (
           <p className="text-[11.5px] text-slate-500">Every field, in the table’s order, plus a “CRM ID” column the CRM uses to find the row again.</p>
+        )}
+        {addedColumns.length > 0 && (
+          <div role="status" className="space-y-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-[11.5px] text-amber-900">
+            <p>
+              “{draft.tab_title}” already has its own columns. {addedColumns.length} of these are not among them and will be added as new columns at the end:{" "}
+              {addedColumns.slice(0, 6).map((h) => `“${h}”`).join(", ")}{addedColumns.length > 6 ? "…" : ""}.
+            </p>
+            <Button type="button" size="sm" variant="outline" onClick={() => chooseColMode("match")}>
+              <Wand2 aria-hidden /> Fill my sheet’s columns instead
+            </Button>
+          </div>
         )}
         {colMode === "match" && (
           draft.split_template ? (

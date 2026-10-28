@@ -236,7 +236,7 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
         const into = rows.slice(0, Math.max(0, table.length + 1 - free))
         const cells = into.flatMap((line, k) => line.flatMap((value, col) => (value.trim() ? [{ row: free + k, col, value }] : [])))
         if (cells.length) await writeCells(token, id, tab, cells)
-        if (rows.length > into.length) await appendRows(token, id, tab, rows.slice(into.length))
+        if (rows.length > into.length) await appendRows(token, id, tab, rows.slice(into.length), { atRow: Math.max(free, table.length + 1) })
       })
       await finish(group.map((j) => j.id))
     } catch (err) {
@@ -341,12 +341,11 @@ async function runAccount(accountId: string, jobs: Job[]): Promise<void> {
           const plan = planTabWrite(table, live.upserts.map((u) => ({ id: u.recordId, headers: u.headers, row: u.row })), live.removes.map((r) => r.recordId), headerIndex)
           if (plan.header) await writeHeaderRow(token, op.spreadsheetId, op.tab, plan.header, headerIndex + 1)
           if (plan.cells.length) await writeCells(token, op.spreadsheetId, op.tab, plan.cells)
-          // New rows go into the first row below everything in the tab (the
-          // read ends at its last filled row), so a template's ready-made
-          // rows — borders, dropdowns — are filled, and nothing filled is
-          // ever written over.
+          // New rows go just below the last row anyone filled: a template's
+          // ready-made rows (checkboxes, dropdowns) are reused with their
+          // filler kept, and nothing typed is ever written over.
           if (plan.appends.length) {
-            await appendRows(token, op.spreadsheetId, op.tab, plan.appends, { fromRow: Math.max(table.length, headerIndex + 1) + 1, fillEmptyRows: true })
+            await appendRows(token, op.spreadsheetId, op.tab, plan.appends, { atRow: firstFreeRow(table, headerIndex) })
           }
           // Deleted last: the rows above were found by the same read.
           if (plan.deletes.length) await deleteRows(token, op.spreadsheetId, sheetId, plan.deletes)

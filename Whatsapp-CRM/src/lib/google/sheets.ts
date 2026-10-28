@@ -82,26 +82,57 @@ export async function readTab(token: string, spreadsheetId: string, title: strin
 }
 
 /**
- * Rows after the tab's table. `fromRow`: where the table starts (its
- * header row) when there are title rows above it. `fillEmptyRows`: write
- * into the empty rows already below the table (keeping their borders and
- * dropdowns) instead of inserting new rows — Google still adds rows when
- * none are left.
+ * Rows below the tab's table, always starting in column A.
+ *
+ * Google's own `values:append` was not used: it guesses "the table" by
+ * itself, and below a row that begins with empty cells it starts the next
+ * row further right — rows came out as a staircase across the sheet.
+ * Here the row is chosen and written to exactly.
+ *
+ * `atRow`: the 1-based row to start at (the caller has read the tab).
+ * Otherwise the row below the last filled one, and not above `fromRow`.
+ * Empty cells are skipped, so a template's ready-made rows keep their
+ * checkboxes, dropdowns and formulas; rows are added when the grid ends.
  */
 export async function appendRows(
   token: string,
   spreadsheetId: string,
   title: string,
   rows: string[][],
-  opts: { fromRow?: number; fillEmptyRows?: boolean } = {},
+  opts: { fromRow?: number; atRow?: number } = {},
 ): Promise<void> {
   if (rows.length === 0) return
-  const range = opts.fromRow && opts.fromRow > 1 ? `${tabRange(title)}!A${opts.fromRow}` : tabRange(title)
-  await call(
+  let start = opts.atRow && opts.atRow > 0 ? Math.floor(opts.atRow) : 0
+  if (!start) {
+    const filled = (await readTab(token, spreadsheetId, title)).length
+    start = Math.max(filled, (opts.fromRow ?? 1) - 1) + 1
+  }
+  const width = Math.max(1, ...rows.map((r) => r.length))
+  const end = start + rows.length - 1
+  await ensureGridSize(token, spreadsheetId, title, end, width)
+  const range = `${tabRange(title)}!A${start}:${columnLetter(width - 1)}${end}`
+  await call(token, `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+    method: 'PUT',
+    // null leaves that cell as it is.
+    body: JSON.stringify({ values: rows.map((r) => Array.from({ length: width }, (_, i) => (String(r[i] ?? '') === '' ? null : String(r[i])))) }),
+  })
+}
+
+/** Adds rows or columns to the tab when it is smaller than this. */
+async function ensureGridSize(token: string, spreadsheetId: string, title: string, rows: number, columns: number): Promise<void> {
+  const data = await call<{ sheets?: Array<{ properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } } }> }>(
     token,
-    `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=${opts.fillEmptyRows ? 'OVERWRITE' : 'INSERT_ROWS'}`,
-    { method: 'POST', body: JSON.stringify({ values: rows }) },
+    `${API}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties(sheetId,title,gridProperties)`,
   )
+  const tab = (data.sheets ?? []).find((s) => (s.properties?.title ?? '').toLowerCase() === title.toLowerCase())?.properties
+  if (!tab) return
+  const sheetId = tab.sheetId ?? 0
+  const requests: unknown[] = []
+  const haveRows = tab.gridProperties?.rowCount ?? 0
+  const haveCols = tab.gridProperties?.columnCount ?? 0
+  if (rows > haveRows) requests.push({ appendDimension: { sheetId, dimension: 'ROWS', length: rows - haveRows } })
+  if (columns > haveCols) requests.push({ appendDimension: { sheetId, dimension: 'COLUMNS', length: columns - haveCols } })
+  if (requests.length) await call(token, `${API}/${encodeURIComponent(spreadsheetId)}:batchUpdate`, { method: 'POST', body: JSON.stringify({ requests }) })
 }
 
 /** Replaces a tab's contents: cleared, then written from A1. */
