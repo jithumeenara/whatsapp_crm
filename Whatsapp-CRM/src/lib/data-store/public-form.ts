@@ -50,6 +50,37 @@ export interface PublicFormField {
   /** Text. */
   minLength?: number
   maxLength?: number
+  /** The column's own name when `label` is a heading set on the form;
+   *  checks such as "is this an ID number?" read both. */
+  columnLabel?: string
+  /** Choices only: how they are shown. Unset = cards up to 6, else a dropdown. */
+  display?: ChoiceDisplay
+}
+
+/** Cards (two across), a list (one per line) or a searchable dropdown. */
+export type ChoiceDisplay = 'cards' | 'list' | 'dropdown'
+export const CHOICE_DISPLAYS: readonly ChoiceDisplay[] = ['cards', 'list', 'dropdown']
+
+function parseChoiceDisplay(raw: unknown, fieldKeys?: readonly string[]): Record<string, ChoiceDisplay> {
+  const out: Record<string, ChoiceDisplay> = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 200)) {
+    if (k.length > 100 || (fieldKeys && !fieldKeys.includes(k))) continue
+    if (CHOICE_DISPLAYS.includes(v as ChoiceDisplay)) out[k] = v as ChoiceDisplay
+  }
+  return out
+}
+
+/** The question's own words on the form, per field; the column keeps its name. */
+function parseLabels(raw: unknown, fieldKeys?: readonly string[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 200)) {
+    if (k.length > 100 || (fieldKeys && !fieldKeys.includes(k))) continue
+    const t = text(v, 200)
+    if (t) out[k] = t
+  }
+  return out
 }
 
 export interface TableFormConfig {
@@ -86,6 +117,10 @@ export interface TableFormConfig {
   confirm_submitter: FormConfirm | null
   /** WhatsApp confirmation to each person, on their own number. */
   confirm_person: FormConfirm | null
+  /** Per choice question: cards, list or dropdown. Missing = automatic. */
+  choice_display: Record<string, ChoiceDisplay>
+  /** Per question: the heading the form shows instead of the column name. */
+  labels: Record<string, string>
 }
 
 export const EMPTY_FORM_CONFIG: TableFormConfig = {
@@ -105,6 +140,8 @@ export const EMPTY_FORM_CONFIG: TableFormConfig = {
   group: DEFAULT_GROUP,
   confirm_submitter: null,
   confirm_person: null,
+  choice_display: {},
+  labels: {},
 }
 
 export const DEFAULT_CONSENT =
@@ -158,6 +195,8 @@ export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): Ta
     group: parseGroup(r.group, fieldKeys),
     confirm_submitter: parseConfirm(r.confirm_submitter, fieldKeys),
     confirm_person: parseConfirm(r.confirm_person, fieldKeys),
+    choice_display: parseChoiceDisplay(r.choice_display, fieldKeys),
+    labels: parseLabels(r.labels, fieldKeys),
   }
 }
 

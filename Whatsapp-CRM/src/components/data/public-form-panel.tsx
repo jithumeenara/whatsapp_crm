@@ -19,6 +19,7 @@ import {
   EMPTY_FORM_CONFIG,
   WEB_FORM_DISPLAY_TYPES,
   WEB_FORM_FIELD_TYPES,
+  type ChoiceDisplay,
   type TableFormConfig,
 } from "@/lib/data-store/public-form"
 import { getSelectItems, type DataField } from "@/lib/data-store/types"
@@ -28,6 +29,13 @@ import { FormBrandEditor, type LogoPreview } from "./form-brand-editor"
 import { FormRuleEditor, type EarlierQuestion } from "./form-rule-editor"
 import { SortableList, DragHandle } from "./sortable-list"
 import { ConfirmSettings, GroupSettings, useApprovedTemplates, type QuestionLite } from "./form-group-settings"
+
+const DISPLAY_OPTIONS: [ChoiceDisplay | "auto", string][] = [
+  ["auto", "Automatic"],
+  ["cards", "Cards"],
+  ["list", "List"],
+  ["dropdown", "Dropdown"],
+]
 
 const FIELD =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
@@ -277,6 +285,21 @@ export function PublicFormPanel({
     const keys = personSet.has(key) ? config.group.person_keys.filter((k) => k !== key) : [...config.group.person_keys, key]
     patch({ group: { ...config.group, person_keys: keys } })
   }
+  // How a choice question looks: automatic, cards, a list or a dropdown.
+  function setDisplay(key: string, value: ChoiceDisplay | "auto") {
+    const next = { ...config.choice_display }
+    if (value === "auto") delete next[key]
+    else next[key] = value
+    patch({ choice_display: next })
+  }
+
+  function setLabel(key: string, value: string) {
+    const next = { ...config.labels }
+    if (value.trim()) next[key] = value.slice(0, 200)
+    else delete next[key]
+    patch({ labels: next })
+  }
+
   const askedQuestions: QuestionLite[] = asked
     .map((k) => formFields.find((f) => f.field_key === k))
     .filter((f): f is DataField => !!f && !WEB_FORM_DISPLAY_TYPES.has(f.field_type))
@@ -455,7 +478,7 @@ export function PublicFormPanel({
 
           <PanelSection
             title="Questions"
-            hint={<>Tick what the form asks and drag ⋮⋮ to set the order. <Wand2 className="inline h-3 w-3" /> opens a question&apos;s smart settings. Required, hints and limits are set in Fields.</>}
+            hint={<>Tick what the form asks and drag ⋮⋮ to set the order. <Wand2 className="inline h-3 w-3" /> opens a question&apos;s settings: its text on the form, how choices look, and smart links. Required, hints and limits are set in Fields.</>}
           >
             <label className="flex items-start justify-between gap-3 rounded-xl bg-primary/5 px-3 py-2.5 text-[12.5px] text-slate-700">
               <span>
@@ -480,7 +503,8 @@ export function PublicFormPanel({
                 const rule = effective.rules[f.field_key]
                 const isAuto = effective.automatic.has(f.field_key)
                 const open = ruleOpen === f.field_key
-                const smart = [rule?.filter && "narrowed", rule?.fill && (rule.fill.locked ? "filled, locked" : "filled"), rule?.show_if && "conditional", isAuto && "auto"].filter(Boolean)
+                const shape = config.choice_display[f.field_key]
+                const smart = [shape && `as ${shape}`, rule?.filter && "narrowed", rule?.fill && (rule.fill.locked ? "filled, locked" : "filled"), rule?.show_if && "conditional", isAuto && "auto"].filter(Boolean)
                 return (
                   <div className={open ? "rounded-xl bg-white ring-1 ring-primary/30" : undefined}>
                     <div className={`flex items-center gap-2 rounded-lg px-1 py-1.5 text-[13px] hover:bg-slate-50 ${heading ? "mt-1 font-semibold text-slate-800" : "text-slate-700"}`}>
@@ -493,7 +517,7 @@ export function PublicFormPanel({
                         className="h-4 w-4 accent-[var(--primary)]"
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate">{f.label}</span>
+                        <span className="block truncate">{config.labels[f.field_key] ?? f.label}</span>
                         {smart.length > 0 && <span className="block truncate text-[11px] font-normal text-primary">{smart.join(" · ")}</span>}
                       </span>
                       {heading && <span className="text-[11px] font-normal text-slate-400">section</span>}
@@ -526,6 +550,39 @@ export function PublicFormPanel({
                     </div>
                     {open && (
                       <div className="px-2 pb-2">
+                        <label className="mb-2 flex flex-col gap-1 text-[12px] text-slate-600">
+                          Question text on the form
+                          <input
+                            value={config.labels[f.field_key] ?? ""}
+                            onChange={(e) => setLabel(f.field_key, e.target.value)}
+                            maxLength={200}
+                            placeholder={f.label}
+                            name={`label-${f.field_key}`}
+                            autoComplete="off"
+                            className={FIELD}
+                          />
+                          <span className="text-[11px] text-slate-400">Empty = “{f.label}”. The column keeps its name.</span>
+                        </label>
+                        {(f.field_type === "select" || f.field_type === "radio") && (
+                          <div role="radiogroup" aria-label={`Show “${f.label}” choices as`} className="mb-2 flex flex-wrap items-center gap-1.5 text-[12px] text-slate-600">
+                            <span className="mr-1">Show choices as</span>
+                            {DISPLAY_OPTIONS.map(([value, name]) => {
+                              const on = (config.choice_display[f.field_key] ?? "auto") === value
+                              return (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={on}
+                                  onClick={() => setDisplay(f.field_key, value)}
+                                  className={`h-7 rounded-full px-2.5 text-[11.5px] font-medium transition-colors ${on ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:text-slate-900"}`}
+                                >
+                                  {name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
                         <FormRuleEditor
                           fieldKey={f.field_key}
                           fieldLabel={f.label}

@@ -87,9 +87,11 @@ export function parseConfirm(raw: unknown, fieldKeys?: readonly string[]): FormC
 }
 
 /** The per-person question a person is shown by on their card: a name if there is one. */
-export function personNameKey(fields: ReadonlyArray<{ key: string; label: string; type: string }>, personKeys: readonly string[]): string | null {
+export function personNameKey(fields: ReadonlyArray<{ key: string; label: string; type: string; columnLabel?: string }>, personKeys: readonly string[]): string | null {
   const mine = fields.filter((f) => personKeys.includes(f.key) && (f.type === 'text' || f.type === 'textarea'))
-  const named = mine.find((f) => /\bname\b|name$|^name/i.test(`${f.key} ${f.label}`) && !/father|mother|guardian|society|company|institution|organi[sz]ation/i.test(`${f.key} ${f.label}`))
+  // The column's own name, not a form heading the business reworded.
+  const words = (f: (typeof mine)[number]) => `${f.key} ${f.columnLabel ?? f.label}`
+  const named = mine.find((f) => /\bname\b|name$|^name/i.test(words(f)) && !/father|mother|guardian|society|company|institution|organi[sz]ation/i.test(words(f)))
   return (named ?? mine[0])?.key ?? null
 }
 
@@ -171,8 +173,9 @@ export function batchDuplicates(
 
 /** ID numbers, bank details, secrets: never put in a message to a number
  *  a stranger typed into a public form. */
-export function isSensitiveQuestion(f: { key: string; label: string }): boolean {
-  return /aadha?a?r|\bpan\b|passport|bank|account|ifsc|card|password|otp|\bpin\b|voter|licen[cs]e/i.test(`${f.key.replace(/_/g, ' ')} ${f.label}`)
+export function isSensitiveQuestion(f: { key: string; label: string; columnLabel?: string }): boolean {
+  // The column's own name counts too: a form heading must not hide it.
+  return /aadha?a?r|\bpan\b|passport|bank|account|ifsc|card|password|otp|\bpin\b|voter|licen[cs]e/i.test(`${f.key.replace(/_/g, ' ')} ${f.label} ${f.columnLabel ?? ''}`)
 }
 
 /** A stranger's words in the business's message: no links, short. */

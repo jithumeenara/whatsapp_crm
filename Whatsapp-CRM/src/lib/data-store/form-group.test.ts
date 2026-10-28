@@ -104,6 +104,12 @@ describe('confirmations', () => {
     expect(isSensitiveQuestion({ key: 'programme', label: 'Training Programme' })).toBe(false)
   })
 
+  it('still treats an Aadhaar column as sensitive when the form shows it under a friendlier heading', () => {
+    // Bug: a custom form heading replaced the label the guard reads, so an
+    // Aadhaar column asked as "Your 12-digit ID" could go into a confirmation.
+    expect(isSensitiveQuestion({ key: 'id_no', label: 'Your 12-digit ID', columnLabel: 'Aadhaar number' })).toBe(true)
+  })
+
   it('turns a typed number into a WhatsApp number with the business’s country code', () => {
     expect(whatsappNumber('85905 51176', '+91')).toBe('918590551176')
     expect(whatsappNumber('08590551176', '+91')).toBe('918590551176')

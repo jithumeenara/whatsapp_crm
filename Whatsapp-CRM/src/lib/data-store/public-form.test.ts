@@ -40,6 +40,26 @@ describe('form settings', () => {
     expect(c.consent_text).toHaveLength(500)
   })
 
+  it('keeps only known choice shapes for questions the table has', () => {
+    const c = parseFormConfig(
+      { choice_display: { month: 'list', district: 'dropdown', gone: 'cards', name: 'carousel' } },
+      ['month', 'district', 'name'],
+    )
+    expect(c.choice_display).toEqual({ month: 'list', district: 'dropdown' })
+    expect(parseFormConfig({ choice_display: ['list'] }).choice_display).toEqual({})
+  })
+
+  it('keeps a trimmed form heading per question, dropping blanks and gone questions', () => {
+    const c = parseFormConfig(
+      { labels: { month: '  Which month?  ', name: '   ', gone: 'x', district: 'd'.repeat(300) } },
+      ['month', 'name', 'district'],
+    )
+    expect(c.labels.month).toBe('Which month?')
+    expect(c.labels.name).toBeUndefined()
+    expect(c.labels.gone).toBeUndefined()
+    expect(c.labels.district).toHaveLength(200)
+  })
+
   it('knows when it is closed', () => {
     const open = parseFormConfig({ enabled: true })
     expect(formState(open, 0)).toEqual({ open: true })

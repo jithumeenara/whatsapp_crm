@@ -328,6 +328,12 @@ export async function loadPublicForm(token: string): Promise<PublicForm | null> 
     // every answer; the form offers a text box instead, which is the
     // honest fallback until the list exists.
     if ((f.type === 'select' || f.type === 'radio') && !f.options?.length) out.type = 'text'
+    const display = config.choice_display[f.key]
+    if (display && (out.type === 'select' || out.type === 'radio')) out.display = display
+    if (config.labels[f.key]) {
+      out.columnLabel = f.label
+      out.label = config.labels[f.key]
+    }
     return out
   })
 

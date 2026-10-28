@@ -958,7 +958,8 @@ function Question({
   const text = typeof value === "string" ? value : ""
   const describedBy = [f.help ? `${id}-help` : null, error ? `${id}-err` : null, locked ? `${id}-lock` : null].filter(Boolean).join(" ") || undefined
   const isChoice = (f.type === "radio" || f.type === "select") && options.length > 0
-  const asCards = isChoice && options.length <= MAX_CARD_OPTIONS
+  const display = f.display ?? (options.length <= MAX_CARD_OPTIONS ? "cards" : "dropdown")
+  const asCards = isChoice && display !== "dropdown"
   const box = `rounded-2xl border p-4 transition-colors sm:p-5 ${error ? "border-rose-300 bg-rose-50/40" : locked ? "border-slate-200 bg-slate-50/70" : "border-slate-200 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10"}`
   const control = `w-full rounded-xl border bg-white px-3.5 py-3 text-[16px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-primary ${error ? "border-rose-300" : "border-slate-300"}`
 
@@ -1016,7 +1017,7 @@ function Question({
         ) : waitingOn ? (
           <div className="rounded-xl border border-dashed border-slate-300 px-3.5 py-3 text-[14px] text-slate-500">{t.chooseFirst(waitingOn)}</div>
         ) : asCards ? (
-          <div role="radiogroup" aria-labelledby={`${id}-label`} aria-describedby={describedBy} className="grid gap-2 sm:grid-cols-2">
+          <div role="radiogroup" aria-labelledby={`${id}-label`} aria-describedby={describedBy} className={`grid gap-2 ${display === "list" ? "" : "sm:grid-cols-2"}`}>
             {options.map((o) => (
               <label
                 key={o}
