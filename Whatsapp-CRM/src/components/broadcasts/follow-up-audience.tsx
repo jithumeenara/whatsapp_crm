@@ -30,7 +30,7 @@ export function FollowUpAudience({ audience, parentFinished = true, onChangeAudi
     apiFetch('/api/broadcasts/audience-count', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: audience.type, fromBroadcast: audience.fromBroadcast, listId: audience.listId }),
+      body: JSON.stringify({ type: audience.type, fromBroadcast: audience.fromBroadcast, listId: audience.listId, listIds: audience.listIds }),
     })
       .then((r) => r.json())
       .then((j: { count?: number | null }) => { if (live) setCount(j.count ?? 0); })
@@ -39,7 +39,7 @@ export function FollowUpAudience({ audience, parentFinished = true, onChangeAudi
         if (live) setError(errorText(err, 'Could not count this group.'));
       });
     return () => { live = false; };
-  }, [audience.type, audience.fromBroadcast, audience.listId]);
+  }, [audience.type, audience.fromBroadcast, audience.listId, audience.listIds]);
 
   const empty = count === 0 && parentFinished;
 

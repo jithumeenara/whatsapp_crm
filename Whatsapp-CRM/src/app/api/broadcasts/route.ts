@@ -10,7 +10,8 @@ import type { AudienceConfig, VariableMapping } from "@/hooks/use-broadcast-send
 import { hasTagRules, parseTagMatch, tagAudienceWhere, tagRuleError, tagsBelongToAccount } from "@/lib/broadcasts/tag-audience";
 import { loadTableRule, phoneColumns, tableAudienceMatch, tableRuleError } from "@/lib/broadcasts/table-audience";
 import { liveCounts } from "@/lib/broadcasts/counts";
-import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
+import { contactsInLists, contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
+import { listIdsOf } from "@/lib/broadcasts/list-audience";
 import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
 import { isSendWindow } from "@/lib/broadcasts/rules";
 import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement";
@@ -220,7 +221,9 @@ export async function POST(request: NextRequest) {
           customField: body.audience.customField,
           excludeTagIds: body.audience.excludeTagIds,
           ...(parent ? { fromBroadcast: { broadcastId: parent.id, outcome: parent.outcome } } : {}),
-          ...(body.audience.type === "list" && typeof body.audience.listId === "string" ? { listId: body.audience.listId } : {}),
+          ...(body.audience.type === "list" && listIdsOf(body.audience).length > 0
+            ? { listIds: listIdsOf(body.audience), listId: listIdsOf(body.audience)[0] }
+            : {}),
           ...(body.audience.type === "engagement" && body.audience.engagement ? { engagement: body.audience.engagement } : {}),
         } as Prisma.InputJsonValue,
         parent_broadcast_id: parent?.id ?? null,
@@ -398,11 +401,13 @@ async function resolveAudience(
     contacts = await db.contact.findMany({
       where: { AND: [sendable, engagementWhere(ctx.accountId, audience.engagement.kind, engagementDays(audience.engagement.days)!)] },
     });
-  } else if (audience.type === "list" && typeof audience.listId === "string") {
-    const ids = await contactsInList(db, ctx.accountId, audience.listId);
+  } else if (audience.type === "list" && listIdsOf(audience).length > 0) {
+    // One list or several: each person once.
+    const listIds = listIdsOf(audience);
+    const ids = await contactsInLists(db, ctx.accountId, listIds);
     contacts = ids && ids.length > 0 ? await db.contact.findMany({ where: { id: { in: ids }, ...sendable } }) : [];
     if (ids) {
-      await db.contactList.updateMany({ where: { id: audience.listId, account_id: ctx.accountId }, data: { last_used_at: new Date() } });
+      await db.contactList.updateMany({ where: { id: { in: listIds }, account_id: ctx.accountId }, data: { last_used_at: new Date() } });
     }
   } else if (audience.type === "contacts" && audience.contactIds && audience.contactIds.length > 0) {
     contacts = await db.contact.findMany({

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account"
 import { liveSendableContactWhere } from "@/lib/broadcasts/sendable"
-import { contactsInList, contactsInOutcome } from "@/lib/broadcasts/outcome-audience"
+import { contactsInLists, contactsInOutcome } from "@/lib/broadcasts/outcome-audience"
+import { listIdsOf } from "@/lib/broadcasts/list-audience"
 import { isOutcome } from "@/lib/broadcasts/outcomes"
 import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement"
 import { hasTagRules, tagAudienceWhere, tagRuleError, tagsBelongToAccount } from "@/lib/broadcasts/tag-audience"
@@ -21,6 +22,7 @@ interface AudienceCountBody {
   excludeTagIds?: string[]
   fromBroadcast?: { broadcastId: string; outcome: string }
   listId?: string
+  listIds?: string[]
   engagement?: { kind?: string; days?: number }
   table?: TableAudience
 }
@@ -125,8 +127,8 @@ export async function POST(req: NextRequest) {
       baseIds = [...new Set(rows.map((r) => r.contact_id))]
     } else if (body.type === "broadcast_outcome" && body.fromBroadcast && isOutcome(body.fromBroadcast.outcome)) {
       baseIds = (await contactsInOutcome(db, ctx.accountId, String(body.fromBroadcast.broadcastId), body.fromBroadcast.outcome)) ?? []
-    } else if (body.type === "list" && typeof body.listId === "string") {
-      baseIds = (await contactsInList(db, ctx.accountId, body.listId)) ?? []
+    } else if (body.type === "list" && listIdsOf(body).length > 0) {
+      baseIds = (await contactsInLists(db, ctx.accountId, listIdsOf(body))) ?? []
     } else {
       return NextResponse.json({ count: null })
     }

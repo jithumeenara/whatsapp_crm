@@ -24,6 +24,7 @@ interface AudienceConfig {
   excludeTagIds?: string[];
   fromBroadcast?: { broadcastId: string; outcome: string };
   listId?: string;
+  listIds?: string[];
   /** Shown in the summary for a follow-up or a list, e.g. "Read, no reply · Diwali offer". */
   label?: string;
   engagement?: { kind: string; days: number };
@@ -138,7 +139,7 @@ export function Step4ScheduleSend({
           // number the send will reach (same rules on the server).
           body: JSON.stringify({
             type: audience.type, tagIds: audience.tagIds, tagMatch: audience.tagMatch, customField: audience.customField,
-            excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId,
+            excludeTagIds: audience.excludeTagIds, fromBroadcast: audience.fromBroadcast, listId: audience.listId, listIds: audience.listIds,
             engagement: audience.engagement, table: audience.table,
           }),
         });

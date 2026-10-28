@@ -32,6 +32,8 @@ export interface AudienceConfig {
   fromBroadcast?: { broadcastId: string; outcome: string };
   /** 'list': a saved contact list. */
   listId?: string;
+  /** Several saved lists: everyone in any of them, each person once. */
+  listIds?: string[];
   /** 'engagement': how people responded to broadcasts lately. */
   engagement?: { kind: string; days: number };
 }

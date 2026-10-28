@@ -27,6 +27,18 @@ export async function contactsInOutcome(
   return [...new Set(rows.filter((r) => outcomeOf(r) === outcome).map((r) => r.contact_id))]
 }
 
+/**
+ * Everyone in these saved lists, each person once. Lists of another
+ * account are skipped; null when none of them is this account's.
+ */
+export async function contactsInLists(db: Db, accountId: string, listIds: readonly string[]): Promise<string[] | null> {
+  if (listIds.length === 0) return null
+  const lists = await db.contactList.findMany({ where: { id: { in: [...listIds] }, account_id: accountId }, select: { id: true } })
+  if (lists.length === 0) return null
+  const rows = await db.contactListMember.findMany({ where: { list_id: { in: lists.map((l) => l.id) } }, select: { contact_id: true } })
+  return [...new Set(rows.map((r) => r.contact_id))]
+}
+
 export async function contactsInList(db: Db, accountId: string, listId: string): Promise<string[] | null> {
   if (typeof listId !== 'string' || !listId) return null
   const list = await db.contactList.findFirst({ where: { id: listId, account_id: accountId }, select: { id: true } })

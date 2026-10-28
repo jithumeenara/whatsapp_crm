@@ -50,6 +50,8 @@ export interface AudienceConfig {
   fromBroadcast?: { broadcastId: string; outcome: string };
   /** A saved contact list. */
   listId?: string;
+  /** Several saved lists: everyone in any of them, each person once. */
+  listIds?: string[];
   /** How people responded to broadcasts lately (engagement.ts). */
   engagement?: { kind: string; days: number };
   /** Human words for a follow-up or list audience, for the summaries. */
@@ -254,7 +256,13 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   /* Saved lists (list mode) — loaded the first time the tab is opened. */
   const [lists, setLists] = useState<SavedList[] | null>(null);
   const [listsError, setListsError] = useState('');
-  const [selectedListId, setSelectedListId] = useState<string>(audience.type === 'list' ? (audience.listId ?? '') : '');
+  // One list or several (everyone in any of them, each person once).
+  const [selectedListIds, setSelectedListIds] = useState<string[]>(
+    audience.type === 'list' ? (audience.listIds?.length ? audience.listIds : audience.listId ? [audience.listId] : []) : []
+  );
+  const [listCount, setListCount] = useState<number | null>(null);
+  const [listCountError, setListCountError] = useState('');
+  const listCountSeq = useRef(0);
   useEffect(() => {
     if (mode !== 'list' || lists !== null) return;
     let live = true;
@@ -267,11 +275,41 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       });
     return () => { live = false; };
   }, [mode, lists]);
-  const selectedList = lists?.find((l) => l.id === selectedListId) ?? null;
-  function chooseList(l: SavedList) {
-    setSelectedListId(l.id);
-    onUpdate({ type: 'list', listId: l.id, label: l.name });
+  const selectedLists = (lists ?? []).filter((l) => selectedListIds.includes(l.id));
+  const listLabel = (ids: string[]) => {
+    const names = (lists ?? []).filter((l) => ids.includes(l.id)).map((l) => l.name);
+    return names.length <= 1 ? names[0] : `${names.length} saved lists`;
+  };
+  function pushLists(ids: string[]) {
+    onUpdate({ type: 'list', listIds: ids, listId: ids[0], label: listLabel(ids) });
   }
+  function toggleList(l: SavedList) {
+    const next = selectedListIds.includes(l.id) ? selectedListIds.filter((id) => id !== l.id) : [...selectedListIds, l.id];
+    setSelectedListIds(next);
+    pushLists(next);
+  }
+
+  /* People in the chosen lists — counted by the server, each person once
+     (debounced; only the newest answer is shown). */
+  useEffect(() => {
+    if (mode !== 'list' || selectedListIds.length === 0) return;
+    const seq = ++listCountSeq.current;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiFetch('/api/broadcasts/audience-count', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'list', listIds: selectedListIds }),
+        });
+        const j = (await res.json()) as { count?: number | null };
+        if (seq === listCountSeq.current) { setListCount(j.count ?? 0); setListCountError(''); }
+      } catch (err) {
+        console.error('[broadcast audience] list count failed:', err);
+        if (seq === listCountSeq.current) setListCountError(errorText(err, 'Could not count the people in these lists.'));
+      }
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [mode, selectedListIds]);
 
   /* Engagement (engagement mode): how people responded lately. */
   const [engKind, setEngKind] = useState<string>(audience.engagement?.kind ?? 'ignored');
@@ -431,7 +469,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     setSearch('');
     if (m === 'all') onUpdate(pickSpecific ? { type: 'contacts', contactIds: [...selectedIds] } : { type: 'all' });
     else if (m === 'tags') pushTags(selectedTagIds, tagMatch, excludeTagIds);
-    else if (m === 'list') onUpdate({ type: 'list', listId: selectedListId || undefined, label: selectedList?.name });
+    else if (m === 'list') pushLists(selectedListIds);
     else if (m === 'engagement') chooseEngagement(engKind, engDays);
     else if (m === 'table') onUpdate({ type: 'table', table: tableRule, label: tableLabel });
     else onUpdate({ type: 'csv', csvContacts: excelContacts });
@@ -712,7 +750,7 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
   const isValid =
     (mode === 'all' && (!pickSpecific || selectedIds.size > 0)) ||
     (mode === 'tags' && (selectedTagIds.length > 0 || excludeTagIds.length > 0) && !!tagCount && !tagCountError) ||
-    (mode === 'list' && !!selectedList && selectedList.member_count > 0) ||
+    (mode === 'list' && selectedListIds.length > 0 && (listCount ?? 0) > 0 && !listCountError) ||
     (mode === 'engagement' && (engCount ?? 0) > 0) ||
     (mode === 'table' && !!tableRule && (tableCount ?? 0) > 0) ||
     (mode === 'excel' && validationStatus === 'done' && sendCount > 0);
@@ -737,8 +775,11 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
     }
 
     if (mode === 'list') {
-      if (!selectedList) return 'Choose a saved list';
-      return `${selectedList.member_count.toLocaleString()} ${selectedList.member_count === 1 ? 'person' : 'people'} in “${selectedList.name}”`;
+      if (selectedListIds.length === 0) return 'Choose one or more saved lists';
+      if (listCountError) return listCountError;
+      if (listCount === null) return 'Counting…';
+      const where = selectedLists.length === 1 ? `“${selectedLists[0].name}”` : `${selectedListIds.length} lists — each person once`;
+      return `${listCount.toLocaleString()} ${listCount === 1 ? 'person' : 'people'} in ${where}`;
     }
 
     if (mode === 'tags') {
@@ -848,8 +889,13 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
       {/* ── Saved list picker (list mode) ── */}
       {mode === 'list' && (
         <fieldset className="rounded-xl border border-slate-200 bg-white p-4">
-          <legend className="sr-only">Saved list</legend>
-          <p className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-slate-600">Saved lists</p>
+          <legend className="sr-only">Saved lists</legend>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-slate-600">Saved lists</p>
+            <p className="text-[12px] text-slate-500">
+              {selectedListIds.length > 1 ? `${selectedListIds.length} chosen — a person in two lists gets it once` : 'Choose one or more'}
+            </p>
+          </div>
           {lists === null ? (
             <p className="flex items-center gap-1.5 text-[13px] text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> Loading…</p>
           ) : listsError ? (
@@ -859,13 +905,14 @@ export function Step2SelectAudience({ audience, onUpdate, onNext, onBack }: Step
           ) : (
             <div className="max-h-72 space-y-1.5 overflow-y-auto">
               {lists.map((l) => {
-                const on = l.id === selectedListId;
+                const on = selectedListIds.includes(l.id);
                 return (
                   <label key={l.id} className={cn(
                     'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors',
                     on ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 hover:bg-slate-50',
                   )}>
-                    <input type="radio" name="saved-list" value={l.id} checked={on} onChange={() => chooseList(l)} className="h-4 w-4 accent-indigo-600" />
+                    <input type="checkbox" value={l.id} checked={on} onChange={() => toggleList(l)}
+                      disabled={!on && selectedListIds.length >= 20} className="h-4 w-4 rounded accent-indigo-600" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-medium text-slate-800">{l.name}</span>
                       {l.source_broadcast && (
