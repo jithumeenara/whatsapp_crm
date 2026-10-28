@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { formState } from '@/lib/data-store/public-form'
+import { groupActive } from '@/lib/data-store/form-group'
 import {
   issueRenderTicket,
   loadPublicForm,
@@ -104,6 +105,16 @@ export default async function PublicFormPage({
         form.config.max_responses !== null ? Math.max(0, form.config.max_responses - form.responses) : null
       }
       allowAnother={!contact || !form.config.one_per_person}
+      group={
+        groupActive(form.config.group)
+          ? {
+              label: form.config.group.label,
+              personKeys: form.config.group.person_keys.filter((k) => form.fields.some((f) => f.key === k)),
+              min: form.config.group.min,
+              max: form.config.group.max,
+            }
+          : null
+      }
     />
   )
 }

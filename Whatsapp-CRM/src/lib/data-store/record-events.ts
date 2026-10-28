@@ -75,7 +75,25 @@ export function afterRecordsChanged(tableId: string, accountId: string): void {
     .catch((err) => console.error('[sheet-routing] hook failed:', err instanceof Error ? err.message : err))
 }
 
-export function afterRecordCreated(record: CreatedRecord): void {
+/** Several rows from one submission (a group form): the staff alert goes
+ *  once per batch — from the first of its rows that meets the alert's
+ *  condition — saying how many. */
+export interface AfterCreateOptions {
+  alertOnce?: string
+  note?: string
+}
+
+/** Batches already alerted, kept for an hour. */
+const alertedBatches = new Map<string, number>()
+function firstOfBatch(batch: string): boolean {
+  const now = Date.now()
+  for (const [k, t] of alertedBatches) if (now - t > 60 * 60_000) alertedBatches.delete(k)
+  if (alertedBatches.has(batch)) return false
+  alertedBatches.set(batch, now)
+  return true
+}
+
+export function afterRecordCreated(record: CreatedRecord, opts: AfterCreateOptions = {}): void {
   // A connected table's knowledge is brought up to date within a minute.
   scheduleKnowledgeRefresh(record.account_id, record.table_id)
   // Two-way sheet: the new row is in the sheet within seconds.
@@ -128,6 +146,8 @@ export function afterRecordCreated(record: CreatedRecord): void {
         table,
         record,
         data,
+        note: opts.note,
+        batch: opts.alertOnce,
       })
     } catch (err) {
       console.error('[data-store] after-create failed:', err instanceof Error ? err.message : err)
@@ -139,7 +159,11 @@ async function sendRecordAlert({
   table,
   record,
   data,
+  note,
+  batch,
 }: {
+  note?: string
+  batch?: string
   table: {
     id: string
     name: string
@@ -157,6 +181,8 @@ async function sendRecordAlert({
   if (!config.enabled) return
   if (!wantsSource(config, record.source)) return
   if (!matchesCondition(config.condition, data)) return
+  // Checked and claimed in one step (no await between): one alert a batch.
+  if (batch && !firstOfBatch(batch)) return
   const hasChannel =
     config.push_user_ids.length > 0 || config.emails.length > 0 || config.whatsapp_numbers.length > 0
   if (!hasChannel) return
@@ -176,8 +202,8 @@ async function sendRecordAlert({
   const lines = summarizeRecord(table.fields, data)
   const via = sourceLabel(record.source)
   const who = contact ? `${contact.name?.trim() || 'Customer'} · ${contact.phone}` : null
-  const detail = lines.map((l) => `${l.label}: ${l.value}`)
-  const oneLine = lines.slice(0, 3).map((l) => `${l.label}: ${l.value}`).join(' · ') || 'No details'
+  const detail = [...(note ? [note] : []), ...lines.map((l) => `${l.label}: ${l.value}`)]
+  const oneLine = [note, lines.slice(0, 3).map((l) => `${l.label}: ${l.value}`).join(' · ')].filter(Boolean).join(' · ') || 'No details'
 
   // In the app. Only to people who are still members of this account —
   // somebody removed since the setting was saved gets nothing.

@@ -32,6 +32,36 @@ describe('appendRows', () => {
     expect(put.body).toEqual({ values: [[null, 'Biju', '9811']] })
   })
 
+  // Bug: a group form saves several rows at once; each export read "3
+  // rows filled" before any had written, and all wrote row 4 — one survived.
+  it('two appends to the same tab at once land on two rows, not the same one', async () => {
+    const tab = [['Name'], ['Anu'], ['Biju']]
+    const puts: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
+      const u = decodeURIComponent(String(url))
+      if (u.includes('fields=sheets.properties')) {
+        return new Response(JSON.stringify({ sheets: [{ properties: { sheetId: 7, title: 'Leads', gridProperties: { rowCount: 1000, columnCount: 26 } } }] }))
+      }
+      if ((init.method ?? 'GET') === 'PUT') {
+        await new Promise((r) => setTimeout(r, 20))
+        const row = Number(/!A(\d+):/.exec(u)![1])
+        puts.push(`A${row}`)
+        const values = JSON.parse(String(init.body)).values as string[][]
+        values.forEach((v, i) => { tab[row - 1 + i] = v })
+        return new Response('{}')
+      }
+      // A read answered a moment later, as Google does.
+      await new Promise((r) => setTimeout(r, 5))
+      return new Response(JSON.stringify({ values: tab.map((r) => [...r]) }))
+    }))
+    await Promise.all([
+      appendRows('t', 'sheet1', 'Leads', [['Chinnu']]),
+      appendRows('t', 'sheet1', 'Leads', [['Dinu']]),
+    ])
+    expect(puts).toEqual(['A4', 'A5'])
+    expect(tab.map((r) => r[0])).toEqual(['Name', 'Anu', 'Biju', 'Chinnu', 'Dinu'])
+  })
+
   it('starts at the row it is given, and adds rows when the grid ends', async () => {
     const calls = stubGoogle([], { rowCount: 5, columnCount: 2 })
     await appendRows('t', 'sheet1', 'Leads', [['a', 'b', 'c'], ['d', 'e', 'f']], { atRow: 5 })

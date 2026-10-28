@@ -27,6 +27,7 @@ import type { FormSource } from "@/lib/data-store/form-logic"
 import { FormBrandEditor, type LogoPreview } from "./form-brand-editor"
 import { FormRuleEditor, type EarlierQuestion } from "./form-rule-editor"
 import { SortableList, DragHandle } from "./sortable-list"
+import { ConfirmSettings, GroupSettings, useApprovedTemplates, type QuestionLite } from "./form-group-settings"
 
 const FIELD =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
@@ -79,6 +80,8 @@ export function PublicFormPanel({
   const [sources, setSources] = useState<FormSource[]>([])
   const [logo, setLogo] = useState<LogoPreview | null>(null)
   const [ruleOpen, setRuleOpen] = useState<string | null>(null)
+  // "When it stops": off = no limit; on shows the date and count.
+  const [limitsOpen, setLimitsOpen] = useState(false)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const origin = typeof window !== "undefined" ? window.location.origin : ""
@@ -266,6 +269,21 @@ export function PublicFormPanel({
     .filter((f): f is DataField => !!f && !WEB_FORM_DISPLAY_TYPES.has(f.field_type))
     .map((f) => ({ key: f.field_key, label: f.label }))
   const effective = effectiveRules(config.rules, questionsInOrder, sources, config.auto_link)
+
+  // Several people in one form: which questions are asked per person.
+  const groupOn = config.group.enabled
+  const personSet = new Set(config.group.person_keys)
+  function togglePerson(key: string) {
+    const keys = personSet.has(key) ? config.group.person_keys.filter((k) => k !== key) : [...config.group.person_keys, key]
+    patch({ group: { ...config.group, person_keys: keys } })
+  }
+  const askedQuestions: QuestionLite[] = asked
+    .map((k) => formFields.find((f) => f.field_key === k))
+    .filter((f): f is DataField => !!f && !WEB_FORM_DISPLAY_TYPES.has(f.field_type))
+    .map((f) => ({ key: f.field_key, label: f.label, type: f.field_type }))
+  const perPersonQuestions = groupOn ? askedQuestions.filter((q) => personSet.has(q.key)) : []
+  const onceQuestions = groupOn ? askedQuestions.filter((q) => !personSet.has(q.key)) : askedQuestions
+  const { templates } = useApprovedTemplates()
 
   function setAutoLink(v: boolean) {
     const next = { ...config, auto_link: v }
@@ -480,6 +498,18 @@ export function PublicFormPanel({
                       </span>
                       {heading && <span className="text-[11px] font-normal text-slate-400">section</span>}
                       {!heading && f.required && <span className="text-[11px] text-rose-500">required</span>}
+                      {!heading && groupOn && (
+                        <button
+                          type="button"
+                          onClick={() => togglePerson(f.field_key)}
+                          aria-pressed={personSet.has(f.field_key)}
+                          aria-label={`${f.label}: ${personSet.has(f.field_key) ? "asked per person" : "asked once"}`}
+                          title={personSet.has(f.field_key) ? "Asked for each person — tap to ask once" : "Asked once — tap to ask for each person"}
+                          className={`h-6 shrink-0 rounded-full px-2 text-[11px] font-medium transition-colors ${personSet.has(f.field_key) ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200" : "bg-slate-100 text-slate-500 hover:text-slate-800"}`}
+                        >
+                          {personSet.has(f.field_key) ? "Per person" : "Once"}
+                        </button>
+                      )}
                       {!heading && (
                         <button
                           type="button"
@@ -529,7 +559,61 @@ export function PublicFormPanel({
             </p>
           </PanelSection>
 
+          <PanelSection title="People" hint="Optional — for one form that registers a whole group.">
+            <GroupSettings
+              group={config.group}
+              perPersonCount={perPersonQuestions.length}
+              onChange={(group) => patch({ group })}
+            />
+          </PanelSection>
+
+          <PanelSection title="WhatsApp confirmation" hint="Optional — sent with your approved template once the form is saved.">
+            <ConfirmSettings
+              title="To the person who filled it"
+              hint={groupOn ? "One message listing everyone they added." : "A message to the number they gave."}
+              value={config.confirm_submitter}
+              templates={templates}
+              phoneQuestions={onceQuestions.filter((q) => q.type === "phone")}
+              valueQuestions={onceQuestions}
+              perPerson={false}
+              groupOn={groupOn}
+              onChange={(confirm_submitter) => patch({ confirm_submitter })}
+            />
+            {groupOn && (
+              <ConfirmSettings
+                title="To each person added"
+                hint="Every person on their own number. Someone whose number is the same as the form filler's gets one message, not two."
+                value={config.confirm_person}
+                templates={templates}
+                phoneQuestions={perPersonQuestions.filter((q) => q.type === "phone")}
+                valueQuestions={askedQuestions}
+                perPerson
+                groupOn={groupOn}
+                onChange={(confirm_person) => patch({ confirm_person })}
+              />
+            )}
+          </PanelSection>
+
           <PanelSection title="When it stops">
+            <label className="flex items-start justify-between gap-3 text-[13px] text-slate-700">
+              <span>
+                Stop taking answers
+                <span className="block text-[11.5px] text-slate-400">
+                  {limitsOpen || config.closes_at || config.max_responses
+                    ? "Closes on a date, or after a number of answers."
+                    : "Off — no limit. The form stays open until you turn it off."}
+                </span>
+              </span>
+              <Switch
+                checked={limitsOpen || !!config.closes_at || !!config.max_responses}
+                onCheckedChange={(v) => {
+                  setLimitsOpen(!!v)
+                  if (!v) patch({ closes_at: null, max_responses: null })
+                }}
+                aria-label="Stop taking answers"
+              />
+            </label>
+            {(limitsOpen || !!config.closes_at || !!config.max_responses) && (
             <div className="grid grid-cols-2 gap-2">
               <label className="flex flex-col gap-1 text-[12px] text-slate-600">
                 Closes on
@@ -556,6 +640,7 @@ export function PublicFormPanel({
                 />
               </label>
             </div>
+            )}
           </PanelSection>
 
           <PanelSection title="Privacy">

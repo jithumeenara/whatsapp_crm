@@ -94,14 +94,35 @@ export async function readTab(token: string, spreadsheetId: string, title: strin
  * Empty cells are skipped, so a template's ready-made rows keep their
  * checkboxes, dropdowns and formulas; rows are added when the grid ends.
  */
-export async function appendRows(
+export function appendRows(
   token: string,
   spreadsheetId: string,
   title: string,
   rows: string[][],
   opts: { fromRow?: number; atRow?: number } = {},
 ): Promise<void> {
-  if (rows.length === 0) return
+  if (rows.length === 0) return Promise.resolve()
+  // One at a time per tab in this process: two appends that both read
+  // "3 rows filled" would both write row 4 (a group form saves several
+  // rows at once). Each waits for the one before, success or not.
+  const key = `${spreadsheetId}\u0000${title.toLowerCase()}`
+  const run = (appendQueue.get(key) ?? Promise.resolve())
+    .catch(() => {})
+    .then(() => appendRowsNow(token, spreadsheetId, title, rows, opts))
+  appendQueue.set(key, run)
+  void run.catch(() => {}).finally(() => { if (appendQueue.get(key) === run) appendQueue.delete(key) })
+  return run
+}
+
+const appendQueue = new Map<string, Promise<void>>()
+
+async function appendRowsNow(
+  token: string,
+  spreadsheetId: string,
+  title: string,
+  rows: string[][],
+  opts: { fromRow?: number; atRow?: number },
+): Promise<void> {
   let start = opts.atRow && opts.atRow > 0 ? Math.floor(opts.atRow) : 0
   if (!start) {
     const filled = (await readTab(token, spreadsheetId, title)).length

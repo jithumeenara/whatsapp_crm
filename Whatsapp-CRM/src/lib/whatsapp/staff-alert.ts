@@ -180,7 +180,8 @@ export async function sendStaffAlert(input: StaffAlertInput): Promise<StaffAlert
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       result.failed.push({ to, error: message })
-      console.error(`[${input.label}] could not reach`, to, '—', message)
+      // A customer's number (a form confirmation) is logged by its last four only.
+      console.error(`[${input.label}] could not reach`, input.label === 'form-confirm' ? `…${to.slice(-4)}` : to, '—', message)
     }
   }
 

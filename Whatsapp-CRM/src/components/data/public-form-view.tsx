@@ -22,12 +22,13 @@
  * sessionStorage only, and are wiped on sending.
  */
 
-import { useMemo, useState, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
-  AlertCircle, CalendarClock, Check, CheckCircle2, Clock, Copy, Globe, Loader2, Lock, Mail, MapPin, Phone,
-  RotateCcw, ShieldCheck, Users,
+  AlertCircle, CalendarClock, Check, CheckCircle2, Clock, Copy, Globe, Loader2, Lock, Mail, MapPin, Pencil, Phone,
+  RotateCcw, ShieldCheck, Trash2, UserPlus, Users, X,
 } from "lucide-react"
 import type { PublicFormField } from "@/lib/data-store/public-form"
+import { personNameKey } from "@/lib/data-store/form-group"
 import {
   fillValue, isShown, optionsFor, pipeAnswers,
   type Answers, type FormLookups, type FormRules,
@@ -57,7 +58,11 @@ interface Props {
   closesInMs: number | null
   spotsLeft: number | null
   allowAnother: boolean
+  /** Several people in one form: these questions are asked per person. */
+  group: { label: string; personKeys: string[]; min: number; max: number } | null
 }
+
+type Person = Record<string, string | boolean>
 
 type Value = string | boolean
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
@@ -151,6 +156,43 @@ function writeDraft(key: string, values: Record<string, Value> | null) {
   }
 }
 
+function readPeople(key: string): Person[] {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(key) ?? "[]") as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((p): p is Record<string, unknown> => !!p && typeof p === "object" && !Array.isArray(p))
+      .map((p) => Object.fromEntries(Object.entries(p).filter(([, v]) => typeof v === "string" || typeof v === "boolean")) as Person)
+      .slice(0, 50)
+  } catch {
+    return []
+  }
+}
+
+function writePeople(key: string, people: Person[] | null) {
+  try {
+    if (people && people.length) sessionStorage.setItem(key, JSON.stringify(people))
+    else sessionStorage.removeItem(key)
+  } catch {
+    // Storage off: the list lives until the page is closed.
+  }
+}
+
+/** Ties one submission's people together, so a retried send saves them once. */
+function newBatchId(): string {
+  try {
+    return crypto.randomUUID()
+  } catch {
+    return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+      (Number(c) ^ (Math.floor(Math.random() * 256) & (15 >> (Number(c) / 4)))).toString(16))
+  }
+}
+
+function lastTen(v: unknown): string | null {
+  const d = String(v ?? "").replace(/\D/g, "")
+  return d.length >= 7 ? d.slice(-10) : null
+}
+
 function scrollBehavior(): ScrollBehavior {
   try {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"
@@ -184,11 +226,36 @@ export function PublicFormView(props: Props) {
   const [honeypot, setHoneypot] = useState("")
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState<{ message: string; reference: string | null } | null>(null)
+  const [done, setDone] = useState<{ message: string; reference: string | null; names: string[] } | null>(null)
   const [copied, setCopied] = useState(false)
 
   const answerable = useMemo(() => fields.filter((f) => !isDisplay(f)), [fields])
   const labelOf = useMemo(() => new Map(fields.map((f) => [f.key, f.label])), [fields])
+
+  // ── Several people in one form ──
+  const group = props.group && props.group.personKeys.length ? props.group : null
+  const personSet = useMemo(() => new Set(group?.personKeys ?? []), [group])
+  const personFields = useMemo(() => answerable.filter((f) => personSet.has(f.key)), [answerable, personSet])
+  // The main form: everything asked once. A heading whose part holds only
+  // per-person questions goes with them, not here.
+  const mainFields = useMemo(() => {
+    if (!group) return fields
+    return fields.filter((f, i) => {
+      if (personSet.has(f.key)) return false
+      if (!isDisplay(f)) return true
+      const part: PublicFormField[] = []
+      for (let j = i + 1; j < fields.length && !isDisplay(fields[j]); j++) part.push(fields[j])
+      return part.length === 0 || part.some((q) => !personSet.has(q.key))
+    })
+  }, [fields, group, personSet])
+  const nameKey = useMemo(() => (group ? personNameKey(fields, group.personKeys) : null), [fields, group])
+  const peopleKey = `${draftKey}:people`
+  const [people, setPeople] = useState<Person[]>([])
+  const [sheet, setSheet] = useState<{ index: number | null; values: Person; attempted: boolean; touched: Set<string> } | null>(null)
+  const [removing, setRemoving] = useState<number | null>(null)
+  const [batchId, setBatchId] = useState(newBatchId)
+  const addButton = useRef<HTMLButtonElement>(null)
+  const sheetBody = useRef<HTMLDivElement>(null)
 
   // The answers as they stand, with every locked question filled from
   // the table — what progress, conditions and options are worked from.
@@ -204,7 +271,7 @@ export function PublicFormView(props: Props) {
     return dep && !String(answers[dep] ?? "").trim() ? dep : null
   }
 
-  const asked = answerable.filter((f) => shown(f) && !locked(f))
+  const asked = answerable.filter((f) => !personSet.has(f.key) && shown(f) && !locked(f))
   const answered = asked.filter((f) => {
     const v = answers[f.key]
     return f.type === "boolean" ? v === true : typeof v === "string" && v.trim() !== ""
@@ -222,32 +289,36 @@ export function PublicFormView(props: Props) {
   /** Sets an answer and settles everything that hangs off it: a
    *  narrowed dropdown whose answer no longer fits is cleared, and an
    *  unlocked filled question takes the new row's value. */
-  function set(key: string, value: Value) {
-    setValues((v) => {
-      const next: Record<string, Value> = { ...v, [key]: value }
-      for (let pass = 0; pass < 4; pass++) {
-        let changed = false
-        const current: Answers = { ...next }
-        for (const f of answerable) {
-          const rule = rules[f.key]
-          if (!rule) continue
-          if (rule.filter && typeof next[f.key] === "string" && next[f.key]) {
-            const allowed = optionsFor(f.key, rules, lookups, current)
-            if (allowed && !allowed.some((o) => o.toLowerCase() === String(next[f.key]).toLowerCase())) {
-              next[f.key] = ""
-              changed = true
-            }
-          }
-          if (rule.fill && !rule.fill.locked && rule.fill.from_field === key) {
-            const filled = fillValue(f.key, rules, lookups, current)
-            if (filled !== null && next[f.key] !== filled) {
-              next[f.key] = filled
-              changed = true
-            }
+  function settle(next: Record<string, Value>, key: string, scope: PublicFormField[], base: Answers = {}) {
+    for (let pass = 0; pass < 4; pass++) {
+      let changed = false
+      const current: Answers = { ...base, ...next }
+      for (const f of scope) {
+        const rule = rules[f.key]
+        if (!rule) continue
+        if (rule.filter && typeof next[f.key] === "string" && next[f.key]) {
+          const allowed = optionsFor(f.key, rules, lookups, current)
+          if (allowed && !allowed.some((o) => o.toLowerCase() === String(next[f.key]).toLowerCase())) {
+            next[f.key] = ""
+            changed = true
           }
         }
-        if (!changed) break
+        if (rule.fill && !rule.fill.locked && rule.fill.from_field === key) {
+          const filled = fillValue(f.key, rules, lookups, current)
+          if (filled !== null && next[f.key] !== filled) {
+            next[f.key] = filled
+            changed = true
+          }
+        }
       }
+      if (!changed) break
+    }
+    return next
+  }
+
+  function set(key: string, value: Value) {
+    setValues((v) => {
+      const next = settle({ ...v, [key]: value }, key, answerable)
       writeDraft(draftKey, next)
       return next
     })
@@ -257,6 +328,116 @@ export function PublicFormView(props: Props) {
 
   function touch(key: string) {
     setTouched((s) => (s.has(key) ? s : new Set(s).add(key)))
+  }
+
+  // ── One person, in the sheet ──
+  /** A person's answers with the ones asked once, and their locked fills. */
+  function personAnswers(p: Person): Answers {
+    const merged: Answers = { ...answers, ...p }
+    for (const f of personFields) {
+      if (rules[f.key]?.fill?.locked) merged[f.key] = fillValue(f.key, rules, lookups, merged) ?? ""
+    }
+    return merged
+  }
+  const personAsked = (merged: Answers) =>
+    personFields.filter((f) => isShown(f.key, rules, merged) && !rules[f.key]?.fill?.locked)
+
+  function personErrors(p: Person, index: number | null): Record<string, string> {
+    const merged = personAnswers(p)
+    const out: Record<string, string> = {}
+    for (const f of personAsked(merged)) {
+      const problem = checkAnswer(f, merged[f.key], t)
+      if (problem) { out[f.key] = problem; continue }
+      // The same number twice in one form is one person entered twice.
+      if (f.type === "phone" && group) {
+        const mine = lastTen(merged[f.key])
+        const other = mine ? people.findIndex((q, j) => j !== index && lastTen(q[f.key]) === mine) : -1
+        if (other >= 0) out[f.key] = t.errSamePhone(group.label, other + 1)
+      }
+    }
+    return out
+  }
+
+  function openPerson(index: number | null) {
+    setRemoving(null)
+    setSheet({ index, values: index === null ? {} : { ...people[index] }, attempted: false, touched: new Set() })
+  }
+
+  function setPersonValue(key: string, value: Value) {
+    setSheet((sh) => (sh ? { ...sh, values: settle({ ...sh.values, [key]: value }, key, personFields, answers) } : sh))
+  }
+
+  function touchPerson(key: string) {
+    setSheet((sh) => (sh && !sh.touched.has(key) ? { ...sh, touched: new Set(sh.touched).add(key) } : sh))
+  }
+
+  function closeSheet(force = false) {
+    if (!sheet) return
+    const changed = JSON.stringify(sheet.values) !== JSON.stringify(sheet.index === null ? {} : people[sheet.index])
+    if (!force && changed && !window.confirm(t.discardPerson)) return
+    setSheet(null)
+    requestAnimationFrame(() => addButton.current?.focus())
+  }
+
+  function savePeople(next: Person[]) {
+    setPeople(next)
+    writePeople(peopleKey, next)
+    // So "Restore my answers" is offered after a reload, with the list.
+    writeDraft(draftKey, values)
+    setDirty(true)
+    setError(null)
+  }
+
+  function savePerson(addAnother: boolean) {
+    if (!sheet || !group) return
+    const errs = personErrors(sheet.values, sheet.index)
+    const firstBad = personAsked(personAnswers(sheet.values)).find((f) => errs[f.key])
+    if (firstBad) {
+      setSheet({ ...sheet, attempted: true })
+      const el = document.getElementById(`q-${firstBad.key}`)
+      el?.scrollIntoView({ behavior: scrollBehavior(), block: "center" })
+      el?.querySelector<HTMLElement>("input, textarea, select, button")?.focus({ preventScroll: true })
+      return
+    }
+    // Only this person's questions are kept.
+    const kept: Person = {}
+    for (const f of personFields) if (sheet.values[f.key] !== undefined) kept[f.key] = sheet.values[f.key]
+    const next = sheet.index === null ? [...people, kept] : people.map((p, i) => (i === sheet.index ? kept : p))
+    savePeople(next)
+    if (addAnother && next.length < group.max) {
+      setSheet({ index: null, values: {}, attempted: false, touched: new Set() })
+      sheetBody.current?.scrollTo({ top: 0 })
+      requestAnimationFrame(() => sheetBody.current?.querySelector<HTMLElement>("input, textarea, button[role=combobox]")?.focus())
+    } else {
+      setSheet(null)
+      requestAnimationFrame(() => addButton.current?.focus())
+    }
+  }
+
+  function removePerson(index: number) {
+    savePeople(people.filter((_, i) => i !== index))
+    setRemoving(null)
+    requestAnimationFrame(() => addButton.current?.focus())
+  }
+
+  // While a person is open: the page behind stays still, the first
+  // question has the focus.
+  const sheetOpen = sheet !== null
+  useEffect(() => {
+    if (!sheetOpen) return
+    const before = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    requestAnimationFrame(() => sheetBody.current?.querySelector<HTMLElement>("input, textarea, button[role=combobox]")?.focus())
+    return () => { document.body.style.overflow = before }
+  }, [sheetOpen])
+
+  const personTitle = (p: Person, i: number) =>
+    (nameKey && typeof p[nameKey] === "string" && String(p[nameKey]).trim()) || (group ? t.personN(group.label, i + 1) : "")
+  const personDetail = (p: Person) => {
+    const phone = personFields.find((f) => f.type === "phone" && typeof p[f.key] === "string" && p[f.key])
+    if (phone) return String(p[phone.key]).replace(/[\s()-]+/g, "")
+    const other = personFields.find((f) => f.key !== nameKey && typeof p[f.key] === "string" && String(p[f.key]).trim())
+    return other ? String(p[other.key]) : ""
   }
 
   function restoreDraft() {
@@ -269,6 +450,7 @@ export function PublicFormView(props: Props) {
         if (keys.has(k) && (typeof v === "string" || typeof v === "boolean")) restored[k] = v
       }
       setValues(restored)
+      if (group) setPeople(readPeople(peopleKey))
     } catch {
       // A draft that cannot be read is simply not offered again.
     }
@@ -277,7 +459,9 @@ export function PublicFormView(props: Props) {
   function startOver() {
     setDraftDecided(true)
     writeDraft(draftKey, null)
+    writePeople(peopleKey, null)
     setValues({ ...props.prefill })
+    setPeople([])
   }
 
   function focusQuestion(key: string) {
@@ -296,6 +480,12 @@ export function PublicFormView(props: Props) {
       focusQuestion(first.key)
       return
     }
+    if (group && people.length < group.min) {
+      setError(t.errNeedPeople(group.min, group.label))
+      addButton.current?.scrollIntoView({ behavior: scrollBehavior(), block: "center" })
+      addButton.current?.focus({ preventScroll: true })
+      return
+    }
     if (props.consentText && !consent) {
       setError(t.errConsent)
       document.getElementById("f-consent")?.focus()
@@ -311,11 +501,25 @@ export function PublicFormView(props: Props) {
         if (f.type === "boolean") payload[f.key] = v === true
         else if (typeof v === "string" && v.trim() !== "") payload[f.key] = v.trim()
       }
+      // Each person: what they were asked, as they answered it.
+      const peoplePayload = group
+        ? people.map((p) => {
+            const merged = personAnswers(p)
+            const out: Record<string, Value> = {}
+            for (const f of personAsked(merged)) {
+              const v = merged[f.key]
+              if (f.type === "boolean") out[f.key] = v === true
+              else if (typeof v === "string" && v.trim() !== "") out[f.key] = v.trim()
+            }
+            return out
+          })
+        : undefined
       const res = await fetch(`/api/forms/${encodeURIComponent(props.token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           values: payload,
+          ...(group ? { people: peoplePayload, batch: batchId } : {}),
           ticket: props.ticket,
           consent,
           website: honeypot,
@@ -328,7 +532,14 @@ export function PublicFormView(props: Props) {
         return
       }
       writeDraft(draftKey, null)
-      setDone({ message: pipeAnswers(props.successMessage || t.thanks, answers), reference: data.reference ?? null })
+      writePeople(peopleKey, null)
+      setDone({
+        message: pipeAnswers(props.successMessage || t.thanks, answers),
+        reference: data.reference ?? null,
+        names: group ? people.map((p, i) => personTitle(p, i)) : [],
+      })
+      setPeople([])
+      setBatchId(newBatchId())
       window.scrollTo({ top: 0, behavior: scrollBehavior() })
     } catch {
       setError(t.errNetwork)
@@ -339,6 +550,7 @@ export function PublicFormView(props: Props) {
 
   function another() {
     setDone(null)
+    setPeople([])
     setValues({ ...props.prefill })
     setTouched(new Set())
     setAttempted(false)
@@ -389,7 +601,7 @@ export function PublicFormView(props: Props) {
       )}
 
       {/* ── Business header ────────────────────────────────────────── */}
-      <header className="relative overflow-hidden bg-primary text-white">
+      <header inert={sheetOpen} className="relative overflow-hidden bg-primary text-white">
         <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(120%_120%_at_100%_0%,rgba(255,255,255,0.22),transparent_55%),linear-gradient(180deg,transparent,rgba(0,0,0,0.18))]" />
         <div className="relative mx-auto w-full max-w-2xl px-4 pb-20 pt-4 sm:pt-8">
           {/* On a phone the language switch gets its own row, so the
@@ -413,7 +625,7 @@ export function PublicFormView(props: Props) {
         </div>
       </header>
 
-      <main className="relative mx-auto -mt-14 w-full max-w-2xl px-4 pb-10">
+      <main inert={sheetOpen} className="relative mx-auto -mt-14 w-full max-w-2xl px-4 pb-10">
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
           <div className="border-b border-slate-100 px-5 pb-5 pt-6 sm:px-8">
             <h1 className="text-balance text-[24px] font-bold leading-tight tracking-tight text-slate-900 sm:text-[28px]">{props.title}</h1>
@@ -447,8 +659,17 @@ export function PublicFormView(props: Props) {
                 <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500">
                   <CheckCircle2 className="h-9 w-9 text-emerald-700" />
                 </span>
-                <h2 className="mt-4 text-[20px] font-bold text-slate-900">{t.submitted}</h2>
+                <h2 className="mt-4 text-[20px] font-bold text-slate-900">{done.names.length ? t.submittedMany(done.names.length) : t.submitted}</h2>
                 <p className="mt-1.5 max-w-md whitespace-pre-line text-[15px] leading-relaxed text-slate-600">{done.message}</p>
+                {done.names.length > 0 && (
+                  <ul className="mt-4 flex max-w-md flex-wrap justify-center gap-1.5">
+                    {done.names.map((n, i) => (
+                      <li key={i} className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-[13px] font-medium text-emerald-800 ring-1 ring-emerald-200">
+                        <Check className="h-3.5 w-3.5" aria-hidden="true" /> {n}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {done.reference && (
                   <div className="mt-5 flex items-center gap-2 rounded-2xl bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
                     <span className="text-[12px] text-slate-500">{t.reference}</span>
@@ -485,7 +706,7 @@ export function PublicFormView(props: Props) {
                   </div>
                 )}
 
-                {fields.filter(shown).map((f) => {
+                {mainFields.filter(shown).map((f) => {
                   if (isDisplay(f)) {
                     return (
                       <div key={f.key} className="mt-3 border-t border-slate-100 pt-5 first:mt-0 first:border-0 first:pt-0">
@@ -510,6 +731,65 @@ export function PublicFormView(props: Props) {
                     />
                   )
                 })}
+
+                {group && (
+                  <section aria-labelledby="people-title" className={`rounded-2xl border p-3 sm:p-5 ${attempted && people.length < group.min ? "border-rose-300 bg-rose-50/40" : "border-slate-200 bg-slate-50/60"}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 id="people-title" className="flex items-center gap-2 text-[16px] font-semibold text-slate-900">
+                        <Users className="h-4.5 w-4.5 text-primary" aria-hidden="true" />
+                        {t.peopleTitle(group.label)}
+                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[12.5px] tabular-nums text-primary">{people.length}</span>
+                      </h2>
+                      {group.max > 1 && <span className="text-[12.5px] text-slate-500">{t.maxPeople(group.max)}</span>}
+                    </div>
+                    {people.length === 0 ? (
+                      <p className="mt-3 text-[14px] leading-relaxed text-slate-500">{t.noPeople(group.label)}</p>
+                    ) : (
+                      <ul className="mt-3 flex flex-col gap-2">
+                        {people.map((p, i) => {
+                          const name = personTitle(p, i)
+                          return (
+                            <li key={i} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white py-2 pl-2.5 pr-1">
+                              <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-[14px] font-semibold text-primary">
+                                {name.trim().charAt(0).toUpperCase() || i + 1}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="line-clamp-2 break-words text-[15px] font-medium leading-snug text-slate-900">{name}</p>
+                                {personDetail(p) && <p className="truncate whitespace-nowrap text-[13px] tabular-nums text-slate-500">{personDetail(p)}</p>}
+                              </div>
+                              {removing === i ? (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <span className="sr-only" role="status">{t.removeAsk(name)}</span>
+                                  <button type="button" onClick={() => removePerson(i)} className="h-10 rounded-lg bg-rose-600 px-3 text-[13px] font-semibold text-white hover:bg-rose-700">{t.remove}</button>
+                                  <button type="button" onClick={() => setRemoving(null)} className="h-10 rounded-lg px-3 text-[13px] font-medium text-slate-600 hover:bg-slate-100">{t.keep}</button>
+                                </div>
+                              ) : (
+                                <div className="flex shrink-0 items-center">
+                                  <button type="button" onClick={() => openPerson(i)} aria-label={`${t.edit} — ${name}`} className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+                                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                  <button type="button" onClick={() => setRemoving(i)} aria-label={`${t.remove} — ${name}`} className="grid h-9 w-9 place-items-center rounded-lg text-slate-500 hover:bg-rose-50 hover:text-rose-700">
+                                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                  </button>
+                                </div>
+                              )}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                    <button
+                      ref={addButton}
+                      type="button"
+                      onClick={() => openPerson(null)}
+                      disabled={people.length >= group.max}
+                      className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/40 bg-white text-[15px] font-semibold text-primary transition-colors hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <UserPlus className="h-4.5 w-4.5" aria-hidden="true" /> {t.addPerson(group.label)}
+                    </button>
+                    {attempted && people.length < group.min && <ErrorLine id="people-err" text={t.errNeedPeople(group.min, group.label)} />}
+                  </section>
+                )}
 
                 {/* A field no person sees or reaches with Tab. Bots fill it in. */}
                 <div aria-hidden="true" inert className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
@@ -548,7 +828,7 @@ export function PublicFormView(props: Props) {
                   className="mt-1 flex h-13 items-center justify-center gap-2 rounded-2xl bg-primary text-[16px] font-semibold text-primary-foreground shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-[0.99] disabled:opacity-60"
                 >
                   {sending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {sending ? t.sending : t.submit}
+                  {sending ? t.sending : group && people.length > 0 ? t.submitCount(people.length) : t.submit}
                 </button>
               </form>
             )}
@@ -589,6 +869,72 @@ export function PublicFormView(props: Props) {
           {t.secure(business)}
         </p>
       </main>
+
+      {sheet && group && (() => {
+        const merged = personAnswers(sheet.values)
+        const list = personAsked(merged)
+        const errs = personErrors(sheet.values, sheet.index)
+        const number = (sheet.index ?? people.length) + 1
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="person-title"
+            onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); closeSheet() } }}
+            className="fixed inset-0 z-50 flex bg-slate-50 sm:items-center sm:justify-center sm:bg-slate-900/40 sm:p-6"
+          >
+            <div className="flex h-dvh w-full flex-col bg-slate-50 sm:h-auto sm:max-h-[90dvh] sm:max-w-xl sm:overflow-hidden sm:rounded-3xl sm:shadow-xl">
+              <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+                <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+                  <UserPlus className="h-4.5 w-4.5" />
+                </span>
+                <h2 id="person-title" className="min-w-0 flex-1 truncate text-[17px] font-semibold text-slate-900">{t.personN(group.label, number)}</h2>
+                <button type="button" onClick={() => closeSheet()} aria-label={t.close} className="grid h-10 w-10 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800">
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </header>
+              <div ref={sheetBody} className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+                {list.map((f, i) => (
+                  <Question
+                    key={f.key}
+                    field={f}
+                    number={i + 1}
+                    value={merged[f.key]}
+                    options={optionsFor(f.key, rules, lookups, merged) ?? f.options ?? []}
+                    locked={false}
+                    waitingOn={(() => {
+                      const dep = rules[f.key]?.filter?.depends_on
+                      return dep && !String(merged[dep] ?? "").trim() ? labelOf.get(dep) ?? "" : null
+                    })()}
+                    error={(sheet.attempted || sheet.touched.has(f.key)) && errs[f.key] ? errs[f.key] : null}
+                    t={t}
+                    onChange={(v) => setPersonValue(f.key, v)}
+                    onTouch={() => touchPerson(f.key)}
+                  />
+                ))}
+              </div>
+              <footer className="flex flex-col gap-2 border-t border-slate-200 bg-white px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row-reverse sm:px-6">
+                <button
+                  type="button"
+                  onClick={() => savePerson(false)}
+                  className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center leading-snug bg-primary text-[15px] font-semibold text-primary-foreground hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30"
+                >
+                  <Check className="h-4.5 w-4.5" aria-hidden="true" /> {t.save}
+                </button>
+                {sheet.index === null && people.length + 1 < group.max && (
+                  <button
+                    type="button"
+                    onClick={() => savePerson(true)}
+                    className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-center leading-snug border border-primary/40 bg-white text-[15px] font-semibold text-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/20"
+                  >
+                    <UserPlus className="h-4.5 w-4.5" aria-hidden="true" /> {t.saveAndAdd}
+                  </button>
+                )}
+              </footer>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

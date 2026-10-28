@@ -108,7 +108,8 @@ FROM (VALUES
   ('145_speed_indexes',                to_regclass('leads_account_created_idx') IS NOT NULL),
   ('146_contact_archive',              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'archived_at')),
   ('147_alert_template_fields',        EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'message_templates' AND column_name = 'variable_fields')),
-  ('148_contact_age_address',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'address'))
+  ('148_contact_age_address',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'address')),
+  ('149_data_record_batch',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'batch_id'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 

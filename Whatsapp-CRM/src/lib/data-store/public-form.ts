@@ -14,6 +14,7 @@
  */
 
 import { DEFAULT_BRAND, parseBrand, parseRules, type FormBrand, type FormRules } from './form-logic'
+import { DEFAULT_GROUP, parseConfirm, parseGroup, type FormConfirm, type FormGroup } from './form-group'
 
 export const WEB_FORM_FIELD_TYPES: ReadonlySet<string> = new Set([
   'text',
@@ -79,6 +80,12 @@ export interface TableFormConfig {
   /** Also link fields the names imply (month → programme → dates), with
    *  no setup. On unless switched off. */
   auto_link: boolean
+  /** Optional: some questions once, the rest per person (form-group.ts). */
+  group: FormGroup
+  /** WhatsApp confirmation to the person who filled the form (all names). */
+  confirm_submitter: FormConfirm | null
+  /** WhatsApp confirmation to each person, on their own number. */
+  confirm_person: FormConfirm | null
 }
 
 export const EMPTY_FORM_CONFIG: TableFormConfig = {
@@ -95,6 +102,9 @@ export const EMPTY_FORM_CONFIG: TableFormConfig = {
   brand: DEFAULT_BRAND,
   rules: {},
   auto_link: true,
+  group: DEFAULT_GROUP,
+  confirm_submitter: null,
+  confirm_person: null,
 }
 
 export const DEFAULT_CONSENT =
@@ -145,6 +155,9 @@ export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): Ta
     brand: parseBrand(r.brand),
     rules: parseRules(r.rules, keys.length ? keys : (fieldKeys ?? [])),
     auto_link: r.auto_link !== false,
+    group: parseGroup(r.group, fieldKeys),
+    confirm_submitter: parseConfirm(r.confirm_submitter, fieldKeys),
+    confirm_person: parseConfirm(r.confirm_person, fieldKeys),
   }
 }
 

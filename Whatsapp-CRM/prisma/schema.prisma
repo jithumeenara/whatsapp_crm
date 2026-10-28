@@ -2793,6 +2793,10 @@ model DataRecord {
   /// whatsapp_flow, integration, payment, web_form. Null for rows
   /// written before this was recorded.
   source     String?
+  /// Several people sent in one public-form submission share this id;
+  /// batch_index is each person's place (1, 2, 3…). Migration 149.
+  batch_id    String?  @db.Uuid
+  batch_index Int?     @db.SmallInt
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 
