@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { parseFormConfig } from '@/lib/data-store/public-form'
+import { parseCopy } from '@/lib/data-store/form-i18n'
 import {
   describeSources,
   newFormToken,
@@ -88,6 +89,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const body = (await req.json().catch(() => null)) as { config?: unknown } | null
     if (!body) return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
     const config = parseFormConfig(body.config, table.fields.map((f) => f.field_key))
+
+    // Translations past the limits are refused, never dropped quietly.
+    const cut = { cut: false }
+    parseCopy((body.config as { copy?: unknown } | null)?.copy, cut)
+    if (cut.cut) {
+      return NextResponse.json(
+        { error: 'Too many translations to save. Clear translations of options you no longer use, or shorten long ones, then save again.' },
+        { status: 400 },
+      )
+    }
 
     // Rules may only use columns the public page is allowed to carry.
     const sources = await describeSources(ctx.accountId, table.fields)

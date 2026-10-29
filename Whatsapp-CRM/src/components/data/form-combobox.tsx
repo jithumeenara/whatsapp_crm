@@ -22,11 +22,15 @@ interface Props {
   disabled?: boolean
   invalid?: boolean
   describedBy?: string
+  /** The words shown for an option, in the reader's language; the value
+   *  saved is always the option itself. */
+  labelOf?(option: string): string
 }
 
 export function FormCombobox({
-  id, value, options, onChange, onBlur, placeholder, searchPlaceholder, noMatch, disabled, invalid, describedBy,
+  id, value, options, onChange, onBlur, placeholder, searchPlaceholder, noMatch, disabled, invalid, describedBy, labelOf,
 }: Props) {
+  const shownAs = (o: string) => labelOf?.(o) ?? o
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -37,8 +41,8 @@ export function FormCombobox({
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return q ? options.filter((o) => o.toLowerCase().includes(q)) : options
-  }, [options, query])
+    return q ? options.filter((o) => o.toLowerCase().includes(q) || (labelOf?.(o) ?? o).toLowerCase().includes(q)) : options
+  }, [options, query, labelOf])
 
   useEffect(() => {
     if (!open) return
@@ -86,16 +90,16 @@ export function FormCombobox({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-describedby={describedBy}
-        className={`flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-3 text-left text-[16px] outline-none transition focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:bg-slate-50 ${invalid ? "border-rose-300" : "border-slate-300"}`}
+        className={`flex w-full items-center gap-2 rounded-xl border bg-white px-3.5 py-3 text-start text-[16px] outline-none transition focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:bg-slate-50 ${invalid ? "border-rose-300" : "border-slate-300"}`}
       >
-        <span className={`min-w-0 flex-1 truncate ${value ? "text-slate-900" : "text-slate-400"}`}>{value || placeholder}</span>
+        <span className={`min-w-0 flex-1 truncate ${value ? "text-slate-900" : "text-slate-400"}`}>{value ? shownAs(value) : placeholder}</span>
         <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
         <div className="absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
           <div className="relative border-b border-slate-100">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               ref={inputRef}
               role="combobox"
@@ -116,7 +120,7 @@ export function FormCombobox({
               }}
               placeholder={searchPlaceholder}
               autoComplete="off"
-              className="w-full bg-transparent py-3 pl-9 pr-3 text-[15px] outline-none placeholder:text-slate-400"
+              className="w-full bg-transparent py-3 ps-9 pe-3 text-[15px] outline-none placeholder:text-slate-400"
             />
           </div>
           <ul ref={listRef} id={listId} role="listbox" className="max-h-64 overflow-y-auto p-1">
@@ -135,7 +139,7 @@ export function FormCombobox({
                   onClick={() => pick(o)}
                   className={`flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2.5 text-[15px] ${i === active ? "bg-primary/10 text-slate-900" : "text-slate-700"}`}
                 >
-                  <span className="min-w-0 flex-1 break-words">{o}</span>
+                  <span className="min-w-0 flex-1 break-words">{shownAs(o)}</span>
                   {o === value && <Check className="h-4 w-4 shrink-0 text-primary" />}
                 </li>
               ))

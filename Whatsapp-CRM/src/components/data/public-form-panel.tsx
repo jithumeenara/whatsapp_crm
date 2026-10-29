@@ -14,6 +14,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { SidePanel, PanelSection } from "./side-panel"
+import { LanguageSettings } from "./form-language-settings"
 import {
   DEFAULT_CONSENT,
   EMPTY_FORM_CONFIG,
@@ -86,6 +87,7 @@ export function PublicFormPanel({
   const [hits, setHits] = useState<ContactHit[]>([])
   const [personal, setPersonal] = useState<{ url: string; contact: ContactHit } | null>(null)
   const [sources, setSources] = useState<FormSource[]>([])
+  const [savedVersion, setSavedVersion] = useState(0)
   const [logo, setLogo] = useState<LogoPreview | null>(null)
   const [ruleOpen, setRuleOpen] = useState<string | null>(null)
   // "When it stops": off = no limit; on shows the date and count.
@@ -164,6 +166,7 @@ export function PublicFormPanel({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || "Could not save")
       apply(data)
+      setSavedVersion((v) => v + 1)
       toast.success(next.enabled ? "Form saved — the link is live" : "Form saved")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save")
@@ -614,6 +617,17 @@ export function PublicFormPanel({
               Tip: fill answers in advance through the link — add <code className="rounded bg-slate-100 px-1">?field_key=value</code>.
               In the thank-you message, <code className="rounded bg-slate-100 px-1">{"{{field_key}}"}</code> repeats an answer.
             </p>
+          </PanelSection>
+
+          <PanelSection title="Languages" hint="The language your questions are in, and others the form offers.">
+            <LanguageSettings
+              tableId={tableId}
+              languages={config.languages}
+              copy={config.copy}
+              savedVersion={savedVersion}
+              onLanguages={(languages) => patch({ languages })}
+              onEntries={(lang, update) => setConfig((c) => ({ ...c, copy: { ...c.copy, [lang]: update(c.copy[lang] ?? {}) } }))}
+            />
           </PanelSection>
 
           <PanelSection title="People" hint="Optional — for one form that registers a whole group.">

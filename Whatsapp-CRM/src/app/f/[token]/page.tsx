@@ -3,9 +3,12 @@ import { notFound } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { formState } from '@/lib/data-store/public-form'
 import { groupActive } from '@/lib/data-store/form-group'
+import { headers as nextHeaders } from 'next/headers'
+import { formLangList, liveCopy, pickLang } from '@/lib/data-store/form-i18n'
 import {
   issueRenderTicket,
   loadPublicForm,
+  publicFormSources,
   verifyPersonalLink,
 } from '@/lib/data-store/public-form-server'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
@@ -82,8 +85,21 @@ export default async function PublicFormPage({
     }
   }
 
+  // Each offered language, with only translations made from today's text.
+  const sources = publicFormSources(form)
+  const languages = formLangList(form.config.languages)
+  const copy = Object.fromEntries(languages.map((l) => [l, liveCopy(form.config.copy, l, sources, form.config.languages.main)]))
+  const headers = await nextHeaders()
+  const startLang = pickLang(form.config.languages, [
+    typeof query.lang === 'string' ? query.lang : null,
+    ...(headers.get('accept-language') ?? '').split(',').map((p) => p.split(';')[0].trim()),
+  ])
+
   return (
     <PublicFormView
+      languages={languages}
+      startLang={startLang}
+      copy={copy}
       token={token}
       ticket={issueRenderTicket(token)}
       personal={contact ? personal : null}

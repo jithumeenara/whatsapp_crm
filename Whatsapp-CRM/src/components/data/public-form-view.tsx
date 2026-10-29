@@ -6,7 +6,8 @@
  * Built to be quicker and kinder than a generic form tool:
  *  • the business's own header — logo, name, tagline, colour — and its
  *    contact details at the foot;
- *  • Malayalam or English for everything around the questions;
+ *  • the languages the business chose — its own translations of the
+ *    questions and options, and the form's words in each;
  *  • smart questions: a dropdown narrows to what fits an earlier answer,
  *    picking a row fills the questions that follow from it (locked when
  *    the business says so), and a question can appear only when it
@@ -22,7 +23,7 @@
  * sessionStorage only, and are wiped on sending.
  */
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
   AlertCircle, CalendarClock, Check, CheckCircle2, Clock, Copy, Globe, Loader2, Lock, Mail, MapPin, Pencil, Phone,
   RotateCcw, ShieldCheck, Trash2, UserPlus, Users, X,
@@ -34,10 +35,16 @@ import {
   type Answers, type FormLookups, type FormRules,
 } from "@/lib/data-store/form-logic"
 import type { PublicFormBrand } from "@/lib/data-store/public-form-server"
-import { FORM_STRINGS, type FormLang, type FormStrings } from "./form-strings"
+import { langInfo } from "@/lib/data-store/form-i18n"
+import { formStrings, type FormLang, type FormStrings } from "./form-strings"
 import { FormCombobox } from "./form-combobox"
 
 interface Props {
+  /** Offered on the switch, main language first. */
+  languages: FormLang[]
+  startLang: FormLang
+  /** Per language: path → the business's translation (form-i18n.ts). */
+  copy: Record<string, Record<string, string>>
   token: string
   ticket: string
   personal: string | null
@@ -202,20 +209,32 @@ function scrollBehavior(): ScrollBehavior {
 }
 
 export function PublicFormView(props: Props) {
-  const { fields, rules, lookups, brand } = props
+  const { rules, lookups, brand } = props
   const draftKey = `form-draft:${props.token}:${props.personal ? props.personal.slice(0, 12) : "public"}`
 
   // Read after hydration without a mismatch: the server has neither.
-  const detected = useSyncExternalStore<FormLang>(
-    noop,
-    () => ((navigator.language || "en").toLowerCase().startsWith("ml") ? "ml" : "en"),
-    () => "en",
-  )
   const savedDraft = useSyncExternalStore(noop, () => readDraft(draftKey), () => null)
 
+  // The server picked the starting language (?lang=, then the browser's).
   const [chosenLang, setChosenLang] = useState<FormLang | null>(null)
-  const lang = chosenLang ?? detected
-  const t = FORM_STRINGS[lang]
+  const lang = chosenLang ?? props.startLang
+  const copy = useMemo(() => props.copy[lang] ?? {}, [props.copy, lang])
+  const t = useMemo(() => formStrings(lang, copy), [lang, copy])
+  const rtl = langInfo(lang).rtl
+  /** The business's words in the reader's language, or as written. */
+  const tr = <T extends string | null>(path: string, written: T): string | T => copy[path] ?? written
+  // Only what is shown changes: keys, values and the column's own name stay.
+  const fields = useMemo(
+    () =>
+      props.fields.map((f) => {
+        const label = copy[`label:${f.key}`]
+        return label || copy[`help:${f.key}`]
+          ? { ...f, label: label ?? f.label, help: copy[`help:${f.key}`] ?? f.help, columnLabel: f.columnLabel ?? f.label }
+          : f
+      }),
+    [props.fields, copy],
+  )
+  const optionText = useCallback((key: string, value: string) => copy[`opt:${key}:${value.trim()}`] ?? value, [copy])
 
   const [values, setValues] = useState<Record<string, Value>>(() => ({ ...props.prefill }))
   const [touched, setTouched] = useState<Set<string>>(() => new Set())
@@ -233,7 +252,11 @@ export function PublicFormView(props: Props) {
   const labelOf = useMemo(() => new Map(fields.map((f) => [f.key, f.label])), [fields])
 
   // ── Several people in one form ──
-  const group = props.group && props.group.personKeys.length ? props.group : null
+  const groupLabel = props.group ? copy.group ?? props.group.label : ""
+  const group = useMemo(
+    () => (props.group && props.group.personKeys.length ? { ...props.group, label: groupLabel } : null),
+    [props.group, groupLabel],
+  )
   const personSet = useMemo(() => new Set(group?.personKeys ?? []), [group])
   const personFields = useMemo(() => answerable.filter((f) => personSet.has(f.key)), [answerable, personSet])
   // The main form: everything asked once. A heading whose part holds only
@@ -534,7 +557,7 @@ export function PublicFormView(props: Props) {
       writeDraft(draftKey, null)
       writePeople(peopleKey, null)
       setDone({
-        message: pipeAnswers(props.successMessage || t.thanks, answers),
+        message: pipeAnswers(tr("success", props.successMessage) || t.thanks, answers),
         reference: data.reference ?? null,
         names: group ? people.map((p, i) => personTitle(p, i)) : [],
       })
@@ -576,24 +599,26 @@ export function PublicFormView(props: Props) {
   const business = brand.name || props.businessName || t.thisBusiness
   const numberOf = new Map(asked.map((f, i) => [f.key, i + 1]))
   const brandStyle = { "--primary": brand.color, "--primary-foreground": "#ffffff" } as React.CSSProperties
-  const languageSwitch = (
-    <div role="group" aria-label={t.language} className="flex rounded-full bg-white/15 p-0.5 text-[12px] font-medium ring-1 ring-white/25 backdrop-blur">
-      {(["en", "ml"] as const).map((l) => (
+  // Only the languages this business offers; none when it offers one.
+  const languageSwitch = props.languages.length > 1 ? (
+    <div role="group" aria-label={t.language} className="flex flex-wrap justify-end gap-0.5 rounded-full bg-white/15 p-0.5 text-[12px] font-medium ring-1 ring-white/25 backdrop-blur">
+      {props.languages.map((l) => (
         <button
           key={l}
           type="button"
+          lang={l}
           onClick={() => setChosenLang(l)}
           aria-pressed={lang === l}
           className={`rounded-full px-3 py-1 transition-colors ${lang === l ? "bg-white text-slate-900" : "text-white/90 hover:text-white"}`}
         >
-          {l === "en" ? "English" : "മലയാളം"}
+          {langInfo(l).native}
         </button>
       ))}
     </div>
-  )
+  ) : null
 
   return (
-    <div lang={lang} style={brandStyle} className="relative min-h-dvh bg-slate-50">
+    <div lang={lang} dir={rtl ? "rtl" : "ltr"} style={brandStyle} className="relative min-h-dvh bg-slate-50">
       {!done && !blocked && (
         <div className="sticky top-0 z-20 h-1 w-full bg-white/60" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label={t.answered(answered, asked.length)}>
           <div className="h-full bg-primary transition-[width] duration-300 ease-out" style={{ width: `${progress}%` }} />
@@ -606,7 +631,7 @@ export function PublicFormView(props: Props) {
         <div className="relative mx-auto w-full max-w-2xl px-4 pb-20 pt-4 sm:pt-8">
           {/* On a phone the language switch gets its own row, so the
               business name is never squeezed. */}
-          <div className="mb-3 flex justify-end sm:hidden">{languageSwitch}</div>
+          {languageSwitch && <div className="mb-3 flex justify-end sm:hidden">{languageSwitch}</div>}
           <div className="flex items-start gap-3.5 sm:gap-4">
             {brand.logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -620,7 +645,7 @@ export function PublicFormView(props: Props) {
               <p className="text-balance text-[18px] font-bold leading-snug sm:text-[20px]">{business}</p>
               {brand.tagline && <p className="mt-0.5 text-[13px] leading-snug text-white/85 sm:text-[14px]">{brand.tagline}</p>}
             </div>
-            <div className="hidden shrink-0 sm:block">{languageSwitch}</div>
+            {languageSwitch && <div className="hidden shrink-0 sm:block">{languageSwitch}</div>}
           </div>
         </div>
       </header>
@@ -628,10 +653,10 @@ export function PublicFormView(props: Props) {
       <main inert={sheetOpen} className="relative mx-auto -mt-14 w-full max-w-2xl px-4 pb-10">
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
           <div className="border-b border-slate-100 px-5 pb-5 pt-6 sm:px-8">
-            <h1 className="text-balance text-[24px] font-bold leading-tight tracking-tight text-slate-900 sm:text-[28px]">{props.title}</h1>
+            <h1 className="text-balance text-[24px] font-bold leading-tight tracking-tight text-slate-900 sm:text-[28px]" dir="auto">{tr("title", props.title)}</h1>
             {props.greeting && !done && <p className="mt-2 text-[15px] text-slate-600">{t.hello(props.greeting)}</p>}
             {props.intro && !done && (
-              <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-600">{props.intro}</p>
+              <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-600" dir="auto">{tr("intro", props.intro)}</p>
             )}
             {!done && !blocked && (
               <div className="mt-4 flex flex-wrap items-center gap-2 text-[12.5px]">
@@ -648,7 +673,7 @@ export function PublicFormView(props: Props) {
                     <Users className="h-3.5 w-3.5" /> {t.placesLeft(props.spotsLeft)}
                   </span>
                 )}
-                <span className="ml-auto tabular-nums text-slate-500">{t.answered(answered, asked.length)}</span>
+                <span className="ms-auto tabular-nums text-slate-500">{t.answered(answered, asked.length)}</span>
               </div>
             )}
           </div>
@@ -728,6 +753,7 @@ export function PublicFormView(props: Props) {
                       t={t}
                       onChange={(v) => set(f.key, v)}
                       onTouch={() => touch(f.key)}
+                      optionText={(o) => optionText(f.key, o)}
                     />
                   )
                 })}
@@ -749,7 +775,7 @@ export function PublicFormView(props: Props) {
                         {people.map((p, i) => {
                           const name = personTitle(p, i)
                           return (
-                            <li key={i} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white py-2 pl-2.5 pr-1">
+                            <li key={i} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white py-2 ps-2.5 pe-1">
                               <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-[14px] font-semibold text-primary">
                                 {name.trim().charAt(0).toUpperCase() || i + 1}
                               </span>
@@ -812,7 +838,7 @@ export function PublicFormView(props: Props) {
                       }}
                       className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--primary)]"
                     />
-                    <span>{props.consentText}</span>
+                    <span>{tr("consent", props.consentText)}</span>
                   </label>
                 )}
 
@@ -910,6 +936,7 @@ export function PublicFormView(props: Props) {
                     t={t}
                     onChange={(v) => setPersonValue(f.key, v)}
                     onTouch={() => touchPerson(f.key)}
+                    optionText={(o) => optionText(f.key, o)}
                   />
                 ))}
               </div>
@@ -941,7 +968,7 @@ export function PublicFormView(props: Props) {
 
 /** One question, in whichever shape suits it. */
 function Question({
-  field: f, number, value, options, locked, waitingOn, error, t, onChange, onTouch,
+  field: f, number, value, options, locked, waitingOn, error, t, onChange, onTouch, optionText,
 }: {
   field: PublicFormField
   number: number | undefined
@@ -953,6 +980,8 @@ function Question({
   t: FormStrings
   onChange(v: string | boolean): void
   onTouch(): void
+  /** An option, or a filled-in value, in the reader's language. */
+  optionText(value: string): string
 }) {
   const id = `f-${f.key}`
   const text = typeof value === "string" ? value : ""
@@ -964,9 +993,9 @@ function Question({
   const control = `w-full rounded-xl border bg-white px-3.5 py-3 text-[16px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-primary ${error ? "border-rose-300" : "border-slate-300"}`
 
   const label = (
-    <span>
+    <span dir="auto">
       {f.label}
-      {f.required && !locked && <span className="ml-1 text-rose-500" aria-label={t.required}>*</span>}
+      {f.required && !locked && <span className="ms-1 text-rose-500" aria-label={t.required}>*</span>}
     </span>
   )
 
@@ -1010,7 +1039,7 @@ function Question({
               aria-describedby={describedBy}
               className="flex min-h-12 items-center rounded-xl border border-dashed border-slate-300 bg-white px-3.5 py-3 text-[16px] text-slate-900"
             >
-              {text || <span className="text-slate-400">—</span>}
+              {text ? optionText(text) : <span className="text-slate-400">—</span>}
             </div>
             <p id={`${id}-lock`} className="mt-1.5 text-[12px] text-slate-500">{t.filledForYou}</p>
           </>
@@ -1031,7 +1060,7 @@ function Question({
                   onChange={() => { onChange(o); onTouch() }}
                   className="h-4 w-4 shrink-0 accent-[var(--primary)]"
                 />
-                <span className="min-w-0 break-words">{o}</span>
+                <span className="min-w-0 break-words" dir="auto">{optionText(o)}</span>
               </label>
             ))}
           </div>
@@ -1047,6 +1076,7 @@ function Question({
             noMatch={t.noMatch}
             invalid={!!error}
             describedBy={describedBy}
+            labelOf={optionText}
           />
         ) : f.type === "textarea" ? (
           <>

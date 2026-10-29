@@ -15,6 +15,14 @@
 
 import { DEFAULT_BRAND, parseBrand, parseRules, type FormBrand, type FormRules } from './form-logic'
 import { DEFAULT_GROUP, parseConfirm, parseGroup, type FormConfirm, type FormGroup } from './form-group'
+import {
+  DEFAULT_LANGUAGES,
+  LEGACY_LANGUAGES,
+  parseCopy,
+  parseLanguages,
+  type FormCopy,
+  type FormLanguages,
+} from './form-i18n'
 
 export const WEB_FORM_FIELD_TYPES: ReadonlySet<string> = new Set([
   'text',
@@ -121,6 +129,10 @@ export interface TableFormConfig {
   choice_display: Record<string, ChoiceDisplay>
   /** Per question: the heading the form shows instead of the column name. */
   labels: Record<string, string>
+  /** The language the questions are written in, and the others offered. */
+  languages: FormLanguages
+  /** The business's translations, per language (form-i18n.ts). */
+  copy: FormCopy
 }
 
 export const EMPTY_FORM_CONFIG: TableFormConfig = {
@@ -142,6 +154,8 @@ export const EMPTY_FORM_CONFIG: TableFormConfig = {
   confirm_person: null,
   choice_display: {},
   labels: {},
+  languages: DEFAULT_LANGUAGES,
+  copy: {},
 }
 
 export const DEFAULT_CONSENT =
@@ -178,6 +192,9 @@ export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): Ta
       ? Math.min(100_000, Math.floor(r.max_responses))
       : null
 
+  // A form saved before languages could be chosen keeps its English / Malayalam switch.
+  const languages = 'languages' in r ? parseLanguages(r.languages) : { ...LEGACY_LANGUAGES, extra: [...LEGACY_LANGUAGES.extra] }
+
   return {
     enabled: r.enabled === true,
     title: text(r.title, 120),
@@ -197,6 +214,8 @@ export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): Ta
     confirm_person: parseConfirm(r.confirm_person, fieldKeys),
     choice_display: parseChoiceDisplay(r.choice_display, fieldKeys),
     labels: parseLabels(r.labels, fieldKeys),
+    languages,
+    copy: parseCopy(r.copy),
   }
 }
 

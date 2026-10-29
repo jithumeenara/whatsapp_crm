@@ -29,6 +29,8 @@ import {
   type TableFormConfig,
 } from './public-form'
 import { getFieldConfig, type FieldConfig } from './types'
+import { groupActive } from './form-group'
+import { copySources, type CopySource } from './form-i18n'
 import {
   BRAND_COLORS,
   columnsNeeded,
@@ -278,21 +280,59 @@ async function buildLookups(
  *  account is ever read. */
 export async function loadPublicForm(token: string): Promise<PublicForm | null> {
   if (!FORM_TOKEN.test(token)) return null
-  const table = await prisma.dataTable.findUnique({
-    where: { form_token: token },
-    select: {
-      id: true,
-      account_id: true,
-      name: true,
-      form_config: true,
-      fields: {
-        orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
-        select: { field_key: true, label: true, field_type: true, required: true, options: true },
-      },
-    },
-  })
-  if (!table) return null
+  const table = await findFormTable(token)
+  return table ? buildPublicForm(table, token) : null
+}
 
+/** The same form as a stranger would get it, for the account's own
+ *  settings screen — also while the form is off. */
+export async function loadFormForSettings(accountId: string, tableId: string): Promise<PublicForm | null> {
+  const table = await prisma.dataTable.findFirst({ where: { id: tableId, account_id: accountId }, select: FORM_TABLE_SELECT })
+  return table ? buildPublicForm(table, table.form_token) : null
+}
+
+/** Everything of the business's own a reader sees, for translating. */
+export function publicFormSources(form: PublicForm): CopySource[] {
+  const values: Record<string, string[]> = {}
+  for (const f of form.fields) {
+    const own = form.lookups[f.key]
+    const fill = form.config.rules[f.key]?.fill
+    const from = fill ? form.lookups[fill.from_field] : undefined
+    const list = [
+      ...(own && form.config.rules[f.key]?.filter ? own.rows.map((r) => r[own.option] ?? '') : []),
+      ...(fill && from ? from.rows.map((r) => r[fill.column] ?? '') : []),
+    ].map((v) => v.trim()).filter(Boolean)
+    if (list.length) values[f.key] = Array.from(new Set(list))
+  }
+  return copySources({
+    title: form.config.title || form.tableName,
+    intro: form.config.intro,
+    success: form.config.success_message,
+    consent: form.config.consent_text,
+    groupLabel: groupActive(form.config.group) ? form.config.group.label : null,
+    fields: form.fields.filter((f) => f.type !== 'html_block'),
+    values,
+  })
+}
+
+const FORM_TABLE_SELECT = {
+  id: true,
+  account_id: true,
+  name: true,
+  form_config: true,
+  form_token: true,
+  fields: {
+    orderBy: [{ sort_order: 'asc' as const }, { created_at: 'asc' as const }],
+    select: { field_key: true, label: true, field_type: true, required: true, options: true },
+  },
+}
+
+type FormTable = NonNullable<Awaited<ReturnType<typeof findFormTable>>>
+function findFormTable(token: string) {
+  return prisma.dataTable.findUnique({ where: { form_token: token }, select: FORM_TABLE_SELECT })
+}
+
+async function buildPublicForm(table: FormTable, token: string | null): Promise<PublicForm> {
   const config = parseFormConfig(table.form_config, table.fields.map((f) => f.field_key))
   const shown = formFieldOrder(table.fields, config)
   // The links the names imply (month → programme → dates), on top of
@@ -371,7 +411,7 @@ export async function loadPublicForm(token: string): Promise<PublicForm | null> 
       name: businessName,
       tagline: config.brand.tagline,
       color: BRAND_COLORS[config.brand.color].hex,
-      logoUrl: config.brand.logo_file_id ? `/api/forms/${token}/logo` : null,
+      logoUrl: config.brand.logo_file_id && token ? `/api/forms/${token}/logo` : null,
       contact: contact && Object.values(contact).some(Boolean) ? contact : null,
     },
     config,
