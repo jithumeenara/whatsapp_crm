@@ -15,6 +15,7 @@
  * them; every value is cut to one line with the full text on hover.
  */
 
+import { refMatches, type RefRecord } from "@/lib/data-store/record-ref"
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
@@ -437,7 +438,9 @@ export default function DataTablePage() {
         Object.values(r.data as Record<string, unknown>).some((v) => String(v ?? "").toLowerCase().includes(needle)) ||
         (r.contact?.name ?? "").toLowerCase().includes(needle) ||
         (r.contact?.phone ?? "").includes(needle) ||
-        sourceLabel(r.source).toLowerCase().includes(needle)
+        sourceLabel(r.source).toLowerCase().includes(needle) ||
+        // The reference a person quotes from their confirmation.
+        refMatches(r as RefRecord, deferredSearch)
       )
     })
     return { searched, filtered: applyFilters(searched, fields, filters) }

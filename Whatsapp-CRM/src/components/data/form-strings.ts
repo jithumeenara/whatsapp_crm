@@ -74,6 +74,14 @@ const en = {
   submitCount: (n: number) => `Submit — ${n} ${n === 1 ? "person" : "people"}`,
   errSamePhone: (label: string, n: number) => `The same number as ${label.toLowerCase()} ${n}.`,
   submittedMany: (n: number) => `${n} ${n === 1 ? "person" : "people"} registered`,
+  // After submitting, when the business shows the full confirmation.
+  confirmTitle: "Sent successfully",
+  detailsBelow: "Below are the details for your reference.",
+  detailsTitle: "Your details",
+  registered: "Received",
+  dateTime: "Date & time",
+  printPdf: "Download / print (PDF)",
+  registerAnother: "Fill in another",
   close: "Close",
 }
 
@@ -143,6 +151,13 @@ const ml: FormStrings = {
   submitCount: (n) => `സമർപ്പിക്കുക — ${n} പേർ`,
   errSamePhone: (label, n) => `${label} ${n}-ന്റെ അതേ നമ്പർ.`,
   submittedMany: (n) => `${n} പേരെ രജിസ്റ്റർ ചെയ്തു`,
+  confirmTitle: "വിജയകരമായി അയച്ചു",
+  detailsBelow: "നിങ്ങളുടെ റഫറൻസിനായി വിവരങ്ങൾ താഴെ കൊടുക്കുന്നു.",
+  detailsTitle: "നിങ്ങളുടെ വിവരങ്ങൾ",
+  registered: "ലഭിച്ചു",
+  dateTime: "തീയതിയും സമയവും",
+  printPdf: "ഡൗൺലോഡ് / പ്രിന്റ് (PDF)",
+  registerAnother: "മറ്റൊന്ന് പൂരിപ്പിക്കുക",
   close: "അടയ്ക്കുക",
 }
 
@@ -210,6 +225,13 @@ const hi: FormStrings = {
   submitCount: (n) => `भेजें — ${n} लोग`,
   errSamePhone: (label, n) => `${label} ${n} वाला ही नंबर।`,
   submittedMany: (n) => `${n} लोगों का पंजीकरण हुआ`,
+  confirmTitle: "सफलतापूर्वक भेजा गया",
+  detailsBelow: "आपके संदर्भ के लिए विवरण नीचे दिए गए हैं।",
+  detailsTitle: "आपकी जानकारी",
+  registered: "प्राप्त",
+  dateTime: "दिनांक और समय",
+  printPdf: "डाउनलोड / प्रिंट (PDF)",
+  registerAnother: "एक और भरें",
   close: "बंद करें",
 }
 
@@ -277,6 +299,13 @@ const ta: FormStrings = {
   submitCount: (n) => `சமர்ப்பி — ${n} பேர்`,
   errSamePhone: (label, n) => `${label} ${n} இன் அதே எண்.`,
   submittedMany: (n) => `${n} பேர் பதிவு செய்யப்பட்டனர்`,
+  confirmTitle: "வெற்றிகரமாக அனுப்பப்பட்டது",
+  detailsBelow: "உங்கள் குறிப்புக்காக விவரங்கள் கீழே உள்ளன.",
+  detailsTitle: "உங்கள் விவரங்கள்",
+  registered: "பெறப்பட்டது",
+  dateTime: "தேதி & நேரம்",
+  printPdf: "பதிவிறக்கு / அச்சிடு (PDF)",
+  registerAnother: "மற்றொன்றை நிரப்பு",
   close: "மூடு",
 }
 
@@ -344,6 +373,13 @@ const kn: FormStrings = {
   submitCount: (n) => `ಸಲ್ಲಿಸಿ — ${n} ಜನರು`,
   errSamePhone: (label, n) => `${label} ${n} ಅವರ ಅದೇ ಸಂಖ್ಯೆ.`,
   submittedMany: (n) => `${n} ಜನರನ್ನು ನೋಂದಾಯಿಸಲಾಗಿದೆ`,
+  confirmTitle: "ಯಶಸ್ವಿಯಾಗಿ ಕಳುಹಿಸಲಾಗಿದೆ",
+  detailsBelow: "ನಿಮ್ಮ ಉಲ್ಲೇಖಕ್ಕಾಗಿ ವಿವರಗಳು ಕೆಳಗಿವೆ.",
+  detailsTitle: "ನಿಮ್ಮ ವಿವರಗಳು",
+  registered: "ಸ್ವೀಕರಿಸಲಾಗಿದೆ",
+  dateTime: "ದಿನಾಂಕ ಮತ್ತು ಸಮಯ",
+  printPdf: "ಡೌನ್‌ಲೋಡ್ / ಮುದ್ರಿಸಿ (PDF)",
+  registerAnother: "ಇನ್ನೊಂದನ್ನು ತುಂಬಿ",
   close: "ಮುಚ್ಚಿ",
 }
 
@@ -411,6 +447,13 @@ const te: FormStrings = {
   submitCount: (n) => `సమర్పించండి — ${n} మంది`,
   errSamePhone: (label, n) => `${label} ${n} గారి అదే నంబర్.`,
   submittedMany: (n) => `${n} మంది నమోదయ్యారు`,
+  confirmTitle: "విజయవంతంగా పంపబడింది",
+  detailsBelow: "మీ సూచన కోసం వివరాలు కింద ఉన్నాయి.",
+  detailsTitle: "మీ వివరాలు",
+  registered: "అందింది",
+  dateTime: "తేదీ & సమయం",
+  printPdf: "డౌన్‌లోడ్ / ప్రింట్ (PDF)",
+  registerAnother: "మరొకటి నింపండి",
   close: "మూసివేయండి",
 }
 
@@ -478,6 +521,13 @@ const ar: FormStrings = {
   submitCount: (n) => (n === 1 ? "إرسال — شخص واحد" : `إرسال — ${n} أشخاص`),
   errSamePhone: (label, n) => `نفس رقم ${label} ${n}.`,
   submittedMany: (n) => (n === 1 ? "تم تسجيل شخص واحد" : `تم تسجيل ${n} أشخاص`),
+  confirmTitle: "تم الإرسال بنجاح",
+  detailsBelow: "فيما يلي التفاصيل للرجوع إليها.",
+  detailsTitle: "بياناتك",
+  registered: "تم الاستلام",
+  dateTime: "التاريخ والوقت",
+  printPdf: "تنزيل / طباعة (PDF)",
+  registerAnother: "تعبئة نموذج آخر",
   close: "إغلاق",
 }
 

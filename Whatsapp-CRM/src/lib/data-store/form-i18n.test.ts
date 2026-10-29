@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   copySources,
+  isCopyPath,
   liveCopy,
   parseCopy,
   parseLanguages,
@@ -101,6 +102,13 @@ describe('what gets translated', () => {
       'label:from_date',
       'success',
     ])
+  })
+
+  it('offers the confirmation’s own heading only when the business wrote one', () => {
+    const base = { title: 'T', intro: null, success: null, consent: null, groupLabel: null, fields: [] }
+    expect(copySources({ ...base, confirmTitle: 'Registration successful' }).map((s) => s.path)).toContain('ctitle')
+    expect(copySources(base).map((s) => s.path)).not.toContain('ctitle')
+    expect(isCopyPath('ctitle')).toBe(true)
   })
 
   it('never offers a date or a number for translating', () => {

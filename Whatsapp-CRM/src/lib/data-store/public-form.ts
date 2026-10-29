@@ -133,6 +133,61 @@ export interface TableFormConfig {
   languages: FormLanguages
   /** The business's translations, per language (form-i18n.ts). */
   copy: FormCopy
+  /** Optional: a full confirmation after submitting (see ConfirmPage). */
+  confirm_page: ConfirmPage
+}
+
+/**
+ * What the person sees after submitting, when the business switches it on:
+ * the answers asked once, the people added, the reference and time, and a
+ * button to save or print it. Off = the short thank-you, as before.
+ */
+export interface ConfirmPage {
+  enabled: boolean
+  /** Heading; the form's own words in the reader's language when empty. */
+  title: string | null
+  /** Questions asked once, shown in the summary card. */
+  summary_keys: string[]
+  /** Per-person questions, shown as columns of the people list. */
+  person_keys: string[]
+  show_time: boolean
+  allow_print: boolean
+  /** Shown before the reference ("REG" → REG-7K2M-9QXD-R5TB). */
+  ref_prefix: string | null
+}
+
+export const DEFAULT_CONFIRM_PAGE: ConfirmPage = {
+  enabled: false,
+  title: null,
+  summary_keys: [],
+  person_keys: [],
+  show_time: true,
+  allow_print: true,
+  ref_prefix: null,
+}
+
+function parseConfirmPage(raw: unknown, fieldKeys?: readonly string[]): ConfirmPage {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...DEFAULT_CONFIRM_PAGE }
+  const r = raw as Record<string, unknown>
+  const keys = (v: unknown) =>
+    Array.from(new Set((Array.isArray(v) ? v : []).filter((k): k is string => typeof k === 'string' && k.length <= 100)))
+      .filter((k) => !fieldKeys || fieldKeys.includes(k))
+      .slice(0, 30)
+  const prefix = typeof r.ref_prefix === 'string' ? r.ref_prefix.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) : ''
+  return {
+    enabled: r.enabled === true,
+    title: text(r.title, 120),
+    summary_keys: keys(r.summary_keys),
+    person_keys: keys(r.person_keys),
+    show_time: r.show_time !== false,
+    allow_print: r.allow_print !== false,
+    ref_prefix: prefix || null,
+  }
+}
+
+/** The reference as the person sees it: the business's prefix, then the code. */
+export function displayRef(ref: string, prefix: string | null | undefined): string {
+  return prefix ? `${prefix}-${ref}` : ref
 }
 
 export const EMPTY_FORM_CONFIG: TableFormConfig = {
@@ -156,6 +211,7 @@ export const EMPTY_FORM_CONFIG: TableFormConfig = {
   labels: {},
   languages: DEFAULT_LANGUAGES,
   copy: {},
+  confirm_page: DEFAULT_CONFIRM_PAGE,
 }
 
 export const DEFAULT_CONSENT =
@@ -216,6 +272,7 @@ export function parseFormConfig(raw: unknown, fieldKeys?: readonly string[]): Ta
     labels: parseLabels(r.labels, fieldKeys),
     languages,
     copy: parseCopy(r.copy),
+    confirm_page: parseConfirmPage(r.confirm_page, fieldKeys),
   }
 }
 

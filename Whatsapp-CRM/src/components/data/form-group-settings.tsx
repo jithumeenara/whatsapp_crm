@@ -6,10 +6,11 @@
  */
 
 import { useEffect, useState } from "react"
-import { MessageCircle, Users } from "lucide-react"
+import { ClipboardCheck, MessageCircle, Users } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { GROUP_HARD_MAX, isSensitiveQuestion, type FormConfirm, type FormGroup } from "@/lib/data-store/form-group"
+import type { ConfirmPage } from "@/lib/data-store/public-form"
 
 const FIELD =
   "h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-[13px] outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
@@ -68,6 +69,92 @@ export function GroupSettings({
               {perPersonCount} question{perPersonCount === 1 ? "" : "s"} asked per person; the rest once. “Most answers” counts people.
             </p>
           )}
+        </>
+      )}
+    </>
+  )
+}
+
+/**
+ * After submitting: the short thank-you (off), or a full confirmation with
+ * the answers asked once, everyone registered, the reference, the time and
+ * a PDF button. Which questions show is the business's choice.
+ */
+export function ConfirmPageSettings({
+  value, onceQuestions, personQuestions, groupOn, onChange,
+}: {
+  value: ConfirmPage
+  onceQuestions: QuestionLite[]
+  personQuestions: QuestionLite[]
+  groupOn: boolean
+  onChange(v: ConfirmPage): void
+}) {
+  const set = (p: Partial<ConfirmPage>) => onChange({ ...value, ...p })
+  const toggle = (list: string[], k: string) => (list.includes(k) ? list.filter((x) => x !== k) : [...list, k])
+  const pick = (title: string, hint: string, questions: QuestionLite[], chosen: string[], key: "summary_keys" | "person_keys") => (
+    <fieldset className="flex flex-col gap-1.5">
+      <legend className="text-[12px] font-medium text-slate-700">{title}</legend>
+      <p className="text-[11.5px] text-slate-400">{hint}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {questions.map((q) => {
+          const on = chosen.includes(q.key)
+          return (
+            <button
+              key={q.key}
+              type="button"
+              aria-pressed={on}
+              onClick={() => set({ [key]: toggle(chosen, q.key) } as Partial<ConfirmPage>)}
+              className={`h-7 max-w-full truncate rounded-full px-2.5 text-[11.5px] font-medium transition-colors ${on ? "bg-primary text-white" : "bg-slate-100 text-slate-600 hover:text-slate-900"}`}
+            >
+              {q.label}
+            </button>
+          )
+        })}
+      </div>
+    </fieldset>
+  )
+  return (
+    <>
+      <label className="flex items-start justify-between gap-3 text-[13px] text-slate-700">
+        <span>
+          <span className="flex items-center gap-1.5 font-medium text-slate-800"><ClipboardCheck className="h-3.5 w-3.5 text-primary" aria-hidden="true" /> Full confirmation after sending</span>
+          <span className="mt-0.5 block text-[11.5px] leading-relaxed text-slate-400">
+            Shows what they sent — the details, everyone added, the reference and time — with a button to save it as a PDF. Off: the short thank-you. Words like “Received” or “Fill in another” can be changed under Languages → Buttons and messages.
+          </span>
+        </span>
+        <Switch checked={value.enabled} onCheckedChange={(v) => set({ enabled: !!v })} aria-label="Full confirmation after sending" />
+      </label>
+      {value.enabled && (
+        <>
+          <label className="flex flex-col gap-1 text-[12px] text-slate-600">
+            Heading
+            <input value={value.title ?? ""} onChange={(e) => set({ title: e.target.value || null })} maxLength={120} placeholder="Sent successfully — e.g. Registration successful" name="confirm-title" autoComplete="off" className={FIELD} />
+          </label>
+          {onceQuestions.length > 0 && pick("Details shown", "None chosen: every answer asked once. ID and bank account numbers always show masked.", onceQuestions, value.summary_keys, "summary_keys")}
+          {groupOn && personQuestions.length > 0 && pick("Columns for each person", "Their name always comes first. None chosen: the first few questions.", personQuestions, value.person_keys, "person_keys")}
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
+            <label className="flex flex-col gap-1 text-[12px] text-slate-600">
+              Reference starts with (optional)
+              <input
+                value={value.ref_prefix ?? ""}
+                onChange={(e) => set({ ref_prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || null })}
+                maxLength={8}
+                placeholder="REG"
+                name="confirm-prefix"
+                autoComplete="off"
+                className={`${FIELD} font-mono uppercase`}
+              />
+            </label>
+            <span className="pb-2 font-mono text-[12px] text-slate-500">{value.ref_prefix ? `${value.ref_prefix}-` : ""}7K2M-9QXD-R5TB</span>
+          </div>
+          <label className="flex items-center justify-between gap-3 text-[12.5px] text-slate-700">
+            Show the date and time
+            <Switch checked={value.show_time} onCheckedChange={(v) => set({ show_time: !!v })} aria-label="Show the date and time" />
+          </label>
+          <label className="flex items-center justify-between gap-3 text-[12.5px] text-slate-700">
+            “Download / print (PDF)” button
+            <Switch checked={value.allow_print} onCheckedChange={(v) => set({ allow_print: !!v })} aria-label="Download or print button" />
+          </label>
         </>
       )}
     </>

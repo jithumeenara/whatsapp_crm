@@ -1,3 +1,4 @@
+import { refMatches } from '@/lib/data-store/record-ref'
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -77,8 +78,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       prisma.dataRecord.count({ where }),
     ])
 
+    // A reference as the person quotes it finds its rows too (record-ref.ts).
     const filtered = search
-      ? records.filter((r) => JSON.stringify(r.data).toLowerCase().includes(search.toLowerCase()))
+      ? records.filter((r) => JSON.stringify(r.data).toLowerCase().includes(search.toLowerCase()) || refMatches(r, search))
       : records
 
     return NextResponse.json({ records: filtered, total, page, pageSize })

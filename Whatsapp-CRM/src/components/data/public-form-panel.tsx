@@ -29,7 +29,7 @@ import type { FormSource } from "@/lib/data-store/form-logic"
 import { FormBrandEditor, type LogoPreview } from "./form-brand-editor"
 import { FormRuleEditor, type EarlierQuestion } from "./form-rule-editor"
 import { SortableList, DragHandle } from "./sortable-list"
-import { ConfirmSettings, GroupSettings, useApprovedTemplates, type QuestionLite } from "./form-group-settings"
+import { ConfirmPageSettings, ConfirmSettings, GroupSettings, useApprovedTemplates, type QuestionLite } from "./form-group-settings"
 
 const DISPLAY_OPTIONS: [ChoiceDisplay | "auto", string][] = [
   ["auto", "Automatic"],
@@ -635,6 +635,16 @@ export function PublicFormPanel({
               group={config.group}
               perPersonCount={perPersonQuestions.length}
               onChange={(group) => patch({ group })}
+            />
+          </PanelSection>
+
+          <PanelSection title="After sending" hint="Optional — what they see once the form is sent.">
+            <ConfirmPageSettings
+              value={config.confirm_page}
+              onceQuestions={onceQuestions}
+              personQuestions={perPersonQuestions}
+              groupOn={groupOn}
+              onChange={(confirm_page) => patch({ confirm_page })}
             />
           </PanelSection>
 

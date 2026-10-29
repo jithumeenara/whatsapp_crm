@@ -37,9 +37,14 @@ export function columnOf(headers: readonly string[], header: string | null | und
  *  exactly what a person may need to correct, so the word "bank" alone
  *  does not lock a column here — an account number, IFSC or card does. */
 export function isSensitiveColumn(header: string): boolean {
+  return isIdOrAccountColumn(header) || /phone|mobile|whats\s*app|contact\s*(no|number)|\bcell\b/i.test(header.replace(/[_/]/g, ' '))
+}
+
+/** ID numbers, bank account details and secrets — masked wherever a
+ *  person's answers are shown back (a confirmation page, a printout). */
+export function isIdOrAccountColumn(header: string): boolean {
   const h = header.replace(/[_/]/g, ' ')
   if (/aadha?a?r|\bpan\b|passport|ifsc|\bcard\b|password|\botp\b|\bpin\b|voter|licen[cs]e|\ba\s*c\b|account|\bacc(t)?\b/i.test(h)) return true
-  if (/phone|mobile|whats\s*app|contact\s*(no|number)|\bcell\b/i.test(h)) return true
   // "Bank" with a number word: "Bank No", "Bank number" — not "Name of Bank".
   return /\bbank\b.*\b(no|number|num)\b/i.test(h)
 }

@@ -74,7 +74,7 @@ export interface CopyEntry {
 /** language → path → entry */
 export type FormCopy = Partial<Record<FormLang, Record<string, CopyEntry>>>
 
-const PATH = /^(title|intro|success|consent|group|(label|help):[A-Za-z0-9_-]{1,100}|opt:[A-Za-z0-9_-]{1,100}:[\s\S]{1,500}|ui:[A-Za-z]{1,40})$/
+const PATH = /^(title|intro|success|consent|group|ctitle|(label|help):[A-Za-z0-9_-]{1,100}|opt:[A-Za-z0-9_-]{1,100}:[\s\S]{1,500}|ui:[A-Za-z]{1,40})$/
 
 export function isCopyPath(p: string): boolean {
   return PATH.test(p)
@@ -94,6 +94,7 @@ export const FORM_UI_WORDS: ReadonlySet<string> = new Set([
   'errConsent', 'errCheck', 'errNetwork', 'errTooMany', 'errGeneric', 'closed', 'full', 'personalOnly', 'thisBusiness',
   'language', 'filledForYou', 'searchOptions', 'noMatch', 'contact', 'save', 'saveAndAdd', 'cancel', 'edit', 'remove',
   'keep', 'discardPerson', 'close',
+  'confirmTitle', 'detailsBelow', 'detailsTitle', 'registered', 'dateTime', 'printPdf', 'registerAnother',
 ])
 
 /** All translations of one form together, in characters: the public page reads them on every visit. */
@@ -167,6 +168,8 @@ export function copySources(form: {
   success: string | null
   consent: string | null
   groupLabel: string | null
+  /** The confirmation page's own heading, when set. */
+  confirmTitle?: string | null
   fields: readonly SourceField[]
   /** field → the option values it can show or be filled with */
   values?: Record<string, readonly string[]>
@@ -190,6 +193,7 @@ export function copySources(form: {
   }
   add('consent', form.consent, 'Consent')
   add('success', form.success, 'Thank-you message')
+  add('ctitle', form.confirmTitle, 'Confirmation heading')
   return out
 }
 

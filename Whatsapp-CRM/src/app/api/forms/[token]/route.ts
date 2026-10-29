@@ -3,7 +3,8 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { clientIpKey } from '@/lib/net/client-ip'
-import { formState } from '@/lib/data-store/public-form'
+import { displayRef, formState } from '@/lib/data-store/public-form'
+import { makeRef } from '@/lib/verify/sheet-verify-link'
 import {
   FORM_TOKEN,
   checkRenderTicket,
@@ -97,12 +98,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     // it. Sent again with different people, it is refused — those were
     // never saved, and saying "done" would be untrue.
     const batchId = group ? (typeof body.batch === 'string' && UUID.test(body.batch) ? body.batch.toLowerCase() : randomUUID()) : null
+    const prefix = form.config.confirm_page.ref_prefix
+    // The batch's saved reference, for an answer sent again.
+    const savedBatch = async (id: string) => {
+      const first = await prisma.dataRecord.findFirst({
+        where: { table_id: form.tableId, account_id: form.accountId, batch_id: id },
+        orderBy: { batch_index: 'asc' },
+        select: { public_ref: true, created_at: true },
+      })
+      return {
+        reference: displayRef(first?.public_ref ?? id.replace(/-/g, '').slice(0, 8).toUpperCase(), prefix),
+        submitted_at: (first?.created_at ?? new Date()).toISOString(),
+      }
+    }
     if (batchId) {
       const saved = await prisma.dataRecord.count({ where: { table_id: form.tableId, account_id: form.accountId, batch_id: batchId } })
       if (saved > 0) {
         const sent = Array.isArray(body.people) ? body.people.length : -1
         if (sent !== saved) return reply({ error: 'This form was already sent with a different list. Reload the page to send more people.' }, 409)
-        return reply({ ok: true, message: success, reference: batchId.replace(/-/g, '').slice(0, 8).toUpperCase(), count: saved })
+        return reply({ ok: true, message: success, ...(await savedBatch(batchId)), count: saved })
       }
     }
 
@@ -193,6 +207,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       return reply({ error: 'Too many people sent from here in a short time. Please try again later.' }, 429)
     }
 
+    // Something to quote when they call the office: random, so it cannot
+    // be guessed, and the same on every row of a group (migration 151).
+    const publicRef = makeRef()
+
     // A group is saved whole or not at all, and once (the unique batch index).
     let created
     try {
@@ -205,6 +223,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
               contact_id: contact?.id ?? null,
               data: data as Prisma.InputJsonValue,
               source: 'web_form',
+              public_ref: publicRef,
               ...(batchId ? { batch_id: batchId, batch_index: i + 1 } : {}),
             },
           }),
@@ -213,7 +232,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     } catch (err) {
       // The same batch arriving twice at once: the other request saved it.
       if (batchId && (err as { code?: string })?.code === 'P2002') {
-        return reply({ ok: true, message: success, reference: batchId.replace(/-/g, '').slice(0, 8).toUpperCase(), count: rows.length })
+        return reply({ ok: true, message: success, ...(await savedBatch(batchId)), count: rows.length })
       }
       throw err
     }
@@ -227,9 +246,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       )
     })
 
-    // Something to quote when they call the office. The first stretch of
-    // the row's (or the batch's) own id: unique enough to find, meaningless outside.
-    const reference = (batchId ?? created[0].id).replace(/-/g, '').slice(0, 8).toUpperCase()
+    const reference = displayRef(publicRef, prefix)
 
     void sendFormConfirmations({
       accountId: form.accountId,
@@ -245,7 +262,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
       sensitive: new Set(form.fields.filter(isSensitiveQuestion).map((f) => f.key)),
     })
 
-    return reply({ ok: true, message: success, reference, count: rows.length })
+    return reply({ ok: true, message: success, reference, submitted_at: created[0].created_at.toISOString(), count: rows.length })
   } catch (err) {
     console.error('[web-form] submit failed:', err instanceof Error ? err.message : err)
     return reply({ error: 'Something went wrong. Please try again in a moment.' }, 500)

@@ -310,6 +310,7 @@ export function publicFormSources(form: PublicForm): CopySource[] {
     success: form.config.success_message,
     consent: form.config.consent_text,
     groupLabel: groupActive(form.config.group) ? form.config.group.label : null,
+    confirmTitle: form.config.confirm_page.enabled ? form.config.confirm_page.title : null,
     fields: form.fields.filter((f) => f.type !== 'html_block'),
     values,
   })

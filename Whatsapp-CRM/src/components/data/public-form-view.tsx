@@ -38,6 +38,7 @@ import type { PublicFormBrand } from "@/lib/data-store/public-form-server"
 import { langInfo } from "@/lib/data-store/form-i18n"
 import { formStrings, type FormLang, type FormStrings } from "./form-strings"
 import { FormCombobox } from "./form-combobox"
+import { FormConfirmation } from "./form-confirmation"
 
 interface Props {
   /** Offered on the switch, main language first. */
@@ -67,6 +68,10 @@ interface Props {
   allowAnother: boolean
   /** Several people in one form: these questions are asked per person. */
   group: { label: string; personKeys: string[]; min: number; max: number } | null
+  /** The full confirmation after sending, when the business turned it on. */
+  confirmPage: { title: string | null; summaryKeys: string[]; personKeys: string[]; showTime: boolean; allowPrint: boolean } | null
+  /** The business's time zone, for the time shown on the confirmation. */
+  timeZone: string
 }
 
 type Person = Record<string, string | boolean>
@@ -245,7 +250,15 @@ export function PublicFormView(props: Props) {
   const [honeypot, setHoneypot] = useState("")
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState<{ message: string; reference: string | null; names: string[] } | null>(null)
+  const [done, setDone] = useState<{
+    message: string
+    reference: string | null
+    names: string[]
+    submittedAt: string | null
+    /** What was sent, for the full confirmation: asked once, and each person. */
+    shared: Answers
+    people: Answers[]
+  } | null>(null)
   const [copied, setCopied] = useState(false)
 
   const answerable = useMemo(() => fields.filter((f) => !isDisplay(f)), [fields])
@@ -549,7 +562,7 @@ export function PublicFormView(props: Props) {
           ...(props.personal ? { c: props.personal } : {}),
         }),
       })
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; reference?: string; error?: string }
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; reference?: string; submitted_at?: string; error?: string }
       if (!res.ok || !data.ok) {
         setError(res.status === 429 ? t.errTooMany : data.error || t.errGeneric)
         return
@@ -560,6 +573,17 @@ export function PublicFormView(props: Props) {
         message: pipeAnswers(tr("success", props.successMessage) || t.thanks, answers),
         reference: data.reference ?? null,
         names: group ? people.map((p, i) => personTitle(p, i)) : [],
+        submittedAt: data.submitted_at ?? null,
+        // Only what was asked: a question hidden by a rule keeps no old
+        // answer here, so it never appears on the confirmation or the PDF.
+        // Filled-in (locked) answers stay — they are part of what was sent.
+        shared: Object.fromEntries(answerable.filter((f) => !personSet.has(f.key) && shown(f)).map((f) => [f.key, answers[f.key]])),
+        people: group
+          ? people.map((p) => {
+              const merged = personAnswers(p)
+              return Object.fromEntries(personFields.filter((f) => isShown(f.key, rules, merged)).map((f) => [f.key, merged[f.key]]))
+            })
+          : [],
       })
       setPeople([])
       setBatchId(newBatchId())
@@ -620,18 +644,18 @@ export function PublicFormView(props: Props) {
   return (
     <div lang={lang} dir={rtl ? "rtl" : "ltr"} style={brandStyle} className="relative min-h-dvh bg-slate-50">
       {!done && !blocked && (
-        <div className="sticky top-0 z-20 h-1 w-full bg-white/60" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label={t.answered(answered, asked.length)}>
+        <div className="sticky top-0 z-20 h-1 w-full bg-white/60 print:hidden" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress} aria-label={t.answered(answered, asked.length)}>
           <div className="h-full bg-primary transition-[width] duration-300 ease-out" style={{ width: `${progress}%` }} />
         </div>
       )}
 
       {/* ── Business header ────────────────────────────────────────── */}
-      <header inert={sheetOpen} className="relative overflow-hidden bg-primary text-white">
-        <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(120%_120%_at_100%_0%,rgba(255,255,255,0.22),transparent_55%),linear-gradient(180deg,transparent,rgba(0,0,0,0.18))]" />
-        <div className="relative mx-auto w-full max-w-2xl px-4 pb-20 pt-4 sm:pt-8">
+      <header inert={sheetOpen} className="relative overflow-hidden bg-primary text-white print:bg-white print:text-slate-900">
+        <div aria-hidden="true" className="absolute inset-0 print:hidden bg-[radial-gradient(120%_120%_at_100%_0%,rgba(255,255,255,0.22),transparent_55%),linear-gradient(180deg,transparent,rgba(0,0,0,0.18))]" />
+        <div className="relative mx-auto w-full max-w-2xl px-4 pb-20 pt-4 sm:pt-8 print:pb-4">
           {/* On a phone the language switch gets its own row, so the
               business name is never squeezed. */}
-          {languageSwitch && <div className="mb-3 flex justify-end sm:hidden">{languageSwitch}</div>}
+          {languageSwitch && <div className="mb-3 flex justify-end sm:hidden print:hidden">{languageSwitch}</div>}
           <div className="flex items-start gap-3.5 sm:gap-4">
             {brand.logoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -645,13 +669,13 @@ export function PublicFormView(props: Props) {
               <p className="text-balance text-[18px] font-bold leading-snug sm:text-[20px]">{business}</p>
               {brand.tagline && <p className="mt-0.5 text-[13px] leading-snug text-white/85 sm:text-[14px]">{brand.tagline}</p>}
             </div>
-            {languageSwitch && <div className="hidden shrink-0 sm:block">{languageSwitch}</div>}
+            {languageSwitch && <div className="hidden shrink-0 sm:block print:hidden">{languageSwitch}</div>}
           </div>
         </div>
       </header>
 
-      <main inert={sheetOpen} className="relative mx-auto -mt-14 w-full max-w-2xl px-4 pb-10">
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+      <main inert={sheetOpen} className={`relative mx-auto -mt-14 w-full px-4 pb-10 print:mt-0 print:max-w-none ${done && props.confirmPage ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5 print:shadow-none">
           <div className="border-b border-slate-100 px-5 pb-5 pt-6 sm:px-8">
             <h1 className="text-balance text-[24px] font-bold leading-tight tracking-tight text-slate-900 sm:text-[28px]" dir="auto">{tr("title", props.title)}</h1>
             {props.greeting && !done && <p className="mt-2 text-[15px] text-slate-600">{t.hello(props.greeting)}</p>}
@@ -679,7 +703,31 @@ export function PublicFormView(props: Props) {
           </div>
 
           <div className="px-5 py-6 sm:px-8">
-            {done ? (
+            {done && props.confirmPage ? (
+              <FormConfirmation
+                t={t}
+                lang={lang}
+                timeZone={props.timeZone}
+                title={tr("ctitle", props.confirmPage.title)}
+                summaryKeys={props.confirmPage.summaryKeys}
+                personKeys={props.confirmPage.personKeys}
+                showTime={props.confirmPage.showTime}
+                allowPrint={props.confirmPage.allowPrint}
+                fields={fields}
+                optionText={optionText}
+                shared={done.shared}
+                people={done.people}
+                groupLabel={group?.label ?? null}
+                groupKeys={group?.personKeys ?? []}
+                nameKey={nameKey}
+                message={done.message}
+                reference={done.reference}
+                submittedAt={done.submittedAt}
+                copied={copied}
+                onCopy={copyReference}
+                onAnother={props.allowAnother ? another : undefined}
+              />
+            ) : done ? (
               <div className="flex flex-col items-center py-6 text-center">
                 <span className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500">
                   <CheckCircle2 className="h-9 w-9 text-emerald-700" />

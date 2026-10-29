@@ -2797,6 +2797,9 @@ model DataRecord {
   /// batch_index is each person's place (1, 2, 3…). Migration 149.
   batch_id    String?  @db.Uuid
   batch_index Int?     @db.SmallInt
+  /// The reference a person quotes for a web-form submission (every row
+  /// of a group shares it). Random, 12 characters. Migration 151.
+  public_ref  String?
   created_at DateTime @default(now()) @db.Timestamptz(6)
   updated_at DateTime @updatedAt @db.Timestamptz(6)
 

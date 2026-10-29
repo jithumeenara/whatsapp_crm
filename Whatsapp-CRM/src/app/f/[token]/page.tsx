@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { formState } from '@/lib/data-store/public-form'
 import { groupActive } from '@/lib/data-store/form-group'
 import { headers as nextHeaders } from 'next/headers'
+import { businessTimezone } from '@/lib/ai/human-date'
 import { formLangList, liveCopy, pickLang } from '@/lib/data-store/form-i18n'
 import {
   issueRenderTicket,
@@ -95,8 +96,18 @@ export default async function PublicFormPage({
     ...(headers.get('accept-language') ?? '').split(',').map((p) => p.split(';')[0].trim()),
   ])
 
+  const cp = form.config.confirm_page
+  // Only needed for the time on the full confirmation.
+  const timeZone = cp.enabled ? await businessTimezone(form.accountId) : 'UTC'
+
   return (
     <PublicFormView
+      confirmPage={
+        cp.enabled
+          ? { title: cp.title, summaryKeys: cp.summary_keys, personKeys: cp.person_keys, showTime: cp.show_time, allowPrint: cp.allow_print }
+          : null
+      }
+      timeZone={timeZone}
       languages={languages}
       startLang={startLang}
       copy={copy}

@@ -34,5 +34,10 @@ export function ensureDataStoreColumns(): Promise<void> {
     await prisma.$executeRawUnsafe(
       'CREATE UNIQUE INDEX IF NOT EXISTS data_records_batch_key ON data_records (table_id, batch_id, batch_index) WHERE batch_id IS NOT NULL',
     )
+    // Migration 151: the reference a person quotes for their submission.
+    await prisma.$executeRawUnsafe('ALTER TABLE data_records ADD COLUMN IF NOT EXISTS public_ref text')
+    await prisma.$executeRawUnsafe(
+      'CREATE INDEX IF NOT EXISTS data_records_public_ref_idx ON data_records (table_id, public_ref) WHERE public_ref IS NOT NULL',
+    )
   })
 }
