@@ -12,7 +12,6 @@
  * header, never by letter, and nothing here knows what the list is for.
  */
 
-import { isSensitiveQuestion } from '@/lib/data-store/form-group'
 
 export const REF_HEADER = 'Verify ref'
 export const STATUS_HEADER = 'Verify status'
@@ -32,10 +31,17 @@ export function columnOf(headers: readonly string[], header: string | null | und
   return want ? headers.findIndex((h) => norm(h) === want) : -1
 }
 
-/** ID numbers, bank details, secrets — and any phone number column, not
- *  only the one messages go to: shown masked, never editable. */
+/** ID numbers, bank account details, secrets — and any phone number
+ *  column, not only the one messages go to: shown masked, never editable.
+ *  A bank's or society's NAME is not one of them: "Name of Bank" is
+ *  exactly what a person may need to correct, so the word "bank" alone
+ *  does not lock a column here — an account number, IFSC or card does. */
 export function isSensitiveColumn(header: string): boolean {
-  return isSensitiveQuestion({ key: '', label: header }) || /phone|mobile|whats\s*app|contact\s*(no|number)|\bcell\b/i.test(header)
+  const h = header.replace(/[_/]/g, ' ')
+  if (/aadha?a?r|\bpan\b|passport|ifsc|\bcard\b|password|\botp\b|\bpin\b|voter|licen[cs]e|\ba\s*c\b|account|\bacc(t)?\b/i.test(h)) return true
+  if (/phone|mobile|whats\s*app|contact\s*(no|number)|\bcell\b/i.test(h)) return true
+  // "Bank" with a number word: "Bank No", "Bank number" — not "Name of Bank".
+  return /\bbank\b.*\b(no|number|num)\b/i.test(h)
 }
 
 /** "98•••••183"-style: enough to recognise, not enough to use. */

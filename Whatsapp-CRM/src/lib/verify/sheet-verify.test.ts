@@ -82,6 +82,20 @@ describe('what the person sees', () => {
     expect(view.map((v) => v.value)).toEqual(['Anu', '••••••1111', '••••••2222'])
   })
 
+  it('a bank’s or society’s NAME can be seen and corrected; account numbers stay locked (bug: "Name of Bank" was masked)', () => {
+    const h = ['Name', 'Name of Bank / Society', 'Bank Account No', 'IFSC', 'Designation']
+    const s = cleanSetup({
+      name_column: 'Name',
+      show_columns: ['Name of Bank / Society', 'Bank Account No', 'IFSC', 'Designation'],
+      edit_columns: ['Name of Bank / Society', 'Bank Account No', 'IFSC', 'Designation'],
+    })
+    expect(s.edit_columns).toEqual(['Name of Bank / Society', 'Designation'])
+    const view = personView(s, h, ['Anu', 'Pazhuvil Service Co-op Bank', '123456789012', 'SBIN0001234', 'Secretary'])
+    expect(view.find((v) => v.header === 'Name of Bank / Society')).toEqual({ header: 'Name of Bank / Society', value: 'Pazhuvil Service Co-op Bank', editable: true })
+    expect(view.find((v) => v.header === 'Bank Account No')?.value).toBe('••••••••9012')
+    expect(view.find((v) => v.header === 'IFSC')?.editable).toBe(false)
+  })
+
   it('masks short and wordy values too', () => {
     expect(maskValue('123')).toBe('•••')
     expect(maskValue('secretword')).toBe('s••••••••d')
