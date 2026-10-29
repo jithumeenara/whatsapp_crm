@@ -71,6 +71,11 @@ const RULES: Array<{ name: string; match: RegExp; reply: () => Response }> = [
     reply: () => Response.json({ type: 'success', message: 'dev-blocked' }),
   },
   {
+    name: 'SMS send (TextBee)',
+    match: /^https:\/\/api\.textbee\.dev\/api\/v\d+\/gateway\/(devices\/[^/]+\/)?send-sms/,
+    reply: () => Response.json({ data: { success: true, smsBatchId: `dev-blocked-${Date.now()}` } }),
+  },
+  {
     name: 'Telegram send',
     match: /^https:\/\/api\.telegram\.org\/bot[^/]+\/(send[A-Za-z]+|copyMessages?|forwardMessages?)(\?|$)/,
     reply: () => Response.json({ ok: true, result: { message_id: Math.floor(Date.now() / 1000) } }),

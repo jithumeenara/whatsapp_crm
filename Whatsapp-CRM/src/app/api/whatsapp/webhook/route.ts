@@ -13,6 +13,7 @@ import { optOutIntent } from '@/lib/broadcasts/rules'
 import { getBroadcastSettings } from '@/lib/broadcasts/settings'
 import { applyMetaUserPreferences, setMarketingConsent, CONSENT_REPLY, type MetaUserPreference } from '@/lib/broadcasts/opt-out'
 import { failureText } from '@/lib/whatsapp/meta-error-codes'
+import { applyVerifyWhatsAppStatus } from '@/lib/verify/wa-status'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { autoReplyToMessage } from '@/lib/ai/auto-reply'
 import { sendNewContactAlert } from '@/lib/contacts/new-contact-alert'
@@ -474,6 +475,13 @@ async function handleStatusUpdate(status: {
     await applyMessageStatus(status.id, status.status)
   } catch (err) {
     console.error('Error updating message status:', err)
+  }
+
+  // 1b) A "check your details" link: delivered, read, or why it failed.
+  try {
+    await applyVerifyWhatsAppStatus(status)
+  } catch (err) {
+    console.error('Error updating verification status:', err)
   }
 
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id

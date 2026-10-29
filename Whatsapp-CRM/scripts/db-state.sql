@@ -109,7 +109,8 @@ FROM (VALUES
   ('146_contact_archive',              EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'archived_at')),
   ('147_alert_template_fields',        EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'message_templates' AND column_name = 'variable_fields')),
   ('148_contact_age_address',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'address')),
-  ('149_data_record_batch',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'batch_id'))
+  ('149_data_record_batch',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'batch_id')),
+  ('150_sheet_verifications',          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sheet_verifications'))
 ) AS m(migration, present)
 ORDER BY m.migration;
 

@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import {
   Plus, Trash2, MoreVertical, Search, Database, ChevronRight,
-  Table2, Loader2, AlertTriangle,
+  Table2, Loader2, AlertTriangle, ClipboardCheck,
 } from "lucide-react"
 import { CreateTableDialog } from "@/components/data/create-table-dialog"
 import { SheetImportWizard } from "@/components/data/sheet-import-wizard"
@@ -136,6 +137,15 @@ export default function DataStorePage() {
                 className="h-8 w-36 sm:w-48 pl-8 pr-3 text-[13px] rounded-lg border border-slate-200 bg-slate-50 outline-none focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-all"
               />
             </div>
+            <Link
+              href="/data/verify"
+              aria-label="Check details"
+              title="People check their own details on a Google Sheet"
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] font-medium hover:bg-slate-50 hover:border-slate-300 transition-colors"
+            >
+              <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+              <span className="hidden md:inline">Check details</span>
+            </Link>
             <button
               type="button"
               onClick={() => setSheetOpen(true)}

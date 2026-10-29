@@ -91,6 +91,11 @@ const PUBLIC_PREFIXES = [
   // nothing but the form's own definition.
   '/f/',
   '/api/forms/',
+  // A person's private "check your details" link (src/lib/verify). The
+  // signed link is what grants access, to that one sheet row; the route
+  // exports POST only and rate-limits per address and per link.
+  '/v/',
+  '/api/v/',
   // Website chat (src/lib/webchat). Visitors have no account here. The
   // routes check the widget key, a bearer session token for anything
   // about a conversation, the origin, and their own rate limits; the

@@ -3952,3 +3952,67 @@ model AiTagDecision {
   @@index([account_id, outcome, created_at(sort: Desc)], map: "ai_tag_decisions_pending")
   @@map("ai_tag_decisions")
 }
+
+/// People checking their own details from a Google Sheet (migration 150).
+/// The details stay in the sheet; this is the settings.
+model SheetVerification {
+  id               String    @id @default(uuid()) @db.Uuid
+  account_id       String    @db.Uuid
+  name             String
+  spreadsheet_id   String
+  spreadsheet_name String?
+  tab_title        String
+  name_column      String?
+  phone_column     String?
+  email_column     String?
+  show_columns     Json      @default("[]")
+  edit_columns     Json      @default("[]")
+  filter_column    String?
+  filter_value     String?
+  deadline         DateTime? @db.Timestamptz(6)
+  language         String    @default("en")
+  intro            String?
+  template_name    String?
+  template_params  Json      @default("[]")
+  sms_text         String?
+  email_subject    String?
+  email_text       String?
+  key_version      Int       @default(1)
+  sending_until    DateTime? @db.Timestamptz(6)
+  last_send_error  String?
+  status           String    @default("active")
+  created_by       String?   @db.Uuid
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([account_id])
+  @@map("sheet_verifications")
+}
+
+/// One sheet row's progress: its reference, state and messages — never
+/// the person's details.
+model SheetVerificationPerson {
+  id              String    @id @default(uuid()) @db.Uuid
+  verification_id String    @db.Uuid
+  account_id      String    @db.Uuid
+  ref             String
+  state           String    @default("pending")
+  opened_at       DateTime? @db.Timestamptz(6)
+  done_at         DateTime? @db.Timestamptz(6)
+  done_by         String?   @db.Uuid
+  wa_status       String?
+  wa_message_id   String?
+  wa_error        String?
+  sms_status      String?
+  sms_error       String?
+  email_status    String?
+  email_error     String?
+  last_sent_at    DateTime? @db.Timestamptz(6)
+  send_count      Int       @default(0)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([verification_id, ref], map: "sheet_verification_people_ref_key")
+  @@index([wa_message_id], map: "sheet_verification_people_wa_idx")
+  @@map("sheet_verification_people")
+}

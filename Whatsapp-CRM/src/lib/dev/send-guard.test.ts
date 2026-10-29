@@ -29,6 +29,16 @@ describe('nothing leaves a development machine', () => {
     expect(json.messages[0].id).toMatch(/^wamid\.DEV_BLOCKED_/)
   })
 
+  it('stops TextBee SMS too, not only MSG91 (bug: a dev machine on TextBee sent real SMS)', async () => {
+    const url = 'https://api.textbee.dev/api/v1/gateway/devices/dev123/send-sms'
+    const plain = 'https://api.textbee.dev/api/v1/gateway/send-sms'
+    expect(blockedSend(url, 'POST', JSON.stringify({ recipients: ['919847012345'], message: 'hi' }), DEV)).not.toBeNull()
+    expect(blockedSend(plain, 'POST', '{}', DEV)).not.toBeNull()
+    expect(blockedSend('https://api.textbee.dev/api/v1/gateway/devices', 'GET', '', DEV)).toBeNull()
+    const json = (await blockedSend(plain, 'POST', '{}', DEV)!.reply().json()) as { data: { success: boolean } }
+    expect(json.data.success).toBe(true)
+  })
+
   it('stops Telegram sends but lets the bot connect', async () => {
     const tg = (m: string) => `https://api.telegram.org/bot123:ABC/${m}`
     for (const m of ['sendMessage', 'sendPhoto', 'sendDocument', 'copyMessage', 'forwardMessage']) {

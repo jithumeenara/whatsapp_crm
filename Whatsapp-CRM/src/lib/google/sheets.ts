@@ -81,6 +81,15 @@ export async function readTab(token: string, spreadsheetId: string, title: strin
   return (data.values ?? []).map((row) => row.map((v) => (v == null ? '' : String(v))))
 }
 
+/** A range's cells as text, e.g. `'Tab'!E7` — a check just before a write. */
+export async function readRange(token: string, spreadsheetId: string, range: string): Promise<string[][]> {
+  const data = await call<{ values?: unknown[][] }>(
+    token,
+    `${API}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`,
+  )
+  return (data.values ?? []).map((row) => row.map((v) => (v == null ? '' : String(v))))
+}
+
 /**
  * Rows below the tab's table, always starting in column A.
  *

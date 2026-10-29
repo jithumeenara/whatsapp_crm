@@ -54,7 +54,7 @@ function allowed(tableId: string, sender: string, numbers: string[]): Set<string
 }
 
 /** The business's country dial code ("+91"), from its owner's number. */
-async function businessDial(accountId: string): Promise<string> {
+export async function businessDial(accountId: string): Promise<string> {
   const fallback = COUNTRY_CODES.find((c) => c.iso === DEFAULT_COUNTRY_ISO)?.dial ?? '+91'
   try {
     const account = await prisma.account.findUnique({ where: { id: accountId }, select: { owner_user_id: true } })
