@@ -162,7 +162,7 @@ export function CompanyProfilePanel() {
             <Input
               value={form.display_name}
               onChange={(e) => set('display_name', e.target.value)}
-              placeholder="ACSTI Kerala"
+              placeholder="Your business name"
               className="h-10 rounded-xl border-slate-200 text-[13px]"
             />
           </Field>

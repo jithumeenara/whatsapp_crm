@@ -201,7 +201,7 @@ export function MicrosoftMailCard() {
               maxLength={2000}
               value={signature}
               onChange={(e) => setSignature(e.target.value)}
-              placeholder={'Regards,\n{{agent_name}}\nACSTI Kerala · +91 …'}
+              placeholder={'Regards,\n{{agent_name}}\nYour business · +91 …'}
               className="w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-800 outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
             />
             <Button

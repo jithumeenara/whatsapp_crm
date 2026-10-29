@@ -204,7 +204,7 @@ export function CallsTab() {
           <Input
             value={config.ai_greeting ?? ""}
             onChange={(e) => set("ai_greeting", e.target.value)}
-            placeholder="Namaskaram, ACSTI Kerala. How can I help?"
+            placeholder="Namaskaram, this is your business name. How can I help?"
             className="mt-2 h-9 text-sm"
           />
         </div>
@@ -387,7 +387,7 @@ export function CallsTab() {
             <Input
               value={config.sip_username ?? ""}
               onChange={(e) => set("sip_username", e.target.value)}
-              placeholder="acsti"
+              placeholder="mybusiness"
               className="h-9 text-sm"
             />
           </div>

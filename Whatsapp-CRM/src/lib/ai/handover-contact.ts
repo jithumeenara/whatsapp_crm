@@ -6,7 +6,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
  *
  * ── The situation this is for ───────────────────────────────────────
  *
- * ACSTI's records hold a society's secretary by their personal number.
+ * One client's records hold an organisation's secretary by their personal number.
  * Secretaries retire at an age and a new one takes over, but the number
  * on file does not change. So the person who answers says they have
  * retired and gives the new secretary's number, and that is the end of

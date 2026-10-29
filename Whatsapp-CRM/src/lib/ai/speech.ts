@@ -49,7 +49,7 @@ export async function speak(args: {
   // This used to happen in the Gemini path only. Cloud TTS — the faster
   // engine, the one an account is told to configure — was handed the
   // reply exactly as WhatsApp would render it, asterisks and all, and
-  // read "*ACSTI Kerala*" aloud as "star ACSTI Kerala star". The better
+  // read "*Business Name*" aloud as "star Business Name star". The better
   // an account's setup, the worse its voice sounded.
   const spoken = stripForSpeech(args.text)
   if (!spoken) throw new Error('Nothing to speak.')

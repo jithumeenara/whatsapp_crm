@@ -316,8 +316,8 @@ export function SmsConfig() {
             />
           </FieldRow>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <FieldRow id="sms-sender" label="Sender ID" icon={Hash} hint="6-char DLT-approved sender ID (e.g. ACSTIK).">
-              <Input id="sms-sender" value={senderId} onChange={(e) => setSenderId(e.target.value)} placeholder="ACSTIK" className="h-9 text-[13px] border-slate-200" />
+            <FieldRow id="sms-sender" label="Sender ID" icon={Hash} hint="6-char DLT-approved sender ID (e.g. MYBIZZ).">
+              <Input id="sms-sender" value={senderId} onChange={(e) => setSenderId(e.target.value)} placeholder="MYBIZZ" className="h-9 text-[13px] border-slate-200" />
             </FieldRow>
             <FieldRow id="sms-route" label="Route" icon={MessageSquare} hint="MSG91 transactional route (default 4).">
               <Input id="sms-route" value={route} onChange={(e) => setRoute(e.target.value)} placeholder="4" className="h-9 text-[13px] border-slate-200" />

@@ -3532,7 +3532,7 @@ async function handleReplyForActiveRun(
   // question was followed by the same menu again. On a live account: a
   // customer said "Hi" and got the welcome list, typed "which programmes
   // are coming up?" instead of tapping it, got a proper answer from the
-  // assistant — and then "Welcome to ACSTI KERALA! Please select an
+  // assistant — and then "Welcome to <business>! Please select an
   // option" underneath it, as if the answer had not happened. Every
   // further question did the same. To the customer it reads as a bot
   // that is not listening.

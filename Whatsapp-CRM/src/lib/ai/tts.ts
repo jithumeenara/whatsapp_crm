@@ -285,7 +285,7 @@ export function speakNumbers(text: string): string {
  * Applied centrally in `speak()` so both engines get it. It used to be
  * called by the Gemini path alone, which meant every account on Google
  * Cloud TTS — the faster, better engine, the one worth having — heard
- * "star ACSTI Kerala star" on every bolded name.
+ * "star Business Name star" on every bolded name.
  */
 /** A run of dotted initials, in any script: A.C.S.T.I, എ.സി.എസ്.ടി.ഐ,
  *  P.O. Two or more short dotted segments is what distinguishes an
@@ -345,7 +345,7 @@ function spokenForm(text: string): string {
     // rule — a space after any period followed by a non-space — reads
     // "4.5" as "4. 5" and "45000.50" as two numbers, which is the exact
     // failure this whole feature exists to avoid. It would also break
-    // "acsti.in". A capital after the stop is the one case that is
+    // "example.in". A capital after the stop is the one case that is
     // reliably a sentence boundary.
     //
     // Malayalam has no capitals, so the range here means *every*
