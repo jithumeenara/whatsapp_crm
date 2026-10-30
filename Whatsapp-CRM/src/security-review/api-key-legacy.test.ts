@@ -5,7 +5,7 @@
  * query; a key whose creator left or was demoted below supervisor is
  * refused; the lookup is uncached (every call hits prisma).
  *
- * GAP (HIGH, documented with it.fails): before this audit ANY member
+ * Was GAP N2 (HIGH), fixed in 403f950 (verifyApiKey refuses, migration 154 revokes). Before this audit ANY member
  * (viewer, agent) could mint a key (A2-01). Migration 152 adds
  * created_by_user_id but backfills nothing, and verifyApiKey treats a key
  * with no creator as "the owner's — keeps working". So every key minted

@@ -21,6 +21,7 @@
 import { prisma } from '@/lib/db'
 import { invalidateAllSessions } from './session-invalidation'
 import { forgetCachedProfile } from './account'
+import { invalidateBusinessCount } from '@/lib/files/legacy-access'
 
 export async function deactivateMember(userId: string, displayName: string | null): Promise<void> {
   await prisma.$transaction(async (tx) => {
@@ -43,6 +44,9 @@ export async function deactivateMember(userId: string, displayName: string | nul
   // The cached copy of their team role would otherwise outlive the move
   // by up to a minute.
   forgetCachedProfile(userId)
+  // A holding account was created; legacy-file access counts businesses
+  // (security review R4a).
+  invalidateBusinessCount()
   // Also closes their live-update sockets (session-invalidation.ts).
   await invalidateAllSessions(userId)
 }
@@ -96,4 +100,5 @@ export async function reviveMember(args: {
     }
   })
   forgetCachedProfile(args.userId)
+  invalidateBusinessCount()
 }

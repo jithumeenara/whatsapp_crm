@@ -27,6 +27,7 @@ import { hashInviteToken } from "@/lib/auth/invitations";
 import { claimInvitation, InvitationUnavailableError } from "@/lib/auth/claim-invitation";
 import { forgetCachedProfile } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
+import { invalidateBusinessCount } from "@/lib/files/legacy-access";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -166,6 +167,8 @@ export async function POST(
     // Their next request must see the new account and role, not the
     // personal-owner copy cached for up to a minute.
     forgetCachedProfile(userId);
+    // Who is in which account changed (security review R4a).
+    invalidateBusinessCount();
 
     return NextResponse.json({ ok: true, accountId });
   } catch (err) {

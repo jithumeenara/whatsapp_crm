@@ -31,9 +31,24 @@ const tx = {
 }
 vi.mock('@/lib/db', () => ({ prisma: { $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) } }))
 
+// R4a (round 5): every change to who belongs to which account drops the
+// legacy-file business count (src/lib/files/legacy-access.ts) at once.
+const biz = vi.hoisted(() => ({ invalidated: 0 }))
+vi.mock('@/lib/files/legacy-access', () => ({ invalidateBusinessCount: () => void biz.invalidated++ }))
+
 import { deactivateMember, reviveMember } from './deactivate-member'
 
 describe('switching a member off and on', () => {
+  it('drops the legacy-file business count when switching off and when reviving (R4a)', async () => {
+    biz.invalidated = 0
+    await deactivateMember('u9', 'Z')
+    expect(biz.invalidated).toBe(1)
+    await reviveMember({ userId: 'u9', accountId: 'team', role: 'agent', fullName: 'Z', passwordHash: 'x' })
+    expect(biz.invalidated).toBe(2)
+    h.invalidated = []
+    h.forgotten = []
+  })
+
   it('ends their sessions and forgets their cached role', async () => {
     await deactivateMember('u1', 'Anu')
     expect(h.invalidated).toEqual(['u1'])

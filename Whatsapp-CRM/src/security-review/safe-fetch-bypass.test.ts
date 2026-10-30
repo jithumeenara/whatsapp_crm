@@ -215,7 +215,7 @@ describe('redirects', () => {
     expect(seenHeaders.authorization).toBeUndefined()
     expect(seenHeaders.cookie).toBeUndefined()
   })
-  // GAP (LOW): only authorization / cookie / proxy-authorization are
+  // Was GAP N7 (LOW), fixed in 403f950 (cross-origin header allow-list). Originally only authorization / cookie / proxy-authorization are
   // stripped on a cross-origin redirect. Integrations and the Flows HTTP
   // node send tenant secrets in custom headers (X-API-Key, api-key,
   // X-Auth-Token …) and follow redirects, so a compromised or malicious

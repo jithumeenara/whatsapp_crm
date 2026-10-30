@@ -365,6 +365,27 @@ const NULL_BODY = new Set([101, 204, 205, 304])
  */
 const CROSS_ORIGIN_HEADERS = new Set(['accept', 'accept-language', 'accept-encoding', 'user-agent'])
 
+/**
+ * Whether a redirect stays on the same site for the caller's headers and
+ * body: the same origin, or the same host moving from http on its default
+ * port to https on its default port. That upgrade is strictly safer (the
+ * same server, now encrypted), and many hosts answer every http:// request
+ * with one, so treating it as another site broke saved http:// webhooks
+ * and integrations (security review round 5). The next hop is checked
+ * like any other — address, DNS and port — before anything is sent.
+ * https→http, another port or another host is another site.
+ */
+function sameSite(from: URL, to: URL): boolean {
+  if (from.origin === to.origin) return true
+  return (
+    from.protocol === 'http:' &&
+    to.protocol === 'https:' &&
+    from.hostname === to.hostname &&
+    from.port === '' && // WHATWG URL leaves a default port empty
+    to.port === ''
+  )
+}
+
 function sizeCap(maxBytes: number): Transform {
   let seen = 0
   return new Transform({
@@ -534,19 +555,26 @@ export async function safeFetch(
       } catch {
         throw new SsrfBlockedError('invalid', 'The address redirected somewhere invalid.')
       }
-      // 301, 302 and 303 continue as a GET without the body, whatever the
-      // method was (fetch does this only for POST on 301/302; a PUT's body
-      // re-sent to wherever a server points is never wanted here).
-      if (res.status === 301 || res.status === 302 || res.status === 303) {
-        if (method !== 'HEAD') method = 'GET'
+      // Method rewriting as the Fetch spec does it: 303 continues as a GET
+      // (HEAD stays HEAD); 301/302 only turn a POST into a GET. Anything
+      // else keeps its method and body — a DELETE that 301s to https must
+      // still delete, not quietly GET (security review round 5).
+      if ((res.status === 303 && method !== 'GET' && method !== 'HEAD') || ((res.status === 301 || res.status === 302) && method === 'POST')) {
+        method = 'GET'
         body = undefined
-        headers.delete('content-type')
-        headers.delete('content-length')
+        for (const name of ['content-type', 'content-length', 'content-encoding', 'content-language', 'content-location']) {
+          headers.delete(name)
+        }
       }
-      if (next.origin !== target.url.origin) {
-        // 307/308 keep method and body by definition; a body (form fields,
-        // tokens, customer data) is not handed to another origin.
-        if (body) throw new SafeFetchError('redirects', 'The address redirected the request to another site.')
+      if (!sameSite(target.url, next)) {
+        // A body (form fields, tokens, customer data) is not handed to
+        // another site. The saved URL is out of date; say so.
+        if (body) {
+          throw new SafeFetchError(
+            'redirects',
+            'This address redirects to another site, so the request was not sent there. Update the saved URL to the address it redirects to.',
+          )
+        }
         for (const name of [...headers.keys()]) {
           if (!CROSS_ORIGIN_HEADERS.has(name)) headers.delete(name)
         }

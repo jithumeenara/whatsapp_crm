@@ -21,6 +21,11 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/auth', () => ({ auth: () => Promise.resolve({ user: { id: h.callers.shift() } }) }))
 vi.mock('@/lib/auth/account', () => ({ forgetCachedProfile: (id: string) => h.forgotten.push(id) }))
 
+// R4a (round 5): every change to who belongs to which account drops the
+// legacy-file business count (src/lib/files/legacy-access.ts) at once.
+const biz = vi.hoisted(() => ({ invalidated: 0 }))
+vi.mock('@/lib/files/legacy-access', () => ({ invalidateBusinessCount: () => void biz.invalidated++ }))
+
 import { POST } from './route'
 
 const TOKEN = 'R'.repeat(43)
@@ -55,6 +60,14 @@ describe('redeeming an invitation', () => {
     expect(inTeam).toHaveLength(1)
     expect(inTeam[0].account_role).toBe('agent')
     expect(h.fake!.state.invitations[0].accepted_by_user_id).toBe(inTeam[0].user_id)
+  })
+
+  it('drops the legacy-file business count when somebody moves account (R4a)', async () => {
+    h.fake!.addInvitation(TOKEN, { role: 'agent' })
+    personalAccount('carol')
+    biz.invalidated = 0
+    expect((await redeem('carol')).status).toBe(200)
+    expect(biz.invalidated).toBe(1)
   })
 
   it('moves the caller at the invitation role and drops their cached role at once', async () => {

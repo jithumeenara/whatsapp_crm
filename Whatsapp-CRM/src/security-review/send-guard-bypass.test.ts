@@ -50,7 +50,7 @@ describe('channels', () => {
     it(`stops ${url} on staging`, () => expect(blockedSend(url, 'POST', '{}', STAGING)).not.toBeNull())
   }
 
-  // GAP (MEDIUM): Instagram DMs sent with an Instagram-Login token go to
+  // Was GAP N3 (MEDIUM), fixed in 403f950. Instagram DMs sent with an Instagram-Login token go to
   // graph.INSTAGRAM.com/…/me/messages (whatsapp/send/route.ts:91,
   // instagram/webhook/route.ts:454, flows/meta-send.ts:205,239,545,576,1014).
   // The guard's Meta rule only matches graph.facebook.com, so a dev,

@@ -39,6 +39,24 @@ done
   (`supabase/migrations/154_revoke_creatorless_api_keys.sql`, dry-run on
   `crm_prod_copy` first). Tell account owners: Settings → API keys shows a notice;
   they create a new key and update their integrations.
+- **Old uploads (optional, manual).** Files uploaded before per-account folders
+  (`uploads/<name>`, not `uploads/account-<id>/<name>`) that have no `file_uploads`
+  row are served and sendable only while the server has **one business** (an
+  account with at least one member who can sign in; holding accounts of removed
+  members and empty personal accounts do not count) **and** public sign-up is
+  closed. Once a second business exists, they return 404. To make them
+  permanently the business's own, on a server that has exactly one business, run
+  once from the app directory (back up the database first):
+
+  ```bash
+  npx tsx --env-file=.env scripts/backfill-legacy-file-owner.ts           # dry run: counts only
+  npx tsx --env-file=.env scripts/backfill-legacy-file-owner.ts --apply   # record the owner
+  ```
+
+  It only adds `file_uploads` rows (never deletes or moves a file), skips files
+  already recorded so a second run changes nothing, prints counts only, and
+  writes nothing if there are zero or two or more businesses. The recorded files
+  then appear in that business's File Manager.
 
 ## 1. App user and files
 

@@ -21,6 +21,11 @@ vi.mock('@/lib/db', () => ({
 }))
 vi.mock('@/lib/whatsapp/phone-utils', () => ({ isValidE164: () => true }))
 
+// R4a (round 5): every change to who belongs to which account drops the
+// legacy-file business count (src/lib/files/legacy-access.ts) at once.
+const biz = vi.hoisted(() => ({ invalidated: 0 }))
+vi.mock('@/lib/files/legacy-access', () => ({ invalidateBusinessCount: () => void biz.invalidated++ }))
+
 import { POST } from './route'
 
 const TOKEN = 'T'.repeat(43)
@@ -39,6 +44,13 @@ describe('sign-up with an invitation', () => {
     vi.stubEnv('NEXT_PUBLIC_ALLOW_SIGNUP', '')
   })
   afterEach(() => vi.unstubAllEnvs())
+
+  it('drops the legacy-file business count once the new member exists (R4a)', async () => {
+    h.fake!.addInvitation(TOKEN, { role: 'agent', account_id: 'team-acc' })
+    biz.invalidated = 0
+    expect((await register({ email: 'r4a@example.com', invite: TOKEN })).status).toBe(201)
+    expect(biz.invalidated).toBe(1)
+  })
 
   it('joins the inviting account with the invitation role — no new workspace, never owner', async () => {
     h.fake!.addInvitation(TOKEN, { role: 'agent', account_id: 'team-acc' })

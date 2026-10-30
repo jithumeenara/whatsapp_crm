@@ -12,7 +12,7 @@
  * (inbound_secret / webhook_secret), so they can forge inbound messages.
  *
  * Secure behaviour (asserted): anyone below owner gets 403 and nothing is
- * saved. Written as it.fails while the hole is open.
+ * saved. Was N1; fixed in 403f950 (requireRole(owner) on each POST).
  */
 import { describe, expect, it, vi } from 'vitest'
 

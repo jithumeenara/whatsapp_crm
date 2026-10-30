@@ -23,6 +23,11 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
+// R4a (round 5): every change to who belongs to which account drops the
+// legacy-file business count (src/lib/files/legacy-access.ts) at once.
+const biz = vi.hoisted(() => ({ invalidated: 0 }))
+vi.mock('@/lib/files/legacy-access', () => ({ invalidateBusinessCount: () => void biz.invalidated++ }))
+
 import { POST } from './route'
 
 describe('transfer ownership', () => {
@@ -31,5 +36,6 @@ describe('transfer ownership', () => {
     const res = await POST(new Request('http://x', { method: 'POST', body: JSON.stringify({ newOwnerUserId: to }) }))
     expect(res.status).toBe(200)
     expect(h.forgotten.sort()).toEqual(['11111111-1111-1111-1111-111111111111', to])
+    expect(biz.invalidated).toBe(1) // R4a
   })
 })

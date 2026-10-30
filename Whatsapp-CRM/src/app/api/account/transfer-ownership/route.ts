@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 
 import { forgetCachedProfile, requireRole, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
+import { invalidateBusinessCount } from "@/lib/files/legacy-access";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -89,6 +90,8 @@ export async function POST(request: Request) {
     // powers from the 60-second cache over an account no longer theirs.
     forgetCachedProfile(ctx.userId);
     forgetCachedProfile(newOwnerUserId);
+    // Account ownership changed (security review R4a).
+    invalidateBusinessCount();
 
     return NextResponse.json({ ok: true });
   } catch (err) {

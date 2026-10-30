@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { isAccountRole } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
+import { invalidateBusinessCount } from '@/lib/files/legacy-access'
 import { isDeactivatedMember, reviveMember } from '@/lib/auth/deactivate-member'
 
 export async function POST(req: Request) {
@@ -84,6 +85,8 @@ export async function POST(req: Request) {
         },
       })
     })
+    // A new member who can sign in (security review R4a).
+    invalidateBusinessCount()
 
     return NextResponse.json(
       { ok: true, member: { name, role, username: digits, whatsapp: digits, password } },

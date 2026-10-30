@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
+import { invalidateBusinessCount } from "@/lib/files/legacy-access";
 import { isValidE164 } from "@/lib/whatsapp/phone-utils";
 import { publicSignupOpen } from "@/lib/auth/signup-policy";
 import { claimInvitation, InvitationUnavailableError, plausibleInviteToken } from "@/lib/auth/claim-invitation";
@@ -140,6 +141,9 @@ export async function POST(req: NextRequest) {
 
       return { user: newUser, joined: false };
     });
+    // A new account or member: legacy-file access depends on how many
+    // businesses the server has (security review R4a).
+    invalidateBusinessCount();
 
     return NextResponse.json(
       { id: result.user.id, email: result.user.email, joined: result.joined },
