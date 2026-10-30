@@ -45,8 +45,11 @@ export function buildFetchHeaders(
  * /api/integrations (the viewer rank included) got the secrets in full.
  */
 export function redactIntegration<T extends { auth_config?: unknown }>(integration: T): T {
+  if (integration.auth_config === undefined) return integration
   const cfg = openAuthConfig(integration.auth_config)
-  if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) return integration
+  // Whatever could not be opened as credentials (null, a corrupted or
+  // non-object sealed value) never leaves the server, not even as ciphertext.
+  if (!cfg) return { ...integration, auth_config: null }
   const c = cfg as Record<string, unknown>
   const shown: Record<string, unknown> = {}
   if (typeof c.username === "string") shown.username = c.username

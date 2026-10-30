@@ -9,12 +9,16 @@
  * data migration is needed.
  */
 
-import { openStoredSecret, sealSecret } from '@/lib/whatsapp/encryption'
+import { isSealed, openStoredSecret, sealSecret } from '@/lib/whatsapp/encryption'
 
 type AuthConfig = Record<string, unknown>
 
+// Only a real ciphertext counts: a client could send { sealed: '<plain
+// JSON>' } and have it stored in clear text otherwise.
 function isSealedConfig(v: unknown): v is { sealed: string } {
-  return !!v && typeof v === 'object' && !Array.isArray(v) && typeof (v as { sealed?: unknown }).sealed === 'string'
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false
+  const sealed = (v as { sealed?: unknown }).sealed
+  return typeof sealed === 'string' && isSealed(sealed)
 }
 
 /** What goes into integrations.auth_config. null / undefined stay as they are. */
@@ -28,8 +32,16 @@ export function sealAuthConfig(cfg: unknown): { sealed: string } | null | undefi
 export function openAuthConfig(stored: unknown): AuthConfig | null {
   if (stored === undefined || stored === null) return null
   if (isSealedConfig(stored)) {
-    const parsed: unknown = JSON.parse(openStoredSecret(stored.sealed))
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as AuthConfig) : null
+    // A corrupted value or one sealed under another key fails closed — the
+    // integration just has no credentials — instead of throwing a crypto
+    // or JSON error (which can quote part of the plaintext) into a route.
+    try {
+      const parsed: unknown = JSON.parse(openStoredSecret(stored.sealed))
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as AuthConfig) : null
+    } catch {
+      console.error('[integrations] stored credentials could not be opened (wrong ENCRYPTION_KEY or corrupted value)')
+      return null
+    }
   }
   return typeof stored === 'object' && !Array.isArray(stored) ? (stored as AuthConfig) : null
 }
