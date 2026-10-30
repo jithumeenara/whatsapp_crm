@@ -410,6 +410,14 @@ const PROVIDERS: Array<{
 ]
 
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return 'unknown host'
+  }
+}
+
 /** The one log line for a stopped side effect: host only, never the path, body or a token. */
 export function logBlocked(hit: { name: string; host: string }, env: Record<string, string | undefined> = process.env): void {
   console.warn(`[DEV] blocked ${hit.name} to ${hit.host} (${(env.APP_ENV || env.NODE_ENV || 'protected').trim().toLowerCase()} environment)`)
@@ -427,7 +435,9 @@ export function installDevSendGuard(): void {
     const method = init?.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')
     const hit = blockedSend(url, method, init?.body, process.env)
     if (hit) {
-      console.warn(`[DEV] ${hit.name} NOT sent (${process.env.APP_ENV || process.env.NODE_ENV || 'protected'} environment): ${url.replace(/access_token=[^&]+/, 'access_token=…')}`)
+      // Host only: Telegram keeps the bot token in the path and other
+      // providers put keys and phone numbers in the query.
+      logBlocked({ name: hit.name, host: hostOf(url) })
       return hit.reply()
     }
     const other = blockedOutbound(url, method, init?.body, process.env)
