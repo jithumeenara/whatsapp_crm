@@ -40,6 +40,9 @@ export async function runHttpNodeRequest(req: HttpNodeRequest): Promise<{ status
     timeoutMs: REQUEST_TIMEOUT_MS,
     maxBytes: MAX_RESPONSE_BYTES,
     allowedPorts: portsFor(req.url),
+    // A POST / PUT / DELETE step acts on another system; on a
+    // non-production server it is not sent (send-guard.ts). GETs go out.
+    purpose: 'outbound-action',
   })
   return { status: resp.status, ok: resp.ok, text: await resp.text() }
 }

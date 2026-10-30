@@ -20,7 +20,7 @@ export async function postAutomationWebhook(
   for (const [k, v] of Object.entries(headers ?? {})) {
     if (typeof v === 'string' && !RESERVED.has(k.toLowerCase())) sent[k] = v
   }
-  const res = await safeFetch(url, { method: 'POST', headers: sent, body }, { timeoutMs: 15_000, maxBytes: 1024 * 1024 })
+  const res = await safeFetch(url, { method: 'POST', headers: sent, body }, { timeoutMs: 15_000, maxBytes: 1024 * 1024, purpose: 'outbound-action' })
   // The answer is not used; drain it so the socket closes.
   await res.arrayBuffer().catch(() => undefined)
   return res.status

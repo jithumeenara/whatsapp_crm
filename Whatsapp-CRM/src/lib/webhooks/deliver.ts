@@ -187,7 +187,7 @@ async function deliverOne(
         // Reject redirects to prevent redirect-based SSRF; the registered
         // URL must be the final destination.
         redirect: 'error',
-      }, { timeoutMs: 10_000, maxBytes: 64 * 1024 })
+      }, { timeoutMs: 10_000, maxBytes: 64 * 1024, purpose: 'outbound-action' })
       // The body is not used; release the socket.
       await res.body?.cancel().catch(() => {})
       lastStatus = res.status

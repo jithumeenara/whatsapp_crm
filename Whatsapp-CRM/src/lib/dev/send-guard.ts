@@ -39,6 +39,22 @@
  *   - DEV_ALLOW_SENDING=1, deliberately;
  *   - a recipient listed in DEV_ALLOWED_RECIPIENTS (comma separated
  *     phone digits or emails) — your own number, to test for real.
+ *
+ * Side effects that are not a message are stopped too (blockedOutbound),
+ * because they end in one just the same — a tenant webhook usually feeds
+ * Zapier or Make, which messages the customer:
+ *   - every request but GET / HEAD that a caller marks as an outbound
+ *     action (`safeFetch(url, init, { purpose: 'outbound-action' })`):
+ *     tenant webhooks, the automation "send webhook" step, a flow or
+ *     chatbot "HTTP request" step, the call-forward hand-off. Reads are
+ *     left alone, so imports and lookups keep working;
+ *   - every write (not GET / HEAD, or a GET with ?method=post|delete) to a
+ *     Meta Graph host — profile, ice breakers, subscriptions, comments,
+ *     publishing — except the OAuth / token endpoints in META_CONNECT,
+ *     which connecting an account in development needs.
+ * DEV_ALLOWED_HOSTS (comma separated host names, exact match) lets those
+ * two kinds through to the hosts listed — your own webhook.site endpoint.
+ * It never unlocks a customer message; DEV_ALLOWED_RECIPIENTS does that.
  */
 
 type FetchFn = typeof fetch
@@ -202,6 +218,98 @@ export function sdkSendBlocked(
   return true
 }
 
+// ── Side effects that are not a message ─────────────────────────────
+
+/** What a safeFetch caller says its request is for. */
+export type OutboundPurpose = 'outbound-action'
+
+/** Hosts a Meta write goes to. Exact names, not suffixes. */
+const META_WRITE_HOSTS = new Set([
+  'graph.facebook.com',
+  'graph.instagram.com',
+  'graph-video.facebook.com',
+  'rupload.facebook.com',
+  'api.instagram.com',
+])
+
+/**
+ * Meta endpoints that connect an account rather than change one: code →
+ * token exchange, long-lived / refreshed tokens, token inspection. Path
+ * after the optional version segment.
+ */
+const META_CONNECT = /^\/(?:v[\d.]+\/)?(?:oauth\/access_token|oauth\/client_code|debug_token|access_token|refresh_access_token)\/?$/
+
+const READS = new Set(['GET', 'HEAD'])
+
+/** Host names from DEV_ALLOWED_HOSTS, lower case, no trailing dot. */
+function allowedHosts(env: Record<string, string | undefined>): Set<string> {
+  return new Set(
+    (env.DEV_ALLOWED_HOSTS ?? '')
+      .split(',')
+      .map((x) => x.trim().toLowerCase().replace(/\.$/, ''))
+      .filter(Boolean),
+  )
+}
+
+/**
+ * Every outbound side effect a protected server must not perform: the
+ * message rules of {@link blockedSend}, then outbound actions and Meta
+ * writes. Null means "let it go". Server environment only — nothing here
+ * is read from a request. In production it returns null before looking
+ * at anything else.
+ */
+export function blockedOutbound(
+  url: string,
+  method: string,
+  body: unknown,
+  env: Record<string, string | undefined>,
+  opts: { purpose?: OutboundPurpose } = {},
+): { name: string; host: string; reply: () => Response } | null {
+  if (!isSendProtected(env) || env.DEV_ALLOW_SENDING === '1') return null
+  const verb = (method || 'GET').toUpperCase()
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, '')
+
+  // A message: its own rules decide, recipient allow-list included.
+  if (verb === 'POST' && RULES.some((r) => r.match.test(url))) {
+    const hit = blockedSend(url, verb, body, env)
+    return hit ? { ...hit, host } : null
+  }
+
+  if (allowedHosts(env).has(host)) return null
+
+  if (opts.purpose === 'outbound-action' && !READS.has(verb)) {
+    return {
+      name: 'outbound action',
+      host,
+      reply: () => Response.json({ ok: true, success: true, dev_blocked: true }),
+    }
+  }
+
+  if (META_WRITE_HOSTS.has(host) && parsed.protocol === 'https:') {
+    const override = (parsed.searchParams.get('method') ?? '').toUpperCase()
+    const writes = !READS.has(verb) || (override !== '' && !READS.has(override))
+    if (writes && !META_CONNECT.test(parsed.pathname)) {
+      return {
+        name: 'Meta write',
+        host,
+        reply: () => Response.json({ success: true, id: `DEV_BLOCKED_${Date.now()}` }),
+      }
+    }
+  }
+  return null
+}
+
+/** The one log line for a stopped side effect: host only, never the path, body or a token. */
+export function logBlocked(hit: { name: string; host: string }, env: Record<string, string | undefined> = process.env): void {
+  console.warn(`[DEV] blocked ${hit.name} to ${hit.host} (${(env.APP_ENV || env.NODE_ENV || 'protected').trim().toLowerCase()} environment)`)
+}
+
 let installed = false
 
 /** Called once, first thing, by server.ts. A no-op in production. */
@@ -216,6 +324,11 @@ export function installDevSendGuard(): void {
     if (hit) {
       console.warn(`[DEV] ${hit.name} NOT sent (${process.env.APP_ENV || process.env.NODE_ENV || 'protected'} environment): ${url.replace(/access_token=[^&]+/, 'access_token=…')}`)
       return hit.reply()
+    }
+    const other = blockedOutbound(url, method, init?.body, process.env)
+    if (other) {
+      logBlocked(other)
+      return other.reply()
     }
     return real(input, init)
   }) as FetchFn

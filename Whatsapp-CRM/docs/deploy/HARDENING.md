@@ -78,6 +78,20 @@ chmod 700 ~ ~/Whatsapp-CRM/uploads 2>/dev/null || true
 - Never set on a server: `APP_ENV=development`, `META_SOCIAL_SIGNATURE=observe`,
   `META_FLOWS_SIGNATURE=observe` (only briefly, while rolling out the Flows
   endpoint signature check), `BIND_HOST=0.0.0.0`.
+- Non-production servers (`APP_ENV` = development / dev / local / test /
+  preview / staging, or `NODE_ENV=test`) stop every outbound side effect in
+  `src/lib/dev/send-guard.ts`: customer messages, and — through
+  `blockedOutbound` — tenant webhooks, automation "send webhook" steps, flow /
+  chatbot HTTP steps other than GET/HEAD (call sites pass
+  `safeFetch(…, { purpose: 'outbound-action' })`), and any Meta Graph write
+  that is not a message, except the OAuth / `debug_token` / token-refresh
+  endpoints. Each stop is answered with a stand-in success and logged as one
+  `[DEV] blocked … to <host>` line. Escape hatches, server environment only:
+  `DEV_ALLOW_SENDING=1` (everything), `DEV_ALLOWED_RECIPIENTS` (messages to
+  your own number) and `DEV_ALLOWED_HOSTS` (comma-separated exact host names,
+  e.g. `webhook.site`, for testing your own webhook receiver; it never
+  unlocks a customer message). None of these belong on a production server,
+  where the guard does nothing.
 - `NODE_ENV`, `PORT`, `BIND_HOST`, `HOSTNAME` are read by `server.ts` **before**
   Next loads `.env`, so they must come from PM2's `env` block, not from `.env`.
 - Check: `stat -c '%a %U' .env` → `600 crm`; `grep -c '^[A-Z_]*=$' .env` lists nothing you rely on.

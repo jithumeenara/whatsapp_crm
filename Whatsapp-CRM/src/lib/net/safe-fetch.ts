@@ -45,7 +45,7 @@ import https from 'node:https'
 import net from 'node:net'
 import { Readable, Transform } from 'node:stream'
 import zlib from 'node:zlib'
-import { blockedSend } from '../dev/send-guard'
+import { blockedOutbound, logBlocked, type OutboundPurpose } from '../dev/send-guard'
 
 // ── Errors ──────────────────────────────────────────────────────────
 
@@ -93,6 +93,14 @@ export interface SafeFetchOptions {
   timeoutMs?: number
   /** Largest response body, counted after decompression. Default 10 MB. */
   maxBytes?: number
+  /**
+   * 'outbound-action': this request does something in another system on
+   * a tenant's behalf (tenant webhook, automation webhook, flow / chatbot
+   * HTTP step). On a non-production server anything but GET / HEAD is
+   * then answered with a stand-in "ok" instead of being sent
+   * (send-guard.ts, blockedOutbound). No effect in production.
+   */
+  purpose?: OutboundPurpose
 }
 
 const DEFAULT_PORTS = [80, 443] as const
@@ -534,9 +542,9 @@ export async function safeFetch(
     const target = checkUrl(current, allowedPorts)
 
     // The send guard patches global fetch, which this does not use.
-    const stopped = blockedSend(target.url.href, method, body?.toString('utf8'), process.env)
+    const stopped = blockedOutbound(target.url.href, method, body?.toString('utf8'), process.env, { purpose: opts.purpose })
     if (stopped) {
-      console.warn(`[DEV] ${stopped.name} NOT sent (safeFetch, protected environment)`)
+      logBlocked(stopped)
       return stopped.reply()
     }
 

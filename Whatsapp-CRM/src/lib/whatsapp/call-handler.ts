@@ -66,7 +66,7 @@ export async function forwardCallWebhook(args: {
       },
       body: args.rawBody,
       redirect: 'error',
-    }, { timeoutMs: FORWARD_TIMEOUT_MS, maxBytes: 64 * 1024 })
+    }, { timeoutMs: FORWARD_TIMEOUT_MS, maxBytes: 64 * 1024, purpose: 'outbound-action' })
     await res.body?.cancel().catch(() => {})
     if (res.ok) {
       console.log('[calls] the voice agent took the call')
