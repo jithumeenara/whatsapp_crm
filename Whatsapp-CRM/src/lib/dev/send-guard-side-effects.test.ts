@@ -121,7 +121,12 @@ describe('outbound actions are stopped outside production', () => {
     expect(lookups).toEqual([])
   })
 
-  it('a flow HTTP GET still goes out (imports and lookups keep working)', async () => {
+  // Round 7 (R6b): a flow GET is not "a read" — catch hooks and SMS send
+  // URLs fire on GET — so it is stopped too; DEV_ALLOWED_HOSTS lets it out.
+  it('a flow HTTP GET is stopped too, and goes out only to a DEV_ALLOWED_HOSTS host', async () => {
+    await expect(runHttpNodeRequest({ method: 'GET', url: 'https://api.example.com/orders/1', headers: {} })).resolves.toMatchObject({ ok: true, status: 200 })
+    expect(lookups).toEqual([])
+    vi.stubEnv('DEV_ALLOWED_HOSTS', 'api.example.com')
     await expect(runHttpNodeRequest({ method: 'GET', url: 'https://api.example.com/orders/1', headers: {} })).rejects.toThrow()
     expect(lookups).toEqual(['api.example.com'])
   })

@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client"
 import { afterRecordsChanged } from '@/lib/data-store/record-events'
 import { buildFetchHeaders, fetchExternalRows, detectType } from "@/lib/integration-fetch"
+import { openAuthConfig } from "@/lib/integration-secrets"
 
 export interface IntegrationRow {
   id: string
@@ -193,7 +194,7 @@ async function upsertContact(db: PrismaClient, accountId: string, userId: string
 // ── Main sync ──────────────────────────────────────────────────
 
 export async function runSync(db: PrismaClient, integration: IntegrationRow, userId: string): Promise<SyncResult> {
-  const headers = buildFetchHeaders(integration.auth_type, integration.auth_config as Record<string, string> | null)
+  const headers = buildFetchHeaders(integration.auth_type, openAuthConfig(integration.auth_config) as Record<string, string> | null)
 
   const rows = await fetchExternalRows({
     source_type: integration.source_type,

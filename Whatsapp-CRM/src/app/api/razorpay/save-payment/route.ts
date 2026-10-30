@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { detectType } from "@/lib/integration-fetch"
 import { isRazorpayPaymentId, paymentRowFromRazorpay } from "@/lib/integrations/razorpay-payment"
 import { afterRecordCreated, afterRecordsChanged } from '@/lib/data-store/record-events'
+import { openAuthConfig } from '@/lib/integration-secrets'
 
 const RAZORPAY_API = "https://api.razorpay.com/v1"
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     })
     if (!intg) return NextResponse.json({ error: "Integration not found" }, { status: 404 })
 
-    const cfg = intg.auth_config as { username?: string; password?: string } | null
+    const cfg = openAuthConfig(intg.auth_config) as { username?: string; password?: string } | null
     if (!cfg?.username || !cfg?.password) {
       return NextResponse.json({ error: "Integration missing credentials" }, { status: 400 })
     }

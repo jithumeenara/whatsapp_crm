@@ -43,17 +43,23 @@
  * Side effects that are not a message are stopped too (blockedOutbound),
  * because they end in one just the same — a tenant webhook usually feeds
  * Zapier or Make, which messages the customer:
- *   - every request but GET / HEAD that a caller marks as an outbound
+ *   - every request, GET included, that a caller marks as an outbound
  *     action (`safeFetch(url, init, { purpose: 'outbound-action' })`):
  *     tenant webhooks, the automation "send webhook" step, a flow or
- *     chatbot "HTTP request" step, the call-forward hand-off. Reads are
- *     left alone, so imports and lookups keep working;
+ *     chatbot "HTTP request" step, the call-forward hand-off. A catch hook
+ *     or an SMS gateway's send URL fires on a GET too. Imports and
+ *     integrations do not pass the flag and keep working;
  *   - every write (not GET / HEAD, or a GET with ?method=post|delete) to a
  *     Meta Graph host — profile, ice breakers, subscriptions, comments,
  *     publishing — except the OAuth / token endpoints in META_CONNECT,
- *     which connecting an account in development needs.
+ *     which connecting an account in development needs;
+ *   - every write to another known provider (PROVIDERS below): Telegram
+ *     (any method but getMe / getFile / getWebhookInfo / getChat, whatever
+ *     the verb), TextBee, Microsoft Graph, *.googleapis.com (but the OAuth
+ *     token endpoints, Calendar freeBusy and the AI model hosts), Razorpay,
+ *     PhonePe (but its token endpoint), Twilio, SendGrid, MSG91.
  * DEV_ALLOWED_HOSTS (comma separated host names, exact match) lets those
- * two kinds through to the hosts listed — your own webhook.site endpoint.
+ * kinds through to the hosts listed — your own webhook.site endpoint.
  * It never unlocks a customer message; DEV_ALLOWED_RECIPIENTS does that.
  */
 
@@ -283,7 +289,9 @@ export function blockedOutbound(
 
   if (allowedHosts(env).has(host)) return null
 
-  if (opts.purpose === 'outbound-action' && !READS.has(verb)) {
+  // A tenant-configured outbound action is stopped whatever its verb: a
+  // Zapier / Make catch hook or an SMS gateway's send URL fires on a GET.
+  if (opts.purpose === 'outbound-action') {
     return {
       name: 'outbound action',
       host,
@@ -302,8 +310,105 @@ export function blockedOutbound(
       }
     }
   }
+
+  if (parsed.protocol === 'https:') {
+    const provider = PROVIDERS.find((p) => p.host(host))
+    if (provider && !provider.open(parsed.pathname, verb, host)) {
+      return { name: provider.name, host, reply: () => provider.reply(parsed.pathname) }
+    }
+  }
   return null
 }
+
+// ── Other providers' writes ─────────────────────────────────────────
+//
+// Preview / staging servers run the background jobs against a copy of
+// production data, so a provider write from one changes a real customer's
+// account: Telegram setWebhook re-points the production bot to staging,
+// TextBee / Microsoft Graph subscriptions re-point inbound SMS and mail,
+// Google Sheets / Calendar / Drive writes edit customers' files, Razorpay /
+// PhonePe create real payment links. On a known provider host everything
+// that is not a read is stopped unless listed in its `open` rule — a
+// structural default, so a new write endpoint is covered without a rule.
+//
+// AI model providers (Gemini, Cloud TTS, Vertex, OpenAI, Anthropic, any
+// OpenAI-compatible base URL) are deliberately left open: a model call
+// changes nothing a customer can see, and the AI features must work in
+// development. Their answers still only reach a customer through a send,
+// which the message rules stop.
+
+const isRead = (verb: string) => READS.has(verb)
+const DEV_ID = () => `DEV_BLOCKED_${Date.now()}`
+
+/** Telegram methods that change nothing (any verb: Telegram accepts GET for every method). */
+const TELEGRAM_READS = new Set(['getme', 'getfile', 'getwebhookinfo', 'getchat'])
+
+/** Google endpoints that are not under the "non-GET is a write" default. */
+const GOOGLE_AI_HOST = /^(?:generativelanguage|texttospeech|(?:[a-z0-9-]+-)?aiplatform)\.googleapis\.com$/
+const GOOGLE_OPEN: Record<string, RegExp> = {
+  'oauth2.googleapis.com': /^\/(?:token|tokeninfo)\/?$/,
+  'www.googleapis.com': /^\/(?:oauth2\/v\d\/(?:token|tokeninfo)|calendar\/v3\/freeBusy)\/?$/,
+  'openidconnect.googleapis.com': /^\/v\d\/userinfo\/?$/,
+}
+
+const PROVIDERS: Array<{
+  name: string
+  host: (h: string) => boolean
+  open: (path: string, verb: string, host: string) => boolean
+  reply: (path: string) => Response
+}> = [
+  {
+    name: 'Telegram write',
+    host: (h) => h === 'api.telegram.org',
+    open: (path, verb) => {
+      const m = /^\/bot[^/]+\/([^/]+)\/?$/.exec(path)
+      if (m) return TELEGRAM_READS.has(m[1].toLowerCase())
+      return isRead(verb) && /^\/file\/bot[^/]+\/./.test(path)
+    },
+    reply: (path) =>
+      Response.json({
+        ok: true,
+        result: /\/(send|copy|forward)[^/]*\/?$/i.test(path) ? { message_id: Math.floor(Date.now() / 1000) } : true,
+      }),
+  },
+  {
+    name: 'TextBee write',
+    host: (h) => h === 'api.textbee.dev',
+    open: (_p, verb) => isRead(verb),
+    reply: () => Response.json({ data: { _id: DEV_ID(), success: true } }),
+  },
+  {
+    name: 'Microsoft Graph write',
+    host: (h) => h === 'graph.microsoft.com',
+    open: (_p, verb) => isRead(verb),
+    reply: () => Response.json({ id: DEV_ID(), expirationDateTime: new Date(Date.now() + 3 * 86_400_000).toISOString() }),
+  },
+  {
+    name: 'Google write',
+    host: (h) => h.endsWith('.googleapis.com') && !GOOGLE_AI_HOST.test(h),
+    open: (path, verb, host) => isRead(verb) || Boolean(GOOGLE_OPEN[host]?.test(path)),
+    reply: () => Response.json({ id: DEV_ID(), spreadsheetId: DEV_ID(), replies: [] }),
+  },
+  {
+    name: 'Razorpay write',
+    host: (h) => h === 'api.razorpay.com',
+    open: (_p, verb) => isRead(verb),
+    reply: () => Response.json({ id: DEV_ID(), entity: 'dev_blocked', status: 'created', short_url: 'https://rzp.io/dev-blocked' }),
+  },
+  {
+    name: 'PhonePe write',
+    host: (h) => h === 'api.phonepe.com' || h === 'api-preprod.phonepe.com',
+    open: (path, verb) => isRead(verb) || /\/oauth\/token\/?$/.test(path),
+    reply: () => Response.json({ orderId: DEV_ID(), state: 'ACTIVE', expireAt: Date.now() + 86_400_000, paylinkUrl: 'https://phon.pe/dev-blocked' }),
+  },
+  {
+    name: 'SMS / email provider write',
+    host: (h) => h === 'api.twilio.com' || h === 'api.sendgrid.com' || h === 'api.msg91.com',
+    open: (_p, verb) => isRead(verb),
+    reply: () => Response.json({ sid: DEV_ID(), id: DEV_ID(), type: 'success', status: 'queued' }),
+  },
+]
+
 
 /** The one log line for a stopped side effect: host only, never the path, body or a token. */
 export function logBlocked(hit: { name: string; host: string }, env: Record<string, string | undefined> = process.env): void {

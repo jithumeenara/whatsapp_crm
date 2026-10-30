@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { redactIntegration } from "@/lib/integration-fetch"
+import { sealAuthConfig } from "@/lib/integration-secrets"
 
 export async function GET(req: NextRequest) {
   try {
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
         base_url: body.base_url.trim(),
         resource: body.resource.trim(),
         auth_type: body.auth_type ?? "none",
-        auth_config: body.auth_config ?? undefined,
+        auth_config: sealAuthConfig(body.auth_config) ?? undefined,
         table_name: body.table_name?.trim() || null,
         sync_interval_minutes: body.sync_interval_minutes ?? null,
         status: "active",

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { openAuthConfig } from '@/lib/integration-secrets'
 
 export async function POST(req: NextRequest) {
   try {
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
       const intg = await prisma.integration.findFirst({
         where: { id: integration_id, account_id: ctx.accountId },
       })
-      const cfg = intg?.auth_config as { username?: string; password?: string } | null
+      const cfg = openAuthConfig(intg?.auth_config) as { username?: string; password?: string } | null
       keySecret = cfg?.password
       if (!keySecret) {
         return NextResponse.json(

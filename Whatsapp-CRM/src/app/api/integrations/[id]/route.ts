@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { redactIntegration } from "@/lib/integration-fetch"
+import { isRedactedEcho, sealAuthConfig } from "@/lib/integration-secrets"
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -37,7 +39,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         base_url: body.base_url ?? integration.base_url,
         resource: body.resource ?? integration.resource,
         auth_type: body.auth_type ?? integration.auth_type,
-        auth_config: body.auth_config !== undefined ? body.auth_config : integration.auth_config,
+        auth_config: body.auth_config !== undefined && !isRedactedEcho(body.auth_config)
+          ? (sealAuthConfig(body.auth_config) as Prisma.InputJsonValue | undefined)
+          : ((integration.auth_config ?? undefined) as Prisma.InputJsonValue | undefined),
         table_name: body.table_name !== undefined ? (body.table_name || null) : integration.table_name,
         sync_interval_minutes: body.sync_interval_minutes !== undefined ? (body.sync_interval_minutes || null) : integration.sync_interval_minutes,
         status: body.status ?? integration.status,

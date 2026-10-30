@@ -96,9 +96,11 @@ export interface SafeFetchOptions {
   /**
    * 'outbound-action': this request does something in another system on
    * a tenant's behalf (tenant webhook, automation webhook, flow / chatbot
-   * HTTP step). On a non-production server anything but GET / HEAD is
-   * then answered with a stand-in "ok" instead of being sent
-   * (send-guard.ts, blockedOutbound). No effect in production.
+   * HTTP step, call-forward). On a non-production server every such
+   * request, GET included (catch hooks fire on GET), is then answered
+   * with a stand-in "ok" instead of being sent, unless its host is in
+   * DEV_ALLOWED_HOSTS (send-guard.ts, blockedOutbound). No effect in
+   * production.
    */
   purpose?: OutboundPurpose
 }

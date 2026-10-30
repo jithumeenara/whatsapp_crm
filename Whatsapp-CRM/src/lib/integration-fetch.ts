@@ -4,6 +4,7 @@
  */
 
 import { SafeFetchError, SsrfBlockedError, safeFetch } from "@/lib/net/safe-fetch"
+import { openAuthConfig } from "@/lib/integration-secrets"
 
 /** Integration APIs (FHIR servers, in-house systems) often listen on an
  *  alternative web port; anything else — 22, 5432, 6379 — stays shut. */
@@ -44,7 +45,7 @@ export function buildFetchHeaders(
  * /api/integrations (the viewer rank included) got the secrets in full.
  */
 export function redactIntegration<T extends { auth_config?: unknown }>(integration: T): T {
-  const cfg = integration.auth_config
+  const cfg = openAuthConfig(integration.auth_config)
   if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) return integration
   const c = cfg as Record<string, unknown>
   const shown: Record<string, unknown> = {}

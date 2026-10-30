@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { openAuthConfig } from '@/lib/integration-secrets'
 
 const RAZORPAY_API = "https://api.razorpay.com/v1"
 
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         )
       }
-      const cfg = intg.auth_config as { username?: string; password?: string } | null
+      const cfg = openAuthConfig(intg.auth_config) as { username?: string; password?: string } | null
       keyId = cfg?.username
       keySecret = cfg?.password
       if (!keyId || !keySecret) {
