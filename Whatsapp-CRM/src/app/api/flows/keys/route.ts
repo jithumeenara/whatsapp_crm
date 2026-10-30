@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessRole } from '@/lib/flows/route-guard'
 import crypto from 'crypto'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -205,6 +206,8 @@ export async function GET() {
  * owner like nothing at all.
  */
 export async function POST() {
+  const denied = await denyUnlessRole('admin')
+  if (denied) return denied
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

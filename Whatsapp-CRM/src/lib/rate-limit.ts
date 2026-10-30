@@ -51,6 +51,26 @@ const buckets = new Map<string, Entry>();
 const LIGHT_SWEEP_EVERY = 1000;
 let callsSinceSweep = 0;
 
+/** A ceiling on live buckets. Public routes key on the caller's address
+ *  or a token from the URL, so a flood of distinct keys inside one window
+ *  (a ten-minute form window, say) would otherwise grow the Map without
+ *  bound. Past it, expired buckets go first, then the oldest — which can
+ *  only ever give somebody a fresh budget early, never take one away. */
+const MAX_BUCKETS = 50_000;
+
+function makeRoom(now: number) {
+  if (buckets.size < MAX_BUCKETS) return;
+  sweepExpired(now);
+  // Make room for a while, not for one key: a sweep per insert at the
+  // ceiling would make every request walk the whole Map.
+  const target = Math.floor(MAX_BUCKETS * 0.9);
+  while (buckets.size > target) {
+    const oldest = buckets.keys().next().value;
+    if (oldest === undefined) break;
+    buckets.delete(oldest);
+  }
+}
+
 function sweepExpired(now: number) {
   for (const [k, v] of buckets) {
     if (v.resetAt <= now) buckets.delete(k);
@@ -72,6 +92,8 @@ export function checkRateLimit(
   const entry = buckets.get(key);
 
   if (!entry || entry.resetAt <= now) {
+    if (!entry) makeRoom(now);
+    else buckets.delete(key); // re-inserted below, so Map order stays oldest-first
     buckets.set(key, { count: 1, resetAt: now + windowMs });
     return { success: true, remaining: limit - 1, reset: now + windowMs, limit };
   }
@@ -121,6 +143,11 @@ export const RATE_LIMITS = {
    *  broadcast is one call; this caps the rate at which a single user
    *  can launch campaigns, not the messages inside one. */
   broadcast: { limit: 5, windowMs: 60_000 },
+  /** Creating or starting a campaign through /api/broadcasts (create,
+   *  process, retry, rescue). Looser than `broadcast` because one
+   *  campaign with automatic follow-ups is several creates in a row, but
+   *  still a ceiling on a script launching sends in a loop. Per user. */
+  broadcastCreate: { limit: 20, windowMs: 60_000 },
   /** Reaction add/swap/remove. More permissive than send — users
    *  fidget with reactions and a single "swap" is actually two calls
    *  (remove + add) under the hood. */
@@ -224,6 +251,10 @@ export const RATE_LIMITS = {
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
  *  leak buckets across files. Not wired up in production code. */
+export function __bucketCountForTests(): number {
+  return buckets.size;
+}
+
 export function __resetRateLimitForTests() {
   buckets.clear();
   callsSinceSweep = 0;

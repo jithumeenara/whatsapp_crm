@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { socialWebhookAllowed } from "@/lib/social/webhook-secrets"
+import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
+import { maskForLog } from "@/lib/whatsapp/phone-utils"
 
 type RawConfig = {
   account_id: string
@@ -57,7 +59,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse("Bad request", { status: 400 })
   }
 
-  if (process.env.INSTAGRAM_VERIFY_TOKEN && token === process.env.INSTAGRAM_VERIFY_TOKEN) {
+  if (sameToken(token, process.env.INSTAGRAM_VERIFY_TOKEN)) {
     return new NextResponse(challenge, { status: 200 })
   }
 
@@ -76,7 +78,7 @@ export async function GET(req: NextRequest) {
     console.error("[Instagram Webhook] DB error during verify:", err)
   }
 
-  console.error(`[Instagram Webhook] Verify token not found: "${token}"`)
+  console.error(`[Instagram Webhook] verify token did not match any saved one (length ${token.length})`)
   return new NextResponse("Forbidden", { status: 403 })
 }
 
@@ -86,7 +88,10 @@ export async function POST(req: NextRequest) {
     const raw = await req.text()
     if (!raw.trim()) return NextResponse.json({ status: "ok" })
     // Only Meta may post here: a forged event would land in an Inbox.
-    if (!(await socialWebhookAllowed(raw, req.headers.get("x-hub-signature-256"), "instagram"))) {
+    // A tenant's own app secret only vouches for that tenant's events —
+    // see socialWebhookScope.
+    const scope = await socialWebhookScope(raw, req.headers.get("x-hub-signature-256"), "instagram")
+    if (!scope) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
     }
     const body = JSON.parse(raw) as IgWebhookBody
@@ -96,7 +101,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Process async so Meta gets a fast 200
-    processInstagramWebhook(body).catch((err) =>
+    processInstagramWebhook(body, scope).catch((err) =>
       console.error("[Instagram Webhook] processInstagramWebhook error:", err)
     )
 
@@ -178,7 +183,7 @@ interface IgWebhookBody {
   }>
 }
 
-async function processInstagramWebhook(body: IgWebhookBody) {
+async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhookScope) {
   await ensureTable()
 
   for (const entry of body.entry ?? []) {
@@ -215,6 +220,12 @@ async function processInstagramWebhook(body: IgWebhookBody) {
       console.warn(`[Instagram] No config found for entry ID: ${entryAccountId}`)
       continue
     }
+    if (!scopeAllows(scope, config.account_id)) {
+      console.warn(`[Instagram] event for ${entryAccountId} was signed with another account's app secret — dropped`)
+      continue
+    }
+    // Stored sealed (or, for an old row, plain) — see openStoredSecret.
+    config = { ...config, access_token: openStoredSecret(config.access_token) }
 
     const instagramAccountId = config.instagram_account_id ?? entryAccountId
 
@@ -264,7 +275,7 @@ async function processInstagramWebhook(body: IgWebhookBody) {
         const postback = val.postback
         if (!postback?.payload) continue
 
-        console.log('[Instagram] postback received from', senderIgsid, '| payload:', postback.payload, '| title:', postback.title)
+        console.log('[Instagram] postback received from', maskForLog(senderIgsid))
 
         await processIgMessage({
           accountId:         config.account_id,

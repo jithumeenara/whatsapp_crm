@@ -1,32 +1,29 @@
 import { NextResponse } from 'next/server'
 import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { afterRecordsChanged } from '@/lib/data-store/record-events'
-import { auth } from '@/auth'
+import { dataStoreMember } from '@/lib/data-store/access'
+import type { AccountRole } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import ExcelJS from 'exceljs'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
 
-async function requireTable(tableId: string) {
-  const session = await auth()
-  if (!session?.user?.id) return { ok: false as const, status: 401, body: { error: 'Unauthorized' } }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) return { ok: false as const, status: 403, body: { error: 'No account.' } }
+async function requireTable(tableId: string, min: AccountRole) {
+  const member = await dataStoreMember(min)
+  if (!member.ok) return member
+  const accountIdOf = member.ctx.accountId
   const table = await prisma.dataTable.findFirst({
-    where: { id: tableId, account_id: profile.account_id },
+    where: { id: tableId, account_id: accountIdOf },
     include: { fields: { orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] } },
   })
   if (!table) return { ok: false as const, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true as const, accountId: profile.account_id, table }
+  return { ok: true as const, accountId: accountIdOf, table }
 }
 
 // GET /api/data-tables/[id]/import/template — download demo Excel template
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: tableId } = await params
-    const guard = await requireTable(tableId)
+    const guard = await requireTable(tableId, 'viewer')
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     const { table } = guard
@@ -99,7 +96,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: tableId } = await params
-    const guard = await requireTable(tableId)
+    const guard = await requireTable(tableId, 'agent')
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     const { table, accountId } = guard

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, isMediaId } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { attachmentHeaders } from '@/lib/files/account-files'
@@ -30,7 +30,7 @@ export async function GET(
   try {
     const { mediaId } = await params
 
-    if (!mediaId) {
+    if (!isMediaId(mediaId)) {
       return NextResponse.json(
         { error: 'Media ID is required' },
         { status: 400 }

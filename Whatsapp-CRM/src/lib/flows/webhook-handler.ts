@@ -315,6 +315,7 @@ function flattenComponentSources(c: Record<string, unknown>): ResolvedSource[] {
 // from INIT and the screen-navigate "load" branch, where there's no single
 // "the field that just changed" to shortcut against.
 async function resolveLabelTemplate(
+  accountId: string,
   template: string,
   sources: LabelSourceConfig[],
   formData: Record<string, unknown>,
@@ -332,11 +333,11 @@ async function resolveLabelTemplate(
         const ownTriggerValue = (triggerName !== null && s.filter_form_name === triggerName)
           ? (triggerValue ?? '')
           : slugify(String(formData[s.filter_form_name!]))
-        value = await fetchLabelValue(s.table_id, s.field_key, s.filter_by_field, ownTriggerValue, chainFor?.(s.table_id, s.filter_form_name!, formData, triggerName, triggerValue))
+        value = await fetchLabelValue(accountId, s.table_id, s.field_key, s.filter_by_field, ownTriggerValue, chainFor?.(s.table_id, s.filter_form_name!, formData, triggerName, triggerValue))
       }
       // else: parent not yet selected — token resolves to '' below.
     } else {
-      value = await fetchLabelValue(s.table_id, s.field_key)
+      value = await fetchLabelValue(accountId, s.table_id, s.field_key)
     }
     tokenValues[s.id] = value
     const tokenRe = new RegExp(`\\{\\{\\s*${s.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}\\}`, 'g')
@@ -384,10 +385,10 @@ export interface ChainFilter {
 }
 
 /** A filter field as configured (key or label, any spelling) → its key. */
-async function resolveFilterField(tableId: string, filterField: string): Promise<string> {
+async function resolveFilterField(accountId: string, tableId: string, filterField: string): Promise<string> {
   try {
     const dbFields = await prisma.dataField.findMany({
-      where: { table_id: tableId },
+      where: { table_id: tableId, account_id: accountId },
       select: { field_key: true, label: true },
     })
     if (dbFields.some((f) => f.field_key === filterField)) return filterField
@@ -399,9 +400,9 @@ async function resolveFilterField(tableId: string, filterField: string): Promise
   }
 }
 
-async function resolveChain(tableId: string, chain: ChainFilter[] | undefined): Promise<ChainFilter[]> {
+async function resolveChain(accountId: string, tableId: string, chain: ChainFilter[] | undefined): Promise<ChainFilter[]> {
   if (!chain || chain.length === 0) return []
-  return Promise.all(chain.map(async (c) => ({ field: await resolveFilterField(tableId, c.field), value: c.value })))
+  return Promise.all(chain.map(async (c) => ({ field: await resolveFilterField(accountId, tableId, c.field), value: c.value })))
 }
 
 function matchesChain(dataObj: Record<string, unknown>, chain: ChainFilter[]): boolean {
@@ -452,19 +453,25 @@ export function buildFilterChain(
   return chain
 }
 
+// Every DataStore read below is scoped to the account that owns the Flow,
+// not just to the table id. The table id comes from the Flow's saved
+// configuration, which its owner can edit freely; scoping by id alone let
+// a Flow naming another account's table serve that account's rows to
+// whoever opened it.
 async function fetchOptions(
+  accountId: string,
   tableId: string,
   fieldKey: string,
   filterField?: string,
   filterValue?: string,
   chain?: ChainFilter[],
 ): Promise<Array<{ id: string; title: string; enabled?: boolean }>> {
-  const resolvedChain = await resolveChain(tableId, chain)
+  const resolvedChain = await resolveChain(accountId, tableId, chain)
   let resolvedFilterField = filterField
   if (filterField) {
     try {
       const dbFields = await prisma.dataField.findMany({
-        where: { table_id: tableId },
+        where: { table_id: tableId, account_id: accountId },
         select: { field_key: true, label: true },
       })
       const exact = dbFields.find((f) => f.field_key === filterField)
@@ -486,7 +493,7 @@ async function fetchOptions(
   }
 
   const records = await prisma.dataRecord.findMany({
-    where: { table_id: tableId },
+    where: { table_id: tableId, account_id: accountId },
     select: { data: true },
     orderBy: { created_at: 'asc' },
     take: 2000,
@@ -536,15 +543,16 @@ async function fetchOptions(
 
 /** Fetches a single text value from a DataStore table for TextLabel components. */
 async function fetchLabelValue(
+  accountId: string,
   tableId: string, fieldKey: string, filterField?: string, filterValue?: string,
   chain?: ChainFilter[],
 ): Promise<string> {
-  const resolvedChain = await resolveChain(tableId, chain)
+  const resolvedChain = await resolveChain(accountId, tableId, chain)
   let resolvedFilterField = filterField
   if (filterField) {
     try {
       const dbFields = await prisma.dataField.findMany({
-        where: { table_id: tableId },
+        where: { table_id: tableId, account_id: accountId },
         select: { field_key: true, label: true },
       })
       const exact = dbFields.find((f) => f.field_key === filterField)
@@ -559,7 +567,7 @@ async function fetchLabelValue(
   }
 
   const records = await prisma.dataRecord.findMany({
-    where: { table_id: tableId },
+    where: { table_id: tableId, account_id: accountId },
     select: { data: true },
     orderBy: { created_at: 'asc' },
     take: 2000,
@@ -754,11 +762,13 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
     aesKey = decrypted.aesKey
     initialVector = decrypted.initialVector
   } catch (err) {
+    // 421 is what Meta's spec asks for, so the client re-fetches the
+    // public key. The detail stays in the server log: this endpoint is
+    // open to anyone, and the old body (key size, which OAEP hash failed,
+    // the raw OpenSSL message) told a stranger exactly how the request
+    // was rejected.
     console.error('[webhook] decryption failed:', err)
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Decryption failed' },
-      { status: 421 },
-    )
+    return NextResponse.json({ error: 'Decryption failed' }, { status: 421 })
   }
 
   const action = payload.action as string | undefined
@@ -893,8 +903,8 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             return
           }
           initData[varName] = isLabel
-            ? await fetchLabelValue(tableId!, fieldKey!)
-            : await fetchOptions(tableId!, fieldKey!)
+            ? await fetchLabelValue(flow.account_id, tableId!, fieldKey!)
+            : await fetchOptions(flow.account_id, tableId!, fieldKey!)
         }),
     )
 
@@ -1023,7 +1033,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .flatMap((c) => flattenComponentSources(c))
           .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
             if (multi) {
-              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, triggerName, triggerValue, chainFor)
+              const { text, tokenValues } = await resolveLabelTemplate(flow.account_id, multi.template, multi.sources, formData, triggerName, triggerValue, chainFor)
               freshData[varName] = text
               for (const [tokenId, val] of Object.entries(tokenValues)) {
                 freshData[makeMultiLabelVarName(multi.name, tokenId)] = val
@@ -1042,22 +1052,22 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             if (isLabel) {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, ownTriggerValue, chainFor(tableId!, filterFormName!, formData, triggerName, triggerValue))
+                freshData[varName] = await fetchLabelValue(flow.account_id, tableId!, fieldKey!, filterByField, ownTriggerValue, chainFor(tableId!, filterFormName!, formData, triggerName, triggerValue))
                 console.log('[data_exchange:filter]', varName, '→ label:', freshData[varName])
               } else if (isFiltered) {
                 freshData[varName] = ''
               } else {
-                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!)
+                freshData[varName] = await fetchLabelValue(flow.account_id, tableId!, fieldKey!)
               }
             } else {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const ownTriggerValue = filterFormName === triggerName ? triggerValue : slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchOptions(tableId!, fieldKey!, filterByField, ownTriggerValue, chainFor(tableId!, filterFormName!, formData, triggerName, triggerValue))
+                freshData[varName] = await fetchOptions(flow.account_id, tableId!, fieldKey!, filterByField, ownTriggerValue, chainFor(tableId!, filterFormName!, formData, triggerName, triggerValue))
                 console.log('[data_exchange:filter]', varName, '→', (freshData[varName] as unknown[]).length, 'filtered options')
               } else if (isFiltered) {
                 freshData[varName] = EMPTY_FILTERED_OPTIONS
               } else {
-                freshData[varName] = await fetchOptions(tableId!, fieldKey!)
+                freshData[varName] = await fetchOptions(flow.account_id, tableId!, fieldKey!)
               }
             }
           }),
@@ -1099,7 +1109,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           .flatMap((c) => flattenComponentSources(c))
           .map(async ({ varName, tableId, fieldKey, filterByField, filterFormName, isLabel, multi }) => {
             if (multi) {
-              const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, formData, null, null, chainFor)
+              const { text, tokenValues } = await resolveLabelTemplate(flow.account_id, multi.template, multi.sources, formData, null, null, chainFor)
               freshData[varName] = text
               for (const [tokenId, val] of Object.entries(tokenValues)) {
                 freshData[makeMultiLabelVarName(multi.name, tokenId)] = val
@@ -1117,26 +1127,26 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             if (isLabel) {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
-                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!, filterByField, triggerValue, chainFor(tableId!, filterFormName!, formData, null, null))
+                freshData[varName] = await fetchLabelValue(flow.account_id, tableId!, fieldKey!, filterByField, triggerValue, chainFor(tableId!, filterFormName!, formData, null, null))
                 console.log('[data_exchange:load] filtered label', varName, '=', freshData[varName])
               } else if (isFiltered) {
                 freshData[varName] = ''
                 console.log('[data_exchange:load]', varName, "→ '' (empty until parent selected)")
               } else {
-                freshData[varName] = await fetchLabelValue(tableId!, fieldKey!)
+                freshData[varName] = await fetchLabelValue(flow.account_id, tableId!, fieldKey!)
                 console.log('[data_exchange:load] label', varName, '=', freshData[varName])
               }
             } else {
               if (isFiltered && hasFormValue(formData, filterFormName!)) {
                 const triggerValue = slugify(String(formData[filterFormName!]))
-                const opts = await fetchOptions(tableId!, fieldKey!, filterByField, triggerValue, chainFor(tableId!, filterFormName!, formData, null, null))
+                const opts = await fetchOptions(flow.account_id, tableId!, fieldKey!, filterByField, triggerValue, chainFor(tableId!, filterFormName!, formData, null, null))
                 freshData[varName] = opts
                 console.log('[data_exchange:load] filtered', varName, 'by', filterFormName, '=', triggerValue, '→', opts.length, 'options')
               } else if (isFiltered) {
                 freshData[varName] = EMPTY_FILTERED_OPTIONS
                 console.log('[data_exchange:load]', varName, '→ [] (empty until parent selected)')
               } else {
-                const opts = await fetchOptions(tableId!, fieldKey!)
+                const opts = await fetchOptions(flow.account_id, tableId!, fieldKey!)
                 freshData[varName] = opts
                 console.log('[data_exchange:load]', varName, '→', opts.length, 'options')
               }
@@ -1357,7 +1367,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
         // No formData exists yet at INIT — every filtered token in the
         // template correctly resolves to '' via resolveLabelTemplate's own
         // hasFormValue check, unfiltered tokens still resolve to a real value.
-        const { text, tokenValues } = await resolveLabelTemplate(multi.template, multi.sources, {}, null, null)
+        const { text, tokenValues } = await resolveLabelTemplate(flow.account_id, multi.template, multi.sources, {}, null, null)
         responseData[varName] = text
         for (const [tokenId, val] of Object.entries(tokenValues)) {
           responseData[makeMultiLabelVarName(multi.name, tokenId)] = val
@@ -1371,7 +1381,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           console.log(`[webhook] ${varName}: filtered label → '' (empty until parent selected)`)
           responseData[varName] = ''
         } else {
-          const val = await fetchLabelValue(tableId!, fieldKey!)
+          const val = await fetchLabelValue(flow.account_id, tableId!, fieldKey!)
           console.log(`[webhook] ${varName}: label value = "${val}"`)
           responseData[varName] = val
         }
@@ -1380,7 +1390,7 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
           console.log(`[webhook] ${varName}: filtered child → [] (empty until parent selected)`)
           responseData[varName] = EMPTY_FILTERED_OPTIONS
         } else {
-          const opts = await fetchOptions(tableId!, fieldKey!)
+          const opts = await fetchOptions(flow.account_id, tableId!, fieldKey!)
           console.log(`[webhook] ${varName}: ${opts.length} options`)
           responseData[varName] = opts
         }

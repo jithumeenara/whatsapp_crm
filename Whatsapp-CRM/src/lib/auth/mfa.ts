@@ -10,7 +10,7 @@ import crypto from "crypto"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import { sendSmsText } from "@/lib/messaging/channels/sms"
 import { sendTemplateMessage } from "@/lib/whatsapp/meta-api"
-import { verifyTotp } from "@/lib/auth/totp"
+import { matchTotpStep } from "@/lib/auth/totp"
 import { isMessageTemplate } from "@/lib/whatsapp/template-row-guard"
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 
@@ -22,6 +22,15 @@ export type MfaPurpose = "login" | "enroll" | "profile_phone"
 
 const CODE_TTL_MS = 5 * 60_000 // 5 minutes
 const MAX_ATTEMPTS = 5
+
+/**
+ * The newest authenticator time step that has already passed a check, per
+ * user — so the same 6-digit code cannot sign in twice during the ±30s
+ * window it stays valid. In memory, like the step-up check in
+ * lib/admin-chat/step-up.ts: the app runs as one process (server.ts), and
+ * after a restart the window it could reopen is at most 90 seconds.
+ */
+const lastTotpStep = new Map<string, number>()
 
 // Exported so other OTP senders (e.g. send-otp/route.ts's customer-facing
 // quick-send) reuse this instead of reimplementing the same generator —
@@ -86,6 +95,7 @@ async function sendWhatsappOtp(userId: string, phone: string, code: string): Pro
     language: template.language ?? "en_US",
     template,
     messageParams: { body: [code], buttonParams: { 0: code } },
+    accountId,
   })
 }
 
@@ -176,6 +186,15 @@ export async function verifyChallenge(challengeId: string, code: string): Promis
   if (challenge.expires_at.getTime() < Date.now()) return { ok: false, error: "This code has expired — request a new one." }
   if (challenge.attempts >= MAX_ATTEMPTS) return { ok: false, error: "Too many incorrect attempts — request a new code." }
 
+  // Count the try BEFORE checking it, in one conditional write. Reading the
+  // count and adding to it later let a burst of guesses sent together all
+  // read "0 so far", so the five-try limit capped nothing.
+  const reserved = await prisma.mfaChallenge.updateMany({
+    where: { id: challengeId, consumed_at: null, attempts: { lt: MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  })
+  if (reserved.count === 0) return { ok: false, error: "Too many incorrect attempts — request a new code." }
+
   let valid = false
   if (challenge.method === "totp") {
     const user = await prisma.user.findUnique({ where: { id: challenge.user_id }, select: { totp_secret: true } })
@@ -186,7 +205,13 @@ export async function verifyChallenge(challengeId: string, code: string): Promis
     // only ever checks the ALREADY-SAVED secret — i.e. only 'login'.
     if (user?.totp_secret) {
       try {
-        valid = verifyTotp(decrypt(user.totp_secret), code)
+        // matchTotpStep, not verifyTotp: a code whose step already
+        // signed this user in is refused, so it cannot be replayed.
+        const step = matchTotpStep(decrypt(user.totp_secret), code, new Date(), lastTotpStep.get(challenge.user_id) ?? null)
+        if (step !== null) {
+          valid = true
+          lastTotpStep.set(challenge.user_id, step)
+        }
       } catch (err) {
         // decrypt() throws hard on a corrupted/undecryptable ciphertext
         // (e.g. ENCRYPTION_KEY rotated since the secret was saved) — this
@@ -210,7 +235,7 @@ export async function verifyChallenge(challengeId: string, code: string): Promis
   }
 
   if (!valid) {
-    await prisma.mfaChallenge.update({ where: { id: challengeId }, data: { attempts: { increment: 1 } } })
+    // Already counted above.
     return {
       ok: false,
       // A wrong TOTP code is, in practice, almost always a clock problem

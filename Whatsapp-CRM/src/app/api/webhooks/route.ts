@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-import { generateWebhookSecret, validateWebhookUrl, WEBHOOK_EVENTS } from '@/lib/webhooks/deliver'
+import { encrypt } from '@/lib/whatsapp/encryption'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { generateWebhookSecret, checkWebhookUrl, WEBHOOK_EVENTS } from '@/lib/webhooks/deliver'
 
 async function requireSession() {
   const session = await auth()
@@ -45,9 +47,15 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // An outgoing webhook sends every Data Store record to its URL, so
+  // only an admin may add one — reading the list is open to members.
+  let guard: { accountId: string }
   try {
-    const guard = await requireSession()
-    if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+    guard = await requireRole('admin')
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+  try {
 
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
@@ -59,7 +67,7 @@ export async function POST(req: Request) {
     // URL validation with SSRF guard
     let url: string
     try {
-      url = validateWebhookUrl(body.url ?? '')
+      url = await checkWebhookUrl(body.url ?? '')
     } catch (e) {
       return NextResponse.json({ error: (e as Error).message }, { status: 400 })
     }
@@ -92,7 +100,8 @@ export async function POST(req: Request) {
         account_id: guard.accountId,
         name,
         url,
-        signing_secret: signingSecret,
+        // Sealed at rest; shown in plain only in this response.
+        signing_secret: encrypt(signingSecret),
         events,
         table_id: tableId,
       },

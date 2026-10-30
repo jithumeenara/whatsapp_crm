@@ -98,6 +98,7 @@ export async function sendOtpToContact(args: {
       language: template.language ?? 'en_US',
       template,
       messageParams: { body: [code], buttonParams: { 0: code } },
+      accountId,
     })
     const rendered = template.body_text.replaceAll('{{1}}', code)
     return { waMessageId: result.messageId, renderedBody: rendered, templateName: template.name }

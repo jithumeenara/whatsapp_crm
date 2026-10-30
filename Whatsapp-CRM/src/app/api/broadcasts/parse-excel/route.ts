@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import type { ExcelContactRow } from "@/lib/broadcasts/excel-row";
 
 /**
@@ -18,7 +18,9 @@ import type { ExcelContactRow } from "@/lib/broadcasts/excel-row";
  */
 export async function POST(request: NextRequest) {
   try {
-    await requireRoleOrApiKey(request, "agent");
+    const ctx = await requireRoleOrApiKey(request, "agent");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
 
     const formData = await request.formData();
     const file = formData.get("file");

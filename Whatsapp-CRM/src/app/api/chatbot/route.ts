@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
@@ -85,6 +86,8 @@ export async function GET() {
 /** POST /api/chatbot — create a new chatbot (optionally from a template) */
 export async function POST(request: Request) {
   try {
+    const denied = await denyUnlessFlowEditor('/chatbot')
+    if (denied) return denied
     const guard = await requireUser()
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
     const { userId, accountId } = guard

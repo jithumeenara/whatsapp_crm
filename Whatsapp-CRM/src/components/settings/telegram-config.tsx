@@ -96,6 +96,9 @@ export function TelegramConfig({ onConnectionChange }: {
   }, [])
 
   useEffect(() => {
+    // The state is set after the request resolves, not synchronously in
+    // the effect; runs once (load is stable).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
   }, [load])
 

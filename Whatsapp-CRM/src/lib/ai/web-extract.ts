@@ -10,11 +10,12 @@
  * up quoted back to a customer as if it were business knowledge.
  *
  * The URL is user-supplied and fetched by this server, so it goes
- * through the same SSRF guard the custom-AI-provider base_url uses; see
- * that file for exactly how far that protection does and doesn't go
- * (notably: no DNS-rebinding protection).
+ * through the central safeFetch (@/lib/net/safe-fetch): the address the
+ * socket connects to is checked on every redirect hop, and the body is
+ * read only up to MAX_FETCH_BYTES.
  */
 
+import { safeFetch } from '@/lib/net/safe-fetch'
 import { assertSafeAiBaseUrl } from './providers/ssrf-guard'
 import { looksLikePdf, type PdfReadOptions } from './pdf-extract'
 
@@ -23,6 +24,9 @@ import { looksLikePdf, type PdfReadOptions } from './pdf-extract'
  *  carries the actual information. */
 const MAX_TEXT_CHARS = 200_000
 const FETCH_TIMEOUT_MS = 20_000
+/** The same 16 MB every upload route takes. A link is an upload the
+ *  server makes on someone's behalf, and needs the same ceiling. */
+const MAX_FETCH_BYTES = 16 * 1024 * 1024
 
 const BLOCK_ELEMENTS = /<\/(p|div|section|article|h[1-6]|li|tr|td|th|br|blockquote)>/gi
 
@@ -124,21 +128,19 @@ export async function fetchPageText(
   rawUrl: string,
   opts: PdfReadOptions = {},
 ): Promise<FetchedPage> {
-  // Same guard as the custom AI provider's base_url: this server makes
-  // the request, so an unguarded URL is an SSRF hole into whatever the
-  // VPS can reach.
+  // This server makes the request, so an unguarded URL is an SSRF hole
+  // into whatever the VPS can reach. safeFetch re-checks every redirect
+  // hop — 'follow' used to take a public page's 302 to the metadata
+  // service at its word.
   assertSafeAiBaseUrl(rawUrl)
-
-  const res = await fetch(rawUrl, {
-    redirect: 'follow',
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  const res = await safeFetch(rawUrl, {
     headers: {
       // Some sites serve a JS-only shell or a 403 to an unidentified
       // client; a plain, honest UA gets the real HTML more often.
       'User-Agent': 'Mozilla/5.0 (compatible; WhatsAppCRM-KnowledgeSync/1.0)',
       Accept: 'text/html,application/xhtml+xml,application/pdf,text/plain;q=0.9,*/*;q=0.8',
     },
-  })
+  }, { timeoutMs: FETCH_TIMEOUT_MS, maxBytes: MAX_FETCH_BYTES })
 
   if (!res.ok) {
     throw new Error(`The page returned HTTP ${res.status}.`)

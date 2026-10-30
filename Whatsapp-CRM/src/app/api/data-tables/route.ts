@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { dataStoreMember } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 import { slugify } from '@/lib/data-store/slugify'
 import { verifyApiKey } from '@/lib/auth/api-key'
@@ -23,14 +23,10 @@ async function requireAuth(req: Request): Promise<
     return { ok: true, accountId: result.accountId }
   }
 
-  const session = await auth()
-  if (!session?.user?.id) return { ok: false, status: 401, body: { error: 'Unauthorized.' } }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) return { ok: false, status: 403, body: { error: 'No account.' } }
-  return { ok: true, accountId: profile.account_id }
+  const member = await dataStoreMember(req.method === 'GET' ? 'viewer' : 'supervisor')
+  if (!member.ok) return member
+  const accountIdOf = member.ctx.accountId
+  return { ok: true, accountId: accountIdOf }
 }
 
 export async function GET(req: Request) {

@@ -1,32 +1,39 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-import { generateApiKey } from '@/lib/auth/api-key'
+import { generateApiKey, MAX_API_KEY_LIFETIME_MS } from '@/lib/auth/api-key'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
-async function requireSession() {
-  const session = await auth()
-  if (!session?.user?.id) return { ok: false as const, status: 401, body: { error: 'Unauthorized.' } }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) return { ok: false as const, status: 403, body: { error: 'No account.' } }
-  return { ok: true as const, accountId: profile.account_id }
+/**
+ * Owner only — the same rule as the Settings tab (canEditWhatsAppConfig in
+ * lib/auth/roles.ts). A key acts at supervisor level, so letting any
+ * member mint one handed a viewer or an agent a supervisor's reach in a
+ * single request.
+ */
+async function requireKeyManager() {
+  try {
+    const ctx = await requireRole('owner')
+    return { ok: true as const, accountId: ctx.accountId, userId: ctx.userId }
+  } catch (err) {
+    return { ok: false as const, response: toErrorResponse(err) }
+  }
 }
 
 export async function GET() {
   try {
-    const guard = await requireSession()
-    if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+    const guard = await requireKeyManager()
+    if (!guard.ok) return guard.response
 
     const keys = await prisma.apiKey.findMany({
-      where: { account_id: guard.accountId },
+      // Revoked keys (their creator was removed) stay in the table for the
+      // audit trail but are not keys any more.
+      where: { account_id: guard.accountId, revoked_at: null },
       select: {
         id: true,
         name: true,
         key_prefix: true,
         last_used_at: true,
         created_at: true,
+        expires_at: true,
       },
       orderBy: { created_at: 'desc' },
     })
@@ -39,13 +46,24 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const guard = await requireSession()
-    if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+    const guard = await requireKeyManager()
+    if (!guard.ok) return guard.response
 
     const body = await req.json().catch(() => null)
-    const name = body?.name?.trim()
+    const name = typeof body?.name === 'string' ? body.name.trim() : ''
     if (!name) return NextResponse.json({ error: 'name is required.' }, { status: 400 })
     if (name.length > 80) return NextResponse.json({ error: 'name too long.' }, { status: 400 })
+
+    // Optional end of life: an ISO time in the future, at most a year out.
+    let expiresAt: Date | null = null
+    if (body?.expires_at !== undefined && body?.expires_at !== null) {
+      const at = typeof body.expires_at === 'string' ? new Date(body.expires_at) : null
+      const now = Date.now()
+      if (!at || Number.isNaN(at.getTime()) || at.getTime() <= now || at.getTime() > now + MAX_API_KEY_LIFETIME_MS) {
+        return NextResponse.json({ error: 'expires_at must be a date in the next 12 months.' }, { status: 400 })
+      }
+      expiresAt = at
+    }
 
     const { raw, hash, prefix } = generateApiKey()
 
@@ -55,8 +73,12 @@ export async function POST(req: Request) {
         name,
         key_hash: hash,
         key_prefix: prefix,
+        // Who minted it: verifyApiKey refuses the key once this person is
+        // no longer a member here at supervisor rank or above.
+        created_by_user_id: guard.userId,
+        expires_at: expiresAt,
       },
-      select: { id: true, name: true, key_prefix: true, created_at: true },
+      select: { id: true, name: true, key_prefix: true, created_at: true, expires_at: true },
     })
 
     // Return the raw key ONLY on creation — it will never be shown again.

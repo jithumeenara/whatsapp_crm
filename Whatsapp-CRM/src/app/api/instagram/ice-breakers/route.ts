@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { ensureInstagramConfigTable as ensureTable } from "@/lib/social/ensure-tables"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 export interface IceBreaker { question: string; payload: string }
 export type MenuItem =
@@ -73,7 +74,7 @@ export async function PATCH(req: NextRequest) {
       SELECT access_token, ice_breakers, persistent_menu, profile_synced_at
       FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
-    const token = rows[0]?.access_token
+    const token = openStoredSecret(rows[0]?.access_token)
     if (!token) {
       return NextResponse.json({ error: "Connect Instagram first — no access token saved." }, { status: 400 })
     }
@@ -125,7 +126,7 @@ export async function DELETE() {
     const rows = await prisma.$queryRaw<RawRow[]>`
       SELECT access_token FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
-    const token = rows[0]?.access_token
+    const token = openStoredSecret(rows[0]?.access_token)
     if (token) {
       await fetch(
         `https://graph.instagram.com/v21.0/me/messenger_profile?fields=ice_breakers,persistent_menu&access_token=${encodeURIComponent(token)}`,

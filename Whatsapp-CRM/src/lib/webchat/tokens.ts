@@ -66,8 +66,11 @@ export function hashToken(token: string): string {
  * more than the purpose needs). Keyed, so the 4 billion IPv4 addresses
  * cannot simply be hashed in advance and looked up.
  */
-export function hashIp(ip: string): string {
-  const secret = process.env.NEXTAUTH_SECRET ?? process.env.ENCRYPTION_KEY ?? 'webchat'
+export function hashIp(ip: string): string | null {
+  // No server secret, no IP kept: a key anyone can read in the source
+  // would make every stored hash reversible.
+  const secret = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET || process.env.ENCRYPTION_KEY
+  if (!secret) return null
   return crypto.createHmac('sha256', `${secret}:webchat-ip`).update(ip).digest('hex').slice(0, 32)
 }
 

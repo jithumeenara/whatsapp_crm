@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { EmojiPickerPopover } from "./emoji-picker-popover";
 import { FileManagerPicker } from "./file-manager-picker";
 import { NO_FORMAT, RichEmailEditor, type FormatState, type RichEmailEditorHandle } from "./rich-email-editor";
+import { EMAIL_DRAFT_PREFIX } from "@/hooks/local-drafts";
 
 export type EmailComposeMode = "reply" | "reply_all" | "new" | "forward";
 
@@ -68,7 +69,7 @@ interface SavedDraft {
   showCc: boolean;
 }
 
-const draftKey = (conversationId: string) => `email-draft:v1:${conversationId}`;
+const draftKey = (conversationId: string) => `${EMAIL_DRAFT_PREFIX}v1:${conversationId}`;
 
 /** This person's unsent draft for this conversation, kept in their own
  *  browser only. Missing or unreadable is simply "no draft". */

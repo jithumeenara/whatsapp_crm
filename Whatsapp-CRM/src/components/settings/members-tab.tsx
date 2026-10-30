@@ -95,6 +95,8 @@ interface Invitation {
   id: string;
   role: 'admin' | 'agent' | 'viewer';
   label: string | null;
+  /** Bound address (only it can use the link), or null for an open link. */
+  email?: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -808,8 +810,8 @@ export function MembersTab() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-slate-800">
-                            {inv.label || 'Untitled invite'}
+                          <span className="min-w-0 truncate text-sm font-medium text-slate-800" title={inv.label || inv.email || undefined}>
+                            {inv.label || inv.email || 'Untitled invite'}
                           </span>
                           <span
                             className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
@@ -819,6 +821,7 @@ export function MembersTab() {
                           </span>
                         </div>
                         <p className="mt-0.5 text-xs text-slate-500">
+                          {inv.email && inv.label ? <span className="break-all">{inv.email} · </span> : null}
                           Created {fmtDate(inv.created_at)} · {fmtExpiresIn(inv.expires_at)}
                         </p>
                       </div>

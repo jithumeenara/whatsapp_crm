@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 type FbRow = { access_token: string | null; page_id: string | null }
 
@@ -12,7 +13,7 @@ async function resolveFacebookAuth(accountId: string): Promise<{ error?: string;
   if (!row?.access_token || !row?.page_id) {
     return { error: "Facebook Page is not connected yet — set it up in Settings > Facebook first." }
   }
-  return { token: row.access_token, pageId: row.page_id }
+  return { token: openStoredSecret(row.access_token), pageId: row.page_id }
 }
 
 /** GET /api/facebook/profile — the Page's own About/description/website/etc. */

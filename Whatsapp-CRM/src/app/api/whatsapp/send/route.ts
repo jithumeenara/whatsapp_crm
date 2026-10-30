@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server'
-import { readFile } from 'fs/promises'
-import { join, basename } from 'path'
-import { lookup as mimeLookup } from 'mime-types'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { canSendMessages, isAccountRole } from '@/lib/auth/roles'
-import { sendTextMessage, sendTemplateMessage, sendMediaMessage, uploadMediaToMeta, sendCatalogMessage, sendSingleProductMessage, sendMultiProductMessage, type MultiProductSection } from '@/lib/whatsapp/meta-api'
-import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
+import { sendTextMessage, sendTemplateMessage, sendMediaMessage, sendCatalogMessage, sendSingleProductMessage, sendMultiProductMessage, type MultiProductSection } from '@/lib/whatsapp/meta-api'
+import { decrypt, encrypt, isLegacyFormat, openStoredSecret } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
+import { MediaPathError, resolveMediaRef as resolveAccountMediaRef } from '@/lib/whatsapp/media-ref'
 import {
+  maskForLog,
   sanitizePhoneForMeta,
   isValidE164,
   phoneVariants,
@@ -28,7 +27,6 @@ import { sendAndRecordConversationEmail, cleanSubject, parseAddresses, type Emai
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
 
-const UPLOADS_DIR = join(process.cwd(), 'uploads')
 
 // ── Instagram send helper ─────────────────────────────────────────────────────
 type IgConfigRow = { access_token: string | null }
@@ -55,7 +53,7 @@ async function handleInstagramSend({
     SELECT access_token FROM instagram_config WHERE account_id = ${accountId}::uuid LIMIT 1
   `.catch(() => [] as IgConfigRow[])
 
-  const token = rows[0]?.access_token
+  const token = openStoredSecret(rows[0]?.access_token)
   if (!token) {
     return NextResponse.json(
       { error: 'Instagram not configured. Set up Instagram in Settings → Instagram.' },
@@ -157,7 +155,7 @@ async function handleFacebookSend({
     SELECT access_token FROM facebook_config WHERE account_id = ${accountId}::uuid LIMIT 1
   `.catch(() => [] as FbConfigRow[])
 
-  const token = rows[0]?.access_token
+  const token = openStoredSecret(rows[0]?.access_token)
   if (!token) {
     return NextResponse.json(
       { error: 'Facebook not configured. Set up Facebook in Settings → Facebook.' },
@@ -752,29 +750,11 @@ export async function POST(request: Request) {
     // the returned media_id. Public https:// URLs are passed as-is (link).
     type MediaRef = { id: string; link?: never } | { link: string; id?: never }
 
+    // Only this account's own uploads (src/lib/whatsapp/media-ref.ts) —
+    // another account's /api/files/account-<id>/ path is refused.
     const resolveMediaRef = async (url: string): Promise<MediaRef> => {
       if (!url) throw new Error('No media URL provided')
-
-      // Already a public URL — pass straight to Meta as a link
-      if (url.startsWith('http')) return { link: url }
-
-      // Local upload path: /api/files/<account-dir>/<filename>
-      const relativePath = url.replace(/^\/api\/files\//, '')
-      const filePath = join(UPLOADS_DIR, relativePath)
-      if (!filePath.startsWith(UPLOADS_DIR)) throw new Error('Invalid file path')
-
-      const fileBuffer = await readFile(filePath)
-      const filename = basename(relativePath)
-      const mimeType = (mimeLookup(filename) || 'application/octet-stream') as string
-
-      const mediaId = await uploadMediaToMeta({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
-        fileBuffer,
-        mimeType,
-        filename,
-      })
-      return { id: mediaId }
+      return resolveAccountMediaRef(url, config.phone_number_id, accessToken, accountId)
     }
 
     // Pre-resolve media so every phone variant reuses the same upload.
@@ -785,7 +765,10 @@ export async function POST(request: Request) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error('[whatsapp/send] media resolve failed:', msg)
-        return NextResponse.json({ error: `Failed to prepare media: ${msg}` }, { status: 400 })
+        // Our own refusal is worded for people; a file-system or Meta error
+        // (paths, upstream bodies) stays in the log.
+        const shown = err instanceof MediaPathError ? msg : 'The file could not be read or uploaded to WhatsApp.'
+        return NextResponse.json({ error: `Failed to prepare media: ${shown}` }, { status: 400 })
       }
     }
 
@@ -801,6 +784,7 @@ export async function POST(request: Request) {
           messageParams: template_message_params ?? undefined,
           params: template_params || [],
           contextMessageId,
+          accountId,
         })
         return result.messageId
       }
@@ -913,7 +897,7 @@ export async function POST(request: Request) {
     // sends go straight through.
     if (workingPhone !== sanitizedPhone) {
       console.log(
-        `[whatsapp/send] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
+        `[whatsapp/send] Auto-corrected contact phone: ${maskForLog(sanitizedPhone)} → ${maskForLog(workingPhone)}`
       )
       await prisma.contact.update({
         where: { id: contact.id },
@@ -946,7 +930,7 @@ export async function POST(request: Request) {
     } catch (err) {
       console.error('Error inserting sent message:', err)
       return NextResponse.json(
-        { error: `Message sent to Meta but failed to save to DB: ${err instanceof Error ? err.message : String(err)}` },
+        { error: 'Message sent to WhatsApp but could not be saved here. Reload the conversation; it may appear after the next sync.' },
         { status: 500 }
       )
     }

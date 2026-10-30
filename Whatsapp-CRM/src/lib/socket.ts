@@ -15,3 +15,11 @@ export function emitToAccount(
     io.to(`account:${accountId}`).emit(event, data);
   }
 }
+
+/**
+ * Close every live-update connection a user has, now — for a member
+ * being removed, a password reset, "sign out everywhere". Without it an
+ * open tab keeps receiving the account's messages until its connection
+ * reaches its lifetime (src/lib/realtime-server.ts).
+ */
+export { disconnectUserSockets } from "./realtime-server";

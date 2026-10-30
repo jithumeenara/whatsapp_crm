@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+// A name like =HYPERLINK(...) stays text in whatever opens the file next.
+import { safeText } from "@/lib/reports/excel";
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { businessTimezone } from "@/lib/ai/human-date";
 import { OUTCOMES, OUTCOME_INFO, isOutcome, outcomeOf, type Outcome } from "@/lib/broadcasts/outcomes";
 
@@ -28,6 +30,8 @@ export async function GET(
 ) {
   try {
     const ctx = await requireRoleOrApiKey(request, "viewer");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
     const { id } = await params;
     const only = request.nextUrl.searchParams.get("outcome");
     if (only !== null && !isOutcome(only)) {
@@ -58,15 +62,15 @@ export async function GET(
       if (only && outcome !== only) continue;
       const list = groups.get(outcome) ?? [];
       list.push({
-        Name: r.contact?.name ?? "",
+        Name: safeText(r.contact?.name ?? ""),
         Phone: r.contact?.phone ?? "",
-        Email: r.contact?.email ?? "",
+        Email: safeText(r.contact?.email ?? ""),
         Group: OUTCOME_INFO[outcome].label,
         "Sent at": stamp(r.sent_at, zone),
         "Delivered at": stamp(r.delivered_at, zone),
         "Read at": stamp(r.read_at, zone),
         "Replied at": stamp(r.replied_at, zone),
-        Reason: r.error_message ?? "",
+        Reason: safeText(r.error_message ?? ""),
       });
       groups.set(outcome, list);
     }

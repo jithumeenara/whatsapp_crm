@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useState, useEffect, useRef, type CSSProperties } from "react";
-import { cn } from "@/lib/utils";
+import { cn, safeHref } from "@/lib/utils";
 import type { Message, MessageReaction, TemplateButton } from "@/types";
 import {
   Clock,
@@ -218,7 +218,7 @@ function MediaImage({ url, alt, mimeType }: { url: string; alt: string; mimeType
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) throw new Error("Failed to load media");
-        const blob = await res.blob();
+        const blob = viewableBlob(await res.blob());
         blobUrl = URL.createObjectURL(blob);
         if (!cancelled) setBlobSrc(blobUrl);
       })
@@ -235,7 +235,8 @@ function MediaImage({ url, alt, mimeType }: { url: string; alt: string; mimeType
     };
   }, [url, isProxied]);
 
-  const src = isProxied ? blobSrc : url;
+  // A direct address comes from the channel's payload: web, app or blob only.
+  const src = isProxied ? blobSrc : safeHref(url, { dataImage: true });
 
   if (error) {
     return (
@@ -300,7 +301,7 @@ function MediaVideo({ url, mimeType }: { url: string; mimeType?: string | null }
   return (
     <div className="group relative w-fit">
       <video
-        src={url}
+        src={safeHref(url)}
         controls
         preload="metadata"
         className="max-h-64 max-w-60 rounded-lg"
@@ -321,7 +322,7 @@ function MediaAudio({ url, mimeType }: { url: string; mimeType?: string | null }
   return (
     <div className="flex items-center gap-1.5">
       <audio
-        src={url}
+        src={safeHref(url)}
         controls
         className="max-w-60"
         onError={() => setError(true)}
@@ -333,6 +334,18 @@ function MediaAudio({ url, mimeType }: { url: string; mimeType?: string | null }
       />
     </div>
   );
+}
+
+/**
+ * A blob: URL has this app's origin, so a fetched file that claimed to be
+ * HTML or SVG would run as the CRM if opened or framed. The media route
+ * already refuses to send those types; this is the second lock — anything
+ * that is not plain media, PDF or text becomes an opaque download.
+ */
+function viewableBlob(blob: Blob): Blob {
+  return /^(image\/(png|jpeg|gif|webp)|video\/|audio\/|application\/pdf$|text\/plain)/.test(blob.type)
+    ? blob
+    : new Blob([blob], { type: "application/octet-stream" });
 }
 
 /**
@@ -351,7 +364,7 @@ async function openMediaInTab(url: string, onFail: () => void): Promise<void> {
   try {
     const res = await fetch(url);
     if (!res.ok) { onFail(); pending?.close(); return; }
-    const blob = await res.blob();
+    const blob = viewableBlob(await res.blob());
     const blobUrl = URL.createObjectURL(blob);
     if (pending) pending.location.href = blobUrl;
     else window.open(blobUrl, "_blank", "noopener,noreferrer"); // last-resort if the pre-open was itself blocked
@@ -388,7 +401,7 @@ function MediaDocument({ url, label, mimeType }: { url: string; label: string; m
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) throw new Error("Failed to load media");
-        const blob = await res.blob();
+        const blob = viewableBlob(await res.blob());
         blobUrl = URL.createObjectURL(blob);
         if (!cancelled) setBlobSrc(blobUrl);
       })
@@ -417,7 +430,7 @@ function MediaDocument({ url, label, mimeType }: { url: string; label: string; m
     return (
       <div className="w-40">
         <a
-          href={url}
+          href={safeHref(url)}
           onClick={handleOpen}
           target="_blank"
           rel="noopener noreferrer"
@@ -457,7 +470,7 @@ function MediaDocument({ url, label, mimeType }: { url: string; label: string; m
   return (
     <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-[13px]">
       <a
-        href={url}
+        href={safeHref(url)}
         onClick={handleOpen}
         target="_blank"
         rel="noopener noreferrer"

@@ -1,5 +1,6 @@
 import webpush from 'web-push'
 import { prisma } from '@/lib/db'
+import { sdkSendBlocked } from '@/lib/dev/send-guard'
 
 let vapidConfigured = false
 
@@ -34,6 +35,11 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
   const subs = await prisma.pushSubscription.findMany({ where: { user_id: userId } })
   if (subs.length === 0) return
 
+  // web-push goes out over node's https, not fetch, so the development
+  // send guard that patches fetch never sees it. Ask it directly: a
+  // laptop or staging copy of production must not buzz real phones.
+  if (sdkSendBlocked('Web push', [])) return
+
   const json = JSON.stringify(payload)
 
   await Promise.allSettled(
@@ -63,6 +69,11 @@ export async function sendPushToAccount(accountId: string, payload: PushPayload)
 
   const subs = await prisma.pushSubscription.findMany({ where: { account_id: accountId } })
   if (subs.length === 0) return
+
+  // web-push goes out over node's https, not fetch, so the development
+  // send guard that patches fetch never sees it. Ask it directly: a
+  // laptop or staging copy of production must not buzz real phones.
+  if (sdkSendBlocked('Web push', [])) return
 
   const json = JSON.stringify(payload)
 

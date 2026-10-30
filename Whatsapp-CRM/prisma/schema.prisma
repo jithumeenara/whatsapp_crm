@@ -290,6 +290,10 @@ model AccountInvitation {
   expires_at          DateTime    @db.Timestamptz(6)
   accepted_at         DateTime?   @db.Timestamptz(6)
   accepted_by_user_id String?     @db.Uuid
+  /// Who it is for, trimmed + lowercased (migration 152). Redeeming needs
+  /// the same address. NULL = a link made before this existed (or without
+  /// an address): anyone holding it may use it once, as before.
+  email               String?
 
   account     Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
   created_by  User?   @relation("InvitationCreator", fields: [created_by_user_id], references: [id], onDelete: SetNull)
@@ -3247,9 +3251,19 @@ model ApiKey {
   key_prefix   String
   last_used_at DateTime? @db.Timestamptz(6)
   created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  /// Who minted it (migration 152). Every request re-checks they are still
+  /// a member of this account at no less than the key's supervisor rank.
+  /// NULL = minted before this was recorded: treated as the account owner's.
+  /// FK is ON DELETE RESTRICT in SQL (users are switched off, never deleted).
+  created_by_user_id String?   @db.Uuid
+  /// Optional; refused from this moment on. At most a year after creation.
+  expires_at         DateTime? @db.Timestamptz(6)
+  /// Soft revocation (member removed) — kept for audit, refused like a delete.
+  revoked_at         DateTime? @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
 
+  @@index([created_by_user_id])
   @@map("api_keys")
 }
 

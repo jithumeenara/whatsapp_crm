@@ -8,7 +8,13 @@
 // Refusal cases:
 //   - Caller not authenticated → 401
 //   - Token not found / used / expired → 400
-//   - Caller's profile has data that prevents the move → 409
+//   - Caller owns an account other people still work in → 409
+//     (leaving would strand that team without its owner)
+//
+// Single use is enforced by claimInvitation's conditional update inside
+// the same transaction as the move — the checks above it only choose
+// the error message. Checking first and marking used later let two
+// people who redeemed the same link at once both join.
 //
 // Implemented with prisma.$transaction to replace the former
 // `redeem_invitation` SECURITY DEFINER RPC.
@@ -18,6 +24,8 @@ import { NextResponse } from "next/server";
 
 import { auth } from "@/auth";
 import { hashInviteToken } from "@/lib/auth/invitations";
+import { claimInvitation, InvitationUnavailableError } from "@/lib/auth/claim-invitation";
+import { forgetCachedProfile } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
 import {
   checkRateLimit,
@@ -120,31 +128,53 @@ export async function POST(
       );
     }
 
-    // Atomically mark the invite accepted and move the caller's profile
-    const accountId = await prisma.$transaction(async (tx) => {
-      // Mark invitation accepted
-      await tx.accountInvitation.update({
-        where: { id: invitation.id },
-        data: {
-          accepted_at: now,
-          accepted_by_user_id: userId,
-        },
-      });
+    const caller = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
 
-      // Move the caller's profile to the new account
+    // The owner of a team cannot leave it by accepting somebody else's
+    // invitation: the team would be left with nobody who can manage it.
+    const teammates = await prisma.profile.count({
+      where: { account_id: callerProfile.account_id, user_id: { not: userId } },
+    });
+    if (teammates > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "You own a workspace other people work in. Transfer its ownership before joining another one.",
+        },
+        { status: 409 },
+      );
+    }
+
+    // Atomically claim the invite and move the caller's profile. The
+    // account and role come from the invitation row, never the request.
+    const accountId = await prisma.$transaction(async (tx) => {
+      // Throws (undoing this transaction) if it is used, expired, or
+      // names a different email address from this login's.
+      const claimed = await claimInvitation(tx, token, userId, caller?.email ?? "", now);
+
       await tx.profile.update({
         where: { user_id: userId },
         data: {
-          account_id: invitation.account_id,
-          account_role: invitation.role,
+          account_id: claimed.account_id,
+          account_role: claimed.role,
         },
       });
 
-      return invitation.account_id;
+      return claimed.account_id;
     });
+
+    // Their next request must see the new account and role, not the
+    // personal-owner copy cached for up to a minute.
+    forgetCachedProfile(userId);
 
     return NextResponse.json({ ok: true, accountId });
   } catch (err) {
+    if (err instanceof InvitationUnavailableError) {
+      return NextResponse.json(
+        { error: err.message },
+        { status: err.reason === "wrong_email" ? 403 : 400 },
+      );
+    }
     console.error("[redeem] error:", err);
     return NextResponse.json(
       { error: "Failed to redeem invitation" },

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { openStoredSecret, sealSecret } from "@/lib/whatsapp/encryption"
 import { ensureFacebookConfigTable as ensureTable } from "@/lib/social/ensure-tables"
 
 const MASKED = "••••••••••••••••"
@@ -57,7 +58,7 @@ export async function PATCH(req: NextRequest) {
       const rows = await prisma.$queryRaw<RawRow[]>`
         SELECT * FROM facebook_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
       `
-      const token = rows[0]?.access_token
+      const token = openStoredSecret(rows[0]?.access_token)
       if (!token) return NextResponse.json({ success: false, error: "No access token saved. Save your config first." })
 
       try {
@@ -66,10 +67,10 @@ export async function PATCH(req: NextRequest) {
         // A valid token returns error code 2018109 (recipient not found) — NOT 190 (bad token).
         // This avoids needing pages_read_engagement which requires Meta app review.
         const testRes = await fetch(
-          `https://graph.facebook.com/v21.0/me/messages?access_token=${token}`,
+          `https://graph.facebook.com/v21.0/me/messages`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
             body: JSON.stringify({ recipient: { id: "0" }, message: { text: "ping" } }),
             cache: "no-store",
           }
@@ -115,11 +116,23 @@ export async function PATCH(req: NextRequest) {
     }
 
     const { access_token, verify_token, page_id, app_secret } = body as Record<string, string>
+    // A Page belongs to one CRM account. The webhook finds the account by
+    // page_id, so a second claim would let one business read another's
+    // Messenger conversations.
+    if (page_id) {
+      const taken = await prisma.$queryRaw<{ n: number }[]>`
+        SELECT 1 AS n FROM facebook_config WHERE page_id = ${page_id} AND account_id <> ${ctx.accountId}::uuid LIMIT 1
+      `
+      if (taken.length > 0) {
+        return NextResponse.json({ error: "This Facebook Page is already connected to another workspace." }, { status: 409 })
+      }
+    }
     const existing = await prisma.$queryRaw<{ access_token: string | null; app_secret: string | null }[]>`
       SELECT access_token, app_secret FROM facebook_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
-    const tokenToSave = (!access_token || access_token === MASKED) ? (existing[0]?.access_token ?? null) : (access_token || null)
-    const secretToSave = (!app_secret || app_secret === MASKED) ? (existing[0]?.app_secret ?? null) : (app_secret || null)
+    // Sealed at rest (AES-256-GCM); an old plain row is sealed on this save.
+    const tokenToSave = sealSecret((!access_token || access_token === MASKED) ? (existing[0]?.access_token ?? null) : (access_token || null))
+    const secretToSave = sealSecret((!app_secret || app_secret === MASKED) ? (existing[0]?.app_secret ?? null) : (app_secret || null))
 
     await prisma.$executeRaw`
       INSERT INTO facebook_config (id, account_id, access_token, verify_token, page_id, app_secret, updated_at)

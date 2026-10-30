@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 type IgData = {
   id?: string; username?: string; name?: string; biography?: string
@@ -23,7 +24,7 @@ export async function GET() {
     const rows = await prisma.$queryRaw<{ access_token: string | null }[]>`
       SELECT access_token FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
-    const token = rows[0]?.access_token
+    const token = openStoredSecret(rows[0]?.access_token)
     if (!token) {
       return NextResponse.json({ error: "Instagram is not connected yet — set it up in Settings > Instagram first." }, { status: 400 })
     }

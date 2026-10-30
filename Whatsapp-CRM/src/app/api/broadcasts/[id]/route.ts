@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { hasMinRole } from "@/lib/auth/roles";
 
 /**
@@ -12,6 +12,8 @@ export async function GET(
 ) {
   try {
     const ctx = await requireRoleOrApiKey(request, "viewer");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
     const { id } = await params;
 
     const broadcast = await ctx.db.broadcast.findFirst({
@@ -89,6 +91,8 @@ export async function PATCH(
 ) {
   try {
     const ctx = await requireRoleOrApiKey(request, "agent");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
     const { id } = await params;
     const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
     const rule = typeof body?.action === "string" ? TRANSITIONS[body.action] : undefined;
@@ -125,6 +129,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await requireRoleOrApiKey(request, "agent");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
     const { id } = await params;
 
     const broadcast = await ctx.db.broadcast.findFirst({

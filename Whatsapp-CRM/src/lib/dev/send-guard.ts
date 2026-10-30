@@ -18,11 +18,21 @@
  *   SendGrid                         api.sendgrid.com/v3/mail/send
  *   MSG91 SMS                        api.msg91.com/…/sendsms
  *   Telegram                         api.telegram.org/bot…/send*, copyMessage, forwardMessage
+ *   WhatsApp marketing / calls       graph.facebook.com/…/marketing_messages, /calls
+ *   Meta Conversions, audiences, ads graph.facebook.com/…/events, /users, act_…/campaigns|adsets|ads|…
+ *   Twilio SMS / RCS / calls         api.twilio.com/…/Messages.json, /Calls.json
+ *   Google RCS                       rcsbusinessmessaging.googleapis.com/…/agentMessages
+ *   Firebase Cloud Messaging         fcm.googleapis.com/…/messages:send, /fcm/send
  *
- * Switched on by APP_ENV=development in the laptop's .env.local — and by
- * nothing else. Production servers are never touched by this file: a
- * server whose environment says nothing keeps sending as it always has,
- * because guessing wrong there would silence every customer.
+ * SDKs that do not use fetch (the Twilio SDK uses axios; web-push uses
+ * node's https) ask `sdkSendBlocked` before sending instead.
+ *
+ * Switched on by APP_ENV=development (or dev / local / test / preview /
+ * staging), by NODE_ENV=test and by a Vitest run — read from the server's
+ * own environment only, never from a request. Production servers are
+ * never touched by this file: a server whose environment says nothing
+ * keeps sending as it always has, because guessing wrong there would
+ * silence every customer.
  *
  * Allowed through, even then:
  *   - DEV_ALLOW_SENDING=1, deliberately;
@@ -37,18 +47,72 @@ export function isDevelopment(env: Record<string, string | undefined>): boolean 
   return ['development', 'dev', 'local'].includes((env.APP_ENV ?? '').trim().toLowerCase())
 }
 
+/**
+ * Every environment that must not reach a real customer: a laptop, a test
+ * run, a preview or staging server (which often points at a copy of
+ * production data). Server environment only.
+ */
+export function isSendProtected(env: Record<string, string | undefined>): boolean {
+  const appEnv = (env.APP_ENV ?? '').trim().toLowerCase()
+  if (['development', 'dev', 'local', 'test', 'preview', 'staging'].includes(appEnv)) return true
+  if ((env.NODE_ENV ?? '').trim().toLowerCase() === 'test') return true
+  return Boolean(env.VITEST)
+}
+
+const metaMessageReply = () =>
+  Response.json({
+    messaging_product: 'whatsapp',
+    contacts: [{ input: 'dev', wa_id: 'dev' }],
+    messages: [{ id: `wamid.DEV_BLOCKED_${Date.now()}` }],
+    message_id: `m_DEV_BLOCKED_${Date.now()}`,
+    recipient_id: 'dev',
+  })
+
 const RULES: Array<{ name: string; match: RegExp; reply: () => Response }> = [
   {
     name: 'Meta message',
     match: /^https:\/\/graph\.facebook\.com\/[^?]*\/messages(\?|$)/,
-    reply: () =>
-      Response.json({
-        messaging_product: 'whatsapp',
-        contacts: [{ input: 'dev', wa_id: 'dev' }],
-        messages: [{ id: `wamid.DEV_BLOCKED_${Date.now()}` }],
-        message_id: `m_DEV_BLOCKED_${Date.now()}`,
-        recipient_id: 'dev',
-      }),
+    reply: metaMessageReply,
+  },
+  {
+    name: 'Meta marketing message',
+    match: /^https:\/\/graph\.facebook\.com\/[^?]*\/marketing_messages(\?|$)/,
+    reply: metaMessageReply,
+  },
+  {
+    name: 'WhatsApp call',
+    match: /^https:\/\/graph\.facebook\.com\/[^?]*\/calls(\?|$)/,
+    reply: () => Response.json({ messaging_product: 'whatsapp', success: true, calls: [{ id: `wacid.DEV_BLOCKED_${Date.now()}` }] }),
+  },
+  {
+    name: 'Meta Conversions API event',
+    match: /^https:\/\/graph\.facebook\.com\/v[\d.]+\/\d+\/events(\?|$)/,
+    reply: () => Response.json({ events_received: 1, messages: [], fbtrace_id: 'DEV_BLOCKED' }),
+  },
+  {
+    name: 'Meta custom audience upload',
+    match: /^https:\/\/graph\.facebook\.com\/v[\d.]+\/\d+\/users(\?|$)/,
+    reply: () => Response.json({ audience_id: 'DEV_BLOCKED', session_id: 'DEV_BLOCKED', num_received: 0, num_invalid_entries: 0 }),
+  },
+  {
+    name: 'Meta ads change',
+    match: /^https:\/\/graph\.facebook\.com\/v[\d.]+\/act_\d+\/(campaigns|adsets|ads|adcreatives|customaudiences)(\?|$)/,
+    reply: () => Response.json({ id: `DEV_BLOCKED_${Date.now()}` }),
+  },
+  {
+    name: 'Twilio send',
+    match: /^https:\/\/api\.twilio\.com\/2010-04-01\/Accounts\/[^/]+\/(Messages|Calls)\.json/,
+    reply: () => Response.json({ sid: `SMDEV_BLOCKED${Date.now()}`, status: 'queued' }, { status: 201 }),
+  },
+  {
+    name: 'Google RCS send',
+    match: /^https:\/\/rcsbusinessmessaging\.googleapis\.com\/v\d+\/phones\/[^/]+\/agentMessages/,
+    reply: () => Response.json({ name: `phones/dev/agentMessages/DEV_BLOCKED_${Date.now()}` }),
+  },
+  {
+    name: 'Push notification (FCM)',
+    match: /^https:\/\/fcm\.googleapis\.com\/(v1\/projects\/[^/]+\/messages:send|fcm\/send)/,
+    reply: () => Response.json({ name: `projects/dev/messages/DEV_BLOCKED_${Date.now()}` }),
   },
   {
     name: 'Gmail send',
@@ -99,26 +163,47 @@ export function blockedSend(
   body: unknown,
   env: Record<string, string | undefined>,
 ): { name: string; reply: () => Response } | null {
-  if (!isDevelopment(env) || env.DEV_ALLOW_SENDING === '1') return null
   if (method.toUpperCase() !== 'POST') return null
   const rule = RULES.find((r) => r.match.test(url))
   if (!rule) return null
+  if (!sendingStopped(body, env)) return null
+  return { name: rule.name, reply: rule.reply }
+}
+
+/** True when a send to these recipients must not leave this server. */
+function sendingStopped(body: unknown, env: Record<string, string | undefined>, recipients?: string[]): boolean {
+  if (!isSendProtected(env) || env.DEV_ALLOW_SENDING === '1') return false
   const allowed = (env.DEV_ALLOWED_RECIPIENTS ?? '')
     .split(',')
     .map((r) => (r.includes('@') ? r.trim().toLowerCase() : r.replace(/\D/g, '')))
     .filter(Boolean)
-  const to = recipientsOf(body)
+  const to = recipients ?? recipientsOf(body)
   if (allowed.length > 0 && to.length > 0 && to.every((r) => allowed.some((a) => r === a || (a.length >= 8 && r.endsWith(a.slice(-10)))))) {
-    return null
+    return false
   }
-  return { name: rule.name, reply: rule.reply }
+  return true
+}
+
+/**
+ * For a send that does not go through fetch (Twilio SDK → axios, web-push
+ * → https): true means "do not send; pretend it went". Logs the stop.
+ */
+export function sdkSendBlocked(
+  name: string,
+  recipients: string[],
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const norm = recipients.map((r) => (r.includes('@') ? r.trim().toLowerCase() : r.replace(/\D/g, ''))).filter(Boolean)
+  if (!sendingStopped(undefined, env, norm)) return false
+  console.warn(`[DEV] ${name} NOT sent (${(env.APP_ENV || env.NODE_ENV || 'test').toLowerCase()} environment)`)
+  return true
 }
 
 let installed = false
 
 /** Called once, first thing, by server.ts. A no-op in production. */
 export function installDevSendGuard(): void {
-  if (installed || !isDevelopment(process.env)) return
+  if (installed || !isSendProtected(process.env)) return
   installed = true
   const real: FetchFn = globalThis.fetch.bind(globalThis)
   globalThis.fetch = (async (input: Parameters<FetchFn>[0], init?: Parameters<FetchFn>[1]) => {
@@ -126,10 +211,10 @@ export function installDevSendGuard(): void {
     const method = init?.method ?? (typeof input === 'object' && 'method' in input ? input.method : 'GET')
     const hit = blockedSend(url, method, init?.body, process.env)
     if (hit) {
-      console.warn(`[DEV] ${hit.name} NOT sent (development): ${url.replace(/access_token=[^&]+/, 'access_token=…')}`)
+      console.warn(`[DEV] ${hit.name} NOT sent (${process.env.APP_ENV || process.env.NODE_ENV || 'protected'} environment): ${url.replace(/access_token=[^&]+/, 'access_token=…')}`)
       return hit.reply()
     }
     return real(input, init)
   }) as FetchFn
-  console.warn('[DEV] Outgoing messages are blocked on this development server. DEV_ALLOW_SENDING=1 or DEV_ALLOWED_RECIPIENTS=<your number> to send.')
+  console.warn('[DEV] Outgoing messages are blocked on this non-production server. DEV_ALLOW_SENDING=1 or DEV_ALLOWED_RECIPIENTS=<your number> to send.')
 }

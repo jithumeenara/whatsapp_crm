@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { canViewAllLeads } from '@/lib/auth/roles'
+import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { findOrCreateContact } from '@/lib/contacts/find-or-create'
@@ -228,6 +229,15 @@ export async function POST(req: NextRequest) {
       force_create,  // when true: bypass duplicate check and always create
     } = body as Record<string, string | boolean | undefined>
     if (!title) return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    // The assignee must be in this account, and an agent may only create
+    // a lead for themselves or for the pool.
+    if (assigned_to !== undefined && assigned_to !== null && assigned_to !== '') {
+      if (!canViewAllLeads(ctx.role) && assigned_to !== ctx.userId) {
+        return NextResponse.json({ error: 'Only a supervisor can assign a lead to somebody else' }, { status: 403 })
+      }
+      const refProblem = await checkOwnedRefs(ctx.accountId, { assigned_to })
+      if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
+    }
     // Gender, age and address belong to the contact (checked before anything is saved).
     const details = cleanContactDetails(body as Record<string, unknown>)
     if ('error' in details) return NextResponse.json({ error: details.error }, { status: 400 })

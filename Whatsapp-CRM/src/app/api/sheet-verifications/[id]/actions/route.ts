@@ -4,6 +4,7 @@ import { hasMinRole } from '@/lib/auth/roles'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { GoogleNotConnectedError } from '@/lib/google/oauth'
 import { SheetsApiError } from '@/lib/google/sheets'
+import { publicErrorMessage } from '@/lib/jobs/public-error'
 import {
   findRow,
   linkFor,
@@ -101,7 +102,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         try {
           await whatsAppSender(v)
         } catch (err) {
-          return NextResponse.json({ error: err instanceof Error ? err.message : 'WhatsApp is not ready to send.' }, { status: 400 })
+          return NextResponse.json({ error: publicErrorMessage(err, 'WhatsApp is not ready to send.', 'sheet-verifications/actions') }, { status: 400 })
         }
       }
 

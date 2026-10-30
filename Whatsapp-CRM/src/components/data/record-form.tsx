@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Loader2, Paperclip, X, ImageIcon, PenLine, Eraser, FilePlus2, AlertTriangle, Sparkles,
 } from 'lucide-react';
-import DOMPurify from 'isomorphic-dompurify';
+import { sanitizeHtmlBlock } from './html-block';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -24,7 +24,7 @@ import {
   effectiveRules, fillValue, isShown, optionsFor, uniquenessOf,
   type Answers, type FormLookups, type FormRules, type FormSource,
 } from '@/lib/data-store/form-logic';
-import { cn } from '@/lib/utils';
+import { cn, safeHref } from '@/lib/utils';
 
 // ─── File upload widget ───────────────────────────────────────
 
@@ -97,11 +97,11 @@ function FileUploadField({
       </div>
       {uploadError && <p className="text-[11px] text-rose-500">{uploadError}</p>}
       {value && (isImage ? (
-        <img src={value} alt="preview"
+        <img src={safeHref(value, { dataImage: true })} alt="preview"
           className="h-24 w-auto rounded-lg border border-slate-200 object-cover"
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       ) : (
-        <a href={value} target="_blank" rel="noopener noreferrer"
+        <a href={safeHref(value)} target="_blank" rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-[12px] text-indigo-600 hover:underline">
           <ImageIcon className="h-3 w-3" /> View file
         </a>
@@ -583,8 +583,10 @@ export function RecordForm({ open, onClose, tableId, fields, record, onSaved, ru
     if (field.field_type === 'html_block') {
       return cfg.content ? (
         <div
-          className="text-[13px] text-slate-500 rounded-lg bg-slate-50 px-3 py-2 prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(cfg.content, { USE_PROFILES: { html: true } }) }}
+          // contain-paint keeps a position:fixed in the block's own style
+          // attributes inside the block instead of over the whole CRM.
+          className="text-[13px] text-slate-500 rounded-lg bg-slate-50 px-3 py-2 prose prose-sm max-w-none [contain:paint]"
+          dangerouslySetInnerHTML={{ __html: sanitizeHtmlBlock(cfg.content) }}
         />
       ) : null;
     }

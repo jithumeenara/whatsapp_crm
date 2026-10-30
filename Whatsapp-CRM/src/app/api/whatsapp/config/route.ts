@@ -232,12 +232,16 @@ export async function GET() {
  * default.
  */
 export async function POST(request: Request) {
+  // Connecting a number or replacing its token decides where every
+  // WhatsApp message of the business goes: the owner's call, as for
+  // set-default, direct-send and DELETE (canEditWhatsAppConfig).
+  let userId: string
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const userId = session.user.id
+    userId = (await requireRole('owner')).userId
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+  try {
 
     const accountId = await resolveAccountId(userId)
     if (!accountId) {

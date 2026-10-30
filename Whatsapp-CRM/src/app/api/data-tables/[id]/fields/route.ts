@@ -1,22 +1,18 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { dataStoreMember } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 import { invalidateRegistrationForms } from '@/lib/ai/registration'
 import { slugify } from '@/lib/data-store/slugify'
 
 async function requireTable(tableId: string) {
-  const session = await auth()
-  if (!session?.user?.id) return { ok: false as const, status: 401, body: { error: 'Unauthorized' } }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) return { ok: false as const, status: 403, body: { error: 'No account.' } }
+  const member = await dataStoreMember('supervisor')
+  if (!member.ok) return member
+  const accountIdOf = member.ctx.accountId
   const table = await prisma.dataTable.findFirst({
-    where: { id: tableId, account_id: profile.account_id },
+    where: { id: tableId, account_id: accountIdOf },
   })
   if (!table) return { ok: false as const, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true as const, accountId: profile.account_id, table }
+  return { ok: true as const, accountId: accountIdOf, table }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

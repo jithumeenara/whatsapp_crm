@@ -1,22 +1,24 @@
+import { isIP } from 'node:net'
+import { isBlockedAddress } from '@/lib/net/safe-fetch'
+
 /**
- * Blocks the "custom" AI provider's user-supplied base_url (and any other
- * provider's baseUrl override) from pointing at internal infrastructure —
- * a live SSRF risk, since this app's own server process makes the
- * outbound request and echoes the response (or its error message) back
- * to whichever authenticated user configured/tested it. Cloud metadata
- * endpoints (169.254.169.254 for AWS/GCP/Azure instance credentials) and
- * private/loopback ranges are the highest-value targets for this class
- * of bug.
+ * A fast, synchronous first look at a URL somebody typed — the custom AI
+ * provider's base_url, a knowledge-base website — before the server
+ * fetches it.
  *
- * Deliberately scoped: this blocks the obvious cases (literal private/
- * loopback/link-local IPs, non-http(s) schemes, bare `localhost`). It
- * does NOT resolve-then-pin the hostname, so a DNS-rebinding attack
- * (a public hostname that resolves to a private IP at request time)
- * would still get through — full protection needs a custom fetch
- * dispatcher that validates the resolved IP, not just the literal
- * string, which isn't implemented here. Combined with the role gates
- * added alongside this (only account owners can set a custom base_url
- * at all), this raises the bar without claiming to fully close it.
+ * This is NOT the control. The control is `safeFetch` in
+ * `@/lib/net/safe-fetch`, which every such request now goes through: it
+ * checks the address the socket actually connects to (so DNS rebinding
+ * and a public name with a private A record are both refused) and
+ * re-checks every redirect hop. This function only refuses what can be
+ * refused without DNS, so a bad base_url fails with a clear message at
+ * once rather than at the first customer reply.
+ *
+ * It used to be the only check, and had two holes beyond the ones its
+ * comment admitted: the URL parser keeps IPv6 hosts in brackets
+ * ("[::1]"), which no comparison here matched, and IPv4 written inside
+ * IPv6 ("[::ffff:169.254.169.254]") was never looked at. The address
+ * rules now come from the central client, so there is one list.
  */
 export function assertSafeAiBaseUrl(rawUrl: string): void {
   let url: URL
@@ -30,32 +32,29 @@ export function assertSafeAiBaseUrl(rawUrl: string): void {
     throw new Error('base_url must use http or https.')
   }
 
-  const host = url.hostname.toLowerCase()
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
 
   if (host === 'localhost' || host.endsWith('.localhost')) {
     throw new Error('base_url cannot point at localhost.')
   }
 
-  // IPv6 loopback / link-local / unique-local.
-  if (host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) {
+  if (isIP(host) && isBlockedAddress(host)) {
     throw new Error('base_url cannot point at a private/internal address.')
   }
+}
 
-  // IPv4 literal — check private/loopback/link-local ranges, including
-  // 169.254.169.254 (AWS/GCP/Azure instance metadata — the classic SSRF
-  // payload target).
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  if (ipv4) {
-    const [a, b] = [Number(ipv4[1]), Number(ipv4[2])]
-    const isPrivate =
-      a === 127 || // loopback
-      a === 10 || // 10.0.0.0/8
-      (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
-      (a === 192 && b === 168) || // 192.168.0.0/16
-      (a === 169 && b === 254) || // 169.254.0.0/16 (link-local + cloud metadata)
-      a === 0
-    if (isPrivate) {
-      throw new Error('base_url cannot point at a private/internal address.')
-    }
+/**
+ * The URL's own port, plus the usual two, for safeFetch's allow-list. A
+ * self-hosted model server or a webhook receiver on :8000 is ordinary;
+ * the address check still applies whatever the port.
+ */
+export function portsFor(rawUrl: string): number[] {
+  const ports = [80, 443]
+  try {
+    const p = Number(new URL(rawUrl).port)
+    if (p > 0 && !ports.includes(p)) ports.push(p)
+  } catch {
+    // safeFetch reports the bad URL itself
   }
+  return ports
 }

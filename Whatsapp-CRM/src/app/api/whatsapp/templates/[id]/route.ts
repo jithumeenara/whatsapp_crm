@@ -178,9 +178,11 @@ export async function PATCH(
         },
       })
     } catch (err) {
+      // Database detail stays in the server log (AGENTS.md rule 9).
+      console.error('[templates/[id] PATCH] local save failed:', err)
       return NextResponse.json(
         {
-          error: `Edited on Meta but failed to save locally: ${err instanceof Error ? err.message : String(err)}. Run "Sync from Meta" to recover.`,
+          error: 'Edited on Meta but failed to save locally. Run "Sync from Meta" to recover.',
         },
         { status: 500 },
       )
@@ -260,9 +262,10 @@ export async function DELETE(
     try {
       await prisma.messageTemplate.delete({ where: { id } })
     } catch (err) {
+      console.error('[templates/[id] DELETE] local delete failed:', err)
       return NextResponse.json(
         {
-          error: `Deleted on Meta but failed to delete locally: ${err instanceof Error ? err.message : String(err)}.`,
+          error: 'Deleted on Meta but failed to delete locally. Run "Sync from Meta" to recover.',
         },
         { status: 500 },
       )

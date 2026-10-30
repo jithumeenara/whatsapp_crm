@@ -1,5 +1,5 @@
 import { readFile } from 'fs/promises'
-import { join, basename } from 'path'
+import { basename } from 'path'
 import { lookup as mimeLookup } from 'mime-types'
 import {
   sendCtaUrlButton,
@@ -17,13 +17,13 @@ import {
   type InteractiveListSection,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import { decrypt, openStoredSecret } from '@/lib/whatsapp/encryption'
+import { uploadPathFor } from '@/lib/whatsapp/media-ref'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
 import { sendConversationEmail } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 
-const UPLOADS_DIR = join(process.cwd(), 'uploads')
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -221,7 +221,8 @@ async function engineSendTextInstagram(args: SendTextEngineArgs): Promise<{ what
   const rows = await prisma.$queryRaw<{ access_token: string }[]>`
     SELECT access_token FROM instagram_config WHERE account_id = ${args.accountId}::uuid LIMIT 1
   `
-  const token = rows[0]?.access_token
+  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
+  const token = openStoredSecret(rows[0]?.access_token)
   if (!token) throw new Error('Instagram not configured for this account')
 
   // Show typing indicator before sending (natural conversational feel)
@@ -479,11 +480,12 @@ export async function engineSendMedia(
   if (args.link.startsWith('http')) {
     mediaRef = { link: args.link }
   } else {
-    const relativePath = args.link.replace(/^\/api\/files\//, '')
-    const filePath = join(UPLOADS_DIR, relativePath)
-    if (!filePath.startsWith(UPLOADS_DIR)) throw new Error('Invalid media file path')
+    // Only this account's own uploads: the path is resolved and its
+    // account-<id>/ folder checked (media-ref.ts), so neither another
+    // account's folder nor ../ out of this one can be read.
+    const filePath = uploadPathFor(args.link, args.accountId)
     const fileBuffer = await readFile(filePath)
-    const filename = basename(relativePath)
+    const filename = basename(filePath)
     const mimeType = (mimeLookup(filename) || 'application/octet-stream') as string
     const mediaId = await uploadMediaToMeta({
       phoneNumberId: config.phone_number_id,
@@ -524,7 +526,8 @@ async function engineSendIgMedia(
   const rows = await prisma.$queryRaw<{ access_token: string }[]>`
     SELECT access_token FROM instagram_config WHERE account_id = ${args.accountId}::uuid LIMIT 1
   `
-  const token = rows[0]?.access_token
+  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
+  const token = openStoredSecret(rows[0]?.access_token)
   if (!token) throw new Error('Instagram not configured for this account')
 
   // Instagram media attachment types: image, audio, video, file
@@ -553,11 +556,10 @@ async function engineSendIgMedia(
   } else {
     // Local file — read from disk and POST as multipart form-data.
     // This bypasses the need for a publicly reachable URL (works with ngrok/localhost).
-    const relativePath = args.link.replace(/^\/api\/files\//, '')
-    const filePath = join(UPLOADS_DIR, relativePath)
-    if (!filePath.startsWith(UPLOADS_DIR)) throw new Error('Invalid media path')
+    // This account's own uploads only (media-ref.ts uploadPathFor).
+    const filePath = uploadPathFor(args.link, args.accountId)
     const fileBuffer = await readFile(filePath)
-    const filename = basename(relativePath)
+    const filename = basename(filePath)
     const mimeType = (mimeLookup(filename) || 'application/octet-stream') as string
     resolvedUrl = args.link
 
@@ -624,6 +626,8 @@ export async function engineSendTemplate(
       to: phone,
       templateName: args.templateName,
       language: args.languageCode,
+      // A header file from /api/files/... must be this account's own.
+      accountId: args.accountId,
       ...(templateRow
         ? {
             template: {
@@ -974,7 +978,8 @@ async function engineSendIgButtonTemplate(
   const rows = await prisma.$queryRaw<{ access_token: string }[]>`
     SELECT access_token FROM instagram_config WHERE account_id = ${args.accountId}::uuid LIMIT 1
   `
-  const token = rows[0]?.access_token
+  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
+  const token = openStoredSecret(rows[0]?.access_token)
   if (!token) throw new Error('Instagram not configured for this account')
 
   // Show typing indicator before sending

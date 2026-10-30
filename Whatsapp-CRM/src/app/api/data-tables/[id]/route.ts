@@ -1,33 +1,30 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { dataStoreMember } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 import { invalidateRegistrationForms } from '@/lib/ai/registration'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import type { AccountRole } from '@/lib/auth/roles'
 
-async function requireOwner(tableId: string) {
-  const session = await auth()
-  if (!session?.user?.id) return { ok: false as const, status: 401, body: { error: 'Unauthorized' } }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) return { ok: false as const, status: 403, body: { error: 'No account.' } }
+async function requireOwner(tableId: string, min: AccountRole) {
+  const member = await dataStoreMember(min)
+  if (!member.ok) return member
+  const accountIdOf = member.ctx.accountId
 
   const table = await prisma.dataTable.findFirst({
-    where: { id: tableId, account_id: profile.account_id },
+    where: { id: tableId, account_id: accountIdOf },
     include: {
       fields: { orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] },
       _count: { select: { records: true } },
     },
   })
   if (!table) return { ok: false as const, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true as const, accountId: profile.account_id, table }
+  return { ok: true as const, accountId: accountIdOf, table }
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const guard = await requireOwner(id)
+    const guard = await requireOwner(id, 'viewer')
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
     return NextResponse.json({ table: guard.table })
   } catch (err) {
@@ -39,7 +36,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const guard = await requireOwner(id)
+    const guard = await requireOwner(id, 'supervisor')
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     const body = await req.json().catch(() => ({}))
@@ -117,7 +114,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       return toErrorResponse(err)
     }
     const { id } = await params
-    const guard = await requireOwner(id)
+    const guard = await requireOwner(id, 'admin')
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     await prisma.dataTable.delete({ where: { id } })

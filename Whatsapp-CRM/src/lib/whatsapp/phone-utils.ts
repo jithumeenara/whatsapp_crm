@@ -102,3 +102,10 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message)
 }
+
+/** A phone number or platform id for a log line: last 4 only (DPDP —
+ *  logs keep no more than debugging needs). */
+export function maskForLog(value: string | null | undefined): string {
+  const v = String(value ?? '')
+  return v.length <= 4 ? '…' : `…${v.slice(-4)}`
+}

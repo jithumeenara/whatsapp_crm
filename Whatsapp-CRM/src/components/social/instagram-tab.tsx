@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { safeHref } from "@/lib/utils"
 import {
   Heart, MessageCircle, Bookmark, Eye, TrendingUp, Users,
   Play, X, ExternalLink, RefreshCw, Grid3X3, Film, Image as ImageLucide,
@@ -153,7 +154,7 @@ export function InstagramTab() {
               <p className="text-[13px] text-slate-600 mt-1 leading-relaxed whitespace-pre-line">{profile.biography}</p>
             )}
             {profile.website && (
-              <a href={profile.website} target="_blank" rel="noreferrer"
+              <a href={safeHref(profile.website)} target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-[12px] text-[#E1306C] font-semibold mt-1 hover:underline">
                 <ExternalLink className="h-3 w-3" />{profile.website}
               </a>
@@ -386,7 +387,7 @@ function PostDetailPanel({ item, onClose }: { item: IgMedia; onClose: () => void
               <p className="text-[12px] text-slate-400 italic">No caption</p>
             )}
             <a
-              href={item.permalink} target="_blank" rel="noreferrer"
+              href={safeHref(item.permalink)} target="_blank" rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-[11px] text-[#E1306C] font-semibold hover:underline"
             >
               <ExternalLink className="h-3 w-3" /> View on Instagram

@@ -20,6 +20,7 @@
 
 import { prisma } from '@/lib/db'
 import { invalidateAllSessions } from './session-invalidation'
+import { forgetCachedProfile } from './account'
 
 export async function deactivateMember(userId: string, displayName: string | null): Promise<void> {
   await prisma.$transaction(async (tx) => {
@@ -31,7 +32,18 @@ export async function deactivateMember(userId: string, displayName: string | nul
       where: { id: userId },
       data: { password_hash: null, totp_secret: null, mfa_method: 'disabled', mfa_phone: null },
     })
+    // Their API keys end with them. verifyApiKey would already refuse
+    // them (creator no longer in the account), but marking them revoked
+    // keeps that true if they are ever revived, and records when.
+    await tx.apiKey.updateMany({
+      where: { created_by_user_id: userId, revoked_at: null },
+      data: { revoked_at: new Date() },
+    })
   })
+  // The cached copy of their team role would otherwise outlive the move
+  // by up to a minute.
+  forgetCachedProfile(userId)
+  // Also closes their live-update sockets (session-invalidation.ts).
   await invalidateAllSessions(userId)
 }
 
@@ -83,4 +95,5 @@ export async function reviveMember(args: {
       }
     }
   })
+  forgetCachedProfile(args.userId)
 }

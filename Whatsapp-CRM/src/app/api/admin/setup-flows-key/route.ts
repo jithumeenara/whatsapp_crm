@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
-import { prisma } from '@/lib/db'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
@@ -24,22 +23,19 @@ NQIDAQAB
  * while logged in, then you can delete this file.
  */
 export async function GET() {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) {
-    return NextResponse.json({ error: 'No account linked.' }, { status: 403 })
+  // Owner only — this replaces the account's Flows encryption key at
+  // Meta, which is WhatsApp configuration (canEditWhatsAppConfig). It
+  // used to need nothing more than being signed in.
+  let accountId: string
+  try {
+    accountId = (await requireRole('owner')).accountId
+  } catch (err) {
+    return toErrorResponse(err)
   }
 
   // Account-level admin action, no conversation context (Finding #14) —
   // resolves to the account's default number.
-  const config = await resolveWhatsAppConfig({ accountId: profile.account_id }).catch(() => null)
+  const config = await resolveWhatsAppConfig({ accountId }).catch(() => null)
   if (!config?.phone_number_id || !config?.access_token) {
     return NextResponse.json(
       { error: 'WhatsApp not configured. Go to Settings → WhatsApp first.' },

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -129,6 +130,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
+  const denied = await denyUnlessFlowEditor('/flows')
+  if (denied) return denied
   const loaded = await loadFlow(id)
   if ('error' in loaded) {
     return NextResponse.json({ error: loaded.error }, { status: loaded.status })

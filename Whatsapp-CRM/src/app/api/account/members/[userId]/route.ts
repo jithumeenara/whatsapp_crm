@@ -26,7 +26,7 @@ import { NextResponse } from "next/server";
 
 import { forgetCachedProfile, requireRole, toErrorResponse } from "@/lib/auth/account";
 import { parseWorkingHours, validateWorkingHours } from "@/lib/agents/working-hours";
-import { isAccountRole, type AccountRole } from "@/lib/auth/roles";
+import { canActOnMember, isAccountRole, type AccountRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/db";
 import { deactivateMember } from "@/lib/auth/deactivate-member";
 import { parsePageAccess } from "@/lib/auth/page-access";
@@ -145,6 +145,20 @@ export async function PATCH(
       );
     }
 
+    // Only the owner acts on admins (roles.ts canActOnMember). Applies to
+    // every field, not just the role: an admin's settings are the owner's
+    // to change.
+    if (
+      userId !== ctx.userId &&
+      isAccountRole(target.account_role) &&
+      !canActOnMember(ctx.role, target.account_role)
+    ) {
+      return NextResponse.json(
+        { error: "Only the account owner can change another admin." },
+        { status: 403 },
+      );
+    }
+
     // Stored through the parser rather than as it arrived, so the column
     // only ever holds the shape the rest of the app expects and an extra
     // field somebody sent cannot ride along into it.
@@ -255,6 +269,13 @@ export async function DELETE(
     if (target.account_role === "owner") {
       return NextResponse.json(
         { error: "Cannot remove the account owner" },
+        { status: 403 },
+      );
+    }
+
+    if (!isAccountRole(target.account_role) || !canActOnMember(ctx.role, target.account_role)) {
+      return NextResponse.json(
+        { error: "Only the account owner can remove an admin." },
         { status: 403 },
       );
     }

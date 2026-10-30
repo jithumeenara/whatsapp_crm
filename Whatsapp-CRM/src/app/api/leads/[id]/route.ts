@@ -3,6 +3,7 @@ import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
+import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
@@ -203,6 +204,24 @@ export async function PATCH(
       })
       return NextResponse.json(withCallablePhones({ lead }))
     }
+
+    // An agent works their own leads and the unassigned pool. A lead a
+    // colleague holds is theirs: the claim above already refused it, and a
+    // plain PATCH must not be the way round that — `{ assigned_to: me }`
+    // used to take it, and any other field edited it.
+    if (!isPrivileged && existing.assigned_to && existing.assigned_to !== ctx.userId) {
+      return NextResponse.json({ error: 'This lead is assigned to another agent' }, { status: 403 })
+    }
+    // Moving a lead between people is a supervisor's call; an agent may
+    // take it (from the pool) or give it back.
+    if (!isPrivileged && body.assigned_to !== undefined && body.assigned_to !== null && body.assigned_to !== '' && body.assigned_to !== ctx.userId) {
+      return NextResponse.json({ error: 'Only a supervisor can assign a lead to somebody else' }, { status: 403 })
+    }
+    // Whatever it now points at must be this account's: a contact id from
+    // another workspace attached their customer, name and number, to this
+    // lead's response.
+    const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id: body.contact_id, assigned_to: body.assigned_to })
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
     // Handle is_hidden toggle via raw SQL (column added on first use)
     if (typeof body.is_hidden === 'boolean') {

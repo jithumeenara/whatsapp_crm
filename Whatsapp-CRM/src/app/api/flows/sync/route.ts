@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessRole } from '@/lib/flows/route-guard'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -110,6 +111,8 @@ function mapStatus(metaStatus: string): 'draft' | 'active' | 'archived' {
 
 export async function POST() {
   try {
+    const denied = await denyUnlessRole('agent')
+    if (denied) return denied
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

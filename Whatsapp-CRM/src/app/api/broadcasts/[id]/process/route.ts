@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 import { prisma } from "@/lib/db";
 import { runBroadcast } from "@/lib/broadcasts/run-broadcast";
 
@@ -16,6 +17,10 @@ export async function POST(
 ) {
   try {
     const ctx = await requireRoleOrApiKey(req, "agent");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
+    const limit = checkRateLimit(`broadcast-create:${ctx.userId}`, RATE_LIMITS.broadcastCreate);
+    if (!limit.success) return rateLimitResponse(limit);
     const { id } = await params;
 
     // Atomic check-and-set: only one concurrent request will flip the row

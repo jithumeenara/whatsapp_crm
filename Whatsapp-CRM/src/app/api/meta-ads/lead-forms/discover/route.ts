@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { fetchLeadForms } from '@/lib/meta-ads/api'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { openStoredSecret } from '@/lib/whatsapp/encryption'
 
 type FbConfigRow = { access_token: string | null; page_id: string | null }
 
@@ -30,7 +31,7 @@ export async function GET() {
 
     let metaForms
     try {
-      metaForms = await fetchLeadForms({ pageId: fb.page_id, accessToken: fb.access_token })
+      metaForms = await fetchLeadForms({ pageId: fb.page_id, accessToken: openStoredSecret(fb.access_token) })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to list forms from Meta'
       return NextResponse.json({ discoverable: false, reason: message })

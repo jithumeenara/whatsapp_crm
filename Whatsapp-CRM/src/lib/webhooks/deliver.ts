@@ -1,5 +1,7 @@
 import { createHmac, randomBytes } from 'crypto'
+import { assertPublicUrl, isBlockedAddress, safeFetch, SafeFetchError, SsrfBlockedError } from '@/lib/net/safe-fetch'
 import { prisma } from '@/lib/db'
+import { openStoredSecret } from '@/lib/whatsapp/encryption'
 
 export type WebhookEvent = 'record.created' | 'record.updated' | 'record.deleted'
 export const WEBHOOK_EVENTS: WebhookEvent[] = [
@@ -27,14 +29,14 @@ export function generateWebhookSecret(): string {
 }
 
 // ── SSRF protection ──────────────────────────────────────────────────────────
-// Block private / loopback / link-local ranges in IPv4 and common IPv6 forms.
-const PRIVATE_IP_RE =
-  /^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|169\.254\.|0\.0\.0\.0|::1$|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:)/i
+// The address rules are the central ones (src/lib/net/safe-fetch.ts): every
+// IPv4 spelling, IPv4-mapped IPv6, ULA/link-local, CGNAT, metadata, …
 
-const BLOCKED_HOSTNAMES = new Set(['localhost', '0.0.0.0', '[::]', '[::1]'])
+const BLOCKED_HOSTNAMES = new Set(['localhost', 'localhost.', '0.0.0.0', '[::]', '[::1]'])
 
 /**
- * Validate and normalise a webhook URL.
+ * Validate and normalise a webhook URL — the cheap, synchronous part:
+ * https only, no credentials, and no literal internal address.
  * Throws a user-visible Error if the URL is unsafe or invalid.
  */
 export function validateWebhookUrl(rawUrl: string): string {
@@ -47,14 +49,51 @@ export function validateWebhookUrl(rawUrl: string): string {
   if (parsed.protocol !== 'https:') {
     throw new Error('Webhook URL must use HTTPS.')
   }
+  if (parsed.username || parsed.password) {
+    throw new Error('Webhook URL must not contain a user name or password.')
+  }
   const host = parsed.hostname.toLowerCase()
-  if (BLOCKED_HOSTNAMES.has(host)) {
+  if (BLOCKED_HOSTNAMES.has(host) || host.endsWith('.localhost') || host.endsWith('.localhost.')) {
     throw new Error('Webhook URL must not point to localhost.')
   }
-  if (PRIVATE_IP_RE.test(host)) {
+  // WHATWG URL has already turned 2130706433 / 0x7f.1 / … into dotted form.
+  const literal = host.startsWith('[') ? host.slice(1, -1) : /^[\d.]+$/.test(host) ? host : null
+  if (literal && isBlockedAddress(literal)) {
     throw new Error('Webhook URL must not point to a private or reserved IP address.')
   }
   return parsed.toString()
+}
+
+/**
+ * validateWebhookUrl plus a DNS check: a public-looking name that resolves
+ * to an internal address is refused when saved. Delivery checks again at
+ * connection time (safeFetch), since a name can change after it is saved.
+ * `resolve` is for tests.
+ */
+export async function checkWebhookUrl(
+  rawUrl: string,
+  opts: { resolve?: (host: string) => Promise<string[]> } = {},
+): Promise<string> {
+  const url = validateWebhookUrl(rawUrl)
+  try {
+    if (opts.resolve) {
+      const host = new URL(url).hostname
+      const addresses = await opts.resolve(host)
+      if (addresses.length === 0 || addresses.some((a) => isBlockedAddress(a))) throw new SsrfBlockedError('address')
+    } else {
+      await assertPublicUrl(url)
+    }
+  } catch (err) {
+    if (err instanceof SafeFetchError) {
+      throw new Error(
+        err.reason === 'dns'
+          ? 'Webhook URL’s host name could not be found.'
+          : 'Webhook URL must not point to a private or reserved address.',
+      )
+    }
+    throw err
+  }
+  return url
 }
 
 // ── Signing ──────────────────────────────────────────────────────────────────
@@ -120,14 +159,23 @@ async function deliverOne(
   payloadJson: string,
   event: WebhookEvent,
 ): Promise<void> {
-  const signature = signPayload(secret, payloadJson)
+  // Sealed at rest; rows from before that are plain (openStoredSecret).
+  let signature: string
+  try {
+    signature = signPayload(openStoredSecret(secret), payloadJson)
+  } catch {
+    console.error(`[webhook] signing secret of ${webhookId} could not be read — not delivered`)
+    return
+  }
   let lastStatus = 0
   let delivered = false
 
   for (let i = 0; i < RETRY_DELAYS_MS.length; i++) {
     if (RETRY_DELAYS_MS[i] > 0) await sleep(RETRY_DELAYS_MS[i])
     try {
-      const res = await fetch(url, {
+      // safeFetch: the address is checked at connection time, so a name
+      // re-pointed at an internal host after saving is still refused.
+      const res = await safeFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -139,14 +187,20 @@ async function deliverOne(
         // Reject redirects to prevent redirect-based SSRF; the registered
         // URL must be the final destination.
         redirect: 'error',
-        signal: AbortSignal.timeout(10_000),
-      })
+      }, { timeoutMs: 10_000, maxBytes: 64 * 1024 })
+      // The body is not used; release the socket.
+      await res.body?.cancel().catch(() => {})
       lastStatus = res.status
       if (res.ok) {
         delivered = true
         break
       }
-    } catch {
+    } catch (err) {
+      // A refused destination will not change on retry.
+      if (err instanceof SsrfBlockedError) {
+        console.warn(`[webhook] ${webhookId} points at an internal address — not delivered`)
+        break
+      }
       // Network error or timeout — try next attempt
     }
   }

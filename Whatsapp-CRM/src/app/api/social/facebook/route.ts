@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth/account"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 type FbApiError = { error?: { message: string; code?: number; type?: string } }
 
@@ -46,7 +47,7 @@ export async function GET() {
       return NextResponse.json({ error: "Facebook Page not connected. Go to Settings → Facebook to connect your page." }, { status: 404 })
     }
 
-    const token  = cfg.access_token
+    const token  = openStoredSecret(cfg.access_token)
     const pageId = cfg.page_id
 
     // ── Step 1: Fetch basic page info ──

@@ -343,6 +343,7 @@ export async function runSend(v: Verification, channel: Channel, refs: string[],
               language: wa.template.language ?? 'en_US',
               template: wa.template,
               messageParams: { body, ...(wa.urlButton !== null ? { buttonParams: { [wa.urlButton]: link.split('/v/')[1] } } : {}) },
+              accountId: v.account_id,
             })
             messageId = res.messageId
           } else if (channel === 'sms') {

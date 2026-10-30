@@ -15,6 +15,8 @@ import { listIdsOf } from "@/lib/broadcasts/list-audience";
 import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
 import { isSendWindow } from "@/lib/broadcasts/rules";
 import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement";
+import { checkHeaderMediaUrl } from "@/lib/broadcasts/header-media";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 
 /**
  * GET /api/broadcasts
@@ -64,6 +66,10 @@ export async function POST(request: NextRequest) {
     // its API open is what made the old menu-only restriction
     // decorative — anyone signed in could read this by asking.
     assertPageAccess(ctx, '/broadcasts');
+    // Each campaign is one call however many people it reaches, so this
+    // caps how fast one member (or one API key) can launch them.
+    const limit = checkRateLimit(`broadcast-create:${ctx.userId}`, RATE_LIMITS.broadcastCreate);
+    if (!limit.success) return rateLimitResponse(limit);
     const db = ctx.db;
 
     const body = await request.json() as {
@@ -98,6 +104,11 @@ export async function POST(request: NextRequest) {
     if (typeof body.name !== "string" || !body.name.trim() || body.name.length > 200) {
       return NextResponse.json({ error: "Give the broadcast a name (up to 200 characters)." }, { status: 400 });
     }
+    // Only a public link or one of this account's own uploads: the file is
+    // read from this server's disk and sent out (header-media.ts).
+    const headerMedia = checkHeaderMediaUrl(body.header_media_url, ctx.accountId);
+    if (!headerMedia.ok) return NextResponse.json({ error: headerMedia.error }, { status: 400 });
+    body.header_media_url = headerMedia.value ?? undefined;
     if (typeof body.template_name !== "string" || !body.template_name) {
       return NextResponse.json({ error: "Choose a template." }, { status: 400 });
     }

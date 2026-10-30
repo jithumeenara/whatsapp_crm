@@ -34,7 +34,7 @@ function SignupContent() {
     e.preventDefault()
     setError(null)
     if (password !== confirmPw) { setError("Passwords do not match"); return }
-    if (password.length < 6) { setError("Password must be at least 6 characters"); return }
+    if (password.length < 8) { setError("Password must be at least 8 characters"); return }
     setLoading(true)
     // Combine the two controls into one E.164 string here, right before
     // sending — country code + digits-only local number. Left blank if
@@ -51,7 +51,10 @@ function SignupContent() {
     if (!res.ok) { setError(data.error ?? "Registration failed"); setLoading(false); return }
     const result = await signIn("credentials", { email, password, redirect: false })
     if (result?.error) { setError("Account created but sign-in failed. Please go to login."); setLoading(false); return }
-    router.push(inviteToken ? `/join/${encodeURIComponent(inviteToken)}` : "/dashboard")
+    // An invited sign-up is already in the team's account — the server
+    // used the invitation up while making the login — so there is nothing
+    // left to accept on /join.
+    router.push(inviteToken && !data.joined ? `/join/${encodeURIComponent(inviteToken)}` : "/dashboard")
   }
 
   if (!SIGNUP_OPEN && !inviteToken) {
@@ -133,7 +136,7 @@ function SignupContent() {
               <label className="block text-[12px] font-semibold text-slate-600 mb-1.5">Password</label>
               <div className="relative">
                 <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input autoComplete="new-password" type={showPw ? "text" : "password"} placeholder="Min. 6 characters" required value={password} onChange={(e) => setPassword(e.target.value)}
+                <input autoComplete="new-password" type={showPw ? "text" : "password"} placeholder="Min. 8 characters" required value={password} onChange={(e) => setPassword(e.target.value)}
                   className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-11 text-[13px] text-slate-900 placeholder:text-slate-400 outline-none transition-all focus:border-indigo-400 focus:bg-white focus:ring-2 focus:ring-indigo-100" />
                 <button type="button" onClick={() => setShowPw(!showPw)} tabIndex={-1} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" aria-label={showPw ? "Hide" : "Show"} aria-pressed={showPw}>
                   {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
 
 /**
@@ -15,6 +15,8 @@ export async function PATCH(
 ) {
   try {
     const ctx = await requireRoleOrApiKey(request, "agent");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
     const { id: broadcastId } = await params;
     const body = await request.json() as {
       updates: Array<{

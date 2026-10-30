@@ -4,7 +4,9 @@
 // InviteMemberDialog
 //
 // Two-step modal:
-//   1. Form  — role + expiry + optional label → POST creates the invite.
+//   1. Form  — role + expiry + optional email + optional label → POST
+//              creates the invite. With an email, only that address can
+//              use the link (checked on the server at sign-up / redeem).
 //   2. Result — the share URL, returned ONCE. Copy-to-clipboard, plus a
 //              "Send via WhatsApp" deep link that pre-fills wa.me with
 //              a friendly message containing the URL.
@@ -73,6 +75,8 @@ interface CreatedInvite {
   url: string;
   role: InviteRole;
   expiresInDays: number;
+  /** The address the link is bound to, or null for an open link. */
+  email: string | null;
   /** Snapshotted at creation time so a later account rename can't
    *  retroactively change the wa.me message text on the result step. */
   accountName: string;
@@ -87,6 +91,7 @@ export function InviteMemberDialog({
   const [role, setRole] = useState<InviteRole>('agent');
   const [expiry, setExpiry] = useState<string>('7');
   const [label, setLabel] = useState('');
+  const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<CreatedInvite | null>(null);
 
@@ -94,6 +99,7 @@ export function InviteMemberDialog({
     setRole('agent');
     setExpiry('7');
     setLabel('');
+    setEmail('');
     setResult(null);
     setSubmitting(false);
   }
@@ -110,6 +116,12 @@ export function InviteMemberDialog({
       toast.error(`Label must be ${MAX_LABEL_LEN} characters or fewer`);
       return;
     }
+    // Emails ignore case: trimmed and lowercased here as on the server.
+    const trimmedEmail = email.trim().toLowerCase();
+    if (trimmedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast.error('Enter a valid email address, or leave it empty');
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch('/api/account/invitations', {
@@ -119,6 +131,7 @@ export function InviteMemberDialog({
           role,
           expiresInDays: Number(expiry),
           label: trimmedLabel || undefined,
+          email: trimmedEmail || undefined,
         }),
       });
 
@@ -131,12 +144,14 @@ export function InviteMemberDialog({
       const data = (await res.json()) as {
         url: string;
         expiresInDays: number;
+        invitation?: { email?: string | null };
       };
 
       setResult({
         url: data.url,
         role,
         expiresInDays: data.expiresInDays,
+        email: data.invitation?.email ?? (trimmedEmail || null),
         // Snapshot the account name into the result so the wa.me
         // share message has team context. Falls back to a generic
         // string if `account` hasn't loaded yet (shouldn't happen
@@ -204,6 +219,13 @@ export function InviteMemberDialog({
                   {result.expiresInDays} day{result.expiresInDays === 1 ? '' : 's'}
                 </span>
                 .
+                {result.email && (
+                  <>
+                    {' '}Only{' '}
+                    <span className="font-medium text-slate-800/80 break-all">{result.email}</span>{' '}
+                    can use it.
+                  </>
+                )}
               </DialogDescription>
             </DialogHeader>
 
@@ -293,6 +315,32 @@ export function InviteMemberDialog({
                 </Select>
                 <p className="text-xs text-slate-500">
                   {ROLE_DESCRIPTIONS[role]}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="invite-email" className="text-slate-800/80">
+                  Email{' '}
+                  <span className="text-xs text-slate-500">(recommended)</span>
+                </Label>
+                <Input
+                  id="invite-email"
+                  name="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="teammate@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  maxLength={254}
+                  className="bg-slate-100 border-slate-200 text-slate-800 placeholder:text-slate-500"
+                />
+                <p className="text-xs text-slate-500">
+                  Only this address can use the link. Leave it empty for a
+                  link anyone you send it to can use once.
                 </p>
               </div>
 

@@ -16,6 +16,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 // rule all have to agree with. See the file for what went wrong when
 // each of them held its own copy.
 import { IDLE_TIMEOUT_MS } from '@/lib/auth/session-timing'
+import { ABSOLUTE_SESSION_MAX_AGE_S, signedInAt, type SessionClaims } from '@/lib/auth/session-guard'
 import { flowEndpointRewrite } from '@/lib/flows/endpoint-path'
 
 // Public paths that never require a session
@@ -207,10 +208,21 @@ async function route(req: NextRequest, forwarded: Headers) {
     return NextResponse.rewrite(new URL(flowEndpoint, req.url), { request: { headers: forwarded } })
   }
 
+  // NextAuth's session *update* (POST /api/auth/session) sits under the
+  // public /api/auth/ prefix, and its jwt callback stamps a fresh
+  // lastActivity on every update. Let through unchecked, an idle session
+  // could revive itself with one request — the very thing the check
+  // below exists to stop. Reading the session (GET) changes nothing and
+  // is left alone.
+  if (pathname === '/api/auth/session' && req.method === 'POST') {
+    const token = await sessionToken(req)
+    if (token && isIdle(token)) return idleResponse(req, pathname)
+  }
+
   // Let public routes through immediately
   if (
     PUBLIC_PATHS.has(pathname) ||
-    PUBLIC_PREFIXES.some((p) => pathname.startsWith(p)) ||
+    PUBLIC_PREFIXES.some((p) => underPrefix(pathname, p)) ||
     // Meta WhatsApp Flows webhook — server-to-server call from Meta (RSA-encrypted, no session cookie).
     // Pattern: /api/flows/{uuid}/webhook
     /^\/api\/flows\/[^/]+\/webhook$/.test(pathname) ||
@@ -230,8 +242,17 @@ async function route(req: NextRequest, forwarded: Headers) {
   // API key auth — let Bearer wcrm_ requests pass through to the route handler.
   // The route handler (requireRoleOrApiKey) performs the actual key verification
   // against the database; the middleware only skips the session check here.
+  //
+  // Only for /api/: a page has no API-key login, so the header must not
+  // stand in for a session there. And only past the idle check: the
+  // header costs nothing to invent, and routes that authenticate by
+  // session (requireRole) never look at it — so an idle session that
+  // simply added "Bearer wcrm_x" used to skip the timeout entirely, and
+  // could even POST /api/heartbeat to make itself fresh again.
   const authHeader = req.headers.get('authorization') ?? ''
-  if (authHeader.startsWith('Bearer wcrm_')) {
+  if (authHeader.startsWith('Bearer wcrm_') && pathname.startsWith('/api/')) {
+    const token = await sessionToken(req)
+    if (token && isIdle(token)) return idleResponse(req, pathname)
     return NextResponse.next({ request: { headers: forwarded } })
   }
 
@@ -241,14 +262,7 @@ async function route(req: NextRequest, forwarded: Headers) {
   }
 
   // Verify session via JWT (Edge-safe — no Prisma required)
-  const token = await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET,
-    cookieName:
-      process.env.NODE_ENV === 'production'
-        ? '__Secure-authjs.session-token'
-        : 'authjs.session-token',
-  })
+  const token = await sessionToken(req)
 
   if (!token?.id) {
     // API routes → 401 JSON (clients handle this)
@@ -264,29 +278,67 @@ async function route(req: NextRequest, forwarded: Headers) {
 
   // Idle timeout — lastActivity is seeded at sign-in and only moves forward
   // via an explicit client-triggered session update, so this reflects real
-  // inactivity, not just "the tab is open." Missing entirely on an older
-  // token (issued before this feature existed) falls back to `iat` so a
-  // pre-existing session doesn't get treated as infinitely fresh.
-  const lastActivity =
-    typeof token.lastActivity === 'number' ? token.lastActivity : (token.iat ?? 0) * 1000
-  if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
-    const cookieName =
-      process.env.NODE_ENV === 'production' ? '__Secure-authjs.session-token' : 'authjs.session-token'
-    if (pathname.startsWith('/api/')) {
-      const res = NextResponse.json({ error: 'Session expired due to inactivity' }, { status: 401 })
-      res.cookies.delete(cookieName)
-      return res
-    }
-    const loginUrl = req.nextUrl.clone()
-    loginUrl.pathname = '/login'
-    loginUrl.searchParams.set('callbackUrl', pathname)
-    loginUrl.searchParams.set('reason', 'idle')
-    const res = NextResponse.redirect(loginUrl)
-    res.cookies.delete(cookieName)
-    return res
-  }
+  // inactivity, not just "the tab is open."
+  if (isIdle(token)) return idleResponse(req, pathname)
 
   return NextResponse.next({ request: { headers: forwarded } })
+}
+
+const SESSION_COOKIE =
+  process.env.NODE_ENV === 'production' ? '__Secure-authjs.session-token' : 'authjs.session-token'
+
+/**
+ * Is `pathname` inside `prefix`? An entry ending in "/" covers what is
+ * below it; any other entry covers itself and what is below it, but not
+ * a longer name that merely starts the same way. Plain startsWith made
+ * "/api/mcp" also cover "/api/mcp-anything" and "/icon" cover
+ * "/iconsettings" — nothing like that exists today, and the next route
+ * somebody adds with such a name should not be public by accident.
+ */
+function underPrefix(pathname: string, prefix: string): boolean {
+  if (prefix.endsWith('/')) return pathname.startsWith(prefix)
+  return pathname === prefix || pathname.startsWith(`${prefix}/`)
+}
+
+function sessionToken(req: NextRequest) {
+  return getToken({ req, secret: process.env.NEXTAUTH_SECRET, cookieName: SESSION_COOKIE })
+}
+
+/**
+ * Past the idle limit? Missing lastActivity on an older token (issued
+ * before this feature existed) falls back to the sign-in time so a pre-existing
+ * session doesn't get treated as infinitely fresh.
+ */
+function isIdle(token: SessionClaims & { lastActivity?: unknown }): boolean {
+  // The absolute cap, too. NextAuth's own exp cannot hold it: every
+  // session refresh and every heartbeat re-signs the token with a fresh
+  // iat and exp. signedInAt() is the original sign-in (authTime, set by
+  // auth.ts and carried on every re-sign; iat for older tokens) — see
+  // src/lib/auth/session-guard.ts.
+  const signedIn = signedInAt(token)
+  if (signedIn !== null && Date.now() / 1000 - signedIn > ABSOLUTE_SESSION_MAX_AGE_S) return true
+  // Missing lastActivity on an older token falls back to the sign-in
+  // time, so a pre-existing session isn't treated as infinitely fresh —
+  // and not to iat, which every re-sign moves forward.
+  const lastActivity =
+    typeof token.lastActivity === 'number' ? token.lastActivity : (signedIn ?? 0) * 1000
+  return Date.now() - lastActivity > IDLE_TIMEOUT_MS
+}
+
+/** Signed out for inactivity: 401 for an API, the login page otherwise. */
+function idleResponse(req: NextRequest, pathname: string) {
+  if (pathname.startsWith('/api/')) {
+    const res = NextResponse.json({ error: 'Session expired due to inactivity' }, { status: 401 })
+    res.cookies.delete(SESSION_COOKIE)
+    return res
+  }
+  const loginUrl = req.nextUrl.clone()
+  loginUrl.pathname = '/login'
+  loginUrl.searchParams.set('callbackUrl', pathname)
+  loginUrl.searchParams.set('reason', 'idle')
+  const res = NextResponse.redirect(loginUrl)
+  res.cookies.delete(SESSION_COOKIE)
+  return res
 }
 
 export const config = {

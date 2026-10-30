@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
 
 export async function POST(
@@ -7,15 +7,13 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  const userId = session.user.id
+  const member = await automationsMember('agent')
+  if (!member.ok) return member.res
+  const { userId, accountId } = member.ctx
 
   try {
     const original = await prisma.automation.findFirst({
-      where: { id, user_id: userId },
+      where: { id, user_id: userId, account_id: accountId },
     })
     if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 

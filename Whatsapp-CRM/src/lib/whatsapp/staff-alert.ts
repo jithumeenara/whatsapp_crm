@@ -172,6 +172,7 @@ export async function sendStaffAlert(input: StaffAlertInput): Promise<StaffAlert
           language: template.language ?? 'en_US',
           template,
           messageParams: paramsFor(input, template.body_text, (template as { variable_fields?: unknown }).variable_fields),
+          accountId: input.accountId,
         })
       } else {
         await sendTextMessage({ phoneNumberId, accessToken, to, text: input.text })

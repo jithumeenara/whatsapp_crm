@@ -2,7 +2,9 @@
 
 ## Reporting a vulnerability
 
-Please report security vulnerabilities privately by emailing the project owner.
+Please report security vulnerabilities privately — never in a public issue
+or pull request. Use GitHub's **Security → Report a vulnerability** (private
+vulnerability reporting) on this repository, or email the project owner.
 
 Include:
 - A description of the issue and the impact.

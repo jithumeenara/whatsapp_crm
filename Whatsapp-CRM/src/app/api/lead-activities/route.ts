@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 
 const PAGE_SIZE = 50
 
@@ -45,6 +46,9 @@ export async function POST(req: NextRequest) {
 
     const { lead_id, contact_id, type, title, description, metadata } = body as Record<string, unknown>
     if (!type || !title) return NextResponse.json({ error: 'type and title are required' }, { status: 400 })
+
+    const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id, lead_id })
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
     const activity = await prisma.leadActivity.create({
       data: {

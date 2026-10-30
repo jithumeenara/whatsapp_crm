@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { agentUsername, canIssueAgentPassword } from '@/lib/auth/agent-credentials'
+import { canActOnMember, isAccountRole } from '@/lib/auth/roles'
 import { invalidateAllSessions } from '@/lib/auth/session-invalidation'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
@@ -29,6 +30,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ userId
     if (!target) return NextResponse.json({ error: 'Member not found' }, { status: 404 })
 
     const email = target.user?.email ?? null
+    // Only the owner acts on admins; nobody resets the owner's password.
+    // (canIssueAgentPassword below already limits targets to roles below
+    // admin — this states the policy where the other member routes do.)
+    if (!isAccountRole(target.account_role) || !canActOnMember(ctx.role, target.account_role)) {
+      return NextResponse.json({ error: 'Only the account owner can act on an admin.' }, { status: 403 })
+    }
     if (
       !canIssueAgentPassword({ email, role: target.account_role, sameAccount: true, isSelf: target.user_id === ctx.userId })
     ) {

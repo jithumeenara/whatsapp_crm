@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
+// A name like =HYPERLINK(...) stays text in whatever opens the file next.
+import { safeText } from "@/lib/reports/excel";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 
 /** GET /api/contact-lists/[id]/export — the list's people as a spreadsheet. */
@@ -20,9 +22,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     sheet.columns = ["Name", "Phone", "Email", "Opted out"].map((k) => ({ header: k, key: k, width: 22 }));
     for (const r of rows) {
       sheet.addRow({
-        Name: r.contact.name ?? "",
+        Name: safeText(r.contact.name ?? ""),
         Phone: r.contact.phone,
-        Email: r.contact.email ?? "",
+        Email: safeText(r.contact.email ?? ""),
         "Opted out": r.contact.opt_in_status === "opted_out" ? "Yes" : "",
       });
     }

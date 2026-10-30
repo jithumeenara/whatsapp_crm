@@ -6,6 +6,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { checkMetaWebhookSignature, logSignatureCheck } from '@/lib/whatsapp/webhook-signature'
 import { whatsappWebhookSecrets } from '@/lib/whatsapp/webhook-secrets'
+import { sameToken } from '@/lib/social/webhook-secrets'
 import { noteDelivered, noteRejected } from '@/lib/whatsapp/webhook-health'
 import { attributeBroadcastReply } from '@/lib/broadcasts/replies'
 import { applyMessageStatus, isValidStatusTransition } from '@/lib/whatsapp/message-status'
@@ -206,7 +207,7 @@ export async function GET(request: Request) {
     for (const config of configs) {
       if (!config.verify_token) continue
       try {
-        if (decrypt(config.verify_token) === verifyToken) {
+        if (sameToken(verifyToken, decrypt(config.verify_token))) {
           matchedConfig = config
           break
         }

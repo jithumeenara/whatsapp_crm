@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { redactIntegration } from "@/lib/integration-fetch"
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
       include: { syncs: { orderBy: { started_at: "desc" }, take: 1 } },
       orderBy: { created_at: "desc" },
     })
-    return NextResponse.json({ integrations })
+    return NextResponse.json({ integrations: integrations.map(redactIntegration) })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
       },
     })
 
-    return NextResponse.json({ integration }, { status: 201 })
+    return NextResponse.json({ integration: redactIntegration(integration) }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)
   }

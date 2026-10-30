@@ -10,7 +10,8 @@
  */
 
 import { readFile } from 'fs/promises'
-import { basename, join } from 'path'
+import { MediaPathError, uploadPathFor } from '@/lib/whatsapp/media-ref'
+import { basename } from 'path'
 import { lookup as mimeLookup } from 'mime-types'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
@@ -20,7 +21,6 @@ import { botForAccount, TELEGRAM_CHANNEL } from './store'
 import { inlineKeyboard, type ButtonSpec } from './links'
 import { toTelegramHtml } from './format'
 
-const UPLOADS_DIR = join(process.cwd(), 'uploads')
 /** Telegram's limit for a file a bot uploads. */
 const MAX_UPLOAD = 50 * 1024 * 1024
 const TEXT_LIMIT = 4096
@@ -84,14 +84,17 @@ function methodFor(mime: string | null | undefined, url: string): { method: stri
 /** A file from the CRM's own storage, read here — Telegram cannot open a login-only link. */
 async function localFile(accountId: string, url: string): Promise<{ bytes: Buffer; name: string; mime: string } | null> {
   if (!url.startsWith('/api/files/')) return null
-  const rel = decodeURIComponent(url.replace(/^\/api\/files\//, '').split('?')[0])
-  const path = join(UPLOADS_DIR, rel)
-  if (!path.startsWith(UPLOADS_DIR)) throw new TelegramSendError('Invalid file path')
-  // A per-account file must be this account's.
-  if (rel.startsWith('account-') && !rel.startsWith(`account-${accountId}`)) throw new TelegramSendError('That file is not this account’s.')
+  // A per-account file must be this account's — checked on the resolved
+  // path, so ../ and ./ cannot reach another account's folder.
+  let path: string
+  try {
+    path = uploadPathFor(url, accountId)
+  } catch (err) {
+    throw new TelegramSendError(err instanceof MediaPathError ? err.message : 'Invalid file path')
+  }
   const bytes = await readFile(path)
   if (bytes.length > MAX_UPLOAD) throw new TelegramSendError('The file is larger than 50 MB — Telegram does not accept it from a bot.')
-  const name = basename(rel)
+  const name = basename(path)
   return { bytes, name, mime: (mimeLookup(name) || 'application/octet-stream') as string }
 }
 

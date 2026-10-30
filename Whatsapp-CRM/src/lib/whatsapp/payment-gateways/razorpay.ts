@@ -70,6 +70,8 @@ export async function createRazorpayPaymentLink(args: CreatePaymentLinkArgs): Pr
  *  src/app/api/razorpay/verify-payment/route.ts for the payment-link
  *  webhook flow instead of the checkout-modal flow. */
 export function verifyRazorpayWebhookSignature(rawBody: string, signature: string, webhookSecret: string): boolean {
+  // An empty key is a key anyone has: fail closed.
+  if (!webhookSecret || !signature) return false
   const expected = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex')
   try {
     return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))

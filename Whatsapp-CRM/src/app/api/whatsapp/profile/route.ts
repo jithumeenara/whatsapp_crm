@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import {
   getWhatsAppBusinessProfile,
@@ -62,9 +63,14 @@ export async function GET(req: NextRequest) {
 
 /** PATCH /api/whatsapp/profile — body: { about?, description?, address?, email?, websites?, vertical? } */
 export async function PATCH(req: NextRequest) {
+  // Every customer sees this profile — changing it is an admin's call.
+  let userId: string
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    userId = (await requireRole("admin")).userId
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+  try {
 
     const body = await req.json().catch(() => ({}))
     const { about, description, address, email, websites, vertical, whatsapp_config_id } = body as {
@@ -72,7 +78,7 @@ export async function PATCH(req: NextRequest) {
       websites?: string[]; vertical?: string; whatsapp_config_id?: string
     }
 
-    const { error, config } = await resolveConfig(session.user.id, whatsapp_config_id)
+    const { error, config } = await resolveConfig(userId, whatsapp_config_id)
     if (error || !config) return NextResponse.json({ error }, { status: 400 })
 
     if (about && about.length > 139) {

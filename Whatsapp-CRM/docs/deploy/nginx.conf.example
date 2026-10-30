@@ -1,0 +1,207 @@
+# nginx site for the CRM — EXAMPLE. Copy to /etc/nginx/sites-available/crm,
+# replace crm.example.com everywhere, then:
+#   sudo ln -s /etc/nginx/sites-available/crm /etc/nginx/sites-enabled/crm
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Files in sites-enabled/ are included inside nginx's http {} block, so the
+# limit_req_zone / map lines at the top of this file are valid here.
+# Written for nginx 1.18-1.26 (Ubuntu 22.04/24.04); not run here — always `nginx -t`. See docs/deploy/HARDENING.md.
+#
+# Also set, once, in /etc/nginx/nginx.conf (http {}):
+#   server_tokens off;            # no nginx version in headers / error pages
+#   ssl_protocols TLSv1.2 TLSv1.3;
+#   ssl_prefer_server_ciphers off;
+
+# ── Rate-limit zones (keyed by the real peer address) ────────────────────
+# Defence in depth: the app has its own limits (src/lib/rate-limit.ts), but
+# those live in Node's memory and reset on every restart.
+limit_req_zone $binary_remote_addr zone=crm_auth:10m     rate=10r/m;   # password/MFA/sign-up
+limit_req_zone $binary_remote_addr zone=crm_webhook:10m  rate=50r/s;   # Meta etc. — bursty
+limit_req_zone $binary_remote_addr zone=crm_public:10m   rate=10r/s;   # website chat, forms
+limit_req_zone $binary_remote_addr zone=crm_api:20m      rate=30r/s;   # everything else
+limit_conn_zone $binary_remote_addr zone=crm_conn:10m;
+limit_req_status 429;
+limit_conn_status 429;
+
+# WebSocket upgrade for Socket.io (/socket.io/) and the live-voice console
+# (/api/ai/live-voice).
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# ── If (and only if) a CDN / Cloudflare sits in front of this server ────
+# $remote_addr would then be the CDN, every visitor would share one rate-
+# limit bucket, and the app's Sessions screen would show the CDN's address.
+# Trust the CDN's published ranges ONLY, never 0.0.0.0/0:
+#   set_real_ip_from 173.245.48.0/20;   # ...one line per published range
+#   real_ip_header   CF-Connecting-IP;  # or X-Forwarded-For with real_ip_recursive on
+# Then also firewall 80/443 to those ranges so nobody can bypass the CDN.
+
+upstream crm_app {
+    server 127.0.0.1:3000;   # server.ts binds 127.0.0.1 in production (BIND_HOST)
+    keepalive 32;
+}
+
+# ── Port 80: ACME challenges and a redirect, nothing else ───────────────
+server {
+    listen 80;
+    listen [::]:80;
+    server_name crm.example.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ── Refuse requests for any other Host (IP scans, spoofed Host headers) ─
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    ssl_reject_handshake on;          # nginx >= 1.19.4 (Ubuntu 22.04 ships 1.18:
+                                      # there, point this at the real cert and "return 444;")
+}
+
+server {
+    # Works on every nginx in Ubuntu 20.04-24.04. On nginx >= 1.25.1 it logs a
+    # deprecation warning: then drop "http2" here and add "http2 on;".
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name crm.example.com;
+
+    # ── TLS (Mozilla "intermediate") ────────────────────────────────────
+    ssl_certificate     /etc/letsencrypt/live/crm.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/crm.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:CRMSSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    # OCSP stapling: only useful if the certificate carries an OCSP URL.
+    # Let's Encrypt stopped OCSP in 2025, so with an LE certificate these
+    # lines do nothing (nginx logs a harmless warning); keep them for a CA
+    # that still offers OCSP.
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/letsencrypt/live/crm.example.com/chain.pem;
+    resolver 1.1.1.1 9.9.9.9 valid=300s;
+    resolver_timeout 5s;
+
+    # ── Limits ──────────────────────────────────────────────────────────
+    # AGENTS.md rule 9: routes accept 16 MB, Next's proxyClientMaxBodySize
+    # is 17mb, so nginx must allow 17m — less and big uploads fail with a
+    # bare 413 before the app can explain; more and nginx buffers bodies
+    # the app will refuse anyway.
+    client_max_body_size 17m;
+    client_body_timeout 30s;
+    client_header_timeout 15s;
+    send_timeout 60s;
+    limit_conn crm_conn 50;
+
+    # ── Security headers ────────────────────────────────────────────────
+    # The app sets CSP, X-Frame-Options, nosniff, Referrer-Policy and
+    # Permissions-Policy itself (next.config.ts). HSTS is taken over here so
+    # it is sent exactly once, also on nginx's own error pages.
+    proxy_hide_header Strict-Transport-Security;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    # Add "; preload" only after reading HARDENING.md ("HSTS preload").
+    proxy_hide_header X-Powered-By;
+
+    # ── Proxy headers ───────────────────────────────────────────────────
+    # src/lib/net/client-ip.ts trusts X-Real-IP, so nginx must SET it (never
+    # pass a client value through). X-Forwarded-For is set, not appended:
+    # the app has no other proxy to hear from, and a client-supplied chain
+    # is only something to mis-read.
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $remote_addr;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header Connection        "";
+    proxy_connect_timeout 5s;
+    proxy_read_timeout    120s;
+    proxy_send_timeout    120s;
+
+    access_log /var/log/nginx/crm.access.log;
+    error_log  /var/log/nginx/crm.error.log warn;
+
+    # ── Block dotfiles and source/infra files outright ──────────────────
+    # (.env, .git, .next internals etc. are never served by Next either;
+    # this keeps it true if someone ever adds a "root" here.)
+    location ~ /\.(?!well-known/) { return 404; }
+    location ~* \.(env|pem|key|sql|dump|bak|sh)$ { return 404; }
+
+    # ── Real-time: Socket.io and the live-voice WebSocket ───────────────
+    location /socket.io/ {
+        limit_req zone=crm_api burst=60 nodelay;
+        proxy_pass http://crm_app;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+    location = /api/ai/live-voice {
+        limit_req zone=crm_api burst=10 nodelay;
+        proxy_pass http://crm_app;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    # ── Credential endpoints: tight limit ───────────────────────────────
+    # NextAuth's sign-in POST is /api/auth/callback/credentials. The rest of
+    # /api/auth/ (session, csrf — polled by every open tab) gets the normal
+    # API limit, or open tabs would start failing.
+    location ~ ^/api/auth/(callback|signin|register|password|mfa|verify-email)(/|$) {
+        limit_req zone=crm_auth burst=10 nodelay;
+        proxy_pass http://crm_app;
+    }
+    location ~ ^/api/(invitations|account/mfa|account/profile/(email|phone)/verify)(/|$) {
+        limit_req zone=crm_auth burst=20 nodelay;
+        proxy_pass http://crm_app;
+    }
+
+    # ── Cron endpoints: localhost only ──────────────────────────────────
+    # server.ts runs most sweeps itself. For the ones that need an external
+    # trigger, call http://127.0.0.1:3000 directly from crontab (see
+    # HARDENING.md) — there is no reason for the internet to reach these.
+    location ~ ^/api/(automations|flows|chatbot|scheduled-messages|offers)/cron$ {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://crm_app;
+    }
+
+    # ── Inbound webhooks: generous (Meta batches), but bounded ──────────
+    location ~ ^/api/(whatsapp/webhook|instagram/webhook|facebook/webhook|telegram/webhook|sms/webhook|email/webhook|rcs/webhook|email/microsoft/notify|payments/phonepe/webhook|whatsapp/payments/webhook|flows/data-exchange)(/|$) {
+        limit_req zone=crm_webhook burst=200 nodelay;
+        proxy_pass http://crm_app;
+    }
+    location ~ ^/api/flows/[^/]+/(webhook|endpoint)$ {
+        limit_req zone=crm_webhook burst=100 nodelay;
+        proxy_pass http://crm_app;
+    }
+
+    # ── Public, unauthenticated endpoints (src/proxy.ts PUBLIC_*) ───────
+    # /api/website-chat/ is the staff settings API and is NOT in this list.
+    location ~ ^/api/(webchat|forms|v|csp-report|mcp|voice|meta-ads/track|google/sheet-ping)(/|$) {
+        limit_req zone=crm_public burst=40 nodelay;
+        proxy_pass http://crm_app;
+    }
+
+    # ── Everything else ─────────────────────────────────────────────────
+    # Uploaded files are served by the app (/api/files/…, with its auth
+    # checks) — never alias the uploads/ folder here.
+    location / {
+        limit_req zone=crm_api burst=120 nodelay;
+        proxy_pass http://crm_app;
+    }
+}

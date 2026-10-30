@@ -14,13 +14,13 @@ import { prisma } from '@/lib/db'
  */
 export async function checkOwnedRefs(
   accountId: string,
-  refs: { contact_id?: unknown; lead_id?: unknown; assigned_to?: unknown },
+  refs: { contact_id?: unknown; lead_id?: unknown; assigned_to?: unknown; conversation_id?: unknown },
 ): Promise<string | null> {
   const given = (v: unknown): v is string => typeof v === 'string' && v !== ''
   const bad = (v: unknown) => v !== undefined && v !== null && v !== '' && typeof v !== 'string'
-  if (bad(refs.contact_id) || bad(refs.lead_id) || bad(refs.assigned_to)) return 'Invalid reference'
+  if (bad(refs.contact_id) || bad(refs.lead_id) || bad(refs.assigned_to) || bad(refs.conversation_id)) return 'Invalid reference'
 
-  const [contact, lead, member] = await Promise.all([
+  const [contact, lead, member, conversation] = await Promise.all([
     given(refs.contact_id)
       ? prisma.contact.findFirst({ where: { id: refs.contact_id, account_id: accountId }, select: { id: true } })
       : true,
@@ -30,11 +30,15 @@ export async function checkOwnedRefs(
     given(refs.assigned_to)
       ? prisma.profile.findFirst({ where: { user_id: refs.assigned_to, account_id: accountId }, select: { user_id: true } })
       : true,
-  ]).catch(() => [null, null, null])
+    given(refs.conversation_id)
+      ? prisma.conversation.findFirst({ where: { id: refs.conversation_id, account_id: accountId }, select: { id: true } })
+      : true,
+  ]).catch(() => [null, null, null, null])
 
   if (!contact) return 'Contact not found'
   if (!lead) return 'Lead not found'
   if (!member) return 'That person is not in this account'
+  if (!conversation) return 'Conversation not found'
   return null
 }
 

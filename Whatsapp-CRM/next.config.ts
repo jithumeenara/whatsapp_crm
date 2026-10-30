@@ -26,6 +26,14 @@ function buildCpus(): number | undefined {
  * `'unsafe-inline'` is required for Next.js hydration scripts and
  * Tailwind inline styles; `'unsafe-eval'` is used in dev mode only.
  *
+ * Status (Oct 2026 audit): script-src 'unsafe-inline' is still enforced,
+ * so this policy does little against an injected inline script. The
+ * nonce-based strict policy (src/lib/security/csp.ts, no 'unsafe-inline'
+ * and no 'unsafe-eval' for scripts) is sent report-only by the proxy on
+ * every response; once /api/csp-report stays empty through a real
+ * payment and an Embedded Signup, it should replace this one.
+ * 'unsafe-eval' is never sent in production.
+ *
  * The rest of the headers are straight blocks, safe to enforce today:
  *   - HSTS: only meaningful on HTTPS (no-op on http://localhost).
  *   - X-Content-Type-Options / X-Frame-Options / Referrer-Policy:
@@ -106,11 +114,17 @@ const SECURITY_HEADERS = [
       // app's own chat window (/api/webchat/frame/…).
       "frame-src 'self' https://*.razorpay.com https://*.facebook.com https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com",
       "frame-ancestors 'none'",
+      // Nothing in the app uses <object> or <embed>; default-src 'self'
+      // would otherwise allow a plugin document from this origin.
+      "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
     ].join("; "),
   },
 ] as const;
+
+const COOP = { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" } as const;
+const CORP = { key: "Cross-Origin-Resource-Policy", value: "same-origin" } as const;
 
 const nextConfig: NextConfig = {
   /**
@@ -131,6 +145,27 @@ const nextConfig: NextConfig = {
   turbopack: { root: APP_ROOT },
 
   serverExternalPackages: ["exceljs"],
+
+  /**
+   * The image optimizer, switched off because nothing uses it.
+   *
+   * No component imports next/image — every picture is a plain <img>
+   * (user-supplied URLs, data: URLs, files from /public). /_next/image
+   * was nevertheless a live, unauthenticated endpoint (the proxy matcher
+   * skips it) that fetches, decodes and re-encodes images with sharp on
+   * request: CPU and memory for anybody who asks, a disk cache they can
+   * fill, and the code path behind most of Next's recent image-optimizer
+   * advisories. Its defaults were already the safe ones — no
+   * remotePatterns (local images only) and SVG refused — but an endpoint
+   * nobody calls is better closed than configured.
+   *
+   * With `unoptimized`, Next answers 404 there (next-server checks it
+   * before parsing anything), and a future <Image> still renders: it is
+   * served as the original file, just not resized. If resizing is ever
+   * wanted, turn this off and list exact remotePatterns; never set
+   * dangerouslyAllowSVG.
+   */
+  images: { unoptimized: true },
   // The full type check is the heaviest part of a build, and on the
   // 2 GB VPS it is what got killed. Every commit is type-checked before
   // it is pushed (tsc --noEmit), so the server can skip repeating it:
@@ -243,6 +278,26 @@ const nextConfig: NextConfig = {
           (h) => h.key !== "X-Frame-Options" && h.key !== "Content-Security-Policy",
         ),
       },
+      // ── Cross-origin isolation ─────────────────────────────────────
+      //
+      // COOP on pages: a window this app opens, or one that opens this
+      // app, gets no handle on it unless the app opened it itself. Not
+      // `same-origin`: Meta's Embedded Signup (FB.login) and Razorpay's
+      // checkout open popups and talk back to this page, and
+      // `same-origin-allow-popups` is exactly "keep the popups I open".
+      //
+      // Not on /google-done: that is the popup, landing back here after
+      // Google, and it must still reach window.opener to report the
+      // result (src/app/google-done/page.tsx). Its own COOP would put it
+      // in a new browsing-context group and the opener would be null.
+      { source: "/", headers: [COOP] },
+      { source: "/:path((?!api/|_next/|google-done).+)", headers: [COOP] },
+      // CORP on API answers: another site cannot pull one into a page as
+      // an <img>/<script> (and so into a Spectre-readable process). Not
+      // on the two API families built to be called from customers'
+      // websites — the website chat and the Pixel pairing endpoint — nor
+      // on /public assets, which include the chat widget's script.
+      { source: "/api/:path((?!webchat/|meta-ads/track).+)", headers: [CORP] },
     ];
   },
 };

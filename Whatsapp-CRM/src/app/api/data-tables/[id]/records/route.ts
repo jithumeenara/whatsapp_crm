@@ -1,6 +1,6 @@
 import { refMatches } from '@/lib/data-store/record-ref'
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { dataStoreMember, rowRank } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -29,14 +29,10 @@ async function requireTable(req: Request, tableId: string): Promise<
     if (!result) return { ok: false, status: 401, body: { error: 'Invalid API key.' } }
     accountId = result.accountId
   } else {
-    const session = await auth()
-    if (!session?.user?.id) return { ok: false, status: 401, body: { error: 'Unauthorized.' } }
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: session.user.id },
-      select: { account_id: true },
-    })
-    if (!profile?.account_id) return { ok: false, status: 403, body: { error: 'No account.' } }
-    accountId = profile.account_id
+    const member = await dataStoreMember(rowRank(req.method))
+    if (!member.ok) return member
+    const accountIdOf = member.ctx.accountId
+    accountId = accountIdOf
   }
 
   const table = await prisma.dataTable.findFirst({
@@ -98,7 +94,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
-    const checked = checkRecordData(body.data)
+    const fieldTypes = await prisma.dataField.findMany({
+      where: { table_id: tableId, account_id: guard.accountId },
+      select: { field_key: true, field_type: true },
+    })
+    const checked = checkRecordData(body.data, fieldTypes)
     if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 })
 
     const source = guard.viaApiKey ? 'api' : 'manual'

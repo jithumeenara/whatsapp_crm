@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
 import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
@@ -9,23 +9,12 @@ import {
 } from '@/lib/automations/validate'
 
 export async function GET() {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  const userId = session.user.id
+  const member = await automationsMember('viewer')
+  if (!member.ok) return member.res
 
   try {
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { account_id: true },
-    })
-    if (!profile?.account_id) {
-      return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
-    }
-
     const automations = await prisma.automation.findMany({
-      where: { account_id: profile.account_id },
+      where: { account_id: member.ctx.accountId },
       orderBy: { created_at: 'desc' },
     })
     return NextResponse.json({ automations })
@@ -36,24 +25,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  const userId = session.user.id
+  const member = await automationsMember('agent')
+  if (!member.ok) return member.res
+  const { userId, accountId } = member.ctx
 
   try {
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { account_id: true },
-    })
-    const accountId = profile?.account_id
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
 
     const body = await request.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })

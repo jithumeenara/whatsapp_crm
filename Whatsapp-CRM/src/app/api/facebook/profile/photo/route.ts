@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 const MAX_BYTES = 5 * 1024 * 1024
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"])
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     const metaForm = new FormData()
     metaForm.append("source", file, file.name)
 
-    const res = await fetch(`https://graph.facebook.com/v21.0/${row.page_id}/picture?access_token=${row.access_token}`, {
+    const res = await fetch(`https://graph.facebook.com/v21.0/${row.page_id}/picture?access_token=${encodeURIComponent(openStoredSecret(row.access_token))}`, {
       method: "POST",
       body: metaForm,
     })

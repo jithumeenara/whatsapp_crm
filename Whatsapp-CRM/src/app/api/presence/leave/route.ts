@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { prisma } from '@/lib/db'
+import { sessionRevoked } from '@/lib/security/session-revoked'
 
 const COOKIE_NAME =
   process.env.NODE_ENV === 'production' ? '__Secure-authjs.session-token' : 'authjs.session-token'
@@ -40,6 +41,12 @@ const COOKIE_NAME =
 export async function POST(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET, cookieName: COOKIE_NAME })
   if (!token?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  // getToken() only decrypts. A revoked session — a logged-out device, a
+  // token from before "sign out everywhere" — is not this person speaking,
+  // and must not mark them gone or announce it to their team.
+  if (await sessionRevoked(token)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -36,6 +36,7 @@ import {
 } from "@/lib/data-store/form-logic"
 import type { PublicFormBrand } from "@/lib/data-store/public-form-server"
 import { langInfo } from "@/lib/data-store/form-i18n"
+import { safeHref } from "@/lib/utils"
 import { formStrings, type FormLang, type FormStrings } from "./form-strings"
 import { FormCombobox } from "./form-combobox"
 import { FormConfirmation } from "./form-confirmation"
@@ -925,7 +926,7 @@ export function PublicFormView(props: Props) {
                 </a>
               )}
               {brand.contact.website && (
-                <a href={brand.contact.website} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex min-w-0 items-center gap-1.5 break-all hover:text-primary">
+                <a href={safeHref(brand.contact.website)} target="_blank" rel="noopener noreferrer nofollow" className="inline-flex min-w-0 items-center gap-1.5 break-all hover:text-primary">
                   <Globe className="h-4 w-4 shrink-0 text-slate-400" /> {brand.contact.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                 </a>
               )}

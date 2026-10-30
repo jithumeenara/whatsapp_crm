@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { socialWebhookAllowed } from "@/lib/social/webhook-secrets"
+import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { emitToAccount } from "@/lib/socket"
@@ -8,6 +8,7 @@ import { normalizePhone } from "@/lib/whatsapp/phone-utils"
 import { fetchLead, getLeadField, fetchAdTargeting } from "@/lib/meta-ads/api"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 type RawConfig = {
   account_id: string
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Also check FACEBOOK_VERIFY_TOKEN env var as a fast path (no DB needed)
-  if (process.env.FACEBOOK_VERIFY_TOKEN && token === process.env.FACEBOOK_VERIFY_TOKEN) {
+  if (sameToken(token, process.env.FACEBOOK_VERIFY_TOKEN)) {
     return new NextResponse(challenge, { status: 200 })
   }
 
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
     console.error("[Facebook Webhook] DB error during verify:", err)
   }
 
-  console.error(`[Facebook Webhook] Verify token not found: "${token}"`)
+  console.error(`[Facebook Webhook] verify token did not match any saved one (length ${token.length})`)
   return new NextResponse("Forbidden", { status: 403 })
 }
 
@@ -83,7 +84,10 @@ export async function POST(req: NextRequest) {
     const raw = await req.text()
     if (!raw.trim()) return NextResponse.json({ status: "ok" })
     // Only Meta may post here: a forged event would land in an Inbox.
-    if (!(await socialWebhookAllowed(raw, req.headers.get("x-hub-signature-256"), "facebook"))) {
+    // A tenant's own app secret only vouches for that tenant's events —
+    // see socialWebhookScope.
+    const scope = await socialWebhookScope(raw, req.headers.get("x-hub-signature-256"), "facebook")
+    if (!scope) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
     }
     const body = JSON.parse(raw) as FbWebhookBody
@@ -92,7 +96,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "ignored" })
     }
 
-    processFacebookWebhook(body).catch((err) =>
+    processFacebookWebhook(body, scope).catch((err) =>
       console.error("[Facebook Webhook] processFacebookWebhook error:", err)
     )
 
@@ -157,7 +161,7 @@ interface FbWebhookBody {
   }>
 }
 
-async function processFacebookWebhook(body: FbWebhookBody) {
+async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookScope) {
   await ensureTable()
 
   for (const entry of body.entry ?? []) {
@@ -185,6 +189,12 @@ async function processFacebookWebhook(body: FbWebhookBody) {
       console.warn(`[Facebook] No config found for page ID: ${pageId}`)
       continue
     }
+    if (!scopeAllows(scope, config.account_id)) {
+      console.warn(`[Facebook] event for page ${pageId} was signed with another account's app secret — dropped`)
+      continue
+    }
+    // Stored sealed (or, for an old row, plain) — see openStoredSecret.
+    config = { ...config, access_token: openStoredSecret(config.access_token) }
 
     // Handle feed changes (post likes, comments, reactions)
     if (entry.changes?.length) {

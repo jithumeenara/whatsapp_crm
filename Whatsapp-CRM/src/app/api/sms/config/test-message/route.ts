@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { auth } from "@/auth"
+import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { sendSmsText } from "@/lib/messaging/channels/sms"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
@@ -21,9 +21,14 @@ async function resolveAccountId(userId: string): Promise<string | null> {
  * testSmsConnection (a credential-only probe with no message sent).
  */
 export async function POST(request: Request) {
+  // A paid send from the SMS settings screen: admins only.
+  let session: { user: { id: string } }
   try {
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    session = { user: { id: (await requireRole("admin")).userId } }
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+  try {
 
     const limit = checkRateLimit(`sms-test-message:${session.user.id}`, RATE_LIMITS.smsTestMessage)
     if (!limit.success) return rateLimitResponse(limit)
@@ -46,8 +51,8 @@ export async function POST(request: Request) {
       })
       return NextResponse.json({ success: true, message: `Test SMS sent to ${to}.`, message_id: result.messageId || undefined })
     } catch (err) {
-      const reason = err instanceof Error ? err.message : "Unknown error"
-      return NextResponse.json({ error: `Failed to send test SMS: ${reason}` }, { status: 502 })
+      console.error("[sms test-message] send failed:", err)
+      return NextResponse.json({ error: "Failed to send the test SMS — check the provider settings and balance." }, { status: 502 })
     }
   } catch (error) {
     console.error("Error in SMS test-message POST:", error)

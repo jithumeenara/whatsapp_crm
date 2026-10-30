@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+import { disconnectUserSockets } from "@/lib/socket"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
 
 /**
@@ -36,6 +37,11 @@ export async function DELETE(
         where: { id: row.id },
         data: { revoked_at: new Date() },
       })
+      // Sockets are per person, not per device: closing them all is the
+      // only way to drop the revoked tab. Devices still signed in
+      // reconnect by themselves with a fresh ticket; the revoked one
+      // cannot get one.
+      disconnectUserSockets(session.user.id)
     }
 
     return NextResponse.json({ success: true, wasCurrent: id === session.sessionId })

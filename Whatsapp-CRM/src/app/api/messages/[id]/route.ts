@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { onceSchemaPatch } from "@/lib/db/schema-patch"
-import { auth } from "@/auth"
+import { ForbiddenError, UnauthorizedError, requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
-import { decrypt } from "@/lib/whatsapp/encryption"
-import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 // Same key as the two read routes, so whichever runs first covers all
 // three for the lifetime of the process.
@@ -13,17 +12,6 @@ async function ensureDeletedAtColumn() {
   `).catch(() => {})
 }
 
-async function requireUser() {
-  const session = await auth()
-  if (!session?.user?.id) return null
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) return null
-  return { userId: session.user.id, accountId: profile.account_id }
-}
-
 /** DELETE /api/messages/[id] — unsend on platform then soft-delete in DB */
 export async function DELETE(
   req: NextRequest,
@@ -31,25 +19,32 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const user = await requireUser()
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    // Deleting is a write: agent and above. An agent reaches only the
+    // chats assigned to them, as everywhere else in the inbox.
+    const ctx = await requireRole("agent")
+    const user = { userId: ctx.userId, accountId: ctx.accountId }
 
     await ensureDeletedAtColumn()
 
     // Verify the message belongs to this account
     const msg = await prisma.message.findFirst({
       where: { id },
-      include: { conversation: { select: { account_id: true, channel: true } } },
+      include: { conversation: { select: { account_id: true, channel: true, assigned_agent_id: true } } },
     })
     if (!msg) return NextResponse.json({ error: "Not found" }, { status: 404 })
-    const conv = msg.conversation as { account_id: string; channel?: string } | null
+    const conv = msg.conversation as { account_id: string; channel?: string; assigned_agent_id?: string | null } | null
     if (conv?.account_id !== user.accountId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
+    if (ctx.role === "agent" && conv.assigned_agent_id !== ctx.userId) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
 
-    const body = await req.json().catch(() => ({})) as { channel?: string; message_id?: string }
-    const channel = body.channel ?? (conv as { channel?: string })?.channel ?? "whatsapp"
-    const platformMid = body.message_id ?? msg.message_id
+    // The channel and the platform id are this message's own. Both used
+    // to come from the request body, which let a caller unsend any other
+    // message on the page in the customer's app by naming its id.
+    const channel = conv.channel ?? "whatsapp"
+    const platformMid = msg.message_id
 
     // ── Unsend on the platform, where the platform allows it ────────────────
     //
@@ -96,9 +91,10 @@ export async function DELETE(
     // apologise.
     return NextResponse.json({ ok: true, removed_here_only: !platformUnsends })
   } catch (err) {
+    if (err instanceof UnauthorizedError || err instanceof ForbiddenError) return toErrorResponse(err)
     const msg = err instanceof Error ? err.message : String(err)
     console.error("[DELETE /api/messages/[id]]", msg)
-    return NextResponse.json({ error: msg }, { status: 502 })
+    return NextResponse.json({ error: "The message could not be deleted. Try again in a moment." }, { status: 502 })
   }
 }
 
@@ -112,7 +108,8 @@ async function deleteInstagramMessage(accountId: string, messageId: string) {
   const rows = await prisma.$queryRaw<{ access_token: string }[]>`
     SELECT access_token FROM instagram_config WHERE account_id = ${accountId}::uuid LIMIT 1
   `.catch(() => [] as { access_token: string }[])
-  const token = rows[0]?.access_token
+  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
+  const token = openStoredSecret(rows[0]?.access_token)
   if (!token) throw new Error("Instagram not configured")
 
   const res = await fetch(
@@ -129,7 +126,8 @@ async function deleteFacebookMessage(accountId: string, messageId: string) {
   const rows = await prisma.$queryRaw<{ access_token: string }[]>`
     SELECT access_token FROM facebook_config WHERE account_id = ${accountId}::uuid LIMIT 1
   `.catch(() => [] as { access_token: string }[])
-  const token = rows[0]?.access_token
+  // Sealed on save (A8-09); older rows are plain — openStoredSecret reads both.
+  const token = openStoredSecret(rows[0]?.access_token)
   if (!token) throw new Error("Facebook not configured")
 
   const res = await fetch(

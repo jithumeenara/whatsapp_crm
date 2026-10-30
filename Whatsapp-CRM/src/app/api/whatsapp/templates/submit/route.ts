@@ -252,10 +252,11 @@ export async function POST(request: Request) {
     } catch (err) {
       // The submit succeeded on Meta's side but we failed to persist
       // locally. Surface the meta_template_id so the user can recover
-      // via "Sync from Meta".
+      // via "Sync from Meta". Database detail stays in the server log.
+      console.error('[templates/submit] local save failed:', err)
       return NextResponse.json(
         {
-          error: `Submitted to Meta but failed to save locally: ${err instanceof Error ? err.message : String(err)}. Run "Sync from Meta" to recover.`,
+          error: 'Submitted to Meta but failed to save locally. Run "Sync from Meta" to recover.',
           meta_template_id: metaTemplateId,
         },
         { status: 500 },

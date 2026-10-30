@@ -1,4 +1,5 @@
 import { handleFlowWebhookPost } from '@/lib/flows/webhook-handler'
+import { checkFlowRequestSignature } from '@/lib/flows/flow-signature'
 
 /**
  * POST /api/flows/data-exchange/[flowId]/[screenId]
@@ -13,5 +14,8 @@ export async function POST(
   { params }: { params: Promise<{ flowId: string; screenId: string }> },
 ) {
   const { flowId } = await params
-  return handleFlowWebhookPost(request, flowId)
+  // Meta's X-Hub-Signature-256, checked before anything is decrypted (A9-08).
+  const signed = await checkFlowRequestSignature(request)
+  if (signed.response) return signed.response
+  return handleFlowWebhookPost(signed.request, flowId)
 }

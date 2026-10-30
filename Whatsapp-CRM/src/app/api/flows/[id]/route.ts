@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -167,6 +168,8 @@ export async function PUT(
 ) {
   const { id } = await context.params
   try {
+    const denied = await denyUnlessFlowEditor('/flows')
+    if (denied) return denied
     const guard = await requireOwnership(id)
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 

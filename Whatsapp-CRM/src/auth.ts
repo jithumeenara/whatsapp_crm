@@ -4,7 +4,8 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { consumeLoginChallenge } from "@/lib/auth/mfa";
 import { getSessionInvalidatedAt } from "@/lib/auth/session-invalidation";
-import { deriveDeviceLabel } from "@/lib/auth/device";
+import { recordDeviceSession } from "@/lib/auth/device-session";
+import { ABSOLUTE_SESSION_MAX_AGE_S, tokenIsIdle, tokenIsStale } from "@/lib/auth/session-guard";
 import { clientIp } from "@/lib/net/client-ip";
 
 function getClientIp(request: Request): string | null {
@@ -92,32 +93,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // sessionId as always valid, same as before this feature existed).
         let sessionId: string | undefined;
         try {
-          const userAgent = request.headers.get("user-agent");
-          const ipAddress = getClientIp(request);
-          const existing = userAgent
-            ? await prisma.userSession.findFirst({
-                where: { user_id: user.id, user_agent: userAgent },
-                orderBy: { last_seen_at: "desc" },
-              })
-            : null;
-
-          if (existing) {
-            await prisma.userSession.update({
-              where: { id: existing.id },
-              data: { last_seen_at: new Date(), revoked_at: null, ip_address: ipAddress },
-            });
-            sessionId = existing.id;
-          } else {
-            const session = await prisma.userSession.create({
-              data: {
-                user_id: user.id,
-                device_label: deriveDeviceLabel(userAgent),
-                user_agent: userAgent,
-                ip_address: ipAddress,
-              },
-            });
-            sessionId = session.id;
-          }
+          // A revoked row is never revived — see lib/auth/device-session.ts.
+          sessionId = await recordDeviceSession(
+            prisma,
+            user.id,
+            request.headers.get("user-agent"),
+            getClientIp(request),
+          );
         } catch (err) {
           console.error("Failed to create/update UserSession row:", err);
         }
@@ -129,7 +111,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   session: {
     strategy: "jwt",
     // Absolute cap — even an active user must re-authenticate after 8 hours.
-    maxAge: 8 * 60 * 60,
+    // Enforced from the sign-in time (token.authTime) in the jwt callback
+    // below; this maxAge alone slides forward on every refresh.
+    maxAge: ABSOLUTE_SESSION_MAX_AGE_S,
   },
   cookies: {
     sessionToken: {
@@ -167,18 +151,31 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       // `loading` state on every call caused visible app-wide re-renders.
       // Kept here as a harmless fallback in case anything else ever calls
       // useSession().update() for an unrelated reason.
+      // An update() on a token that is already idle must not revive it:
+      // refuse it, exactly as the proxy would on its next request.
+      if (trigger === "update" && !user && tokenIsIdle(token)) return null;
       if (user?.id || trigger === "update") token.lastActivity = Date.now();
+      // When this person actually signed in. Unlike `iat`, which every
+      // refresh re-stamps, nothing changes it afterwards — revocation and
+      // the 8-hour cap are measured from it (lib/auth/session-guard.ts).
+      // Whole seconds like every JWT time claim (the proxy and heartbeat
+      // do arithmetic with it), rounded UP so a sign-in in the same second
+      // as a "Sign out everywhere" that preceded it is not refused; a token
+      // from that same second before it is still caught by its revoked
+      // UserSession row.
+      if (user?.id) token.authTime = Math.ceil(Date.now() / 1000);
 
       // "Sign out everywhere" (Settings > Profile > Sessions) — reject any
       // token issued before the user's last invalidation, on every use.
       // This is what actually revokes a session under the JWT strategy;
       // returning null here is NextAuth's documented way to force the
       // caller to be treated as signed out.
+      // Measured from the sign-in time, not `iat` — a refresh (heartbeat)
+      // re-stamps `iat`, which let a stolen cookie kept warm outlive both
+      // this and the 8-hour cap.
       if (token.id) {
         const invalidatedAt = await getSessionInvalidatedAt(token.id as string);
-        if (invalidatedAt && typeof token.iat === "number" && invalidatedAt.getTime() / 1000 > token.iat) {
-          return null;
-        }
+        if (tokenIsStale(token, invalidatedAt)) return null;
       }
 
       // Per-device revocation ("Log out" on one row in Settings > Profile >

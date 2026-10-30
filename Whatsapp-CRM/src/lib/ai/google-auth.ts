@@ -41,6 +41,38 @@ const REFRESH_MARGIN_MS = 60_000
  */
 const tokenCache = new Map<string, { token: string; expiresAt: number }>()
 
+const GOOGLE_TOKEN_URI = 'https://oauth2.googleapis.com/token'
+
+/**
+ * Only Google's own token endpoint. The JSON is uploaded by an account,
+ * and its token_uri was POSTed to as given — a server-side request to any
+ * address the uploader liked, with the reply's error text shown back.
+ * Every real service-account key names this one endpoint.
+ */
+function trustedTokenUri(raw: unknown): string {
+  if (typeof raw !== 'string') return GOOGLE_TOKEN_URI
+  try {
+    const u = new URL(raw)
+    if (u.protocol === 'https:' && u.hostname === 'oauth2.googleapis.com') return u.toString()
+  } catch {
+    // fall through to the default
+  }
+  return GOOGLE_TOKEN_URI
+}
+
+/**
+ * The cache key has to name the credential, not just the identity it
+ * claims. client_email is not a secret, and the cache is shared by every
+ * account on this server: keyed on the email alone, a second account
+ * uploading a JSON with someone else's client_email and its own private
+ * key was handed the first account's cached token without signing
+ * anything.
+ */
+function cacheKeyFor(sa: ServiceAccount, scope: string): string {
+  const fingerprint = crypto.createHash('sha256').update(sa.private_key).update('\0').update(sa.token_uri).digest('hex')
+  return `${sa.client_email}::${fingerprint}::${scope}`
+}
+
 /**
  * Parses service-account JSON, returning null for anything that is not
  * one rather than throwing.
@@ -56,7 +88,7 @@ export function parseServiceAccount(json: string): ServiceAccount | null {
       // the PEM unparseable and produces a signing error that looks
       // nothing like its cause.
       private_key: parsed.private_key.replace(/\\n/g, '\n'),
-      token_uri: parsed.token_uri || 'https://oauth2.googleapis.com/token',
+      token_uri: trustedTokenUri(parsed.token_uri),
       project_id: parsed.project_id ?? '',
     }
   } catch {
@@ -122,7 +154,7 @@ export async function getAccessToken(
   const sa = account ?? loadServiceAccount()
   if (!sa) throw new Error('No Google Cloud service account is configured.')
 
-  const cacheKey = `${sa.client_email}::${scope}`
+  const cacheKey = cacheKeyFor(sa, scope)
   const hit = tokenCache.get(cacheKey)
   if (hit && Date.now() < hit.expiresAt - REFRESH_MARGIN_MS) return hit.token
 

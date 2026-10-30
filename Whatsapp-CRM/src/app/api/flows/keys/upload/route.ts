@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessRole } from '@/lib/flows/route-guard'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -18,6 +19,8 @@ const META_API_VERSION = 'v21.0'
  *   { business_public_key: "-----BEGIN PUBLIC KEY-----\n..." }
  */
 export async function POST(request: Request) {
+  const denied = await denyUnlessRole('admin')
+  if (denied) return denied
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

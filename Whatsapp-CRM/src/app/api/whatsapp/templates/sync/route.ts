@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
-import { auth } from '@/auth'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
@@ -135,12 +135,15 @@ function extractSampleValues(
 }
 
 export async function POST() {
+  // Rewrites the account's templates from Meta: the same floor as
+  // submitting or editing one (supervisor).
+  let userId: string
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-    const userId = session.user.id
+    userId = (await requireRole('supervisor')).userId
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+  try {
 
     // Resolve the caller's account_id — both whatsapp_config and
     // the message_templates we sync into are account-scoped.
@@ -290,10 +293,11 @@ export async function POST() {
           inserted++
         }
       } catch (err) {
+        console.error(`[templates/sync] could not save ${t.name}/${t.language}:`, err)
         errors.push({
           name: t.name,
           language: t.language,
-          message: err instanceof Error ? err.message : String(err),
+          message: 'Could not be saved here — see the server log.',
         })
       }
     }

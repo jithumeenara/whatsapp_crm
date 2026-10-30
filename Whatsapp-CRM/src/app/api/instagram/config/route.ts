@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { openStoredSecret, sealSecret } from "@/lib/whatsapp/encryption"
 import { ensureInstagramConfigTable as ensureTable } from "@/lib/social/ensure-tables"
 
 const MASKED = "••••••••••••••••"
@@ -67,7 +68,7 @@ export async function PATCH(req: NextRequest) {
       const rows = await prisma.$queryRaw<RawRow[]>`
         SELECT * FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
       `
-      const token = rows[0]?.access_token
+      const token = openStoredSecret(rows[0]?.access_token)
       if (!token) {
         return NextResponse.json({ success: false, error: "No access token saved. Save your config first." })
       }
@@ -134,11 +135,26 @@ export async function PATCH(req: NextRequest) {
     // ── Save config ──────────────────────────────────────────────
     const { access_token, verify_token, instagram_account_id, page_id } = body as Record<string, string>
 
+    // An Instagram account (or its Page) belongs to one CRM account. The
+    // webhook finds the account by these ids, so a second claim would let
+    // one business read another's DMs.
+    for (const id of [instagram_account_id, page_id]) {
+      if (!id) continue
+      const taken = await prisma.$queryRaw<{ n: number }[]>`
+        SELECT 1 AS n FROM instagram_config
+        WHERE account_id <> ${ctx.accountId}::uuid AND (instagram_account_id = ${id} OR page_id = ${id}) LIMIT 1
+      `
+      if (taken.length > 0) {
+        return NextResponse.json({ error: "This Instagram account is already connected to another workspace." }, { status: 409 })
+      }
+    }
+
     const existing = await prisma.$queryRaw<{ access_token: string | null }[]>`
       SELECT access_token FROM instagram_config WHERE account_id = ${ctx.accountId}::uuid LIMIT 1
     `
     const keepToken = !access_token || access_token === MASKED
-    const tokenToSave = keepToken ? (existing[0]?.access_token ?? null) : (access_token || null)
+    // Sealed at rest (AES-256-GCM); an old plain row is sealed on this save.
+    const tokenToSave = sealSecret(keepToken ? (existing[0]?.access_token ?? null) : (access_token || null))
 
     await prisma.$executeRaw`
       INSERT INTO instagram_config (id, account_id, access_token, verify_token, instagram_account_id, page_id, updated_at)

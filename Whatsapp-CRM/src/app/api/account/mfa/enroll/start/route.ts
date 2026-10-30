@@ -30,10 +30,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "A valid method is required" }, { status: 400 })
     }
 
+    // Replacing a method that is already on would skip the password check
+    // that turning it off requires (/api/account/mfa/disable): anybody at
+    // a signed-in browser could swap in their own authenticator and lock
+    // the owner out. Disable first, then set up the new one — which is
+    // also the only path the Settings screen offers.
+    const current = await prisma.user.findUnique({ where: { id: session.user.id }, select: { email: true, mfa_method: true } })
+    if (current?.mfa_method && current.mfa_method !== "disabled") {
+      return NextResponse.json(
+        { error: "Two-factor authentication is already on. Disable it with your password first, then set up the new method." },
+        { status: 409 },
+      )
+    }
+
     if (method === "totp") {
-      const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { email: true } })
       const secret = generateTotpSecret()
-      const otpauthUri = buildOtpauthUri(secret, user?.email ?? "user")
+      const otpauthUri = buildOtpauthUri(secret, current?.email ?? "user")
       const qrDataUrl = await QRCode.toDataURL(otpauthUri, { margin: 1, width: 220 })
       // The candidate secret is intentionally NOT persisted here — this
       // endpoint is session-protected (only the account owner can call it

@@ -287,12 +287,33 @@ export async function requireRoleOrApiKey(
       );
     }
 
-    // Use the account's earliest profile as the system userId for DB writes
-    const profile = await prisma.profile.findFirst({
-      where: { account_id: result.accountId },
-      orderBy: { created_at: "asc" },
-      include: { account: { select: { id: true, name: true } } },
+    // Writes made with a key are attributed to the account's owner — the
+    // only role that may mint or revoke keys (/api/api-keys). This used to
+    // borrow the account's EARLIEST profile, which could be an agent or
+    // anybody who happened to join first. The key's reach is still the
+    // supervisor rank above, never the owner's.
+    // A key minted since migration 152 acts as whoever minted it —
+    // verifyApiKey has just confirmed they are still a member here at
+    // supervisor rank or above. Older keys have no creator and are the
+    // owner's.
+    const account = await prisma.account.findUnique({
+      where: { id: result.accountId },
+      select: { owner_user_id: true },
     });
+    if (!account) throw new ForbiddenError("Account not found.");
+    const actingUserId = result.creatorUserId ?? account.owner_user_id;
+    // Fallback for an account whose owner row has drifted (older data):
+    // keep the integration working, attributed to the earliest member.
+    const profile =
+      (await prisma.profile.findFirst({
+        where: { account_id: result.accountId, user_id: actingUserId },
+        include: { account: { select: { id: true, name: true } } },
+      })) ??
+      (await prisma.profile.findFirst({
+        where: { account_id: result.accountId },
+        orderBy: { created_at: "asc" },
+        include: { account: { select: { id: true, name: true } } },
+      }));
     if (!profile?.account) throw new ForbiddenError("Account not found.");
 
     return {

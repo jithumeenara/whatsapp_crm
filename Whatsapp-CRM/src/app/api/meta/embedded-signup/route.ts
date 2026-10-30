@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
-import { encrypt } from "@/lib/whatsapp/encryption"
+import { encrypt, sealSecret } from "@/lib/whatsapp/encryption"
 import { loadMetaPlatformConfig } from "@/lib/whatsapp/meta-platform-config"
 import { ensureFacebookConfigTable, ensureInstagramConfigTable } from "@/lib/social/ensure-tables"
 import {
@@ -11,6 +11,7 @@ import {
   subscribeWabaToApp,
   registerPhoneNumber,
   verifyPhoneNumber,
+  listWabaPhoneNumberIds,
 } from "@/lib/whatsapp/meta-api"
 import { createOrGetDataset } from "@/lib/meta-ads/api"
 import { listOwnedCatalogs } from "@/lib/whatsapp/catalog-api"
@@ -61,6 +62,20 @@ export async function POST(req: NextRequest) {
       console.error("[embedded-signup] code exchange failed:", err)
       const reason = err instanceof Error ? err.message : "Failed to exchange the signup code"
       return NextResponse.json({ error: `${reason} — the code expires 30 seconds after signup, try connecting again.` }, { status: 502 })
+    }
+
+    // The wabaId / phoneNumberId come from the browser. Only a number this
+    // token can actually see under that WABA is connected — nothing is
+    // subscribed, registered or saved before that is proven.
+    let grantedNumbers: string[]
+    try {
+      grantedNumbers = await listWabaPhoneNumberIds({ wabaId, accessToken })
+    } catch (err) {
+      console.error("[embedded-signup] could not list the WABA's numbers:", err)
+      return NextResponse.json({ error: "Could not confirm the WhatsApp account you chose. Try connecting again." }, { status: 403 })
+    }
+    if (!grantedNumbers.includes(String(phoneNumberId))) {
+      return NextResponse.json({ error: "That phone number is not part of the WhatsApp account you granted. Try connecting again." }, { status: 403 })
     }
 
     // ── WhatsApp ────────────────────────────────────────────────────
@@ -162,7 +177,7 @@ export async function POST(req: NextRequest) {
 async function discoverAndSaveFacebookAndInstagram(accountId: string, businessToken: string) {
   const result = { facebookConnected: false, instagramConnected: false, pageName: "", igUsername: "" }
   try {
-    const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?access_token=${businessToken}`, { cache: "no-store" })
+    const pagesRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
     const pagesData = (await pagesRes.json()) as { data?: Array<{ id: string; name: string; access_token: string }> }
     // The Configuration may not have requested Page access at all (a
     // WhatsApp-only setup) — an empty/missing list here just means there's
@@ -173,7 +188,7 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
     await ensureFacebookConfigTable()
     await prisma.$executeRaw`
       INSERT INTO facebook_config (id, account_id, access_token, page_id, page_name, status, test_error, last_tested_at, updated_at)
-      VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${page.access_token}, ${page.id}, ${page.name}, 'connected', null, now(), now())
+      VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${sealSecret(page.access_token)}, ${page.id}, ${page.name}, 'connected', null, now(), now())
       ON CONFLICT (account_id) DO UPDATE SET
         access_token = EXCLUDED.access_token,
         page_id      = EXCLUDED.page_id,
@@ -189,8 +204,8 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
     // An Instagram professional account is always linked through a Page in
     // Meta's data model — this is the standard, stable discovery call.
     const igRes = await fetch(
-      `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account{id,username,name}&access_token=${page.access_token}`,
-      { cache: "no-store" },
+      `https://graph.facebook.com/v21.0/${page.id}?fields=instagram_business_account{id,username,name}`,
+      { headers: { Authorization: `Bearer ${page.access_token}` }, cache: "no-store" },
     )
     const igData = (await igRes.json()) as { instagram_business_account?: { id: string; username?: string; name?: string } }
     const ig = igData.instagram_business_account
@@ -198,7 +213,7 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
       await ensureInstagramConfigTable()
       await prisma.$executeRaw`
         INSERT INTO instagram_config (id, account_id, access_token, instagram_account_id, page_id, ig_username, ig_name, status, test_error, last_tested_at, updated_at)
-        VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${page.access_token}, ${ig.id}, ${page.id}, ${ig.username ?? null}, ${ig.name ?? null}, 'connected', null, now(), now())
+        VALUES (${randomUUID()}::uuid, ${accountId}::uuid, ${sealSecret(page.access_token)}, ${ig.id}, ${page.id}, ${ig.username ?? null}, ${ig.name ?? null}, 'connected', null, now(), now())
         ON CONFLICT (account_id) DO UPDATE SET
           access_token         = EXCLUDED.access_token,
           instagram_account_id = EXCLUDED.instagram_account_id,
@@ -233,7 +248,7 @@ async function discoverAndSaveFacebookAndInstagram(accountId: string, businessTo
 async function discoverAndSaveMetaAds(accountId: string, userId: string, businessToken: string, wabaId: string) {
   const result = { metaAdsConnected: false, adAccountName: "" }
   try {
-    const adAccountsRes = await fetch(`https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name&access_token=${businessToken}`, { cache: "no-store" })
+    const adAccountsRes = await fetch(`https://graph.facebook.com/v21.0/me/adaccounts?fields=id,name`, { headers: { Authorization: `Bearer ${businessToken}` }, cache: "no-store" })
     const adAccountsData = (await adAccountsRes.json()) as { data?: Array<{ id: string; name: string }> }
     const adAccount = adAccountsData.data?.[0]
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
 
 /**
@@ -17,21 +17,11 @@ export async function GET(
 ) {
   const { id } = await context.params
 
-  const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) {
-    return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
-  }
+  const member = await automationsMember('viewer')
+  if (!member.ok) return member.res
 
   const automation = await prisma.automation.findFirst({
-    where: { id, account_id: profile.account_id },
+    where: { id, account_id: member.ctx.accountId },
     select: { id: true },
   })
   if (!automation) {

@@ -20,6 +20,7 @@ import { prisma } from '@/lib/db'
 import { minutesNowIn } from '@/lib/agents/working-hours'
 import { createLeadFromAutomation } from '@/lib/leads/create-from-automation'
 import { engineSendText, engineSendTemplate, engineSendCatalogItem } from './meta-send'
+import { postAutomationWebhook } from './send-webhook'
 
 // ------------------------------------------------------------
 // Public API
@@ -393,13 +394,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
-      const res = await fetch(cfg.url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
-        body,
-      })
-      if (!res.ok) throw new Error(`webhook returned ${res.status}`)
-      return `webhook ${res.status}`
+      const status = await postAutomationWebhook(cfg.url, cfg.headers, body)
+      if (status < 200 || status >= 300) throw new Error(`webhook returned ${status}`)
+      return `webhook ${status}`
     }
 
     case 'close_conversation': {

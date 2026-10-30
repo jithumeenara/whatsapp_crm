@@ -5,6 +5,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
 import { websiteScheduleText } from "@/lib/scheduled-messages/website-text"
+import { publicErrorMessage } from '@/lib/jobs/public-error'
 
 /**
  * GET /api/scheduled-messages?conversation_id=...
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
         bcc = parseAddresses(body.email_bcc)
         to = kind === "forward" ? parseAddresses(body.email_to) : []
       } catch (err) {
-        return NextResponse.json({ error: err instanceof Error ? err.message : "Invalid address" }, { status: 400 })
+        return NextResponse.json({ error: publicErrorMessage(err, "Invalid address", "scheduled-messages") }, { status: 400 })
       }
       const subject = cleanSubject(body.email_subject)
       if (kind === "new" && !subject) return NextResponse.json({ error: "A new email needs a subject" }, { status: 400 })

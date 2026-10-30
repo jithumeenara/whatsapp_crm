@@ -12,7 +12,7 @@
 
 import { NextResponse } from "next/server";
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { forgetCachedProfile, requireRole, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
 import {
   checkRateLimit,
@@ -85,6 +85,10 @@ export async function POST(request: Request) {
         data: { owner_user_id: newOwnerUserId },
       }),
     ]);
+    // Both roles just changed. Without this the old owner kept owner
+    // powers from the 60-second cache over an account no longer theirs.
+    forgetCachedProfile(ctx.userId);
+    forgetCachedProfile(newOwnerUserId);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

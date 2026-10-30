@@ -1,3 +1,4 @@
+import { auth } from "@/auth"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
@@ -59,6 +60,20 @@ export async function POST(req: NextRequest) {
     await prisma.user.update({
       where: { id: ctx.userId },
       data: { password_hash: hash },
+    })
+
+    // A password is changed because it may have been seen. Every OTHER
+    // device signed in with the old one is signed out (the jwt callback in
+    // src/auth.ts rejects a token whose UserSession row is revoked); this
+    // one stays, so the person is not thrown out mid-save.
+    const session = await auth()
+    await prisma.userSession.updateMany({
+      where: {
+        user_id: ctx.userId,
+        revoked_at: null,
+        ...(session?.sessionId ? { id: { not: session.sessionId } } : {}),
+      },
+      data: { revoked_at: new Date() },
     })
 
     return NextResponse.json({ success: true })

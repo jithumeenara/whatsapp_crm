@@ -16,6 +16,7 @@
  * takes effect almost immediately.
  */
 import { prisma } from "@/lib/db"
+import { disconnectUserSockets } from "@/lib/socket"
 
 const CACHE_TTL_MS = 30_000
 
@@ -46,4 +47,7 @@ export async function invalidateAllSessions(userId: string): Promise<void> {
     }),
   ])
   cache.set(userId, { value: now, expiresAt: Date.now() + CACHE_TTL_MS })
+  // Open tabs would otherwise go on receiving the account's live updates
+  // until their connection aged out.
+  disconnectUserSockets(userId)
 }

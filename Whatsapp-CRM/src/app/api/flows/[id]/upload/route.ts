@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { Prisma } from '@prisma/client'
 import { readFile } from 'fs/promises'
-import { join as pathJoin } from 'path'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
-
-const UPLOADS_DIR = pathJoin(process.cwd(), 'uploads')
+import { MediaPathError, uploadPathFor } from '@/lib/whatsapp/media-ref'
 
 /**
  * Converts a /api/files/... URL to a raw base64 string by reading from disk.
@@ -21,7 +20,7 @@ const UPLOADS_DIR = pathJoin(process.cwd(), 'uploads')
  * local editor preview (which uses a plain <img> tag, where the prefix IS
  * required — different consumer, different format).
  */
-async function imageUrlToBase64(src: string): Promise<string> {
+async function imageUrlToBase64(src: string, accountId: string): Promise<string> {
   if (!src) return src
   if (src.startsWith('data:')) {
     // Already a data URI (e.g. a legacy/manually-set value) — strip the
@@ -30,8 +29,18 @@ async function imageUrlToBase64(src: string): Promise<string> {
     return commaIdx === -1 ? src : src.slice(commaIdx + 1)
   }
   if (src.startsWith('/api/files/')) {
-    const relativePath = src.replace(/^\/api\/files\//, '')
-    const filePath = pathJoin(UPLOADS_DIR, relativePath)
+    // Only this account's own uploads, resolved inside uploads/ (no ../)
+    // — media-ref.ts. A refused path is dropped, never read.
+    let filePath: string
+    try {
+      filePath = uploadPathFor(src, accountId)
+    } catch (err) {
+      if (err instanceof MediaPathError) {
+        console.warn('[upload] Image path refused:', src, err.message)
+        return ''
+      }
+      throw err
+    }
     try {
       const data = await readFile(filePath)
       return data.toString('base64')
@@ -50,13 +59,13 @@ async function imageUrlToBase64(src: string): Promise<string> {
 }
 
 /** Pre-processes all Image components in screens, converting stored URLs to base64. */
-async function resolveScreenImages(screens: InternalScreen[]): Promise<InternalScreen[]> {
+async function resolveScreenImages(screens: InternalScreen[], accountId: string): Promise<InternalScreen[]> {
   return Promise.all(screens.map(async (screen) => ({
     ...screen,
     components: await Promise.all(screen.components.map(async (comp) => {
       const c = comp as Record<string, unknown>
       if (c.type === 'Image' && typeof c.src === 'string' && c.src) {
-        return { ...comp, src: await imageUrlToBase64(c.src as string) }
+        return { ...comp, src: await imageUrlToBase64(c.src as string, accountId) }
       }
       return comp
     })),
@@ -839,7 +848,7 @@ export async function GET(
       return NextResponse.json({ error: 'No screens in trigger_config' }, { status: 400 })
     }
 
-    const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[])
+    const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[], profile?.account_id ?? '')
     const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(preparedScreens)
     const routingModel: Record<string, string[]> = {}
     for (const screen of metaScreens) {
@@ -876,6 +885,8 @@ export async function POST(
   try {
     const { id } = await context.params
 
+    const denied = await denyUnlessFlowEditor('/flows')
+    if (denied) return denied
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -914,7 +925,7 @@ export async function POST(
       // ── Already on Meta: update assets only (skip create) ────────
       const hasScreens = Array.isArray(cfg?.screens) && (cfg.screens as unknown[]).length > 0
       if (hasScreens) {
-        const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[])
+        const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[], profile.account_id)
         const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(preparedScreens)
         const routingModel: Record<string, string[]> = {}
         for (const screen of metaScreens) {
@@ -989,7 +1000,7 @@ export async function POST(
     const hasScreens = Array.isArray(cfg?.screens) && (cfg.screens as unknown[]).length > 0
 
     if (hasScreens) {
-      const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[])
+      const preparedScreens = await resolveScreenImages(cfg.screens as InternalScreen[], profile.account_id)
       const { screens: metaScreens, hasDynamicData } = transformScreensForMeta(preparedScreens)
 
       // Build routing_model: screen → list of screens it navigates to

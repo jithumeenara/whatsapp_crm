@@ -1,0 +1,32 @@
+version: 2
+# Like the CI workflow, this file is only read from `.github/` at the
+# repository root; the app's package.json lives in `Whatsapp-CRM/`.
+# Review requests come from CODEOWNERS (Dependabot's own `reviewers`
+# option has been retired).
+updates:
+  - package-ecosystem: npm
+    directory: "/Whatsapp-CRM"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # Don't propose a version until it has been public for a few days:
+    # most hijacked-maintainer releases are caught and pulled within
+    # that window. Security updates are not delayed by this.
+    cooldown:
+      default-days: 5
+      semver-major-days: 14
+    labels:
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    cooldown:
+      default-days: 5
+    labels:
+      - dependencies
+      - github-actions

@@ -10,14 +10,18 @@
 # Sourced, not run: it changes this shell only, and uses no `set -e` or
 # `exit` that would close the shell it is sourced into.
 
-_pgenv_raw=$(grep -E '^DATABASE_URL=' .env 2>/dev/null | head -n 1 | cut -d= -f2-)
+# PGENV_FILE picks another file (backup-db.sh passes .env.local when
+# that is where DATABASE_URL lives). `|| true`: a missing line is
+# reported below, not by `set -e` closing a caller's shell.
+_pgenv_raw=$(grep -E '^DATABASE_URL=' "${PGENV_FILE:-.env}" 2>/dev/null | head -n 1 | cut -d= -f2-) || true
 _pgenv_raw=${_pgenv_raw%$'\r'}
 _pgenv_raw=${_pgenv_raw#\"}; _pgenv_raw=${_pgenv_raw%\"}
 _pgenv_raw=${_pgenv_raw#\'}; _pgenv_raw=${_pgenv_raw%\'}
 
 # Percent-decoding: a password with @ or : in it is stored as %40 / %3A.
 # A + stays a + — in a URL's user and password it is not a space.
-_pgenv_decode() { local s=$1; printf '%b' "${s//%/\\x}"; }
+# A literal backslash is doubled first so %b prints it as itself.
+_pgenv_decode() { local s=${1//\\/\\\\}; printf '%b' "${s//%/\\x}"; }
 
 _pgenv_re='^postgres(ql)?://([^:@/]*)(:([^@]*))?@([^:/?]+)(:([0-9]+))?/([^?]+)'
 if [[ $_pgenv_raw =~ $_pgenv_re ]]; then
@@ -29,9 +33,15 @@ if [[ $_pgenv_raw =~ $_pgenv_re ]]; then
   # No pager: a result taller than the screen otherwise stops in `less`
   # at "(END)", which looks like a hang to whoever is following along.
   export PSQL_PAGER=cat
+  # ?sslmode= is the one query setting libpq needs; without it a remote
+  # database is reached over plain TCP. Only libpq's own values pass.
+  unset PGSSLMODE
+  if [[ $_pgenv_raw =~ [?\&]sslmode=(disable|allow|prefer|require|verify-ca|verify-full)(\&|$) ]]; then
+    export PGSSLMODE=${BASH_REMATCH[1]}
+  fi
   echo "pg-env: database ${PGDATABASE} on ${PGHOST}:${PGPORT}"
 else
-  echo "pg-env: could not read DATABASE_URL from .env in $(pwd) — nothing set" >&2
+  echo "pg-env: could not read DATABASE_URL from ${PGENV_FILE:-.env} in $(pwd) — nothing set" >&2
 fi
 unset _pgenv_raw _pgenv_re
 unset -f _pgenv_decode

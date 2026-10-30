@@ -16,6 +16,7 @@ import { resolveVariables, resolveVariablesByKey, type VariableMapping } from "@
 import { buildDataStoreIndex } from "@/lib/broadcasts/resolve-data-store";
 import { extractVariableKeys, isNamedVariableText } from "@/lib/whatsapp/template-variable-keys";
 import { resolveMediaRef } from "@/lib/whatsapp/media-ref";
+import { checkHeaderMediaUrl } from "./header-media";
 import { classifyMetaError } from "@/lib/whatsapp/meta-error-codes";
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config";
 import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
@@ -185,7 +186,11 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
   let resolvedHeaderMedia: { id: string; link?: never } | { link: string; id?: never } | null = null;
   if (broadcast.header_media_url) {
     try {
-      resolvedHeaderMedia = await resolveMediaRef(broadcast.header_media_url, config.phone_number_id, accessToken);
+      // Checked again here, not only when saved: a campaign stored before
+      // the check existed must not read another workspace's file either.
+      const headerMedia = checkHeaderMediaUrl(broadcast.header_media_url, accountId);
+      if (!headerMedia.ok) throw new Error(headerMedia.error);
+      resolvedHeaderMedia = await resolveMediaRef(broadcast.header_media_url, config.phone_number_id, accessToken, accountId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       await prisma.broadcast.update({
@@ -390,6 +395,9 @@ export async function runBroadcast(broadcastId: string, accountId: string) {
             language: broadcast.template_language,
             template: templateRow ?? undefined,
             params,
+            // A template's own /api/files/ header is checked against the
+            // sending account too (media-ref.ts).
+            accountId,
             messageParams: {
               // Campaign-level override of the template's approved sample
               // media, when the user picked one for this broadcast —

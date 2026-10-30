@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { join, extname, basename } from "path";
@@ -83,8 +84,9 @@ export async function POST(req: NextRequest) {
 
     const ext = extname(file.name) || "";
     const safeName = basename(file.name, ext).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80) || "file";
-    // Named by its checked type, never by the extension the uploader typed.
-    const storedName = `${Date.now()}-${safeName}${extensionFor(file.type)}`;
+    // Named by its checked type, never by the extension the uploader typed,
+    // and behind a random prefix — a timestamp could be guessed.
+    const storedName = `${randomUUID()}-${safeName}${extensionFor(file.type)}`;
     const accountDir = join(UPLOADS_DIR, `account-${ctx.accountId}`);
 
     await mkdir(accountDir, { recursive: true });

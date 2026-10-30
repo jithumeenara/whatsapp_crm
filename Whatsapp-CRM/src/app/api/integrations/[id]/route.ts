@@ -1,17 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { redactIntegration } from "@/lib/integration-fetch"
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await requireRoleOrApiKey(req, "viewer")
+    assertPageAccess(ctx, "/integrations")
     const { id } = await params
     const integration = await prisma.integration.findFirst({
       where: { id, account_id: ctx.accountId },
       include: { syncs: { orderBy: { started_at: "desc" }, take: 10 } },
     })
     if (!integration) return NextResponse.json({ error: "Not found" }, { status: 404 })
-    return NextResponse.json({ integration })
+    return NextResponse.json({ integration: redactIntegration(integration) })
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -41,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: body.status ?? integration.status,
       },
     })
-    return NextResponse.json({ integration: updated })
+    return NextResponse.json({ integration: redactIntegration(updated) })
   } catch (err) {
     return toErrorResponse(err)
   }

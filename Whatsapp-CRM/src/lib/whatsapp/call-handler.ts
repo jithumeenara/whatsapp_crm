@@ -16,7 +16,8 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { emitToAccount } from '@/lib/socket'
 import { pickAgent, type AgentPickStrategy } from '@/lib/flows/agent-routing'
 import { rejectCall, type CallWebhookEvent } from '@/lib/whatsapp/calling-api'
-import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { maskForLog, normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { safeFetch, SsrfBlockedError } from '@/lib/net/safe-fetch'
 
 interface HandleArgs {
   accountId: string
@@ -52,11 +53,10 @@ export async function forwardCallWebhook(args: {
   const url = config?.call_forward_url?.trim()
   if (!url) return
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), FORWARD_TIMEOUT_MS)
-
   try {
-    const res = await fetch(url, {
+    // safeFetch: an internal address (or a name re-pointed at one) is
+    // refused at connection time — this URL is typed in by an admin.
+    const res = await safeFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -65,21 +65,24 @@ export async function forwardCallWebhook(args: {
         ...(args.signature ? { 'x-hub-signature-256': args.signature } : {}),
       },
       body: args.rawBody,
-      signal: controller.signal,
-    })
+      redirect: 'error',
+    }, { timeoutMs: FORWARD_TIMEOUT_MS, maxBytes: 64 * 1024 })
+    await res.body?.cancel().catch(() => {})
     if (res.ok) {
       console.log('[calls] the voice agent took the call')
     } else {
       console.warn(`[calls] the voice agent answered ${res.status} — it did not take the call`)
     }
   } catch (err) {
-    const aborted = (err as { name?: string })?.name === 'AbortError'
+    const reason = (err as { reason?: string })?.reason
     console.warn(
       `[calls] could not reach the voice agent at ${url}: ` +
-        (aborted ? `no answer within ${FORWARD_TIMEOUT_MS}ms` : String(err)),
+        (err instanceof SsrfBlockedError
+          ? 'it points at an internal address, which is not allowed'
+          : reason === 'timeout'
+            ? `no answer within ${FORWARD_TIMEOUT_MS}ms`
+            : String(err)),
     )
-  } finally {
-    clearTimeout(timeout)
   }
 }
 
@@ -311,7 +314,7 @@ async function handleIncoming(
   // moment a person is actually wanted.
   if (aiWouldAnswer) {
     console.log(
-      `[calls] ${event.callId} from ${contact?.name ?? event.from} — the assistant is taking it`,
+      `[calls] ${event.callId} from ${maskForLog(event.from)} — the assistant is taking it`,
     )
     return
   }
@@ -335,8 +338,8 @@ async function handleIncoming(
   // popup appeared for somebody else" look identical from one screen and
   // need completely different fixes.
   console.log(
-    `[calls] ringing ${event.callId} from ${contact?.name ?? event.from} — ${pick.reason}` +
-      (pick.agent ? ` [to ${pick.agent.fullName}]` : ' [to everyone]') +
+    `[calls] ringing ${event.callId} from ${maskForLog(event.from)} — ${pick.reason}` +
+      (pick.agent ? ` [to agent ${pick.agent.userId}]` : ' [to everyone]') +
       (aiWouldAnswer ? ' (assistant is standing by)' : ''),
   )
 

@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { isFacebookOrigin } from './facebook-origin';
 
 declare global {
   interface Window {
@@ -88,7 +89,10 @@ export function EmbeddedSignupButton({ onConnected, className }: Props) {
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
-      if (!event.origin.endsWith('facebook.com')) return;
+      // Meta's own pages only. A bare endsWith('facebook.com') also let
+      // https://evilfacebook.com (or plain http) post a lookalike event and
+      // swap in its own WhatsApp account ids mid-signup.
+      if (!isFacebookOrigin(event.origin)) return;
       let parsed: { type?: string; data?: { waba_id?: string; phone_number_id?: string } } | null = null;
       try { parsed = JSON.parse(event.data); } catch { return; }
       // Meta documents the completion event as `event: "FINISH"` but notes

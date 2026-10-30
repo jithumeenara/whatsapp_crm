@@ -29,13 +29,24 @@ import { ensureAiMetaColumn } from "./src/lib/ai/reply-sources";
 import { attachLiveVoiceServer } from "./src/lib/ai/live-voice-server";
 import { loadLiveVoiceContext } from "./src/lib/ai/live-voice-context";
 import { isClientGone } from "./src/lib/net/client-gone";
-import { verifyRealtimeTicket } from "./src/lib/realtime-ticket";
+import { attachAccountNamespace, socketCorsOrigin } from "./src/lib/realtime-server";
 import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
 import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
 import { installDevSendGuard, isDevelopment } from "./src/lib/dev/send-guard";
 import { singleFlight } from "./src/lib/jobs/single-flight";
+import { checkStartupEnv, isDevServer } from "./src/lib/security/startup-check";
 
-const dev = process.env.NODE_ENV !== "production";
+// Development mode only when asked for by name — see isDevServer for what
+// an unset NODE_ENV used to turn on in production.
+const dev = isDevServer(process.env);
+// And say so to the rest of the process. A custom server's next() does
+// not set NODE_ENV, and the session cookie's name (auth.ts, proxy.ts,
+// the heartbeat) is chosen from it — left unset, a production server
+// would look for the development cookie name.
+if (!process.env.NODE_ENV) {
+  (process.env as Record<string, string | undefined>).NODE_ENV = dev ? "development" : "production";
+}
+
 const hostname = process.env.HOSTNAME ?? "localhost";
 const port = parseInt(process.env.PORT ?? "3000", 10);
 
@@ -93,6 +104,21 @@ const app = next({ dev, hostname, port, webpack: true });
 const handle = app.getRequestHandler();
 
 app.prepare().then(() => {
+  // Refuse to serve with secrets that would make sessions forgeable or
+  // stored tokens readable (src/lib/security/startup-check.ts). Here,
+  // after prepare(), because that is when Next has loaded .env.local /
+  // .env.production — checked any earlier, a correctly configured server
+  // would look empty. Names the variable, never its value, and exits
+  // once: pm2 shows the reason in its log.
+  {
+    const { errors, warnings } = checkStartupEnv(process.env);
+    for (const w of warnings) console.warn(`[startup] WARNING: ${w}`);
+    if (errors.length > 0) {
+      for (const e of errors) console.error(`[startup] ${e}`);
+      console.error("[startup] Refusing to start in production until the variables above are fixed.");
+      process.exit(1);
+    }
+  }
   // A laptop (APP_ENV=development in .env.local) sends nothing to real
   // people — see src/lib/dev/send-guard.ts. Installed here, after Next has
   // read .env.local. A no-op on every production server.
@@ -131,8 +157,10 @@ app.prepare().then(() => {
   });
 
   const io = new SocketIOServer(httpServer, {
+    // Same-origin unless a site URL says otherwise — never "*"
+    // (src/lib/realtime-server.ts).
     cors: {
-      origin: process.env.NEXT_PUBLIC_SITE_URL ?? "*",
+      origin: socketCorsOrigin(process.env),
       methods: ["GET", "POST"],
     },
   });
@@ -147,36 +175,11 @@ app.prepare().then(() => {
   // other upgrade, so socket.io's own handshake is untouched.
   attachLiveVoiceServer(httpServer, loadLiveVoiceContext);
 
-  // Every connection to the staff namespace presents a signed ticket from
-  // /api/realtime/ticket, and is placed in the one account room the
-  // ticket names. It used to join whichever room it asked for, which let
-  // anyone holding an account id listen to that business's messages —
-  // see src/lib/realtime-ticket.ts.
-  io.use((socket, nextFn) => {
-    const ticket = verifyRealtimeTicket(
-      (socket.handshake.auth as { ticket?: unknown } | undefined)?.ticket,
-    );
-    if (!ticket) return nextFn(new Error("unauthorized"));
-    (socket.data as { accountId?: string }).accountId = ticket.accountId;
-    nextFn();
-  });
-
-  io.on("connection", (socket) => {
-    const accountId = (socket.data as { accountId?: string }).accountId;
-    if (accountId) socket.join(`account:${accountId}`);
-
-    // Kept for clients still running the old page: the room is already
-    // joined from the ticket, and a request for any other room is ignored.
-    socket.on("join_account", () => {
-      if (accountId) socket.join(`account:${accountId}`);
-    });
-    // Ignored. The page shares one socket between several listeners and
-    // used to send this whenever one of them closed, which silently cut off
-    // all the others (no ticks, no replies until a reload). Tabs still on
-    // the old page keep sending it until they reload, so the server must
-    // not act on it. The room is the ticket's; nothing else changes it.
-    socket.on("leave_account", () => {});
-  });
+  // Every connection to the staff namespace presents a signed ticket
+  // from /api/realtime/ticket, is placed in the one account room the
+  // ticket names, and is closed after a bounded lifetime so it has to be
+  // re-admitted — see src/lib/realtime-server.ts.
+  attachAccountNamespace(io);
 
   // Visitors chatting from a business's website. A namespace of its own,
   // with its own admission check, so a visitor can never reach a staff

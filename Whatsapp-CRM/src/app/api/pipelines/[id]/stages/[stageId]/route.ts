@@ -16,14 +16,18 @@ export async function PATCH(
 
     // stage_type is fixed at creation (exactly one Won + one Lost per
     // pipeline) — only the display name/color/position are editable.
-    const stage = await prisma.pipelineStage.update({
-      where: { id: stageId },
-      data: {
-        name:     body.name     ?? undefined,
-        color:    body.color    ?? undefined,
-        position: body.position ?? undefined,
-      },
+    const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 100) : undefined
+    const color = typeof body.color === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(body.color) ? body.color : undefined
+    const position = Number.isInteger(body.position) ? body.position : undefined
+
+    // The stage must be in the pipeline just checked: updating by its id
+    // alone let an admin rename another workspace's stage (A4-05).
+    const updated = await prisma.pipelineStage.updateMany({
+      where: { id: stageId, pipeline_id: pipeline.id },
+      data: { name, color, position },
     })
+    if (updated.count === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    const stage = await prisma.pipelineStage.findFirst({ where: { id: stageId, pipeline_id: pipeline.id } })
 
     return NextResponse.json({ stage })
   } catch (e) {

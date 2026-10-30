@@ -383,7 +383,11 @@ async function runTotals(ctx: Ctx, c: Checked, period: ResolvedPeriod, base: Rep
   const result: ReportResult = { ...base, total: current, previousTotal: previous }
 
   if (!c.spec.by) {
-    const bucket = c.spec.bucket ?? bucketFor(period.days)
+    // Checked here as well as in parseSpec: it is spliced into the SQL
+    // text, and a caller that skips parseSpec must not be able to change
+    // that (A4-12). Anything else falls back to the automatic bucket.
+    const asked = c.spec.bucket
+    const bucket = asked === 'day' || asked === 'week' || asked === 'month' ? asked : bucketFor(period.days)
     const series = async (fromDay: string, toDay: string) => {
       const p = new Params()
       const a = p.add(ctx.accountId)

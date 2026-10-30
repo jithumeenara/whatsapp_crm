@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe"
 import { sanitizePhoneForMeta, isValidE164 } from "@/lib/whatsapp/phone-utils"
 import { emitToAccount } from "@/lib/socket"
@@ -57,26 +58,17 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const session = await auth()
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    // Creates a contact and a conversation: a write, so agent and above.
+    let ctx
+    try {
+      ctx = await requireRole("agent")
+    } catch (err) {
+      return toErrorResponse(err)
     }
-    const userId = session.user.id
+    const { userId, accountId } = ctx
 
     const limit = checkRateLimit(`new-chat:${userId}`, RATE_LIMITS.newChat)
     if (!limit.success) return rateLimitResponse(limit)
-
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: userId },
-      select: { account_id: true },
-    })
-    const accountId = profile?.account_id ?? ""
-    if (!accountId) {
-      return NextResponse.json(
-        { error: "Your profile is not linked to an account." },
-        { status: 403 },
-      )
-    }
 
     const body = await request.json().catch(() => null)
     const rawPhone = typeof body?.phone === "string" ? body.phone.trim() : ""

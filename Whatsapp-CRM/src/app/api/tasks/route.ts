@@ -3,6 +3,7 @@ import { isOneOf, TASK_PRIORITIES, TASK_STATUSES } from '@/lib/status-lists'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
+import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 
 const PAGE_SIZE = 25
 
@@ -56,6 +57,9 @@ export async function POST(req: NextRequest) {
     if (priority !== undefined && !isOneOf(TASK_PRIORITIES, priority)) {
       return NextResponse.json({ error: `priority must be one of: ${TASK_PRIORITIES.join(', ')}` }, { status: 400 })
     }
+
+    const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id, lead_id, assigned_to })
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
     const task = await prisma.task.create({
       data: {

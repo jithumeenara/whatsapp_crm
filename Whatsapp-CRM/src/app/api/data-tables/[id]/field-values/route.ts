@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { dataStoreMember } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 
 /**
@@ -18,25 +18,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: 'field_key query parameter is required.' }, { status: 400 })
     }
 
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: session.user.id },
-      select: { account_id: true },
-    })
-    if (!profile?.account_id) return NextResponse.json({ error: 'No account.' }, { status: 403 })
+    const member = await dataStoreMember('viewer')
+    if (!member.ok) return NextResponse.json(member.body, { status: member.status })
+    const accountId = member.ctx.accountId
 
     // Verify table belongs to this account
     const table = await prisma.dataTable.findFirst({
-      where: { id: tableId, account_id: profile.account_id },
+      where: { id: tableId, account_id: accountId },
       select: { id: true },
     })
     if (!table) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
 
     // Fetch all records (up to 2000) — server-side extraction
     const records = await prisma.dataRecord.findMany({
-      where: { table_id: tableId, account_id: profile.account_id },
+      where: { table_id: tableId, account_id: accountId },
       select: { data: true },
       orderBy: { created_at: 'asc' },
       take: 2000,

@@ -116,6 +116,7 @@ export async function sendToAdmin(
     language: template.language ?? 'en_US',
     template: template as unknown as Parameters<typeof sendTemplateMessage>[0]['template'],
     messageParams: { body: [await firstName(member.user_id), oneLine] },
+    accountId: member.account_id,
   })
   return 'template'
 }

@@ -33,20 +33,33 @@ if [ -z "$ENV_FILE" ]; then
   exit 1
 fi
 
-DATABASE_URL="$(grep '^DATABASE_URL=' "$ENV_FILE" | head -1 | sed -e 's/^DATABASE_URL=//' -e 's/^"//' -e 's/"$//')"
-# pg_dump does not understand Prisma's ?schema= query string.
-DATABASE_URL="${DATABASE_URL%%\?*}"
+# Connection details go to pg_dump as PG* environment variables, never
+# as a URL argument: anything on a command line can be read, password
+# included, by every user on the machine (ps, /proc/<pid>/cmdline).
+# pg-env.sh also carries ?sslmode= across and drops Prisma's ?schema=.
+PGENV_FILE="$ENV_FILE"
+# shellcheck source=/dev/null
+source "scripts/pg-env.sh" > /dev/null
+unset PGENV_FILE
+if [ -z "${PGDATABASE:-}" ]; then
+  echo "backup-db: could not read DATABASE_URL in $ENV_FILE" >&2
+  exit 1
+fi
+
+# Every file this run creates — the .partial included — is owner-only
+# from the moment it exists, not after a later chmod.
+umask 077
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/crm}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
-DB_NAME="$(printf '%s' "$DATABASE_URL" | sed -E 's#.*/([^/?]+)$#\1#')"
+DB_NAME="$PGDATABASE"
 STAMP="$(date +%Y-%m-%d_%H%M)"
 OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.dump"
 
-pg_dump --format=custom --no-owner --no-acl --file="$OUT.partial" "$DATABASE_URL"
+pg_dump --format=custom --no-owner --no-acl --file="$OUT.partial"
 mv "$OUT.partial" "$OUT"
 chmod 600 "$OUT"
 

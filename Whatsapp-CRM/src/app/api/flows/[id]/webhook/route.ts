@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { debugLog, handleFlowWebhookPost } from '@/lib/flows/webhook-handler'
+import { checkFlowRequestSignature } from '@/lib/flows/flow-signature'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 
@@ -49,5 +50,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id: flowId } = await params
-  return handleFlowWebhookPost(request, flowId)
+  // Meta's X-Hub-Signature-256, checked before anything is decrypted (A9-08).
+  const signed = await checkFlowRequestSignature(request)
+  if (signed.response) return signed.response
+  return handleFlowWebhookPost(signed.request, flowId)
 }

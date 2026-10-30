@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getToken, encode } from "next-auth/jwt"
 import { prisma } from "@/lib/db"
+import { IDLE_TIMEOUT_MS } from "@/lib/auth/session-timing"
+import { ABSOLUTE_SESSION_MAX_AGE_S, signedInAt } from "@/lib/auth/session-guard"
+import { sessionRevoked } from "@/lib/security/session-revoked"
 
 const COOKIE_NAME =
   process.env.NODE_ENV === "production" ? "__Secure-authjs.session-token" : "authjs.session-token"
 
-// Must match auth.ts's session.maxAge — the hard absolute cap on a
-// session's total lifetime, independent of activity.
-const ABSOLUTE_SESSION_MAX_AGE_S = 8 * 60 * 60
 
 /**
  * POST /api/heartbeat
@@ -74,6 +74,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  // This route re-signs the cookie, so it is the one place a dead session
+  // could be made live again — and getToken() only decrypts, it runs none
+  // of auth.ts's checks. Each of them is repeated here rather than left to
+  // whatever stood in front of this route: the proxy's idle check was
+  // skippable with an invented "Bearer wcrm_" header, and no idle check
+  // anywhere looks at revocation.
+  const lastActivity =
+    typeof token.lastActivity === "number" ? token.lastActivity : (signedInAt(token) ?? 0) * 1000
+  if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+    return NextResponse.json({ error: "Session expired due to inactivity" }, { status: 401 })
+  }
+  if (await sessionRevoked(token)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   // Presence, recorded rather than declared.
   //
   // This request already means "a real person did something a moment
@@ -101,7 +116,14 @@ export async function POST(req: NextRequest) {
   // Preserve the ORIGINAL sign-in's absolute cutoff rather than letting
   // encode() grant a fresh maxAge from now — otherwise every heartbeat
   // would silently extend the hard 8-hour cap indefinitely, defeating it.
-  const originalIat = typeof token.iat === "number" ? token.iat : Math.floor(Date.now() / 1000)
+  //
+  // Anchored on `authTime`, not `iat`. encode() stamps a new iat on every
+  // token it writes (this route's and NextAuth's own session refresh), so
+  // a cutoff computed from iat moved forward with every heartbeat and
+  // never arrived. auth.ts sets authTime at sign-in and it is carried on
+  // every re-issued token; a token from before that falls back to iat
+  // (src/lib/auth/session-guard.ts).
+  const originalIat = signedInAt(token) ?? Math.floor(Date.now() / 1000)
   const absoluteCutoffS = originalIat + ABSOLUTE_SESSION_MAX_AGE_S
   const remainingS = absoluteCutoffS - Math.floor(Date.now() / 1000)
   if (remainingS <= 0) {
@@ -109,7 +131,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Session expired" }, { status: 401 })
   }
 
-  const updatedToken = { ...token, lastActivity: Date.now() }
+  const updatedToken = { ...token, lastActivity: Date.now(), authTime: originalIat }
   const encoded = await encode({
     token: updatedToken,
     secret: process.env.NEXTAUTH_SECRET!,

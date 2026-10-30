@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -17,10 +18,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // its own status. This is what makes dragging a deal into the Won/Lost
     // column on the board actually close it.
     let status = body.status ?? undefined
-    if (status === undefined && body.stage_id && body.stage_id !== existing.stage_id) {
+    if (body.stage_id && body.stage_id !== existing.stage_id) {
+      // A stage of this deal's own pipeline only — any stage id used to
+      // be written as given, another pipeline's or another workspace's.
       const targetStage = await prisma.pipelineStage.findFirst({ where: { id: body.stage_id, pipeline_id: existing.pipeline_id } })
-      if (targetStage) status = targetStage.stage_type
+      if (!targetStage) return NextResponse.json({ error: 'Stage not found in this pipeline' }, { status: 400 })
+      if (status === undefined) status = targetStage.stage_type
     }
+    const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id: body.contact_id, assigned_to: body.assigned_to })
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
     const deal = await prisma.deal.update({
       where: { id },

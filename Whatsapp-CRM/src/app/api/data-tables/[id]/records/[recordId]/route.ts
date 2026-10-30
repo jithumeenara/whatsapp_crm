@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { afterRecordsChanged } from '@/lib/data-store/record-events'
-import { auth } from '@/auth'
+import { dataStoreMember } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { dispatchWebhooks } from '@/lib/webhooks/deliver'
@@ -26,14 +26,10 @@ async function requireRecord(req: Request, tableId: string, recordId: string): P
     if (!result) return { ok: false, status: 401, body: { error: 'Invalid API key.' } }
     accountId = result.accountId
   } else {
-    const session = await auth()
-    if (!session?.user?.id) return { ok: false, status: 401, body: { error: 'Unauthorized.' } }
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: session.user.id },
-      select: { account_id: true },
-    })
-    if (!profile?.account_id) return { ok: false, status: 403, body: { error: 'No account.' } }
-    accountId = profile.account_id
+    const member = await dataStoreMember('agent')
+    if (!member.ok) return member
+    const accountIdOf = member.ctx.accountId
+    accountId = accountIdOf
   }
 
   const record = await prisma.dataRecord.findFirst({
@@ -61,7 +57,11 @@ export async function PUT(
 
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
-    const checked = checkRecordData(body.data)
+    const fieldTypes = await prisma.dataField.findMany({
+      where: { table_id: tableId, account_id: guard.accountId },
+      select: { field_key: true, field_type: true },
+    })
+    const checked = checkRecordData(body.data, fieldTypes)
     if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 })
 
     const record = await prisma.dataRecord.update({

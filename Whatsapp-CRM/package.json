@@ -16,7 +16,7 @@
     "self-hosted"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "tsx server.ts",
@@ -52,7 +52,7 @@
     "emoji-picker-react": "^4.19.1",
     "exceljs": "^3.4.0",
     "flag-icons": "^7.5.0",
-    "isomorphic-dompurify": "^3.23.0",
+    "isomorphic-dompurify": "3.18.0",
     "lucide-react": "^1.17.0",
     "mime-types": "^3.0.2",
     "motion": "^13.1.1",
@@ -110,6 +110,7 @@
     "brace-expansion@1": "1.1.21",
     "brace-expansion@5": "5.0.12",
     "vite": "^8.3.5",
-    "eslint-plugin-react-hooks": "7.0.1"
+    "eslint-plugin-react-hooks": "7.0.1",
+    "undici@7": "^7.30.1"
   }
 }

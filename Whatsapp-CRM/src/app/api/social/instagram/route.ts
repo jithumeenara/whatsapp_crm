@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole } from "@/lib/auth/account"
+import { openStoredSecret } from "@/lib/whatsapp/encryption"
 
 export async function GET() {
   try {
@@ -21,7 +22,7 @@ export async function GET() {
       return NextResponse.json({ error: "Instagram not connected" }, { status: 404 })
     }
 
-    const token = cfg.access_token
+    const token = openStoredSecret(cfg.access_token)
     const igId  = cfg.instagram_account_id
 
     // Fetch profile + first page of media in parallel

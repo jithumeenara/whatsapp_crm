@@ -33,6 +33,7 @@
  */
 
 import crypto from "crypto";
+import { runHttpNodeRequest } from "./http-request-node";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { updateContactField } from "@/lib/contacts/update-field";
@@ -2886,15 +2887,16 @@ The assistant could not generate a reply: ${detail}`,
       const url = interpolateWithContact(cfg.url ?? "", run.vars, contactForHttp);
       let httpError = false;
       try {
-        const reqInit: RequestInit = {
+        // Through runHttpNodeRequest, not fetch: the URL is author-typed and
+        // the reply can be messaged out, so it must not reach the server's
+        // own network (see http-request-node.ts).
+        const resp = await runHttpNodeRequest({
           method,
-          headers: { "Content-Type": "application/json", ...(cfg.headers ?? {}) },
-        };
-        if (cfg.body && method !== "GET" && method !== "HEAD") {
-          reqInit.body = interpolateWithContact(cfg.body, run.vars, contactForHttp);
-        }
-        const resp = await fetch(url, reqInit);
-        const text = await resp.text();
+          url,
+          headers: cfg.headers ?? {},
+          body: cfg.body ? interpolateWithContact(cfg.body, run.vars, contactForHttp) : undefined,
+        });
+        const text = resp.text;
         if (cfg.response_var) {
           let parsed: unknown;
           try { parsed = JSON.parse(text); } catch { parsed = text; }

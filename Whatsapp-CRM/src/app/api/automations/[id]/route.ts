@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
+import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
 import {
   loadStepsTree,
@@ -11,22 +11,19 @@ import {
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
 
-async function requireUser() {
-  const session = await auth()
-  return session?.user?.id ?? null
-}
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const userId = await requireUser()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const member = await automationsMember('viewer')
+  if (!member.ok) return member.res
+  const { userId, accountId } = member.ctx
 
   try {
     const automation = await prisma.automation.findFirst({
-      where: { id, user_id: userId },
+      where: { id, user_id: userId, account_id: accountId },
     })
     if (!automation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
@@ -43,8 +40,9 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const userId = await requireUser()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const member = await automationsMember('agent')
+  if (!member.ok) return member.res
+  const { userId, accountId } = member.ctx
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
@@ -52,7 +50,7 @@ export async function PATCH(
   try {
     // Ownership check — load existing fields needed for merged validation
     const existing = await prisma.automation.findFirst({
-      where: { id, user_id: userId },
+      where: { id, user_id: userId, account_id: accountId },
       select: { id: true, is_active: true, trigger_type: true, trigger_config: true },
     })
     if (!existing) {
@@ -82,10 +80,9 @@ export async function PATCH(
       // approval itself, so activation stays blocked with a clear message
       // rather than silently accepting a trigger that will never fire.
       if (mergedTriggerType === 'comment_keyword_match') {
-        const profile = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true } })
-        const igRows = profile?.account_id
+        const igRows = accountId
           ? await prisma.$queryRaw<{ comment_dm_status: string | null }[]>`
-              SELECT comment_dm_status FROM instagram_config WHERE account_id = ${profile.account_id}::uuid LIMIT 1
+              SELECT comment_dm_status FROM instagram_config WHERE account_id = ${accountId}::uuid LIMIT 1
             `.catch(() => [] as { comment_dm_status: string | null }[])
           : []
         if ((igRows[0]?.comment_dm_status ?? 'pending_meta_approval') !== 'approved') {
@@ -141,13 +138,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const userId = await requireUser()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const member = await automationsMember('agent')
+  if (!member.ok) return member.res
+  const { userId, accountId } = member.ctx
 
   try {
     // Verify ownership before deleting
     const existing = await prisma.automation.findFirst({
-      where: { id, user_id: userId },
+      where: { id, user_id: userId, account_id: accountId },
       select: { id: true },
     })
     if (!existing) {

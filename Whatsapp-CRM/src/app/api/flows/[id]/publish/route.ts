@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -21,6 +22,8 @@ export async function POST(
   try {
     const { id } = await context.params
 
+    const denied = await denyUnlessFlowEditor('/flows')
+    if (denied) return denied
     const session = await auth()
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

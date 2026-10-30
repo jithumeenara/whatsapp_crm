@@ -111,3 +111,30 @@ export function decrypt(encryptedText: string): string {
 export function isLegacyFormat(encryptedText: string): boolean {
   return encryptedText.split(':').length === 2
 }
+
+const GCM_SHAPE = /^[0-9a-f]{24}:[0-9a-f]*:[0-9a-f]{32}$/i
+
+/** True when a stored value is this module's current (GCM) output. */
+export function isSealed(value: string): boolean {
+  return GCM_SHAPE.test(value)
+}
+
+/**
+ * A stored secret that may predate encryption (Facebook / Instagram tokens
+ * and app secrets, outgoing-webhook signing secrets were once kept as
+ * plain text). Sealed values are decrypted; anything else is an old plain
+ * row and is returned as it is, so no data migration is needed — the
+ * next save seals it.
+ */
+export function openStoredSecret(value: string): string
+export function openStoredSecret(value: string | null | undefined): string | null
+export function openStoredSecret(value: string | null | undefined): string | null {
+  if (!value) return value ?? null
+  return isSealed(value) ? decrypt(value) : value
+}
+
+/** Seals a secret for storage; null and empty stay as they are. */
+export function sealSecret(value: string | null | undefined): string | null {
+  if (!value) return null
+  return isSealed(value) ? value : encrypt(value)
+}

@@ -6,6 +6,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { detectAndTranslate, isAlreadyTargetLanguage, TRANSLATE_MODEL } from '@/lib/ai/translate'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { publicErrorMessage } from '@/lib/jobs/public-error'
 
 /**
  * POST /api/messages/translate
@@ -98,7 +99,7 @@ export async function POST(req: Request) {
         })
       } catch (err) {
         return NextResponse.json(
-          { error: err instanceof Error ? err.message : 'Translation failed' },
+          { error: publicErrorMessage(err, 'Translation failed', 'messages/translate') },
           { status: 502 },
         )
       }
@@ -139,7 +140,7 @@ export async function POST(req: Request) {
         })
       } catch (err) {
         return NextResponse.json(
-          { error: err instanceof Error ? err.message : 'Translation failed' },
+          { error: publicErrorMessage(err, 'Translation failed', 'messages/translate') },
           { status: 502 },
         )
       }

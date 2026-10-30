@@ -1,4 +1,5 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { hasMinRole } from "@/lib/auth/roles"
 import { NextRequest, NextResponse } from "next/server"
 import { CONVERSATION_STATUSES, isOneOf } from "@/lib/status-lists"
 import { sendPushToUser } from "@/lib/push"
@@ -70,8 +71,30 @@ export async function PATCH(
       }
       data.status = body.status
     }
-    if ("assigned_agent_id" in body) data.assigned_agent_id = body.assigned_agent_id
-    if (body.unread_count !== undefined) data.unread_count = body.unread_count
+    if ("assigned_agent_id" in body) {
+      const next = body.assigned_agent_id ?? null
+      if (next !== null && typeof next !== "string") {
+        return NextResponse.json({ error: "assigned_agent_id must be a user id or null" }, { status: 400 })
+      }
+      // An agent (who only reaches their own chats here) may keep it or
+      // give it back; handing it to a colleague is a supervisor's call.
+      if (!hasMinRole(ctx.role, "supervisor") && next !== null && next !== ctx.userId) {
+        return NextResponse.json({ error: "Only a supervisor can move a conversation between people" }, { status: 403 })
+      }
+      // The person must be in this account — the assignment push below
+      // carries this account's customer's name to them.
+      if (next !== null) {
+        const member = await ctx.db.profile.findFirst({ where: { user_id: next, account_id: ctx.accountId }, select: { user_id: true } })
+        if (!member) return NextResponse.json({ error: "That person is not in this account" }, { status: 400 })
+      }
+      data.assigned_agent_id = next
+    }
+    if (body.unread_count !== undefined) {
+      if (!Number.isInteger(body.unread_count) || body.unread_count < 0) {
+        return NextResponse.json({ error: "unread_count must be a whole number, 0 or more" }, { status: 400 })
+      }
+      data.unread_count = body.unread_count
+    }
 
     const updated = await ctx.db.conversation.update({
       where: { id },

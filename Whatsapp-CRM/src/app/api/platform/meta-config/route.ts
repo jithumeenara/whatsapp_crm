@@ -1,9 +1,25 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { ForbiddenError, requireRole, toErrorResponse } from "@/lib/auth/account"
+import { isPlatformOwner } from "@/lib/auth/platform-owner"
 import { prisma } from "@/lib/db"
 import { encrypt } from "@/lib/whatsapp/encryption"
 
 const MASKED = "••••••••••••••••"
+
+/**
+ * The server owner only (lib/auth/platform-owner.ts), not the owner of
+ * whichever workspace is asking. This one Meta App receives the WhatsApp
+ * Business tokens of every tenant who connects through Embedded Signup,
+ * so a tenant owner — anybody, on a server with open sign-ups — who could
+ * replace it would collect every other tenant's tokens from then on.
+ */
+async function requirePlatformOwner() {
+  const ctx = await requireRole("owner")
+  if (!(await isPlatformOwner(ctx.userId))) {
+    throw new ForbiddenError("Only the server owner can change the platform Meta App.")
+  }
+  return ctx
+}
 
 /**
  * GET /api/platform/meta-config
@@ -16,7 +32,7 @@ const MASKED = "••••••••••••••••"
  */
 export async function GET() {
   try {
-    await requireRole("owner")
+    await requirePlatformOwner()
     const config = await prisma.metaPlatformConfig.findUnique({ where: { id: "singleton" } })
     if (!config) return NextResponse.json({ configured: false })
 
@@ -35,7 +51,7 @@ export async function GET() {
 /** PATCH /api/platform/meta-config — body: { app_id, app_secret, config_id } */
 export async function PATCH(req: NextRequest) {
   try {
-    const ctx = await requireRole("owner")
+    const ctx = await requirePlatformOwner()
     const body = await req.json().catch(() => ({}))
     const { app_id, app_secret, config_id } = body as { app_id?: string; app_secret?: string; config_id?: string }
 

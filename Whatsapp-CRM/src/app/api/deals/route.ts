@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 
 export async function GET(req: NextRequest) {
   try {
@@ -53,6 +54,13 @@ export async function POST(req: NextRequest) {
       where: { id: body.stage_id, pipeline_id: body.pipeline_id },
     })
     if (!stage) return NextResponse.json({ error: 'Stage not found' }, { status: 404 })
+
+    // Everything the deal points at must be this account's: the response
+    // reads the contact's name and number back through it.
+    const refProblem = await checkOwnedRefs(ctx.accountId, {
+      contact_id: body.contact_id, lead_id: body.lead_id, conversation_id: body.conversation_id, assigned_to: body.assigned_to,
+    })
+    if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
     const deal = await prisma.deal.create({
       data: {

@@ -18,6 +18,7 @@ import {
   inviteUrl,
 } from "@/lib/auth/invitations";
 import { isAccountRole } from "@/lib/auth/roles";
+import { normaliseInviteEmail } from "@/lib/auth/claim-invitation";
 import { prisma } from "@/lib/db";
 import {
   checkRateLimit,
@@ -97,6 +98,7 @@ export async function GET() {
         id: true,
         role: true,
         label: true,
+        email: true,
         created_by_user_id: true,
         created_at: true,
         expires_at: true,
@@ -123,7 +125,7 @@ export async function POST(request: Request) {
     if (!limit.success) return rateLimitResponse(limit);
 
     const body = (await request.json().catch(() => null)) as
-      | { role?: unknown; expiresInDays?: unknown; label?: unknown }
+      | { role?: unknown; expiresInDays?: unknown; label?: unknown; email?: unknown }
       | null;
 
     const role = body?.role;
@@ -152,6 +154,16 @@ export async function POST(request: Request) {
       label = trimmed === "" ? null : trimmed;
     }
 
+    // Optional: who it is for. Then only a login with this address (trimmed,
+    // lowercased) can use it — see src/lib/auth/claim-invitation.ts.
+    let email: string | null = null;
+    if (body?.email !== undefined && body?.email !== null && body?.email !== "") {
+      email = normaliseInviteEmail(body.email);
+      if (!email) {
+        return NextResponse.json({ error: "Enter a valid email address, or leave it empty" }, { status: 400 });
+      }
+    }
+
     const { token, hash } = generateInviteToken();
 
     const invitation = await prisma.accountInvitation.create({
@@ -161,12 +173,14 @@ export async function POST(request: Request) {
         role,
         created_by_user_id: ctx.userId,
         label,
+        email,
         expires_at: expiresAt,
       },
       select: {
         id: true,
         role: true,
         label: true,
+        email: true,
         expires_at: true,
         created_at: true,
       },

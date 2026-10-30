@@ -18,7 +18,27 @@ export type RecordDataResult =
   | { ok: true; data: Record<string, unknown> }
   | { ok: false; error: string }
 
-export function checkRecordData(raw: unknown): RecordDataResult {
+/** A value of a file, image or signature field: a web link, one of this
+ *  app's own paths, or — for a picture only — an inline raster image.
+ *  The screens that show these now refuse other schemes too (A7-04);
+ *  this keeps `javascript:`, `data:text/html` and `//host` out of the
+ *  row itself, for every other reader of it. */
+const MEDIA_TYPES = new Set(['file', 'image', 'signature'])
+const INLINE_RASTER = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/i
+
+function mediaValueOk(fieldType: string, value: unknown): boolean {
+  if (value === null || value === undefined || value === '') return true
+  if (typeof value !== 'string') return false
+  const v = value.trim()
+  if (/^https?:\/\/[^\s]+$/i.test(v)) return true
+  if (v.startsWith('/') && !v.startsWith('//') && !v.startsWith('/\\')) return true
+  return fieldType !== 'file' && INLINE_RASTER.test(v)
+}
+
+export function checkRecordData(
+  raw: unknown,
+  fields?: ReadonlyArray<{ field_key: string; field_type: string }>,
+): RecordDataResult {
   if (raw === undefined || raw === null) return { ok: true, data: {} }
   if (typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, error: '"data" must be an object of field values.' }
@@ -37,5 +57,12 @@ export function checkRecordData(raw: unknown): RecordDataResult {
     return { ok: false, error: '"data" could not be read.' }
   }
   if (size > MAX_BYTES) return { ok: false, error: 'This record is too large (1 MB at most).' }
+  for (const f of fields ?? []) {
+    if (!MEDIA_TYPES.has(f.field_type)) continue
+    const value = (raw as Record<string, unknown>)[f.field_key]
+    if (!mediaValueOk(f.field_type, value)) {
+      return { ok: false, error: `"${f.field_key.slice(0, 40)}" must be a web link or an uploaded file.` }
+    }
+  }
   return { ok: true, data: raw as Record<string, unknown> }
 }

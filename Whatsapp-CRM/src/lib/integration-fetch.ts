@@ -3,6 +3,16 @@
  * Used by both the sync engine and the test endpoint.
  */
 
+import { SafeFetchError, SsrfBlockedError, safeFetch } from "@/lib/net/safe-fetch"
+
+/** Integration APIs (FHIR servers, in-house systems) often listen on an
+ *  alternative web port; anything else — 22, 5432, 6379 — stays shut. */
+const INTEGRATION_FETCH_LIMITS = {
+  allowedPorts: [80, 443, 8080, 8443],
+  timeoutMs: 20_000,
+  maxBytes: 20 * 1024 * 1024,
+}
+
 // ── Auth header builder ────────────────────────────────────────
 
 export function buildFetchHeaders(
@@ -24,6 +34,24 @@ export function buildFetchHeaders(
     ).toString("base64")}`
   }
   return headers
+}
+
+/**
+ * An integration as it may leave the server. Its credentials — an API
+ * key's value, a bearer token, a Basic-auth password — stay here: the
+ * sync reads them from the database, and the screen only shows which
+ * key id or header is in use. Without this every member who could read
+ * /api/integrations (the viewer rank included) got the secrets in full.
+ */
+export function redactIntegration<T extends { auth_config?: unknown }>(integration: T): T {
+  const cfg = integration.auth_config
+  if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) return integration
+  const c = cfg as Record<string, unknown>
+  const shown: Record<string, unknown> = {}
+  if (typeof c.username === "string") shown.username = c.username
+  if (typeof c.header === "string") shown.header = c.header
+  shown.has_secret = ["password", "token", "value"].some((k) => typeof c[k] === "string" && c[k] !== "")
+  return { ...integration, auth_config: shown }
 }
 
 // ── FHIR flatteners ────────────────────────────────────────────
@@ -171,15 +199,20 @@ export async function fetchExternalRows(opts: {
     ? `${base_url.replace(/\/$/, "")}/${resource}?_count=${limit}`
     : `${base_url.replace(/\/$/, "")}/${resource.replace(/^\//, "")}`
 
-  // Use AbortController for timeout — more compatible than AbortSignal.timeout()
-  // across Node.js versions and Next.js's fetch override.
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(new Error("Request timed out after 20s")), 20000)
-
+  // The Base URL is whatever an admin typed, so the request goes through
+  // safeFetch: no private, loopback or cloud-metadata address, checked at
+  // connection time and again on every redirect.
   let res: Response
   try {
-    res = await fetch(url, { headers, signal: controller.signal })
+    res = await safeFetch(url, { headers }, INTEGRATION_FETCH_LIMITS)
   } catch (err) {
+    if (err instanceof SsrfBlockedError) {
+      throw new Error(`${new URL(url).hostname} cannot be used as an integration address — ${err.message}`)
+    }
+    if (err instanceof SafeFetchError && err.reason === "timeout") {
+      throw new Error(`Request to ${new URL(url).hostname} timed out — server took more than 20 seconds to respond`)
+    }
+    if (err instanceof SafeFetchError) throw new Error(err.message)
     const msg = err instanceof Error ? err.message : String(err)
     // Normalize the generic "fetch failed" into something actionable
     if (msg === "fetch failed" || msg.includes("ENOTFOUND") || msg.includes("ECONNREFUSED")) {
@@ -189,8 +222,6 @@ export async function fetchExternalRows(opts: {
       throw new Error(`Request to ${new URL(url).hostname} timed out — server took more than 20 seconds to respond`)
     }
     throw new Error(`Network error: ${msg}`)
-  } finally {
-    clearTimeout(timer)
   }
 
   if (!res.ok) {

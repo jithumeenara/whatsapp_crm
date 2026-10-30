@@ -7,6 +7,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { getProviderKeys, generateAiReplyWithFallback } from '@/lib/ai/providers/registry'
 import { polishSystemPrompt, polishUserMessage, cleanPolished, missingFacts } from '@/lib/ai/polish-message'
 import { TEAM_MEMBER_MARKER } from '@/lib/ai/history'
+import { publicErrorMessage } from '@/lib/jobs/public-error'
 
 /**
  * Drafts a reply for an agent to look at before sending.
@@ -140,7 +141,7 @@ export async function POST(req: Request) {
       })
     } catch (err) {
       return NextResponse.json(
-        { error: err instanceof Error ? err.message : 'Could not improve the message.' },
+        { error: publicErrorMessage(err, 'Could not improve the message.', 'messages/ai-suggest') },
         { status: 400 },
       )
     }
@@ -236,7 +237,7 @@ export async function POST(req: Request) {
     })
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not draft a reply.' },
+      { error: publicErrorMessage(err, 'Could not draft a reply.', 'messages/ai-suggest') },
       { status: 400 },
     )
   }

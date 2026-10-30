@@ -28,6 +28,19 @@ export async function POST(req: NextRequest) {
     const code = typeof body?.code === "string" ? body.code : ""
     if (!method || !code) return NextResponse.json({ error: "A code is required" }, { status: 400 })
 
+    // Replacing a method that is already on would skip the password check
+    // that turning it off requires (/api/account/mfa/disable): anybody at
+    // a signed-in browser could swap in their own authenticator and lock
+    // the owner out. Disable first, then set up the new one — which is
+    // also the only path the Settings screen offers.
+    const current = await prisma.user.findUnique({ where: { id: session.user.id }, select: { email: true, mfa_method: true } })
+    if (current?.mfa_method && current.mfa_method !== "disabled") {
+      return NextResponse.json(
+        { error: "Two-factor authentication is already on. Disable it with your password first, then set up the new method." },
+        { status: 409 },
+      )
+    }
+
     if (method === "totp") {
       const secret = typeof body?.secret === "string" ? body.secret : ""
       if (!secret) return NextResponse.json({ error: "Missing secret — restart setup" }, { status: 400 })

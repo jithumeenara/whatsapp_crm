@@ -18,6 +18,7 @@
 import twilio from "twilio"
 import { prisma } from "@/lib/db"
 import { encrypt, decrypt } from "@/lib/whatsapp/encryption"
+import { sdkSendBlocked } from "@/lib/dev/send-guard"
 
 export interface RcsConfigResolved {
   accountSid: string
@@ -81,6 +82,10 @@ export async function sendRcsText(args: {
   if (!config.messagingServiceSid && !config.fromNumber) {
     throw new Error("RCS config is missing both messaging_service_sid and from_number")
   }
+
+  // The Twilio SDK sends over axios, not fetch, so the central send guard
+  // cannot see this — ask it directly (src/lib/dev/send-guard.ts).
+  if (sdkSendBlocked("RCS/SMS (Twilio)", [args.to])) return { messageId: `SMDEV_BLOCKED${Date.now()}` }
 
   const client = twilio(config.accountSid, config.authToken)
   const message = await client.messages.create({

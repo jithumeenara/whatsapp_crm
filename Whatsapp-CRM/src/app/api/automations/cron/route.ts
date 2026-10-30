@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { resumePendingExecution } from '@/lib/automations/engine'
@@ -23,8 +24,11 @@ export async function GET(request: Request) {
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }
-  const supplied = request.headers.get('x-cron-secret')
-  if (supplied !== expected) {
+  // Compared in constant time, like the other crons: `!==` stops at the
+  // first differing character, which leaks the secret's prefix by timing.
+  const supplied = Buffer.from(request.headers.get('x-cron-secret') ?? '')
+  const want = Buffer.from(expected)
+  if (supplied.length !== want.length || !timingSafeEqual(supplied, want)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

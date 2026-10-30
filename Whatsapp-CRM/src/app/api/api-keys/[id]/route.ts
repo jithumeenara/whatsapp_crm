@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 export async function DELETE(
   _req: Request,
@@ -9,16 +9,18 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    const session = await auth()
-    if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 })
-    const profile = await prisma.profile.findUnique({
-      where: { user_id: session.user.id },
-      select: { account_id: true },
-    })
-    if (!profile?.account_id) return NextResponse.json({ error: 'No account.' }, { status: 403 })
+    // Owner only, like minting — see ../route.ts. Revocation is a hard
+    // delete, and verifyApiKey reads the table on every request (no
+    // cache), so the key stops working on its very next call.
+    let accountId: string
+    try {
+      accountId = (await requireRole('owner')).accountId
+    } catch (err) {
+      return toErrorResponse(err)
+    }
 
     const deleted = await prisma.apiKey.deleteMany({
-      where: { id, account_id: profile.account_id },
+      where: { id, account_id: accountId },
     })
     if (deleted.count === 0) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
 

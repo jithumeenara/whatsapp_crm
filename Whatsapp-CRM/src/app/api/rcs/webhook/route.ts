@@ -19,22 +19,26 @@ import crypto from "crypto"
  * against RcsConfig, same as WhatsApp resolves accounts by phone_number_id.
  */
 
-async function resolveAccountByRecipient(to: string | null, messagingServiceSid: string | null) {
-  if (messagingServiceSid) {
-    const byService = await prisma.rcsConfig.findFirst({
-      where: { messaging_service_sid: messagingServiceSid },
-      select: { account_id: true, user_id: true, account_sid: true, auth_token: true },
-    })
-    if (byService) return byService
-  }
-  if (to) {
-    const byNumber = await prisma.rcsConfig.findFirst({
-      where: { from_number: to },
-      select: { account_id: true, user_id: true, account_sid: true, auth_token: true },
-    })
-    if (byNumber) return byNumber
-  }
-  return null
+type RcsClaimant = { account_id: string; user_id: string; account_sid: string; auth_token: string }
+
+/**
+ * Every account whose RCS settings name this receiving number or
+ * Messaging Service. Those are typed in by each account's owner, so more
+ * than one may claim the same value — which one the message belongs to is
+ * decided by whose auth token verifies Twilio's signature, never by row
+ * order.
+ */
+async function claimantsForRecipient(to: string | null, messagingServiceSid: string | null): Promise<RcsClaimant[]> {
+  const or = [
+    ...(messagingServiceSid ? [{ messaging_service_sid: messagingServiceSid }] : []),
+    ...(to ? [{ from_number: to }] : []),
+  ]
+  if (or.length === 0) return []
+  return prisma.rcsConfig.findMany({
+    where: { OR: or },
+    select: { account_id: true, user_id: true, account_sid: true, auth_token: true },
+    take: 20,
+  })
 }
 
 export async function POST(request: NextRequest) {
@@ -43,24 +47,29 @@ export async function POST(request: NextRequest) {
 
   const to = params.To ?? null
   const messagingServiceSid = params.MessagingServiceSid ?? null
-  const config = await resolveAccountByRecipient(to, messagingServiceSid)
-  if (!config) return NextResponse.json({ error: "Not found" }, { status: 404 })
-
-  let authToken: string
-  try {
-    authToken = decrypt(config.auth_token)
-  } catch {
-    console.error("[rcs webhook] could not decrypt auth token for account:", config.account_id)
-    return NextResponse.json({ error: "Configuration error" }, { status: 500 })
-  }
+  const claimants = await claimantsForRecipient(to, messagingServiceSid)
+  if (claimants.length === 0) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
   const signature = request.headers.get("x-twilio-signature")
   // Twilio signs the exact URL it was configured to POST to — behind a
   // reverse proxy, request.url may not match that exactly (protocol/host
   // rewriting). If validation keeps failing in production despite correct
   // credentials, this is the first thing to check.
-  const isValid = verifyTwilioSignature({ authToken, signature, url: request.url, params })
-  if (!isValid) {
+  let config: RcsClaimant | null = null
+  for (const claimant of claimants) {
+    let authToken: string
+    try {
+      authToken = decrypt(claimant.auth_token)
+    } catch {
+      console.error("[rcs webhook] could not decrypt auth token for account:", claimant.account_id)
+      continue
+    }
+    if (verifyTwilioSignature({ authToken, signature, url: request.url, params })) {
+      config = claimant
+      break
+    }
+  }
+  if (!config) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
   }
 

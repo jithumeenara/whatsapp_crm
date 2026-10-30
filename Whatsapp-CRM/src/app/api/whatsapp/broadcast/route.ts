@@ -230,6 +230,9 @@ export async function POST(request: Request) {
               template: templateRow ?? undefined,
               messageParams: recipient.messageParams,
               params: recipient.params ?? [],
+              // headerMediaUrl comes from the body: a /api/files/ header
+              // must be this account's own (media-ref.ts).
+              accountId,
             })
             sentMessageId = result.messageId
             lastError = null

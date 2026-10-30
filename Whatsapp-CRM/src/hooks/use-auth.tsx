@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useSession, signOut as nextAuthSignOut } from "next-auth/react";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
+import { clearEmailDrafts } from "./local-drafts";
 import { profileFromMe } from "./profile-from-me";
 import {
   canEditSettings as canEditSettingsFor,
@@ -126,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [status, userId, fetchProfile]);
 
   const signOut = useCallback(async () => {
+    clearEmailDrafts();
     await nextAuthSignOut({ callbackUrl: "/login" });
   }, []);
 

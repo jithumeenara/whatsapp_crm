@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { assertPageAccess, requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { checkHeaderMediaUrl } from "@/lib/broadcasts/header-media"
 
 /**
  * POST /api/broadcasts/draft
@@ -11,6 +12,7 @@ import { prisma } from "@/lib/db"
 export async function POST(req: NextRequest) {
   try {
     const ctx = await requireRole("agent")
+    assertPageAccess(ctx, "/broadcasts")
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: "Invalid JSON" }, { status: 400 })
 
@@ -24,6 +26,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "template_name is required" }, { status: 400 })
     }
 
+    const headerMedia = checkHeaderMediaUrl(header_media_url, ctx.accountId)
+    if (!headerMedia.ok) return NextResponse.json({ error: headerMedia.error }, { status: 400 })
+
     const broadcast = await prisma.broadcast.create({
       data: {
         user_id: ctx.userId,
@@ -32,7 +37,7 @@ export async function POST(req: NextRequest) {
         template_name: template_name,
         template_language: (template_language as string) ?? "en_US",
         template_variables: template_variables ?? {},
-        header_media_url: typeof header_media_url === "string" && header_media_url.trim() ? header_media_url.trim() : null,
+        header_media_url: headerMedia.value,
         // Which number to send from (Finding #14) — optional; null falls
         // back to the account's default number at send time.
         whatsapp_config_id: typeof whatsapp_config_id === "string" && whatsapp_config_id.trim() ? whatsapp_config_id.trim() : null,

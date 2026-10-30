@@ -11,6 +11,7 @@ import { isSensitiveField } from '@/lib/data-store/record-alert'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
 import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-tables'
 import { invalidateSearchableTables, parseAiSearch } from '@/lib/ai/table-search-store'
+import { publicErrorMessage } from '@/lib/jobs/public-error'
 
 /**
  * This table and the assistant: is it something the AI answers from,
@@ -296,7 +297,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // An empty table, or one with no readable fields, is the account's to
     // fix — the reason goes back as written.
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not train this table.' },
+      { error: publicErrorMessage(err, 'Could not train this table.', 'data-tables/ai') },
       { status: 400 },
     )
   }

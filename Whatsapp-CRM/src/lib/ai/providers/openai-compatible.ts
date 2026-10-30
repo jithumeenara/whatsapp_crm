@@ -1,6 +1,7 @@
 import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiError } from './types'
 import { errorMessage, AI_REQUEST_TIMEOUT_MS } from './types'
-import { assertSafeAiBaseUrl } from './ssrf-guard'
+import { safeFetch } from '@/lib/net/safe-fetch'
+import { assertSafeAiBaseUrl, portsFor } from './ssrf-guard'
 
 /**
  * A generic OpenAI-chat-completions-compatible adapter, parameterized by
@@ -31,7 +32,11 @@ export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateAr
   }
   messages.push({ role: 'user', content: args.userMessage })
 
-  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
+  // safeFetch rather than fetch: the base_url is typed by the account,
+  // so the address actually connected to is checked, and a redirect is
+  // refused outright — no real provider answers chat/completions with
+  // one, and following it would carry the API key along.
+  const res = await safeFetch(`${baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${args.apiKey}`,
@@ -46,8 +51,8 @@ export async function chatCompletionsRequest(baseUrl: string, args: AiGenerateAr
     // No timeout here before meant a hung/slow provider (OpenAI, DeepSeek,
     // or a self-hosted "custom" endpoint) just hung the whole reply — see
     // AI_REQUEST_TIMEOUT_MS's own comment.
-    signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
-  })
+    redirect: 'error',
+  }, { timeoutMs: AI_REQUEST_TIMEOUT_MS, allowedPorts: portsFor(baseUrl) })
 
   const data = (await res.json().catch(() => ({}))) as OpenAiChatResponse
   if (!res.ok) {

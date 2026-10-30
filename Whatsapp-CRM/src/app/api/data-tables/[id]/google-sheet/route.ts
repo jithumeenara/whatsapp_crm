@@ -8,6 +8,7 @@ import { applyColumnChoices, exportAll, importFromSheet, suggestColumns, writeEx
 import { canBrowseSheets, previewSpreadsheet } from '@/lib/google/sheet-browse'
 import { canWriteSheets, runSheetSync } from '@/lib/google/sheet-two-way'
 import { ID_HEADER, NOT_SYNCED } from '@/lib/google/sheet-two-way-plan'
+import { publicErrorMessage } from '@/lib/jobs/public-error'
 
 /** Sheets switched on in either form: picked files, or browse all. */
 async function sheetsUsable(accountId: string): Promise<boolean> {
@@ -243,7 +244,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ link: present(link), synced })
     }
     // The rows come in now, not on a second click.
-    const imported = direction === 'import' ? await importFromSheet(link.id, ctx.accountId).catch((err) => ({ error: err instanceof Error ? err.message : String(err) })) : null
+    const imported = direction === 'import' ? await importFromSheet(link.id, ctx.accountId).catch((err) => ({ error: publicErrorMessage(err, 'The sheet could not be imported.', 'data-tables/google-sheet') })) : null
     return NextResponse.json({ link: present(link), imported })
   } catch (err) {
     // Google's own refusals, said in words the panel can show.
@@ -341,7 +342,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (direction === 'export') return NextResponse.json(await exportAll(link.id, ctx.accountId))
       return NextResponse.json(await importFromSheet(link.id, ctx.accountId))
     } catch (err) {
-      return NextResponse.json({ error: err instanceof Error ? err.message : 'Google Sheets failed.' }, { status: 400 })
+      return NextResponse.json({ error: publicErrorMessage(err, 'Google Sheets failed.', 'data-tables/google-sheet') }, { status: 400 })
     }
   } catch (err) {
     return toErrorResponse(err)

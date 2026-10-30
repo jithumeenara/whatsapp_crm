@@ -5,6 +5,8 @@ import { motion, useReducedMotion } from 'motion/react'
 import { Plus, Trash2, Copy, Check, AlertTriangle, ToggleLeft, ToggleRight, AlertCircle, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ConfirmIconDialog } from '@/components/ui/confirm-icon-dialog'
+import { useAuth } from '@/hooks/use-auth'
+import { apiFetch, errorText } from '@/lib/api-fetch'
 
 interface DataTable { id: string; name: string }
 
@@ -40,6 +42,10 @@ function statusBadge(status: number | null, failures: number) {
 
 export function WebhooksPanel() {
   const reduceMotion = useReducedMotion()
+  // Create, enable/disable and delete are admin-and-up on the server
+  // (/api/webhooks). Anyone else sees the list without the controls
+  // rather than buttons that only answer "forbidden".
+  const { canEditSettings } = useAuth()
   const [hooks, setHooks] = useState<WebhookRow[]>([])
   const [tables, setTables] = useState<DataTable[]>([])
   const [loading, setLoading] = useState(true)
@@ -110,23 +116,32 @@ export function WebhooksPanel() {
   }
 
   async function toggleActive(hook: WebhookRow) {
-    const res = await fetch(`/api/webhooks/${hook.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_active: !hook.is_active }),
-    })
-    if (res.ok) {
+    setError('')
+    try {
+      const res = await apiFetch(`/api/webhooks/${hook.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !hook.is_active }),
+      })
       const data = await res.json()
       setHooks((prev) => prev.map((h) => (h.id === hook.id ? { ...h, ...data.webhook } : h)))
+    } catch (err) {
+      console.error('[webhooks] toggle failed:', err)
+      setError(errorText(err, 'The webhook could not be changed. Try again.'))
     }
   }
 
   async function remove() {
     if (!deleteTarget) return
     setDeleting(true)
+    setError('')
     try {
-      await fetch(`/api/webhooks/${deleteTarget.id}`, { method: 'DELETE' })
+      await apiFetch(`/api/webhooks/${deleteTarget.id}`, { method: 'DELETE' })
       setHooks((prev) => prev.filter((h) => h.id !== deleteTarget.id))
+      setDeleteTarget(null)
+    } catch (err) {
+      console.error('[webhooks] delete failed:', err)
+      setError(errorText(err, 'The webhook could not be deleted. Try again.'))
       setDeleteTarget(null)
     } finally {
       setDeleting(false)
@@ -167,9 +182,11 @@ if (sig !== expected) return res.status(401).end()`}</pre>
         </div>
       )}
 
-      {showForm ? (
+      {!canEditSettings ? (
+        <p className="text-[12.5px] text-slate-500">Only an admin or the owner can add, change or delete webhooks.</p>
+      ) : showForm ? (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 space-y-4">
-          <p className="text-[13px] font-semibold text-slate-800">New Webhook</p>
+          <p className="text-[13px] font-semibold text-slate-800">New webhook</p>
 
           <div className="space-y-1.5">
             <label className="text-[12px] font-medium text-slate-600">Name</label>
@@ -230,19 +247,27 @@ if (sig !== expected) return res.status(401).end()`}</pre>
 
           <div className="flex gap-2">
             <Button onClick={create} disabled={submitting} className="h-9 px-4 text-[13px] bg-[#4A5CE8] hover:bg-[#3D4FD6] text-white">
-              {submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create Webhook'}
+              {submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Creating…</> : 'Create webhook'}
             </Button>
             <Button variant="outline" onClick={resetForm} className="h-9 px-4 text-[13px] border-slate-200">Cancel</Button>
           </div>
         </div>
       ) : (
+        <>
+        {error && (
+          <div role="alert" className="flex items-center gap-2 text-[12.5px] text-rose-700">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {error}
+          </div>
+        )}
         <button
           onClick={() => setShowForm(true)}
           className="flex items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-2.5 text-[13px] text-slate-500 hover:border-[#5B6CF9]/50 hover:text-[#4A5CE8] transition-colors"
         >
           <Plus className="h-4 w-4" />
-          Add Webhook
+          Add webhook
         </button>
+        </>
       )}
 
       {loading ? (
@@ -266,11 +291,13 @@ if (sig !== expected) return res.status(401).end()`}</pre>
                   <p className="font-semibold text-[13.5px] text-slate-800 truncate">{h.name}</p>
                   <p className="text-[12px] text-slate-500 truncate">{h.url}</p>
                 </div>
+                {canEditSettings && (
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => toggleActive(h)}
                     className="rounded-lg p-1.5 text-slate-400 hover:text-[#4A5CE8] hover:bg-[#EEF0FF] transition-colors"
                     title={h.is_active ? 'Disable' : 'Enable'}
+                    aria-label={h.is_active ? 'Disable webhook' : 'Enable webhook'}
                   >
                     {h.is_active ? <ToggleRight className="h-5 w-5 text-[#4A5CE8]" /> : <ToggleLeft className="h-5 w-5" />}
                   </button>
@@ -282,6 +309,7 @@ if (sig !== expected) return res.status(401).end()`}</pre>
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-1.5">

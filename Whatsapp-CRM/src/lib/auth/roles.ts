@@ -112,3 +112,16 @@ export function canDeleteAccount(role: AccountRole): boolean {
 export function canTransferOwnership(role: AccountRole): boolean {
   return role === "owner";
 }
+
+/**
+ * May `actor` change, remove or reset the login of a member holding
+ * `target`? Only the owner acts on admins; an admin acts on supervisors,
+ * agents and viewers. Nobody acts on the owner (ownership moves only
+ * through transfer-ownership). An admin able to demote a fellow admin
+ * could then hand them a new phone-login password and sign in as them.
+ */
+export function canActOnMember(actor: AccountRole, target: AccountRole): boolean {
+  if (target === "owner") return false;
+  if (actor === "owner") return true;
+  return actor === "admin" && roleRank(target) < roleRank("admin");
+}

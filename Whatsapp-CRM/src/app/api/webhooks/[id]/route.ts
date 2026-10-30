@@ -1,22 +1,23 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
-import { validateWebhookUrl, WEBHOOK_EVENTS } from '@/lib/webhooks/deliver'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { checkWebhookUrl, WEBHOOK_EVENTS } from '@/lib/webhooks/deliver'
 
+/** Changing or removing an outgoing webhook is an admin's decision: it
+ *  decides where every Data Store record is sent. */
 async function requireWebhook(webhookId: string) {
-  const session = await auth()
-  if (!session?.user?.id) return { ok: false as const, status: 401, body: { error: 'Unauthorized.' } }
-  const profile = await prisma.profile.findUnique({
-    where: { user_id: session.user.id },
-    select: { account_id: true },
-  })
-  if (!profile?.account_id) return { ok: false as const, status: 403, body: { error: 'No account.' } }
+  let accountId: string
+  try {
+    accountId = (await requireRole('admin')).accountId
+  } catch (err) {
+    return { ok: false as const, response: toErrorResponse(err) }
+  }
   const hook = await prisma.webhook.findFirst({
-    where: { id: webhookId, account_id: profile.account_id },
+    where: { id: webhookId, account_id: accountId },
     select: { id: true },
   })
-  if (!hook) return { ok: false as const, status: 404, body: { error: 'Webhook not found.' } }
-  return { ok: true as const, accountId: profile.account_id }
+  if (!hook) return { ok: false as const, response: NextResponse.json({ error: 'Webhook not found.' }, { status: 404 }) }
+  return { ok: true as const, accountId }
 }
 
 export async function PUT(
@@ -26,7 +27,7 @@ export async function PUT(
   try {
     const { id } = await params
     const guard = await requireWebhook(id)
-    if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+    if (!guard.ok) return guard.response
 
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'Invalid JSON.' }, { status: 400 })
@@ -42,7 +43,7 @@ export async function PUT(
 
     if (body.url !== undefined) {
       try {
-        updates.url = validateWebhookUrl(body.url)
+        updates.url = await checkWebhookUrl(body.url)
       } catch (e) {
         return NextResponse.json({ error: (e as Error).message }, { status: 400 })
       }
@@ -110,7 +111,7 @@ export async function DELETE(
   try {
     const { id } = await params
     const guard = await requireWebhook(id)
-    if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
+    if (!guard.ok) return guard.response
 
     await prisma.webhook.delete({ where: { id } })
     return NextResponse.json({ success: true })

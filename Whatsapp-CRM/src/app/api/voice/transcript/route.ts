@@ -82,7 +82,11 @@ export async function POST(request: Request) {
       where: { id: call.id },
       data: {
         transcript: stored,
-        ...(payload?.end_reason ? { end_reason: payload.end_reason } : {}),
+        // A short code from the voice server ("hangup", "timeout"), held
+        // to a sane length like the transcript above.
+        ...(typeof payload?.end_reason === 'string' && payload.end_reason.trim()
+          ? { end_reason: payload.end_reason.trim().slice(0, 100) }
+          : {}),
       },
     })
   } catch (err) {

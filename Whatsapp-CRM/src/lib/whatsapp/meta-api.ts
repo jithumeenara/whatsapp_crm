@@ -618,6 +618,9 @@ export interface SendTemplateMessageArgs {
   messageParams?: SendTimeParams
   /** Meta's message_id of the message being replied to. */
   contextMessageId?: string
+  /** The sending account — a header file from /api/files/... must be its
+   *  own (src/lib/whatsapp/media-ref.ts). Pass it from every caller. */
+  accountId?: string
 }
 
 /**
@@ -644,6 +647,7 @@ export async function sendTemplateMessage(
     template,
     messageParams,
     contextMessageId,
+    accountId,
   } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
@@ -665,7 +669,7 @@ export async function sendTemplateMessage(
     const headerLink = headerMediaUrl || template.header_media_url
     if (mediaHeader && !headerMediaId && headerLink && !/^https?:\/\//i.test(headerLink)) {
       const { resolveMediaRef } = await import('./media-ref')
-      const ref = await resolveMediaRef(headerLink, phoneNumberId, accessToken)
+      const ref = await resolveMediaRef(headerLink, phoneNumberId, accessToken, accountId)
       if (ref.id) {
         headerMediaId = ref.id
         headerMediaUrl = undefined
@@ -1638,6 +1642,8 @@ export async function getMediaUrl(
   args: GetMediaUrlArgs
 ): Promise<{ url: string; mimeType: string }> {
   const { mediaId, accessToken } = args
+  // An id, never a path: this reaches Graph with the account's token.
+  if (!isMediaId(mediaId)) throw new Error('Not a WhatsApp media id')
   const response = await fetch(`${META_API_BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -1647,6 +1653,26 @@ export async function getMediaUrl(
   const data = await response.json()
   if (!data.url) throw new Error('Media URL not found in Meta response')
   return { url: data.url, mimeType: data.mime_type || 'application/octet-stream' }
+}
+
+/** A Graph media id: letters, digits, `_ . -` only — no `/ ? #`, no `..`. */
+export function isMediaId(id: unknown): id is string {
+  return typeof id === 'string' && /^[A-Za-z0-9_.-]{1,128}$/.test(id) && !id.includes('..')
+}
+
+const META_MEDIA_HOSTS = ['fbsbx.com', 'fbcdn.net', 'whatsapp.net', 'facebook.com']
+
+/** https, on a Meta media domain (or a subdomain of one). */
+export function isMetaMediaHost(url: string): boolean {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return false
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || (u.port && u.port !== '443')) return false
+  const host = u.hostname.toLowerCase()
+  return META_MEDIA_HOSTS.some((d) => host === d || host.endsWith(`.${d}`))
 }
 
 export interface DownloadMediaArgs {
@@ -1662,6 +1688,9 @@ export async function downloadMedia(
   args: DownloadMediaArgs
 ): Promise<{ buffer: Buffer; contentType: string }> {
   const { downloadUrl, accessToken } = args
+  // The token goes only to Meta's own media hosts — never to whatever URL
+  // an answer happened to carry.
+  if (!isMetaMediaHost(downloadUrl)) throw new Error('Media download refused: not a Meta media address')
   const response = await fetch(downloadUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -1716,4 +1745,22 @@ export async function sendTypingIndicator(
   if (!response.ok) {
     await throwMetaError(response, `Typing indicator failed: ${response.status}`)
   }
+}
+
+/**
+ * The phone number ids under a WABA that this token can see. Used to
+ * prove a browser-supplied (wabaId, phoneNumberId) pair really belongs to
+ * what the person granted, before anything is saved.
+ */
+export async function listWabaPhoneNumberIds(args: { wabaId: string; accessToken: string }): Promise<string[]> {
+  const ids: string[] = []
+  let url: string | null = `${META_API_BASE}/${encodeURIComponent(args.wabaId)}/phone_numbers?fields=id&limit=100`
+  for (let page = 0; url && page < 5; page++) {
+    const response: Response = await fetch(url, { headers: { Authorization: `Bearer ${args.accessToken}` }, cache: 'no-store' })
+    if (!response.ok) await throwMetaError(response, `Could not list the WhatsApp account's numbers: ${response.status}`)
+    const data = (await response.json()) as { data?: Array<{ id?: string }>; paging?: { next?: string } }
+    for (const row of data.data ?? []) if (row.id) ids.push(String(row.id))
+    url = data.paging?.next && data.paging.next.startsWith(META_API_BASE) ? data.paging.next : null
+  }
+  return ids
 }

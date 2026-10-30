@@ -11,7 +11,7 @@ import {
 import type { DataField, DataRecord, FieldType } from '@/lib/data-store/types';
 import { getSelectItems } from '@/lib/data-store/types';
 import { sourceLabel } from '@/lib/data-store/sources';
-import { cn } from '@/lib/utils';
+import { cn, safeHref } from '@/lib/utils';
 import { initials, pickTitleField, prettyValue } from '@/lib/data-store/table-view';
 
 /**
@@ -173,7 +173,8 @@ function FieldValue({ field, value }: { field: DataField; value: unknown }) {
   }
 
   if (field.field_type === 'image' || field.field_type === 'signature') {
-    const url = String(value);
+    // Values come from forms and imports: only a web, app or inline-image address is linked.
+    const url = safeHref(String(value), { dataImage: true });
     return (
       <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -187,7 +188,7 @@ function FieldValue({ field, value }: { field: DataField; value: unknown }) {
   }
 
   if (field.field_type === 'file') {
-    const url = String(value);
+    const url = safeHref(String(value));
     return (
       <a
         href={url}
@@ -196,7 +197,7 @@ function FieldValue({ field, value }: { field: DataField; value: unknown }) {
         className="inline-flex items-center gap-1.5 text-[13px] text-indigo-600 hover:underline"
       >
         <Paperclip className="h-3.5 w-3.5 shrink-0" />
-        {fileNameFromUrl(url)}
+        {fileNameFromUrl(String(value))}
       </a>
     );
   }

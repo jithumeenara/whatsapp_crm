@@ -1,0 +1,91 @@
+name: CI
+
+# GitHub only reads workflows from `.github/workflows` at the ROOT of the
+# repository. The app lives in `Whatsapp-CRM/`, so this file (and
+# dependabot.yml) must sit at `<repo>/.github/` to run at all — see the
+# `working-directory` default below, which assumes that location.
+#
+# The default branch is `master`; `main` is kept so a later rename does
+# not silently switch CI off again.
+on:
+  pull_request:
+    branches: [master, main]
+  push:
+    branches: [master, main]
+
+# Least privilege: the job only reads the code. Nothing here pushes,
+# comments or publishes, so the token gets no write scope at all.
+permissions:
+  contents: read
+
+# Cancel older CI runs for the same branch when a new commit arrives —
+# saves minutes when someone pushes a stack of fixes to one PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: Whatsapp-CRM
+    # Dummy env vars so `next build` doesn't fail when it reads the
+    # public Supabase config at build time. These never leave CI and
+    # never hit a real service — they just satisfy the `!` non-null
+    # assertions in the client factories. ENCRYPTION_KEY and
+    # META_APP_SECRET are read at module-load by lib/whatsapp/*; the
+    # test suite asserts behaviour around these values, so any non-
+    # empty placeholder works as long as it stays consistent with
+    # vitest.config.ts.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://ci.example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-anon-key
+      ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+      META_APP_SECRET: 'ci-dummy-meta-secret'
+    steps:
+      # Actions are pinned to a full commit SHA (a tag can be moved to
+      # point at different code); Dependabot keeps the pins current.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          # Don't leave the token in .git/config for later steps.
+          persist-credentials: false
+
+      # Node 20 reached end of life on 2026-04-30 and gets no more
+      # security fixes; jsdom 30 / isomorphic-dompurify 3.23 need
+      # ^22.22.2. "22" resolves to the newest 22.x security release.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Whatsapp-CRM/package-lock.json
+
+      # `npm ci` installs exactly what the lockfile says and fails if
+      # package.json and the lockfile disagree.
+      - name: Install dependencies
+        run: npm ci
+
+      # Every package must carry a valid npm registry signature (and
+      # provenance attestation, where the publisher provides one).
+      - name: Verify registry signatures
+        run: npm audit signatures
+
+      # Fail on any known high/critical advisory in what ships to
+      # production. Low/moderate and dev-only issues are left to
+      # Dependabot so an unrelated advisory doesn't block every PR.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

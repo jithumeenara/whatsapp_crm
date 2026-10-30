@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 
 /**
  * GET /api/broadcasts/demo-template
@@ -16,6 +16,8 @@ import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 export async function GET(request: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(request, "viewer");
+    // Broadcasts are a page an admin grants; the API keeps the same rule.
+    assertPageAccess(ctx, "/broadcasts");
 
     const tags = await ctx.db.tag.findMany({
       where: { account_id: ctx.accountId },

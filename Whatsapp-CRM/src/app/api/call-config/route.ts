@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt } from '@/lib/whatsapp/encryption'
+import { checkWebhookUrl } from '@/lib/webhooks/deliver'
 
 /**
  * Call settings for the account: whether the assistant answers, who a
@@ -109,6 +110,20 @@ export async function PUT(request: Request) {
       typeof body.sip_password === 'string' && body.sip_password.trim() && body.sip_password !== MASKED
         ? encrypt(body.sip_password.trim())
         : (existing?.sip_password ?? null),
+  }
+
+  // Every incoming call is POSTed here by this server, so it is held to
+  // the outgoing-webhook rule: https, and a public address. Checked when
+  // it changes; the forward itself checks again (safeFetch).
+  if (data.call_forward_url && data.call_forward_url !== existing?.call_forward_url) {
+    try {
+      data.call_forward_url = await checkWebhookUrl(data.call_forward_url)
+    } catch (err) {
+      return NextResponse.json(
+        { error: `Forward calls to: ${err instanceof Error ? err.message.replace(/^Webhook URL/, 'the address') : 'not a valid address.'}` },
+        { status: 400 },
+      )
+    }
   }
 
   try {
