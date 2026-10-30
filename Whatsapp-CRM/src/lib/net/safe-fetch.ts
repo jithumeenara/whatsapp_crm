@@ -357,8 +357,13 @@ export type SafeFetchInit = Omit<RequestInit, 'window'>
 const REDIRECTS = new Set([301, 302, 303, 307, 308])
 const NULL_BODY = new Set([101, 204, 205, 304])
 
-/** Headers that identify the caller, dropped when a redirect leaves the origin. */
-const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization']
+/**
+ * The only caller headers that follow a redirect to another origin. Every
+ * other header can carry a credential — Authorization and Cookie, but also
+ * X-API-Key, api-key, X-Auth-Token and whatever an integration invents —
+ * so an allow-list, not a deny-list (security review N7).
+ */
+const CROSS_ORIGIN_HEADERS = new Set(['accept', 'accept-language', 'accept-encoding', 'user-agent'])
 
 function sizeCap(maxBytes: number): Transform {
   let seen = 0
@@ -529,16 +534,22 @@ export async function safeFetch(
       } catch {
         throw new SsrfBlockedError('invalid', 'The address redirected somewhere invalid.')
       }
-      // Same rules as fetch: 303, and a POST answered with 301/302,
-      // continue as a GET without the body.
-      if (res.status === 303 || ((res.status === 301 || res.status === 302) && method === 'POST')) {
+      // 301, 302 and 303 continue as a GET without the body, whatever the
+      // method was (fetch does this only for POST on 301/302; a PUT's body
+      // re-sent to wherever a server points is never wanted here).
+      if (res.status === 301 || res.status === 302 || res.status === 303) {
         if (method !== 'HEAD') method = 'GET'
         body = undefined
         headers.delete('content-type')
         headers.delete('content-length')
       }
       if (next.origin !== target.url.origin) {
-        for (const h of CREDENTIAL_HEADERS) headers.delete(h)
+        // 307/308 keep method and body by definition; a body (form fields,
+        // tokens, customer data) is not handed to another origin.
+        if (body) throw new SafeFetchError('redirects', 'The address redirected the request to another site.')
+        for (const name of [...headers.keys()]) {
+          if (!CROSS_ORIGIN_HEADERS.has(name)) headers.delete(name)
+        }
       }
       current = next.href
       continue

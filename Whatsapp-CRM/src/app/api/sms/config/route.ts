@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { getCurrentAccount, requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { saveSmsConfig, testSmsConnection, registerTextBeeWebhook, deleteTextBeeWebhook, type SmsProvider } from "@/lib/messaging/channels/sms"
 import { decrypt } from "@/lib/whatsapp/encryption"
@@ -12,6 +12,16 @@ async function resolveAccountId(userId: string): Promise<string | null> {
     select: { account_id: true },
   })
   return profile?.account_id ?? null
+}
+
+/** Only the owner may see the inbound webhook secret: whoever holds it can
+ *  forge inbound customer messages. Everyone else sees connection status. */
+async function callerIsOwner(): Promise<boolean> {
+  try {
+    return (await getCurrentAccount()).role === "owner"
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -47,6 +57,7 @@ export async function GET() {
     }
 
     const provider: SmsProvider = config.provider === "textbee" ? "textbee" : "msg91"
+    const isOwner = await callerIsOwner()
     const safeConfig = {
       id: config.id,
       provider,
@@ -54,7 +65,8 @@ export async function GET() {
       route: config.route,
       dlt_entity_id: config.dlt_entity_id,
       device_id: config.device_id,
-      webhook_secret: config.webhook_secret, // used to build the webhook URL client-side, not a login credential
+      // Builds the webhook URL client-side; it authenticates inbound SMS, so owner only.
+      ...(isOwner ? { webhook_secret: config.webhook_secret } : {}),
       textbee_webhook_registered: !!config.textbee_webhook_id,
       status: config.status,
     }
@@ -75,6 +87,14 @@ export async function POST(request: Request) {
 
     const accountId = await resolveAccountId(session.user.id)
     if (!accountId) return NextResponse.json({ error: "Your profile is not linked to an account." }, { status: 403 })
+    // Replacing the provider credentials reroutes every outgoing message
+    // (OTPs, confirmations, broadcasts) and returns the inbound webhook
+    // secret, so it is the owner's decision — the same as DELETE.
+    try {
+      await requireRole("owner")
+    } catch (err) {
+      return toErrorResponse(err)
+    }
 
     const body = await request.json()
     const { auth_key, sender_id, route, dlt_entity_id, dlt_template_id, device_id } = body

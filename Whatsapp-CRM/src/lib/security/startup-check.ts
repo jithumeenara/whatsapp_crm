@@ -59,20 +59,33 @@ const PLACEHOLDERS = [
  *  what `openssl rand -base64 32` (44) and the docs comfortably exceed. */
 const MIN_SECRET_LENGTH = 32
 
+const SECRET_FIX =
+  'Generate one with `openssl rand -hex 32` and set it in the server\'s environment (changing it signs everyone out once). See docs/deploy/HARDENING.md, "Upgrading an existing server".'
+const KEY_FIX =
+  'If this server already has stored tokens, do NOT generate a new key — that makes all stored tokens unreadable; restore the key it was using. Only a brand-new server takes a fresh one (`openssl rand -hex 32`). See docs/deploy/HARDENING.md, "Upgrading an existing server".'
+
+/** What is wrong with a session secret, in words that never include it. */
 function weakSecret(value: string | undefined): string | null {
   const v = (value ?? '').trim()
   if (!v) return 'is not set'
-  if (v.length < MIN_SECRET_LENGTH) return `is shorter than ${MIN_SECRET_LENGTH} characters`
+  if (v.length < MIN_SECRET_LENGTH) return `is ${v.length} characters long; it must be at least ${MIN_SECRET_LENGTH}`
   const lower = v.toLowerCase()
-  if (PLACEHOLDERS.some((p) => lower.includes(p))) return 'is a placeholder value'
-  if (new Set(v).size < 8) return 'is not random'
+  // Each word is public (it is in this list) and shorter than the value,
+  // so naming it never reveals the secret.
+  const word = PLACEHOLDERS.find((p) => lower.includes(p))
+  if (word) return `contains the placeholder word "${word}"`
+  if (new Set(v).size < 8) return `is not random (only ${new Set(v).size} different characters)`
   return null
 }
 
 function weakEncryptionKey(value: string | undefined): string | null {
   const v = (value ?? '').trim()
   if (!v) return 'is not set'
-  if (!/^[0-9a-fA-F]{64}$/.test(v)) return 'must be exactly 64 hexadecimal characters (32 bytes)'
+  if (!/^[0-9a-fA-F]{64}$/.test(v)) {
+    return /^[0-9a-fA-F]*$/.test(v)
+      ? `is ${v.length} characters long; it must be exactly 64 hexadecimal characters (32 bytes)`
+      : `is ${v.length} characters long; it must be exactly 64 hexadecimal characters (32 bytes), and it has characters other than 0-9 and a-f`
+  }
   if (new Set(v.toLowerCase()).size < 4) return 'is not random'
   return null
 }
@@ -89,18 +102,18 @@ export function checkStartupEnv(env: Env): { errors: string[]; warnings: string[
   if (isDevServer(env)) return { errors, warnings }
 
   const session = weakSecret(env.NEXTAUTH_SECRET)
-  if (session) errors.push(`NEXTAUTH_SECRET ${session}.`)
+  if (session) errors.push(`NEXTAUTH_SECRET ${session}. ${SECRET_FIX}`)
   // NextAuth prefers AUTH_SECRET when both exist; the proxy reads
   // NEXTAUTH_SECRET. A weak AUTH_SECRET is therefore what signs cookies.
   if (env.AUTH_SECRET !== undefined) {
     const auth = weakSecret(env.AUTH_SECRET)
-    if (auth) errors.push(`AUTH_SECRET ${auth}.`)
+    if (auth) errors.push(`AUTH_SECRET ${auth}. ${SECRET_FIX}`)
     else if (env.AUTH_SECRET !== env.NEXTAUTH_SECRET) {
       warnings.push('AUTH_SECRET differs from NEXTAUTH_SECRET: sign-in and the proxy would disagree. Set NEXTAUTH_SECRET only.')
     }
   }
   const key = weakEncryptionKey(env.ENCRYPTION_KEY)
-  if (key) errors.push(`ENCRYPTION_KEY ${key}.`)
+  if (key) errors.push(`ENCRYPTION_KEY ${key}. ${KEY_FIX}`)
 
   if (['development', 'dev', 'local'].includes((env.APP_ENV ?? '').trim().toLowerCase())) {
     warnings.push('APP_ENV is set to development on a production server: outgoing messages are blocked and background jobs are off.')

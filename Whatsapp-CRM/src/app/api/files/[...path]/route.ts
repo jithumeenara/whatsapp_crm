@@ -5,6 +5,7 @@ import { lookup } from "mime-types";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { attachmentHeaders } from "@/lib/files/account-files";
+import { legacyFileAllowed } from "@/lib/files/legacy-access";
 
 /** Read per request, not at import: the working directory is the app's. */
 const uploadsDir = () => resolve(join(process.cwd(), "uploads"));
@@ -54,14 +55,10 @@ export async function GET(
     }
   } else {
     // Files from before per-account folders have no folder to judge by.
-    // Where the upload was recorded, its account decides; one recorded as
-    // another workspace's is theirs. (Unrecorded legacy files keep the
-    // old rule — see findings A3, "legacy uploads".)
-    const owner = await prisma.fileUpload.findFirst({
-      where: { url: `/api/files/${path.join("/")}` },
-      select: { account_id: true },
-    });
-    if (owner && owner.account_id !== profile.account_id) {
+    // Where the upload was recorded, its account decides; an unrecorded one
+    // is served only while this server has a single account (N4 / A3-23,
+    // src/lib/files/legacy-access.ts — the send paths use the same rule).
+    if (!(await legacyFileAllowed(`/api/files/${path.join("/")}`, profile.account_id))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
   }

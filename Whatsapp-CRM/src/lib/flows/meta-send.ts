@@ -18,7 +18,7 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import { decrypt, openStoredSecret } from '@/lib/whatsapp/encryption'
-import { uploadPathFor } from '@/lib/whatsapp/media-ref'
+import { resolveUploadPath } from '@/lib/whatsapp/media-ref'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { sendSmsText } from '@/lib/messaging/channels/sms'
 import { sendConversationEmail } from '@/lib/email/conversation-send'
@@ -483,7 +483,7 @@ export async function engineSendMedia(
     // Only this account's own uploads: the path is resolved and its
     // account-<id>/ folder checked (media-ref.ts), so neither another
     // account's folder nor ../ out of this one can be read.
-    const filePath = uploadPathFor(args.link, args.accountId)
+    const filePath = await resolveUploadPath(args.link, args.accountId)
     const fileBuffer = await readFile(filePath)
     const filename = basename(filePath)
     const mimeType = (mimeLookup(filename) || 'application/octet-stream') as string
@@ -557,7 +557,7 @@ async function engineSendIgMedia(
     // Local file — read from disk and POST as multipart form-data.
     // This bypasses the need for a publicly reachable URL (works with ngrok/localhost).
     // This account's own uploads only (media-ref.ts uploadPathFor).
-    const filePath = uploadPathFor(args.link, args.accountId)
+    const filePath = await resolveUploadPath(args.link, args.accountId)
     const fileBuffer = await readFile(filePath)
     const filename = basename(filePath)
     const mimeType = (mimeLookup(filename) || 'application/octet-stream') as string

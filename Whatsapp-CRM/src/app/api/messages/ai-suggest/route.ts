@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { runCustomerTurn, type CustomerAiConfig } from '@/lib/ai/customer-pipeline'
 import { recordAiUsage } from '@/lib/ai/usage'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
@@ -40,10 +40,14 @@ const HISTORY_DEPTH = 10
 export async function POST(req: Request) {
   let accountId: string
   let userId: string
+  let role: string
   try {
-    const ctx = await getCurrentAccount()
+    // Agent rank (security review N6): a viewer only reads, and every
+    // press is a paid model call.
+    const ctx = await requireRole('agent')
     accountId = ctx.accountId
     userId = ctx.userId
+    role = ctx.role
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -72,7 +76,13 @@ export async function POST(req: Request) {
   // account_id in the filter, not only the id: a conversation from
   // another account must not resolve even if an id were guessed.
   const conversation = await prisma.conversation.findFirst({
-    where: { id: conversationId, account_id: accountId },
+    where: {
+      id: conversationId,
+      account_id: accountId,
+      // An agent sees only conversations assigned to them — the same rule
+      // as /api/conversations and /api/conversations/[id] (N6).
+      ...(role === 'agent' ? { assigned_agent_id: userId } : {}),
+    },
     select: { id: true, contact_id: true, channel: true },
   })
   if (!conversation) {

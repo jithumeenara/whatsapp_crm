@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { getCurrentAccount, requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { saveEmailConfig, testEmailConnection } from "@/lib/messaging/channels/email"
 import { decrypt } from "@/lib/whatsapp/encryption"
@@ -12,6 +12,16 @@ async function resolveAccountId(userId: string): Promise<string | null> {
     select: { account_id: true },
   })
   return profile?.account_id ?? null
+}
+
+/** Only the owner may see the inbound webhook secret: whoever holds it can
+ *  forge inbound customer messages. Everyone else sees connection status. */
+async function callerIsOwner(): Promise<boolean> {
+  try {
+    return (await getCurrentAccount()).role === "owner"
+  } catch {
+    return false
+  }
 }
 
 /** GET /api/email/config — mirrors /api/whatsapp/config's 200-for-every-non-auth-outcome shape. */
@@ -42,13 +52,15 @@ export async function GET() {
       })
     }
 
+    const isOwner = await callerIsOwner()
     const safeConfig = {
       id: config.id,
       provider: config.provider,
       from_email: config.from_email,
       from_name: config.from_name,
       inbound_parse_host: config.inbound_parse_host,
-      inbound_secret: config.inbound_secret, // used to build the webhook URL client-side, not a login credential
+      // Builds the webhook URL client-side; it authenticates inbound mail, so owner only.
+      ...(isOwner ? { inbound_secret: config.inbound_secret } : {}),
       status: config.status,
     }
 
@@ -68,6 +80,14 @@ export async function POST(request: Request) {
 
     const accountId = await resolveAccountId(session.user.id)
     if (!accountId) return NextResponse.json({ error: "Your profile is not linked to an account." }, { status: 403 })
+    // Replacing the provider credentials reroutes every outgoing message
+    // (OTPs, confirmations, broadcasts) and returns the inbound webhook
+    // secret, so it is the owner's decision — the same as DELETE.
+    try {
+      await requireRole("owner")
+    } catch (err) {
+      return toErrorResponse(err)
+    }
 
     const body = await request.json()
     const { api_key, from_email, from_name, inbound_parse_host } = body

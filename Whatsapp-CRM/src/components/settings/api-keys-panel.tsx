@@ -31,13 +31,18 @@ export function ApiKeysPanel() {
   const [error, setError] = useState('')
   const [revokeTarget, setRevokeTarget] = useState<ApiKey | null>(null)
   const [revoking, setRevoking] = useState(false)
+  // Keys with no recorded creator were turned off (security review N2).
+  const [legacyKeysOff, setLegacyKeysOff] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch('/api/api-keys')
       const data = await res.json()
-      if (res.ok) setKeys(data.keys ?? [])
+      if (res.ok) {
+        setKeys(data.keys ?? [])
+        setLegacyKeysOff(data.legacy_keys_off === true)
+      }
     } finally {
       setLoading(false)
     }
@@ -87,6 +92,15 @@ export function ApiKeysPanel() {
 
   return (
     <div className="space-y-5">
+      {legacyKeysOff && (
+        <div role="status" className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle aria-hidden="true" className="h-4 w-4 text-amber-700 mt-0.5 shrink-0" />
+          <p className="text-[13px] text-amber-800">
+            Older API keys were turned off for security. Create a new key and update your integrations.
+          </p>
+        </div>
+      )}
+
       {newRawKey && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 space-y-3">
           <div className="flex items-start gap-2">

@@ -13,6 +13,7 @@
  * function having to remember:
  *
  *   WhatsApp, Messenger, Instagram   graph.facebook.com/…/messages
+ *   Instagram (Instagram Login)      graph.instagram.com/…/me/messages
  *   Gmail                            gmail.googleapis.com/…/messages/send
  *   Outlook / Microsoft 365          graph.microsoft.com/…/sendMail, /reply, /forward, /send
  *   SendGrid                         api.sendgrid.com/v3/mail/send
@@ -71,7 +72,9 @@ const metaMessageReply = () =>
 const RULES: Array<{ name: string; match: RegExp; reply: () => Response }> = [
   {
     name: 'Meta message',
-    match: /^https:\/\/graph\.facebook\.com\/[^?]*\/messages(\?|$)/,
+    // Instagram-Login tokens send DMs through graph.instagram.com, not
+    // graph.facebook.com (whatsapp/send, instagram webhook, flows).
+    match: /^https:\/\/graph\.(facebook|instagram)\.com\/[^?]*\/messages(\?|$)/,
     reply: metaMessageReply,
   },
   {

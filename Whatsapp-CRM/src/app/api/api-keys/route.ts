@@ -18,6 +18,15 @@ async function requireKeyManager() {
   }
 }
 
+async function hadCreatorlessKeys(accountId: string): Promise<boolean> {
+  try {
+    return (await prisma.apiKey.count({ where: { account_id: accountId, created_by_user_id: null } })) > 0
+  } catch (err) {
+    console.error('[GET /api/api-keys] creatorless key count failed', err)
+    return false
+  }
+}
+
 export async function GET() {
   try {
     const guard = await requireKeyManager()
@@ -37,7 +46,12 @@ export async function GET() {
       },
       orderBy: { created_at: 'desc' },
     })
-    return NextResponse.json({ keys })
+    // Keys with no recorded creator are refused (security review N2) and
+    // revoked by migration 154. Say so, so the owner knows why an
+    // integration stopped. Revoked rows stay in the table, so this keeps
+    // answering after the migration. Never fails the list.
+    const legacyKeysOff = await hadCreatorlessKeys(guard.accountId)
+    return NextResponse.json({ keys, legacy_keys_off: legacyKeysOff })
   } catch (err) {
     console.error('[GET /api/api-keys]', err)
     return NextResponse.json({ error: 'Internal server error.' }, { status: 500 })

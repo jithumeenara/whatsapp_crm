@@ -8,8 +8,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * every request: they must still be a member of that account at no less
  * than the key's own rank. A revoked or expired key is refused.
  *
- * Keys made before creators were recorded (created_by_user_id null)
- * belong to the account owner and keep working.
+ * Keys made before creators were recorded (created_by_user_id null) used
+ * to be treated as the owner's and kept working. Any member could mint a
+ * key then (A2-01), so the owner decided (security review N2, 2026-10)
+ * that they are refused; migration 154 also revokes them.
  */
 
 type Key = { id: string; account_id: string; key_hash: string; key_prefix: string; created_by_user_id: string | null; expires_at: Date | null; revoked_at: Date | null }
@@ -85,8 +87,8 @@ describe('verifying an API key', () => {
     await expect(verifyApiKey(RAW)).resolves.toBeNull()
   })
 
-  it('a key made before creators were recorded still works, as the owner’s', async () => {
+  it('a key made before creators were recorded is refused (N2: policy changed by the owner)', async () => {
     h.keys = [key({ created_by_user_id: null })]
-    await expect(verifyApiKey(RAW)).resolves.toEqual(expect.objectContaining({ accountId: 'acc', creatorUserId: null }))
+    await expect(verifyApiKey(RAW)).resolves.toBeNull()
   })
 })

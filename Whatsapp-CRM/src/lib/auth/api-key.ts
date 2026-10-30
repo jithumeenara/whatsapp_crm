@@ -31,12 +31,15 @@ export function generateApiKey(): { raw: string; hash: string; prefix: string } 
  *   - its creator is no longer a member of the key's account, or holds
  *     less than the key's own supervisor rank. Removing or demoting the
  *     person who minted a key ends it; no key outranks its creator.
- * A key with no recorded creator was minted before migration 152 and is
- * the account owner's; it keeps working.
+ *   - it has no recorded creator. Those were minted before migration 152,
+ *     when any member could mint a key (A2-01), so nobody can say whose
+ *     authority they carry. They used to count as the owner's; the owner
+ *     decided they are refused (security review N2). Migration 154 also
+ *     revokes them, but this check closes the hole before it runs.
  */
 export async function verifyApiKey(
   raw: string,
-): Promise<{ accountId: string; keyId: string; creatorUserId: string | null } | null> {
+): Promise<{ accountId: string; keyId: string; creatorUserId: string } | null> {
   if (!raw.startsWith(PREFIX) || raw.length < 20) return null
 
   const hash = createHash('sha256').update(raw).digest('hex')
@@ -59,14 +62,15 @@ export async function verifyApiKey(
     // Lengths must match for timingSafeEqual; both are SHA-256 hex so always 32 bytes
     if (storedBuf.length !== hashBuf.length) continue
     if (timingSafeEqual(storedBuf, hashBuf)) {
-      if (candidate.created_by_user_id && !(await creatorStillEntitled(candidate.created_by_user_id, candidate.account_id))) {
+      const creator = candidate.created_by_user_id
+      if (!creator || !(await creatorStillEntitled(creator, candidate.account_id))) {
         return null
       }
       // Update last_used_at without blocking the response
       prisma.apiKey
         .update({ where: { id: candidate.id }, data: { last_used_at: new Date() } })
         .catch(() => {})
-      return { accountId: candidate.account_id, keyId: candidate.id, creatorUserId: candidate.created_by_user_id }
+      return { accountId: candidate.account_id, keyId: candidate.id, creatorUserId: creator }
     }
   }
   return null

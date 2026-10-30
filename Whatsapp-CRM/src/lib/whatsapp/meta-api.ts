@@ -619,8 +619,8 @@ export interface SendTemplateMessageArgs {
   /** Meta's message_id of the message being replied to. */
   contextMessageId?: string
   /** The sending account — a header file from /api/files/... must be its
-   *  own (src/lib/whatsapp/media-ref.ts). Pass it from every caller. */
-  accountId?: string
+   *  own (src/lib/whatsapp/media-ref.ts). Required (security review N5). */
+  accountId: string
 }
 
 /**

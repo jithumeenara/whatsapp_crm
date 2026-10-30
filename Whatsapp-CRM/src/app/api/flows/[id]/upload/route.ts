@@ -6,7 +6,7 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
-import { MediaPathError, uploadPathFor } from '@/lib/whatsapp/media-ref'
+import { MediaPathError, resolveUploadPath } from '@/lib/whatsapp/media-ref'
 
 /**
  * Converts a /api/files/... URL to a raw base64 string by reading from disk.
@@ -33,7 +33,7 @@ async function imageUrlToBase64(src: string, accountId: string): Promise<string>
     // — media-ref.ts. A refused path is dropped, never read.
     let filePath: string
     try {
-      filePath = uploadPathFor(src, accountId)
+      filePath = await resolveUploadPath(src, accountId)
     } catch (err) {
       if (err instanceof MediaPathError) {
         console.warn('[upload] Image path refused:', src, err.message)

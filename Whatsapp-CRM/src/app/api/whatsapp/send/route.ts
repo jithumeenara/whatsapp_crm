@@ -341,16 +341,11 @@ export async function POST(request: Request) {
       if (!limit.success) return rateLimitResponse(limit)
 
       accountId = result.accountId
-      // Use account owner as sender for API key calls
-      const owner = await prisma.profile.findFirst({
-        where: { account_id: accountId },
-        orderBy: { created_at: 'asc' },
-        select: { user_id: true },
-      })
-      if (!owner) {
-        return NextResponse.json({ error: 'Account has no members.' }, { status: 403 })
-      }
-      userId = owner.user_id
+      // The key acts as the person who minted it (verifyApiKey confirmed
+      // they are still a member at supervisor rank); a key with no
+      // recorded creator never gets here (N2). It used to be attributed to
+      // the account's earliest member, whoever that happened to be.
+      userId = result.creatorUserId
     } else {
       const session = await auth()
       if (!session?.user?.id) {

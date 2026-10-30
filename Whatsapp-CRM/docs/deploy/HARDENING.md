@@ -6,6 +6,40 @@ proves the step took. Replace `crm.example.com`, `crm` (the app's Linux
 user) and paths with your own. Example files: `docs/deploy/nginx.conf.example`,
 `docs/deploy/ecosystem.config.example.cjs`, `.env.local.example`.
 
+## 0. Upgrading an existing server
+
+Read this **before** deploying the 2026-10 security release onto a server that is
+already running. A production start now checks its secrets and **refuses to start**
+if one is weak. The pm2 log names the variable and what is wrong with it
+(`[startup] NEXTAUTH_SECRET is 20 characters long; it must be at least 32 …`),
+never its value. Check these first, in the server's environment file
+(e.g. `.env.production`), without printing them:
+
+```bash
+# lengths only — never echo the values themselves
+for v in NEXTAUTH_SECRET AUTH_SECRET ENCRYPTION_KEY; do
+  printf '%s: ' "$v"; grep -E "^$v=" .env.production | cut -d= -f2- | tr -d '\n"' | wc -c
+done
+```
+
+- **`NEXTAUTH_SECRET`** (and **`AUTH_SECRET`**, if set): at least 32 random
+  characters, and must not contain a placeholder word such as `secret`,
+  `password`, `example`, `changeme`, `placeholder`. If it fails, make a new one with
+  `openssl rand -hex 32`. Changing it **signs everyone out once** (they sign in
+  again; no data is touched). Keep `AUTH_SECRET` unset, or equal to
+  `NEXTAUTH_SECRET`.
+- **`ENCRYPTION_KEY`**: exactly 64 hexadecimal characters. **Do NOT change it on a
+  server that already has data**: every stored WhatsApp/Instagram/Facebook token,
+  provider API key and password it encrypted becomes unreadable, and each channel
+  must then be reconnected by hand. If the check rejects the key a running server is
+  using, stop and restore the exact key it was started with (backup of the env file,
+  password manager) rather than generating a new one. Only a brand-new server takes
+  a fresh key (`openssl rand -hex 32`).
+- **Migration 154** turns off API keys made before key creators were recorded
+  (`supabase/migrations/154_revoke_creatorless_api_keys.sql`, dry-run on
+  `crm_prod_copy` first). Tell account owners: Settings → API keys shows a notice;
+  they create a new key and update their integrations.
+
 ## 1. App user and files
 
 ```bash

@@ -10,7 +10,7 @@
  */
 
 import { readFile } from 'fs/promises'
-import { MediaPathError, uploadPathFor } from '@/lib/whatsapp/media-ref'
+import { MediaPathError, resolveUploadPath } from '@/lib/whatsapp/media-ref'
 import { basename } from 'path'
 import { lookup as mimeLookup } from 'mime-types'
 import type { Prisma } from '@prisma/client'
@@ -88,7 +88,7 @@ async function localFile(accountId: string, url: string): Promise<{ bytes: Buffe
   // path, so ../ and ./ cannot reach another account's folder.
   let path: string
   try {
-    path = uploadPathFor(url, accountId)
+    path = await resolveUploadPath(url, accountId)
   } catch (err) {
     throw new TelegramSendError(err instanceof MediaPathError ? err.message : 'Invalid file path')
   }

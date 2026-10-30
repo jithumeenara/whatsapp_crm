@@ -67,6 +67,14 @@ export async function POST(request: Request) {
 
     const accountId = await resolveAccountId(session.user.id)
     if (!accountId) return NextResponse.json({ error: "Your profile is not linked to an account." }, { status: 403 })
+    // Replacing the provider credentials reroutes every outgoing message
+    // (OTPs, confirmations, broadcasts) and returns the inbound webhook
+    // secret, so it is the owner's decision — the same as DELETE.
+    try {
+      await requireRole("owner")
+    } catch (err) {
+      return toErrorResponse(err)
+    }
 
     const body = await request.json()
     const { account_sid, auth_token, messaging_service_sid, from_number } = body
