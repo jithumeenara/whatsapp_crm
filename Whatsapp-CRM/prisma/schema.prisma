@@ -3994,6 +3994,11 @@ model SheetVerification {
   sms_text         String?
   email_subject    String?
   email_text       String?
+  /// Buttons on the person's page (migration 155): a chat with this
+  /// connected number, with this text typed in; and a number to call.
+  help_whatsapp_config_id String? @db.Uuid
+  help_whatsapp_text      String?
+  help_call_phone         String?
   key_version      Int       @default(1)
   sending_until    DateTime? @db.Timestamptz(6)
   last_send_error  String?

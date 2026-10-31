@@ -7,7 +7,7 @@
 
 import { prisma } from '@/lib/db'
 import { googleAccessToken } from '@/lib/google/oauth'
-import { appendRows, columnLetter, ensureTab, readRange, readTab, tabRange, writeCells, writeHeaderRow } from '@/lib/google/sheets'
+import { appendRows, columnLetter, ensureTab, readRange, readRowDropdowns, readTab, tabRange, writeCells, writeHeaderRow } from '@/lib/google/sheets'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
@@ -33,6 +33,7 @@ import {
   STATUS_HEADER,
   type Change,
   type MessageValues,
+  type RowDropdowns,
   type VerifySetup,
 } from './sheet-verify'
 import { makeRef, signLink } from './sheet-verify-link'
@@ -103,6 +104,37 @@ export async function readSheet(v: Verification, opts: { fresh?: boolean } = {})
 
 export function forgetSheet(v: Pick<Verification, 'id' | 'spreadsheet_id' | 'tab_title'>): void {
   sheetCache.delete(`${v.id}:${v.spreadsheet_id}:${v.tab_title}`)
+}
+
+/** Dropdown lists change rarely; a person's page and their answer a
+ *  minute later share one read. */
+const dropdownCache = new Map<string, { at: number; value: RowDropdowns }>()
+const DROPDOWN_CACHE_MS = 60_000
+
+/**
+ * The sheet's own dropdown lists on a person's row, for the columns they
+ * may correct. Only read when the list has editable columns; a failure
+ * means plain text boxes, never a broken page.
+ */
+export async function rowDropdowns(v: Verification, sheet: Sheet, rowNumber: number, opts: { fresh?: boolean } = {}): Promise<RowDropdowns> {
+  const setup = setupOf(v)
+  const editCols = setup.edit_columns.map((h) => columnOf(sheet.headers, h)).filter((i) => i >= 0)
+  if (!editCols.length) return new Map()
+  const key = `${v.id}:${v.tab_title}:${rowNumber}`
+  const hit = dropdownCache.get(key)
+  if (!opts.fresh && hit && Date.now() - hit.at < DROPDOWN_CACHE_MS) return hit.value
+  try {
+    const all = await readRowDropdowns(sheet.token, v.spreadsheet_id, v.tab_title, rowNumber, Math.max(...editCols) + 1)
+    const value: RowDropdowns = new Map([...all].filter(([col]) => editCols.includes(col)))
+    dropdownCache.set(key, { at: Date.now(), value })
+    if (dropdownCache.size > 2000) dropdownCache.delete(dropdownCache.keys().next().value as string)
+    return value
+  } catch (err) {
+    console.error('[sheet-verify] dropdowns not read:', err instanceof Error ? err.message : err)
+    // Plain boxes then (or the last list read). Only while Google cannot be
+    // read is a strict dropdown left to the sheet's own rule.
+    return hit?.value ?? new Map()
+  }
 }
 
 export type Found = { kind: 'one'; row: string[]; rowNumber: number } | { kind: 'none' } | { kind: 'many' }

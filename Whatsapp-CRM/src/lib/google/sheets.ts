@@ -90,6 +90,85 @@ export async function readRange(token: string, spreadsheetId: string, range: str
   return (data.values ?? []).map((row) => row.map((v) => (v == null ? '' : String(v))))
 }
 
+/** A cell's dropdown, from Google's data validation. */
+export interface CellDropdown {
+  options: string[]
+  /** "Reject the input": only a listed value is allowed in the sheet. */
+  strict: boolean
+}
+
+interface DataValidation {
+  condition?: { type?: string; values?: Array<{ userEnteredValue?: string }> }
+  strict?: boolean
+}
+
+export const MAX_DROPDOWN_OPTIONS = 200
+
+/** Distinct, non-empty, in order, at most MAX_DROPDOWN_OPTIONS. */
+function cleanOptions(raw: unknown[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const v of raw) {
+    const s = String(v ?? '').trim()
+    if (!s || s.length > 200 || seen.has(s.toLowerCase())) continue
+    seen.add(s.toLowerCase())
+    out.push(s)
+    if (out.length >= MAX_DROPDOWN_OPTIONS) break
+  }
+  return out
+}
+
+/**
+ * What a cell's data validation offers, when it is a dropdown: the items
+ * written in the rule ("List of items"), or the range it points to ("List
+ * from a range", e.g. `=Lists!$A$2:$A$40`) for the caller to read. Other
+ * rules (numbers, dates, checkboxes) are not dropdowns. Pure, for tests.
+ */
+export function dropdownRule(dv: DataValidation | undefined): { options: string[]; strict: boolean } | { range: string; strict: boolean } | null {
+  const type = dv?.condition?.type
+  const strict = dv?.strict === true
+  if (type === 'ONE_OF_LIST') {
+    const options = cleanOptions((dv?.condition?.values ?? []).map((v) => v.userEnteredValue))
+    return options.length ? { options, strict } : null
+  }
+  if (type === 'ONE_OF_RANGE') {
+    const range = String(dv?.condition?.values?.[0]?.userEnteredValue ?? '').trim().replace(/^=/, '')
+    return range ? { range, strict } : null
+  }
+  return null
+}
+
+/**
+ * The dropdowns on one row of a tab, by 0-based column. One read for the
+ * row's rules, then one per "list from a range" (each range read once).
+ */
+export async function readRowDropdowns(token: string, spreadsheetId: string, title: string, rowNumber: number, columnCount: number): Promise<Map<number, CellDropdown>> {
+  const out = new Map<number, CellDropdown>()
+  if (rowNumber < 1 || columnCount < 1) return out
+  const range = `${tabRange(title)}!A${rowNumber}:${columnLetter(columnCount - 1)}${rowNumber}`
+  const data = await call<{ sheets?: Array<{ data?: Array<{ rowData?: Array<{ values?: Array<{ dataValidation?: DataValidation }> }> }> }> }>(
+    token,
+    `${API}/${encodeURIComponent(spreadsheetId)}?ranges=${encodeURIComponent(range)}&fields=${encodeURIComponent('sheets.data.rowData.values.dataValidation')}`,
+  )
+  const cells = data.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values ?? []
+  const ranges = new Map<string, string[]>()
+  for (let col = 0; col < cells.length; col++) {
+    const rule = dropdownRule(cells[col]?.dataValidation)
+    if (!rule) continue
+    if ('options' in rule) {
+      out.set(col, rule)
+      continue
+    }
+    if (!ranges.has(rule.range)) {
+      const rows = await readRange(token, spreadsheetId, rule.range).catch(() => [] as string[][])
+      ranges.set(rule.range, cleanOptions(rows.flat()))
+    }
+    const options = ranges.get(rule.range) ?? []
+    if (options.length) out.set(col, { options, strict: rule.strict })
+  }
+  return out
+}
+
 /**
  * Rows below the tab's table, always starting in column A.
  *

@@ -107,11 +107,16 @@ export interface ViewItem {
   /** As the person sees it: masked when sensitive or a contact detail. */
   value: string
   editable: boolean
+  /** The sheet cell's own dropdown list, offered when correcting. */
+  options?: string[]
 }
+
+/** Dropdowns on the person's row, by 0-based column (Google data validation). */
+export type RowDropdowns = ReadonlyMap<number, { options: string[]; strict: boolean }>
 
 /** What the person sees of their row: their name first, then the shown
  *  columns, in the business's order. */
-export function personView(setup: VerifySetup, headers: readonly string[], row: readonly string[]): ViewItem[] {
+export function personView(setup: VerifySetup, headers: readonly string[], row: readonly string[], dropdowns?: RowDropdowns): ViewItem[] {
   const cols = [setup.name_column, ...setup.show_columns].filter((h): h is string => !!h)
   const seen = new Set<string>()
   const edit = new Set(setup.edit_columns.map(norm))
@@ -123,7 +128,9 @@ export function personView(setup: VerifySetup, headers: readonly string[], row: 
     seen.add(norm(h))
     const raw = String(row[i] ?? '').trim()
     const hidden = isSensitiveColumn(h) || contact.has(norm(h))
-    out.push({ header: headers[i].trim() || h, value: hidden && raw ? maskValue(raw) : raw, editable: edit.has(norm(h)) && !hidden })
+    const editable = edit.has(norm(h)) && !hidden
+    const options = editable ? dropdowns?.get(i)?.options : undefined
+    out.push({ header: headers[i].trim() || h, value: hidden && raw ? maskValue(raw) : raw, editable, ...(options?.length ? { options } : {}) })
   }
   return out
 }
@@ -147,6 +154,7 @@ export function corrections(
   row: readonly string[],
   values: unknown,
   seen: unknown,
+  dropdowns?: RowDropdowns,
 ): { ok: true; changes: Change[] } | { ok: false; problem: string; stale?: boolean } {
   if (!values || typeof values !== 'object' || Array.isArray(values)) return { ok: false, problem: 'Nothing was sent.' }
   const edit = new Set(setup.edit_columns.map(norm))
@@ -157,8 +165,16 @@ export function corrections(
     const col = columnOf(headers, header)
     if (col < 0) return { ok: false, problem: `“${header.slice(0, 60)}” is no longer in the list.` }
     if (typeof v !== 'string') return { ok: false, problem: 'Each answer must be text.' }
-    const after = v.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+    let after = v.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
     if (!after) return { ok: false, problem: `“${headers[col].trim()}” cannot be left empty.` }
+    // A cell with a dropdown takes one of its items, written exactly as listed.
+    // When the sheet only warns (not strict), another value is still allowed.
+    const dropdown = dropdowns?.get(col)
+    if (dropdown?.options.length) {
+      const listed = dropdown.options.find((o) => o.toLowerCase() === after.toLowerCase())
+      if (listed) after = listed
+      else if (dropdown.strict) return { ok: false, problem: `Choose “${headers[col].trim()}” from the list.` }
+    }
     if (after.length > MAX_VALUE) return { ok: false, problem: `“${headers[col].trim()}” can be at most ${MAX_VALUE} characters.` }
     const now = String(row[col] ?? '').trim()
     if (typeof before[header] === 'string' && (before[header] as string).trim() !== now) {
@@ -229,10 +245,15 @@ export interface VerificationInput extends VerifySetup {
   sms_text: string | null
   email_subject: string | null
   email_text: string | null
+  /** Checked against the account's own numbers by the route before saving. */
+  help_whatsapp_config_id: string | null
+  help_whatsapp_text: string | null
+  help_call_phone: string | null
   status: 'active' | 'closed'
 }
 
 const LANGS = new Set(['en', 'ml', 'hi', 'ta', 'kn', 'te', 'ar'])
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Each allowed field copied and checked on its own; nothing else is taken. */
 export function cleanVerificationInput(raw: unknown): { ok: true; data: VerificationInput } | { ok: false; problem: string } {
@@ -262,6 +283,10 @@ export function cleanVerificationInput(raw: unknown): { ok: true; data: Verifica
     if (s.startsWith('col:') && s.length <= 104 && !isSensitiveColumn(s.slice(4))) return s
     return ''
   })
+  // A phone number to dial: digits with an optional leading +, spaces and dashes allowed.
+  const call = text(r.help_call_phone, 30)
+  if (call && !/^\+?[\d\s()-]{6,25}$/.test(call)) return { ok: false, problem: 'The call number should be a phone number, like +91 98470 12345.' }
+  const callPhone = call
   return {
     ok: true,
     data: {
@@ -278,6 +303,9 @@ export function cleanVerificationInput(raw: unknown): { ok: true; data: Verifica
       sms_text: text(r.sms_text, 600),
       email_subject: text(r.email_subject, 150),
       email_text: text(r.email_text, 3000),
+      help_whatsapp_config_id: typeof r.help_whatsapp_config_id === 'string' && UUID_RE.test(r.help_whatsapp_config_id) ? r.help_whatsapp_config_id : null,
+      help_whatsapp_text: text(r.help_whatsapp_text, 200),
+      help_call_phone: callPhone,
       status: r.status === 'closed' ? 'closed' : 'active',
     },
   }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { cleanVerificationInput } from '@/lib/verify/sheet-verify'
+import { ownsWhatsAppNumber } from '@/lib/verify/verify-brand'
 
 /**
  * "Check details" lists — people confirming or correcting their own row
@@ -43,6 +44,9 @@ export async function POST(req: Request) {
     assertPageAccess(ctx, '/data')
     const parsed = cleanVerificationInput(await req.json().catch(() => null))
     if (!parsed.ok) return NextResponse.json({ error: parsed.problem }, { status: 400 })
+    if (!(await ownsWhatsAppNumber(ctx.accountId, parsed.data.help_whatsapp_config_id))) {
+      return NextResponse.json({ error: 'Choose one of your connected WhatsApp numbers.' }, { status: 400 })
+    }
     const count = await prisma.sheetVerification.count({ where: { account_id: ctx.accountId } })
     if (count >= 200) return NextResponse.json({ error: 'You have 200 checks already. Delete old ones first.' }, { status: 400 })
     const created = await prisma.sheetVerification.create({

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Everyday update for one customer VPS: new code only, no database
-# migrations. For a release that adds migrations, use the release's own
-# script instead.
+# Everyday update for one customer VPS: new code, and any new database
+# migrations it brings (after a verified database backup).
 #
 #   bash code-update.sh <app-dir> <pm2-name>
 #
 # Every step is checked; the first failure stops the script. If the build
-# or the start fails, it puts the previous version back by itself.
+# or the start fails, it puts the previous code back by itself (migrations
+# only ever add, so the old code runs on the newer database).
 # Secret values are never printed. Run it from your own shell (not sudo).
 
 set -u
@@ -40,9 +40,23 @@ if [ -n "$CHANGED" ]; then
 fi
 NEW="$(git rev-parse origin/master)"
 [ "$NEW" = "$OLD" ] && { ok "Already at ${OLD:0:7} — nothing to update"; exit 0; }
-# Migrations in this update need the release script, not this one.
-if git diff --relative --name-only "$OLD" "$NEW" | grep -q '^supabase/migrations/'; then
-  stop "This update adds database migrations — use the release's own update script"
+# New migration files in this update (added, not edited), by number.
+MIGS="$(git diff --relative --diff-filter=A --name-only "$OLD" "$NEW" -- supabase/migrations | sed -n 's#^supabase/migrations/\([0-9]\{3\}\)_.*\.sql$#\1#p' | sort -u)"
+if [ -n "$MIGS" ]; then
+  MIG_FROM="$(printf '%s\n' "$MIGS" | head -1)"; MIG_TO="$(printf '%s\n' "$MIGS" | tail -1)"
+  [ "$((10#$MIG_FROM))" -ge 145 ] || stop "This update carries old migrations ($MIG_FROM…) — ask before continuing"
+  ok "new database migrations: $(printf '%s ' $MIGS)"
+  STAMP="$(date +%F-%H%M)"
+  val() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '"\r\n'; }
+  if [ -f scripts/pg-env.sh ]; then source scripts/pg-env.sh >/dev/null; fi
+  if [ -n "${PGDATABASE:-}" ]; then
+    pg_dump -Fc -f "$HOME/crm-before-update-$STAMP.dump" || stop "Database backup failed — nothing was changed"
+  else
+    pg_dump -Fc -f "$HOME/crm-before-update-$STAMP.dump" "$(val DATABASE_URL | sed 's/?schema=public//')" || stop "Database backup failed — nothing was changed"
+  fi
+  chmod 600 "$HOME/crm-before-update-$STAMP.dump"
+  pg_restore -l "$HOME/crm-before-update-$STAMP.dump" >/dev/null || stop "Backup file is not readable — nothing was changed"
+  ok "database backup: ~/crm-before-update-$STAMP.dump (delete it after a week)"
 fi
 git merge -q --ff-only origin/master || stop "Could not move to the new code. Run: git status"
 ok "now at $(git rev-parse --short HEAD) (was ${OLD:0:7})"
@@ -63,6 +77,14 @@ if git diff --relative --name-only "$OLD" HEAD | grep -qE '^(package(-lock)?\.js
   ok "packages installed"
 else
   ok "no package changes — skipped"
+fi
+
+if [ -n "$MIGS" ]; then
+  say "3b. Database migrations $MIG_FROM–$MIG_TO"
+  # Each file runs as one transaction; a failing one leaves nothing half-done.
+  bash scripts/apply-migrations.sh "$MIG_FROM" "$MIG_TO" || rollback "A migration failed (that file changed nothing)"
+  npx prisma generate >/dev/null 2>&1 || rollback "prisma generate failed"
+  ok "migrations applied"
 fi
 
 say "4. Build (app stopped meanwhile to free memory)"

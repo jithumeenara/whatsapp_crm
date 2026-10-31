@@ -3,7 +3,7 @@ import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { clientIpKey } from '@/lib/net/client-ip'
 import { corrections } from '@/lib/verify/sheet-verify'
 import { readLink } from '@/lib/verify/sheet-verify-link'
-import { openLink, viewOf } from '@/lib/verify/verify-public'
+import { dropdownsOf, openLink, viewOf } from '@/lib/verify/verify-public'
 import { prisma } from '@/lib/db'
 import { isOpen, markOpened, recordAnswer, RowMovedError, setupOf } from '@/lib/verify/sheet-verify-server'
 import { verifyStrings } from '@/lib/verify/verify-strings'
@@ -63,16 +63,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
     if (body.action === 'confirm') {
       await recordAnswer({ v: link.v, sheet: link.sheet, rowNumber: link.rowNumber, ref: link.ref, changes: [], by: 'Person', state: 'verified' })
-      return NextResponse.json({ ok: true, state: 'verified', items: viewOf(link) })
+      return NextResponse.json({ ok: true, state: 'verified', items: viewOf(link, await dropdownsOf(link)) })
     }
 
-    const checked = corrections(setupOf(link.v), link.sheet.headers, link.row, body.values, body.seen)
+    // The sheet's own dropdown lists, read afresh: a listed value is required where the sheet requires one.
+    const dropdowns = await dropdownsOf(link, { fresh: true })
+    const checked = corrections(setupOf(link.v), link.sheet.headers, link.row, body.values, body.seen, dropdowns)
     if (!checked.ok) return NextResponse.json({ error: checked.problem, stale: !!checked.stale }, { status: checked.stale ? 409 : 400 })
     if (!checked.changes.length) return NextResponse.json({ error: t.noChange }, { status: 400 })
     await recordAnswer({ v: link.v, sheet: link.sheet, rowNumber: link.rowNumber, ref: link.ref, changes: checked.changes, by: 'Person', state: 'corrected' })
     const row = [...link.row]
     for (const c of checked.changes) row[c.col] = c.after
-    return NextResponse.json({ ok: true, state: 'corrected', items: viewOf({ ...link, row }) })
+    return NextResponse.json({ ok: true, state: 'corrected', items: viewOf({ ...link, row }, dropdowns) })
   } catch (err) {
     if (err instanceof RowMovedError) return NextResponse.json({ error: err.message, stale: true }, { status: 409 })
     console.error('[verify-answer] failed:', err instanceof Error ? err.message : err)

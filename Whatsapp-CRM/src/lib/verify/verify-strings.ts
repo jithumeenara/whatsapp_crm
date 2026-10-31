@@ -27,6 +27,9 @@ export interface VerifyStrings {
   tooMany: string
   reload: string
   noChange: string
+  needHelp: string
+  call: string
+  whatsapp: string
 }
 
 const en: VerifyStrings = {
@@ -50,6 +53,9 @@ const en: VerifyStrings = {
   tooMany: 'Too many tries. Please wait a few minutes and try again.',
   reload: 'Reload',
   noChange: 'Nothing was changed. Edit a detail, or press “Everything is correct”.',
+  needHelp: 'Need help?',
+  call: 'Call',
+  whatsapp: 'WhatsApp',
 }
 
 const ml: VerifyStrings = {
@@ -73,6 +79,9 @@ const ml: VerifyStrings = {
   tooMany: 'കൂടുതൽ ശ്രമങ്ങൾ. കുറച്ച് മിനിറ്റ് കഴിഞ്ഞ് വീണ്ടും ശ്രമിക്കുക.',
   reload: 'വീണ്ടും തുറക്കുക',
   noChange: 'ഒന്നും മാറ്റിയിട്ടില്ല. ഒരു വിവരം തിരുത്തുക, അല്ലെങ്കിൽ “എല്ലാം ശരിയാണ്” അമർത്തുക.',
+  needHelp: 'സഹായം വേണോ?',
+  call: 'വിളിക്കുക',
+  whatsapp: 'WhatsApp',
 }
 
 const hi: VerifyStrings = {
@@ -96,6 +105,9 @@ const hi: VerifyStrings = {
   tooMany: 'बहुत अधिक प्रयास। कुछ मिनट बाद फिर से कोशिश करें।',
   reload: 'फिर से खोलें',
   noChange: 'कुछ नहीं बदला। कोई जानकारी सुधारें, या “सब कुछ सही है” दबाएँ।',
+  needHelp: 'मदद चाहिए?',
+  call: 'कॉल करें',
+  whatsapp: 'WhatsApp',
 }
 
 const ta: VerifyStrings = {
@@ -119,6 +131,9 @@ const ta: VerifyStrings = {
   tooMany: 'அதிக முயற்சிகள். சில நிமிடங்கள் கழித்து மீண்டும் முயற்சிக்கவும்.',
   reload: 'மீண்டும் திற',
   noChange: 'எதுவும் மாற்றப்படவில்லை. ஒரு விவரத்தைத் திருத்தவும், அல்லது “அனைத்தும் சரி” என்பதை அழுத்தவும்.',
+  needHelp: 'உதவி வேண்டுமா?',
+  call: 'அழைக்கவும்',
+  whatsapp: 'WhatsApp',
 }
 
 const kn: VerifyStrings = {
@@ -142,6 +157,9 @@ const kn: VerifyStrings = {
   tooMany: 'ಹೆಚ್ಚು ಪ್ರಯತ್ನಗಳು. ಕೆಲವು ನಿಮಿಷಗಳ ನಂತರ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',
   reload: 'ಮತ್ತೆ ತೆರೆಯಿರಿ',
   noChange: 'ಏನನ್ನೂ ಬದಲಿಸಿಲ್ಲ. ಒಂದು ವಿವರವನ್ನು ಸರಿಪಡಿಸಿ, ಅಥವಾ “ಎಲ್ಲವೂ ಸರಿಯಾಗಿದೆ” ಒತ್ತಿ.',
+  needHelp: 'ಸಹಾಯ ಬೇಕೇ?',
+  call: 'ಕರೆ ಮಾಡಿ',
+  whatsapp: 'WhatsApp',
 }
 
 const te: VerifyStrings = {
@@ -165,6 +183,9 @@ const te: VerifyStrings = {
   tooMany: 'చాలా ప్రయత్నాలు. కొన్ని నిమిషాల తర్వాత మళ్లీ ప్రయత్నించండి.',
   reload: 'మళ్లీ తెరవండి',
   noChange: 'ఏమీ మార్చలేదు. ఒక వివరాన్ని సరిచేయండి, లేదా “అన్నీ సరైనవే” నొక్కండి.',
+  needHelp: 'సహాయం కావాలా?',
+  call: 'కాల్ చేయండి',
+  whatsapp: 'WhatsApp',
 }
 
 const ar: VerifyStrings = {
@@ -188,6 +209,9 @@ const ar: VerifyStrings = {
   tooMany: 'محاولات كثيرة. يرجى الانتظار بضع دقائق ثم المحاولة مجددًا.',
   reload: 'إعادة الفتح',
   noChange: 'لم يتغير شيء. صحّح أحد البيانات، أو اضغط «كل شيء صحيح».',
+  needHelp: 'هل تحتاج إلى مساعدة؟',
+  call: 'اتصل',
+  whatsapp: 'واتساب',
 }
 
 export const VERIFY_STRINGS: Record<FormLang, VerifyStrings> = { en, ml, hi, ta, kn, te, ar }

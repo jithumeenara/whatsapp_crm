@@ -37,6 +37,9 @@ export interface VerificationSettings {
   sms_text: string | null
   email_subject: string | null
   email_text: string | null
+  help_whatsapp_config_id: string | null
+  help_whatsapp_text: string | null
+  help_call_phone: string | null
   status: "active" | "closed"
 }
 
@@ -44,8 +47,11 @@ export const EMPTY_SETTINGS: VerificationSettings = {
   name: "", spreadsheet_id: "", spreadsheet_name: null, tab_title: "",
   name_column: null, phone_column: null, email_column: null, show_columns: [], edit_columns: [],
   filter_column: null, filter_value: null, deadline: null, language: "en", intro: null,
-  template_name: null, template_params: [], sms_text: null, email_subject: null, email_text: null, status: "active",
+  template_name: null, template_params: [], sms_text: null, email_subject: null, email_text: null,
+  help_whatsapp_config_id: null, help_whatsapp_text: null, help_call_phone: null, status: "active",
 }
+
+interface WaNumber { id: string; label: string }
 
 interface TemplateLite { name: string; language?: string | null; body_text?: string | null; buttons?: unknown }
 
@@ -81,6 +87,7 @@ export function VerifySettings({ initial, onSaved }: { initial: VerificationSett
   const [tabs, setTabs] = useState<string[]>([])
   const [headers, setHeaders] = useState<string[] | null>(null)
   const [templates, setTemplates] = useState<TemplateLite[] | null>(null)
+  const [numbers, setNumbers] = useState<WaNumber[] | null>(null)
   const [saving, setSaving] = useState(false)
   const loadSeq = useRef(0)
 
@@ -115,6 +122,19 @@ export function VerifySettings({ initial, onSaved }: { initial: VerificationSett
       .then((r) => r.json())
       .then((d: { templates?: TemplateLite[] }) => { if (live) setTemplates(Array.isArray(d.templates) ? d.templates : []) })
       .catch((err) => { console.error("[verify-settings] templates failed:", err); if (live) setTemplates([]) })
+    return () => { live = false }
+  }, [])
+
+  // This account's connected numbers, for the WhatsApp button on the page.
+  useEffect(() => {
+    let live = true
+    apiFetch("/api/whatsapp/config", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { configs?: Array<{ id: string; config?: { label?: string | null }; phone_info?: { display_phone_number?: string } }> }) => {
+        if (!live) return
+        setNumbers((d.configs ?? []).map((c) => ({ id: c.id, label: [c.config?.label, c.phone_info?.display_phone_number].filter(Boolean).join(" · ") || "WhatsApp number" })))
+      })
+      .catch((err) => { console.error("[verify-settings] numbers failed:", err); if (live) setNumbers([]) })
     return () => { live = false }
   }, [])
 
@@ -282,6 +302,26 @@ export function VerifySettings({ initial, onSaved }: { initial: VerificationSett
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /> Put “Their private link” in one of the {"{{n}}"} above — otherwise people get no link.
           </p>
         )}
+      </Section>
+
+      <Section title="Help buttons on their page" hint="A Call button, and a WhatsApp button that opens a chat with your number with your text already typed — a chatbot trigger word works here. Leave empty to hide a button.">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-1 text-[12.5px] text-slate-600">
+            WhatsApp number
+            <select value={s.help_whatsapp_config_id ?? ""} onChange={(e) => set({ help_whatsapp_config_id: e.target.value || null })} className={FIELD}>
+              <option value="">{numbers === null ? "Loading…" : "No WhatsApp button"}</option>
+              {(numbers ?? []).map((n) => <option key={n.id} value={n.id}>{n.label}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-[12.5px] text-slate-600">
+            Message already typed
+            <input value={s.help_whatsapp_text ?? ""} onChange={(e) => set({ help_whatsapp_text: e.target.value })} maxLength={200} disabled={!s.help_whatsapp_config_id} placeholder="e.g. HELP or a chatbot trigger word…" autoComplete="off" name="verify-help-text" className={`${FIELD} disabled:bg-slate-50`} dir="auto" />
+          </label>
+        </div>
+        <label className="flex flex-col gap-1 text-[12.5px] text-slate-600">
+          Number for the Call button
+          <input value={s.help_call_phone ?? ""} onChange={(e) => set({ help_call_phone: e.target.value })} maxLength={30} type="tel" inputMode="tel" placeholder="Empty: the phone in your company profile" autoComplete="off" name="verify-help-phone" className={FIELD} />
+        </label>
       </Section>
 
       <Section title="SMS and email (for people WhatsApp does not reach)" hint="Use {{name}}, {{link}}, {{deadline}}, {{business}} and {{ref}}. An SMS in India must match your DLT-approved text exactly.">
