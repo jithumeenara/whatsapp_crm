@@ -78,7 +78,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^25",
+    "@types/node": "^26",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
