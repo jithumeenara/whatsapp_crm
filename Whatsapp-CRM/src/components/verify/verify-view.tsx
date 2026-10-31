@@ -5,11 +5,12 @@
  * the business's list, to confirm or correct. Phone-first, one column,
  * large targets; every language the business can choose, right to left
  * for Arabic. Nothing here is trusted — the server checks the link, the
- * columns that may change and the values again.
+ * columns that may change and the values again. Laid out like the shared
+ * public form, so a person who filled that in sees the same business page.
  */
 
 import { useEffect, useState } from "react"
-import { AlertCircle, CheckCircle2, Loader2, Lock, Pencil, RotateCcw, ShieldCheck } from "lucide-react"
+import { AlertCircle, CalendarClock, CheckCircle2, Loader2, Lock, Pencil, RotateCcw, ShieldCheck } from "lucide-react"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { langInfo, isFormLang } from "@/lib/data-store/form-i18n"
 import type { ViewItem } from "@/lib/verify/sheet-verify"
@@ -28,19 +29,39 @@ type Props =
       done: boolean
     }
 
+function BusinessHeader({ business }: Readonly<{ business: string }>) {
+  return (
+    <header className="relative overflow-hidden bg-primary text-white">
+      <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(120%_120%_at_100%_0%,rgba(255,255,255,0.22),transparent_55%),linear-gradient(180deg,transparent,rgba(0,0,0,0.18))]" />
+      <div className="relative mx-auto flex w-full max-w-xl items-center gap-3.5 px-4 pb-20 pt-6 sm:pt-10">
+        {business ? (
+          <>
+            <span aria-hidden="true" className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-white/95 text-[22px] font-bold text-primary shadow-sm">
+              {business.trim().charAt(0).toUpperCase()}
+            </span>
+            <p className="min-w-0 text-balance text-[18px] font-bold leading-snug sm:text-[20px]" dir="auto">{business}</p>
+          </>
+        ) : (
+          <span aria-hidden="true" className="grid h-14 w-14 place-items-center rounded-2xl bg-white/15"><ShieldCheck className="h-7 w-7" /></span>
+        )}
+      </div>
+    </header>
+  )
+}
+
 export function VerifyView(props: Props) {
   const t = verifyStrings(props.lang)
   const rtl = isFormLang(props.lang) && langInfo(props.lang).rtl
   return (
-    <div lang={props.lang} dir={rtl ? "rtl" : "ltr"} className="min-h-dvh bg-slate-50 px-4 py-6 sm:py-10">
-      <main className="mx-auto w-full max-w-lg">
-        {props.business && <p className="mb-3 text-center text-[13px] font-medium text-slate-500" dir="auto">{props.business}</p>}
+    <div lang={props.lang} dir={rtl ? "rtl" : "ltr"} className="min-h-dvh bg-slate-50">
+      <BusinessHeader business={props.business} />
+      <main className="relative mx-auto -mt-14 w-full max-w-xl px-4 pb-10">
         {props.mode === "message" ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-            <AlertCircle className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
-            <p className="mt-3 text-[15px] leading-relaxed text-slate-700">{props.message}</p>
+          <div className="rounded-3xl border border-slate-200 bg-white px-6 py-8 text-center shadow-lg shadow-slate-900/5">
+            <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-slate-100"><AlertCircle className="h-7 w-7 text-slate-500" aria-hidden="true" /></span>
+            <p className="mt-4 text-[15.5px] leading-relaxed text-slate-700">{props.message}</p>
             {props.retry && (
-              <button type="button" onClick={() => window.location.reload()} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-[14px] font-medium text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={() => window.location.reload()} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-300 px-4 text-[14px] font-medium text-slate-700 hover:bg-slate-50">
                 <RotateCcw className="h-4 w-4" aria-hidden="true" /> {t.reload}
               </button>
             )}
@@ -48,12 +69,17 @@ export function VerifyView(props: Props) {
         ) : (
           <DetailsForm {...props} />
         )}
+        {props.business && (
+          <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-[12.5px] text-slate-500">
+            <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-700" aria-hidden="true" /> {props.business}
+          </p>
+        )}
       </main>
     </div>
   )
 }
 
-function DetailsForm(props: Extract<Props, { mode: "form" }>) {
+function DetailsForm(props: Readonly<Extract<Props, { mode: "form" }>>) {
   const t = verifyStrings(props.lang)
   const [items, setItems] = useState(props.items)
   const [done, setDone] = useState<null | "verified" | "corrected">(props.done ? "verified" : null)
@@ -114,31 +140,43 @@ function DetailsForm(props: Extract<Props, { mode: "form" }>) {
     }
   }
 
-  return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-5 pb-4 pt-5">
-        <h1 className="text-[20px] font-semibold leading-snug text-slate-900">{t.title}</h1>
-        {done ? (
-          <p role="status" className="mt-2 flex items-start gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-[14px] text-emerald-800">
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            {done === "corrected" ? t.thanksCorrected : props.done && !busy ? t.already : t.thanks}
-          </p>
-        ) : (
-          <p className="mt-1.5 whitespace-pre-line text-[14px] leading-relaxed text-slate-600" dir="auto">{props.intro || t.intro}</p>
-        )}
-        {props.deadline && !done && <p className="mt-2 text-[12.5px] font-medium text-amber-700">{t.by(props.deadline)}</p>}
-      </div>
+  let doneText = t.thanks
+  if (done === "corrected") doneText = t.thanksCorrected
+  else if (props.done && !busy) doneText = t.already
 
-      <dl className="divide-y divide-slate-100">
+  return (
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+      {done && !editing ? (
+        <div role="status" className="border-b border-slate-100 px-5 pb-6 pt-8 text-center sm:px-8">
+          <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-emerald-50 ring-8 ring-emerald-50/60">
+            <CheckCircle2 className="h-9 w-9 text-emerald-600" aria-hidden="true" />
+          </span>
+          <h1 className="mt-4 text-balance text-[22px] font-bold leading-tight text-slate-900">{doneText}</h1>
+        </div>
+      ) : (
+        <div className="border-b border-slate-100 px-5 pb-5 pt-6 sm:px-8">
+          <h1 className="text-balance text-[24px] font-bold leading-tight tracking-tight text-slate-900 sm:text-[26px]">{t.title}</h1>
+          <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-600" dir="auto">{props.intro || t.intro}</p>
+          {props.deadline && (
+            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[12.5px] font-medium text-amber-800">
+              <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" /> {t.by(props.deadline)}
+            </p>
+          )}
+        </div>
+      )}
+
+      <dl className="flex flex-col gap-2.5 px-4 py-5 sm:px-8">
         {items.map((i) => {
           const id = `v-${i.header.replace(/\W+/g, "-")}`
+          const field = editing && i.editable
           return (
-            <div key={i.header} className="px-5 py-3.5">
-              <dt className="text-[12px] font-medium text-slate-500" dir="auto">
-                {editing && i.editable ? <label htmlFor={id}>{i.header}</label> : i.header}
+            <div key={i.header} className={`rounded-2xl border px-4 py-3 transition-colors ${field ? "border-primary/30 bg-primary/[0.03]" : "border-slate-100 bg-slate-50/70"}`}>
+              <dt className="flex items-center gap-1.5 text-[12.5px] font-medium text-slate-500" dir="auto">
+                {field ? <label htmlFor={id}>{i.header}</label> : i.header}
+                {!editing && i.editable && <Pencil className="h-3 w-3 text-slate-300" aria-hidden="true" />}
               </dt>
               <dd className="mt-1">
-                {editing && i.editable ? (
+                {field ? (
                   <input
                     id={id}
                     value={draft[i.header] ?? ""}
@@ -149,8 +187,8 @@ function DetailsForm(props: Extract<Props, { mode: "form" }>) {
                     className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3.5 text-[16px] text-slate-900 outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/15"
                   />
                 ) : (
-                  <span className="flex items-center gap-1.5 break-words text-[16px] text-slate-900" dir="auto">
-                    {i.value || <span className="text-slate-400">—</span>}
+                  <span className="flex items-center gap-1.5 break-words text-[16px] font-medium text-slate-900" dir="auto">
+                    {i.value || <span className="font-normal text-slate-400">—</span>}
                     {!i.editable && /•/.test(i.value) && <Lock className="h-3.5 w-3.5 shrink-0 text-slate-400" aria-label={t.hidden} />}
                   </span>
                 )}
@@ -160,7 +198,7 @@ function DetailsForm(props: Extract<Props, { mode: "form" }>) {
         })}
       </dl>
 
-      <div className="flex flex-col gap-2.5 border-t border-slate-100 bg-slate-50/60 px-5 py-4">
+      <div className="flex flex-col gap-2.5 border-t border-slate-100 px-5 pb-6 pt-4 sm:px-8">
         {error && (
           <div role="alert" className="flex flex-col gap-2 rounded-xl bg-rose-50 px-3 py-2.5 text-[13.5px] text-rose-700">
             <span className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> {error.text}</span>
@@ -174,7 +212,7 @@ function DetailsForm(props: Extract<Props, { mode: "form" }>) {
         {editing ? (
           <>
             <p className="text-[12.5px] leading-relaxed text-slate-500">{t.editHint(props.business || "us")}</p>
-            <button type="button" onClick={() => send("correct")} disabled={!!busy} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-[15px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60">
+            <button type="button" onClick={() => send("correct")} disabled={!!busy} className="inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-[16px] font-semibold text-white shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-[0.99] disabled:opacity-60">
               {busy === "correct" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
               {busy === "correct" ? t.saving : t.save}
             </button>
@@ -185,21 +223,18 @@ function DetailsForm(props: Extract<Props, { mode: "form" }>) {
         ) : (
           <>
             {!done && (
-              <button type="button" onClick={() => send("confirm")} disabled={!!busy} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-[15px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60">
+              <button type="button" onClick={() => send("confirm")} disabled={!!busy} className="inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-[16px] font-semibold text-white shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-[0.99] disabled:opacity-60">
                 {busy === "confirm" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
                 {busy === "confirm" ? t.saving : t.allCorrect}
               </button>
             )}
             {canEdit && (
-              <button type="button" onClick={startEdit} disabled={!!busy} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-[15px] font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-60">
+              <button type="button" onClick={startEdit} disabled={!!busy} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 text-[15px] font-medium text-slate-800 transition hover:bg-slate-50 active:scale-[0.99] disabled:opacity-60">
                 <Pencil className="h-4 w-4" aria-hidden="true" /> {done ? t.correctAgain : t.fix}
               </button>
             )}
           </>
         )}
-        <p className="mt-1 flex items-center justify-center gap-1.5 text-[11.5px] text-slate-400">
-          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> {props.business}
-        </p>
       </div>
     </div>
   )

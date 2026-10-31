@@ -7,9 +7,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AlertTriangle, Check, CheckCircle2, Copy, ExternalLink, Loader2, Mail, MessageCircle, MessageSquare, Phone, RefreshCw, Search, ShieldOff, Wand2 } from "lucide-react"
+import { AlertTriangle, Check, CheckCircle2, Copy, ExternalLink, Loader2, Mail, MessageCircle, MessageSquare, MoreHorizontal, Phone, RefreshCw, Search, ShieldOff, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
 import { apiFetch, errorText } from "@/lib/api-fetch"
@@ -153,9 +154,47 @@ export function VerifyPeople({ id, spreadsheetId }: { id: string; spreadsheetId:
     })
   }
 
+  const pct = counts.all ? Math.round((counts.done / counts.all) * 100) : 0
+
   return (
     <div className="flex flex-col gap-4">
       {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-[13px] text-rose-700">{error}</p>}
+
+      {people !== null && counts.all > 0 && (
+        <section aria-label="Progress" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-[12.5px] text-slate-500">Answered</p>
+              <p className="text-[26px] font-semibold leading-tight tabular-nums text-slate-900">
+                {counts.done.toLocaleString()} <span className="text-[15px] font-normal text-slate-400">of {counts.all.toLocaleString()}</span>
+              </p>
+            </div>
+            <p className="text-[22px] font-semibold tabular-nums text-emerald-700">{pct}%</p>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label={`${pct}% answered`}>
+            <div className="h-full rounded-full bg-emerald-500 transition-[width] duration-300 ease-out" style={{ width: `${pct}%` }} />
+          </div>
+          <div role="group" aria-label="Show only" className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {([
+              ["done", "Confirmed", "bg-emerald-500"],
+              ["opened", "Opened", "bg-amber-400"],
+              ["waiting", "Not opened", "bg-slate-300"],
+              ["not_reached", "Not reached", "bg-rose-500"],
+            ] as const).map(([k, label, dot]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setFilter(filter === k ? "all" : k)}
+                aria-pressed={filter === k}
+                className={`rounded-xl px-3 py-2 text-start transition-colors ${filter === k ? "bg-slate-900 text-white" : "bg-slate-50 hover:bg-slate-100"}`}
+              >
+                <span className={`flex items-center gap-1.5 text-[12px] ${filter === k ? "text-white/80" : "text-slate-500"}`}><span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" /> {label}</span>
+                <span className="mt-0.5 block text-[18px] font-semibold tabular-nums">{counts[k].toLocaleString()}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {admin && (
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4">
@@ -179,25 +218,40 @@ export function VerifyPeople({ id, spreadsheetId }: { id: string; spreadsheetId:
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" /> {missing} row{missing === 1 ? "" : "s"} have no reference yet (new rows, or the first time). Get the sheet ready before sending.
             </p>
           )}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => act("prepare", { action: "prepare" }, (d) => `Sheet ready — ${Number(d.added ?? 0)} new reference${d.added === 1 ? "" : "s"}${Number(d.replaced ?? 0) ? `, ${Number(d.replaced)} copied one${d.replaced === 1 ? "" : "s"} replaced` : ""}`)} disabled={!!busy} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-              {busy === "prepare" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />} Get the sheet ready
+          <div className="flex flex-wrap items-center gap-2">
+            {missing > 0 || shared > 0 ? (
+              <button type="button" onClick={() => act("prepare", { action: "prepare" }, (d) => `Sheet ready — ${Number(d.added ?? 0)} new reference${d.added === 1 ? "" : "s"}${Number(d.replaced ?? 0) ? `, ${Number(d.replaced)} copied one${d.replaced === 1 ? "" : "s"} replaced` : ""}`)} disabled={!!busy} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-primary px-3.5 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-60">
+                {busy === "prepare" ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />} Step 1 · Get the sheet ready
+              </button>
+            ) : null}
+            <button type="button" onClick={() => send("whatsapp", "pending")} disabled={!!busy || sending || !pendingCount || missing > 0} className={`inline-flex h-10 items-center gap-1.5 rounded-lg px-3.5 text-[13px] font-medium disabled:opacity-50 ${missing > 0 || shared > 0 ? "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" : "bg-primary text-white hover:opacity-90"}`}>
+              <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Send on WhatsApp <span className="tabular-nums">({pendingCount})</span>
             </button>
-            <button type="button" onClick={() => send("whatsapp", "pending")} disabled={!!busy || sending || !pendingCount || missing > 0} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-[13px] font-medium text-white hover:opacity-90 disabled:opacity-50">
-              <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Send on WhatsApp ({pendingCount})
-            </button>
-            <button type="button" onClick={() => send("sms", "not_reached")} disabled={!!busy || sending || !counts.not_reached} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            <button type="button" onClick={() => send("sms", "not_reached")} disabled={!!busy || sending || !counts.not_reached} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" /> SMS to not reached
             </button>
-            <button type="button" onClick={() => send("email", "not_reached")} disabled={!!busy || sending || !counts.not_reached} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            <button type="button" onClick={() => send("email", "not_reached")} disabled={!!busy || sending || !counts.not_reached} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
               <Mail className="h-3.5 w-3.5" aria-hidden="true" /> Email to not reached
             </button>
-            <a href={`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`} target="_blank" rel="noopener noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-slate-600 hover:bg-slate-100">
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> Open the sheet
-            </a>
-            <button type="button" onClick={() => setAsk({ title: "Cancel every link sent so far?", description: "Links already sent stop working at once. Send again to give people new ones. Their answers so far stay.", label: "Cancel links", destructive: true, run: () => act("revoke", { action: "revoke" }, () => "All earlier links cancelled") })} disabled={!!busy} className="ms-auto inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50">
-              <ShieldOff className="h-3.5 w-3.5" aria-hidden="true" /> Cancel all links
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger aria-label="More actions" disabled={!!busy} className="ms-auto inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50 data-[popup-open]:bg-slate-100">
+                <MoreHorizontal className="h-4 w-4" aria-hidden="true" /> More
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-56 border-slate-200 bg-white">
+                <DropdownMenuItem render={<a href={`https://docs.google.com/spreadsheets/d/${encodeURIComponent(spreadsheetId)}/edit`} target="_blank" rel="noopener noreferrer" />}>
+                  <ExternalLink className="h-4 w-4" /> Open the Google Sheet
+                </DropdownMenuItem>
+                {missing === 0 && shared === 0 && (
+                  <DropdownMenuItem onClick={() => act("prepare", { action: "prepare" }, (d) => `Sheet ready — ${Number(d.added ?? 0)} new reference${d.added === 1 ? "" : "s"}`)}>
+                    <Wand2 className="h-4 w-4" /> Get the sheet ready again
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onClick={() => setAsk({ title: "Cancel every link sent so far?", description: "Links already sent stop working at once. Send again to give people new ones. Their answers so far stay.", label: "Cancel links", destructive: true, run: () => act("revoke", { action: "revoke" }, () => "All earlier links cancelled") })}>
+                  <ShieldOff className="h-4 w-4" /> Cancel all links
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           {sending && <p role="status" className="flex items-center gap-2 text-[12.5px] text-slate-600"><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Sending… this list updates as it goes.</p>}
         </div>
@@ -228,9 +282,12 @@ export function VerifyPeople({ id, spreadsheetId }: { id: string; spreadsheetId:
           {shown.map((p) => {
             const st = STATE_LABEL[p.state] ?? STATE_LABEL.pending
             return (
-              <li key={p.ref} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
-                <span className="min-w-0 flex-1 basis-48">
-                  <span className="block truncate text-[14px] font-medium text-slate-900">{p.name || "(no name)"}</span>
+              <li key={p.ref} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3.5">
+                <span aria-hidden="true" className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-[13px] font-semibold ${done(p) ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                  {(p.name.trim().charAt(0) || "?").toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 basis-40">
+                  <span className="block truncate text-[14px] font-medium text-slate-900" dir="auto">{p.name || "(no name)"}</span>
                   <span className="block truncate text-[12px] tabular-nums text-slate-500">
                     {p.ref} · row {p.rowNumber}{p.phone ? ` · ${p.phone}` : ""}{p.duplicate ? " · same number as another row" : ""}
                   </span>
