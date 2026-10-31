@@ -81,7 +81,7 @@ export default function VerifyListPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#F4F6FA]">
+    <div className="relative flex h-full flex-col overflow-y-auto bg-[#F4F6FA]">
       <div className="border-b border-slate-200 bg-white px-4 sm:px-6">
         <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 py-2">
           <div className="flex min-w-0 items-center gap-2.5">

@@ -8,7 +8,7 @@ import { EMPTY_SETTINGS, VerifySettings } from "@/components/verify/verify-setti
 export default function NewVerifyPage() {
   const router = useRouter()
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#F4F6FA]">
+    <div className="relative flex h-full flex-col overflow-y-auto bg-[#F4F6FA]">
       <div className="border-b border-slate-200 bg-white px-4 sm:px-6">
         <div className="flex min-h-14 items-center gap-2.5 py-2">
           <Link href="/data/verify" aria-label="Back" className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100"><ArrowLeft className="h-4 w-4" /></Link>

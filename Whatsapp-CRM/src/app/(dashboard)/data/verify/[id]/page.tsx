@@ -53,7 +53,7 @@ export default function VerifyDetailPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-[#F4F6FA]">
+    <div className="relative flex h-full flex-col overflow-y-auto bg-[#F4F6FA]">
       <div className="border-b border-slate-200 bg-white px-4 sm:px-6">
         <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center gap-x-3 gap-y-2 py-3">
           <Link href="/data/verify" aria-label="Back to all checks" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-slate-100"><ArrowLeft className="h-4 w-4" /></Link>
