@@ -41,7 +41,7 @@ fi
 NEW="$(git rev-parse origin/master)"
 [ "$NEW" = "$OLD" ] && { ok "Already at ${OLD:0:7} — nothing to update"; exit 0; }
 # Migrations in this update need the release script, not this one.
-if git diff --name-only "$OLD" "$NEW" | grep -q '^supabase/migrations/'; then
+if git diff --relative --name-only "$OLD" "$NEW" | grep -q '^supabase/migrations/'; then
   stop "This update adds database migrations — use the release's own update script"
 fi
 git merge -q --ff-only origin/master || stop "Could not move to the new code. Run: git status"
@@ -57,7 +57,7 @@ rollback() {
 }
 
 say "3. Packages"
-if git diff --name-only "$OLD" HEAD | grep -qE '^(package(-lock)?\.json|prisma/schema\.prisma)$'; then
+if git diff --relative --name-only "$OLD" HEAD | grep -qE '^(package(-lock)?\.json|prisma/schema\.prisma)$'; then
   npm ci --no-audit --no-fund >/tmp/crm-npm-ci.log 2>&1 || rollback "npm ci failed — see /tmp/crm-npm-ci.log"
   npx prisma generate >/dev/null 2>&1 || rollback "prisma generate failed"
   ok "packages installed"
