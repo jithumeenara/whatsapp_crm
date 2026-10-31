@@ -50,6 +50,19 @@ if [ -d uploads ]; then tar -czf "$HOME/crm-uploads-$STAMP.tgz" uploads || stop 
 
 say "3. New code"
 git fetch -q origin || stop "git fetch failed"
+# A server's own `npm install` rewrites package-lock.json. That file is
+# generated, and the new code brings its own, so it alone may be reset.
+# Any other local change stops the update for a person to look at.
+CHANGED="$(git status --porcelain --untracked-files=no)"
+if [ -n "$CHANGED" ]; then
+  if [ -z "$(printf '%s\n' "$CHANGED" | grep -v 'package-lock\.json$')" ]; then
+    git checkout -- package-lock.json || stop "Could not reset package-lock.json"
+    ok "reset the server's own package-lock.json (generated file)"
+  else
+    printf '%s\n' "$CHANGED" | sed 's/^/   /'
+    stop "These files were changed on the server itself (listed above). Ask before continuing."
+  fi
+fi
 git merge --ff-only origin/master >/dev/null || stop "Could not move to the new code (local changes?). Run: git status"
 ok "now at $(git rev-parse --short HEAD) (was ${OLD:0:7})"
 
