@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 /** GET /api/meta-ads/lead-forms — every Instant Form that has ever
  *  produced a submission for this account, newest first, with a real
@@ -67,17 +69,31 @@ export async function POST(req: NextRequest) {
   try {
     // Enables lead syncing for a form — a real operational action, 'agent'
     // floor. Found with no role check at all in the full-app audit.
-    const { accountId } = await requireRole('agent')
+    const ctx = await requireRole('agent')
+    const { accountId } = ctx
 
     const { meta_form_id, name, page_id } = await req.json().catch(() => ({}))
     if (!meta_form_id || !page_id) {
       return NextResponse.json({ error: 'meta_form_id and page_id are required' }, { status: 400 })
     }
 
+    // meta_form_id is unique across accounts: a form already linked to
+    // another account is refused, never switched on or returned here.
+    const linked = await prisma.leadAdForm.findUnique({ where: { meta_form_id }, select: { account_id: true } })
+    if (linked && linked.account_id !== accountId) {
+      return NextResponse.json({ error: 'This form is already connected to another account' }, { status: 409 })
+    }
     const form = await prisma.leadAdForm.upsert({
       where: { meta_form_id },
       create: { account_id: accountId, meta_form_id, page_id, name: name || `Form ${meta_form_id}`, is_active: true },
       update: { is_active: true },
+    })
+
+    await auditConfigChange(auditCtx(req, ctx), 'config.integration_changed', {
+      area: 'meta_lead_form',
+      fields: ['is_active'],
+      target: { type: 'lead_ad_form', id: form.id },
+      meta: { verb: 'sync_enabled', meta_form_id: String(meta_form_id).slice(0, 60), page_id: String(page_id).slice(0, 60) },
     })
 
     return NextResponse.json({ form })
@@ -91,7 +107,8 @@ export async function POST(req: NextRequest) {
  *  Meta-side form ID for a form it hasn't loaded a CRM row for yet. */
 export async function PATCH(req: NextRequest) {
   try {
-    const { accountId } = await requireRole('agent')
+    const ctx = await requireRole('agent')
+    const { accountId } = ctx
 
     const { id, meta_form_id, name, is_active } = await req.json().catch(() => ({}))
     if (!id && !meta_form_id) return NextResponse.json({ error: 'id or meta_form_id is required' }, { status: 400 })
@@ -107,6 +124,13 @@ export async function PATCH(req: NextRequest) {
         ...(typeof name === 'string' && name.trim() ? { name: name.trim() } : {}),
         ...(typeof is_active === 'boolean' ? { is_active } : {}),
       },
+    })
+
+    await auditConfigChange(auditCtx(req, ctx), 'config.integration_changed', {
+      area: 'meta_lead_form',
+      before: { name: existing.name, is_active: existing.is_active },
+      after: { name: form.name, is_active: form.is_active },
+      target: { type: 'lead_ad_form', id: form.id },
     })
 
     return NextResponse.json({ form })
