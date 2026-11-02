@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useSessionWindow } from "@/lib/hooks/use-session-window"
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, Copy, Check, Pencil, Phone, PhoneOff,
+  ArrowLeft, ChevronLeft, ChevronRight, Check, Pencil, Phone, PhoneOff,
   MapPin, MessageSquare, ExternalLink, RefreshCw, Paperclip, Send, Loader2,
   FileText, Plus, Trash2, X, Image, Music, FolderOpen, LayoutTemplate, Sparkles,
 } from "lucide-react"
@@ -669,49 +669,75 @@ export default function LeadDetailPage() {
       <div className="flex-1 overflow-hidden grid grid-cols-1 xl:grid-cols-[1fr_420px]">
         <div className="overflow-y-auto p-6 space-y-4">
           {/* Contact hero card */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-wrap items-start gap-4">
-            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white text-xl font-black">
-              {displayName.slice(0, 1).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1 space-y-2">
-              <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-[16px] font-bold text-slate-800 truncate">{displayName}</h1>
+          {/* One row when the card is wide; on a phone: name and actions,
+              then the numbers, then who it is assigned to. Sized by the
+              card itself (container query), since the chat panel beside
+              it changes how wide it gets. */}
+          <div className="@container rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3 @3xl:flex-nowrap">
+              {/* Avatar, with the score as a badge on its corner */}
+              <div className="relative shrink-0">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-[20px] font-black text-white @3xl:h-14 @3xl:w-14 @3xl:text-[22px]">
+                  {displayName.slice(0, 1).toUpperCase()}
+                </div>
                 {lead.score && (
-                  <span className={cn("shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize flex items-center gap-1",
-                    lead.score === "hot" ? "bg-rose-100 text-rose-700" : lead.score === "warm" ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700")}>
-                    {SCORE_OPTIONS.find((s) => s.key === lead.score)?.emoji} {lead.score}
+                  <span
+                    title={`${lead.score} lead`}
+                    className={cn("absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full text-[12px] shadow-sm ring-2 ring-white",
+                      lead.score === "hot" ? "bg-rose-100" : lead.score === "warm" ? "bg-amber-100" : "bg-sky-100")}
+                  >
+                    <span aria-hidden="true">{SCORE_OPTIONS.find((s) => s.key === lead.score)?.emoji}</span>
+                    <span className="sr-only">{lead.score} lead</span>
                   </span>
                 )}
               </div>
-              {(lead.district || lead.place) && (
-                <p className="flex items-center gap-1 text-[12px] text-slate-400 mt-0.5">
-                  <MapPin className="h-3 w-3" /> {[lead.place, lead.district].filter(Boolean).join(", ")}
-                </p>
-              )}
-              </div>
-              {phone && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[14px] font-bold text-slate-800 tabular-nums">{phone}</span>
-                  <a href={`tel:${phone}`} className="flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-emerald-500 text-white text-[12px] font-semibold hover:bg-emerald-600">
-                    <Phone className="h-3.5 w-3.5" /> Call
-                  </a>
-                  <button onClick={() => copyPhone(phone)} aria-label="Copy number" className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50">
-                    {copied === phone ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5 text-slate-500" />}
-                  </button>
-                </div>
-              )}
-              {altPhone && (
-                <div className="flex items-center gap-2">
-                  <a href={`tel:${altPhone}`} className="flex items-center gap-1.5 text-[13px] text-slate-600 tabular-nums hover:text-indigo-600">
-                    <Phone className="h-3 w-3" /> {altPhone}
-                  </a>
-                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-semibold">Call Alt</span>
-                </div>
-              )}
-            </div>
 
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <span aria-hidden="true" className="hidden h-10 w-px shrink-0 bg-slate-200 @3xl:block" />
+
+              <div className="min-w-0 flex-1 @3xl:flex-none">
+                <h1 className="truncate text-[18px] font-bold text-slate-900 @3xl:text-[20px]">{displayName}</h1>
+                {(lead.district || lead.place) && (
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-slate-400">
+                    <MapPin className="h-3 w-3 shrink-0" /> {[lead.place, lead.district].filter(Boolean).join(", ")}
+                  </p>
+                )}
+              </div>
+
+              {/* On a phone: call and edit stay beside the name */}
+              <div className="flex shrink-0 items-center gap-2 @3xl:hidden">
+                {phone && (
+                  <a href={`tel:${phone}`} aria-label={`Call ${phone}`} className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white hover:bg-emerald-600">
+                    <Phone className="h-4 w-4" />
+                  </a>
+                )}
+                <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact" aria-label="Edit contact"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50">
+                  {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                </button>
+              </div>
+
+              {/* The numbers: the main one copies, the other one calls */}
+              {(phone || altPhone) && (
+                <div className="flex w-full flex-wrap items-center gap-1.5 @md:gap-2 @3xl:w-auto @3xl:flex-nowrap">
+                  {phone && (
+                    <button onClick={() => copyPhone(phone)} title="Copy number" aria-label={`Copy ${phone}`}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-full bg-indigo-100 px-2.5 text-[12.5px] font-bold tabular-nums text-indigo-900 hover:bg-indigo-200 @md:px-4 @md:text-[14px]">
+                      {phone}
+                      {copied === phone && <Check className="h-3.5 w-3.5 text-emerald-600" aria-label="Copied" />}
+                    </button>
+                  )}
+                  {altPhone && (
+                    <a href={`tel:${altPhone}`} title="Call the other number" aria-label={`Call the other number ${altPhone}`}
+                      className="inline-flex h-9 items-center rounded-full bg-slate-100 px-2.5 text-[12.5px] font-medium tabular-nums text-slate-600 hover:bg-slate-200 @md:px-4 @md:text-[14px]">
+                      {altPhone}
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <span aria-hidden="true" className="hidden h-10 w-px shrink-0 bg-slate-200 @3xl:ml-auto @3xl:block" />
+
+            <div className={cn("items-center gap-2 @3xl:flex @3xl:w-auto", canViewAllLeads && teamMembers.length > 0 ? "flex w-full" : "hidden")}>
               {canViewAllLeads && teamMembers.length > 0 && (
                 <select
                   aria-label="Assign this lead to"
@@ -738,7 +764,7 @@ export default function LeadDetailPage() {
                       setAssigning(false)
                     }
                   }}
-                  className="h-9 max-w-[12rem] rounded-xl border border-slate-200 bg-white px-2 text-[12px] text-slate-700"
+                  className="h-10 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 @3xl:w-48 @3xl:flex-none"
                 >
                   <option value="">Unassigned (pool)</option>
                   {teamMembers.map((m) => (
@@ -746,10 +772,17 @@ export default function LeadDetailPage() {
                   ))}
                 </select>
               )}
+              {/* Wide card: Call and Edit at the end of the row */}
+              {phone && (
+                <a href={`tel:${phone}`} className="hidden h-10 shrink-0 items-center gap-2 rounded-xl bg-emerald-500 px-5 text-[14px] font-semibold text-white hover:bg-emerald-600 @3xl:inline-flex">
+                  <Phone className="h-4 w-4" /> Call
+                </a>
+              )}
               <button onClick={openContactEdit} disabled={!contactId || contactEditLoading} title="Edit contact" aria-label="Edit contact"
-                className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 disabled:opacity-50">
-                {contactEditLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+                className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 @3xl:flex">
+                {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
               </button>
+            </div>
             </div>
           </div>
 
