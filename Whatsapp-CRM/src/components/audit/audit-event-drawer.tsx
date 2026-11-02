@@ -44,9 +44,9 @@ function Changes({ changes }: { changes: unknown }) {
             const pair = Array.isArray(val) && val.length === 2 ? val : null
             return (
               <tr key={field} className="border-t border-slate-100 align-top">
-                <th scope="row" className="px-3 py-2 font-medium text-slate-700">{field.replace(/_/g, " ")}</th>
-                <td className="break-words px-3 py-2 text-slate-500">{pair ? show(pair[0]) : "—"}</td>
-                <td className="break-words px-3 py-2 text-slate-800">{pair ? show(pair[1]) : show(val)}</td>
+                <th scope="row" className="px-3 py-2 font-medium text-slate-700 [overflow-wrap:anywhere]">{field.replace(/_/g, " ")}</th>
+                <td className="px-3 py-2 text-slate-500 [overflow-wrap:anywhere]">{pair ? show(pair[0]) : "—"}</td>
+                <td className="px-3 py-2 text-slate-800 [overflow-wrap:anywhere]">{pair ? show(pair[1]) : show(val)}</td>
               </tr>
             )
           })}
@@ -76,7 +76,7 @@ const AGENT_KEYS: Array<[string, string]> = [
 ]
 
 function Group({ title, events, timeZone, onOpen }: { title: string; events: AuditEventView[]; timeZone: string; onOpen: (id: string) => void }) {
-  if (!events.length) return null
+  if (!Array.isArray(events) || events.length === 0) return null
   return (
     <section className="space-y-2">
       <h3 className="text-[13px] font-semibold text-slate-800">{title} <span className="font-normal text-slate-400">({events.length})</span></h3>
@@ -178,7 +178,7 @@ export function AuditEventDrawer({
                   <Field label="Request id" value={e.request_id} mono />
                   <Field label="Operation id" value={e.correlation_id} mono />
                   <Field label="Event number" value={`#${e.seq}`} mono />
-                  <Field label="Row hash" value={`${e.row_hash.slice(0, 16)}…`} mono />
+                  <Field label="Row hash" value={e.row_hash ? `${e.row_hash.slice(0, 16)}…` : null} mono />
                 </dl>
               </section>
 

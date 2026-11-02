@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { useAuth } from "@/hooks/use-auth"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { AUDIT_ACTIONS, AUDIT_CATEGORIES, categoryOf } from "@/lib/audit/actions"
-import { dayEndIso, dayStartIso, zonedDateTime } from "@/lib/audit/zoned"
+import { dayEndIso, dayKey, dayStartIso, zonedDateTime } from "@/lib/audit/zoned"
 import { AuditEventList } from "@/components/audit/audit-event-list"
 import { AuditEventDrawer } from "@/components/audit/audit-event-drawer"
 import { ACTION_PHRASES, CATEGORY_LABELS, OUTCOME_LABELS } from "@/components/audit/audit-labels"
@@ -168,7 +168,7 @@ export function AuditLog() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.${format}`
+      a.download = `audit-log-${dayKey(new Date(), tz)}.${format}`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -235,7 +235,7 @@ export function AuditLog() {
             <p>
               The audit log has a break at event #{verifyResult.brokenAtSeq ?? "?"}: {WHY_TEXT[verifyResult.why ?? ""] ?? "it does not check out"}.
               {verifyResult.message ? <> {verifyResult.message}</> : null}
-              Checked {verifyResult.rows.toLocaleString("en-IN")} events. Keep this screen and tell the server owner.
+              {" "}Checked {verifyResult.rows.toLocaleString("en-IN")} events. Keep this screen and tell the server owner.
             </p>
           </div>
         ) : (
@@ -265,7 +265,7 @@ export function AuditLog() {
             type="button"
             aria-pressed={!activeCategory}
             onClick={() => setParams({ category: null, action: null })}
-            className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${!activeCategory ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+            className={`h-7 rounded-full px-3 text-[12px] font-medium transition-colors ${!activeCategory ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
           >
             All
           </button>
@@ -275,7 +275,7 @@ export function AuditLog() {
               type="button"
               aria-pressed={activeCategory === c}
               onClick={() => setParams({ category: activeCategory === c ? null : c, action: null })}
-              className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${activeCategory === c ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+              className={`h-7 rounded-full px-3 text-[12px] font-medium transition-colors ${activeCategory === c ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
             >
               {CATEGORY_LABELS[c] ?? c}
             </button>
@@ -344,7 +344,7 @@ export function AuditLog() {
           </div>
           <div className="space-y-1">
             <Label htmlFor="audit-request" className="text-[12px] text-slate-600">Request id</Label>
-            <Input id="audit-request" name="audit-request" value={draft.request_id} maxLength={80} autoComplete="off" spellCheck={false} placeholder="Copy it from an event’s details…"
+            <Input id="audit-request" name="audit-request" value={draft.request_id} maxLength={80} autoComplete="off" spellCheck={false} placeholder="From an event’s details…"
               onChange={(e) => setDraft((d) => ({ ...d, request_id: e.target.value }))} />
           </div>
         </div>
