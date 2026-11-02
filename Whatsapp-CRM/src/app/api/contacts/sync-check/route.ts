@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 
@@ -144,10 +145,12 @@ export async function GET() {
  * webhook creates a second contact — which is where duplicates come
  * from in the first place.
  */
-export async function POST() {
+export async function POST(req: Request) {
   let accountId: string
+  let ctx: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    ctx = await requireRole('admin')
+    accountId = ctx.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -173,6 +176,14 @@ export async function POST() {
       data: { phone_normalized: normalized },
     })
     repaired++
+  }
+
+  if (repaired > 0) {
+    await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+      action: 'record.bulk_updated',
+      target: { type: 'contact', id: null, label: null },
+      meta: { op: 'normalize_phones', count: repaired, skipped },
+    })
   }
 
   return NextResponse.json({

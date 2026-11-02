@@ -3,6 +3,7 @@ import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 async function requireOwnership(id: string) {
@@ -12,19 +13,25 @@ async function requireOwnership(id: string) {
   }
   const profile = await prisma.profile.findUnique({
     where: { user_id: session.user.id },
-    select: { account_id: true },
+    select: { account_id: true, account_role: true },
   })
   if (!profile?.account_id) {
     return { ok: false as const, status: 403, body: { error: 'Profile not linked to an account.' } }
   }
   const chatbot = await prisma.flow.findFirst({
     where: { id, account_id: profile.account_id, flow_type: 'chatbot' },
-    select: { id: true },
+    select: { id: true, name: true, description: true, trigger_type: true, trigger_config: true, entry_node_id: true, status: true },
   })
   if (!chatbot) {
     return { ok: false as const, status: 404, body: { error: 'Not found' } }
   }
-  return { ok: true as const, userId: session.user.id, accountId: profile.account_id }
+  return {
+    ok: true as const,
+    userId: session.user.id,
+    accountId: profile.account_id,
+    role: String(profile.account_role ?? ''),
+    chatbot,
+  }
 }
 
 /** GET /api/chatbot/[id] — fetch chatbot with its nodes */
@@ -119,6 +126,13 @@ export async function PUT(
       prisma.flow.findUnique({ where: { id } }),
       prisma.flowNode.findMany({ where: { flow_id: id }, orderBy: { created_at: 'asc' } }),
     ])
+    await audit(auditCtx(request, guard), {
+      action: 'record.updated',
+      target: { type: 'chatbot', id, label: (typeof body.name === 'string' ? body.name : guard.chatbot.name) },
+      before: guard.chatbot as unknown as Record<string, unknown>,
+      after: patch,
+      meta: body.nodes !== undefined ? { nodes: body.nodes.length } : null,
+    })
     return NextResponse.json({ chatbot, nodes })
   } catch (err) {
     console.error('[PUT /api/chatbot/[id]]', err)
@@ -147,6 +161,12 @@ export async function PATCH(
       where: { id },
       data: { status },
     })
+    await audit(auditCtx(request, guard), {
+      action: status === 'archived' ? 'record.archived' : 'record.status_changed',
+      target: { type: 'chatbot', id, label: guard.chatbot.name },
+      before: { status: guard.chatbot.status },
+      after: { status },
+    })
     return NextResponse.json({ chatbot })
   } catch (err) {
     console.error('[PATCH /api/chatbot/[id]]', err)
@@ -156,7 +176,7 @@ export async function PATCH(
 
 /** DELETE /api/chatbot/[id] — hard delete (cascades to nodes) */
 export async function DELETE(
-  _req: Request,
+  req: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params
@@ -171,6 +191,10 @@ export async function DELETE(
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     await prisma.flow.delete({ where: { id } })
+    await audit(auditCtx(req, guard), {
+      action: 'record.deleted',
+      target: { type: 'chatbot', id, label: guard.chatbot.name },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[DELETE /api/chatbot/[id]]', err)

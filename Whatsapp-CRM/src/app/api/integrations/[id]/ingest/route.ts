@@ -3,6 +3,7 @@ import { afterRecordsChanged } from '@/lib/data-store/record-events'
 import { prisma } from "@/lib/db"
 import { flattenPlain, detectType } from "@/lib/integration-fetch"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 
 /** One push writes at most this many rows, each with at most this many fields. */
 const MAX_ROWS = 500
@@ -23,8 +24,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
 
   let accountId: string
+  let ctx: Awaited<ReturnType<typeof requireRoleOrApiKey>>
   try {
-    accountId = (await requireRoleOrApiKey(req, "supervisor")).accountId
+    ctx = await requireRoleOrApiKey(req, "supervisor")
+    accountId = ctx.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -108,6 +111,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   await prisma.integration.update({ where: { id }, data: { last_synced_at: new Date() } })
   if (recordsUpserted > 0) afterRecordsChanged(table.id, integration.account_id)
+
+  // Counts only — the pushed rows are customer data.
+  await audit(auditCtx(req, ctx), {
+    action: "import.completed",
+    target: { type: "integration", id },
+    meta: { via: "integration_ingest", table_id: table.id, records: recordsUpserted, contacts_created: contactsCreated },
+  })
 
   return NextResponse.json({ success: true, records_upserted: recordsUpserted, contacts_created: contactsCreated })
 }

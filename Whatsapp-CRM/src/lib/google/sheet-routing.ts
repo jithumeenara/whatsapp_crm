@@ -24,6 +24,7 @@
  */
 
 import { Prisma } from '@prisma/client'
+import { jobFailed } from '@/lib/audit/actors'
 import { prisma } from '@/lib/db'
 import { googleAccessToken } from './oauth'
 import { appendRows, createSpreadsheet, deleteRows, ensureTab, isTransientSheetsError, readTab, writeCells, writeHeaderRow, SheetsApiError } from './sheets'
@@ -473,6 +474,13 @@ export async function sweepSheetRouting(): Promise<void> {
   const stuck = await prisma.sheetJob.findMany({ where: { status: 'running', updated_at: { lt: new Date(Date.now() - 10 * 60_000) } }, take: 500 })
   if (stuck.length) await later(stuck as Job[], 'Interrupted (server restart) — tried again.', true)
   const tables = await prisma.sheetRouteTable.findMany({ select: { table_id: true } })
-  for (const t of tables) await scanTable(t.table_id).catch((err) => console.error('[sheet-routing] scan failed:', errText(err)))
+  let failures = 0
+  for (const t of tables) {
+    await scanTable(t.table_id).catch((err) => {
+      failures++
+      console.error('[sheet-routing] scan failed:', errText(err))
+    })
+  }
+  if (failures) void jobFailed('sheet-routing', null, `${failures} table scan(s) failed`)
   await processSheetJobs()
 }

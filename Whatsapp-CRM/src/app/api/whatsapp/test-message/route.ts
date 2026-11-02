@@ -6,6 +6,7 @@ import { sendTextMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function POST(request: Request) {
   try {
@@ -80,6 +81,11 @@ export async function POST(request: Request) {
       text: '👋 Hello! This is a test message from your WhatsApp CRM. Everything is working correctly.',
     })
 
+    await audit(auditCtx(request, { accountId: profile.account_id, userId: session.user.id, role: profile.account_role }), {
+      action: 'message.sent',
+      target: { type: 'message', id: result.messageId ?? null },
+      meta: { channel: 'whatsapp', test: true, to: normalized, whatsapp_config_id: config.id },
+    })
     return NextResponse.json({ success: true, message_id: result.messageId })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'

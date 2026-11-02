@@ -5,6 +5,7 @@ import { GoogleNotConnectedError, googleAccessToken, logGoogleActivity } from '@
 import { canWriteSheets } from '@/lib/google/sheet-two-way'
 import { createSpreadsheet, spreadsheetUrl, SheetsApiError, writeHeaderRow } from '@/lib/google/sheets'
 import { safeTabTitle } from '@/lib/google/sheet-rows'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * POST { title, tab?, headers?: string[] } — a new spreadsheet in the
@@ -32,6 +33,11 @@ export async function POST(req: NextRequest) {
     const sheet = await createSpreadsheet(token, title, tab)
     if (headers.length) await writeHeaderRow(token, sheet.id, tab, headers)
     await logGoogleActivity(ctx.accountId, ctx.userId, 'sheet_created', title).catch(() => {})
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'google_sheet', id: sheet.id },
+      meta: { destination: 'google_sheets', header_count: headers.length },
+    })
     return NextResponse.json({ id: sheet.id, name: sheet.title, tab, url: spreadsheetUrl(sheet.id, sheet.tabs[0]?.sheetId), headers })
   } catch (err) {
     if (err instanceof SheetsApiError) return NextResponse.json({ error: err.message }, { status: err.status >= 400 && err.status < 600 ? err.status : 502 })

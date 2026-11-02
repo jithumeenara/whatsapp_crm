@@ -26,6 +26,7 @@ import { sendSmsText } from '@/lib/messaging/channels/sms'
 import { sendAndRecordConversationEmail, cleanSubject, parseAddresses, type EmailMode } from '@/lib/email/conversation-send'
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
+import { audit, auditCtx } from '@/lib/audit'
 
 
 // ── Instagram send helper ─────────────────────────────────────────────────────
@@ -320,7 +321,43 @@ async function handleEmailSend(args: {
   }
 }
 
+/** Who sent what — filled in by sendPost once the caller and the
+ *  conversation are known, so POST can record message.sent after a 2xx. */
+interface SentBy {
+  accountId: string
+  userId: string
+  role: string
+  apiKeyId?: string
+  conversationId: string
+  channel: string
+  messageType: string
+  template: string | null
+}
+
+/**
+ * POST /api/whatsapp/send — a staff member (or an API key) sends one
+ * message. Audited as message.sent with the channel and template name
+ * only: the body is never recorded (plan §4).
+ */
 export async function POST(request: Request) {
+  let sentBy: SentBy | null = null
+  const res = await sendPost(request, (w) => { sentBy = w })
+  const who = sentBy as SentBy | null
+  if (who && res.status >= 200 && res.status < 300) {
+    const data = (await res.clone().json().catch(() => null)) as { message_id?: string } | null
+    await audit(
+      auditCtx(request, { accountId: who.accountId, userId: who.userId, role: who.role, apiKeyId: who.apiKeyId }),
+      {
+        action: 'message.sent',
+        target: { type: 'message', id: data?.message_id ?? null },
+        meta: { channel: who.channel, type: who.messageType, template: who.template, conversation_id: who.conversationId },
+      },
+    )
+  }
+  return res
+}
+
+async function sendPost(request: Request, onSender: (who: SentBy) => void): Promise<Response> {
   try {
     // Accept session auth OR Bearer API key
     const authHeader = request.headers.get('authorization') ?? ''
@@ -329,6 +366,8 @@ export async function POST(request: Request) {
     // Agents may only send to conversations assigned to them. API key
     // callers have elevated access, so this stays false on that path.
     let isAgent = false
+    let senderRole = 'supervisor'
+    let apiKeyId: string | undefined
 
     if (authHeader.startsWith('Bearer wcrm_')) {
       const result = await verifyApiKey(authHeader.slice('Bearer '.length))
@@ -346,6 +385,7 @@ export async function POST(request: Request) {
       // recorded creator never gets here (N2). It used to be attributed to
       // the account's earliest member, whoever that happened to be.
       userId = result.creatorUserId
+      apiKeyId = result.keyId
     } else {
       const session = await auth()
       if (!session?.user?.id) {
@@ -385,6 +425,7 @@ export async function POST(request: Request) {
       // Resolved here from the profile already loaded, rather than
       // re-querying the same row further down.
       isAgent = profile.account_role === 'agent'
+      senderRole = profile.account_role
     }
 
     const body = await request.json()
@@ -465,6 +506,11 @@ export async function POST(request: Request) {
     // Resolved before the phone check below — Email contacts are identified
     // by email, not phone, so the phone requirement must not apply to them.
     const convChannel = (conversation as { channel?: string }).channel ?? 'whatsapp'
+    onSender({
+      accountId, userId, role: senderRole, apiKeyId,
+      conversationId: conversation.id, channel: convChannel, messageType: String(message_type),
+      template: message_type === 'template' && typeof template_name === 'string' ? template_name : null,
+    })
     if (body.telegram_ask_number === true && convChannel !== 'telegram') {
       return NextResponse.json({ error: '"Ask for number" works only in a Telegram chat.' }, { status: 400 })
     }

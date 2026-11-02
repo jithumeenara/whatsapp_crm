@@ -15,6 +15,7 @@
  */
 
 import type { Prisma } from '@prisma/client'
+import { jobFailed, jobWrote } from '@/lib/audit/actors'
 import { prisma } from '@/lib/db'
 import { slugify } from '@/lib/data-store/slugify'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
@@ -308,9 +309,16 @@ export async function syncGoogleForm(linkId: string, accountId: string): Promise
 export async function sweepGoogleForms(): Promise<void> {
   await ensureGoogleTables().catch(() => {})
   const links = await prisma.googleFormLink.findMany({ where: { auto_sync: true }, select: { id: true, account_id: true } }).catch(() => [])
+  let imported = 0
+  let failures = 0
   for (const l of links) {
-    await syncGoogleForm(l.id, l.account_id).catch((err) =>
-      console.error('[google-forms] scheduled sync failed:', err instanceof Error ? err.message : err),
-    )
+    const r = await syncGoogleForm(l.id, l.account_id).catch((err) => {
+      failures++
+      console.error('[google-forms] scheduled sync failed:', err instanceof Error ? err.message : err)
+      return null
+    })
+    imported += r?.imported ?? 0
   }
+  void jobWrote('google-forms', null, imported)
+  if (failures) void jobFailed('google-forms', null, `${failures} form sync(s) failed`)
 }

@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { attachmentHeaders } from "@/lib/files/account-files";
 import { legacyFileAllowed } from "@/lib/files/legacy-access";
+import { fileViewed } from "@/lib/audit/actors";
 
 /** Read per request, not at import: the working directory is the app's. */
 const uploadsDir = () => resolve(join(process.cwd(), "uploads"));
@@ -66,6 +67,8 @@ export async function GET(
   try {
     const data = await readFile(requestedPath);
     const mimeType = lookup(requestedPath) || "application/octet-stream";
+    // Opt-in (AUDIT_LOG_FILE_VIEWS=on): once per person per file per day.
+    fileViewed(profile.account_id, session.user.id, null, rel.split(/[\\/]/).join("/"), req);
 
     // Only the types uploads are checked against are served as themselves,
     // and only media and PDFs open inline. Anything else — an old file

@@ -34,6 +34,7 @@ import {
   RATE_LIMITS,
 } from "@/lib/rate-limit";
 import { clientIpKey } from "@/lib/net/client-ip";
+import { audit, auditCtx } from "@/lib/audit";
 
 function getClientIp(request: Request): string {
   return clientIpKey(request.headers);
@@ -148,7 +149,7 @@ export async function POST(
 
     // Atomically claim the invite and move the caller's profile. The
     // account and role come from the invitation row, never the request.
-    const accountId = await prisma.$transaction(async (tx) => {
+    const joined = await prisma.$transaction(async (tx) => {
       // Throws (undoing this transaction) if it is used, expired, or
       // names a different email address from this login's.
       const claimed = await claimInvitation(tx, token, userId, caller?.email ?? "", now);
@@ -161,14 +162,21 @@ export async function POST(
         },
       });
 
-      return claimed.account_id;
+      return { accountId: claimed.account_id, role: claimed.role as string, invitationId: claimed.id as string };
     });
+    const accountId = joined.accountId;
 
     // Their next request must see the new account and role, not the
     // personal-owner copy cached for up to a minute.
     forgetCachedProfile(userId);
     // Who is in which account changed (security review R4a).
     invalidateBusinessCount();
+
+    await audit(auditCtx(request, { accountId, userId, role: joined.role }), {
+      action: "member.joined",
+      target: { type: "member", id: userId },
+      meta: { role: joined.role, invitation_id: joined.invitationId },
+    });
 
     return NextResponse.json({ ok: true, accountId });
   } catch (err) {

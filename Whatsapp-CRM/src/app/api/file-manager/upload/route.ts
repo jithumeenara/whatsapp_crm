@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { join, extname, basename } from "path";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { audit, auditCtx } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { contentMatchesType, extensionFor } from "@/lib/files/account-files";
 import { scanCallbackUrl } from "@/lib/files/scan-signature";
@@ -111,6 +112,14 @@ export async function POST(req: NextRequest) {
       results.push(record);
     }
 
+    if (results.length > 0) {
+      const correlationId = results.length > 1 ? crypto.randomUUID() : null;
+      await audit({ ...auditCtx(req, ctx), correlationId }, results.map((r) => ({
+        action: "file.uploaded" as const,
+        target: { type: "file", id: r.id, label: r.original_name },
+        meta: { mime_type: r.mime_type, size: r.size, where: "file manager" },
+      })));
+    }
     return NextResponse.json({ files: results, errors });
   } catch (err) {
     return toErrorResponse(err);

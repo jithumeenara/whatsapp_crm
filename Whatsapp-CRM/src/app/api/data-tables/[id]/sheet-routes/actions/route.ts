@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { businessTimezone } from '@/lib/ai/human-date'
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { id } = await params
     const table = await prisma.dataTable.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true, fields: { orderBy: { sort_order: 'asc' }, select: { field_key: true, label: true, field_type: true, options: true } } },
+      select: { id: true, name: true, fields: { orderBy: { sort_order: 'asc' }, select: { field_key: true, label: true, field_type: true, options: true } } },
     })
     if (!table) return NextResponse.json({ error: 'Table not found' }, { status: 404 })
     const fields = table.fields as RouteField[]
@@ -65,11 +66,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         return NextResponse.json({ error: 'Add a rule first.' }, { status: 400 })
       }
       const queued = await enqueueBackfill(id, ctx.accountId)
+      await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+        action: 'record.bulk_updated',
+        target: { type: 'data_table', id, label: table.name },
+        meta: { what: 'send existing rows to sheets', count: queued },
+      })
       return NextResponse.json({ queued })
     }
 
     if (action === 'retry') {
-      return NextResponse.json({ retried: await retryFailed(id, ctx.accountId) })
+      const retried = await retryFailed(id, ctx.accountId)
+      await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+        action: 'record.bulk_updated',
+        target: { type: 'data_table', id, label: table.name },
+        meta: { what: 'retry failed sheet rows', count: retried },
+      })
+      return NextResponse.json({ retried })
     }
 
     if (action === 'ai') {

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx, changedFieldNames } from '@/lib/audit'
 import { parseAlertConfig } from '@/lib/data-store/record-alert'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
 
@@ -64,6 +65,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     await prisma.dataTable.update({
       where: { id: table.id },
       data: { alert_config: config as unknown as Prisma.InputJsonValue },
+    })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'data_table', id: table.id },
+      meta: {
+        what: 'alerts',
+        fields: changedFieldNames((table.alert_config ?? {}) as Record<string, unknown>, config as unknown as Record<string, unknown>),
+      },
     })
     return NextResponse.json({ config })
   } catch (err) {

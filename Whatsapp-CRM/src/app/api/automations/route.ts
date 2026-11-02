@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
 import {
@@ -105,6 +106,11 @@ export async function POST(request: Request) {
       if (err) return NextResponse.json({ error: err }, { status: 500 })
     }
 
+    await audit(auditCtx(request, member.ctx), {
+      action: 'record.created',
+      target: { type: 'automation', id: automation.id, label: automation.name },
+      meta: { trigger_type: effectiveTriggerType, is_active: !!is_active, steps: effectiveSteps?.length ?? 0 },
+    })
     return NextResponse.json({ automation }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/automations]', err)

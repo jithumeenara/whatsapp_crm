@@ -3,7 +3,8 @@ import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/db"
 import { createChallenge } from "@/lib/auth/mfa"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
-import { clientIpKey } from "@/lib/net/client-ip"
+import { clientIp, clientIpKey } from "@/lib/net/client-ip"
+import { recordLoginFailure, recordRateLimited } from "@/lib/audit/aggregate"
 
 function getClientIp(request: NextRequest): string {
   return clientIpKey(request.headers)
@@ -22,8 +23,12 @@ function getClientIp(request: NextRequest): string {
  */
 export async function POST(req: NextRequest) {
   try {
+    const where = { ip: clientIp(req.headers), userAgent: req.headers.get("user-agent"), requestId: req.headers.get("x-request-id") }
     const limit = checkRateLimit(`mfa-start:${getClientIp(req)}`, RATE_LIMITS.mfaStart)
-    if (!limit.success) return rateLimitResponse(limit)
+    if (!limit.success) {
+      recordRateLimited({ ...where, bucket: "mfa-start" })
+      return rateLimitResponse(limit)
+    }
 
     const body = await req.json().catch(() => ({}))
     const emailOrPhone = typeof body?.email === "string" ? body.email : ""
@@ -49,9 +54,21 @@ export async function POST(req: NextRequest) {
     // Generic failure for both "no such user" and "wrong password" —
     // never reveal which one it was.
     const genericError = NextResponse.json({ error: "Invalid email or password" }, { status: 401 })
-    if (!user || !user.password_hash) return genericError
+    // The real reason goes to the audit log only (counted per minute; an
+    // unknown email is kept as an HMAC, never as typed).
+    const failed = async (reason: string, u?: { id: string } | null) => {
+      let known: { id: string; accountId: string | null } | null = null
+      if (u) {
+        const p = await prisma.profile.findUnique({ where: { user_id: u.id }, select: { account_id: true } }).catch(() => null)
+        known = { id: u.id, accountId: p?.account_id ?? null }
+      }
+      recordLoginFailure({ ...where, reason, typed: emailOrPhone, user: known })
+      return genericError
+    }
+    if (!user) return failed("unknown_user")
+    if (!user.password_hash) return failed("no_password", user)
     const valid = await bcrypt.compare(password, user.password_hash)
-    if (!valid) return genericError
+    if (!valid) return failed("bad_password", user)
 
     if (user.mfa_method === "disabled") {
       return NextResponse.json({ mfaRequired: false })

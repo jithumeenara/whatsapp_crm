@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { imageSettingsFor, setImageSettings } from '@/lib/ai/image-settings'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
 
@@ -52,6 +54,11 @@ export async function PUT(req: Request) {
       read_images: body!.read_images as boolean,
       read_files: body!.read_files as boolean,
       confirm: body!.confirm as boolean,
+    })
+    await auditConfigChange(auditCtx(req, ctx), 'config.ai_changed', {
+      area: 'ai_image_reading',
+      fields: ['confirm', 'read_files', 'read_images'],
+      meta: { read_images: body!.read_images, read_files: body!.read_files, confirm: body!.confirm },
     })
     return NextResponse.json(await view(ctx.accountId))
   } catch (err) {

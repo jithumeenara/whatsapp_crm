@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 
 type FbRow = { access_token: string | null; page_id: string | null }
 
@@ -75,6 +77,13 @@ export async function PATCH(req: NextRequest) {
     if (!res.ok || data.error) {
       return NextResponse.json({ error: data.error?.message ?? "Failed to save Page profile" }, { status: 502 })
     }
+
+    // Which Page fields were sent to Meta — never their text.
+    await auditConfigChange(auditCtx(req, ctx), "config.channel_changed", {
+      area: "facebook_page_profile",
+      fields: (["about", "description", "website", "phone"] as const).filter((k) => body[k] !== undefined),
+      target: { type: "facebook_page", id: pageId },
+    })
 
     return NextResponse.json({ success: true })
   } catch (err) {

@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
@@ -65,6 +66,11 @@ export async function POST(
       await prisma.automationStep.createMany({ data: rows })
     }
 
+    await audit(auditCtx(request, member.ctx), {
+      action: 'record.created',
+      target: { type: 'automation', id: copy.id, label: copy.name },
+      meta: { duplicated_from: original.id },
+    })
     return NextResponse.json({ automation: copy }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/automations/[id]/duplicate]', err)

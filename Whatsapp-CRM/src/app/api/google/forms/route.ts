@@ -5,6 +5,7 @@ import { linkGoogleForm } from '@/lib/google/forms'
 import { formsFailure } from '@/lib/google/forms-http'
 import { logGoogleActivity } from '@/lib/google/oauth'
 import { ensureGoogleTables } from '@/lib/google/store'
+import { audit, auditCtx } from '@/lib/audit'
 
 /** The linked forms, each with its table and how it last went. */
 export async function GET() {
@@ -41,6 +42,11 @@ export async function POST(req: NextRequest) {
     if (typeof body.formId !== 'string') return NextResponse.json({ error: 'formId is required.' }, { status: 400 })
     const res = await linkGoogleForm(ctx.accountId, body.formId)
     await logGoogleActivity(ctx.accountId, ctx.userId, 'form_linked', `${res.imported} responses brought in`)
+    await audit(auditCtx(req, ctx), {
+      action: 'import.completed',
+      target: { type: 'google_form_link', id: res.linkId },
+      meta: { via: 'google_form_link', table_id: res.tableId, records: res.imported },
+    })
     return NextResponse.json(res, { status: 201 })
   } catch (err) {
     return formsFailure(err)

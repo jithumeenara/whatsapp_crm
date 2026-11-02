@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -37,6 +38,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       include: { stages: { orderBy: { position: 'asc' } }, _count: { select: { deals: true } } },
     })
 
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'pipeline', id, label: pipeline.name },
+      before: { name: exists.name },
+      after: body.name !== undefined ? { name: body.name } : {},
+    })
+
     return NextResponse.json({ pipeline })
   } catch (e) {
     return toErrorResponse(e)
@@ -50,7 +58,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     const exists = await prisma.pipeline.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true, _count: { select: { deals: true } } },
+      select: { id: true, name: true, _count: { select: { deals: true } } },
     })
     if (!exists) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     // Deleting a pipeline deleted every deal in it, values and all.
@@ -62,6 +70,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     await prisma.pipeline.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), { action: 'record.deleted', target: { type: 'pipeline', id, label: exists.name } })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return toErrorResponse(e)

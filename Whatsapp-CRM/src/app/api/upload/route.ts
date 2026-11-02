@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { join, extname, basename } from "path";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { audit, auditCtx } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { contentMatchesType, extensionFor } from "@/lib/files/account-files";
 
@@ -110,6 +111,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    await audit(auditCtx(req, ctx), {
+      action: "file.uploaded",
+      target: { type: "file", id: record.id, label: file.name },
+      meta: { mime_type: file.type, size: file.size },
+    });
     return NextResponse.json({ url: publicUrl, filename: storedName, id: record.id });
   } catch (err) {
     return toErrorResponse(err);

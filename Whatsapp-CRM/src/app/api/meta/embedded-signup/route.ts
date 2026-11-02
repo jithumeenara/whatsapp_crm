@@ -15,6 +15,8 @@ import {
 } from "@/lib/whatsapp/meta-api"
 import { createOrGetDataset } from "@/lib/meta-ads/api"
 import { listOwnedCatalogs } from "@/lib/whatsapp/catalog-api"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 
 /**
  * POST /api/meta/embedded-signup
@@ -160,6 +162,21 @@ export async function POST(req: NextRequest) {
       discoverAndSaveMetaAds(ctx.accountId, ctx.userId, accessToken, wabaId),
       discoverAndSaveCatalog(ctx.accountId, ctx.userId, accessToken),
     ])
+
+    // Which number was connected and what else came with it — ids only,
+    // never the business token or the registration PIN.
+    await auditConfigChange(auditCtx(req, ctx), "config.whatsapp_changed", {
+      area: "whatsapp_embedded_signup",
+      fields: ["access_token", "connect_method", "phone_number_id", "status", "waba_id"],
+      target: { type: "whatsapp_number", id: phoneNumberId },
+      meta: {
+        verb: existingForThisNumber ? "reconnected" : "connected",
+        phone_number_id: phoneNumberId,
+        waba_id: wabaId,
+        facebook_connected: social.facebookConnected,
+        instagram_connected: social.instagramConnected,
+      },
+    })
 
     return NextResponse.json({
       success: true,

@@ -39,6 +39,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { withJobAudit } from '@/lib/audit/actors'
 import { fetchPageText } from './web-extract'
 import { fetchSheetForAccount, serializeSheet } from './google-sheet'
 import { serializeDataTable } from './data-store-source'
@@ -64,6 +65,11 @@ export interface KnowledgeSweepResult {
 }
 
 export async function sweepWebsiteKnowledge(): Promise<KnowledgeSweepResult> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('website-knowledge', () => sweepWebsiteKnowledgeRun(), (r) => r.resynced)
+}
+
+async function sweepWebsiteKnowledgeRun(): Promise<KnowledgeSweepResult> {
   const result: KnowledgeSweepResult = { checked: 0, resynced: 0, failed: 0, unchanged: 0 }
 
   const due = await prisma.aiKnowledgeItem.findMany({

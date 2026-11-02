@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
+import { audit, auditCtx } from "@/lib/audit";
 
 const PAGE = 50;
 
@@ -92,6 +93,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       throw err;
     }
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "contact_list", id, label: data.name ?? null },
+      meta: { fields: Object.keys(data) },
+    });
     return NextResponse.json({ ok: true, ...data });
   } catch (err) {
     return toErrorResponse(err);
@@ -107,6 +113,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // themselves are untouched.
     const r = await ctx.db.contactList.deleteMany({ where: { id, account_id: ctx.accountId } });
     if (r.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    await audit(auditCtx(req, ctx), { action: "record.deleted", target: { type: "contact_list", id, label: null } });
     return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);

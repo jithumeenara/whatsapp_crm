@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { checkMarketingMessagesEligibility } from '@/lib/whatsapp/marketing-messages-api'
@@ -32,6 +34,11 @@ export async function POST(request: Request) {
 
     await prisma.whatsAppConfig.update({ where: { id }, data: { marketing_messages_status: status } })
 
+    await auditConfigChange(auditCtx(request, ctx), 'config.whatsapp_changed', {
+      area: 'whatsapp_marketing_status',
+      fields: ['marketing_messages_status'],
+      target: { type: 'whatsapp_config', id: id },
+    })
     return NextResponse.json({ success: true, status })
   } catch (err) {
     return toErrorResponse(err)

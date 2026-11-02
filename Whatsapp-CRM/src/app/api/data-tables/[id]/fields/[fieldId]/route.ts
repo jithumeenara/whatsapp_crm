@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { dataStoreMember } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 import { invalidateRegistrationForms } from '@/lib/ai/registration'
+import { audit, auditCtx } from '@/lib/audit'
 
 async function requireField(tableId: string, fieldId: string) {
   const member = await dataStoreMember('supervisor')
@@ -11,7 +12,7 @@ async function requireField(tableId: string, fieldId: string) {
     where: { id: fieldId, table_id: tableId, account_id: accountIdOf },
   })
   if (!field) return { ok: false as const, status: 404, body: { error: 'Field not found.' } }
-  return { ok: true as const, field }
+  return { ok: true as const, field, ctx: member.ctx }
 }
 
 export async function PUT(
@@ -39,6 +40,15 @@ export async function PUT(
     // A field becoming Required changes what the assistant asks for,
     // so the cached form definition has to go with it.
     invalidateRegistrationForms(guard.field.account_id)
+    // Column definition only — never row values.
+    await audit(auditCtx(req, guard.ctx), {
+      action: 'record.updated',
+      target: { type: 'data_field', id: fieldId, label: field.label },
+      before: guard.field as unknown as Record<string, unknown>,
+      after: field as unknown as Record<string, unknown>,
+      only: ['label', 'field_type', 'options', 'relation_table_id', 'relation_label_field', 'required', 'sort_order'],
+      meta: { table_id: tableId, field_key: guard.field.field_key },
+    })
     return NextResponse.json({ field })
   } catch (err) {
     console.error('[PUT /api/data-tables/[id]/fields/[fieldId]]', err)
@@ -47,7 +57,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string; fieldId: string }> },
 ) {
   try {
@@ -59,6 +69,11 @@ export async function DELETE(
     // A field becoming Required changes what the assistant asks for,
     // so the cached form definition has to go with it.
     invalidateRegistrationForms(guard.field.account_id)
+    await audit(auditCtx(req, guard.ctx), {
+      action: 'record.deleted',
+      target: { type: 'data_field', id: fieldId, label: guard.field.label },
+      meta: { table_id: tableId, field_key: guard.field.field_key, field_type: guard.field.field_type },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/data-tables/[id]/fields/[fieldId]]', err)

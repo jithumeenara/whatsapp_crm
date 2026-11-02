@@ -3,6 +3,7 @@ import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/au
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 import { prisma } from "@/lib/db";
 import { runBroadcast } from "@/lib/broadcasts/run-broadcast";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * POST /api/broadcasts/[id]/process
@@ -39,6 +40,16 @@ export async function POST(
       if (!exists) return NextResponse.json({ error: "Not found" }, { status: 404 });
       return NextResponse.json({ ok: true, message: "Already sending" });
     }
+
+    const sent = await ctx.db.broadcast.findFirst({
+      where: { id, account_id: ctx.accountId },
+      select: { name: true, template_name: true, total_recipients: true },
+    });
+    await audit(auditCtx(req, ctx), {
+      action: "broadcast.sent",
+      target: { type: "broadcast", id, label: sent?.name ?? null },
+      meta: { recipients: sent?.total_recipients ?? null, template: sent?.template_name ?? null },
+    });
 
     // Fire and forget — runs in Node.js event loop after response is sent.
     setImmediate(() => {

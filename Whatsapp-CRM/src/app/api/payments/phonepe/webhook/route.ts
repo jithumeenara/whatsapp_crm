@@ -76,12 +76,13 @@ export async function POST(request: Request) {
       !credentials ||
       !verifyPhonePeWebhookAuth(request.headers.get('authorization'), credentials.webhookUsername, credentials.webhookPassword)
     ) {
+      void import('@/lib/audit/actors').then((m) => m.webhookRejected('phonepe', null, 'bad_credentials'))
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // PhonePe wants a 2xx within 3–5 seconds; the status call happens
     // after the answer. If it fails, the sweep asks again.
-    void reconcilePhonePePayment(payment.id).catch((err) => {
+    void reconcilePhonePePayment(payment.id, 'webhook').catch((err) => {
       console.error('[phonepe/webhook] status check failed:', err instanceof Error ? err.message : err)
     })
     return NextResponse.json({ received: true })

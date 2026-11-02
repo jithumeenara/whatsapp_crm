@@ -748,6 +748,13 @@ export async function runCustomerTurn(args: {
           : {}),
         ...(args.noSideEffects ? { noSideEffects: true } : {}),
         ...(anonymousVisitor ? { anonymous: true } : {}),
+        // One correlation id per turn, so every write of this turn groups.
+        audit: {
+          kind: 'ai_reply' as const,
+          conversationId: args.conversationId ?? null,
+          correlationId: `ai-turn:${args.conversationId ?? args.contactId}:${startedAt}`,
+          model: args.aiConfig.active_provider,
+        },
       }
     : args.readOnlyTools
       ? // Nobody's conversation: business lookups only (customer-tools.ts).

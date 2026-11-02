@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function GET(req: NextRequest) {
   try {
@@ -83,6 +84,15 @@ export async function POST(req: NextRequest) {
         stage:   { select: { id: true, name: true, color: true } },
         contact: { select: { id: true, name: true, phone: true } },
         lead:    { select: { id: true, title: true, score: true, status: true } },
+      },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'deal', id: deal.id, label: null },
+      after: {
+        pipeline_id: deal.pipeline_id, stage_id: deal.stage_id, contact_id: deal.contact_id, lead_id: deal.lead_id,
+        assigned_to: deal.assigned_to, value: deal.value?.toString() ?? null, currency: deal.currency, status: deal.status,
       },
     })
 

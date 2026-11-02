@@ -3,6 +3,7 @@ import { dataStoreMember } from '@/lib/data-store/access'
 import { prisma } from '@/lib/db'
 import { invalidateRegistrationForms } from '@/lib/ai/registration'
 import { slugify } from '@/lib/data-store/slugify'
+import { audit, auditCtx } from '@/lib/audit'
 
 async function requireTable(tableId: string) {
   const member = await dataStoreMember('supervisor')
@@ -12,7 +13,7 @@ async function requireTable(tableId: string) {
     where: { id: tableId, account_id: accountIdOf },
   })
   if (!table) return { ok: false as const, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true as const, accountId: accountIdOf, table }
+  return { ok: true as const, accountId: accountIdOf, table, ctx: member.ctx }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -40,6 +41,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       order.map((id, index) => prisma.dataField.update({ where: { id }, data: { sort_order: index } })),
     )
     invalidateRegistrationForms(guard.accountId)
+    await audit(auditCtx(req, guard.ctx), {
+      action: 'record.updated',
+      target: { type: 'data_table', id: tableId, label: guard.table.name },
+      meta: { fields_reordered: order.length },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[PUT /api/data-tables/[id]/fields]', err)
@@ -89,6 +95,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // A field becoming Required changes what the assistant asks for,
     // so the cached form definition has to go with it.
     invalidateRegistrationForms(guard.accountId)
+    await audit(auditCtx(req, guard.ctx), {
+      action: 'record.created',
+      target: { type: 'data_field', id: field.id, label: field.label },
+      meta: { table_id: tableId, table: guard.table.name, field_key: field.field_key, field_type: field.field_type, required: field.required },
+    })
     return NextResponse.json({ field }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/data-tables/[id]/fields]', err)

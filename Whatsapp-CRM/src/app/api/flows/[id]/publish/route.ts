@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -16,7 +17,7 @@ const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
  * After a successful publish, the local status is updated to "active".
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -79,6 +80,13 @@ export async function POST(
       data: { status: 'active' },
     })
 
+    await auditFlowAction(request, {
+      action: 'record.status_changed',
+      target: { type: 'flow', id, label: flow.name },
+      before: { status: flow.status },
+      after: { status: 'active' },
+      meta: { published_to_meta: true },
+    })
     return NextResponse.json({ ok: true, status: 'active' })
   } catch (err) {
     console.error('[POST /api/flows/[id]/publish]', err)

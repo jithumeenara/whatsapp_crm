@@ -44,6 +44,7 @@ import { sendHandoffAlert } from './handoff-alert'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { engineSendText, engineSendVoiceNote } from '@/lib/flows/meta-send'
 import type { RegistrationExtract } from './image-reading'
+import { agentHandover, type AgentAuditInfo } from '@/lib/audit/actors'
 
 /** How long one exchange lasts without a human touching it. WhatsApp's
  *  own session window: past it, a returning customer is starting a new
@@ -925,6 +926,9 @@ export async function handOver(args: {
   conversationId: string
   note: string
   assignTo?: string | null
+  /** Who the audit log shows handing over; null when a person (the
+   *  website visitor's own button) asked for it, not an agent. */
+  auditAs?: AgentAuditInfo | null
 }): Promise<void> {
   try {
     const conversation = await prisma.conversation.update({
@@ -975,6 +979,13 @@ export async function handOver(args: {
     // money per handover. Off for every account until somebody turns it
     // on. See lead_settings.ai_judgement_mode.
     void judgeIfEnabled(args.accountId, args.conversationId, conversation.contact_id)
+
+    // The note is free text about the customer: only the fact is kept.
+    if (args.auditAs !== null) {
+      void agentHandover(args.accountId, args.auditAs ?? { kind: 'ai_reply', conversationId: args.conversationId }, args.conversationId, {
+        assigned: Boolean(args.assignTo),
+      })
+    }
   } catch (err) {
     console.error('[auto-reply] handoff failed:', err instanceof Error ? err.message : err)
   }

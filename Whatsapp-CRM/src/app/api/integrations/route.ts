@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { redactIntegration } from "@/lib/integration-fetch"
 import { sealAuthConfig } from "@/lib/integration-secrets"
@@ -61,6 +63,12 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    await auditConfigChange(auditCtx(req, ctx), "config.integration_changed", {
+      area: "integration",
+      fields: [],
+      target: { type: "integration", id: integration.id, label: integration.name },
+      meta: { created: true, auth_type: integration.auth_type },
+    })
     return NextResponse.json({ integration: redactIntegration(integration) }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)

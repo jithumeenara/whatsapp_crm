@@ -53,6 +53,8 @@ vi.mock('@/lib/db', () => ({
       },
     },
     serviceCategory: { findMany: () => Promise.resolve([]) },
+    // Role changes now run with their audit event in one transaction.
+    $transaction(fn: (tx: unknown) => unknown) { return fn(this) },
   },
 }))
 

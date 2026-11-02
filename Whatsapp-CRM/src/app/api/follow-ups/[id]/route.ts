@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { checkOwnedRefs, FOLLOW_UP_STATUSES } from '@/lib/leads/owned-refs'
 import { claimIfUnassigned } from '@/lib/leads/claim'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -49,6 +50,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         userId: ctx.userId,
         how: 'by editing a follow-up',
       })
+      if (claimed) {
+        await audit(auditCtx(req, ctx), {
+          action: 'record.assigned',
+          target: { type: 'lead', id: existing.lead_id, label: null },
+          before: { assigned_to: null },
+          after: { assigned_to: ctx.userId },
+          meta: { claim: true, how: 'follow_up_edit' },
+        })
+      }
       // Somebody else picked it in the same moment: it is theirs now.
       if (!claimed && !canViewAllLeads(ctx.role)) {
         const now = await prisma.lead.findFirst({ where: { id: existing.lead_id }, select: { assigned_to: true } })
@@ -61,9 +71,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const isCompleting = status === 'done' && existing.status !== 'done'
     const isSkipping   = status === 'skipped' && existing.status !== 'skipped'
 
-    const followUp = await prisma.followUp.update({
-      where: { id },
-      data: {
+    const data = {
         ...(title !== undefined && { title }),
         ...(note !== undefined && { note }),
         ...(due_at !== undefined && { due_at: new Date(due_at) }),
@@ -72,7 +80,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(lead_id !== undefined && { lead_id: lead_id || null }),
         ...(assigned_to !== undefined && { assigned_to: assigned_to || null }),
         ...(isCompleting && { completed_at: new Date() }),
-      },
+    }
+    const followUp = await prisma.followUp.update({
+      where: { id },
+      data,
       include: {
         contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
         lead: { select: { id: true, title: true } },
@@ -96,6 +107,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       })
     }
 
+    if (Object.keys(data).length > 0) {
+      const { lead: _lead, ...beforeRow } = existing
+      await audit(auditCtx(req, ctx), {
+        action: status !== undefined && status !== existing.status ? 'record.status_changed' : 'record.updated',
+        target: { type: 'follow_up', id, label: null },
+        before: beforeRow as unknown as Record<string, unknown>,
+        after: data,
+      })
+    }
+
     return NextResponse.json(withCallablePhones({ followUp }))
   } catch (err) {
     return toErrorResponse(err)
@@ -116,6 +137,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'This follow-up belongs to another agent' }, { status: 403 })
     }
     await prisma.followUp.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.deleted',
+      target: { type: 'follow_up', id, label: null },
+      meta: { status: existing.status, due_at: existing.due_at, lead_id: existing.lead_id, contact_id: existing.contact_id, assigned_to: existing.assigned_to },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

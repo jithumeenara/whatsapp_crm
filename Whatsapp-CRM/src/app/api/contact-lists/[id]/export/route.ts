@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 // A name like =HYPERLINK(...) stays text in whatever opens the file next.
 import { safeText } from "@/lib/files/spreadsheet-safe";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
+import { audit, auditCtx } from "@/lib/audit";
 
 /** GET /api/contact-lists/[id]/export — the list's people as a spreadsheet. */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       });
     }
     const buffer = await wb.xlsx.writeBuffer();
+    await audit(auditCtx(req, ctx), {
+      action: "export.downloaded",
+      target: { type: "contact_list", id: list.id, label: list.name },
+      meta: { rows: rows.length, format: "xlsx", filters: null },
+    });
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

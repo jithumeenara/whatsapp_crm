@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { publicOrigin } from '@/lib/email/microsoft/origin'
@@ -132,6 +134,12 @@ export async function PUT(req: NextRequest) {
     const saved = existing
       ? await prisma.googleConnection.update({ where: { id: existing.id }, data })
       : await prisma.googleConnection.create({ data: { account_id: ctx.accountId, user_id: ctx.userId, client_secret: encrypt(secret), ...data } })
+    await auditConfigChange(auditCtx(req, ctx), 'config.google_changed', {
+      area: 'google_app',
+      before: existing as unknown as Record<string, unknown> | null,
+      after: data as Record<string, unknown>,
+      meta: { created: !existing, app_changed: appChanged },
+    })
     await logGoogleActivity(ctx.accountId, ctx.userId, 'app_saved', appChanged ? 'New Google app — the account must connect again' : undefined)
     const checks = await runVerify(saved, req, ctx.userId)
     return NextResponse.json({ ok: true, checks })
@@ -165,6 +173,11 @@ export async function DELETE(req: NextRequest) {
       await prisma.googleFormLink.deleteMany({ where: { account_id: ctx.accountId } })
       await prisma.googleConnection.delete({ where: { id: existing.id } })
       await logGoogleActivity(ctx.accountId, ctx.userId, 'app_removed')
+      await auditConfigChange(auditCtx(req, ctx), 'config.google_changed', {
+        area: 'google_app',
+        fields: [],
+        meta: { removed: true, scopes_revoked: existing.granted_scopes },
+      })
     } else {
       await prisma.googleConnection.update({
         where: { id: existing.id },
@@ -174,6 +187,11 @@ export async function DELETE(req: NextRequest) {
         },
       })
       await logGoogleActivity(ctx.accountId, ctx.userId, 'disconnected', existing.google_email ?? undefined)
+      await auditConfigChange(auditCtx(req, ctx), 'config.google_changed', {
+        area: 'google_connection',
+        fields: ['refresh_token', 'access_token', 'granted_scopes', 'enabled_services', 'status'],
+        meta: { disconnected: true, scopes_revoked: existing.granted_scopes },
+      })
     }
     return NextResponse.json({ ok: true })
   } catch (err) {

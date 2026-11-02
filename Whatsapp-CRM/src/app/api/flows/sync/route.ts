@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { denyUnlessRole } from '@/lib/flows/route-guard'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -109,7 +110,7 @@ function mapStatus(metaStatus: string): 'draft' | 'active' | 'archived' {
   }
 }
 
-export async function POST() {
+export async function POST(request?: Request) {
   try {
     const denied = await denyUnlessRole('agent')
     if (denied) return denied
@@ -245,6 +246,12 @@ export async function POST() {
         })
       }
     }
+
+    await auditFlowAction(request ?? null, {
+      action: 'import.completed',
+      target: { type: 'flow', label: 'Sync from Meta' },
+      meta: { count: inserted + updated, inserted, updated, removed: skipped, failed: errors.length, total: metaFlows.length },
+    }, crypto.randomUUID())
 
     return NextResponse.json({
       success: errors.length === 0,

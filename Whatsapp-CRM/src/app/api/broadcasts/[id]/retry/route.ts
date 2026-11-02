@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { runBroadcast } from "@/lib/broadcasts/run-broadcast";
 import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
 import { pickRetryable } from "@/lib/broadcasts/retry-rules";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * POST /api/broadcasts/[id]/retry
@@ -28,7 +29,7 @@ export async function POST(
 
     const broadcast = await ctx.db.broadcast.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true, status: true },
+      select: { id: true, name: true, status: true },
     });
 
     if (!broadcast) {
@@ -71,6 +72,11 @@ export async function POST(
       data: { status: "sending" },
     });
     await refreshBroadcastCounts(id);
+    await audit(auditCtx(req, ctx), {
+      action: "broadcast.retried",
+      target: { type: "broadcast", id, label: broadcast.name },
+      meta: { recipients: failedCount, skipped: pick.skipped },
+    });
 
     setImmediate(() => {
       runBroadcast(id, ctx.accountId).catch((err) => {

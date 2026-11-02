@@ -48,6 +48,7 @@ import { anyOwner } from '@/lib/agents/ask-callback'
 import { recordContactHandover } from './handover-contact'
 import { MATCHES, type LoadedTable } from './table-search'
 import { describeTables, runTableSearch } from './table-search-store'
+import { agentRecordWritten, agentToolCalled, type AgentAuditInfo } from '@/lib/audit/actors'
 
 export interface CustomerToolContext {
   accountId: string
@@ -83,6 +84,15 @@ export interface CustomerToolContext {
    *  become a flood of fake records. save_my_details takes their name and
    *  number; from the next reply on, everything WhatsApp has is open. */
   anonymous?: boolean
+  /** Who the audit log records as acting: the agent kind, the turn's
+   *  correlation id, and the staff member when one started it. Without
+   *  it, writes are still recorded as the customer assistant. */
+  audit?: AgentAuditInfo
+}
+
+/** The audit identity of this context's writes (never the owner). */
+function auditOf(ctx: { audit?: AgentAuditInfo; conversationId?: string }): AgentAuditInfo {
+  return ctx.audit ?? { kind: 'ai_reply', conversationId: ctx.conversationId ?? null }
 }
 
 type ToolArgs = Record<string, unknown>
@@ -386,6 +396,10 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         }
       }
 
+      void agentRecordWritten(ctx.accountId, auditOf(ctx), {
+        tool: 'start_chatbot', op: 'create', target: { type: 'flow_run', id: null },
+        extra: { flow_or_bot_id: match.id },
+      })
       // The bot has already sent its own first message by the time this
       // returns. Anything the model writes now would arrive as a second,
       // competing message — so it is told to stop, and the code stops it
@@ -419,9 +433,14 @@ const TOOLS: Record<string, CustomerToolImpl> = {
       const phone = typeof args.phone === 'string' ? args.phone : ''
       const saved = await updateContactField({ accountId: ctx.accountId, contactId: ctx.contactId, field: 'phone', value: phone })
       if (!saved.ok) return { saved: false, error: `${saved.error} Ask them to type it again.` }
-      if (typeof args.name === 'string' && args.name.trim()) {
-        await updateContactField({ accountId: ctx.accountId, contactId: ctx.contactId, field: 'name', value: args.name })
+      const named = typeof args.name === 'string' && args.name.trim()
+      if (named) {
+        await updateContactField({ accountId: ctx.accountId, contactId: ctx.contactId, field: 'name', value: String(args.name) })
       }
+      void agentRecordWritten(ctx.accountId, auditOf(ctx), {
+        tool: 'save_my_details', op: 'update', target: { type: 'contact', id: ctx.contactId },
+        fields: named ? ['name', 'phone'] : ['phone'],
+      })
       return {
         saved: true,
         note: 'Saved. Thank them, and carry on with what they asked for.',
@@ -557,11 +576,17 @@ const TOOLS: Record<string, CustomerToolImpl> = {
               return null
             })
           leadCreated = Boolean(lead)
+          if (lead) {
+            void agentRecordWritten(ctx.accountId, auditOf(ctx), {
+              tool: 'schedule_callback', op: 'create', target: { type: 'lead', id: lead.id },
+              fields: ['status', 'source'],
+            })
+          }
         }
       }
 
       try {
-        await prisma.followUp.create({
+        const followUp = await prisma.followUp.create({
           data: {
             account_id: ctx.accountId,
             // Owned by whoever owns the lead, and otherwise by nobody —
@@ -581,6 +606,11 @@ const TOOLS: Record<string, CustomerToolImpl> = {
               : 'The customer asked to be called back at this time.',
             due_at: at,
           },
+          select: { id: true },
+        })
+        void agentRecordWritten(ctx.accountId, auditOf(ctx), {
+          tool: 'schedule_callback', op: 'create', target: { type: 'follow_up', id: followUp.id },
+          fields: ['due_at', 'title'], extra: lead?.id ? { lead_id: lead.id } : undefined,
         })
       } catch (err) {
         console.error('[schedule_callback] could not save:', err instanceof Error ? err.message : err)
@@ -625,6 +655,14 @@ const TOOLS: Record<string, CustomerToolImpl> = {
               },
             }),
           ])
+          .then(() => {
+            if (moved || lead.ai_suggested) {
+              void agentRecordWritten(ctx.accountId, auditOf(ctx), {
+                tool: 'schedule_callback', op: 'update', target: { type: 'lead', id: lead.id },
+                fields: lead.ai_suggested ? ['ai_suggested', 'status'] : ['status'],
+              })
+            }
+          })
           .catch((err) =>
             console.error('[schedule_callback] lead not updated:', err instanceof Error ? err.message : err),
           )
@@ -677,7 +715,7 @@ const TOOLS: Record<string, CustomerToolImpl> = {
           note: 'No number was given. Ask them for the number of the person who has taken over.',
         }
       }
-      return recordContactHandover({
+      const handed = await recordContactHandover({
         accountId: ctx.accountId,
         fromContactId: ctx.contactId,
         newPhone: phone,
@@ -685,6 +723,13 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         said: typeof args.said === 'string' ? args.said : null,
         userId: ctx.userId ?? null,
       })
+      if ((handed as { recorded?: unknown })?.recorded === true) {
+        void agentRecordWritten(ctx.accountId, auditOf(ctx), {
+          tool: 'contact_handed_over', op: 'create', target: { type: 'contact', id: ctx.contactId },
+          extra: { recorded: 'note and task' },
+        })
+      }
+      return handed
     },
   },
 
@@ -781,6 +826,11 @@ const TOOLS: Record<string, CustomerToolImpl> = {
         purpose: typeof args.purpose === 'string' ? args.purpose.slice(0, 500) : null,
       })
       if (!res.ok) return { booked: false, note: res.reason }
+      void agentRecordWritten(ctx.accountId, auditOf(ctx), {
+        tool: 'book_appointment', op: 'create', target: { type: 'follow_up', id: res.followUpId },
+        fields: ['start', ...(typeof args.purpose === 'string' ? ['purpose'] : [])],
+        extra: ctx.contactId ? { contact_id: ctx.contactId } : undefined,
+      })
       return {
         booked: true,
         when: res.label,
@@ -881,14 +931,25 @@ export async function runCustomerTool(
   if (!tool || !offered.includes(name)) {
     return { error: `No such tool: ${name}. Available: ${offered.join(', ')}` }
   }
+  const writes = SIDE_EFFECT_TOOLS.has(name)
   try {
-    return await tool.run(args, ctx)
+    const out = await tool.run(args, ctx)
+    // Write tools only; argument names, never what the customer typed.
+    if (writes) void agentToolCalled(ctx.accountId, auditOf(ctx), name, args, toolFailed(out) ? 'failure' : 'success')
+    return out
   } catch (err) {
+    if (writes) void agentToolCalled(ctx.accountId, auditOf(ctx), name, args, 'failure')
     // The customer must never see a database error. The model is told
     // the lookup failed so it can say so honestly and offer a handover.
     console.error(`[customer-tools] ${name} failed:`, err instanceof Error ? err.message : err)
     return { error: 'That lookup failed. Tell the customer you could not check right now and offer to have someone follow up.' }
   }
+}
+
+function toolFailed(out: unknown): boolean {
+  if (!out || typeof out !== 'object') return false
+  const o = out as Record<string, unknown>
+  return 'error' in o || o.saved === false || o.scheduled === false || o.booked === false || o.started === false || o.recorded === false
 }
 
 /** Appended to the prompt when tools are available, so the model knows

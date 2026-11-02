@@ -1,6 +1,7 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
 export async function GET() {
   try {
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
     const field = await prisma.customField.create({
       data: { account_id: ctx.accountId, user_id: ctx.userId, field_name, field_type },
     })
+    await audit(auditCtx(req, ctx), { action: "record.created", target: { type: "custom_field", id: field.id, label: field_name }, after: { field_name, field_type } })
     return NextResponse.json({ field }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { MCP_TOOLS, MCP_TOOLS_BY_NAME } from '@/lib/mcp/tools'
+import { recordApiKeyUse } from '@/lib/audit/usage'
+import { clientIp } from '@/lib/net/client-ip'
 
 /**
  * This CRM, as a Model Context Protocol server.
@@ -164,6 +166,15 @@ export async function POST(request: Request) {
 
   const id = body.id ?? null
   const method = body.method
+
+  // MCP authenticates with verifyApiKey directly, so its use is counted
+  // here: per key, per method (and tool), per hour — names from a fixed list.
+  {
+    const known = ['initialize', 'ping', 'tools/list', 'tools/call']
+    const toolName = method === 'tools/call' ? String(body.params?.name ?? '') : ''
+    const what = !known.includes(method) ? 'other' : toolName && MCP_TOOLS_BY_NAME.has(toolName) ? `tools/call/${toolName}` : method
+    recordApiKeyUse({ accountId: key.accountId, keyId: key.keyId, url: `/api/mcp/${what}`, method: 'POST', source: 'mcp', ip: clientIp(request.headers) })
+  }
 
   // A notification carries no id and expects no answer. "the server MUST
   // return HTTP status code 202 Accepted with no body."

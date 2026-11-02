@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { decrypt, encrypt } from '@/lib/whatsapp/encryption'
@@ -91,6 +93,13 @@ export async function POST(request: Request) {
 
     const route = await getPhoneWebhookRoute(config.phone_number_id, accessToken).catch(() => null)
     const confirmed = !!route?.phone_number && sameEndpoint(route.phone_number, url)
+    // Where Meta sends this number's events. No token value is recorded.
+    await auditConfigChange(auditCtx(request, ctx), 'config.webhook_changed', {
+      area: 'whatsapp_webhook_route',
+      fields: ['webhook_override'],
+      target: { type: 'whatsapp_config', id: config.id },
+      meta: { confirmed },
+    })
     return NextResponse.json({ success: true, url, confirmed })
   } catch (err) {
     return toErrorResponse(err)

@@ -1,10 +1,12 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import {
-  NOTIFY_PATH, OAUTH_COOKIE, createInboxSubscription, deleteSubscription, exchangeCode, loadMailbox, whoAmI,
+  MS_SCOPES, NOTIFY_PATH, OAUTH_COOKIE, createInboxSubscription, deleteSubscription, exchangeCode, loadMailbox, whoAmI,
 } from '@/lib/email/microsoft/graph'
 import { publicOrigin } from '@/lib/email/microsoft/origin'
 
@@ -112,6 +114,12 @@ export async function GET(req: NextRequest) {
         status: subscription ? 'connected' : 'error',
         last_error: subscriptionError ? `Receiving mail is not set up yet: ${subscriptionError}`.slice(0, 500) : null,
       },
+    })
+    // The grant and its scopes (not secret); tokens are never recorded.
+    await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {
+      area: 'microsoft_mailbox',
+      fields: ['refresh_token', 'access_token', 'mailbox_email', 'subscription_id', 'status'],
+      meta: { connected: true, scopes: MS_SCOPES.split(' '), receiving: !!subscription },
     })
     return back(origin, subscription ? 'connected' : 'partial', subscriptionError ?? undefined)
   } catch (err) {

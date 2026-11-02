@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { requireStepUp, StepUpError } from '@/lib/admin-chat/step-up'
 import { writeAudit } from '@/lib/admin-chat/audit'
 import { hashCode, newVerifyCode } from '@/lib/admin-chat/rules'
@@ -37,6 +39,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         where: { id: member.id },
         data: { verify_code_hash: hashCode(code), verify_expires_at: new Date(Date.now() + VERIFY_MINUTES * 60_000) },
       })
+      await auditConfigChange(auditCtx(req, ctx), 'config.other_changed', {
+        area: 'admin_chat_member',
+        fields: ['verify_code_hash'],
+        target: { type: 'admin_chat_member', id: member.id },
+        meta: { new_code: true },
+      })
       return NextResponse.json({ ok: true, verify_code: `CRM-${code}`, verify_minutes: VERIFY_MINUTES })
     }
 
@@ -62,6 +70,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       actorUserId: ctx.userId,
       detail: { scope: fields.scope, valid_until: body.valid_until, days: fields.allowedDays, start: fields.startMinute, end: fields.endMinute },
     })
+    await auditConfigChange(auditCtx(req, ctx), 'config.other_changed', {
+      area: 'admin_chat_member',
+      before: member as unknown as Record<string, unknown>,
+      after: {
+        scope: fields.scope, valid_from: fields.validFrom, valid_until: fields.validUntil, allowed_days: fields.allowedDays,
+        start_minute: fields.startMinute, end_minute: fields.endMinute, brief_enabled: fields.briefEnabled,
+        brief_minute: fields.briefMinute, alerts_enabled: fields.alertsEnabled,
+      },
+      target: { type: 'admin_chat_member', id: member.id },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     if (err instanceof StepUpError || err instanceof MemberFieldError) return NextResponse.json({ error: err.message }, { status: err.status })
@@ -69,7 +87,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await requireRole('admin')
     const { id } = await params
@@ -83,6 +101,12 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       }),
     ])
     await writeAudit({ accountId: ctx.accountId, event: 'member_disabled', memberId: member.id, actorUserId: ctx.userId })
+    await auditConfigChange(auditCtx(req, ctx), 'config.other_changed', {
+      area: 'admin_chat_member',
+      fields: ['status'],
+      target: { type: 'admin_chat_member', id: member.id },
+      meta: { disabled: true, sessions_ended: true },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

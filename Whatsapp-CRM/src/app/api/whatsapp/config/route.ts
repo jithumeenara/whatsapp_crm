@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import {
   registerPhoneNumber,
   subscribeWabaToApp,
@@ -236,8 +238,11 @@ export async function POST(request: Request) {
   // WhatsApp message of the business goes: the owner's call, as for
   // set-default, direct-send and DELETE (canEditWhatsAppConfig).
   let userId: string
+  let role: string
   try {
-    userId = (await requireRole('owner')).userId
+    const owner = await requireRole('owner')
+    userId = owner.userId
+    role = owner.role
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -465,6 +470,16 @@ export async function POST(request: Request) {
       )
     }
 
+    // Which fields changed — never the token values (stored encrypted;
+    // a re-entered token always shows as changed).
+    await auditConfigChange(auditCtx(request, { accountId, userId, role }), 'config.whatsapp_changed', {
+      area: 'whatsapp_number',
+      before: existing as unknown as Record<string, unknown> | null,
+      after: baseData,
+      target: { type: 'whatsapp_config', id: savedId },
+      meta: { created: !existing, registered: !registrationError },
+    })
+
     if (registrationError) {
       return NextResponse.json({
         success: false,
@@ -516,8 +531,9 @@ export async function DELETE(request: Request) {
 
     // Removing a number takes its payment settings with it and moves its
     // chats to another number: the owner's decision only.
+    let role: string
     try {
-      await requireRole('owner')
+      role = (await requireRole('owner')).role
     } catch (err) {
       return toErrorResponse(err)
     }
@@ -568,6 +584,13 @@ export async function DELETE(request: Request) {
         { status: 500 }
       )
     }
+
+    await auditConfigChange(auditCtx(request, { accountId, userId, role }), 'config.whatsapp_changed', {
+      area: 'whatsapp_number',
+      fields: [],
+      target: { type: 'whatsapp_config', id: target.id },
+      meta: { removed: true, was_default: target.is_default },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

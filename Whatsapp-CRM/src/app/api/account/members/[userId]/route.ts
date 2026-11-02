@@ -31,6 +31,7 @@ import { prisma } from "@/lib/db";
 import { deactivateMember } from "@/lib/auth/deactivate-member";
 import { parsePageAccess } from "@/lib/auth/page-access";
 import { Prisma } from "@prisma/client";
+import { audit, auditCtx, auditInTx, type AuditEntry } from "@/lib/audit";
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -128,7 +129,7 @@ export async function PATCH(
     // Verify the target is a member of the caller's account and is not the owner
     const target = await prisma.profile.findFirst({
       where: { user_id: userId, account_id: ctx.accountId },
-      select: { account_role: true },
+      select: { account_role: true, restrict_to_assigned: true, page_access: true, handles_categories: true, full_name: true },
     });
 
     if (!target) {
@@ -211,16 +212,63 @@ export async function PATCH(
         ? Prisma.DbNull
         : (parsedPages as unknown as Prisma.InputJsonValue);
 
-    await prisma.profile.update({
-      where: { user_id: userId },
-      data: {
-        ...(isRoleChange ? { account_role: role as AccountRole } : {}),
-        ...(isRestrictionChange ? { restrict_to_assigned: restrictToAssigned } : {}),
-        ...(isHoursChange ? { working_hours: hoursValue } : {}),
-        ...(subjects ? { handles_categories: subjects } : {}),
-        ...(isPagesChange ? { page_access: pagesValue } : {}),
-      },
-    });
+    const data = {
+      ...(isRoleChange ? { account_role: role as AccountRole } : {}),
+      ...(isRestrictionChange ? { restrict_to_assigned: restrictToAssigned } : {}),
+      ...(isHoursChange ? { working_hours: hoursValue } : {}),
+      ...(subjects ? { handles_categories: subjects } : {}),
+      ...(isPagesChange ? { page_access: pagesValue } : {}),
+    };
+
+    // ── Audit ───────────────────────────────────────────────────────
+    // Role, pages and "only assigned" decide what this person can reach:
+    // they are recorded in the same transaction as the change, so the
+    // change cannot happen unrecorded (plan §6). Hours and subjects are
+    // ordinary settings, recorded best-effort afterwards.
+    const actx = auditCtx(request, ctx);
+    const memberTarget = { type: "member", id: userId, label: target.full_name ?? null };
+    const critical: AuditEntry[] = [];
+    if (isRoleChange && role !== target.account_role) {
+      critical.push({ action: "member.role_changed", target: memberTarget, before: { role: target.account_role }, after: { role } });
+    }
+    if (isPagesChange) {
+      critical.push({
+        action: "member.pages_changed",
+        target: memberTarget,
+        changes: { page_access: [target.page_access ?? null, parsedPages] },
+      });
+    }
+    if (isRestrictionChange && restrictToAssigned !== target.restrict_to_assigned) {
+      critical.push({
+        action: "member.updated",
+        target: memberTarget,
+        before: { restrict_to_assigned: target.restrict_to_assigned },
+        after: { restrict_to_assigned: restrictToAssigned },
+      });
+    }
+
+    if (critical.length) {
+      await prisma.$transaction(async (tx) => {
+        await tx.profile.update({ where: { user_id: userId }, data });
+        await auditInTx(tx, actx, critical);
+      }, { timeout: 10_000, maxWait: 5_000 });
+    } else {
+      await prisma.profile.update({ where: { user_id: userId }, data });
+    }
+
+    const ordinary: string[] = [
+      ...(isHoursChange ? ["working_hours"] : []),
+      ...(subjects ? ["handles_categories"] : []),
+    ];
+    if (ordinary.length) {
+      await audit(actx, {
+        action: "member.updated",
+        target: memberTarget,
+        ...(subjects ? { before: { handles_categories: target.handles_categories } } : {}),
+        ...(subjects ? { after: { handles_categories: subjects } } : {}),
+        meta: { fields: ordinary },
+      });
+    }
     // Their next page load must see the new role or pages, not a copy
     // cached for up to a minute.
     forgetCachedProfile(userId);
@@ -282,7 +330,10 @@ export async function DELETE(
 
     // Switched off, never deleted and never made an owner — see
     // src/lib/auth/deactivate-member.ts for what each of those cost.
-    await deactivateMember(userId, target.full_name);
+    await deactivateMember(userId, target.full_name, {
+      ctx: auditCtx(_request, ctx),
+      before: { role: target.account_role },
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);

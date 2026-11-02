@@ -14,6 +14,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { jobFailed, jobWrote } from '@/lib/audit/actors'
 import { googleAccessToken, isGoogleServiceEnabled, logGoogleActivity } from './oauth'
 import { ensureGoogleTables } from './store'
 import { disabledApi, disabledApiMessage, isApiDisabled } from './api-disabled'
@@ -384,7 +385,15 @@ export async function sweepGmailInboxes(): Promise<void> {
   const conns = await prisma.googleConnection
     .findMany({ where: { status: 'connected', enabled_services: { has: 'gmail_inbox' } }, select: { account_id: true } })
     .catch(() => [])
+  let saved = 0
+  let failures = 0
   for (const c of conns) {
-    await pollGmail(c.account_id).catch((err) => console.error('[gmail] poll failed:', err instanceof Error ? err.message : err))
+    saved += await pollGmail(c.account_id).catch((err) => {
+      failures++
+      console.error('[gmail] poll failed:', err instanceof Error ? err.message : err)
+      return 0
+    })
   }
+  void jobWrote('gmail-inbox', null, saved)
+  if (failures) void jobFailed('gmail-inbox', null, `${failures} inbox poll(s) failed`)
 }

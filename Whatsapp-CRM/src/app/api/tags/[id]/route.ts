@@ -1,9 +1,10 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -17,6 +18,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Tag not found" }, { status: 404 })
     }
     await prisma.tag.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), { action: "record.deleted", target: { type: "tag", id, label: tag.name } })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)
@@ -34,7 +36,10 @@ export async function PATCH(
   try {
     const ctx = await requireRole("admin")
     const { id } = await params
-    const tag = await prisma.tag.findFirst({ where: { id, account_id: ctx.accountId }, select: { id: true } })
+    const tag = await prisma.tag.findFirst({
+      where: { id, account_id: ctx.accountId },
+      select: { id: true, name: true, ai_mode: true, ai_description: true, ai_avoid: true, ai_examples: true },
+    })
     if (!tag) return NextResponse.json({ error: "Tag not found" }, { status: 404 })
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>
     const mode = body.ai_mode
@@ -52,6 +57,12 @@ export async function PATCH(
     const updated = await prisma.tag.update({
       where: { id },
       data: { ai_mode: mode, ai_description: description || null, ai_avoid: text(body.ai_avoid, 300) || null, ai_examples: examples },
+    })
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "tag", id, label: tag.name },
+      before: tag as unknown as Record<string, unknown>,
+      after: { ai_mode: mode, ai_description: description || null, ai_avoid: text(body.ai_avoid, 300) || null, ai_examples: examples },
     })
     return NextResponse.json({ tag: updated })
   } catch (err) {

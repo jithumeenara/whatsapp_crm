@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { DEFAULT_SIGNALS, normalizeMode, normalizeThreshold, sanitizeSignals } from "@/lib/leads/ai-signals"
 
@@ -259,6 +261,15 @@ export async function GET() {
     return toErrorResponse(err)
   }
 }
+
+/** The settings PATCH accepts — the audit log names which were sent. */
+const LEAD_SETTING_KEYS = [
+  "ai_judgement_mode", "ai_lead_enabled", "ai_lead_exclusions", "ai_lead_min_messages", "ai_lead_mode",
+  "ai_lead_recheck_hours", "ai_lead_rules", "ai_lead_signals", "ai_lead_threshold", "auto_lead_creation",
+  "call_connected_labels", "call_not_connected_labels", "close_enquiry_reasons", "lead_sources",
+  "max_concurrent_chats", "new_lead_alert_enabled", "offer_enabled", "offer_seconds", "score_options",
+  "scoring_mode", "sla_breach_hours", "sla_warn_hours",
+] as const
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -525,6 +536,12 @@ export async function PATCH(req: NextRequest) {
       LIMIT  1
     `
     const row = rows[0]
+
+    // Which settings were sent — rules and lists are not copied into the log.
+    await auditConfigChange(auditCtx(req, ctx), "config.lead_settings_changed", {
+      area: "lead_settings",
+      fields: LEAD_SETTING_KEYS.filter((k) => body[k] !== undefined),
+    })
 
     return NextResponse.json({
       auto_lead_creation:        row?.auto_lead_creation   ?? false,

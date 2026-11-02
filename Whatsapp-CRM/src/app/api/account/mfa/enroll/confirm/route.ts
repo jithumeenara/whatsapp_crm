@@ -5,6 +5,8 @@ import { encrypt } from "@/lib/whatsapp/encryption"
 import { verifyChallenge } from "@/lib/auth/mfa"
 import { verifyTotp } from "@/lib/auth/totp"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { audit } from "@/lib/audit"
+import { userAuditCtx } from "@/lib/audit/user-ctx"
 
 /**
  * POST /api/account/mfa/enroll/confirm
@@ -51,6 +53,7 @@ export async function POST(req: NextRequest) {
         where: { id: session.user.id },
         data: { mfa_method: "totp", mfa_phone: null, totp_secret: encrypt(secret), mfa_enabled_at: new Date() },
       })
+      await audit(await userAuditCtx(req, session.user.id), { action: "auth.mfa_enabled", target: { type: "user", id: session.user.id }, meta: { method: "totp" } })
       return NextResponse.json({ ok: true })
     }
 
@@ -76,6 +79,11 @@ export async function POST(req: NextRequest) {
         totp_secret: null,
         mfa_enabled_at: new Date(),
       },
+    })
+    await audit(await userAuditCtx(req, session.user.id), {
+      action: "auth.mfa_enabled",
+      target: { type: "user", id: session.user.id },
+      meta: { method: result.challenge.method },
     })
     return NextResponse.json({ ok: true })
   } catch (error) {

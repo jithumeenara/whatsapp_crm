@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { redactIntegration } from "@/lib/integration-fetch"
 import { isRedactedEcho, sealAuthConfig } from "@/lib/integration-secrets"
@@ -47,6 +49,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status: body.status ?? integration.status,
       },
     })
+    // Field names only — auth_config holds credentials.
+    await auditConfigChange(auditCtx(req, ctx), "config.integration_changed", {
+      area: "integration",
+      before: integration as unknown as Record<string, unknown>,
+      after: updated as unknown as Record<string, unknown>,
+      target: { type: "integration", id, label: updated.name },
+    })
     return NextResponse.json({ integration: redactIntegration(updated) })
   } catch (err) {
     return toErrorResponse(err)
@@ -60,6 +69,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const integration = await prisma.integration.findFirst({ where: { id, account_id: ctx.accountId } })
     if (!integration) return NextResponse.json({ error: "Not found" }, { status: 404 })
     await prisma.integration.delete({ where: { id } })
+    await auditConfigChange(auditCtx(req, ctx), "config.integration_changed", {
+      area: "integration",
+      fields: [],
+      target: { type: "integration", id, label: integration.name },
+      meta: { removed: true },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)

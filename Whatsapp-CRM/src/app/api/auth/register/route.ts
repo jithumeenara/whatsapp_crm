@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { invalidateBusinessCount } from "@/lib/files/legacy-access";
 import { isValidE164 } from "@/lib/whatsapp/phone-utils";
 import { publicSignupOpen } from "@/lib/auth/signup-policy";
+import { audit } from "@/lib/audit";
+import { clientIp } from "@/lib/net/client-ip";
 import { claimInvitation, InvitationUnavailableError, plausibleInviteToken } from "@/lib/auth/claim-invitation";
 
 // The same floor as changing a password (/api/auth/password).
@@ -118,7 +120,7 @@ export async function POST(req: NextRequest) {
             account_role: invitation.role,
           },
         });
-        return { user: newUser, joined: true };
+        return { user: newUser, joined: true, accountId: invitation.account_id, role: invitation.role as string, invitationId: invitation.id as string | undefined };
       }
 
       const account = await tx.account.create({
@@ -139,11 +141,25 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      return { user: newUser, joined: false };
+      return { user: newUser, joined: false, accountId: account.id, role: "owner", invitationId: undefined };
     });
     // A new account or member: legacy-file access depends on how many
     // businesses the server has (security review R4a).
     invalidateBusinessCount();
+
+    // Sign-up goes to the platform chain (no team yet chose this person);
+    // joining by invitation is also recorded in the team's own log.
+    const where = { ip: clientIp(req.headers), userAgent: req.headers.get("user-agent"), requestId: req.headers.get("x-request-id") };
+    await audit(
+      { accountId: null, actor: { type: "public", id: result.user.id }, source: "web", ...where },
+      { action: "auth.registered", target: { type: "user", id: result.user.id }, meta: { joined: result.joined, account_id: result.accountId } },
+    );
+    if (result.joined) {
+      await audit(
+        { accountId: result.accountId, actor: { type: "user", id: result.user.id, role: result.role }, source: "web", ...where },
+        { action: "member.joined", target: { type: "member", id: result.user.id }, meta: { role: result.role, invitation_id: result.invitationId ?? null } },
+      );
+    }
 
     return NextResponse.json(
       { id: result.user.id, email: result.user.email, joined: result.joined },

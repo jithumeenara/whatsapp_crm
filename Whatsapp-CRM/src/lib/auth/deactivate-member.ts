@@ -22,8 +22,16 @@ import { prisma } from '@/lib/db'
 import { invalidateAllSessions } from './session-invalidation'
 import { forgetCachedProfile } from './account'
 import { invalidateBusinessCount } from '@/lib/files/legacy-access'
+import { auditInTx, type AuditContext } from '@/lib/audit'
 
-export async function deactivateMember(userId: string, displayName: string | null): Promise<void> {
+/** Who switched the member off or on, for the audit log. The event is
+ *  written in the same transaction (fail closed, plan §7). */
+export interface MemberAudit {
+  ctx: AuditContext
+  before?: Record<string, unknown>
+}
+
+export async function deactivateMember(userId: string, displayName: string | null, who?: MemberAudit): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const holding = await tx.account.create({
       data: { name: `${displayName?.trim() || 'Former member'} (removed)`, owner_user_id: userId },
@@ -40,7 +48,14 @@ export async function deactivateMember(userId: string, displayName: string | nul
       where: { created_by_user_id: userId, revoked_at: null },
       data: { revoked_at: new Date() },
     })
-  })
+    if (who) {
+      await auditInTx(tx, who.ctx, {
+        action: 'member.deactivated',
+        target: { type: 'member', id: userId, label: displayName },
+        meta: { previous_role: (who.before?.role as string | undefined) ?? null, api_keys_revoked: true, sessions_ended: true },
+      })
+    }
+  }, { timeout: 10_000, maxWait: 5_000 })
   // The cached copy of their team role would otherwise outlive the move
   // by up to a minute.
   forgetCachedProfile(userId)
@@ -75,6 +90,8 @@ export async function reviveMember(args: {
   role: 'admin' | 'supervisor' | 'agent' | 'viewer'
   fullName: string
   passwordHash: string
+  /** Who brought them back — recorded in the same transaction. */
+  audit?: MemberAudit
 }): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const profile = await tx.profile.findUnique({ where: { user_id: args.userId }, select: { account_id: true } })
@@ -98,7 +115,14 @@ export async function reviveMember(args: {
         console.warn(`[revive-member] holding account ${profile.account_id} is not empty — kept`)
       }
     }
-  })
+    if (args.audit) {
+      await auditInTx(tx, args.audit.ctx, {
+        action: 'member.revived',
+        target: { type: 'member', id: args.userId, label: args.fullName },
+        meta: { role: args.role },
+      })
+    }
+  }, { timeout: 10_000, maxWait: 5_000 })
   forgetCachedProfile(args.userId)
   invalidateBusinessCount()
 }

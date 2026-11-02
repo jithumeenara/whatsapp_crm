@@ -18,6 +18,7 @@
 
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
+import { webhookWrote } from '@/lib/audit/actors'
 
 const CLOSED = 'closed'
 const POOL_STATUSES = ['new', 'follow_up']
@@ -62,6 +63,8 @@ export async function leadForHandoff(args: {
       })
       await note(args, lead.id, `Asked to talk to a person (${channel}) — lead created`)
       emitToAccount(args.accountId, 'lead', { eventType: 'INSERT', new: lead, old: {} })
+      // The visitor's channel is the actor, not the widget owner.
+      void webhookWrote(args.source, args.accountId, { type: 'lead', id: lead.id }, { op: 'create', asked_for_person: true })
       return { leadId: lead.id, created: true }
     }
 

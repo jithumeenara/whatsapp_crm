@@ -17,6 +17,7 @@ import { isSendWindow } from "@/lib/broadcasts/rules";
 import { engagementDays, engagementWhere, isEngagementKind } from "@/lib/broadcasts/engagement";
 import { checkHeaderMediaUrl } from "@/lib/broadcasts/header-media";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * GET /api/broadcasts
@@ -120,7 +121,7 @@ export async function POST(request: NextRequest) {
     // Automatic follow-up and event-based broadcasts choose their people
     // later (auto-sweep.ts / events.ts) — no audience is resolved now.
     if (body.schedule_type === "after_parent" || body.schedule_type === "event") {
-      return createAutomatic(ctx, body, sendWindow);
+      return createAutomatic(request, ctx, body, sendWindow);
     }
 
     if (!body.audience || typeof body.audience !== "object") {
@@ -279,6 +280,12 @@ export async function POST(request: NextRequest) {
         throw err;
       }
     }
+
+    await audit(auditCtx(request, ctx), {
+      action: "record.created",
+      target: { type: "broadcast", id: broadcast.id, label: broadcast.name },
+      meta: { template: body.template_name, audience: body.audience.type, recipients: contacts.length, schedule: scheduleType },
+    });
 
     // ── Fetch recipients with contact + custom values ─────────
     const recipientRows = await db.broadcastRecipient.findMany({
@@ -623,6 +630,7 @@ function toMinutes(value: unknown, unit: unknown): number | null {
 }
 
 async function createAutomatic(
+  request: NextRequest,
   ctx: AccountContext,
   body: {
     name: string;
@@ -676,6 +684,11 @@ async function createAutomatic(
       },
       select: { id: true },
     });
+    await audit(auditCtx(request, ctx), {
+      action: "record.created",
+      target: { type: "broadcast", id: b.id, label: base.name },
+      meta: { template: base.template_name, schedule: "after_parent", parent: parent.id },
+    });
     return NextResponse.json({ broadcastId: b.id, scheduled: true, recipients: [] });
   }
 
@@ -715,5 +728,10 @@ async function createAutomatic(
     const { enqueueEventRecipients } = await import("@/lib/broadcasts/events");
     queued = await enqueueEventRecipients(ctx.accountId, b.id, holders.map((h) => h.contact_id), delay);
   }
+  await audit(auditCtx(request, ctx), {
+    action: "record.created",
+    target: { type: "broadcast", id: b.id, label: base.name },
+    meta: { template: base.template_name, schedule: "event", trigger: ev.trigger, queued },
+  });
   return NextResponse.json({ broadcastId: b.id, scheduled: true, recipients: [], queued });
 }

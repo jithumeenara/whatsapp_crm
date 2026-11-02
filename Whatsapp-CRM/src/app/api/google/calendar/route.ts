@@ -4,6 +4,8 @@ import { prisma } from '@/lib/db'
 import { businessTimezone } from '@/lib/ai/human-date'
 import { CalendarError, freeSlots, parseCalendarSettings } from '@/lib/google/calendar'
 import { isGoogleServiceEnabled, loadGoogleConnection, logGoogleActivity } from '@/lib/google/oauth'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 /** The Calendar card's settings, and the business zone they are read in. */
 export async function GET() {
@@ -31,8 +33,16 @@ export async function PUT(req: NextRequest) {
     if (!conn) return NextResponse.json({ error: 'Connect a Google account first.' }, { status: 400 })
     const body = (await req.json().catch(() => ({}))) as { settings?: unknown }
     const settings = parseCalendarSettings(body.settings)
+    const prev = await prisma.googleConnection
+      .findUnique({ where: { id: conn.id }, select: { calendar_settings: true } })
+      .catch(() => null)
     await prisma.googleConnection.update({ where: { id: conn.id }, data: { calendar_settings: settings as object } })
     await logGoogleActivity(ctx.accountId, ctx.userId, 'calendar_settings', `${settings.slotMinutes}-minute slots, ${settings.dayStart}–${settings.dayEnd}`)
+    await auditConfigChange(auditCtx(req, ctx), 'config.google_changed', {
+      area: 'google_calendar',
+      before: parseCalendarSettings(prev?.calendar_settings) as unknown as Record<string, unknown>,
+      after: settings as unknown as Record<string, unknown>,
+    })
     return NextResponse.json({ ok: true, settings })
   } catch (err) {
     return toErrorResponse(err)

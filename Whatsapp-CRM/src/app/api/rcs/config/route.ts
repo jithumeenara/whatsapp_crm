@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { saveRcsConfig, testRcsConnection } from "@/lib/messaging/channels/rcs"
 import { decrypt } from "@/lib/whatsapp/encryption"
@@ -97,6 +99,10 @@ export async function POST(request: Request) {
       fromNumber: from_number,
     })
 
+    await auditConfigChange(auditCtx(request ?? null, { accountId, userId: session.user.id, role: "owner" }), "config.channel_changed", {
+      area: "rcs",
+      fields: ["account_sid", "auth_token", "messaging_service_sid", "from_number"].filter((k) => body[k] !== undefined && body[k] !== null && body[k] !== ""),
+    })
     return NextResponse.json({ success: true, saved: true, message: test.message })
   } catch (error) {
     console.error("Error in RCS config POST:", error)
@@ -105,7 +111,7 @@ export async function POST(request: Request) {
 }
 
 /** DELETE /api/rcs/config — "Reset Configuration" recovery flow. */
-export async function DELETE() {
+export async function DELETE(request?: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -125,6 +131,7 @@ export async function DELETE() {
       if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ success: true })
       throw err
     }
+    await auditConfigChange(auditCtx(request ?? null, { accountId, userId: session.user.id, role: "owner" }), "config.channel_changed", { area: "rcs", fields: [], meta: { removed: true } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error in RCS config DELETE:", error)

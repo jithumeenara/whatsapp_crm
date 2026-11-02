@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { requireRole, toErrorResponse, type AccountContext } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 
@@ -22,16 +24,17 @@ NQIDAQAB
  * Flows endpoint encryption works. Visit this URL once in your browser
  * while logged in, then you can delete this file.
  */
-export async function GET() {
+export async function GET(req?: Request) {
   // Owner only — this replaces the account's Flows encryption key at
   // Meta, which is WhatsApp configuration (canEditWhatsAppConfig). It
   // used to need nothing more than being signed in.
-  let accountId: string
+  let ctx: AccountContext
   try {
-    accountId = (await requireRole('owner')).accountId
+    ctx = await requireRole('owner')
   } catch (err) {
     return toErrorResponse(err)
   }
+  const accountId = ctx.accountId
 
   // Account-level admin action, no conversation context (Finding #14) —
   // resolves to the account's default number.
@@ -63,6 +66,13 @@ export async function GET() {
   const rawText = await res.text()
   let body: unknown
   try { body = JSON.parse(rawText) } catch { body = rawText }
+
+  await auditConfigChange(auditCtx(req ?? null, ctx), 'config.security_changed', {
+    area: 'whatsapp_flows_encryption_key',
+    fields: ['business_public_key'],
+    outcome: res.ok ? 'success' : 'failure',
+    reason: res.ok ? null : `Meta answered ${res.status}`,
+  })
 
   if (!res.ok) {
     return NextResponse.json(

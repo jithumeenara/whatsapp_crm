@@ -12,6 +12,8 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
+import { audit, auditCtx } from '@/lib/audit'
+import type { AccountContext } from '@/lib/auth/account'
 
 // Unverified WABAs are capped at 250 total templates (verified ones go up
 // to 6,000). Meta doesn't expose verification tier anywhere this app reads
@@ -129,8 +131,9 @@ export async function POST(request: Request) {
     // signed-in member submitting to Meta in the business's name.
     let accountId: string
     let userId: string
+    let ctx: AccountContext
     try {
-      const ctx = await requireRole('supervisor')
+      ctx = await requireRole('supervisor')
       accountId = ctx.accountId
       userId = ctx.userId
     } catch (err) {
@@ -262,6 +265,15 @@ export async function POST(request: Request) {
         { status: 500 },
       )
     }
+
+    await audit(auditCtx(request, ctx), {
+      action: 'record.created',
+      target: { type: 'template', id: (row as { id?: string } | null)?.id ?? null, label: payload.name },
+      meta: {
+        language: payload.language, category: payload.category, status: normalizeStatus(metaStatus),
+        body_text: payload.body_text, dry_run: dryRun || undefined,
+      },
+    })
 
     return NextResponse.json({
       success: true,

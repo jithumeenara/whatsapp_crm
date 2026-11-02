@@ -9,6 +9,7 @@ import { fetchLead, getLeadField, fetchAdTargeting } from "@/lib/meta-ads/api"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
+import { webhookRejected, webhookWrote } from "@/lib/audit/actors"
 
 type RawConfig = {
   account_id: string
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
     // see socialWebhookScope.
     const scope = await socialWebhookScope(raw, req.headers.get("x-hub-signature-256"), "facebook")
     if (!scope) {
+      webhookRejected("facebook", null, "bad_signature")
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
     }
     const body = JSON.parse(raw) as FbWebhookBody
@@ -406,6 +408,8 @@ async function processLeadgenChange(
       external_id: `${externalIdPrefix}:${leadgenId}`,
     },
   })
+
+  void webhookWrote("facebook_lead_ads", accountId, { type: "lead", id: createdLead.id }, { op: "create", contact_id: contact.id, form_id: form?.id ?? null })
 
   await prisma.leadActivity.create({
     data: {

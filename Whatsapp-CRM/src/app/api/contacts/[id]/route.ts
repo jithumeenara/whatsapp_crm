@@ -6,6 +6,8 @@ import { checkEmail, checkPhone, isPlaceholderPhone } from "@/lib/contacts/valid
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { contactDetailsPatch } from "@/lib/leads/contact-details"
 import { emitToAccount } from "@/lib/socket"
+import { audit, auditCtx } from "@/lib/audit"
+import { contactAuditChange } from "@/lib/audit/contact-fields"
 
 /**
  * GET /api/contacts/[id]
@@ -93,10 +95,13 @@ export async function DELETE(
     }
 
     if (!permanent) {
-      await prisma.contact.updateMany({
+      const archived = await prisma.contact.updateMany({
         where: { id, account_id: ctx.accountId, archived_at: null },
         data: { archived_at: new Date(), archived_by: ctx.userId },
       })
+      if (archived.count > 0) {
+        await audit(auditCtx(req, ctx), { action: "record.archived", target: { type: "contact", id, label: null } })
+      }
       // Their leads leave open alerts and the Leads list on screen.
       const leads = await prisma.lead.findMany({ where: { contact_id: id }, select: { id: true } })
       for (const lead of leads) {
@@ -193,6 +198,12 @@ export async function DELETE(
       await tx.contact.delete({ where: { id } })
     })
 
+    await audit(auditCtx(req, ctx), {
+      action: "record.deleted",
+      target: { type: "contact", id, label: null },
+      meta: { permanent: true, leads_removed: removedLeadIds.length },
+    })
+
     // Announced after the transaction commits, never inside it.
     //
     // A listener that reacted to a rollback would remove a lead from
@@ -235,7 +246,10 @@ export async function PATCH(
 
     const contact = await prisma.contact.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true, phone: true, email: true, alternate_phone: true },
+      select: {
+        id: true, phone: true, email: true, alternate_phone: true, name: true, company: true,
+        avatar_url: true, opt_in_status: true, gender: true, age: true, address: true,
+      },
     })
     if (!contact) {
       return NextResponse.json({ error: "Not found" }, { status: 404 })
@@ -287,6 +301,20 @@ export async function PATCH(
 
     try {
       const updated = await prisma.contact.update({ where: { id }, data: { ...data, ...details } })
+      // Personal fields (name, phone, email, address…): names only, never
+      // the values; opt-in status keeps its before/after.
+      const change = contactAuditChange(
+        contact as unknown as Record<string, unknown>,
+        { ...data, ...details },
+        // Derived from phone; the phone change already says it.
+        [...Object.keys(data), ...Object.keys(details)].filter((k) => k !== "phone_normalized"),
+      )
+      await audit(auditCtx(req, ctx), {
+        action: "record.updated",
+        target: { type: "contact", id, label: null },
+        changes: change.changes,
+        meta: change.fields.length ? { fields: change.fields } : null,
+      })
       return NextResponse.json({ contact: updated })
     } catch (err) {
       if (isUniqueViolation(err)) {

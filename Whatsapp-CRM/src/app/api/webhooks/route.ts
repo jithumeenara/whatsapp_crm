@@ -3,6 +3,8 @@ import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { generateWebhookSecret, checkWebhookUrl, WEBHOOK_EVENTS } from '@/lib/webhooks/deliver'
 
 async function requireSession() {
@@ -49,7 +51,7 @@ export async function GET() {
 export async function POST(req: Request) {
   // An outgoing webhook sends every Data Store record to its URL, so
   // only an admin may add one — reading the list is open to members.
-  let guard: { accountId: string }
+  let guard: { accountId: string; userId: string; role: string }
   try {
     guard = await requireRole('admin')
   } catch (err) {
@@ -114,6 +116,15 @@ export async function POST(req: Request) {
         is_active: true,
         created_at: true,
       },
+    })
+
+    // The URL may carry a key in its query string, and the signing secret
+    // is never recorded — only that a webhook was added.
+    await auditConfigChange(auditCtx(req, guard), 'config.webhook_changed', {
+      area: 'outgoing_webhook',
+      fields: [],
+      target: { type: 'webhook', id: webhook.id, label: webhook.name },
+      meta: { created: true, events: webhook.events },
     })
 
     // Return signing_secret ONLY on creation — never again

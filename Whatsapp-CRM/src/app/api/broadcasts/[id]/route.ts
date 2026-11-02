@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { hasMinRole } from "@/lib/auth/roles";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * GET /api/broadcasts/[id]
@@ -100,7 +101,7 @@ export async function PATCH(
 
     const broadcast = await ctx.db.broadcast.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true, status: true, schedule_type: true },
+      select: { id: true, name: true, status: true, schedule_type: true },
     });
     if (!broadcast) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (rule.eventOnly && broadcast.schedule_type !== "event") {
@@ -113,6 +114,12 @@ export async function PATCH(
     if (changed.count === 0) {
       return NextResponse.json({ error: `This broadcast is ${broadcast.status} and can't be changed that way now.` }, { status: 409 });
     }
+    await audit(auditCtx(request, ctx), {
+      action: rule.to === "cancelled" ? "broadcast.cancelled" : "record.status_changed",
+      target: { type: "broadcast", id: broadcast.id, label: broadcast.name },
+      before: { status: broadcast.status },
+      after: { status: rule.to },
+    });
     return NextResponse.json({ ok: true, status: rule.to });
   } catch (err) {
     return toErrorResponse(err);
@@ -135,7 +142,7 @@ export async function DELETE(
 
     const broadcast = await ctx.db.broadcast.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true, status: true },
+      select: { id: true, name: true, status: true, total_recipients: true },
     });
     if (!broadcast) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -157,6 +164,11 @@ export async function DELETE(
     }
 
     await ctx.db.broadcast.delete({ where: { id } });
+    await audit(auditCtx(request, ctx), {
+      action: "record.deleted",
+      target: { type: "broadcast", id: broadcast.id, label: broadcast.name },
+      meta: { status: broadcast.status, recipients: broadcast.total_recipients },
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);

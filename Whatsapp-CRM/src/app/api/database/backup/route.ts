@@ -2,6 +2,8 @@ import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { auth } from '@/auth'
 import { isPlatformOwner } from '@/lib/auth/platform-owner'
+import { audit } from '@/lib/audit'
+import { userAuditCtx } from '@/lib/audit/user-ctx'
 
 /** sslmode values libpq understands; anything else is dropped, not passed on. */
 const SSL_MODES = new Set(['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'])
@@ -51,7 +53,7 @@ function findPgBin(tool: string): string {
   return candidates.find((p) => p === tool || existsSync(p)) ?? tool
 }
 
-export async function GET() {
+export async function GET(req?: Request) {
   const session = await auth()
   if (!session?.user?.id) {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
@@ -84,6 +86,17 @@ export async function GET() {
   ]
 
   console.info(`[database/backup] whole-database backup started by user ${session.user.id} at ${new Date().toISOString()}`)
+
+  // A whole-database download is always recorded: started, and whether
+  // pg_dump finished. Best effort — never blocks or breaks the download.
+  const actx = await userAuditCtx(req ?? null, session.user.id)
+  const recordBackup = (outcome: 'success' | 'failure', reason?: string) =>
+    audit(actx, {
+      action: 'database.backup_downloaded',
+      outcome,
+      reason: reason ?? null,
+      target: { type: 'database', id: db.database },
+    })
 
   const pgDump = spawn(findPgBin('pg_dump'), args, { env: pgDumpEnv(db) })
 
@@ -121,6 +134,7 @@ export async function GET() {
   if (ended) await exited
   if (exitCode !== null && exitCode !== 0) {
     console.error(`[database/backup] pg_dump exited with code ${exitCode}`)
+    await recordBackup('failure', `pg_dump exited with code ${exitCode}`)
     return new Response(JSON.stringify({ error: 'The backup could not be made. The server log has the reason.' }), { status: 500 })
   }
   pgDump.stdout.removeAllListeners('data')
@@ -136,9 +150,11 @@ export async function GET() {
         if (code === 0) {
           console.info('[database/backup] finished')
           controller.close()
+          void recordBackup('success')
         } else {
           console.error(`[database/backup] pg_dump exited with code ${code} part-way through`)
           controller.error(new Error('pg_dump failed'))
+          void recordBackup('failure', `pg_dump exited with code ${code} part-way through`)
         }
       })
     },

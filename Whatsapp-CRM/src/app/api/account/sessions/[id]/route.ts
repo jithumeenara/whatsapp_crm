@@ -3,6 +3,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { disconnectUserSockets } from "@/lib/socket"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { audit } from "@/lib/audit"
+import { userAuditCtx } from "@/lib/audit/user-ctx"
 
 /**
  * DELETE /api/account/sessions/[id] — log out one specific device
@@ -42,6 +44,11 @@ export async function DELETE(
       // reconnect by themselves with a fresh ticket; the revoked one
       // cannot get one.
       disconnectUserSockets(session.user.id)
+      await audit(await userAuditCtx(req, session.user.id), {
+        action: "auth.session_revoked",
+        target: { type: "session", id: row.id },
+        meta: { current: id === session.sessionId },
+      })
     }
 
     return NextResponse.json({ success: true, wasCurrent: id === session.sessionId })

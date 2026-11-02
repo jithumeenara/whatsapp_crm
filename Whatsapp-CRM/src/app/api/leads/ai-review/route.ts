@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * Telling the assistant whether it was right.
@@ -149,6 +150,12 @@ export async function POST(req: NextRequest) {
         })
         .catch(() => {})
 
+      await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+        action: 'record.bulk_updated',
+        target: { type: 'lead', id: null, label: null },
+        meta: { op: 'ai_review', decision, count: leads.length, ids: ids(leads).slice(0, 200), closed_ids: ids(flagged).slice(0, 200) },
+      })
+
       return NextResponse.json({ accepted: leads.length })
     }
 
@@ -184,6 +191,18 @@ export async function POST(req: NextRequest) {
         where: { id: { in: ids(suggestions) }, account_id: ctx.accountId, ai_suggested: true },
       })
     }
+
+    await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+      action: suggestions.length > 0 ? 'record.bulk_deleted' : 'record.bulk_updated',
+      target: { type: 'lead', id: null, label: null },
+      meta: {
+        op: 'ai_review',
+        decision,
+        count: leads.length,
+        ids: ids(leads).slice(0, 200),
+        deleted_ids: ids(suggestions).slice(0, 200),
+      },
+    })
 
     return NextResponse.json({ rejected: leads.length })
   } catch (err) {

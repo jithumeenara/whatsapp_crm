@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -34,6 +35,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .map((s) => prisma.pipelineStage.update({ where: { id: s.id }, data: { position: s.position + 1 } })),
     ])
 
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'pipeline_stage', id: stage.id, label: name },
+      meta: { pipeline_id, position: insertPosition },
+    })
+
     return NextResponse.json({ stage }, { status: 201 })
   } catch (e) {
     return toErrorResponse(e)
@@ -65,6 +72,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       where: { pipeline_id },
       orderBy: { position: 'asc' },
     })
+
+    if (Array.isArray(body.order) && body.order.length > 0) {
+      await audit(auditCtx(req, ctx), {
+        action: 'record.updated',
+        target: { type: 'pipeline', id: pipeline_id, label: pipeline.name },
+        meta: { op: 'stages_reordered', order: stages.map((s) => s.id) },
+      })
+    }
 
     return NextResponse.json({ stages })
   } catch (e) {

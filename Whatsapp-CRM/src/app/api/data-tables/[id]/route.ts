@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { invalidateRegistrationForms } from '@/lib/ai/registration'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import type { AccountRole } from '@/lib/auth/roles'
+import { audit, auditCtx } from '@/lib/audit'
 
 async function requireOwner(tableId: string, min: AccountRole) {
   const member = await dataStoreMember(min)
@@ -18,7 +19,7 @@ async function requireOwner(tableId: string, min: AccountRole) {
     },
   })
   if (!table) return { ok: false as const, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true as const, accountId: accountIdOf, table }
+  return { ok: true as const, accountId: accountIdOf, table, ctx: member.ctx }
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -97,6 +98,14 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     // WhatsApp looks broken for up to sixty seconds — which is exactly
     // when somebody is watching.
     invalidateRegistrationForms(guard.accountId)
+    // Table settings only (name, icon, AI switches) — no record values.
+    await audit(auditCtx(req, guard.ctx), {
+      action: 'record.updated',
+      target: { type: 'data_table', id, label: table.name },
+      before: guard.table as unknown as Record<string, unknown>,
+      after: table as unknown as Record<string, unknown>,
+      only: ['name', 'icon', 'description', 'ai_can_register', 'ai_unique_by', 'ai_capacity_by', 'ai_capacity_limit', 'ai_success_message'],
+    })
     return NextResponse.json({ table })
   } catch (err) {
     console.error('[PUT /api/data-tables/[id]]', err)
@@ -104,7 +113,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     // A table holds registrations, bookings, sheet links: deleting one
     // takes all of them, so only an admin may.
@@ -118,6 +127,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
     await prisma.dataTable.delete({ where: { id } })
+    await audit(auditCtx(req, guard.ctx), {
+      action: 'record.deleted',
+      target: { type: 'data_table', id, label: guard.table.name },
+      meta: { records: guard.table._count?.records ?? null, fields: guard.table.fields.length },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/data-tables/[id]]', err)

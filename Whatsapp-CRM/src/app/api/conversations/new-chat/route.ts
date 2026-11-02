@@ -8,6 +8,7 @@ import { emitToAccount } from "@/lib/socket"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from "@/lib/whatsapp/resolve-config"
 import { DEFAULT_COUNTRY_ISO, splitE164 } from "@/lib/country-codes"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * POST /api/conversations/new-chat
@@ -179,6 +180,18 @@ export async function POST(request: Request) {
         include: { contact: true },
       })
       emitToAccount(accountId, "conversation", { eventType: "INSERT", new: full ?? conversation, old: {} })
+    }
+
+    if (contactCreated || conversationCreated) {
+      const actx = auditCtx(request, ctx)
+      await audit(actx, [
+        ...(contactCreated
+          ? [{ action: "record.created" as const, target: { type: "contact", id: contact.id, label: null }, after: { phone: contact.phone, opt_in_source: "new_chat" } }]
+          : []),
+        ...(conversationCreated
+          ? [{ action: "record.created" as const, target: { type: "conversation", id: conversation.id, label: null }, after: { contact_id: contact.id, channel: "whatsapp", whatsapp_config_id: whatsappConfig.id } }]
+          : []),
+      ])
     }
 
     return NextResponse.json({

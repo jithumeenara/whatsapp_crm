@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { ensureInstagramConfigTable as ensureTable } from "@/lib/social/ensure-tables"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
@@ -113,13 +115,18 @@ export async function PATCH(req: NextRequest) {
       WHERE account_id = ${ctx.accountId}::uuid
     `
 
+    await auditConfigChange(auditCtx(req, ctx), "config.channel_changed", {
+      area: "instagram_ice_breakers",
+      fields: ["ice_breakers", "persistent_menu"],
+      meta: { ice_breakers: iceBreakers.length, menu_items: persistentMenu.length },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req?: Request) {
   try {
     const ctx = await requireRole("owner")
     await ensureTable()
@@ -138,6 +145,11 @@ export async function DELETE() {
       SET ice_breakers = NULL, persistent_menu = NULL, profile_synced_at = NULL, updated_at = now()
       WHERE account_id = ${ctx.accountId}::uuid
     `
+    await auditConfigChange(auditCtx(req ?? null, ctx), "config.channel_changed", {
+      area: "instagram_ice_breakers",
+      fields: ["ice_breakers", "persistent_menu"],
+      meta: { removed: true },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)

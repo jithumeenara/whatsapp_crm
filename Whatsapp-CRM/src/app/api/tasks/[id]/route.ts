@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -27,9 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id, lead_id, assigned_to })
     if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
-    const task = await prisma.task.update({
-      where: { id },
-      data: {
+    const data = {
         ...(title !== undefined && { title }),
         ...(description !== undefined && { description }),
         ...(priority !== undefined && { priority }),
@@ -39,7 +38,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(lead_id !== undefined && { lead_id: lead_id || null }),
         ...(assigned_to !== undefined && { assigned_to: assigned_to || null }),
         ...(status === 'done' && !existing.completed_at && { completed_at: new Date() }),
-      },
+    }
+    const task = await prisma.task.update({
+      where: { id },
+      data,
       include: {
         contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },
         lead: { select: { id: true, title: true } },
@@ -47,19 +49,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     })
 
+    if (Object.keys(data).length > 0) {
+      const statusMoved = status !== undefined && status !== existing.status
+      await audit(auditCtx(req, ctx), {
+        action: statusMoved ? 'record.status_changed' : 'record.updated',
+        target: { type: 'task', id, label: null },
+        before: existing as unknown as Record<string, unknown>,
+        after: data,
+      })
+    }
+
     return NextResponse.json(withCallablePhones({ task }))
   } catch (err) {
     return toErrorResponse(err)
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await requireRole('agent')
     const { id } = await params
     const existing = await prisma.task.findFirst({ where: { id, account_id: ctx.accountId } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await prisma.task.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.deleted',
+      target: { type: 'task', id, label: null },
+      meta: { status: existing.status, lead_id: existing.lead_id, contact_id: existing.contact_id, assigned_to: existing.assigned_to },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

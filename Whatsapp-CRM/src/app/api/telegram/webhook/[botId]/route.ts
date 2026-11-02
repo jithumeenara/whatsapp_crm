@@ -31,6 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ botId: 
   })
   const secret = req.headers.get('x-telegram-bot-api-secret-token') ?? ''
   if (!bot || !secret || !sameSecret(secret, bot.webhookSecret)) {
+    void import('@/lib/audit/actors').then((m) => m.webhookRejected('telegram', null, bot ? 'bad_secret' : 'unknown_bot'))
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 

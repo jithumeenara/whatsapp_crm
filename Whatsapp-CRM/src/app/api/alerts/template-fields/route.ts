@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { ALERT_KINDS, cleanMapping, mappingFor, type AlertKind } from "@/lib/whatsapp/alert-fields"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * What each {{n}} of a staff-alert template carries.
@@ -63,6 +64,11 @@ export async function PUT(req: NextRequest) {
         create: { account_id: ctx.accountId, new_contact_alert_params: value ?? Prisma.DbNull },
       })
     }
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "alert_rule", id: kind, label: kind === "handoff" ? "Handover alert" : "New contact alert" },
+      meta: { op: "template_fields", template: params ? template : null, fields: params },
+    })
     return NextResponse.json({ params, template: params ? template : null })
   } catch (err) {
     return toErrorResponse(err)

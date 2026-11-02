@@ -21,6 +21,24 @@ import { minutesNowIn } from '@/lib/agents/working-hours'
 import { createLeadFromAutomation } from '@/lib/leads/create-from-automation'
 import { engineSendText, engineSendTemplate, engineSendCatalogItem } from './meta-send'
 import { postAutomationWebhook } from './send-webhook'
+import { agentRecordWritten } from '@/lib/audit/actors'
+
+/** The audit log's record of what an automation step wrote: actor
+ *  agent:automation, correlation id = this run's log id. */
+function auditStep(
+  args: { automation: { id: string; account_id: string }; logId: string | null },
+  step: string,
+  op: 'create' | 'update' | 'delete',
+  target: { type: string; id?: string | null },
+  fields?: string[],
+): void {
+  void agentRecordWritten(args.automation.account_id, {
+    kind: 'automation',
+    flowOrBotId: args.automation.id,
+    correlationId: args.logId ? `automation-run:${args.logId}` : `automation:${args.automation.id}`,
+    source: 'job',
+  }, { tool: step, op, target, fields })
+}
 
 // ------------------------------------------------------------
 // Public API
@@ -313,6 +331,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         source: 'automation',
         hop: args.context.tag_hop ?? 0,
       })
+      if (added.length) auditStep(args, 'add_tag', 'update', { type: 'contact', id: args.contactId }, ['tags'])
       return added.length ? `tag ${cfg.tag_id} added` : `tag ${cfg.tag_id} already present (or not this account's)`
     }
 
@@ -327,6 +346,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         source: 'automation',
         hop: args.context.tag_hop ?? 0,
       })
+      if (removed.length) auditStep(args, 'remove_tag', 'update', { type: 'contact', id: args.contactId }, ['tags'])
       return removed.length ? `tag ${cfg.tag_id} removed` : `tag ${cfg.tag_id} was not on the contact`
     }
 
@@ -360,6 +380,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         where: { account_id: args.automation.account_id, contact_id: args.contactId },
         data: { assigned_agent_id: agentId },
       })
+      for (const c of convs) auditStep(args, 'assign_conversation', 'update', { type: 'conversation', id: c.id }, ['assigned_agent_id'])
       // Push notification to the assigned agent
       try {
         const { sendPushToUser } = await import('@/lib/push')
@@ -387,6 +408,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         where: { id: args.contactId, account_id: args.automation.account_id },
         data: { [cfg.field]: cfg.value },
       })
+      auditStep(args, 'update_contact_field', 'update', { type: 'contact', id: args.contactId }, [cfg.field])
       return `${cfg.field} updated`
     }
 
@@ -405,6 +427,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         where: { account_id: args.automation.account_id, contact_id: args.contactId },
         data: { status: 'closed' },
       })
+      auditStep(args, 'close_conversation', 'update', { type: 'contact', id: args.contactId }, ['status'])
       return 'conversation closed'
     }
 
@@ -436,6 +459,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         config: cfg,
         queueScope: `automation:${args.automation.id}:lead`,
       })
+      if (outcome.created) auditStep(args, 'create_lead', 'create', { type: 'lead', id: outcome.leadId ?? null })
       // A step that decided not to fire is a success, not a failure —
       // "no keyword match" is the rule working. Throwing would mark the
       // whole run failed and stop every step after it.

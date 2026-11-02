@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { buildContactWhere, type FilterConfig } from '@/lib/segments/filter'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -40,14 +41,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const { name, description, color, filter_config } = body as Record<string, unknown>
 
-    const segment = await prisma.segment.update({
-      where: { id },
-      data: {
+    const data = {
         ...(name !== undefined && { name: name as string }),
         ...(description !== undefined && { description: (description as string) || null }),
         ...(color !== undefined && { color: color as string }),
         ...(filter_config !== undefined && { filter_config: filter_config as object }),
-      },
+    }
+    const segment = await prisma.segment.update({ where: { id }, data })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'segment', id, label: segment.name },
+      before: existing as unknown as Record<string, unknown>,
+      after: data,
     })
 
     return NextResponse.json({ segment })
@@ -56,13 +62,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await requireRole('agent')
     const { id } = await params
     const existing = await prisma.segment.findFirst({ where: { id, account_id: ctx.accountId } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await prisma.segment.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), { action: 'record.deleted', target: { type: 'segment', id, label: existing.name } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

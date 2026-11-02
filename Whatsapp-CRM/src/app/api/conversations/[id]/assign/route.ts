@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { sendPushToUser } from '@/lib/push'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -59,6 +60,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         contact: { select: { id: true, name: true, phone: true } },
       },
     })
+
+    if (agentId !== conversation.assigned_agent_id) {
+      await audit(auditCtx(req, ctx), {
+        action: 'record.assigned',
+        target: { type: 'conversation', id, label: null },
+        before: { assigned_agent_id: conversation.assigned_agent_id },
+        after: { assigned_agent_id: agentId },
+      })
+    }
 
     // Send push notification to newly assigned agent
     if (agentId && agentId !== ctx.userId) {

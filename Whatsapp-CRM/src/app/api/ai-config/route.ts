@@ -7,6 +7,8 @@ import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys, type ProviderKeys } from '@/lib/ai/providers/registry'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import {
   REASONING_EFFORTS,
   DEFAULT_REASONING_EFFORT,
@@ -24,7 +26,7 @@ import {
 async function requireUser(min: 'viewer' | 'owner' = 'owner') {
   try {
     const ctx = await requireRole(min)
-    return { ok: true as const, userId: ctx.userId, accountId: ctx.accountId }
+    return { ok: true as const, userId: ctx.userId, accountId: ctx.accountId, role: ctx.role }
   } catch (err) {
     const res = toErrorResponse(err)
     const body = await res.json().catch(() => ({ error: 'Unauthorized' }))
@@ -434,16 +436,31 @@ export async function PUT(req: Request) {
   // Training is one explicit action instead: POST /api/ai-knowledge/sync,
   // behind the Training tab's "Train now".
 
+  // Field names only — the prompt, knowledge and API keys never enter the log.
+  await auditConfigChange(auditCtx(req, { accountId: guard.accountId, userId: guard.userId, role: guard.role }), 'config.ai_changed', {
+    area: 'ai_config',
+    before: existing as unknown as Record<string, unknown> | null,
+    after: data as Record<string, unknown>,
+    target: { type: 'ai_config', id: config.id },
+  })
+
   return NextResponse.json({ success: true, id: config.id })
 }
 
-export async function DELETE() {
+export async function DELETE(req?: Request) {
   const guard = await requireUser()
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
-  await prisma.aiConfig.deleteMany({
+  const removed = await prisma.aiConfig.deleteMany({
     where: { account_id: guard.accountId },
   })
+  if (removed.count > 0) {
+    await auditConfigChange(auditCtx(req ?? null, { accountId: guard.accountId, userId: guard.userId, role: guard.role }), 'config.ai_changed', {
+      area: 'ai_config',
+      fields: [],
+      meta: { removed: true },
+    })
+  }
 
   return NextResponse.json({ success: true })
 }

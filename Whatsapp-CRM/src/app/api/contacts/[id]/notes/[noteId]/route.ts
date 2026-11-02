@@ -1,9 +1,10 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string; noteId: string }> },
 ) {
   try {
@@ -19,6 +20,11 @@ export async function DELETE(
     }
 
     await prisma.contactNote.delete({ where: { id: noteId } })
+    await audit(auditCtx(req, ctx), {
+      action: "record.deleted",
+      target: { type: "contact_note", id: noteId, label: null },
+      meta: { contact_id: id, author_id: note.user_id, note_chars: note.note_text?.length ?? 0 },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

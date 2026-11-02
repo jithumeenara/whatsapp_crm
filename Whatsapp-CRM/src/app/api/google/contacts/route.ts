@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { ContactsError, importGoogleContacts, listContactGroups } from '@/lib/google/contacts'
 import { GoogleNotConnectedError, logGoogleActivity } from '@/lib/google/oauth'
+import { audit, auditCtx } from '@/lib/audit'
 
 function failure(err: unknown) {
   if (err instanceof ContactsError) return NextResponse.json({ error: err.message }, { status: err.status })
@@ -32,6 +33,11 @@ export async function POST(req: NextRequest) {
     const groups = Array.isArray(body.groups) ? body.groups.filter((g): g is string => typeof g === 'string' && g.startsWith('contactGroups/')).slice(0, 50) : []
     const result = await importGoogleContacts(ctx.accountId, ctx.userId, groups)
     await logGoogleActivity(ctx.accountId, ctx.userId, 'contacts_import', `${result.created} added, ${result.updated} updated`)
+    await audit(auditCtx(req, ctx), {
+      action: 'import.completed',
+      target: { type: 'contacts' },
+      meta: { via: 'google_contacts', groups: groups.length, read: result.read, created: result.created, updated: result.updated, skipped: result.skipped },
+    })
     return NextResponse.json(result)
   } catch (err) {
     return failure(err)

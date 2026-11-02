@@ -15,6 +15,7 @@ import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { sendTextMessage } from '@/lib/whatsapp/meta-api'
 import { emitToAccount } from '@/lib/socket'
+import { jobFailed, jobWrote, paymentPaid } from '@/lib/audit/actors'
 import {
   getPhonePeLinkStatus,
   parsePhonePeCredentials,
@@ -24,7 +25,7 @@ import {
 
 export type ReconcileOutcome = 'completed' | 'failed' | 'unchanged' | 'skipped' | 'amount_mismatch'
 
-export async function reconcilePhonePePayment(paymentId: string): Promise<ReconcileOutcome> {
+export async function reconcilePhonePePayment(paymentId: string, via: 'webhook' | 'sweep' = 'sweep'): Promise<ReconcileOutcome> {
   const payment = await prisma.whatsAppPayment.findUnique({ where: { id: paymentId } })
   if (!payment || payment.status !== 'pending') return 'skipped'
 
@@ -77,6 +78,11 @@ export async function reconcilePhonePePayment(paymentId: string): Promise<Reconc
 
   const updated = await prisma.whatsAppPayment.findUnique({ where: { id: payment.id } })
   if (updated) emitToAccount(payment.account_id, 'whatsapp_payment', { eventType: 'UPDATE', new: updated, old: {} })
+  if (next === 'completed') {
+    void paymentPaid('phonepe', payment.account_id, { type: 'whatsapp_payment', id: payment.id }, {
+      reference: payment.reference_id, amount: Number(payment.amount), via,
+    }, { job: via === 'sweep' })
+  }
 
   if (next === 'completed' && payment.conversation_id) {
     await thankCustomer(payment.account_id, payment.whatsapp_config_id, payment.conversation_id, payment.contact_id, Number(payment.amount))
@@ -174,16 +180,23 @@ export async function sweepPhonePePayments(now: number = Date.now()): Promise<nu
     })
 
     let checked = 0
+    let moved = 0
+    let failures = 0
     for (const p of candidates) {
       const age = now - p.created_at.getTime()
       if (now - p.updated_at.getTime() < checkEvery(age)) continue
       try {
-        await reconcilePhonePePayment(p.id)
+        const outcome = await reconcilePhonePePayment(p.id)
+        if (outcome === 'completed' || outcome === 'failed') moved++
         checked++
       } catch (err) {
+        failures++
         console.error(`[phonepe] status check failed for ${p.id}:`, err instanceof Error ? err.message : err)
       }
     }
+    // One summary per run that changed something; one failure note per run.
+    void jobWrote('phonepe-reconcile', null, moved)
+    if (failures > 0) void jobFailed('phonepe-reconcile', null, `${failures} status check(s) failed`)
     return checked
   } finally {
     sweeping = false

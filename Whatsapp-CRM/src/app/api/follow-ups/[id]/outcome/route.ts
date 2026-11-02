@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { outcomeTitle, parseOutcomeInput } from '@/lib/leads/follow-up-outcome'
 import { claimIfUnassigned } from '@/lib/leads/claim'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * POST /api/follow-ups/:id/outcome — Done, Reschedule or Couldn't reach.
@@ -65,6 +66,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             ? 'by rescheduling a follow-up'
             : "by recording a follow-up as couldn't reach",
       })
+      if (claimed) {
+        await audit(auditCtx(req, ctx), {
+          action: 'record.assigned',
+          target: { type: 'lead', id: existing.lead_id, label: null },
+          before: { assigned_to: null },
+          after: { assigned_to: ctx.userId },
+          meta: { claim: true, how: 'follow_up_outcome' },
+        })
+      }
       // Somebody else picked it in the same moment: it is theirs now.
       if (!claimed && !canViewAllLeads(ctx.role)) {
         const now = await prisma.lead.findFirst({ where: { id: existing.lead_id }, select: { assigned_to: true } })
@@ -133,6 +143,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           },
         })
       }
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: outcome === 'rescheduled' ? 'record.updated' : 'record.status_changed',
+      target: { type: 'follow_up', id, label: null },
+      before: { status: existing.status, due_at: existing.due_at, assigned_to: existing.assigned_to },
+      after: outcome === 'rescheduled'
+        ? { due_at: nextAt, assigned_to: assignee }
+        : { status: outcome === 'done' ? 'done' : 'skipped', assigned_to: assignee },
+      meta: { outcome, next_at: nextAt ?? null, lead_id: existing.lead_id },
     })
 
     if (existing.lead_id) {

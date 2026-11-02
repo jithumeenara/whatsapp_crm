@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { looksLikeContactList, peopleTableIds } from '@/lib/data-store/people-tables'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { fetchPageText } from '@/lib/ai/web-extract'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { fetchSheetForAccount, serializeSheet } from '@/lib/ai/google-sheet'
@@ -173,8 +174,10 @@ async function geminiFor(accountId: string) {
 
 export async function POST(req: Request) {
   let ctx: { accountId: string; userId: string }
+  let actor: Awaited<ReturnType<typeof requireRole>>
   try {
     const r = await requireRole(WRITE_ROLE)
+    actor = r
     ctx = { accountId: r.accountId, userId: r.userId }
   } catch (err) {
     return toErrorResponse(err)
@@ -239,6 +242,11 @@ export async function POST(req: Request) {
       })
       invalidateKnowledge(configId)
       scheduleKnowledgeRefresh(ctx.accountId)
+      await audit(auditCtx(req, actor), {
+        action: 'record.created',
+        target: { type: 'knowledge_source', id: item.id, label: item.name },
+        meta: { kind, audience: resolvedAudience },
+      })
       return NextResponse.json({ item }, { status: 201 })
     }
 
@@ -321,6 +329,11 @@ export async function POST(req: Request) {
         effective_until: effectiveUntil,
         status: 'pending',
       },
+    })
+    await audit(auditCtx(req, actor), {
+      action: 'record.created',
+      target: { type: 'knowledge_source', id: item.id, label: item.name },
+      meta: { kind, source, audience: resolvedAudience, content },
     })
     return NextResponse.json({ item }, { status: 201 })
   } catch (err) {

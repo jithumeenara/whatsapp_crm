@@ -1,6 +1,7 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
 export async function GET(
   _req: NextRequest,
@@ -87,6 +88,12 @@ export async function POST(
       created_by_name: user.profile?.full_name || user.email,
       created_by_role: user.profile?.account_role ?? null,
     }
+
+    await audit(auditCtx(req, ctx), {
+      action: "record.created",
+      target: { type: "contact_note", id: created.id, label: null },
+      after: { contact_id: id, note_text: noteText },
+    })
 
     return NextResponse.json({ note }, { status: 201 })
   } catch (err) {

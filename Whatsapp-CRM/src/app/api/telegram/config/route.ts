@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { publicOrigin } from '@/lib/email/microsoft/origin'
 import { checkRateLimit } from '@/lib/rate-limit'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
@@ -102,6 +104,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: msg }, { status: 502 })
       }
       await prisma.telegramBot.update({ where: { id: row.id }, data: { webhook_secret: secret, status: 'connected', last_error: null } })
+      await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', { area: 'telegram', fields: ['webhook_secret', 'status'], meta: { reconnect: true } })
       return NextResponse.json({ ok: true })
     }
 
@@ -152,6 +155,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: msg }, { status: 502 })
     }
     await prisma.telegramBot.update({ where: { id: row.id }, data: { status: 'connected', last_error: null } })
+    // The bot token is never recorded.
+    await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {
+      area: 'telegram',
+      fields: Object.keys(fields),
+      target: { type: 'telegram_bot', id: row.id, label: me.username ?? null },
+      meta: { connected: true },
+    })
     return NextResponse.json({ ok: true, username: me.username })
   } catch (err) {
     return toErrorResponse(err)
@@ -170,13 +180,14 @@ export async function PUT(req: Request) {
     const channels = channelsOf(config.ai_auto_reply_channels).filter((c) => c !== 'telegram')
     if (body.ai_auto_reply) channels.push('telegram')
     await prisma.aiConfig.update({ where: { id: config.id }, data: { ai_auto_reply_channels: channels } })
+    await auditConfigChange(auditCtx(req, ctx), 'config.ai_changed', { area: 'telegram_ai_reply', fields: ['ai_auto_reply_channels'], meta: { telegram: body.ai_auto_reply } })
     return NextResponse.json({ answers_telegram: body.ai_auto_reply })
   } catch (err) {
     return toErrorResponse(err)
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req?: Request) {
   try {
     const ctx = await requireRole('admin')
     const row = await prisma.telegramBot.findUnique({ where: { account_id: ctx.accountId } })
@@ -185,6 +196,7 @@ export async function DELETE() {
     // secret check refuses a disconnected bot's updates anyway.
     await deleteWebhook(decrypt(row.token_enc)).catch((err) => console.warn('[telegram config] deleteWebhook failed:', err instanceof Error ? err.message : err))
     await prisma.telegramBot.update({ where: { id: row.id }, data: { status: 'disconnected', last_error: null } })
+    await auditConfigChange(auditCtx(req ?? null, ctx), 'config.channel_changed', { area: 'telegram', fields: ['status'], target: { type: 'telegram_bot', id: row.id }, meta: { disconnected: true } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

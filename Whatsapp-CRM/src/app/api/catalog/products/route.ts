@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import { batchUpsertProducts } from "@/lib/whatsapp/catalog-api"
@@ -77,6 +78,11 @@ export async function POST(request: Request) {
         brand: brand || null,
         sync_status: "pending",
       },
+    })
+    await audit(auditCtx(request, ctx), {
+      action: "record.created",
+      target: { type: "product", id: product.id, label: product.name },
+      meta: { retailer_id: sku, price: product.price === null ? null : String(product.price), currency: product.currency },
     })
 
     try {

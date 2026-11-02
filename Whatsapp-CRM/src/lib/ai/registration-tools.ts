@@ -23,10 +23,18 @@ import { prisma } from '@/lib/db'
 import { businessTimezone, humanDate } from './human-date'
 import { listRegistrationForms, validateValues } from './registration'
 import { afterRecordCreated, afterRecordsChanged } from '@/lib/data-store/record-events'
+import { agentRecordWritten, type AgentAuditInfo } from '@/lib/audit/actors'
 
 export interface RegistrationToolContext {
   accountId: string
   contactId: string
+  /** Audit identity (see customer-tools' CustomerToolContext.audit). */
+  audit?: AgentAuditInfo
+  conversationId?: string
+}
+
+function regAudit(ctx: RegistrationToolContext): AgentAuditInfo {
+  return ctx.audit ?? { kind: 'ai_reply', conversationId: ctx.conversationId ?? null }
 }
 
 export interface RegistrationToolImpl {
@@ -287,6 +295,11 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
         },
       })
       afterRecordCreated({ ...record, source: 'whatsapp_ai' })
+      // Field names only — the values are the customer's details.
+      void agentRecordWritten(ctx.accountId, regAudit(ctx), {
+        tool: 'submit_registration', op: 'create', target: { type: 'data_record', id: record.id },
+        fields: Object.keys(check.values), extra: { table_id: form.table_id },
+      })
 
       const table = await prisma.dataTable.findUnique({
         where: { id: form.table_id },
@@ -369,6 +382,10 @@ export const REGISTRATION_TOOLS: Record<string, RegistrationToolImpl> = {
         data: { data: merged as Prisma.InputJsonValue },
       })
       afterRecordsChanged(record.table_id, ctx.accountId)
+      void agentRecordWritten(ctx.accountId, regAudit(ctx), {
+        tool: 'add_registration_details', op: 'update', target: { type: 'data_record', id: record.id },
+        fields: Object.keys(check.values), extra: { table_id: record.table_id },
+      })
 
       return {
         saved: true,

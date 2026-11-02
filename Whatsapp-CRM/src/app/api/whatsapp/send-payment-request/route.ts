@@ -9,6 +9,7 @@ import { createRazorpayPaymentLink } from '@/lib/whatsapp/payment-gateways/razor
 import { sendCtaUrlButton } from '@/lib/whatsapp/meta-api'
 import { createPhonePePaymentLink, parsePhonePeCredentials, PhonePeError } from '@/lib/payments/phonepe'
 import { emitToAccount } from '@/lib/socket'
+import { audit, auditCtx } from '@/lib/audit'
 
 /** How long a PhonePe link stays payable. PhonePe allows up to 45 days;
  *  a week covers "I'll pay tonight" without leaving old links open. */
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No payment gateway connected for this number. Connect one in Settings > Payments first.' }, { status: 400 })
     }
     if (gatewayConfig.gateway === 'phonepe') {
-      return sendPhonePeRequest({
+      const res = await sendPhonePeRequest({
         accountId: ctx.accountId,
         userId: ctx.userId,
         conversationId,
@@ -73,6 +74,15 @@ export async function POST(request: Request) {
         amount,
         description,
       })
+      if (res.ok) {
+        const sent = (await res.clone().json().catch(() => null)) as { reference_id?: string } | null
+        await audit(auditCtx(request, ctx), {
+          action: 'payment.link_created',
+          target: { type: 'payment', id: sent?.reference_id ?? null },
+          meta: { gateway: 'phonepe', amount, currency: 'INR', conversation_id: conversationId, contact_id: conversation.contact.id },
+        })
+      }
+      return res
     }
     if (gatewayConfig.gateway !== 'razorpay') {
       return NextResponse.json({ error: `No adapter built for ${gatewayConfig.gateway} yet — only Razorpay can send today.` }, { status: 400 })
@@ -163,6 +173,11 @@ export async function POST(request: Request) {
         old: {},
       })
 
+      await audit(auditCtx(request, ctx), {
+        action: 'payment.link_created',
+        target: { type: 'payment', id: paymentRecord.id, label: referenceId },
+        meta: { gateway: 'razorpay', amount, currency: 'INR', conversation_id: conversationId, contact_id: conversation.contact.id },
+      })
       return NextResponse.json({ success: true, whatsapp_message_id: result.messageId, reference_id: referenceId })
     } catch (err) {
       await prisma.whatsAppPayment.update({ where: { id: paymentRecord.id }, data: { status: 'failed' } })

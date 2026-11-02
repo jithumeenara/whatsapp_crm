@@ -6,6 +6,7 @@ import { isAccountRole } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { invalidateBusinessCount } from '@/lib/files/legacy-access'
 import { isDeactivatedMember, reviveMember } from '@/lib/auth/deactivate-member'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function POST(req: Request) {
   try {
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
         role: role as 'admin' | 'supervisor' | 'agent' | 'viewer',
         fullName: name,
         passwordHash: await bcrypt.hash(password, 12),
+        audit: { ctx: auditCtx(req, ctx) },
       })
       return NextResponse.json(
         { ok: true, revived: true, member: { name, role, username: digits, whatsapp: digits, password } },
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
     const password = randomBytes(16).toString('hex')
     const passwordHash = await bcrypt.hash(password, 12)
 
-    await prisma.$transaction(async (tx) => {
+    const createdId = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
           email: memberEmail,
@@ -84,9 +86,17 @@ export async function POST(req: Request) {
           account_role: role,
         },
       })
+      return newUser.id
     })
     // A new member who can sign in (security review R4a).
     invalidateBusinessCount()
+
+    // The phone number and password are never recorded — the id and role are.
+    await audit(auditCtx(req, ctx), {
+      action: 'member.created',
+      target: { type: 'member', id: createdId ?? null, label: name },
+      meta: { role, login: 'phone' },
+    })
 
     return NextResponse.json(
       { ok: true, member: { name, role, username: digits, whatsapp: digits, password } },

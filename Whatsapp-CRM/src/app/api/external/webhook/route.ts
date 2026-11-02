@@ -3,6 +3,7 @@ import { clientIpKey } from '@/lib/net/client-ip'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import { webhookRejected, webhookWrote } from '@/lib/audit/actors'
 
 // POST /api/external/webhook?secret=<WEBHOOK_SECRET>
 //
@@ -41,6 +42,7 @@ export async function POST(req: NextRequest) {
   // Validate secret token
   const secret = req.nextUrl.searchParams.get('secret')?.trim()
   if (!secret) {
+    webhookRejected('external', null, 'missing_secret')
     return NextResponse.json({ error: 'Missing secret token.' }, { status: 401 })
   }
 
@@ -50,6 +52,7 @@ export async function POST(req: NextRequest) {
     SELECT account_id FROM lead_settings WHERE webhook_secret = ${secret} LIMIT 1
   `
   if (!rows.length) {
+    webhookRejected('external', null, 'bad_secret')
     return NextResponse.json({ error: 'Invalid secret token.' }, { status: 401 })
   }
   const accountId: string = rows[0].account_id
@@ -120,6 +123,11 @@ export async function POST(req: NextRequest) {
         },
       })
       contactId = updated.id
+      // The audit actor is the webhook, never the owner whose id the
+      // business columns borrow. Field names only.
+      void webhookWrote('external', accountId, { type: 'contact', id: updated.id }, {
+        op: 'update', fields: ['name', 'email', 'company', 'external_id'].filter((_, i) => [name, email, company, externalId][i]),
+      }, req)
     } else {
       const normalized = phone ? normalizePhone(phone) : null
       const created = await prisma.contact.create({
@@ -137,6 +145,7 @@ export async function POST(req: NextRequest) {
         },
       })
       contactId = created.id
+      void webhookWrote('external', accountId, { type: 'contact', id: created.id }, { op: 'create' }, req)
     }
   }
 
@@ -167,6 +176,7 @@ export async function POST(req: NextRequest) {
         },
       })
       leadId = updated.id
+      void webhookWrote('external', accountId, { type: 'lead', id: updated.id }, { op: 'update', fields: ['score', 'source', 'status', 'title'] }, req)
     } else {
       const created = await prisma.lead.create({
         data: {
@@ -182,6 +192,7 @@ export async function POST(req: NextRequest) {
         },
       })
       leadId = created.id
+      void webhookWrote('external', accountId, { type: 'lead', id: created.id }, { op: 'create' }, req)
 
       await prisma.leadActivity.create({
         data: {

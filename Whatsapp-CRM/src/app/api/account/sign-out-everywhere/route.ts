@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { invalidateAllSessions } from "@/lib/auth/session-invalidation"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { audit } from "@/lib/audit"
+import { userAuditCtx } from "@/lib/audit/user-ctx"
 
 /**
  * POST /api/account/sign-out-everywhere
@@ -13,7 +15,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit
  * a clean redirect on this device rather than waiting for the next
  * request to get silently rejected.
  */
-export async function POST() {
+export async function POST(req?: Request) {
   const session = await auth()
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
@@ -21,5 +23,9 @@ export async function POST() {
   if (!limit.success) return rateLimitResponse(limit)
 
   await invalidateAllSessions(session.user.id)
+  await audit(await userAuditCtx(req ?? null, session.user.id), {
+    action: "auth.signed_out_everywhere",
+    target: { type: "user", id: session.user.id },
+  })
   return NextResponse.json({ success: true })
 }

@@ -7,6 +7,7 @@ import { canActOnMember, isAccountRole } from '@/lib/auth/roles'
 import { invalidateAllSessions } from '@/lib/auth/session-invalidation'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * POST /api/account/members/[userId]/password
@@ -16,7 +17,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
  * The way back in for an agent who lost theirs — and for agents created
  * while the Add Agent dialog showed the number instead of the password.
  */
-export async function POST(_req: Request, { params }: { params: Promise<{ userId: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ userId: string }> }) {
   try {
     const ctx = await requireRole('admin')
     const limit = checkRateLimit(`admin:memberPassword:${ctx.userId}`, RATE_LIMITS.adminAction)
@@ -48,6 +49,12 @@ export async function POST(_req: Request, { params }: { params: Promise<{ userId
     const password = randomBytes(16).toString('hex')
     await prisma.user.update({ where: { id: target.user_id }, data: { password_hash: await bcrypt.hash(password, 12) } })
     await invalidateAllSessions(target.user_id)
+    // The new password itself is never recorded — only that it was issued.
+    await audit(auditCtx(req, ctx), {
+      action: 'auth.password_reset_by_admin',
+      target: { type: 'member', id: target.user_id, label: target.full_name ?? null },
+      meta: { sessions_ended: true },
+    })
 
     const username = agentUsername(email)!
     return NextResponse.json({

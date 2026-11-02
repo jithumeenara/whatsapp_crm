@@ -3,6 +3,7 @@ import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 
 /**
@@ -198,6 +199,10 @@ export async function PUT(
     if (body.entry_node_id !== undefined) flowPatch.entry_node_id = body.entry_node_id
     if (body.fallback_policy !== undefined) flowPatch.fallback_policy = body.fallback_policy as Prisma.InputJsonValue
 
+    const before = await prisma.flow.findUnique({
+      where: { id },
+      select: { name: true, description: true, trigger_type: true, entry_node_id: true, status: true },
+    })
     await prisma.flow.update({
       where: { id },
       data: flowPatch,
@@ -229,6 +234,18 @@ export async function PUT(
         orderBy: { created_at: 'asc' },
       }),
     ])
+    await auditFlowAction(request, {
+      action: 'record.updated',
+      target: { type: 'flow', id, label: flow?.name ?? before?.name ?? null },
+      before: before ?? null,
+      after: flowPatch,
+      only: ['name', 'description', 'trigger_type', 'entry_node_id'],
+      meta: {
+        trigger_config: body.trigger_config !== undefined ? 'changed' : undefined,
+        fallback_policy: body.fallback_policy !== undefined ? 'changed' : undefined,
+        nodes: body.nodes !== undefined ? body.nodes.length : undefined,
+      },
+    })
     return NextResponse.json({ flow, nodes })
   } catch (err) {
     console.error('[PUT /api/flows/[id]]', err)
@@ -237,7 +254,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params
@@ -251,7 +268,9 @@ export async function DELETE(
     const guard = await requireOwnership(id)
     if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
+    const gone = await prisma.flow.findUnique({ where: { id }, select: { name: true } })
     await prisma.flow.delete({ where: { id } })
+    await auditFlowAction(request, { action: 'record.deleted', target: { type: 'flow', id, label: gone?.name ?? null } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[DELETE /api/flows/[id]]', err)

@@ -1,6 +1,7 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * GET /api/contacts/[id]/custom-values
@@ -96,6 +97,15 @@ export async function PUT(
         }),
       ),
     ])
+
+    if (set.length || clear.length) {
+      await audit(auditCtx(req, ctx), {
+        action: "record.updated",
+        target: { type: "contact", id, label: null },
+        // Field ids only — custom values can hold anything a person typed.
+        meta: { op: "custom_values", set_field_ids: set.map((v) => v.fieldId), cleared_field_ids: clear },
+      })
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err) {

@@ -5,6 +5,7 @@ import { generateOtpCode } from '@/lib/auth/mfa'
 import { sendOtpToContact, NoOtpTemplateError } from '@/lib/whatsapp/send-otp'
 import { NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * POST /api/whatsapp/send-otp
@@ -48,6 +49,12 @@ export async function POST(request: Request) {
         contactId: conversation.contact_id,
         conversationId: conversation.id,
         code,
+      })
+      // The code itself is never recorded — only that one was sent.
+      await audit(auditCtx(request, ctx), {
+        action: 'message.sent',
+        target: { type: 'conversation', id: conversation.id },
+        meta: { channel: 'whatsapp', template: 'otp', contact_id: conversation.contact_id },
       })
       return NextResponse.json({ success: true, whatsapp_message_id: result.whatsapp_message_id, code })
     } catch (err) {

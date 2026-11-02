@@ -6,6 +6,7 @@ import { emitToAccount } from '@/lib/socket'
 import { findOrCreateContact } from '@/lib/contacts/find-or-create'
 import { parseFollowUpInput } from '@/lib/leads/new-follow-up'
 import { claimIfUnassigned } from '@/lib/leads/claim'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * POST /api/leads/follow-up — "call this person back at this time".
@@ -154,6 +155,28 @@ export async function POST(req: NextRequest) {
 
       return { leadId, created, followUp }
     })
+
+    await audit(auditCtx(req, ctx), [
+      result.created
+        ? {
+            action: 'record.created',
+            target: { type: 'lead', id: result.leadId, label: null },
+            after: { contact_id: contact.id, source: 'manual', status: 'follow_up', assigned_to: assignee },
+            meta: { from: 'follow_up_form', contact_created: contactCreated },
+          }
+        : {
+            action: lead?.status !== 'follow_up' ? 'record.status_changed' : 'record.updated',
+            target: { type: 'lead', id: result.leadId, label: null },
+            before: { status: lead?.status ?? null, assigned_to: lead?.assigned_to ?? null },
+            after: { status: 'follow_up', assigned_to: assignee },
+            meta: { from: 'follow_up_form' },
+          },
+      {
+        action: 'record.created',
+        target: { type: 'follow_up', id: result.followUp.id, label: null },
+        after: { lead_id: result.leadId, contact_id: contact.id, due_at: result.followUp.due_at, assigned_to: assignee },
+      },
+    ])
 
     emitToAccount(ctx.accountId, 'lead', {
       eventType: result.created ? 'INSERT' : 'UPDATE',

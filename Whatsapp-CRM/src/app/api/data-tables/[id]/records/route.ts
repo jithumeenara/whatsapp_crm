@@ -7,15 +7,20 @@ import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { afterRecordCreated } from '@/lib/data-store/record-events'
 import { checkRecordData } from '@/lib/data-store/record-data'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
+import { audit, auditCtx } from '@/lib/audit'
+import { recordFieldNames } from '@/lib/data-store/audit-fields'
+
+interface Actor { accountId: string; userId: string; role: string; apiKeyId?: string }
 
 async function requireTable(req: Request, tableId: string): Promise<
-  | { ok: true; accountId: string; tableName: string; viaApiKey: boolean }
+  | { ok: true; accountId: string; tableName: string; viaApiKey: boolean; actor: Actor }
   | { ok: false; status: number; body: { error: string } }
 > {
   await ensureDataStoreColumns().catch(() => {})
   // Accept session OR Bearer API key
   const authHeader = req.headers.get('authorization') ?? ''
   let accountId: string | null = null
+  let actor: Actor
 
   if (authHeader.startsWith('Bearer wcrm_')) {
     const raw = authHeader.slice('Bearer '.length)
@@ -28,11 +33,13 @@ async function requireTable(req: Request, tableId: string): Promise<
     const result = await verifyApiKey(raw)
     if (!result) return { ok: false, status: 401, body: { error: 'Invalid API key.' } }
     accountId = result.accountId
+    actor = { accountId: result.accountId, userId: result.creatorUserId, role: 'supervisor', apiKeyId: result.keyId }
   } else {
     const member = await dataStoreMember(rowRank(req.method))
     if (!member.ok) return member
     const accountIdOf = member.ctx.accountId
     accountId = accountIdOf
+    actor = { accountId: accountIdOf, userId: member.ctx.userId, role: member.ctx.role }
   }
 
   const table = await prisma.dataTable.findFirst({
@@ -40,7 +47,7 @@ async function requireTable(req: Request, tableId: string): Promise<
     select: { id: true, name: true },
   })
   if (!table) return { ok: false, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true, accountId, tableName: table.name, viaApiKey: authHeader.startsWith('Bearer wcrm_') }
+  return { ok: true, accountId, tableName: table.name, viaApiKey: authHeader.startsWith('Bearer wcrm_'), actor }
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -112,6 +119,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     })
 
     afterRecordCreated({ ...record, source })
+    // Field NAMES only — never the values.
+    await audit(auditCtx(req, guard.actor), {
+      action: 'record.created',
+      target: { type: 'data_record', id: record.id, label: guard.tableName },
+      changes: null,
+      meta: { table_id: tableId, source, fields: recordFieldNames(checked.data) },
+    })
 
     return NextResponse.json({ record }, { status: 201 })
   } catch (err) {

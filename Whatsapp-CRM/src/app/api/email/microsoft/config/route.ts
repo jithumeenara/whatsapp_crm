@@ -1,6 +1,8 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { CALLBACK_PATH, accessTokenFor, deleteSubscription, isGuid, loadMailbox } from '@/lib/email/microsoft/graph'
@@ -100,6 +102,13 @@ export async function PUT(req: NextRequest) {
         },
       })
     }
+    // Field names only — never the client secret or tokens.
+    await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {
+      area: 'microsoft_mailbox',
+      before: existing as unknown as Record<string, unknown> | null,
+      after: { tenant_id: tenantId, client_id: clientId, ...(secret ? { client_secret: '(new)' } : {}), ...(signature !== undefined ? { signature: signature || null } : {}) },
+      meta: { created: !existing, app_changed: !!appChanged },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)
@@ -128,6 +137,11 @@ export async function DELETE(req: NextRequest) {
         },
       })
     }
+    await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {
+      area: 'microsoft_mailbox',
+      fields: [],
+      meta: { disconnected: true, forgot_app: req.nextUrl.searchParams.get('forget') === '1' },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

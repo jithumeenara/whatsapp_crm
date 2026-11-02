@@ -74,7 +74,10 @@ async function handle(items: Notification[]) {
   for (const n of items) {
     if (!n.subscriptionId || !n.clientState) continue
     const box = await prisma.microsoftMailbox.findFirst({ where: { subscription_id: n.subscriptionId } })
-    if (!box || !same(n.clientState, box.client_state)) continue
+    if (!box || !same(n.clientState, box.client_state)) {
+      void import('@/lib/audit/actors').then((m) => m.webhookRejected('microsoft', box?.account_id ?? null, 'bad_client_state'))
+      continue
+    }
 
     if (n.lifecycleEvent) {
       if (n.lifecycleEvent === 'reauthorizationRequired' || n.lifecycleEvent === 'subscriptionRemoved') {

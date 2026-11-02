@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { emitToAccount } from '@/lib/socket'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * POST /api/calls/[id]/respond — an agent answers or declines.
@@ -23,8 +24,9 @@ export async function POST(
 ) {
   let accountId: string
   let userId: string
+  let guard: Awaited<ReturnType<typeof requireRole>>
   try {
-    const guard = await requireRole('agent')
+    guard = await requireRole('agent')
     accountId = guard.accountId
     userId = guard.userId
   } catch (err) {
@@ -92,6 +94,15 @@ export async function POST(
   // losers of the race keep ringing until their own countdown expires,
   // for a call that is already being spoken on.
   emitToAccount(accountId, 'call', { type: 'ended', callId: call.id, agentId: userId })
+
+  // Declining writes nothing (the call keeps ringing for others); only
+  // the claim changes the call, so only the claim is recorded.
+  await audit(auditCtx(request, guard), {
+    action: 'record.status_changed',
+    target: { type: 'call', id: call.id },
+    changes: { status: [call.status, 'in_progress'] },
+    meta: { verb: 'accepted' },
+  })
 
   return NextResponse.json({
     ok: true,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { getSelectItems, type FieldConfig, type SelectOption } from '@/lib/data-store/types'
 import {
   findHealthIssues,
@@ -121,6 +122,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (changes.length > 0) {
       scheduleKnowledgeRefresh(ctx.accountId, id)
       afterRecordsChanged(id, ctx.accountId)
+    }
+
+    if (changes.length > 0) {
+      // Field name and count only — never the values merged.
+      await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+        action: 'record.bulk_updated',
+        target: { type: 'data_table', id },
+        changes: null,
+        meta: { what: body.action, fields: [field.field_key], count: changes.length },
+      })
     }
 
     const fresh = await load(ctx.accountId, id)

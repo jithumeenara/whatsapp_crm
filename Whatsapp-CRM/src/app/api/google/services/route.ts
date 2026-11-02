@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { loadGoogleConnection, logGoogleActivity } from '@/lib/google/oauth'
 import { isServiceId, serviceById } from '@/lib/google/services'
@@ -42,6 +44,11 @@ export async function POST(req: NextRequest) {
       },
     })
     await logGoogleActivity(ctx.accountId, ctx.userId, body.enabled ? 'service_on' : 'service_off', svc.name)
+    await auditConfigChange(auditCtx(req, ctx), 'config.google_changed', {
+      area: 'google_services',
+      fields: ['enabled_services'],
+      meta: { service: svc.id, enabled: body.enabled, scopes: svc.scopes },
+    })
     return NextResponse.json({ ok: true, enabled_services: enabled })
   } catch (err) {
     return toErrorResponse(err)

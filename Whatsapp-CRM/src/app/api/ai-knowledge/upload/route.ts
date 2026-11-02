@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { extractFileText, SUPPORTED_UPLOAD_HINT } from '@/lib/ai/file-extract'
 import { invalidateKnowledge } from '@/lib/ai/knowledge-store'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
@@ -23,8 +24,10 @@ const MAX_BYTES = 10 * 1024 * 1024
 
 export async function POST(req: Request) {
   let ctx: { accountId: string }
+  let actor: Awaited<ReturnType<typeof requireRole>>
   try {
-    ctx = { accountId: (await requireRole('admin')).accountId }
+    actor = await requireRole('admin')
+    ctx = { accountId: actor.accountId }
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -117,5 +120,10 @@ export async function POST(req: Request) {
     },
   })
 
+  await audit(auditCtx(req, actor), {
+    action: 'file.uploaded',
+    target: { type: 'knowledge_source', id: item.id, label: item.name },
+    meta: { kind: 'document', characters: text.length, audience },
+  })
   return NextResponse.json({ item, characters: text.length }, { status: 201 })
 }

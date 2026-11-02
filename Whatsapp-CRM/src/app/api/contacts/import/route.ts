@@ -5,6 +5,7 @@ import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { cleanImportRow, MAX_IMPORT_ROWS, phoneKey, planExistingUpdate, type ImportRow } from "@/lib/contacts/csv-import"
 import { loadContactsByNumber } from "@/lib/contacts/import-existing"
 import { checkRateLimit } from "@/lib/rate-limit"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * POST /api/contacts/import
@@ -126,6 +127,12 @@ export async function POST(req: NextRequest) {
         }
       }
     }
+
+    await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+      action: "import.completed",
+      target: { type: "contact", id: null, label: null },
+      meta: { rows: (body.contacts as unknown[]).length, imported, updated, skipped, failed, updated_ids: updates.map((u) => u.id).slice(0, 200) },
+    })
 
     return NextResponse.json({ imported, updated, skipped, failed })
   } catch (err) {

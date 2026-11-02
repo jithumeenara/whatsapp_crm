@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * The list of subjects this business handles.
@@ -85,6 +86,7 @@ export async function PUT(req: NextRequest) {
 
     // One transaction: a half-applied list would leave the account with
     // categories it never agreed to and judgements sorted into them.
+    let dropped: string[] = []
     await prisma.$transaction(async (tx) => {
       const existing = await tx.serviceCategory.findMany({
         where: { account_id: ctx.accountId },
@@ -94,6 +96,7 @@ export async function PUT(req: NextRequest) {
 
       // Gone from the list: hidden, not destroyed. See the note above.
       const dropping = existing.map((e) => e.key).filter((k) => !keeping.has(k))
+      dropped = dropping
       if (dropping.length > 0) {
         await tx.serviceCategory.updateMany({
           where: { account_id: ctx.accountId, key: { in: dropping } },
@@ -122,6 +125,11 @@ export async function PUT(req: NextRequest) {
       where: { account_id: ctx.accountId, active: true },
       orderBy: { sort_order: 'asc' },
       select: { id: true, key: true, label: true, hint: true, sort_order: true },
+    })
+    await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+      action: 'record.bulk_updated',
+      target: { type: 'service_category', id: null, label: null },
+      meta: { count: clean.length, keys: clean.map((c) => c.key), deactivated: dropped },
     })
     return NextResponse.json({ categories })
   } catch (err) {

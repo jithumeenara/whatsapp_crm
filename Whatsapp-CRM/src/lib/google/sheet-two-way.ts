@@ -20,6 +20,7 @@
  */
 
 import crypto from 'crypto'
+import { jobFailed, jobWrote } from '@/lib/audit/actors'
 import { syncDropdownFields } from './sheet-dropdowns'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
@@ -264,15 +265,24 @@ export async function sweepTwoWaySheets(now: Date = new Date()): Promise<void> {
       select: { id: true, account_id: true, last_synced_at: true, instant_ping_at: true, last_error: true, updated_at: true },
     })
     .catch(() => [])
+  let changed = 0
+  let failures = 0
   for (const l of links) {
     const pinging = l.instant_ping_at && now.getTime() - l.instant_ping_at.getTime() < 24 * 60 * 60_000
     const every = l.last_error ? 15 : pinging ? 10 : 1
     const last = (l.last_error ? l.updated_at : l.last_synced_at)?.getTime() ?? 0
     if (now.getTime() - last < every * 60_000 - 5_000) continue
-    await runSheetSync(l.id, l.account_id).catch((err) =>
-      console.error('[sheet-sync] scheduled run failed:', err instanceof Error ? err.message : err),
-    )
+    const r = await runSheetSync(l.id, l.account_id).catch((err) => {
+      failures++
+      console.error('[sheet-sync] scheduled run failed:', err instanceof Error ? err.message : err)
+      return null
+    })
+    const s = r?.stats?.fromSheet
+    changed += s ? s.created + s.updated + s.deleted : 0
   }
+  // One audit summary per run that changed CRM records (sheet → CRM).
+  void jobWrote('sheet-two-way', null, changed)
+  if (failures) void jobFailed('sheet-two-way', null, `${failures} sync run(s) failed`)
 }
 
 // ── Instant updates from the sheet (optional Apps Script) ───────────────

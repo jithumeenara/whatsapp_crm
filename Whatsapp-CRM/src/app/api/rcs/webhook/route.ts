@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
     }
   }
   if (!config) {
+    void import("@/lib/audit/actors").then((m) => m.webhookRejected("rcs", null, "bad_signature"))
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { mergeContacts, MergeError } from "@/lib/contacts/merge"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * POST /api/contacts/duplicates/merge   { survivor_id, merged_ids: [..] }
@@ -24,11 +25,13 @@ export async function POST(req: NextRequest) {
     }
 
     let merged = 0
+    const mergedOk: string[] = []
     const failed: Array<{ id: string; error: string }> = []
     for (const id of mergedIds) {
       try {
         await mergeContacts({ accountId: ctx.accountId, userId: ctx.userId, survivorId, mergedId: id })
         merged++
+        mergedOk.push(id)
       } catch (err) {
         if (err instanceof MergeError) failed.push({ id, error: err.message })
         else {
@@ -38,6 +41,11 @@ export async function POST(req: NextRequest) {
       }
     }
     if (merged === 0) return NextResponse.json({ error: failed[0]?.error ?? "Nothing was merged.", failed }, { status: 409 })
+    await audit(auditCtx(req, ctx), {
+      action: "record.merged",
+      target: { type: "contact", id: survivorId, label: null },
+      meta: { merged_ids: mergedOk, count: merged, failed: failed.length, via: "find_duplicates" },
+    })
     return NextResponse.json({ merged, failed })
   } catch (err) {
     return toErrorResponse(err)

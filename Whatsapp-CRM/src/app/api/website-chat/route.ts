@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { publicOrigin } from '@/lib/email/microsoft/origin'
 import { newPublicKey } from '@/lib/webchat/tokens'
 import { installSnippet } from '@/lib/webchat/settings'
@@ -111,6 +113,12 @@ export async function POST(req: Request) {
     const widget = await prisma.webChatWidget.create({
       data: { account_id: ctx.accountId, user_id: ctx.userId, public_key: newPublicKey(), name: 'Website Bot', ...(parsed.patch as Record<string, unknown>) } as Prisma.WebChatWidgetUncheckedCreateInput,
     })
+    await auditConfigChange(auditCtx(req, ctx), 'config.channel_changed', {
+      area: 'website_chat_widget',
+      fields: Object.keys(parsed.patch as Record<string, unknown>),
+      target: { type: 'webchat_widget', id: widget.id },
+      meta: { created: true },
+    })
     return NextResponse.json({ id: widget.id }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)
@@ -134,6 +142,7 @@ export async function PUT(req: Request) {
     const channels = channelsOf(config.ai_auto_reply_channels).filter((c) => c !== 'website')
     if (body.ai_auto_reply) channels.push('website')
     await prisma.aiConfig.update({ where: { id: config.id }, data: { ai_auto_reply_channels: channels } })
+    await auditConfigChange(auditCtx(req, ctx), 'config.ai_changed', { area: 'website_ai_reply', fields: ['ai_auto_reply_channels'], meta: { website: body.ai_auto_reply } })
     return NextResponse.json({ answers_website: body.ai_auto_reply })
   } catch (err) {
     return toErrorResponse(err)

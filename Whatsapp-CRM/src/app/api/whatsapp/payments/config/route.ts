@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange, configFieldList } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import {
@@ -92,8 +94,17 @@ export async function PUT(request: Request) {
 
     const existing = await prisma.paymentGatewayConfig.findUnique({ where: { whatsapp_config_id } })
 
+    // Which fields changed, never keys, secrets or passwords.
+    const record = (fields: string[]) =>
+      auditConfigChange(auditCtx(request, ctx), 'config.payment_changed', {
+        area: 'payment_gateway',
+        fields,
+        target: { type: 'whatsapp_config', id: whatsapp_config_id },
+        meta: { gateway, created: !existing },
+      })
+
     if (gateway === 'phonepe') {
-      return savePhonePe({
+      const res = await savePhonePe({
         accountId: ctx.accountId,
         userId: ctx.userId,
         whatsappConfigId: whatsapp_config_id,
@@ -101,6 +112,8 @@ export async function PUT(request: Request) {
         hasRow: !!existing,
         input: phonepe,
       })
+      if (res.ok) await record(['gateway', 'credentials', 'status'])
+      return res
     }
 
     // Credentials are stored as a single encrypted string INSIDE the Json
@@ -138,6 +151,10 @@ export async function PUT(request: Request) {
         data: { account_id: ctx.accountId, user_id: ctx.userId, whatsapp_config_id, ...data },
       })
     }
+    await record([
+      ...configFieldList(existing as unknown as Record<string, unknown> | null, { gateway, vpa: data.vpa, mcc: data.mcc, pc: data.pc, status: data.status }),
+      ...(key_id && key_secret ? ['credentials'] : []),
+    ])
 
     return NextResponse.json({
       success: true,
@@ -257,6 +274,12 @@ export async function DELETE(request: Request) {
     if (!existing) return NextResponse.json({ success: true })
 
     await prisma.paymentGatewayConfig.delete({ where: { id: existing.id } })
+    await auditConfigChange(auditCtx(request, ctx), 'config.payment_changed', {
+      area: 'payment_gateway',
+      fields: [],
+      target: { type: 'whatsapp_config', id: whatsappConfigId },
+      meta: { gateway: existing.gateway, removed: true },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)

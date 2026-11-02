@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { auditConfigChange } from "@/lib/audit/config-change"
+import { userAuditCtx } from "@/lib/audit/user-ctx"
 
 // 5 minutes to 90 days — wide enough to be genuinely useful (someone
 // wanting a strict 15-minute policy, or a lenient 60-day one) while
@@ -58,6 +60,11 @@ export async function PATCH(req: Request) {
     await prisma.user.update({
       where: { id: session.user.id },
       data: { session_inactivity_limit_minutes: limitMinutes },
+    })
+    await auditConfigChange(await userAuditCtx(req, session.user.id), "config.security_changed", {
+      area: "session_settings",
+      fields: ["session_inactivity_limit_minutes"],
+      target: { type: "user", id: session.user.id },
     })
 
     return NextResponse.json({ success: true, limitMinutes })

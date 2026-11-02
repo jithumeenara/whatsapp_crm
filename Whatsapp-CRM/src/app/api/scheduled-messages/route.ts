@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
 import { websiteScheduleText } from "@/lib/scheduled-messages/website-text"
 import { publicErrorMessage } from '@/lib/jobs/public-error'
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * GET /api/scheduled-messages?conversation_id=...
@@ -116,6 +117,11 @@ export async function POST(req: NextRequest) {
           next_send_at: at,
         },
       })
+      await audit(auditCtx(req, ctx), {
+        action: "record.created",
+        target: { type: "scheduled_message", id: created.id, label: null },
+        meta: { channel: "email", conversation_id: emailConv.id, schedule_type: "once", next_send_at: at, email_kind: kind, attachments: fileIds.length },
+      })
       return NextResponse.json({ item: created }, { status: 201 })
     }
 
@@ -220,6 +226,16 @@ export async function POST(req: NextRequest) {
         stop_on_reply: scheduleType === "recurring" ? body.stop_on_reply !== false : false,
         max_sends: maxSends,
         next_send_at: nextSendAt,
+      },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: "record.created",
+      target: { type: "scheduled_message", id: created.id, label: null },
+      meta: {
+        channel: conversation.channel, conversation_id: conversation.id, schedule_type: scheduleType,
+        template_name: isWebsite ? null : body.template_name, next_send_at: nextSendAt, max_sends: maxSends,
+        interval: scheduleType === "recurring" ? `${intervalValue} ${intervalUnit}` : null,
       },
     })
 

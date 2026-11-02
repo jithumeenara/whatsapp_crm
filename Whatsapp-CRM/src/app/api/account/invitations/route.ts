@@ -9,6 +9,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { audit, auditCtx } from "@/lib/audit";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import {
@@ -184,6 +185,13 @@ export async function POST(request: Request) {
         expires_at: true,
         created_at: true,
       },
+    });
+
+    // The token and the address are never recorded.
+    await audit(auditCtx(request, ctx), {
+      action: "member.invited",
+      target: { type: "invitation", id: invitation.id, label: label },
+      meta: { role, expires_at: invitation.expires_at, for_email: !!email },
     });
 
     return NextResponse.json(

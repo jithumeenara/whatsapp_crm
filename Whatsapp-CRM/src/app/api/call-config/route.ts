@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { checkWebhookUrl } from '@/lib/webhooks/deliver'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 /**
  * Call settings for the account: whether the assistant answers, who a
@@ -54,8 +56,10 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   let accountId: string
+  let ctx: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    ctx = await requireRole('admin')
+    accountId = ctx.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -131,6 +135,12 @@ export async function PUT(request: Request) {
       where: { account_id: accountId },
       create: { account_id: accountId, ...data },
       update: data,
+    })
+    // Field names only — the SIP password and greeting never leave here.
+    await auditConfigChange(auditCtx(request, ctx), 'config.channel_changed', {
+      area: 'call_config',
+      before: existing as unknown as Record<string, unknown> | null,
+      after: data,
     })
     return NextResponse.json(present(saved as unknown as Record<string, unknown>))
   } catch (err) {

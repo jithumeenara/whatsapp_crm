@@ -43,6 +43,7 @@
  */
 
 import { Prisma } from '@prisma/client'
+import { withJobAudit } from '@/lib/audit/actors'
 import { prisma } from '@/lib/db'
 import { engineSendText } from '@/lib/flows/meta-send'
 
@@ -69,6 +70,11 @@ export interface IdleCloseResult {
 let sweeping = false
 
 export async function sweepIdleConversations(): Promise<IdleCloseResult> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('idle-close', () => sweepIdleConversationsRun(), (r) => r.closed + r.messaged)
+}
+
+async function sweepIdleConversationsRun(): Promise<IdleCloseResult> {
   const result: IdleCloseResult = { accountsChecked: 0, closed: 0, messaged: 0 }
   // A slow pass (many goodbyes) must not overlap the next tick, or the
   // same conversation is told goodbye twice.

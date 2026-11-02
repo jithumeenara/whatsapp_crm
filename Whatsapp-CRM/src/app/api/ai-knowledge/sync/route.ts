@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getProviderKeys } from '@/lib/ai/providers/registry'
 import { syncKnowledgeEmbeddings, toKnowledgeItems } from '@/lib/ai/embeddings'
@@ -18,10 +19,12 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
  * confirmed an existing embedding for) its text. That's why the Training
  * tab's Status column means something.
  */
-export async function POST() {
+export async function POST(req?: Request) {
   let accountId: string
+  let actor: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    actor = await requireRole('admin')
+    accountId = actor.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -83,6 +86,11 @@ export async function POST() {
   }
 
   invalidateKnowledge(config.id)
+  await audit({ ...auditCtx(req ?? null, actor), correlationId: crypto.randomUUID() }, {
+    action: 'record.bulk_updated',
+    target: { type: 'knowledge_source', label: 'Train knowledge' },
+    meta: { count: trained, failed: result.failed },
+  })
 
   return NextResponse.json({ ...result, trained })
 }

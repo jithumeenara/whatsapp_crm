@@ -3,6 +3,7 @@ import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { getFlowTemplate } from '@/lib/flows/templates'
 
 /**
@@ -120,6 +121,11 @@ export async function POST(request: Request) {
           throw nodesErr
         }
       }
+      await auditFlowAction(request, {
+        action: 'record.created',
+        target: { type: 'flow', id: flow.id, label: flow.name },
+        meta: { template: body.template_slug },
+      })
       return NextResponse.json({ flow }, { status: 201 })
     }
 
@@ -139,6 +145,11 @@ export async function POST(request: Request) {
         trigger_type,
         trigger_config: (body.trigger_config ?? {}) as Prisma.InputJsonValue,
       },
+    })
+    await auditFlowAction(request, {
+      action: 'record.created',
+      target: { type: 'flow', id: flow.id, label: flow.name },
+      meta: { trigger_type },
     })
     return NextResponse.json({ flow }, { status: 201 })
   } catch (err) {

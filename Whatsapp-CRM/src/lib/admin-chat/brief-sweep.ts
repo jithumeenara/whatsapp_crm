@@ -14,6 +14,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { withJobAudit } from '@/lib/audit/actors'
 import { businessTimezone } from '@/lib/ai/human-date'
 import { localNow, windowCheck } from './rules'
 import {
@@ -122,6 +123,11 @@ export async function sendToAdmin(
 }
 
 export async function sweepAdminChatBriefs(now: Date = new Date()): Promise<{ briefs: number; alerts: number }> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('admin-chat-briefs', () => sweepAdminChatBriefsRun(now), (r) => r.briefs + r.alerts)
+}
+
+async function sweepAdminChatBriefsRun(now: Date = new Date()): Promise<{ briefs: number; alerts: number }> {
   if (running) return { briefs: 0, alerts: 0 }
   running = true
   let briefs = 0

@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
+import { audit, auditCtx } from '@/lib/audit'
 
 const PAGE_SIZE = 25
 
@@ -79,6 +80,12 @@ export async function POST(req: NextRequest) {
         lead: { select: { id: true, title: true } },
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'task', id: task.id, label: null },
+      after: { title: task.title, priority: task.priority, status: task.status, due_date: task.due_date, contact_id: task.contact_id, lead_id: task.lead_id, assigned_to: task.assigned_to },
     })
 
     return NextResponse.json(withCallablePhones({ task }), { status: 201 })

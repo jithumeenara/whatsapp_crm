@@ -6,6 +6,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { audit, auditCtx } from "@/lib/audit";
 
 import {
   requireRole,
@@ -90,10 +91,21 @@ export async function PATCH(request: Request) {
       );
     }
 
+    const previous = await prisma.account.findUnique({
+      where: { id: ctx.accountId },
+      select: { name: true, default_currency: true },
+    });
     const account = await prisma.account.update({
       where: { id: ctx.accountId },
       data: updateData,
       select: { id: true, name: true, default_currency: true },
+    });
+
+    await audit(auditCtx(request, ctx), {
+      action: "account.updated",
+      target: { type: "account", id: ctx.accountId },
+      before: previous ?? null,
+      after: updateData,
     });
 
     return NextResponse.json({ account });

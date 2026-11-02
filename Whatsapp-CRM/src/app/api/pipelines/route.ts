@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function GET(req: NextRequest) {
   try {
@@ -101,6 +102,12 @@ export async function POST(req: NextRequest) {
     const full = await prisma.pipeline.findUnique({
       where: { id: pipeline.id },
       include: { stages: { orderBy: { position: 'asc' } }, _count: { select: { deals: true } } },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'pipeline', id: pipeline.id, label: name },
+      meta: { stages: stages.map((s) => s.name) },
     })
 
     return NextResponse.json({ pipeline: full }, { status: 201 })

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function GET(_req: NextRequest) {
   try {
@@ -35,6 +36,12 @@ export async function POST(req: NextRequest) {
         color: (color as string) ?? '#3b82f6',
         filter_config: (filter_config as object) ?? {},
       },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'segment', id: segment.id, label: segment.name },
+      after: { name: segment.name, color: segment.color, filter_config: segment.filter_config },
     })
 
     return NextResponse.json({ segment }, { status: 201 })

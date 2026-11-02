@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { hasMinRole } from '@/lib/auth/roles'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { serializeDataTable } from '@/lib/ai/data-store-source'
@@ -176,6 +177,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       },
     })
     invalidateSearchableTables(ctx.accountId)
+    await audit(auditCtx(req, ctx), {
+      action: 'config.ai_changed',
+      target: { type: 'data_table', id: state.table.id },
+      before: { ask_first: current.ask_first, upcoming_by: current.upcoming_by },
+      after: {
+        ...(askFirst !== undefined ? { ask_first: askFirst } : {}),
+        ...(upcomingBy !== undefined ? { upcoming_by: upcomingBy } : {}),
+      },
+    })
 
     const fresh = await loadState(ctx.accountId, id)
     if (!fresh) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
@@ -278,6 +288,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const result = await trainKnowledgeConfig(configId)
     invalidateKnowledge(configId)
+    await audit(auditCtx(req, ctx), {
+      action: action === 'connect' ? 'record.created' : 'record.updated',
+      target: { type: 'knowledge_source', id: state.knowledge?.id ?? null, label: 'Data Store table' },
+      meta: { table_id: id, action, failed: result.failed, skipped: result.skipped ?? undefined },
+    })
 
     state = await loadState(ctx.accountId, id)
     if (!state) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })

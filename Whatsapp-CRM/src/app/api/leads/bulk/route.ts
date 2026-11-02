@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * One change, applied to many leads.
@@ -112,6 +113,7 @@ export async function POST(req: NextRequest) {
     if (leads.length === 0) return NextResponse.json({ error: 'None of those leads were found.', updated: 0 }, { status: 404 })
     const given: Record<string, number> = {}
     const chats: Array<{ contactId: string; userId: string }> = []
+    const doneIds: string[] = []
     for (const lead of leads) {
       // A deliberate share-out by a person: presence and hours are not checked.
       const next = await takeTurn(ctx.accountId, 'bulk-spread', pool)
@@ -119,6 +121,7 @@ export async function POST(req: NextRequest) {
       const reason = `${next.fullName} — shared out in turn by a supervisor (${pool.length} in the team)`
       const r = await prisma.lead.updateMany({ where: { id: lead.id, account_id: ctx.accountId }, data: { assigned_to: next.userId, claimed_at: new Date() } })
       if (r.count === 0) continue
+      doneIds.push(lead.id)
       given[next.fullName] = (given[next.fullName] ?? 0) + 1
       await prisma.leadActivity
         .create({ data: { lead_id: lead.id, account_id: ctx.accountId, user_id: ctx.userId, type: 'assigned', title: `Assigned to ${next.fullName}`, description: reason } })
@@ -128,6 +131,13 @@ export async function POST(req: NextRequest) {
     }
     await moveChats(ctx.accountId, chats, ctx.userId, 'with their lead — shared out in turn').catch((err) => console.error('[leads] spread chats failed:', err))
     const updated = Object.values(given).reduce((a, b) => a + b, 0)
+    if (updated > 0) {
+      await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+        action: 'record.bulk_updated',
+        target: { type: 'lead', id: null, label: null },
+        meta: { op: 'spread', count: updated, ids: doneIds.slice(0, 200), team_size: pool.length },
+      })
+    }
     return NextResponse.json({ updated, skipped: ids.length - updated, given })
   }
 
@@ -265,6 +275,17 @@ export async function POST(req: NextRequest) {
         ),
       )
     }
+
+    await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+      action: 'record.bulk_updated',
+      target: { type: 'lead', id: null, label: null },
+      meta: {
+        op: body.status !== undefined ? 'status' : body.assigned_to !== undefined ? 'assign' : 'score',
+        count: result.count,
+        ids: touched.map((l) => l.id).slice(0, 200),
+        set: { status: data.status, assigned_to: data.assigned_to, score: data.score },
+      },
+    })
 
     return NextResponse.json({
       updated: result.count,

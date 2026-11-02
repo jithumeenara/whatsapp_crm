@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { encrypt } from '@/lib/whatsapp/encryption'
 import { parseServiceAccount, clearTokenCache } from '@/lib/ai/google-auth'
 import { synthesizeWithCloudTts } from '@/lib/ai/cloud-tts'
@@ -69,8 +71,10 @@ export async function GET() {
 
 export async function POST(req: Request) {
   let accountId: string
+  let actor: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    actor = await requireRole('admin')
+    accountId = actor.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -154,6 +158,11 @@ export async function POST(req: Request) {
   // A replaced key leaves the old identity's token cached and usable
   // until it expires. Cleared so the change takes effect now.
   clearTokenCache(parsed)
+  // The key file is never recorded — only that it was replaced.
+  await auditConfigChange(auditCtx(req, actor), 'config.ai_changed', {
+    area: 'ai_tts_credentials',
+    fields: ['google_tts_credentials', 'google_tts_client_email', 'google_tts_project_id'],
+  })
 
   return NextResponse.json({
     ok: true,
@@ -163,10 +172,12 @@ export async function POST(req: Request) {
   })
 }
 
-export async function DELETE() {
+export async function DELETE(req?: Request) {
   let accountId: string
+  let actor: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    actor = await requireRole('admin')
+    accountId = actor.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -190,6 +201,11 @@ export async function DELETE() {
   // Everything, not just this identity: the row is gone and there is no
   // parsed account left to key the eviction on.
   clearTokenCache()
+  await auditConfigChange(auditCtx(req ?? null, actor), 'config.ai_changed', {
+    area: 'ai_tts_credentials',
+    fields: ['google_tts_credentials', 'google_tts_client_email', 'google_tts_project_id'],
+    meta: { removed: true },
+  })
 
   return NextResponse.json({ ok: true })
 }

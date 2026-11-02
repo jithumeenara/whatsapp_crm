@@ -13,6 +13,8 @@ import {
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
+import { audit, auditCtx } from '@/lib/audit'
+import type { AccountContext } from '@/lib/auth/account'
 
 /**
  * Per-template lifecycle endpoint.
@@ -61,8 +63,10 @@ export async function PATCH(
     // back to Meta for approval in the business's name — not something
     // an agent or a viewer should be able to do by calling this directly.
     let accountId: string
+    let ctx: AccountContext
     try {
-      accountId = (await requireRole('supervisor')).accountId
+      ctx = await requireRole('supervisor')
+      accountId = ctx.accountId
     } catch (err) {
       return toErrorResponse(err)
     }
@@ -77,7 +81,10 @@ export async function PATCH(
     // Fetch the existing row to read meta_template_id and status.
     const existing = await prisma.messageTemplate.findFirst({
       where: { id, account_id: accountId },
-      select: { id: true, name: true, status: true, meta_template_id: true, language: true, waba_id: true },
+      select: {
+        id: true, name: true, status: true, meta_template_id: true, language: true, waba_id: true,
+        category: true, header_type: true, header_content: true, header_media_url: true, body_text: true, footer_text: true, buttons: true,
+      },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
@@ -188,6 +195,22 @@ export async function PATCH(
       )
     }
 
+    await audit(auditCtx(request, ctx), {
+      action: 'record.updated',
+      target: { type: 'template', id, label: existing.name },
+      before: {
+        category: existing.category, header_type: existing.header_type, header_content: existing.header_content,
+        header_media_url: existing.header_media_url, body_text: existing.body_text, footer_text: existing.footer_text,
+        buttons: existing.buttons, status: existing.status,
+      },
+      after: {
+        category: payload.category, header_type: payload.header_type ?? null, header_content: payload.header_content ?? null,
+        header_media_url: payload.header_media_url ?? null, body_text: payload.body_text, footer_text: payload.footer_text ?? null,
+        buttons: payload.buttons ?? null, status: 'PENDING',
+      },
+      meta: { language: existing.language, dry_run: isDryRun() || undefined },
+    })
+
     return NextResponse.json({
       success: true,
       template: row,
@@ -206,7 +229,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -221,8 +244,10 @@ export async function DELETE(
     // Deleting on Meta cannot be undone: supervisors and above only, as
     // the Templates page itself — not any signed-in member.
     let accountId: string
+    let ctx: AccountContext
     try {
-      accountId = (await requireRole('supervisor')).accountId
+      ctx = await requireRole('supervisor')
+      accountId = ctx.accountId
     } catch (err) {
       return toErrorResponse(err)
     }
@@ -270,6 +295,12 @@ export async function DELETE(
         { status: 500 },
       )
     }
+
+    await audit(auditCtx(request, ctx), {
+      action: 'record.deleted',
+      target: { type: 'template', id, label: existing.name },
+      meta: { on_meta: !!existing.meta_template_id && !isDryRun() },
+    })
 
     return NextResponse.json({ success: true, dry_run: isDryRun() })
   } catch (error) {

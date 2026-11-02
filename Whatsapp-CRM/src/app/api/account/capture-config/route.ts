@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { cleanNumbers } from '@/lib/whatsapp/staff-alert'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 const DEFAULT_CONFIRM_MSG =
   "Hi {{name}}! Is that your real name? Please reply *Yes* to confirm or *No* to enter a different name."
@@ -63,9 +65,8 @@ export async function PATCH(req: Request) {
         ? body.ask_name_message.trim()
         : undefined
 
-    const config = await prisma.contactCaptureConfig.upsert({
-      where: { account_id: ctx.accountId },
-      update: {
+    const previous = await prisma.contactCaptureConfig.findUnique({ where: { account_id: ctx.accountId } })
+    const update = {
         ...(typeof body.enabled === 'boolean' ? { enabled: body.enabled } : {}),
         ...(confirmMsg ? { confirm_message: confirmMsg } : {}),
         ...(askNameMsg ? { ask_name_message: askNameMsg } : {}),
@@ -74,7 +75,10 @@ export async function PATCH(req: Request) {
           : {}),
         ...(alertNumbers !== undefined ? { new_contact_alert_numbers: alertNumbers } : {}),
         ...(alertTemplate !== undefined ? { new_contact_alert_template: alertTemplate } : {}),
-      },
+    }
+    const config = await prisma.contactCaptureConfig.upsert({
+      where: { account_id: ctx.accountId },
+      update,
       create: {
         account_id: ctx.accountId,
         enabled: body.enabled ?? false,
@@ -84,6 +88,13 @@ export async function PATCH(req: Request) {
         new_contact_alert_numbers: alertNumbers ?? [],
         new_contact_alert_template: alertTemplate ?? null,
       },
+    })
+
+    // Which settings changed — never the messages or numbers themselves.
+    await auditConfigChange(auditCtx(req, ctx), 'config.security_changed', {
+      area: 'capture_config',
+      before: previous as Record<string, unknown> | null,
+      after: update,
     })
 
     return NextResponse.json({

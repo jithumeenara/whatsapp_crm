@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { addTagsToContact } from '@/lib/contacts/tag-events'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * The AI's tag decisions for one contact, for the contact panel.
@@ -65,6 +66,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (body.action === 'accept') {
       await addTagsToContact({ accountId: ctx.accountId, contactId: contact.id, tagIds: [decision.tag_id], source: 'inbox' })
     }
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'contact', id: contact.id, label: null },
+      meta: { op: body.action === 'accept' ? 'ai_tag_accepted' : 'ai_tag_dismissed', tag_id: decision.tag_id, decision_id: decision.id },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

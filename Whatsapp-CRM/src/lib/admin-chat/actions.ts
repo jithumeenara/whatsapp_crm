@@ -44,6 +44,27 @@ import {
   type ActionKind,
 } from './action-rules'
 import { writeAudit } from './audit'
+import { agentActionDecided, agentRecordWritten, agentToolCalled, type AgentAuditInfo } from '@/lib/audit/actors'
+
+/** The audit-log identity of an admin-chat action: the agent, acting for
+ *  the admin who asked; the approval id groups proposal and outcome. */
+function adminAgent(requestedBy: string, approvalId: string, approvedBy?: string | null): AgentAuditInfo {
+  return { kind: 'admin_chat', onBehalfOf: requestedBy, approvalId, approvedBy: approvedBy ?? null, correlationId: `admin-chat:${approvalId}`, source: 'admin_chat' }
+}
+
+/** What an action wrote, for the audit log (ids only). */
+function writtenTarget(kind: string, result: Record<string, unknown>): { type: string; id: string | null; op: 'create' | 'update' } | null {
+  const id = (k: string) => (typeof result[k] === 'string' ? (result[k] as string) : null)
+  switch (kind) {
+    case 'add_follow_up': return { type: 'follow_up', id: id('follow_up_id'), op: 'create' }
+    case 'add_tag': return { type: 'contact', id: null, op: 'update' }
+    case 'assign_chat': return { type: 'conversation', id: id('conversation_id'), op: 'update' }
+    case 'create_lead': return { type: 'lead', id: id('lead_id'), op: 'create' }
+    case 'send_template': return { type: 'conversation', id: id('conversation_id'), op: 'update' }
+    case 'prepare_broadcast': return { type: 'broadcast', id: id('broadcast_id'), op: 'create' }
+    default: return null
+  }
+}
 import { notifyAdmins } from './notify'
 
 export interface ActionContext {
@@ -220,6 +241,8 @@ export async function proposeAction(ctx: ActionContext, kind: ActionKind, args: 
   const code = newConfirmCode()
   await prisma.adminChatAction.update({ where: { id: row.id }, data: { confirm_code_hash: hashConfirmCode(row.id, code) } })
   void writeAudit({ accountId: ctx.accountId, event: 'action_proposed', memberId: ctx.memberId, sessionId: ctx.sessionId, detail: { kind, summary } })
+  // Argument names only — the summary and values may name a customer.
+  void agentToolCalled(ctx.accountId, adminAgent(ctx.userId, row.id), kind, args)
   return { ok: true, actionId: row.id, code, summary }
 }
 
@@ -235,6 +258,7 @@ export async function confirmFromChat(ctx: ActionContext, code: string): Promise
     // One wrong code cancels it — a 4-digit code is never there to be guessed.
     await prisma.adminChatAction.updateMany({ where: { id: action.id, status: 'proposed' }, data: { status: 'rejected', confirm_code_hash: null } })
     void writeAudit({ accountId: ctx.accountId, event: 'action_rejected', memberId: ctx.memberId, sessionId: ctx.sessionId, detail: { reason: 'wrong_code' } })
+    void agentActionDecided(ctx.accountId, adminAgent(action.requested_by, action.id), 'rejected', action.kind, null, { reason: 'wrong_code' })
     return 'That code does not match, so the request is cancelled and nothing was changed. Ask again for a new code.'
   }
 
@@ -263,9 +287,11 @@ export async function confirmFromChat(ctx: ActionContext, code: string): Promise
 }
 
 export async function rejectFromChat(ctx: ActionContext): Promise<string> {
+  const open = await prisma.adminChatAction.findMany({ where: { member_id: ctx.memberId, status: 'proposed' }, select: { id: true, kind: true, requested_by: true } })
   const r = await prisma.adminChatAction.updateMany({ where: { member_id: ctx.memberId, status: 'proposed' }, data: { status: 'rejected' } })
   if (r.count === 0) return 'Nothing was waiting.'
   void writeAudit({ accountId: ctx.accountId, event: 'action_rejected', memberId: ctx.memberId, sessionId: ctx.sessionId })
+  for (const a of open) void agentActionDecided(ctx.accountId, adminAgent(a.requested_by, a.id), 'rejected', a.kind, null, { reason: 'declined' })
   return 'Cancelled — nothing was changed.'
 }
 
@@ -298,6 +324,13 @@ export async function undoFromChat(ctx: ActionContext): Promise<string> {
     return 'Could not undo it — change it in the CRM.'
   }
   void writeAudit({ accountId: action.account_id, event: 'action_undone', memberId: ctx.memberId, sessionId: ctx.sessionId, detail: { kind: action.kind, summary: action.summary } })
+  {
+    const t = writtenTarget(action.kind, res as Record<string, unknown>)
+    void agentRecordWritten(action.account_id, adminAgent(action.requested_by, action.id, ctx.userId), {
+      tool: action.kind, op: action.kind === 'add_follow_up' ? 'delete' : 'update',
+      target: { type: t?.type ?? 'record', id: t?.id ?? null }, extra: { undo: true },
+    })
+  }
   return `↩️ Undone: ${action.summary}.`
 }
 
@@ -438,11 +471,18 @@ export async function executeAction(actionId: string, actorUserId: string, from:
     console.error('[admin-chat] action failed:', message)
     await prisma.adminChatAction.update({ where: { id: action.id }, data: { status: 'failed', error: message.slice(0, 500) } })
     void writeAudit({ accountId, event: 'action_failed', memberId: action.member_id, sessionId: action.session_id, actorUserId, detail: { kind: action.kind, error: message.slice(0, 200) } })
+    void agentActionDecided(accountId, adminAgent(action.requested_by, action.id, actorUserId), 'confirmed', action.kind, null, { result: 'failed' })
     return { ok: false, error: `It did not work: ${message.slice(0, 200)}` }
   }
 
   await prisma.adminChatAction.update({ where: { id: action.id }, data: { result: result as Prisma.InputJsonValue } })
   void writeAudit({ accountId, event: 'action_done', memberId: action.member_id, sessionId: action.session_id, actorUserId, detail: { kind: action.kind, summary: action.summary } })
+  {
+    const info = adminAgent(action.requested_by, action.id, actorUserId)
+    const t = writtenTarget(action.kind, result)
+    void agentActionDecided(accountId, info, 'confirmed', action.kind, t ? { type: t.type, id: t.id } : null, { result: 'done' })
+    if (t) void agentRecordWritten(accountId, info, { tool: action.kind, op: t.op, target: { type: t.type, id: t.id } })
+  }
   void notifyAdmins({ accountId, exceptUserId: actorUserId, title: 'Admin Chat: action done', body: action.summary })
   return { ok: true, summary: action.summary }
 }

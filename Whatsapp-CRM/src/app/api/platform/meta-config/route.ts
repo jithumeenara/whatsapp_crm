@@ -3,6 +3,8 @@ import { ForbiddenError, requireRole, toErrorResponse } from "@/lib/auth/account
 import { isPlatformOwner } from "@/lib/auth/platform-owner"
 import { prisma } from "@/lib/db"
 import { encrypt } from "@/lib/whatsapp/encryption"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 
 const MASKED = "••••••••••••••••"
 
@@ -70,6 +72,19 @@ export async function PATCH(req: NextRequest) {
       where: { id: "singleton" },
       create: { id: "singleton", app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), updated_by: ctx.userId },
       update: { app_id: app_id.trim(), app_secret: secretToSave, config_id: config_id.trim(), updated_by: ctx.userId },
+    })
+
+    // Which fields changed — never the App Secret or any value.
+    const fields = [
+      ...(existing?.app_id !== app_id.trim() ? ["app_id"] : []),
+      ...(existing?.config_id !== config_id.trim() ? ["config_id"] : []),
+      ...(!keepSecret ? ["app_secret"] : []),
+    ]
+    await auditConfigChange(auditCtx(req, ctx), "config.platform_changed", {
+      area: "platform_meta_app",
+      fields,
+      target: { type: "config", id: "platform_meta_app" },
+      meta: { created: !existing },
     })
 
     return NextResponse.json({ success: true })

@@ -21,6 +21,7 @@
  */
 
 import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from '@google/generative-ai'
+import { withJobAudit } from '@/lib/audit/actors'
 import { prisma } from '@/lib/db'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { recordAiUsage, tokensFromGemini } from '@/lib/ai/usage'
@@ -200,6 +201,11 @@ let running = false
 
 /** Conversations with something new from the customer, quiet for a minute. */
 export async function sweepAutoTags(): Promise<number> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('auto-tag', () => sweepAutoTagsRun(), (n) => n)
+}
+
+async function sweepAutoTagsRun(): Promise<number> {
   if (running) return 0
   running = true
   try {

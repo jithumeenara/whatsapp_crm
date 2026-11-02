@@ -17,6 +17,7 @@ import { batchDuplicates, groupActive, isSensitiveQuestion, personNameKey, split
 import { sendFormConfirmations } from '@/lib/data-store/form-confirm'
 import { randomUUID } from 'crypto'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
+import { publicFormSubmitted } from '@/lib/audit/actors'
 
 /**
  * A stranger submitting a table's public form. No login — the proxy lets
@@ -247,6 +248,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     })
 
     const reference = displayRef(publicRef, prefix)
+    // The random reference and a count — never the answers.
+    void publicFormSubmitted(form.accountId, req, 'web_form', { table_id: form.tableId, ref: publicRef, count: rows.length })
 
     void sendFormConfirmations({
       accountId: form.accountId,

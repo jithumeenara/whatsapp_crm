@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function PATCH(
   req: NextRequest,
@@ -28,6 +29,11 @@ export async function PATCH(
     })
     if (updated.count === 0) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     const stage = await prisma.pipelineStage.findFirst({ where: { id: stageId, pipeline_id: pipeline.id } })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'pipeline_stage', id: stageId, label: stage?.name ?? null },
+      meta: { pipeline_id: pipeline.id, fields: Object.entries({ name, color, position }).filter(([, v]) => v !== undefined).map(([k]) => k) },
+    })
 
     return NextResponse.json({ stage })
   } catch (e) {
@@ -75,6 +81,11 @@ export async function DELETE(
     }
 
     await prisma.pipelineStage.delete({ where: { id: stageId } })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.deleted',
+      target: { type: 'pipeline_stage', id: stageId, label: stage.name },
+      meta: { pipeline_id, deals_moved_to: otherStage?.id ?? null },
+    })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return toErrorResponse(e)

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { prisma } from '@/lib/db'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { slugify } from '@/lib/data-store/slugify'
@@ -98,9 +99,19 @@ export async function POST(req: Request) {
           await removeIfEmpty()
           return NextResponse.json({ error: result.error ?? 'The first sync did not finish.' }, { status: 400 })
         }
+        await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+          action: 'import.completed',
+          target: { type: 'data_table', id: table.id, label: name },
+          meta: { source: 'google_sheet', two_way: true, sheet: tab.title, stats: result.stats as unknown as Record<string, unknown> },
+        })
         return NextResponse.json({ table_id: table.id, two_way: true, stats: result.stats }, { status: 201 })
       }
       const imported = await importFromSheet(link.id, ctx.accountId)
+      await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+        action: 'import.completed',
+        target: { type: 'data_table', id: table.id, label: name },
+        meta: { source: 'google_sheet', two_way: false, sheet: tab.title, count: imported.imported },
+      })
       return NextResponse.json({ table_id: table.id, two_way: false, imported: imported.imported }, { status: 201 })
     } catch (err) {
       await removeIfEmpty().catch(() => {})

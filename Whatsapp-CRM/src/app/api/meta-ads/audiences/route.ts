@@ -6,6 +6,7 @@ import { createCustomAudience, addUsersToCustomAudience } from '@/lib/meta-ads/a
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { buildContactWhere, type FilterConfig } from '@/lib/segments/filter'
+import { audit, auditCtx } from '@/lib/audit'
 
 /** GET /api/meta-ads/audiences — every Segment, with its Meta sync status if any. */
 export async function GET() {
@@ -49,7 +50,8 @@ export async function POST(req: NextRequest) {
     // Pushes contact PII (hashed) to Meta and writes DB state — 'agent'
     // floor, same as this app's other real operational actions. Found
     // with no role check at all in the full-app audit.
-    const { accountId, userId } = await requireRole('agent')
+    const ctx = await requireRole('agent')
+    const { accountId, userId } = ctx
 
     const rl = checkRateLimit(`meta-ads-audience-sync:${userId}`, RATE_LIMITS.adminAction)
     if (!rl.success) return NextResponse.json({ error: 'Too many syncs — wait a moment and try again.' }, { status: 429 })
@@ -96,6 +98,14 @@ export async function POST(req: NextRequest) {
         where: { segment_id: segment.id },
         create: { account_id: accountId, segment_id: segment.id, meta_audience_id: audienceId, synced_count: uploaded, last_synced_at: new Date(), last_error: null },
         update: { meta_audience_id: audienceId, synced_count: uploaded, last_synced_at: new Date(), last_error: null },
+      })
+
+      // Customer data left the system (hashed, to Meta): who sent which
+      // segment, and how many — never the emails or numbers.
+      await audit(auditCtx(req, ctx), {
+        action: 'export.downloaded',
+        target: { type: 'segment', id: segment.id },
+        meta: { destination: 'meta_custom_audience', meta_audience_id: audienceId, count: uploaded, contact_count: contacts.length },
       })
 
       return NextResponse.json({ success: true, audience_id: audienceId, synced_count: uploaded, contact_count: contacts.length })

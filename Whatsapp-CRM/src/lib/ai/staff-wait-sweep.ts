@@ -15,6 +15,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { withJobAudit } from '@/lib/audit/actors'
 import { autoReplyToMessage, staffAwaitingReply, STAFF_WAIT_MS } from './auto-reply'
 import { websiteAiLimitReached, widgetLimitForConversation } from '@/lib/webchat/ai-allowance'
 import { pushVisitorStatus, pushVisitorTyping } from '@/lib/webchat/realtime'
@@ -36,6 +37,11 @@ function remember(id: string) {
 let running = false
 
 export async function sweepStaffWaits(now: Date = new Date()): Promise<number> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('staff-wait', () => sweepStaffWaitsRun(now), (n) => n)
+}
+
+async function sweepStaffWaitsRun(now: Date = new Date()): Promise<number> {
   if (running) return 0
   running = true
   try {

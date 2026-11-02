@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * Sync message templates from Meta → local message_templates table.
@@ -134,12 +135,14 @@ function extractSampleValues(
   return sv
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   // Rewrites the account's templates from Meta: the same floor as
   // submitting or editing one (supervisor).
   let userId: string
+  let ctx: Awaited<ReturnType<typeof requireRole>>
   try {
-    userId = (await requireRole('supervisor')).userId
+    ctx = await requireRole('supervisor')
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -301,6 +304,12 @@ export async function POST() {
         })
       }
     }
+
+    await audit({ ...auditCtx(request, ctx), correlationId: crypto.randomUUID() }, {
+      action: 'import.completed',
+      target: { type: 'template', label: 'Sync from Meta' },
+      meta: { count: inserted + updated, inserted, updated, failed: errors.length, total: metaTemplates.length },
+    })
 
     return NextResponse.json({
       success: errors.length === 0,

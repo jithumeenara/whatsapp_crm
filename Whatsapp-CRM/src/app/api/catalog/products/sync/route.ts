@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import { fetchCatalogProducts, type MetaCatalogProduct } from "@/lib/whatsapp/catalog-api"
@@ -13,7 +14,7 @@ import { fetchCatalogProducts, type MetaCatalogProduct } from "@/lib/whatsapp/ca
  * asynchronous, so this pull is what actually flips a product from
  * `pending` to `synced` (or `error` if Meta never applied it).
  */
-export async function POST() {
+export async function POST(request?: Request) {
   try {
     const ctx = await requireRole("agent")
 
@@ -84,6 +85,11 @@ export async function POST() {
 
     await prisma.catalogConfig.update({ where: { account_id: ctx.accountId }, data: { last_synced_at: new Date() } })
 
+    await audit({ ...auditCtx(request ?? null, ctx), correlationId: crypto.randomUUID() }, {
+      action: "import.completed",
+      target: { type: "catalog", label: "Sync products from Meta" },
+      meta: { count: pulled },
+    })
     return NextResponse.json({ success: true, pulled })
   } catch (err) {
     return toErrorResponse(err)

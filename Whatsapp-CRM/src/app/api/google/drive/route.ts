@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { DriveError, importDriveFile } from '@/lib/google/drive'
 import { GoogleNotConnectedError, isGoogleServiceEnabled, loadGoogleConnection } from '@/lib/google/oauth'
+import { audit, auditCtx } from '@/lib/audit'
 
 /** Whether "Google Drive" is offered when attaching — for any team member. */
 export async function GET() {
@@ -26,6 +27,11 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => ({}))) as { fileId?: unknown }
     if (typeof body.fileId !== 'string') return NextResponse.json({ error: 'fileId is required.' }, { status: 400 })
     const f = await importDriveFile(ctx.accountId, body.fileId)
+    await audit(auditCtx(req, ctx), {
+      action: 'file.uploaded',
+      target: { type: 'file', id: f.id },
+      meta: { purpose: 'google_drive_import', content_type: f.mime_type, size: f.size },
+    })
     return NextResponse.json({
       file: {
         id: f.id,

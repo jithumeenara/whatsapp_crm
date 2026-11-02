@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { cleanVerificationInput } from '@/lib/verify/sheet-verify'
 import { ownsWhatsAppNumber } from '@/lib/verify/verify-brand'
@@ -52,6 +53,10 @@ export async function POST(req: Request) {
     const created = await prisma.sheetVerification.create({
       data: { ...parsed.data, account_id: ctx.accountId, created_by: ctx.userId },
       select: { id: true },
+    })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'sheet_verification', id: created.id, label: typeof parsed.data.name === 'string' ? parsed.data.name : null },
     })
     return NextResponse.json({ id: created.id }, { status: 201 })
   } catch (err) {

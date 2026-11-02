@@ -20,6 +20,7 @@
  */
 
 import type { WebChatWidget } from '@prisma/client'
+import { withJobAudit } from '@/lib/audit/actors'
 import { prisma } from '@/lib/db'
 import { hashToken, isSessionTokenShape, newSessionToken, newVisitorId } from './tokens'
 
@@ -124,6 +125,11 @@ export async function authenticateSession(token: unknown): Promise<Authenticated
 /** Expired sessions with no conversation are noise; the rest are kept
  *  only as long as the session itself. Run from server.ts's sweeps. */
 export async function sweepExpiredWebChatSessions(): Promise<number> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('webchat-sessions', () => sweepExpiredWebChatSessionsRun(), (n) => n)
+}
+
+async function sweepExpiredWebChatSessionsRun(): Promise<number> {
   const { count } = await prisma.webChatSession.deleteMany({
     where: { expires_at: { lt: new Date() } },
   })

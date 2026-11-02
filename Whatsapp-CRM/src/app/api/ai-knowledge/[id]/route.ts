@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { scheduleKnowledgeRefresh } from '@/lib/ai/knowledge-refresh'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { fetchPageText } from '@/lib/ai/web-extract'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { fetchSheetForAccount, serializeSheet } from '@/lib/ai/google-sheet'
@@ -58,8 +59,10 @@ interface PatchBody {
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   let accountId: string
+  let actor: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    actor = await requireRole('admin')
+    accountId = actor.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -191,13 +194,22 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   // to wait for that to lapse.
   invalidateKnowledge(item.ai_config_id)
   scheduleKnowledgeRefresh(accountId)
+  // Names of what changed; knowledge text is never copied into the log.
+  await audit(auditCtx(req, actor), {
+    action: 'record.updated',
+    target: { type: 'knowledge_source', id, label: item.name },
+    changes: null,
+    meta: { fields: Object.keys(data).sort(), status: item.status, resync: body.resync ? true : undefined },
+  })
   return NextResponse.json({ item })
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   let accountId: string
+  let actor: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    actor = await requireRole('admin')
+    accountId = actor.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -206,6 +218,10 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   await prisma.aiKnowledgeItem.delete({ where: { id } })
+  await audit(auditCtx(req, actor), {
+    action: 'record.deleted',
+    target: { type: 'knowledge_source', id, label: (existing as { name?: string }).name ?? null },
+  })
   invalidateKnowledge(existing.ai_config_id)
   scheduleKnowledgeRefresh(accountId)
   // The orphaned embedding row is cleaned up by the next sync run, which

@@ -5,6 +5,7 @@ import { requireStepUp, StepUpError } from '@/lib/admin-chat/step-up'
 import { executeAction } from '@/lib/admin-chat/actions'
 import { writeAudit } from '@/lib/admin-chat/audit'
 import { sendToAdmin } from '@/lib/admin-chat/brief-sweep'
+import { agentActionDecided } from '@/lib/audit/actors'
 
 /**
  * POST /api/admin-chat/actions/[id] — Settings → Admin Chat → Waiting for approval.
@@ -35,6 +36,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const r = await prisma.adminChatAction.updateMany({ where: { id: action.id, status: 'awaiting_web' }, data: { status: 'rejected', approved_by: ctx.userId } })
       if (r.count === 0) return NextResponse.json({ error: 'Already handled.' }, { status: 409 })
       await writeAudit({ accountId: ctx.accountId, event: 'action_rejected', memberId: action.member_id, actorUserId: ctx.userId, detail: { kind: action.kind, summary: action.summary } })
+      // Approval is recorded by executeAction (lib/admin-chat/actions.ts);
+      // a rejection from the web never reaches it, so it is recorded here.
+      await agentActionDecided(
+        ctx.accountId,
+        { kind: 'admin_chat', onBehalfOf: action.requested_by, approvalId: action.id, approvedBy: ctx.userId, correlationId: `admin-chat:${action.id}`, source: 'web' },
+        'rejected',
+        action.kind,
+        null,
+        { reason: 'rejected_in_crm' },
+      )
       if (member && settings) {
         void sendToAdmin(member, settings, `✋ Not done: ${action.summary} — rejected in the CRM.`, `${action.summary} was rejected`, new Date()).catch(() => {})
       }

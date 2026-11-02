@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { unlink } from "fs/promises";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { audit, auditCtx } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 
 export async function GET(
@@ -21,7 +22,7 @@ export async function GET(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -36,6 +37,11 @@ export async function DELETE(
     await unlink(file.file_path).catch(() => {});
 
     await prisma.fileUpload.delete({ where: { id } });
+    await audit(auditCtx(req, ctx), {
+      action: "file.deleted",
+      target: { type: "file", id, label: file.original_name },
+      meta: { mime_type: file.mime_type, size: file.size },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

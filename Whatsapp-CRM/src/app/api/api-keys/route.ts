@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { generateApiKey, MAX_API_KEY_LIFETIME_MS } from '@/lib/auth/api-key'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx, auditInTx } from '@/lib/audit'
 
 /**
  * Owner only — the same rule as the Settings tab (canEditWhatsAppConfig in
@@ -12,7 +13,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 async function requireKeyManager() {
   try {
     const ctx = await requireRole('owner')
-    return { ok: true as const, accountId: ctx.accountId, userId: ctx.userId }
+    return { ok: true as const, accountId: ctx.accountId, userId: ctx.userId, ctx }
   } catch (err) {
     return { ok: false as const, response: toErrorResponse(err) }
   }
@@ -81,19 +82,30 @@ export async function POST(req: Request) {
 
     const { raw, hash, prefix } = generateApiKey()
 
-    const key = await prisma.apiKey.create({
-      data: {
-        account_id: guard.accountId,
-        name,
-        key_hash: hash,
-        key_prefix: prefix,
-        // Who minted it: verifyApiKey refuses the key once this person is
-        // no longer a member here at supervisor rank or above.
-        created_by_user_id: guard.userId,
-        expires_at: expiresAt,
-      },
-      select: { id: true, name: true, key_prefix: true, created_at: true, expires_at: true },
-    })
+    // Recorded in the same transaction (fail closed): a key that acts at
+    // supervisor level never exists unrecorded. The key, its hash and its
+    // prefix are never part of the event.
+    const key = await prisma.$transaction(async (tx) => {
+      const created = await tx.apiKey.create({
+        data: {
+          account_id: guard.accountId,
+          name,
+          key_hash: hash,
+          key_prefix: prefix,
+          // Who minted it: verifyApiKey refuses the key once this person is
+          // no longer a member here at supervisor rank or above.
+          created_by_user_id: guard.userId,
+          expires_at: expiresAt,
+        },
+        select: { id: true, name: true, key_prefix: true, created_at: true, expires_at: true },
+      })
+      await auditInTx(tx, auditCtx(req, guard.ctx), {
+        action: 'api_key.created',
+        target: { type: 'api_key', id: created.id, label: name },
+        meta: { name, expires_at: expiresAt },
+      })
+      return created
+    }, { timeout: 10_000, maxWait: 5_000 })
 
     // Return the raw key ONLY on creation — it will never be shown again.
     return NextResponse.json({ key, raw }, { status: 201 })

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { assertPageAccess, requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { checkHeaderMediaUrl } from "@/lib/broadcasts/header-media"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * POST /api/broadcasts/draft
@@ -52,6 +53,11 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    await audit(auditCtx(req, ctx), {
+      action: "record.created",
+      target: { type: "broadcast", id: broadcast.id, label: broadcast.name },
+      meta: { template: template_name, status: "draft" },
+    })
     return NextResponse.json({ broadcast }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)

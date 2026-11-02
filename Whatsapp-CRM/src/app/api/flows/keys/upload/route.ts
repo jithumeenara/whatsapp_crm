@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { denyUnlessRole } from '@/lib/flows/route-guard'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -68,5 +69,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status: 502 })
   }
 
+  await auditFlowAction(request, {
+    action: 'config.whatsapp_changed',
+    target: { type: 'flows_key', label: 'Flows public key' },
+    meta: { uploaded_to_meta: true, phone_number_id: config.phone_number_id },
+  })
   return NextResponse.json({ ok: true })
 }

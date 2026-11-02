@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { checkWebhookUrl, WEBHOOK_EVENTS } from '@/lib/webhooks/deliver'
 
 /** Changing or removing an outgoing webhook is an admin's decision: it
  *  decides where every Data Store record is sent. */
 async function requireWebhook(webhookId: string) {
   let accountId: string
+  let ctx: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    ctx = await requireRole('admin')
+    accountId = ctx.accountId
   } catch (err) {
     return { ok: false as const, response: toErrorResponse(err) }
   }
@@ -17,7 +21,7 @@ async function requireWebhook(webhookId: string) {
     select: { id: true },
   })
   if (!hook) return { ok: false as const, response: NextResponse.json({ error: 'Webhook not found.' }, { status: 404 }) }
-  return { ok: true as const, accountId }
+  return { ok: true as const, accountId, ctx }
 }
 
 export async function PUT(
@@ -97,6 +101,11 @@ export async function PUT(
         updated_at: true,
       },
     })
+    await auditConfigChange(auditCtx(req, guard.ctx), 'config.webhook_changed', {
+      area: 'outgoing_webhook',
+      fields: Object.keys(updates),
+      target: { type: 'webhook', id, label: webhook.name },
+    })
     return NextResponse.json({ webhook })
   } catch (err) {
     console.error('[PUT /api/webhooks/[id]]', err)
@@ -105,7 +114,7 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -114,6 +123,12 @@ export async function DELETE(
     if (!guard.ok) return guard.response
 
     await prisma.webhook.delete({ where: { id } })
+    await auditConfigChange(auditCtx(req, guard.ctx), 'config.webhook_changed', {
+      area: 'outgoing_webhook',
+      fields: [],
+      target: { type: 'webhook', id },
+      meta: { removed: true },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('[DELETE /api/webhooks/[id]]', err)

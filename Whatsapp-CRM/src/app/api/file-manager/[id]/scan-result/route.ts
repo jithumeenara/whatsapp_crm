@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { validScanSignature } from "@/lib/files/scan-signature";
+import { webhookWrote } from "@/lib/audit/actors";
 
 // Virus scan webhook — called by the external scanner after scanning a file,
 // at the callback URL it was given (scanCallbackUrl), which carries a
@@ -19,7 +20,7 @@ export async function POST(
     const body = (await req.json().catch(() => ({}))) as { status?: unknown; result?: unknown };
     const status = body.status === "infected" ? "infected" : "clean";
 
-    const file = await prisma.fileUpload.findUnique({ where: { id }, select: { id: true } });
+    const file = await prisma.fileUpload.findUnique({ where: { id }, select: { id: true, account_id: true } });
     if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     await prisma.fileUpload.update({
@@ -30,6 +31,9 @@ export async function POST(
         scan_result: body.result && typeof body.result === "object" && JSON.stringify(body.result).length <= 4000 ? (body.result as Prisma.InputJsonValue) : Prisma.JsonNull,
       },
     });
+
+    // The scanner changed a file's state: which file, and the verdict.
+    await webhookWrote("file_scanner", file.account_id, { type: "file", id }, { scan_status: status }, req);
 
     return NextResponse.json({ ok: true, status });
   } catch (err) {

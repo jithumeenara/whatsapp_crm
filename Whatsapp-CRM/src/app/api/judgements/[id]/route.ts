@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * PATCH /api/judgements/[id]
@@ -113,6 +114,14 @@ export async function PATCH(
         reviewed_at: new Date(),
         reviewed_by: ctx.userId,
       },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'judgement', id, label: null },
+      before: { is_lead: existing.is_lead, category: existing.category },
+      after: { is_lead: humanIsLead, category: resolvedCategory },
+      meta: { verdict, re_review: !!existing.reviewed_at },
     })
 
     return NextResponse.json({ ok: true })

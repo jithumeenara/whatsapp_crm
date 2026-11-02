@@ -1,4 +1,5 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { sanitizeQuickLinks } from "@/lib/navigation/sections"
 import { isValidE164 } from "@/lib/whatsapp/phone-utils"
@@ -83,6 +84,14 @@ export async function PATCH(req: NextRequest) {
       },
     })
 
+    // The person's own profile: which fields changed, never the new phone
+    // or name themselves.
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "member", id: ctx.userId, label: "own profile" },
+      changes: null,
+      meta: { self: true, fields: Object.keys(data).filter((k) => k !== "phone_verified_at").sort() },
+    })
     return NextResponse.json({ profile })
   } catch (err) {
     return toErrorResponse(err)

@@ -7,13 +7,18 @@ import { verifyApiKey } from '@/lib/auth/api-key'
 import { dispatchWebhooks } from '@/lib/webhooks/deliver'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { checkRecordData } from '@/lib/data-store/record-data'
+import { audit, auditCtx } from '@/lib/audit'
+import { changedRecordFields, recordFieldNames } from '@/lib/data-store/audit-fields'
+
+interface Actor { accountId: string; userId: string; role: string; apiKeyId?: string }
 
 async function requireRecord(req: Request, tableId: string, recordId: string): Promise<
-  | { ok: true; accountId: string; tableName: string }
+  | { ok: true; accountId: string; tableName: string; actor: Actor; data: unknown }
   | { ok: false; status: number; body: { error: string } }
 > {
   const authHeader = req.headers.get('authorization') ?? ''
   let accountId: string | null = null
+  let actor: Actor
 
   if (authHeader.startsWith('Bearer wcrm_')) {
     const raw = authHeader.slice('Bearer '.length)
@@ -25,16 +30,18 @@ async function requireRecord(req: Request, tableId: string, recordId: string): P
     const result = await verifyApiKey(raw)
     if (!result) return { ok: false, status: 401, body: { error: 'Invalid API key.' } }
     accountId = result.accountId
+    actor = { accountId: result.accountId, userId: result.creatorUserId, role: 'supervisor', apiKeyId: result.keyId }
   } else {
     const member = await dataStoreMember('agent')
     if (!member.ok) return member
     const accountIdOf = member.ctx.accountId
     accountId = accountIdOf
+    actor = { accountId: accountIdOf, userId: member.ctx.userId, role: member.ctx.role }
   }
 
   const record = await prisma.dataRecord.findFirst({
     where: { id: recordId, table_id: tableId, account_id: accountId },
-    select: { id: true },
+    select: { id: true, data: true },
   })
   if (!record) return { ok: false, status: 404, body: { error: 'Record not found.' } }
 
@@ -43,7 +50,7 @@ async function requireRecord(req: Request, tableId: string, recordId: string): P
     select: { name: true },
   })
 
-  return { ok: true, accountId, tableName: table?.name ?? '' }
+  return { ok: true, accountId, tableName: table?.name ?? '', actor, data: record.data }
 }
 
 export async function PUT(
@@ -78,6 +85,14 @@ export async function PUT(
       updated_at: record.updated_at.toISOString(),
     }, guard.tableName)
 
+    // Field NAMES only — never the values (registrations, IDs, bank details).
+    await audit(auditCtx(req, guard.actor), {
+      action: 'record.updated',
+      target: { type: 'data_record', id: record.id, label: guard.tableName },
+      changes: null,
+      meta: { table_id: tableId, fields: changedRecordFields(guard.data, checked.data) },
+    })
+
     return NextResponse.json({ record })
   } catch (err) {
     console.error('[PUT /api/data-tables/[id]/records/[recordId]]', err)
@@ -109,6 +124,13 @@ export async function DELETE(
         updated_at: record.updated_at.toISOString(),
       }, guard.tableName)
     }
+
+    await audit(auditCtx(req, guard.actor), {
+      action: 'record.deleted',
+      target: { type: 'data_record', id: recordId, label: guard.tableName },
+      changes: null,
+      meta: { table_id: tableId, fields: recordFieldNames(guard.data) },
+    })
 
     return NextResponse.json({ success: true })
   } catch (err) {

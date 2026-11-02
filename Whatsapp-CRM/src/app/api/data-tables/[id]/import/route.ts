@@ -6,6 +6,7 @@ import type { AccountRole } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import ExcelJS from 'exceljs'
 import { ensureDataStoreColumns } from '@/lib/data-store/schema'
+import { audit, auditCtx } from '@/lib/audit'
 
 async function requireTable(tableId: string, min: AccountRole) {
   const member = await dataStoreMember(min)
@@ -16,7 +17,7 @@ async function requireTable(tableId: string, min: AccountRole) {
     include: { fields: { orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] } },
   })
   if (!table) return { ok: false as const, status: 404, body: { error: 'Table not found.' } }
-  return { ok: true as const, accountId: accountIdOf, table }
+  return { ok: true as const, accountId: accountIdOf, table, ctx: member.ctx }
 }
 
 // GET /api/data-tables/[id]/import/template — download demo Excel template
@@ -185,6 +186,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     scheduleKnowledgeRefresh(accountId, tableId)
     afterRecordsChanged(tableId, accountId)
 
+    // One event for the whole file; no row values.
+    await audit({ ...auditCtx(req, guard.ctx), correlationId: crypto.randomUUID() }, {
+      action: 'import.completed',
+      target: { type: 'data_table', id: tableId, label: table.name },
+      meta: { count: rowsData.length, source: 'file' },
+    })
     return NextResponse.json({ count: rowsData.length }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/data-tables/[id]/import]', err)

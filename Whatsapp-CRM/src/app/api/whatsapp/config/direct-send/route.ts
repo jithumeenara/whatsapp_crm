@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 
 /**
@@ -23,6 +25,11 @@ export async function POST(request: Request) {
     if (!target) return NextResponse.json({ error: 'Number not found' }, { status: 404 })
 
     await prisma.whatsAppConfig.update({ where: { id }, data: { direct_send_enabled: enabled } })
+    await auditConfigChange(auditCtx(request, ctx), 'config.whatsapp_changed', {
+      area: 'whatsapp_direct_send',
+      fields: ['direct_send_enabled'],
+      target: { type: 'whatsapp_config', id: id },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)

@@ -1,8 +1,9 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     // Removes this field's value from every contact: an admin's decision.
     const ctx = await requireRole("admin")
@@ -18,6 +19,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
       prisma.contactCustomValue.deleteMany({ where: { custom_field_id: id } }),
       prisma.customField.delete({ where: { id } }),
     ])
+    await audit(auditCtx(req, ctx), { action: "record.deleted", target: { type: "custom_field", id, label: existing.field_name }, meta: { field_type: existing.field_type } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

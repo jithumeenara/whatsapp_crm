@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx, type AuditEntry } from '@/lib/audit'
 import { prisma } from '@/lib/db'
 import { GoogleNotConnectedError, googleAccessToken, isGoogleServiceEnabled, loadGoogleConnection } from '@/lib/google/oauth'
 import { SheetsApiError, createSpreadsheet, getSpreadsheet, spreadsheetUrl, writeTab } from '@/lib/google/sheets'
@@ -38,6 +39,22 @@ async function guard(tableId: string) {
     select: { id: true, name: true },
   })
   return { ctx, table }
+}
+
+/** One audit event about this table's Google Sheet link — no row values. */
+async function auditSheet(
+  req: NextRequest,
+  ctx: Awaited<ReturnType<typeof requireRole>>,
+  table: { id: string; name: string },
+  action: AuditEntry['action'],
+  meta: Record<string, unknown>,
+): Promise<void> {
+  const bulk = action === 'import.completed' || action === 'export.downloaded' || action === 'record.bulk_updated'
+  await audit({ ...auditCtx(req, ctx), ...(bulk ? { correlationId: crypto.randomUUID() } : {}) }, {
+    action,
+    target: { type: 'data_table', id: table.id, label: table.name },
+    meta: { what: 'google sheet', ...meta },
+  })
 }
 
 function presentSync(link: Awaited<ReturnType<typeof prisma.googleSheetLink.findFirst>>, linkedRows: number) {
@@ -230,6 +247,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     })
     if (direction === 'export') await writeExportHeader(link.id, ctx.accountId)
+    await auditSheet(req, ctx, table, 'record.updated', { direction, linked: true, sheet: sheetTitle })
     if (direction === 'sync') {
       // Two-way replaces one-way on this table: an import would bring rows
       // in twice, an export to the same tab would append them twice.
@@ -267,6 +285,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       data: { auto_sync: body.auto_sync },
     })
     if (updated.count === 0) return NextResponse.json({ error: 'Set up an import sheet first.' }, { status: 400 })
+    await auditSheet(req, ctx, table, 'record.updated', { direction: 'import', auto_sync: body.auto_sync })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)
@@ -316,6 +335,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       })
       await prisma.googleSheetRow.deleteMany({ where: { link_id: sync.id } })
       await prisma.googleSheetLink.deleteMany({ where: { id: imp.id, account_id: ctx.accountId } })
+      await auditSheet(req, ctx, table, 'record.updated', { direction: 'sync', converted_from: 'import' })
       return NextResponse.json(await runSheetSync(sync.id, ctx.accountId))
     }
     if (body.action === 'sync_now' || body.action === 'apply_deletions' || body.action === 'keep_deleted') {
@@ -329,6 +349,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       const result = await runSheetSync(sync.id, ctx.accountId, { allowDeletes: body.action === 'apply_deletions' })
       if (!result.ok) return NextResponse.json({ error: result.error ?? 'The sync did not finish.' }, { status: 400 })
+      await auditSheet(req, ctx, table, 'record.bulk_updated', { action: body.action })
       return NextResponse.json(result)
     }
 
@@ -339,8 +360,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: `Set up the ${direction} sheet first.` }, { status: 400 })
     }
     try {
-      if (direction === 'export') return NextResponse.json(await exportAll(link.id, ctx.accountId))
-      return NextResponse.json(await importFromSheet(link.id, ctx.accountId))
+      if (direction === 'export') {
+        const out = await exportAll(link.id, ctx.accountId)
+        await auditSheet(req, ctx, table, 'export.downloaded', { format: 'google_sheet', sheet: link.sheet_title })
+        return NextResponse.json(out)
+      }
+      const got = await importFromSheet(link.id, ctx.accountId)
+      await auditSheet(req, ctx, table, 'import.completed', {
+        source: 'google_sheet', sheet: link.sheet_title, count: (got as { imported?: number }).imported ?? null,
+      })
+      return NextResponse.json(got)
     } catch (err) {
       return NextResponse.json({ error: publicErrorMessage(err, 'Google Sheets failed.', 'data-tables/google-sheet') }, { status: 400 })
     }
@@ -356,7 +385,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!table) return NextResponse.json({ error: 'Table not found.' }, { status: 404 })
     const direction = req.nextUrl.searchParams.get('direction')
     if (!isDirection(direction)) return NextResponse.json({ error: 'direction must be export, import or sync.' }, { status: 400 })
-    await prisma.googleSheetLink.deleteMany({ where: { table_id: id, account_id: ctx.accountId, direction } })
+    const gone = await prisma.googleSheetLink.deleteMany({ where: { table_id: id, account_id: ctx.accountId, direction } })
+    if (gone.count > 0) await auditSheet(req, ctx, table, 'record.updated', { direction, linked: false })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

@@ -7,6 +7,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig, NoWhatsAppConfigError } from '@/lib/whatsapp/resolve-config'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { audit, auditCtx } from '@/lib/audit'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -273,6 +274,12 @@ export async function POST(request: Request) {
         failedCount++
       }
     }
+
+    await audit({ ...auditCtx(request, { accountId, userId, role: profile.account_role }), correlationId: crypto.randomUUID() }, {
+      action: 'broadcast.sent',
+      target: { type: 'broadcast', label: typeof template_name === 'string' ? template_name : null },
+      meta: { recipients: recipients.length, sent: sentCount, failed: failedCount, template: template_name, direct: true },
+    })
 
     return NextResponse.json({
       success: true,

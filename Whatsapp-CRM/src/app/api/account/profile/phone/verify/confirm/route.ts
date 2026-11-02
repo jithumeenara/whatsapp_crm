@@ -3,6 +3,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { verifyChallenge } from "@/lib/auth/mfa"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { audit } from "@/lib/audit"
+import { userAuditCtx } from "@/lib/audit/user-ctx"
 
 /**
  * POST /api/account/profile/phone/verify/confirm
@@ -39,6 +41,12 @@ export async function POST(req: NextRequest) {
     }
 
     await prisma.profile.update({ where: { user_id: session.user.id }, data: { phone_verified_at: new Date() } })
+    // The fact only — never the number.
+    await audit(await userAuditCtx(req, session.user.id), {
+      action: "record.updated",
+      target: { type: "member", id: session.user.id },
+      meta: { field: "phone_verified", self: true },
+    })
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error("Error in account/profile/phone/verify/confirm POST:", error)

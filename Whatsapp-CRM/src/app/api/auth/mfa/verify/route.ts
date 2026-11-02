@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { verifyChallenge } from "@/lib/auth/mfa"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
-import { clientIpKey } from "@/lib/net/client-ip"
+import { clientIp, clientIpKey } from "@/lib/net/client-ip"
+import { prisma } from "@/lib/db"
+import { recordLoginFailure, recordRateLimited } from "@/lib/audit/aggregate"
 
 function getClientIp(request: NextRequest): string {
   return clientIpKey(request.headers)
@@ -18,8 +20,12 @@ function getClientIp(request: NextRequest): string {
  */
 export async function POST(req: NextRequest) {
   try {
+    const where = { ip: clientIp(req.headers), userAgent: req.headers.get("user-agent"), requestId: req.headers.get("x-request-id") }
     const limit = checkRateLimit(`mfa-verify:${getClientIp(req)}`, RATE_LIMITS.mfaVerify)
-    if (!limit.success) return rateLimitResponse(limit)
+    if (!limit.success) {
+      recordRateLimited({ ...where, bucket: "mfa-verify" })
+      return rateLimitResponse(limit)
+    }
 
     const body = await req.json().catch(() => ({}))
     const challengeId = typeof body?.challengeId === "string" ? body.challengeId : ""
@@ -30,6 +36,20 @@ export async function POST(req: NextRequest) {
 
     const result = await verifyChallenge(challengeId, code)
     if (!result.ok) {
+      // Counted per minute for the audit log, against the challenge's user
+      // when there is one. The code itself is never kept.
+      const ch = await prisma.mfaChallenge
+        .findUnique({ where: { id: challengeId }, select: { user_id: true } })
+        .catch(() => null)
+      const prof = ch
+        ? await prisma.profile.findUnique({ where: { user_id: ch.user_id }, select: { account_id: true } }).catch(() => null)
+        : null
+      recordLoginFailure({
+        ...where,
+        action: "auth.mfa_fail",
+        reason: ch ? "mfa_invalid" : "unknown_challenge",
+        user: ch ? { id: ch.user_id, accountId: prof?.account_id ?? null } : null,
+      })
       return NextResponse.json({ error: result.error ?? "Invalid code" }, { status: 400 })
     }
     // Only 'login' challenges are meaningful to this endpoint — 'enroll'

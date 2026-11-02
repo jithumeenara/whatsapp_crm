@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * PATCH /api/broadcasts/[id]/recipients
@@ -65,6 +66,11 @@ export async function PATCH(
       await refreshBroadcastCounts(broadcastId);
     }
 
+    await audit({ ...auditCtx(request, ctx), correlationId: crypto.randomUUID() }, {
+      action: "record.bulk_updated",
+      target: { type: "broadcast", id: broadcastId },
+      meta: { count: body.updates.length, sent: sentInBatch, failed: failedInBatch, what: "recipient status" },
+    });
     return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);

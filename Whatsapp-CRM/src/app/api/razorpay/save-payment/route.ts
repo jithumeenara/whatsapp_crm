@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { detectType } from "@/lib/integration-fetch"
 import { isRazorpayPaymentId, paymentRowFromRazorpay } from "@/lib/integrations/razorpay-payment"
@@ -98,15 +99,25 @@ export async function POST(req: NextRequest) {
     const existingRecord = await prisma.dataRecord.findFirst({
       where: { table_id: table.id, data: { path: ["id"], equals: payment_id } },
     })
+    let recordId: string
     if (existingRecord) {
       await prisma.dataRecord.update({ where: { id: existingRecord.id }, data: { data: row } })
       afterRecordsChanged(table.id, ctx.accountId)
+      recordId = existingRecord.id
     } else {
       const created = await prisma.dataRecord.create({
         data: { table_id: table.id, account_id: ctx.accountId, data: row, source: 'payment' },
       })
       afterRecordCreated({ ...created, source: 'payment' })
+      recordId = created.id
     }
+    // The payment's own fields stay in the table; the log keeps which.
+    await audit(auditCtx(req, ctx), {
+      action: existingRecord ? "record.updated" : "record.created",
+      target: { type: "data_record", id: recordId, label: tableName },
+      changes: null,
+      meta: { table_id: table.id, payment_id, source: "razorpay", fields: Object.keys(row).sort().slice(0, 60) },
+    })
 
     // Create/update contact from email or contact (phone) field
     const phone = row.contact || row.phone || null

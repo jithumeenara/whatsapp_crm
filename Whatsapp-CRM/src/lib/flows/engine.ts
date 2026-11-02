@@ -104,6 +104,23 @@ import {
 import { afterRecordCreated } from "@/lib/data-store/record-events";
 import { triggerVars, carriedTriggerVars } from "@/lib/flows/trigger-vars";
 import { resolveTagStep } from "@/lib/flows/tag-step";
+import { agentRecordWritten, agentHandover, type AgentAuditInfo } from "@/lib/audit/actors";
+
+/** The audit identity of a chatbot run's writes: agent:chatbot, the bot
+ *  id, and the run id as correlation — never the bot owner's user id. */
+function runAgent(run: { id: string; flow_id: string; conversation_id: string | null }): AgentAuditInfo {
+  return { kind: "chatbot", flowOrBotId: run.flow_id, correlationId: `flow-run:${run.id}`, conversationId: run.conversation_id, source: "ai" };
+}
+
+function auditRun(
+  run: { id: string; flow_id: string; account_id: string; conversation_id: string | null },
+  step: string,
+  op: "create" | "update" | "delete",
+  target: { type: string; id?: string | null },
+  fields?: string[],
+): void {
+  void agentRecordWritten(run.account_id, runAgent(run), { tool: step, op, target, fields });
+}
 
 // ============================================================
 // Pure helpers — extracted so engine.test.ts can exercise them
@@ -966,6 +983,7 @@ async function executeHandoff(
     // Notify the inbox in real-time so agents see the pending assignment immediately.
     const { emitToAccount } = await import("@/lib/socket");
     emitToAccount(run.account_id, "conversation", { eventType: "UPDATE", new: updatedConv, old: {} });
+    void agentHandover(run.account_id, runAgent(run), run.conversation_id, { assigned: Boolean(resolvedAgentId), reason: endReason });
 
     if (resolvedAgentId && pick.agent) {
       const agent = pick.agent;
@@ -1492,6 +1510,7 @@ async function advanceFromNodeKey(
           const { removeTagsFromContact } = await import("@/lib/contacts/tag-events");
           await removeTagsFromContact({ accountId: run.account_id, contactId: run.contact_id, tagIds: [step.tagId], source: "chatbot" });
         }
+        auditRun(run, step.action === "add" ? "add_tag" : "remove_tag", "update", { type: "contact", id: run.contact_id }, ["tags"]);
       } catch (err) {
         // Non-fatal — log + advance. A tag-write failure shouldn't
         // strand the customer mid-flow.
@@ -1706,6 +1725,7 @@ async function advanceFromNodeKey(
           // Keep the cached contact in sync so a later node in the same
           // pass that reads {{contact.x}} doesn't see a stale value.
           if (["name", "email", "company"].includes(cfg.field)) contactGetter.patch({ [cfg.field]: val });
+          auditRun(run, "update_contact", "update", { type: "contact", id: run.contact_id }, [cfg.field]);
         } else {
           await logEvent(run.id, "error", node.node_key, { reason: "update_contact_failed", field: cfg.field, error: result.error });
         }
@@ -2076,6 +2096,7 @@ async function advanceFromNodeKey(
           ? {
               accountId: run.account_id,
               contactId: run.contact_id,
+              audit: runAgent(run),
               ...(searchTables.length > 0 ? { canSearchTables: true } : {}),
               ...((await calendarBookingEnabled(run.account_id)) ? { calendarBooking: true } : {}),
             }
@@ -2500,6 +2521,7 @@ The assistant could not generate a reply: ${detail}`,
             },
           });
           afterRecordCreated({ ...created, source: "chatbot" });
+          auditRun(run, "save_to_table", "create", { type: "data_record", id: created.id }, Object.keys(recordData));
         } catch (err) {
           await logEvent(run.id, "error", node.node_key, {
             reason: "save_to_table_failed",
@@ -2723,6 +2745,7 @@ The assistant could not generate a reply: ${detail}`,
                   description: `Lead "${title}" was updated automatically by a chatbot flow`,
                 },
               });
+              auditRun(run, "create_lead", "update", { type: "lead", id: existingLead.id });
             } else {
               const newLead = await prisma.lead.create({
                 data: {
@@ -2752,6 +2775,7 @@ The assistant could not generate a reply: ${detail}`,
               });
               const { emitToAccount } = await import("@/lib/socket");
               emitToAccount(run.account_id, "lead", { eventType: "INSERT", new: newLead, old: {} });
+              auditRun(run, "create_lead", "create", { type: "lead", id: newLead.id });
             }
 
           } else if (action === "add_to_segment" && cfg.segment_id) {
@@ -2786,6 +2810,7 @@ The assistant could not generate a reply: ${detail}`,
               }
               const { addTagsToContact } = await import("@/lib/contacts/tag-events");
               await addTagsToContact({ accountId: run.account_id, contactId: run.contact_id, tagIds: [tag.id], source: "chatbot" });
+              auditRun(run, "add_to_segment", "update", { type: "contact", id: run.contact_id }, ["tags"]);
             }
 
           } else if (action === "create_followup") {
@@ -2813,6 +2838,7 @@ The assistant could not generate a reply: ${detail}`,
                 ...(cfg.followup_assigned_to ? { assigned_to: cfg.followup_assigned_to } : {}),
               },
             });
+            auditRun(run, "create_followup", "create", { type: "follow_up", id: followUp.id });
             // Log in lead activity if linked to a lead
             if (recentLeadForFollowup) {
               await prisma.leadActivity.create({
@@ -2840,7 +2866,7 @@ The assistant could not generate a reply: ${detail}`,
               orderBy: { created_at: "desc" },
               select: { id: true },
             });
-            await prisma.task.create({
+            const task = await prisma.task.create({
               data: {
                 account_id: run.account_id,
                 user_id: run.user_id,
@@ -2855,7 +2881,9 @@ The assistant could not generate a reply: ${detail}`,
                 due_date: dueDate,
                 ...(cfg.task_assigned_to ? { assigned_to: cfg.task_assigned_to } : {}),
               },
+              select: { id: true },
             });
+            auditRun(run, "create_task", "create", { type: "task", id: task.id });
           }
         } catch (err) {
           // Non-fatal — log and advance so the customer flow isn't blocked.
@@ -3601,6 +3629,7 @@ async function handleReplyForActiveRun(
         where: { id: run.conversation_id },
         data: { status: "pending" },
       });
+      void agentHandover(run.account_id, runAgent(run), run.conversation_id, { reason: "fallback_exhausted" });
     }
     await logEvent(run.id, "handoff", run.current_node_key, {
       reason: "fallback_exhausted",

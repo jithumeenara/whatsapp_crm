@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { checkRateLimit } from "@/lib/rate-limit"
 import { ALERT_FIELD_SAMPLE, mappingFor, type AlertKind } from "@/lib/whatsapp/alert-fields"
 import { cleanNumbers, sendStaffAlert } from "@/lib/whatsapp/staff-alert"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * POST /api/alerts/test  { kind: "handoff" | "new_contact" }
@@ -57,6 +58,11 @@ export async function POST(req: NextRequest) {
       values,
       label: "alert-test",
       text: `🔔 Test alert (${kind === "handoff" ? "customer needs a person" : "new contact"}) — sample values only.\n\nFrom: ${values.customer_name}\nNumber: ${values.customer_phone}\nThey said: "${values.customer_message}"`,
+    })
+    await audit(auditCtx(req, ctx), {
+      action: "message.sent",
+      target: { type: "alert_rule", id: kind, label: kind === "handoff" ? "Handover alert" : "New contact alert" },
+      meta: { channel: "whatsapp", purpose: "alert_test", numbers: cleanNumbers(numbers).length, template: template ?? null },
     })
     return NextResponse.json({ ...result, usedTemplate: template })
   } catch (err) {

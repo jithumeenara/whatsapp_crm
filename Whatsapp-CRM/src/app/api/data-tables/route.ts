@@ -4,10 +4,11 @@ import { prisma } from '@/lib/db'
 import { slugify } from '@/lib/data-store/slugify'
 import { verifyApiKey } from '@/lib/auth/api-key'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { audit, auditCtx } from '@/lib/audit'
 
 /** Session OR API key. Returns the resolved accountId on success. */
 async function requireAuth(req: Request): Promise<
-  | { ok: true; accountId: string }
+  | { ok: true; accountId: string; actor: { accountId: string; userId: string; role: string; apiKeyId?: string } }
   | { ok: false; status: number; body: { error: string } }
 > {
   const authHeader = req.headers.get('authorization') ?? ''
@@ -20,13 +21,17 @@ async function requireAuth(req: Request): Promise<
 
     const result = await verifyApiKey(raw)
     if (!result) return { ok: false, status: 401, body: { error: 'Invalid API key.' } }
-    return { ok: true, accountId: result.accountId }
+    return {
+      ok: true,
+      accountId: result.accountId,
+      actor: { accountId: result.accountId, userId: result.creatorUserId, role: 'supervisor', apiKeyId: result.keyId },
+    }
   }
 
   const member = await dataStoreMember(req.method === 'GET' ? 'viewer' : 'supervisor')
   if (!member.ok) return member
   const accountIdOf = member.ctx.accountId
-  return { ok: true, accountId: accountIdOf }
+  return { ok: true, accountId: accountIdOf, actor: member.ctx }
 }
 
 export async function GET(req: Request) {
@@ -74,6 +79,11 @@ export async function POST(req: Request) {
         icon: body.icon ?? 'database',
         description: body.description ?? null,
       },
+    })
+    await audit(auditCtx(req, guard.actor), {
+      action: 'record.created',
+      target: { type: 'data_table', id: table.id, label: table.name },
+      meta: { slug },
     })
     return NextResponse.json({ table }, { status: 201 })
   } catch (err) {

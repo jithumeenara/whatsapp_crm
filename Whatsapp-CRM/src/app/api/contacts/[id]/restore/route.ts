@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * POST /api/contacts/[id]/restore
@@ -18,6 +19,7 @@ export async function POST(
       data: { archived_at: null, archived_by: null },
     })
     if (restored.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 })
+    await audit(auditCtx(req, ctx), { action: "record.restored", target: { type: "contact", id, label: null } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

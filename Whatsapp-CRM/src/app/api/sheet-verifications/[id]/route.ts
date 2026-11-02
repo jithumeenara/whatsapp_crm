@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx, changedFieldNames } from '@/lib/audit'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { cleanVerificationInput } from '@/lib/verify/sheet-verify'
 import { ownsWhatsAppNumber } from '@/lib/verify/verify-brand'
@@ -48,16 +49,23 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!(await ownsWhatsAppNumber(ctx.accountId, parsed.data.help_whatsapp_config_id))) {
       return NextResponse.json({ error: 'Choose one of your connected WhatsApp numbers.' }, { status: 400 })
     }
+    const before = await prisma.sheetVerification.findFirst({ where: { id, account_id: ctx.accountId }, select: SETTINGS })
     const done = await prisma.sheetVerification.updateMany({ where: { id, account_id: ctx.accountId }, data: parsed.data })
     if (!done.count) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
     const v = await prisma.sheetVerification.findFirst({ where: { id, account_id: ctx.accountId }, select: SETTINGS })
+    // Setting names only: the texts and sheet details are not copied here.
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'sheet_verification', id, label: (v as { name?: string } | null)?.name ?? null },
+      meta: { fields: changedFieldNames(before as Record<string, unknown> | null, parsed.data as unknown as Record<string, unknown>) },
+    })
     return NextResponse.json({ verification: v })
   } catch (err) {
     return toErrorResponse(err)
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await requireRole('admin')
     assertPageAccess(ctx, '/data')
@@ -65,6 +73,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     if (!UUID.test(id)) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
     const done = await prisma.sheetVerification.deleteMany({ where: { id, account_id: ctx.accountId } })
     if (!done.count) return NextResponse.json({ error: 'Not found.' }, { status: 404 })
+    await audit(auditCtx(req, ctx), { action: 'record.deleted', target: { type: 'sheet_verification', id } })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

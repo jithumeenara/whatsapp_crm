@@ -9,6 +9,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { audit, auditCtx } from "@/lib/audit";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
@@ -37,7 +38,7 @@ export async function DELETE(
     // as 404 rather than leaking existence.
     const existing = await prisma.accountInvitation.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true },
+      select: { id: true, role: true, label: true },
     });
 
     if (!existing) {
@@ -48,6 +49,11 @@ export async function DELETE(
     }
 
     await prisma.accountInvitation.delete({ where: { id } });
+    await audit(auditCtx(_request, ctx), {
+      action: "member.invite_cancelled",
+      target: { type: "invitation", id, label: existing.label ?? null },
+      meta: { role: existing.role },
+    });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

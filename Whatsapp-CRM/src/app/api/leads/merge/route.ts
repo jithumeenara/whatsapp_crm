@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * Folding duplicate leads into one.
@@ -140,6 +141,12 @@ export async function POST(req: NextRequest) {
       await tx.lead.deleteMany({ where: { id: { in: ids }, account_id: ctx.accountId } })
 
       return moved
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.merged',
+      target: { type: 'lead', id: keep.id, label: null },
+      meta: { merged_ids: ids, count: ids.length, moved: result },
     })
 
     return NextResponse.json({ merged: ids.length, kept: keep.id, moved: result })

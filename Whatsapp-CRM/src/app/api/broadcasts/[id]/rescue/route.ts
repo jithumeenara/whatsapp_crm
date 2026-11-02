@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 import { refreshBroadcastCounts } from "@/lib/broadcasts/counts";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * POST /api/broadcasts/[id]/rescue
@@ -25,7 +26,7 @@ export async function POST(
 
     const broadcast = await ctx.db.broadcast.findFirst({
       where: { id, account_id: ctx.accountId },
-      select: { id: true, status: true },
+      select: { id: true, name: true, status: true },
     });
 
     if (!broadcast) {
@@ -52,6 +53,14 @@ export async function POST(
       data: { status: "failed" },
     });
     await refreshBroadcastCounts(id);
+    // No "broadcast.rescued" action exists yet: a status change with the count.
+    await audit(auditCtx(req, ctx), {
+      action: "record.status_changed",
+      target: { type: "broadcast", id, label: broadcast.name },
+      before: { status: "sending" },
+      after: { status: "failed" },
+      meta: { rescued: count },
+    });
 
     return NextResponse.json({ ok: true, rescued: count });
   } catch (err) {

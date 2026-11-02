@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 import { contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
 import { OUTCOME_INFO, isOutcome } from "@/lib/broadcasts/outcomes";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * Contact lists — fixed, saved sets of people, usable as a broadcast
@@ -96,6 +97,11 @@ export async function POST(req: NextRequest) {
           });
         }
         return created;
+      });
+      await audit(auditCtx(req, ctx), {
+        action: "record.created",
+        target: { type: "contact_list", id: list.id, label: list.name },
+        meta: { members: contactIds.length, ...origin, merged_list_ids: Array.isArray(body?.mergeListIds) ? body.mergeListIds : undefined },
       });
       return NextResponse.json({ list: { ...list, member_count: contactIds.length } }, { status: 201 });
     } catch (err) {

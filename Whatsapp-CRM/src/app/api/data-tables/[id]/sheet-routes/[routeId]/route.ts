@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import type { Prisma } from '@prisma/client'
 import { parseRuleInput } from '@/lib/google/sheet-route-input'
 import type { RouteField } from '@/lib/google/sheet-route-rules'
@@ -19,6 +20,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null
     if (body && Object.keys(body).length === 1 && typeof body.enabled === 'boolean') {
       await prisma.sheetRoute.update({ where: { id: route.id }, data: { enabled: body.enabled } })
+      await audit(auditCtx(req, ctx), {
+        action: 'record.status_changed',
+        target: { type: 'data_table', id },
+        meta: { what: 'sheet routing rule', rule_id: route.id, enabled: body.enabled },
+      })
       return NextResponse.json({ ok: true })
     }
     const fields = await prisma.dataField.findMany({ where: { table_id: id, account_id: ctx.accountId }, select: { field_key: true, label: true, field_type: true, options: true } })
@@ -28,18 +34,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: 'This table already has an “Others” rule.' }, { status: 400 })
     }
     await prisma.sheetRoute.update({ where: { id: route.id }, data: { ...parsed.rule, conditions: parsed.rule.conditions as unknown as Prisma.InputJsonValue, columns: parsed.rule.columns as unknown as Prisma.InputJsonValue, last_error: null } })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'data_table', id },
+      meta: { what: 'sheet routing rule', rule_id: route.id, fields: Object.keys(parsed.rule).sort() },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string; routeId: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string; routeId: string }> }) {
   try {
     const ctx = await requireRole('admin')
     const { id, routeId } = await params
     const n = await prisma.sheetRoute.deleteMany({ where: { id: routeId, table_id: id, account_id: ctx.accountId } })
     if (n.count === 0) return NextResponse.json({ error: 'Rule not found' }, { status: 404 })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.deleted',
+      target: { type: 'data_table', id },
+      meta: { what: 'sheet routing rule', rule_id: routeId },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

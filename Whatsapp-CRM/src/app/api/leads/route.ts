@@ -5,6 +5,7 @@ import { canViewAllLeads } from '@/lib/auth/roles'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
+import { audit, auditCtx } from '@/lib/audit'
 import { findOrCreateContact } from '@/lib/contacts/find-or-create'
 import { normalizeEnteredPhone } from '@/lib/leads/new-follow-up'
 import { cleanContactDetails, hasContactDetails, saveContactDetails } from '@/lib/leads/contact-details'
@@ -371,6 +372,13 @@ export async function POST(req: NextRequest) {
         details_saved = false
       }
     }
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'lead', id: lead.id, label: null },
+      after: { title: lead.title, contact_id: lead.contact_id, source: lead.source, status: lead.status, score: lead.score, assigned_to: lead.assigned_to },
+      meta: force_create ? { force_create: true } : null,
+    })
 
     emitToAccount(ctx.accountId, 'lead', { eventType: 'INSERT', new: lead, old: {} })
     return NextResponse.json({ ...withCallablePhones({ lead }), details_saved }, { status: 201 })

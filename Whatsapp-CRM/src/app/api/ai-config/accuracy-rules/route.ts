@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { accuracyPromptBlock, accuracyRulesFor, parseAccuracyRules, setAccuracyRules, suggestedTopics } from '@/lib/ai/accuracy-rules'
 import { businessUnderstanding, formatCompanyBlock, loadCompanyProfile, resolveCategory } from '@/lib/ai/company-profile'
 
@@ -39,6 +41,11 @@ export async function PUT(req: Request) {
     const body = (await req.json().catch(() => null)) as { rules?: unknown } | null
     if (!body?.rules) return NextResponse.json({ error: 'rules is required.' }, { status: 400 })
     await setAccuracyRules(ctx.accountId, parseAccuracyRules(body.rules))
+    // Rule names only: the phrases and topics themselves are not recorded.
+    await auditConfigChange(auditCtx(req, ctx), 'config.ai_changed', {
+      area: 'ai_accuracy_rules',
+      fields: typeof body.rules === 'object' && body.rules ? Object.keys(body.rules as object) : ['rules'],
+    })
     return NextResponse.json(await view(ctx.accountId))
   } catch (err) {
     return toErrorResponse(err)

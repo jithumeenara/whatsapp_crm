@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
+import { audit, auditCtx } from '@/lib/audit'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -48,6 +49,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       },
     })
 
+    {
+      const after: Record<string, unknown> = {
+        stage_id: body.stage_id ?? undefined,
+        title: body.title ?? undefined,
+        value: body.value === undefined || body.value === null ? undefined : String(body.value),
+        currency: body.currency ?? undefined,
+        notes: body.notes ?? undefined,
+        expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : undefined,
+        status,
+        assigned_to: body.assigned_to ?? undefined,
+        contact_id: body.contact_id ?? undefined,
+      }
+      for (const k of Object.keys(after)) if (after[k] === undefined) delete after[k]
+      const before = { ...existing, value: existing.value?.toString() ?? null } as Record<string, unknown>
+      const statusMoved = status !== undefined && status !== existing.status
+      await audit(auditCtx(req, ctx), {
+        action: statusMoved ? 'record.status_changed' : 'record.updated',
+        target: { type: 'deal', id, label: null },
+        before,
+        after,
+      })
+    }
+
     // Click-to-WhatsApp attribution — a deal closing is the strongest
     // outcome signal there is; report it if this contact's conversation
     // came from an ad (reportMetaAdsOutcome no-ops otherwise).
@@ -75,6 +99,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     await prisma.deal.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.deleted',
+      target: { type: 'deal', id, label: null },
+      meta: { pipeline_id: existing.pipeline_id, stage_id: existing.stage_id, status: existing.status, value: existing.value?.toString() ?? null, contact_id: existing.contact_id },
+    })
     return NextResponse.json({ ok: true })
   } catch (e) {
     return toErrorResponse(e)

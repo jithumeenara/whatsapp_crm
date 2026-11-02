@@ -32,6 +32,8 @@ vi.mock('@/lib/db', () => ({
         return Promise.resolve({ count: 1 })
       },
     },
+    // Key creation and revocation now run with their audit event in one transaction.
+    $transaction(fn: (tx: unknown) => unknown) { return fn(this) },
   },
 }))
 

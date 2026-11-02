@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { openStoredSecret, sealSecret } from "@/lib/whatsapp/encryption"
 import { ensureInstagramConfigTable as ensureTable } from "@/lib/social/ensure-tables"
@@ -175,6 +177,14 @@ export async function PATCH(req: NextRequest) {
         updated_at           = now()
     `
 
+    await auditConfigChange(auditCtx(req, ctx), "config.channel_changed", {
+      area: "instagram",
+      fields: ["access_token", "verify_token", "instagram_account_id", "page_id"].filter((k) => {
+        const v = (body as Record<string, unknown>)[k]
+        return typeof v === "string" && v !== "" && v !== MASKED
+      }),
+      meta: { created: existing.length === 0 },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)

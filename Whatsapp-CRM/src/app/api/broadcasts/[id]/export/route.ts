@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import { safeText } from "@/lib/files/spreadsheet-safe";
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { businessTimezone } from "@/lib/ai/human-date";
+import { audit, auditCtx } from "@/lib/audit";
 import { OUTCOMES, OUTCOME_INFO, isOutcome, outcomeOf, type Outcome } from "@/lib/broadcasts/outcomes";
 
 /** "2026-10-18 14:30" in the business's own zone, never the server's. */
@@ -87,6 +88,11 @@ export async function GET(
     }
 
     const buffer = await wb.xlsx.writeBuffer();
+    await audit(auditCtx(request, ctx), {
+      action: "export.downloaded",
+      target: { type: "broadcast", id: broadcast.id, label: broadcast.name },
+      meta: { rows: [...groups.values()].reduce((n, l) => n + l.length, 0), format: "xlsx", outcome: only ?? "all" },
+    });
     const filename = `broadcast-${broadcast.name.replace(/[^a-z0-9]/gi, "_")}${only ? `-${only}` : ""}.xlsx`;
     // exceljs's bundled Buffer type doesn't line up with this project's
     // @types/node Buffer<ArrayBufferLike> generic — Uint8Array sidesteps

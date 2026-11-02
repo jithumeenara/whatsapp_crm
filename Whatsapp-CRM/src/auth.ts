@@ -7,9 +7,21 @@ import { getSessionInvalidatedAt } from "@/lib/auth/session-invalidation";
 import { recordDeviceSession } from "@/lib/auth/device-session";
 import { ABSOLUTE_SESSION_MAX_AGE_S, tokenIsIdle, tokenIsStale } from "@/lib/auth/session-guard";
 import { clientIp } from "@/lib/net/client-ip";
+import { audit } from "@/lib/audit";
+import { recordLoginFailure } from "@/lib/audit/aggregate";
 
 function getClientIp(request: Request): string | null {
   return clientIp(request.headers);
+}
+
+/** The team a user belongs to, for the audit log. Never throws. */
+async function auditAccountOf(userId: string): Promise<{ accountId: string | null; role: string | null }> {
+  try {
+    const p = await prisma.profile.findUnique({ where: { user_id: userId }, select: { account_id: true, account_role: true } });
+    return { accountId: p?.account_id ?? null, role: p?.account_role ?? null };
+  } catch {
+    return { accountId: null, role: null };
+  }
 }
 
 // Only updated when it's at least this stale, so a session's normal use
@@ -63,13 +75,28 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           });
         }
 
-        if (!user || !user.password_hash) return null;
+        // Why a sign-in failed is recorded for the audit log only (counted
+        // per minute, lib/audit/aggregate.ts); the person is told nothing
+        // more than before. An unknown email is kept only as an HMAC.
+        const where = {
+          ip: getClientIp(request),
+          userAgent: request.headers.get("user-agent"),
+          requestId: request.headers.get("x-request-id"),
+        };
+        const failed = async (reason: string, u?: { id: string } | null) => {
+          const known = u ? { id: u.id, accountId: (await auditAccountOf(u.id)).accountId } : null;
+          recordLoginFailure({ ...where, reason, typed: raw, user: known });
+          return null;
+        };
+
+        if (!user) return failed("unknown_user");
+        if (!user.password_hash) return failed("no_password", user);
 
         const valid = await bcrypt.compare(
           credentials.password as string,
           user.password_hash
         );
-        if (!valid) return null;
+        if (!valid) return failed("bad_password", user);
 
         // MFA gate — password alone is never sufficient once a user has
         // opted in. The challengeId must be a 'login' challenge for THIS
@@ -78,9 +105,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // same verified code can't be reused for a second sign-in.
         if (user.mfa_method !== "disabled") {
           const challengeId = credentials.challengeId as string | undefined;
-          if (!challengeId) return null;
+          if (!challengeId) return failed("mfa_missing", user);
           const consumed = await consumeLoginChallenge(challengeId, user.id);
-          if (!consumed) return null;
+          if (!consumed) return failed("mfa_invalid", user);
         }
 
         // Real per-device session tracking (Settings > Profile > Sessions)
@@ -92,6 +119,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         // and just omits sessionId (jwt() below treats a token with no
         // sessionId as always valid, same as before this feature existed).
         let sessionId: string | undefined;
+        let newDevice = false;
         try {
           // A revoked row is never revived — see lib/auth/device-session.ts.
           sessionId = await recordDeviceSession(
@@ -99,10 +127,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             user.id,
             request.headers.get("user-agent"),
             getClientIp(request),
+            { onNewDevice: () => { newDevice = true; } },
           );
         } catch (err) {
           console.error("Failed to create/update UserSession row:", err);
         }
+
+        // Best effort: audit() never throws and never blocks the sign-in.
+        const team = await auditAccountOf(user.id);
+        const actx = {
+          accountId: team.accountId,
+          actor: { type: "user" as const, id: user.id, role: team.role },
+          source: "web" as const,
+          ...where,
+        };
+        await audit(actx, [
+          { action: "auth.login_success", target: { type: "user", id: user.id }, meta: { mfa: user.mfa_method !== "disabled" } },
+          ...(newDevice ? [{ action: "auth.new_device" as const, target: { type: "user", id: user.id } }] : []),
+        ]);
 
         return { id: user.id, email: user.email, sessionId };
       },
@@ -254,6 +296,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async signOut(message) {
       const token = "token" in message ? message.token : null;
       if (!token?.id) return;
+
+      const team = await auditAccountOf(String(token.id));
+      await audit(
+        { accountId: team.accountId, actor: { type: "user", id: String(token.id), role: team.role }, source: "web" },
+        { action: "auth.logout", target: { type: "user", id: String(token.id) } },
+      );
 
       await Promise.allSettled([
         prisma.user.update({

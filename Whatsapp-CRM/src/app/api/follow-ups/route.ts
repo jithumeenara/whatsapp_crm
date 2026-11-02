@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
+import { audit, auditCtx } from '@/lib/audit'
 
 const PAGE_SIZE = 25
 
@@ -72,6 +73,12 @@ export async function POST(req: NextRequest) {
         lead: { select: { id: true, title: true } },
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'follow_up', id: followUp.id, label: null },
+      after: { due_at: followUp.due_at, contact_id: followUp.contact_id, lead_id: followUp.lead_id, assigned_to: followUp.assigned_to },
     })
 
     return NextResponse.json(withCallablePhones({ followUp }), { status: 201 })

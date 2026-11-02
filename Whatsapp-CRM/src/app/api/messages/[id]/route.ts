@@ -3,6 +3,7 @@ import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { ForbiddenError, UnauthorizedError, requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
+import { audit, auditCtx } from "@/lib/audit"
 
 // Same key as the two read routes, so whichever runs first covers all
 // three for the lifetime of the process.
@@ -83,6 +84,12 @@ export async function DELETE(
     await prisma.$executeRaw`
       UPDATE messages SET deleted_at = now() WHERE id = ${id}::uuid
     `
+    // Never the body: only which message, where, and whether it was unsent.
+    await audit(auditCtx(req, ctx), {
+      action: "message.deleted",
+      target: { type: "message", id, label: null },
+      meta: { channel, conversation_id: msg.conversation_id, sender_type: msg.sender_type, content_type: msg.content_type, unsent_on_platform: !!(platformMid && platformUnsends) },
+    })
 
     // The agent needs to know which of the two just happened. A
     // message gone from their screen but still on the customer's phone

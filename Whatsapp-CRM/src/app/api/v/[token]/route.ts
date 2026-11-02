@@ -7,6 +7,7 @@ import { dropdownsOf, openLink, viewOf } from '@/lib/verify/verify-public'
 import { prisma } from '@/lib/db'
 import { isOpen, markOpened, recordAnswer, RowMovedError, setupOf } from '@/lib/verify/sheet-verify-server'
 import { verifyStrings } from '@/lib/verify/verify-strings'
+import { publicDetailsConfirmed } from '@/lib/audit/actors'
 
 /**
  * POST /api/v/<token>  { action: 'confirm' }
@@ -63,6 +64,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
 
     if (body.action === 'confirm') {
       await recordAnswer({ v: link.v, sheet: link.sheet, rowNumber: link.rowNumber, ref: link.ref, changes: [], by: 'Person', state: 'verified' })
+      void publicDetailsConfirmed(link.v.account_id, req, { verification_id: link.v.id, state: 'verified', fields: [] })
       return NextResponse.json({ ok: true, state: 'verified', items: viewOf(link, await dropdownsOf(link)) })
     }
 
@@ -72,6 +74,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     if (!checked.ok) return NextResponse.json({ error: checked.problem, stale: !!checked.stale }, { status: checked.stale ? 409 : 400 })
     if (!checked.changes.length) return NextResponse.json({ error: t.noChange }, { status: 400 })
     await recordAnswer({ v: link.v, sheet: link.sheet, rowNumber: link.rowNumber, ref: link.ref, changes: checked.changes, by: 'Person', state: 'corrected' })
+    // Column names only — never what the person typed.
+    void publicDetailsConfirmed(link.v.account_id, req, { verification_id: link.v.id, state: 'corrected', fields: checked.changes.map((c) => c.header) })
     const row = [...link.row]
     for (const c of checked.changes) row[c.col] = c.after
     return NextResponse.json({ ok: true, state: 'corrected', items: viewOf({ ...link, row }, dropdowns) })

@@ -14,6 +14,7 @@
  */
 
 import crypto from 'crypto'
+import { jobFailed, jobWrote } from '@/lib/audit/actors'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { googleAccessToken, isGoogleServiceEnabled } from './oauth'
@@ -305,11 +306,19 @@ export async function sweepGoogleSheetImports(): Promise<void> {
   const links = await prisma.googleSheetLink
     .findMany({ where: { direction: 'import', auto_sync: true }, select: { id: true, account_id: true } })
     .catch(() => [])
+  let imported = 0
+  let failures = 0
   for (const l of links) {
-    await importFromSheet(l.id, l.account_id).catch((err) =>
-      console.error('[google-sheet] scheduled import failed:', err instanceof Error ? err.message : err),
-    )
+    const r = await importFromSheet(l.id, l.account_id).catch((err) => {
+      failures++
+      console.error('[google-sheet] scheduled import failed:', err instanceof Error ? err.message : err)
+      return null
+    })
+    imported += r?.imported ?? 0
   }
+  // One audit summary per run that changed something.
+  void jobWrote('google-sheet-import', null, imported)
+  if (failures) void jobFailed('google-sheet-import', null, `${failures} import(s) failed`)
 }
 
 

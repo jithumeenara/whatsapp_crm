@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { Prisma } from '@prisma/client'
 import { readFile } from 'fs/promises'
 import { auth } from '@/auth'
@@ -879,7 +880,7 @@ export async function GET(
 }
 
 export async function POST(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -968,6 +969,11 @@ export async function POST(
           return NextResponse.json({ error: `Meta API error: ${assetRes.status}` }, { status: 502 })
         }
       }
+      await auditFlowAction(request, {
+        action: 'record.updated',
+        target: { type: 'flow', id, label: flow.name },
+        meta: { uploaded_to_meta: true, meta_flow_id: metaFlowId, updated: true },
+      })
       return NextResponse.json({ ok: true, meta_flow_id: metaFlowId, updated: true })
     }
 
@@ -1073,6 +1079,11 @@ export async function POST(
       },
     })
 
+    await auditFlowAction(request, {
+      action: 'record.updated',
+      target: { type: 'flow', id, label: flow.name },
+      meta: { uploaded_to_meta: true, meta_flow_id: metaFlowId, created: true },
+    })
     return NextResponse.json({ ok: true, meta_flow_id: metaFlowId })
   } catch (err) {
     console.error('[POST /api/flows/[id]/upload]', err)

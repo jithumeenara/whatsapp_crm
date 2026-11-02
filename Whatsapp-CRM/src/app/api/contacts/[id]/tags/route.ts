@@ -2,6 +2,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { addTagsToContact, removeTagsFromContact } from "@/lib/contacts/tag-events"
 import { NextRequest, NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * GET /api/contacts/[id]/tags
@@ -67,6 +68,11 @@ export async function PUT(
     if (tagIds.length > 0) {
       await addTagsToContact({ accountId: ctx.accountId, contactId: id, tagIds, source: "inbox" })
     }
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "contact", id, label: null },
+      meta: { op: "tags_replaced", tag_ids: tagIds },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (err) {
@@ -109,6 +115,11 @@ export async function POST(
       return NextResponse.json({ error: "That tag does not exist." }, { status: 404 })
     }
     await addTagsToContact({ accountId: ctx.accountId, contactId: id, tagIds: [tagId], source: "inbox" })
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "contact", id, label: null },
+      meta: { op: "tag_added", tag_id: tagId },
+    })
 
     return NextResponse.json({ ok: true }, { status: 201 })
   } catch (err) {
@@ -142,6 +153,11 @@ export async function DELETE(
     }
 
     await removeTagsFromContact({ accountId: ctx.accountId, contactId: id, tagIds: [tagId], source: "inbox" })
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "contact", id, label: null },
+      meta: { op: "tag_removed", tag_id: tagId },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (err) {

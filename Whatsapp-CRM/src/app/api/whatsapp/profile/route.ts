@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import {
   getWhatsAppBusinessProfile,
@@ -65,8 +66,10 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   // Every customer sees this profile — changing it is an admin's call.
   let userId: string
+  let ctx: Awaited<ReturnType<typeof requireRole>>
   try {
-    userId = (await requireRole("admin")).userId
+    ctx = await requireRole("admin")
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -93,6 +96,14 @@ export async function PATCH(req: NextRequest) {
       phoneNumberId: config.phone_number_id,
       accessToken,
       profile: { about, description, address, email, websites, vertical },
+    })
+
+    // Field names only: the profile text and contact details stay on Meta.
+    const sent = { about, description, address, email, websites, vertical }
+    await audit(auditCtx(req, ctx), {
+      action: "config.whatsapp_changed",
+      target: { type: "whatsapp_profile", id: config.id ?? null, label: "Business profile" },
+      meta: { fields: Object.keys(sent).filter((k) => sent[k as keyof typeof sent] !== undefined).sort() },
     })
 
     return NextResponse.json({ success: true })

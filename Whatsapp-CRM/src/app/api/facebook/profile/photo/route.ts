@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
+import { audit, auditCtx } from "@/lib/audit"
 
 const MAX_BYTES = 5 * 1024 * 1024
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"])
@@ -49,6 +50,12 @@ export async function POST(req: NextRequest) {
     if (!res.ok || data.error) {
       return NextResponse.json({ error: data.error?.message ?? "Failed to update the Page photo" }, { status: 502 })
     }
+
+    await audit(auditCtx(req, ctx), {
+      action: "file.uploaded",
+      target: { type: "facebook_page", id: row.page_id },
+      meta: { purpose: "facebook_page_photo", content_type: file.type, size: file.size },
+    })
 
     return NextResponse.json({ success: true })
   } catch (err) {

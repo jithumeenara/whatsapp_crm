@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { COMPANY_CATEGORIES, COMPANY_SECTIONS, ensureCompanyProfileColumns } from '@/lib/ai/company-profile'
 import { isKnownTimezone } from '@/lib/agents/timezones'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 /**
  * The account's company details.
@@ -40,8 +42,10 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   let accountId: string
+  let ctx: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    ctx = await requireRole('admin')
+    accountId = ctx.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
@@ -77,10 +81,18 @@ export async function PUT(req: Request) {
   }
 
   await ensureCompanyProfileColumns()
+  const before = await prisma.companyProfile.findUnique({ where: { account_id: accountId } })
   const profile = await prisma.companyProfile.upsert({
     where: { account_id: accountId },
     update: data,
     create: { account_id: accountId, ...data },
+  })
+
+  // Which details changed — never the text itself.
+  await auditConfigChange(auditCtx(req, ctx), 'config.other_changed', {
+    area: 'company_profile',
+    before: before as Record<string, unknown> | null,
+    after: data,
   })
 
   return NextResponse.json({ profile })

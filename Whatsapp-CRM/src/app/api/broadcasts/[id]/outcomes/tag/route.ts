@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/au
 import { contactsInOutcome } from "@/lib/broadcasts/outcome-audience";
 import { isOutcome } from "@/lib/broadcasts/outcomes";
 import { addTagsToContacts } from "@/lib/contacts/tag-events";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * POST /api/broadcasts/[id]/outcomes/tag   { outcome, tagId }
@@ -34,6 +35,11 @@ export async function POST(
       accountId: ctx.accountId,
       pairs: contactIds.map((contactId) => ({ contactId, tagId: tag.id })),
       source: "broadcast",
+    });
+    await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+      action: "record.bulk_updated",
+      target: { type: "broadcast", id },
+      meta: { count: added.length, inGroup: contactIds.length, outcome: body.outcome, tag: tag.name, tagId: tag.id },
     });
     return NextResponse.json({ tag: tag.name, inGroup: contactIds.length, added: added.length });
   } catch (err) {

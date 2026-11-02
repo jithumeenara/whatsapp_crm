@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { CONVERSATION_STATUSES, isOneOf } from "@/lib/status-lists"
 import { sendPushToUser } from "@/lib/push"
 import { requestFeedback } from "@/lib/ai/csat"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * GET /api/conversations/[id]
@@ -100,6 +101,21 @@ export async function PATCH(
       where: { id },
       data,
     })
+
+    // Marking a chat read (unread_count alone) is routine, not recorded.
+    {
+      const statusMoved = data.status !== undefined && data.status !== conversation.status
+      const ownerMoved = "assigned_agent_id" in data && data.assigned_agent_id !== conversation.assigned_agent_id
+      if (statusMoved || ownerMoved) {
+        await audit(auditCtx(req, ctx), {
+          action: statusMoved ? "record.status_changed" : "record.assigned",
+          target: { type: "conversation", id, label: null },
+          before: { status: conversation.status, assigned_agent_id: conversation.assigned_agent_id },
+          after: data,
+          only: ["status", "assigned_agent_id"],
+        })
+      }
+    }
 
     // Closing a conversation is the one moment the customer has an
     // opinion worth asking for, and the one moment asking is not an

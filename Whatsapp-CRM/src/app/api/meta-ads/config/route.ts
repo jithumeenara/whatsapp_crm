@@ -4,6 +4,8 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { testMetaAdsConnection, createOrGetDataset } from '@/lib/meta-ads/api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 /**
  * GET /api/meta-ads/config
@@ -121,6 +123,12 @@ export async function POST(request: Request) {
     } else {
       await prisma.metaAdsConfig.create({ data: { account_id: accountId, user_id: ctx.userId, ...data } })
     }
+    await auditConfigChange(auditCtx(request, ctx), 'config.integration_changed', {
+      area: 'meta_ads',
+      before: existing as unknown as Record<string, unknown> | null,
+      after: { waba_id: data.waba_id, ad_account_id: data.ad_account_id, business_id: data.business_id, access_token: data.access_token, dataset_id: data.dataset_id, automatic_events_enabled: data.automatic_events_enabled, status: data.status },
+      meta: { created: !existing },
+    })
 
     return NextResponse.json({
       success: true,
@@ -135,10 +143,11 @@ export async function POST(request: Request) {
 }
 
 /** DELETE /api/meta-ads/config — "Reset Configuration" recovery flow. */
-export async function DELETE() {
+export async function DELETE(request?: Request) {
   try {
     // Destroys real credentials — 'owner' only, same floor as POST above.
-    const { accountId } = await requireRole('owner')
+    const ctx = await requireRole('owner')
+    const { accountId } = ctx
 
     try {
       await prisma.metaAdsConfig.delete({ where: { account_id: accountId } })
@@ -146,6 +155,7 @@ export async function DELETE() {
       if ((err as { code?: string })?.code === 'P2025') return NextResponse.json({ success: true })
       throw err
     }
+    await auditConfigChange(auditCtx(request ?? null, ctx), 'config.integration_changed', { area: 'meta_ads', fields: [], meta: { removed: true } })
     return NextResponse.json({ success: true })
   } catch (error) {
     return toErrorResponse(error)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
+import { audit, auditCtx } from '@/lib/audit'
 
 const PAGE_SIZE = 50
 
@@ -64,6 +65,12 @@ export async function POST(req: NextRequest) {
       include: {
         user: { select: { id: true, name: true, email: true } },
       },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'lead_activity', id: activity.id, label: null },
+      after: { lead_id: activity.lead_id, contact_id: activity.contact_id, type: activity.type, description: activity.description },
     })
 
     return NextResponse.json({ activity }, { status: 201 })

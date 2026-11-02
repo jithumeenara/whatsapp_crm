@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { requireStepUp, StepUpError } from '@/lib/admin-chat/step-up'
 import { writeAudit, verifyAuditChain } from '@/lib/admin-chat/audit'
 import { MAX_MEMBERS } from '@/lib/admin-chat/rules'
@@ -208,6 +210,8 @@ export async function PUT(req: Request) {
       })
     }
     await writeAudit({ accountId: ctx.accountId, event: 'settings_changed', actorUserId: ctx.userId, detail: data })
+    // Mirrored into the main audit log; the authenticator code never is.
+    await auditConfigChange(auditCtx(req, ctx), 'config.other_changed', { area: 'admin_chat_settings', fields: Object.keys(data) })
     return NextResponse.json({ ok: true })
   } catch (err) {
     if (err instanceof StepUpError) return NextResponse.json({ error: err.message }, { status: err.status })

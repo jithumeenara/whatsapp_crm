@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
+import { audit, auditCtx } from "@/lib/audit"
 
 const MIN_PASSWORD = 8
 
@@ -50,6 +51,12 @@ export async function POST(req: NextRequest) {
 
     const valid = await bcrypt.compare(current, user.password_hash)
     if (!valid) {
+      await audit(auditCtx(req, ctx), {
+        action: "auth.password_changed",
+        outcome: "failure",
+        reason: "current password incorrect",
+        target: { type: "user", id: ctx.userId },
+      })
       return NextResponse.json(
         { error: "Current password is incorrect" },
         { status: 400 },
@@ -74,6 +81,12 @@ export async function POST(req: NextRequest) {
         ...(session?.sessionId ? { id: { not: session.sessionId } } : {}),
       },
       data: { revoked_at: new Date() },
+    })
+
+    await audit(auditCtx(req, ctx), {
+      action: "auth.password_changed",
+      target: { type: "user", id: ctx.userId },
+      meta: { other_sessions_ended: true },
     })
 
     return NextResponse.json({ success: true })

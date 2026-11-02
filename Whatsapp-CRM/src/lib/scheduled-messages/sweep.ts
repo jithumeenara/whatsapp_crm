@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { withJobAudit } from '@/lib/audit/actors'
 import { engineSendText, engineSendMedia, engineSendInteractiveButtons, engineSendTemplate } from '@/lib/flows/meta-send'
 import { sendAndRecordConversationEmail } from '@/lib/email/conversation-send'
 import type { MediaKind } from '@/lib/whatsapp/meta-api'
@@ -36,6 +37,11 @@ export interface SweepResult {
  * deployments that prefer an external scheduler).
  */
 export async function sweepScheduledMessages(): Promise<SweepResult> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('scheduled-messages', () => sweepScheduledMessagesRun(), (r) => r.sent + r.expired)
+}
+
+async function sweepScheduledMessagesRun(): Promise<SweepResult> {
   const now = new Date()
   let sent = 0
   let skipped = 0

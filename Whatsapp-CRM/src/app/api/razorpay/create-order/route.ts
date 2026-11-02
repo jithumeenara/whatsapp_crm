@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { openAuthConfig } from '@/lib/integration-secrets'
 
@@ -97,6 +98,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Razorpay: ${desc}` }, { status: rzpRes.status })
     }
 
+    await audit(auditCtx(req, ctx), {
+      action: "payment.link_created",
+      target: { type: "payment", id: rzpData.id ?? null, label: "Razorpay order" },
+      meta: { gateway: "razorpay", amount: rzpData.amount ?? amount, currency: rzpData.currency ?? currency, integration_id: integration_id ?? null },
+    })
     return NextResponse.json({
       order_id: rzpData.id,
       amount: rzpData.amount,

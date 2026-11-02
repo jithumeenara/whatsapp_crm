@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 import { writeAudit } from '@/lib/admin-chat/audit'
 
 /**
@@ -19,6 +20,12 @@ export async function POST(req: Request) {
       data: { state: 'ended', ended_at: new Date(), end_reason: 'ended_by_owner', history: [] },
     })
     await writeAudit({ accountId: ctx.accountId, event: 'all_sessions_ended', actorUserId: ctx.userId, detail: { sessions: ended.count } })
+    await audit(auditCtx(req, ctx), {
+      action: 'admin_chat.session_ended',
+      target: { type: 'admin_chat', id: ctx.accountId },
+      reason: 'ended_by_owner',
+      meta: { sessions: ended.count, all: true },
+    })
     return NextResponse.json({ ok: true, ended: ended.count })
   } catch (err) {
     return toErrorResponse(err)

@@ -7,6 +7,7 @@ import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
+import { audit, auditCtx } from '@/lib/audit'
 
 async function getLead(id: string, accountId: string) {
   return prisma.lead.findFirst({
@@ -202,6 +203,13 @@ export async function PATCH(
           description: 'Lead was claimed from the pool',
         },
       })
+      await audit(auditCtx(req, ctx), {
+        action: 'record.assigned',
+        target: { type: 'lead', id, label: null },
+        before: { assigned_to: existing.assigned_to },
+        after: { assigned_to: ctx.userId },
+        meta: { claim: true },
+      })
       return NextResponse.json(withCallablePhones({ lead }))
     }
 
@@ -234,6 +242,12 @@ export async function PATCH(
       await prisma.$executeRaw`
         UPDATE leads SET is_hidden = ${body.is_hidden} WHERE id = ${id}::uuid
       `
+      await audit(auditCtx(req, ctx), {
+        action: 'record.updated',
+        target: { type: 'lead', id, label: null },
+        before: { is_hidden: (existing as { is_hidden?: boolean | null }).is_hidden ?? null },
+        after: { is_hidden: body.is_hidden },
+      })
       const lead = await getLead(id, ctx.accountId)
       return NextResponse.json(withCallablePhones({ lead }))
     }
@@ -316,6 +330,26 @@ export async function PATCH(
         assignee: { select: { id: true, email: true, profile: { select: { full_name: true } } } },
       },
     })
+
+    // Status and owner moves get their own names so they can be filtered;
+    // any other edit is a plain update. The diff keeps only what changed.
+    if (Object.keys(data).length > 0) {
+      const statusMoved = data.status !== undefined && data.status !== existing.status
+      const ownerMoved = data.assigned_to !== undefined && data.assigned_to !== existing.assigned_to
+      const otherFields = Object.keys(data).filter((k) => !['status', 'assigned_to', 'claimed_at'].includes(k))
+      const action = statusMoved
+        ? 'record.status_changed'
+        : ownerMoved && otherFields.length === 0
+          ? 'record.assigned'
+          : 'record.updated'
+      await audit(auditCtx(req, ctx), {
+        action,
+        target: { type: 'lead', id, label: null },
+        before: existing as unknown as Record<string, unknown>,
+        after: data,
+        meta: autoClaimed ? { auto_claimed: true } : null,
+      })
+    }
 
     // Click-to-WhatsApp attribution — a lead qualifying is a real outcome
     // worth reporting back to Meta, if this contact's conversation came
@@ -519,6 +553,11 @@ export async function DELETE(
     const existing = await prisma.lead.findFirst({ where: { id, account_id: ctx.accountId } })
     if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
     await prisma.lead.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.deleted',
+      target: { type: 'lead', id, label: null },
+      meta: { status: existing.status, contact_id: existing.contact_id, assigned_to: existing.assigned_to },
+    })
 
     // Say so, or the screens keep showing it.
     //

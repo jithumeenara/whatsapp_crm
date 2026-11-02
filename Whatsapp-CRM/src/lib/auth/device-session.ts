@@ -22,6 +22,7 @@ export async function recordDeviceSession(
   userId: string,
   userAgent: string | null,
   ipAddress: string | null,
+  opts: { onNewDevice?: () => void } = {},
 ): Promise<string> {
   const existing = userAgent
     ? await db.userSession.findFirst({
@@ -36,6 +37,17 @@ export async function recordDeviceSession(
       data: { last_seen_at: new Date(), ip_address: ipAddress },
     })
     return existing.id
+  }
+  // A device this person never used before (no row for this browser at
+  // all, live or revoked) — the audit log records it as auth.new_device.
+  // Only checked when someone asks, so the plain path stays one query.
+  if (opts.onNewDevice) {
+    const seen = userAgent
+      ? await db.userSession.findFirst({ where: { user_id: userId, user_agent: userAgent }, select: { id: true } })
+      : null
+    if (!seen) {
+      try { opts.onNewDevice() } catch { /* never blocks a sign-in */ }
+    }
   }
   const session = await db.userSession.create({
     data: {

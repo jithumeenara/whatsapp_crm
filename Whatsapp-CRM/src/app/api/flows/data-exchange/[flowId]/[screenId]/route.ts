@@ -16,6 +16,9 @@ export async function POST(
   const { flowId } = await params
   // Meta's X-Hub-Signature-256, checked before anything is decrypted (A9-08).
   const signed = await checkFlowRequestSignature(request)
-  if (signed.response) return signed.response
+  if (signed.response) {
+    void import('@/lib/audit/actors').then((m) => m.webhookRejected('meta_flows', null, 'bad_signature'))
+    return signed.response
+  }
   return handleFlowWebhookPost(signed.request, flowId)
 }

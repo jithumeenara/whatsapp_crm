@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import type { Prisma } from '@prisma/client'
 import { parseRuleInput } from '@/lib/google/sheet-route-input'
 import { describeConditions, type RouteField } from '@/lib/google/sheet-route-rules'
@@ -106,6 +107,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
       select: { id: true },
     })
+    await audit(auditCtx(req, ctx), {
+      action: 'record.created',
+      target: { type: 'data_table', id, label: table.name },
+      meta: { what: 'sheet routing rule', rule_id: created.id, fallback: parsed.rule.is_fallback === true },
+    })
     return NextResponse.json({ id: created.id })
   } catch (err) {
     return toErrorResponse(err)
@@ -132,6 +138,15 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
         await prisma.sheetRoute.updateMany({ where: { id: ids[i], table_id: id, account_id: ctx.accountId }, data: { position: i } })
       }
     }
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'data_table', id, label: table.name },
+      meta: {
+        what: 'sheet routing',
+        mode: body?.mode === 'first' || body?.mode === 'all' ? body.mode : undefined,
+        reordered: Array.isArray(body?.order) ? (body.order as unknown[]).length : undefined,
+      },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit"
+import { audit } from "@/lib/audit"
+import { userAuditCtx } from "@/lib/audit/user-ctx"
 
 /**
  * POST /api/account/mfa/disable
@@ -25,6 +27,12 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { password_hash: true } })
     if (!user?.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
+      await audit(await userAuditCtx(req, session.user.id), {
+        action: "auth.mfa_disabled",
+        outcome: "failure",
+        reason: "password incorrect",
+        target: { type: "user", id: session.user.id },
+      })
       return NextResponse.json({ error: "Incorrect password" }, { status: 401 })
     }
 
@@ -32,6 +40,7 @@ export async function POST(req: NextRequest) {
       where: { id: session.user.id },
       data: { mfa_method: "disabled", mfa_phone: null, totp_secret: null, mfa_enabled_at: null },
     })
+    await audit(await userAuditCtx(req, session.user.id), { action: "auth.mfa_disabled", target: { type: "user", id: session.user.id } })
     return NextResponse.json({ ok: true })
   } catch (error) {
     console.error("Error in account/mfa/disable POST:", error)

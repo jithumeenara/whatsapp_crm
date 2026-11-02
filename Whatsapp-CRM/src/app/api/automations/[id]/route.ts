@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { automationsMember } from '@/lib/automations/access'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import {
   loadStepsTree,
   replaceSteps,
@@ -51,7 +52,7 @@ export async function PATCH(
     // Ownership check — load existing fields needed for merged validation
     const existing = await prisma.automation.findFirst({
       where: { id, user_id: userId, account_id: accountId },
-      select: { id: true, is_active: true, trigger_type: true, trigger_config: true },
+      select: { id: true, name: true, description: true, is_active: true, trigger_type: true, trigger_config: true },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -126,6 +127,14 @@ export async function PATCH(
       if (err) return NextResponse.json({ error: err }, { status: 500 })
     }
 
+    const onlyActive = Object.keys(update).length === 1 && 'is_active' in update && !Array.isArray(body.steps)
+    await audit(auditCtx(request, member.ctx), {
+      action: onlyActive ? 'record.status_changed' : 'record.updated',
+      target: { type: 'automation', id, label: typeof update.name === 'string' ? update.name : existing.name },
+      before: existing as unknown as Record<string, unknown>,
+      after: update,
+      meta: Array.isArray(body.steps) ? { steps_replaced: body.steps.length } : null,
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[PATCH /api/automations/[id]]', err)
@@ -134,7 +143,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
@@ -146,13 +155,18 @@ export async function DELETE(
     // Verify ownership before deleting
     const existing = await prisma.automation.findFirst({
       where: { id, user_id: userId, account_id: accountId },
-      select: { id: true },
+      select: { id: true, name: true, trigger_type: true },
     })
     if (!existing) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
     await prisma.automation.delete({ where: { id } })
+    await audit(auditCtx(request, member.ctx), {
+      action: 'record.deleted',
+      target: { type: 'automation', id, label: existing.name },
+      meta: { trigger_type: existing.trigger_type },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[DELETE /api/automations/[id]]', err)

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { handoverSettingsFor, setHandoverSettings } from '@/lib/ai/handover-settings'
 import { officeHours } from '@/lib/ai/handover-consent'
 
@@ -56,6 +58,7 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'ask_first must be true or false.' }, { status: 400 })
     }
     await setHandoverSettings(ctx.accountId, { ask_first: body.ask_first })
+    await auditConfigChange(auditCtx(req, ctx), 'config.ai_changed', { area: 'ai_handover', fields: ['ask_first'], meta: { ask_first: body.ask_first } })
     return NextResponse.json(await view(ctx.accountId))
   } catch (err) {
     return toErrorResponse(err)

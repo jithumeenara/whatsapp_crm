@@ -1,6 +1,7 @@
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { NextRequest, NextResponse } from "next/server"
+import { audit, auditCtx } from "@/lib/audit"
 
 export async function GET() {
   try {
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
         color: body.color ?? "#10b981",
       },
     })
+    await audit(auditCtx(req, ctx), { action: "record.created", target: { type: "tag", id: tag.id, label: tag.name }, after: { name: tag.name, color: tag.color } })
     return NextResponse.json({ tag }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)

@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account"
 import { prisma } from "@/lib/db"
 import { Prisma } from "@prisma/client"
 import { websiteScheduleText } from "@/lib/scheduled-messages/website-text"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * PATCH /api/scheduled-messages/[id]
@@ -41,6 +42,12 @@ export async function PATCH(
         return NextResponse.json({ error: "This scheduled message has already ended" }, { status: 400 })
       }
       const updated = await prisma.scheduledMessage.update({ where: { id }, data: { status: body.status } })
+      await audit(auditCtx(req, ctx), {
+        action: "record.status_changed",
+        target: { type: "scheduled_message", id, label: null },
+        before: { status: existing.status },
+        after: { status: body.status },
+      })
       return NextResponse.json({ item: updated })
     }
 
@@ -143,6 +150,18 @@ export async function PATCH(
       },
     })
 
+    // Template parameters can carry customer details: only the shape is kept.
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "scheduled_message", id, label: null },
+      before: existing as unknown as Record<string, unknown>,
+      after: {
+        content_text: updated.content_text, template_name: updated.template_name, template_language: updated.template_language,
+        schedule_type: updated.schedule_type, interval_value: updated.interval_value, interval_unit: updated.interval_unit,
+        stop_on_reply: updated.stop_on_reply, max_sends: updated.max_sends, next_send_at: updated.next_send_at, status: updated.status,
+      },
+    })
+
     return NextResponse.json({ item: updated })
   } catch (err) {
     return toErrorResponse(err)
@@ -155,7 +174,7 @@ export async function PATCH(
  * actually disappears from the list, per explicit request.
  */
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -168,6 +187,11 @@ export async function DELETE(
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
     await prisma.scheduledMessage.delete({ where: { id } })
+    await audit(auditCtx(req, ctx), {
+      action: "record.deleted",
+      target: { type: "scheduled_message", id, label: null },
+      meta: { conversation_id: existing.conversation_id, status: existing.status, schedule_type: existing.schedule_type, sends_count: existing.sends_count },
+    })
     return NextResponse.json({ ok: true })
   } catch (err) {
     return toErrorResponse(err)

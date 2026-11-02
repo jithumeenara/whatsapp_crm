@@ -8,6 +8,8 @@ import { cleanPhrases, ensureEvalColumns } from '@/lib/ai/eval/schema'
 import { realQuestions } from '@/lib/ai/eval/real-questions'
 import { qualityReport } from '@/lib/ai/eval/quality-report'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 /**
  * The evaluation suite: test cases, runs, and results.
@@ -79,11 +81,22 @@ type PostBody =
 
 export async function POST(req: Request) {
   let accountId: string
+  let ctx: Awaited<ReturnType<typeof requireRole>>
   try {
-    accountId = (await requireRole('admin')).accountId
+    ctx = await requireRole('admin')
+    accountId = ctx.accountId
   } catch (err) {
     return toErrorResponse(err)
   }
+  // Test-case changes: the verb, counts and ids — never the questions or
+  // expected answers (they quote customers).
+  const auditCases = (verb: string, extra: { id?: string; count?: number; fields?: string[] }) =>
+    auditConfigChange(auditCtx(req, ctx), 'config.ai_changed', {
+      area: 'ai_eval_cases',
+      fields: extra.fields ?? [],
+      target: { type: 'ai_eval_case', id: extra.id ?? null },
+      meta: { verb, ...(extra.count !== undefined ? { count: extra.count } : {}) },
+    })
 
   const aiConfig = await prisma.aiConfig.findUnique({
     where: { account_id: accountId },
@@ -117,6 +130,7 @@ export async function POST(req: Request) {
           notes: c.notes ?? null,
         })),
       })
+      await auditCases('seeded', { count: STARTER_CASES.length })
       return NextResponse.json({ ok: true, added: STARTER_CASES.length })
     }
 
@@ -136,6 +150,7 @@ export async function POST(req: Request) {
           must_not_include: cleanPhrases(body.must_not_include) ?? undefined,
         },
       })
+      await auditCases('created', { id: created.id, count: 1 })
       return NextResponse.json({ ok: true, case: created })
     }
 
@@ -158,6 +173,10 @@ export async function POST(req: Request) {
         },
       })
       if (updated.count === 0) return NextResponse.json({ error: 'Test case not found.' }, { status: 404 })
+      await auditCases('updated', {
+        id: body.id,
+        fields: (['question', 'expected', 'expect_handoff', 'category', 'notes', 'enabled', 'must_include', 'must_not_include'] as const).filter((k) => body[k] !== undefined),
+      })
       return NextResponse.json({ ok: true })
     }
 
@@ -166,6 +185,7 @@ export async function POST(req: Request) {
         where: { id: body.id, ai_config_id: aiConfig.id },
       })
       if (deleted.count === 0) return NextResponse.json({ error: 'Test case not found.' }, { status: 404 })
+      await auditCases('deleted', { id: body.id, count: deleted.count })
       return NextResponse.json({ ok: true })
     }
 
@@ -198,6 +218,7 @@ export async function POST(req: Request) {
           notes: 'Asked by a customer. Write what a correct answer must say.',
         })),
       })
+      await auditCases('added_from_chats', { count: questions.length })
       return NextResponse.json({ ok: true, added: questions.length })
     }
 

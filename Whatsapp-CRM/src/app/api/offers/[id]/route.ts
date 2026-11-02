@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { acceptOffer, declineOffer } from '@/lib/agents/run-offer'
 import { advanceConversation } from '@/lib/agents/advance-offers'
 import { notifyCustomerConnected } from '@/lib/ai/handover-consent'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * PATCH /api/offers/[id]
@@ -53,6 +54,12 @@ export async function PATCH(
       // showing a validation error.
       return NextResponse.json({ error: result.error }, { status: 409 })
     }
+
+    await audit(auditCtx(req, ctx), {
+      action: action === 'accept' ? 'record.assigned' : 'record.updated',
+      target: { type: 'offer', id, label: null },
+      meta: { decision: action, conversation_id: result.conversationId ?? null },
+    })
 
     // Declining should hand the conversation to the next person now,
     // not in fifty seconds. Not awaited — the agent's screen should

@@ -18,6 +18,7 @@
 
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
+import { webhookWrote } from '@/lib/audit/actors'
 
 const CHANNEL_NAMES: Record<string, string> = {
   whatsapp: 'WhatsApp',
@@ -73,6 +74,9 @@ export async function autoCreateLead(args: {
     // silently and is found only by somebody who happens to refresh the
     // Leads page.
     emitToAccount(args.accountId, 'lead', { eventType: 'INSERT', new: lead, old: {} })
+    // Recorded as the channel's webhook, never as the config owner whose
+    // id the lead row borrows.
+    void webhookWrote(args.source, args.accountId, { type: 'lead', id: lead.id }, { op: 'create', auto_lead: true })
   } catch (err) {
     console.error('[leads] auto lead creation failed:', err instanceof Error ? err.message : err)
   }

@@ -4,6 +4,7 @@ import { onceSchemaPatch } from "@/lib/db/schema-patch"
 import { Prisma } from '@prisma/client'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
+import { audit, auditCtx } from '@/lib/audit'
 import { getChatbotTemplate } from '@/lib/chatbot/templates'
 import { findFlowIssues, sortIssues } from '@/lib/flows/graph-health'
 
@@ -14,12 +15,12 @@ async function requireUser() {
   }
   const profile = await prisma.profile.findUnique({
     where: { user_id: session.user.id },
-    select: { account_id: true },
+    select: { account_id: true, account_role: true },
   })
   if (!profile?.account_id) {
     return { ok: false as const, status: 403, body: { error: 'Profile not linked to an account.' } }
   }
-  return { ok: true as const, userId: session.user.id, accountId: profile.account_id }
+  return { ok: true as const, userId: session.user.id, accountId: profile.account_id, role: String(profile.account_role ?? '') }
 }
 
 async function ensureChannelColumn() {
@@ -139,6 +140,11 @@ export async function POST(request: Request) {
         },
       })
       await prisma.$executeRaw`UPDATE flows SET channel = ${channel} WHERE id = ${chatbot.id}::uuid`
+      await audit(auditCtx(request, guard), {
+        action: 'record.created',
+        target: { type: 'chatbot', id: chatbot.id, label: chatbot.name },
+        meta: { channel, template: body.template_slug },
+      })
       return NextResponse.json({ chatbot: { ...chatbot, channel } }, { status: 201 })
     }
 
@@ -173,6 +179,11 @@ export async function POST(request: Request) {
       },
     })
     await prisma.$executeRaw`UPDATE flows SET channel = ${channel} WHERE id = ${chatbot.id}::uuid`
+    await audit(auditCtx(request, guard), {
+      action: 'record.created',
+      target: { type: 'chatbot', id: chatbot.id, label: chatbot.name },
+      meta: { channel, trigger_type: chatbot.trigger_type },
+    })
     return NextResponse.json({ chatbot: { ...chatbot, channel } }, { status: 201 })
   } catch (err) {
     console.error('[POST /api/chatbot]', err)

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -159,6 +160,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   // published again, customers keep getting the version that carries the
   // old address — so say so rather than reporting a fix that has not
   // reached anybody yet.
+  await auditFlowAction(request, {
+    action: 'record.updated',
+    target: { type: 'flow', id },
+    meta: { endpoint_uri: expected, needs_publish: true },
+  })
   return NextResponse.json({
     success: true,
     endpoint_uri: expected,

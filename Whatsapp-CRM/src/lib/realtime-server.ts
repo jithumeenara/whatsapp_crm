@@ -35,6 +35,7 @@
 
 import type { Server as SocketIOServer } from 'socket.io'
 import { verifyRealtimeTicket } from './realtime-ticket'
+import { socketRefused } from './audit/actors'
 
 /** Longest a staff connection stays open before it must re-admit itself. */
 export const SOCKET_MAX_LIFETIME_MS = 15 * 60_000
@@ -49,7 +50,11 @@ export function attachAccountNamespace(
     const ticket = verifyRealtimeTicket(
       (socket.handshake.auth as { ticket?: unknown } | undefined)?.ticket,
     )
-    if (!ticket) return nextFn(new Error('unauthorized'))
+    if (!ticket) {
+      // Throttled: one audit event per minute with a count, not one per try.
+      socketRefused(null, 'bad_ticket', null, socket.handshake.address ?? null)
+      return nextFn(new Error('unauthorized'))
+    }
     const data = socket.data as { accountId?: string; userId?: string }
     data.accountId = ticket.accountId
     data.userId = typeof ticket.userId === 'string' ? ticket.userId : undefined

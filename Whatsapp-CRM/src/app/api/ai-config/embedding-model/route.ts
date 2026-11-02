@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { embeddingModelFor, isEmbeddingModel, setEmbeddingModel, toKnowledgeItems } from '@/lib/ai/embeddings'
 import { loadKnowledge } from '@/lib/ai/knowledge-store'
@@ -65,6 +67,11 @@ export async function PUT(req: Request) {
     if (!limited.success) return rateLimitResponse(limited)
 
     await setEmbeddingModel(before.config_id, body.model)
+    await auditConfigChange(auditCtx(req, ctx), 'config.ai_changed', {
+      area: 'ai_embedding_model',
+      fields: ['embedding_model'],
+      meta: { from: before.model, to: body.model },
+    })
     // Re-read everything with the new model now, not in a minute.
     void refreshNow(ctx.accountId, [])
 

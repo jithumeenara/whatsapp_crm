@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { withJobAudit } from '@/lib/audit/actors'
 import { runBroadcast } from '@/lib/broadcasts/run-broadcast'
 import { sweepAutomaticBroadcasts } from '@/lib/broadcasts/auto-sweep'
 
@@ -27,6 +28,11 @@ export interface BroadcastSweepResult {
  * to the next cycle, or finish for good), happens in the .then() below.
  */
 export async function sweepScheduledBroadcasts(): Promise<BroadcastSweepResult> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('broadcasts', () => sweepScheduledBroadcastsRun(), (r) => r.started)
+}
+
+async function sweepScheduledBroadcastsRun(): Promise<BroadcastSweepResult> {
   const now = new Date()
   let started = 0
 

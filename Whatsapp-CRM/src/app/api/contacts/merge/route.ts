@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account"
 import { mergeContacts, MergeError, type FieldChoice } from "@/lib/contacts/merge"
+import { audit, auditCtx } from "@/lib/audit"
 
 /**
  * POST /api/contacts/merge — { survivor_id, merged_id, field_choices? }
@@ -37,6 +38,11 @@ export async function POST(req: NextRequest) {
         survivorId: body.survivor_id,
         mergedId: body.merged_id,
         fieldChoices: choices,
+      })
+      await audit(auditCtx(req, ctx), {
+        action: "record.merged",
+        target: { type: "contact", id: body.survivor_id, label: null },
+        meta: { merged_id: body.merged_id, field_choices: choices, moved: result.moved },
       })
       return NextResponse.json({ success: true, survivor: result.survivor, moved: result.moved })
     } catch (err) {

@@ -11,6 +11,7 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { auditCtx, auditInTx } from "@/lib/audit";
 
 import { forgetCachedProfile, requireRole, toErrorResponse } from "@/lib/auth/account";
 import { prisma } from "@/lib/db";
@@ -72,20 +73,27 @@ export async function POST(request: Request) {
 
     // Atomically: demote current owner → admin, promote target → owner,
     // update accounts.owner_user_id
-    await prisma.$transaction([
-      prisma.profile.update({
+    // Recorded in the same transaction: ownership never moves unrecorded.
+    await prisma.$transaction(async (tx) => {
+      await tx.profile.update({
         where: { user_id: ctx.userId },
         data: { account_role: "admin" },
-      }),
-      prisma.profile.update({
+      });
+      await tx.profile.update({
         where: { user_id: newOwnerUserId },
         data: { account_role: "owner" },
-      }),
-      prisma.account.update({
+      });
+      await tx.account.update({
         where: { id: ctx.accountId },
         data: { owner_user_id: newOwnerUserId },
-      }),
-    ]);
+      });
+      await auditInTx(tx, auditCtx(request, ctx), {
+        action: "account.ownership_transferred",
+        target: { type: "member", id: newOwnerUserId },
+        changes: { owner: [ctx.userId, newOwnerUserId] },
+        meta: { new_owner_previous_role: targetProfile.account_role, old_owner_now: "admin" },
+      });
+    }, { timeout: 10_000, maxWait: 5_000 });
     // Both roles just changed. Without this the old owner kept owner
     // powers from the 60-second cache over an account no longer theirs.
     forgetCachedProfile(ctx.userId);

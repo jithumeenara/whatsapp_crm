@@ -1,6 +1,8 @@
 import crypto from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { prisma } from '@/lib/db'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { publicOrigin } from '@/lib/email/microsoft/origin'
@@ -136,6 +138,12 @@ export async function GET(req: NextRequest) {
         last_error: null,
         ...(sameAccount ? {} : { connected_at: new Date() }),
       },
+    })
+    // The grant and its scopes (scopes are not secret); tokens never.
+    await auditConfigChange(auditCtx(req, ctx), 'config.google_changed', {
+      area: 'google_connection',
+      fields: ['access_token', 'granted_scopes', 'enabled_services', ...(tokens.refresh_token ? ['refresh_token'] : [])],
+      meta: { connected: true, same_account: sameAccount, scopes: granted, enabled_services: enabled, not_allowed: missing },
     })
     const names = (ids: readonly string[]) => ids.map((id) => serviceById(id)?.name ?? id).join(', ')
     await logGoogleActivity(

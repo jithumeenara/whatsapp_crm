@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client'
 import crypto from 'crypto'
 import { afterRecordCreated } from '@/lib/data-store/record-events'
 import { phoneFromFlowToken } from './flow-token'
+import { webhookWrote } from '@/lib/audit/actors'
 
 // ── In-memory debug log (last 10 decrypted payloads per flow) ────────
 interface DebugEntry {
@@ -1298,6 +1299,11 @@ export async function handleFlowWebhookPost(request: Request, flowId: string): P
             },
           })
           afterRecordCreated({ ...created, source: 'whatsapp_flow' })
+          // A Meta-signed Flow submission: the actor is Meta's Flow endpoint.
+          // Field names only — the values are the customer's answers.
+          void webhookWrote('meta_flows', table.account_id, { type: 'data_record', id: created.id }, {
+            op: 'create', table_id: saveTableId, flow_id: flowId, fields: Object.keys(record as Record<string, unknown>),
+          }, request)
           if (!contactId) {
             console.warn(
               '[data_exchange:save] saved without a contact — this row will not appear in the customer\u2019s own registrations',

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx, changedFieldNames } from '@/lib/audit'
 import { parseFormConfig } from '@/lib/data-store/public-form'
 import { parseCopy } from '@/lib/data-store/form-i18n'
 import {
@@ -122,6 +123,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       },
       select: TABLE_SELECT,
     })
+    // Which form settings changed — names only.
+    await audit(auditCtx(req, ctx), {
+      action: 'record.updated',
+      target: { type: 'form', id: table.id },
+      meta: {
+        table_id: table.id,
+        enabled: config.enabled,
+        fields: changedFieldNames((table.form_config ?? {}) as Record<string, unknown>, config as unknown as Record<string, unknown>),
+        link_created: config.enabled && !table.form_token ? true : undefined,
+      },
+    })
     return NextResponse.json(await view(ctx.accountId, updated, sources))
   } catch (err) {
     return toErrorResponse(err)
@@ -143,6 +155,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         where: { id: table.id },
         data: { form_token: newFormToken() },
         select: TABLE_SELECT,
+      })
+      // The old public link stops working; the token itself is never recorded.
+      await audit(auditCtx(req, ctx), {
+        action: 'record.updated',
+        target: { type: 'form', id: table.id },
+        meta: { table_id: table.id, new_link: true },
       })
       return NextResponse.json(await view(ctx.accountId, updated))
     }

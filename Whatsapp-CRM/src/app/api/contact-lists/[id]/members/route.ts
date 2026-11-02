@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
+import { audit, auditCtx } from "@/lib/audit";
 
 /**
  * DELETE /api/contact-lists/[id]/members   { contactIds: string[] }
@@ -19,6 +20,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (!list) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const r = await ctx.db.contactListMember.deleteMany({ where: { list_id: list.id, contact_id: { in: ids } } });
     await ctx.db.contactList.update({ where: { id: list.id }, data: { updated_at: new Date() } });
+    await audit(auditCtx(req, ctx), {
+      action: "record.updated",
+      target: { type: "contact_list", id: list.id, label: null },
+      meta: { op: "members_removed", count: r.count, contact_ids: ids.slice(0, 200) },
+    });
     return NextResponse.json({ removed: r.count });
   } catch (err) {
     return toErrorResponse(err);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { decrypt } from "@/lib/whatsapp/encryption"
 import { batchUpsertProducts } from "@/lib/whatsapp/catalog-api"
@@ -41,6 +42,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         brand: brand !== undefined ? brand || null : existing.brand,
         sync_status: "pending",
       },
+    })
+    const shape = (p: typeof existing) => ({
+      name: p.name, description: p.description, price: p.price === null ? null : String(p.price), currency: p.currency,
+      image_url: p.image_url, availability: p.availability, category: p.category, brand: p.brand,
+    })
+    await audit(auditCtx(request, ctx), {
+      action: "record.updated",
+      target: { type: "product", id, label: product.name },
+      before: shape(existing),
+      after: shape(product),
     })
 
     try {
@@ -95,6 +106,11 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const config = await prisma.catalogConfig.findUnique({ where: { account_id: ctx.accountId } })
 
     await prisma.product.delete({ where: { id } })
+    await audit(auditCtx(request, ctx), {
+      action: "record.deleted",
+      target: { type: "product", id, label: existing.name },
+      meta: { retailer_id: existing.retailer_id },
+    })
 
     if (config) {
       try {

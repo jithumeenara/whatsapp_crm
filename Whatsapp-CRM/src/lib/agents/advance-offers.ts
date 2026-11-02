@@ -25,6 +25,7 @@
  */
 
 import { prisma } from '@/lib/db'
+import { withJobAudit } from '@/lib/audit/actors'
 import { isExpired } from './offer'
 import { offerConversation } from './run-offer'
 
@@ -216,6 +217,11 @@ async function noteExhausted(conversationId: string, reason: string): Promise<vo
  * minute; it looks for ripe offers first, so a quiet minute costs one query.
  */
 export async function sweepStaleOffers(): Promise<{ accounts: number; advanced: number; exhausted: number }> {
+  // One audit summary per run that changed something; a failure if it threw.
+  return withJobAudit('stale-offers', () => sweepStaleOffersRun(), (r) => r.advanced + r.exhausted)
+}
+
+async function sweepStaleOffersRun(): Promise<{ accounts: number; advanced: number; exhausted: number }> {
   const now = new Date()
   const pending = await prisma.conversationOffer.findMany({
     where: { status: 'pending' },

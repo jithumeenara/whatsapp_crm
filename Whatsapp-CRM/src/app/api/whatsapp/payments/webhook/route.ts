@@ -4,6 +4,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { verifyRazorpayWebhookSignature } from '@/lib/whatsapp/payment-gateways/razorpay'
 import { sendOrderStatusMessage } from '@/lib/whatsapp/payments-api'
 import { emitToAccount } from '@/lib/socket'
+import { paymentPaid, webhookRejected } from '@/lib/audit/actors'
 
 /**
  * POST /api/whatsapp/payments/webhook
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
 
     const { key_secret: keySecret } = JSON.parse(decrypt(gatewayConfig.credentials as string)) as { key_id: string; key_secret: string }
     if (!verifyRazorpayWebhookSignature(rawBody, signature, keySecret)) {
+      webhookRejected('razorpay', payment.account_id, 'bad_signature')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 
@@ -87,6 +89,11 @@ export async function POST(request: Request) {
     const updated = await prisma.whatsAppPayment.findFirst({ where: { id: payment.id } })
 
     emitToAccount(payment.account_id, 'whatsapp_payment', { eventType: 'UPDATE', new: updated, old: {} })
+    if (newStatus === 'completed') {
+      void paymentPaid('razorpay', payment.account_id, { type: 'whatsapp_payment', id: payment.id }, {
+        reference: payment.reference_id, amount: Number(payment.amount), status: newStatus,
+      })
+    }
 
     // Best-effort — let the customer know via an order_status follow-up.
     // Never blocks the webhook ack, matching every other fire-and-forget

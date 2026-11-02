@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { denyUnlessFlowEditor } from '@/lib/flows/route-guard'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
 import { validateFlowForActivation } from '@/lib/flows/validate'
@@ -102,6 +103,11 @@ export async function POST(
     const updated = await prisma.flow.update({
       where: { id },
       data: { status, updated_at: new Date() },
+    })
+    await auditFlowAction(request, {
+      action: status === 'archived' ? 'record.archived' : 'record.status_changed',
+      target: { type: 'flow', id, label: updated.name },
+      meta: { status },
     })
     return NextResponse.json({ flow: updated })
   } catch (err) {

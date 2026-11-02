@@ -5,6 +5,7 @@ import { checkEmail, checkPhone } from "@/lib/contacts/validate"
 import { findExistingContact } from "@/lib/contacts/dedupe"
 import { contactDetailsPatch } from "@/lib/leads/contact-details"
 import { parseTagMatch, tagAudienceWhere } from "@/lib/broadcasts/tag-audience"
+import { audit, auditCtx } from "@/lib/audit"
 
 const PAGE_SIZE = 25
 
@@ -149,6 +150,7 @@ export async function POST(req: NextRequest) {
         where: { id: archivedTwin.id },
         data: { archived_at: null, archived_by: null, ...(name ? { name } : {}), ...(email ? { email } : {}) },
       })
+      await audit(auditCtx(req, ctx), { action: "record.restored", target: { type: "contact", id: restored.id, label: null }, meta: { via: "create_same_number" } })
       return NextResponse.json({ contact: restored, restored: true }, { status: 200 })
     }
 
@@ -169,6 +171,17 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    await audit(auditCtx(req, ctx), {
+      action: "record.created",
+      target: { type: "contact", id: contact.id, label: null },
+      // Personal fields by name only, never their values (src/lib/audit/contact-fields.ts).
+      after: { opt_in_source: "manual" },
+      meta: {
+        fields: (["name", "phone", "email", "company", "alternate_phone", "avatar_url", "gender", "age", "address"] as const)
+          .filter((k) => contact[k] !== null && contact[k] !== undefined && contact[k] !== "")
+          .sort(),
+      },
+    })
     return NextResponse.json({ contact }, { status: 201 })
   } catch (err) {
     return toErrorResponse(err)

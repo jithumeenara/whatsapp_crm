@@ -7,6 +7,7 @@ import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { runAutomationsForTrigger } from "@/lib/automations/engine"
 import { openStoredSecret } from "@/lib/whatsapp/encryption"
 import { maskForLog } from "@/lib/whatsapp/phone-utils"
+import { webhookRejected } from "@/lib/audit/actors"
 
 type RawConfig = {
   account_id: string
@@ -92,6 +93,7 @@ export async function POST(req: NextRequest) {
     // see socialWebhookScope.
     const scope = await socialWebhookScope(raw, req.headers.get("x-hub-signature-256"), "instagram")
     if (!scope) {
+      webhookRejected("instagram", null, "bad_signature")
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
     }
     const body = JSON.parse(raw) as IgWebhookBody

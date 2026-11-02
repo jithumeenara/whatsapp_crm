@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * Things this business does not offer, and what to say about them.
@@ -84,6 +85,7 @@ export async function PUT(req: NextRequest) {
       )
     }
 
+    let dropped: string[] = []
     await prisma.$transaction(async (tx) => {
       const existing = await tx.outOfScopeAnswer.findMany({
         where: { account_id: ctx.accountId },
@@ -95,6 +97,7 @@ export async function PUT(req: NextRequest) {
       // may point at this key, and the review screen should still be
       // able to say what it matched.
       const dropping = existing.map((e) => e.key).filter((k) => !keeping.has(k))
+      dropped = dropping
       if (dropping.length > 0) {
         await tx.outOfScopeAnswer.updateMany({
           where: { account_id: ctx.accountId, key: { in: dropping } },
@@ -120,6 +123,11 @@ export async function PUT(req: NextRequest) {
       where: { account_id: ctx.accountId, active: true },
       orderBy: { created_at: 'asc' },
       select: { id: true, key: true, question: true, answer: true, seen_count: true },
+    })
+    await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+      action: 'record.bulk_updated',
+      target: { type: 'out_of_scope_answer', id: null, label: null },
+      meta: { count: clean.length, keys: clean.map((c) => c.key), deactivated: dropped },
     })
     return NextResponse.json({ entries })
   } catch (err) {

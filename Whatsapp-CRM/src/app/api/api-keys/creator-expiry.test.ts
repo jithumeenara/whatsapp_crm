@@ -25,6 +25,8 @@ vi.mock('@/lib/db', () => ({
         return Promise.resolve([])
       },
     },
+    // Key creation now runs with its audit event in one transaction.
+    $transaction(fn: (tx: unknown) => unknown) { return fn(this) },
   },
 }))
 

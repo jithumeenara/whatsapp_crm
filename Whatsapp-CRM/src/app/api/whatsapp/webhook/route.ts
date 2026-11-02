@@ -44,6 +44,7 @@ import {
 } from '@/lib/whatsapp/call-handler'
 import { isContactBlocked, checkForFlood } from '@/lib/whatsapp/spam-guard'
 import { autoCreateLead } from '@/lib/leads/auto-create'
+import { webhookRejected } from '@/lib/audit/actors'
 import { refreshBroadcastCounts } from '@/lib/broadcasts/counts'
 
 /** Why nothing was sent, in words rather than a reason code. These are
@@ -263,6 +264,7 @@ export async function POST(request: Request) {
     // sending, but this server turns it away" instead of "connected".
     logSignatureCheck(check, signature)
     noteRejected(check)
+    webhookRejected('whatsapp', null, `signature_${check}`)
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
     // rather than silently eating events. Meta retries for up to 7 days,

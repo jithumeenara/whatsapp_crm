@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { hasMinRole } from '@/lib/auth/roles'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
+import { audit, auditCtx, type AuditEntry } from '@/lib/audit'
 import { GoogleNotConnectedError } from '@/lib/google/oauth'
 import { SheetsApiError } from '@/lib/google/sheets'
 import { publicErrorMessage } from '@/lib/jobs/public-error'
@@ -50,6 +51,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const action = body?.action
     const admin = hasMinRole(ctx.role, 'admin')
     const ref = typeof body?.ref === 'string' ? body.ref.trim().slice(0, 40) : ''
+    const target = { type: 'sheet_verification', id: v.id, label: v.name }
+    const record = (e: Omit<AuditEntry, 'target'>) => audit(auditCtx(req, ctx), { ...e, target })
 
     if (action === 'phone') {
       if (!ref) return NextResponse.json({ error: 'Choose a person.' }, { status: 400 })
@@ -59,6 +62,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       if (found.kind === 'many') return NextResponse.json({ error: 'Two rows have this reference (a copied row). Press “Get the sheet ready” first.' }, { status: 409 })
       const me = await prisma.profile.findUnique({ where: { user_id: ctx.userId }, select: { full_name: true, email: true } })
       await recordAnswer({ v, sheet, rowNumber: found.rowNumber, ref, changes: [], by: me?.full_name || me?.email || 'Staff', state: 'phone', userId: ctx.userId })
+      await record({ action: 'record.status_changed', meta: { action: 'phone_confirmed', ref, row: found.rowNumber } })
       return NextResponse.json({ ok: true })
     }
 
@@ -66,7 +70,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     if (action === 'prepare') {
       try {
-        return NextResponse.json(await prepareSheet(v))
+        const prepared = await prepareSheet(v)
+        await record({ action: 'record.updated', meta: { action: 'prepare' } })
+        return NextResponse.json(prepared)
       } catch (err) {
         if (err instanceof SheetsApiError || err instanceof GoogleNotConnectedError || !(err instanceof Error)) throw err
         return NextResponse.json({ error: err.message }, { status: 400 })
@@ -75,6 +81,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     if (action === 'revoke') {
       await prisma.sheetVerification.updateMany({ where: { id: v.id, account_id: ctx.accountId }, data: { key_version: { increment: 1 } } })
+      await record({ action: 'record.updated', meta: { action: 'revoke_links' } })
       return NextResponse.json({ ok: true })
     }
 
@@ -83,6 +90,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const found = findRow(await readSheet(v, { fresh: true }), ref, setupOf(v))
       if (found.kind === 'none') return NextResponse.json({ error: 'That person is no longer in the sheet.' }, { status: 404 })
       if (found.kind === 'many') return NextResponse.json({ error: 'Two rows have this reference (a copied row). Press “Get the sheet ready” first.' }, { status: 409 })
+      // A private link for one person, to send by hand: who asked is kept.
+      await record({ action: 'access.sensitive_viewed', meta: { action: 'link', ref } })
       return NextResponse.json({ link: linkFor(v, ref) })
     }
 
@@ -128,6 +137,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       })
       if (!claim.count) return NextResponse.json({ error: 'A send is already running. Wait for it to finish.' }, { status: 409 })
       void runSend(v, channel, refs, until)
+      await audit({ ...auditCtx(req, ctx), correlationId: crypto.randomUUID() }, {
+        action: 'broadcast.sent',
+        target,
+        meta: { recipients: refs.length, channel, scope, what: 'check details links' },
+      })
       return NextResponse.json({ queued: refs.length })
     }
 

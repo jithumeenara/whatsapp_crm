@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readdir, stat } from "fs/promises";
 import { join, extname, basename } from "path";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { audit, auditCtx } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 
 const UPLOADS_DIR = join(process.cwd(), "uploads");
@@ -47,7 +48,7 @@ const MIME_CATEGORY: Record<string, string> = {
   "text/plain": "document", "text/csv": "document",
 };
 
-export async function POST() {
+export async function POST(req?: Request) {
   try {
     const ctx = await requireRole("agent");
     const accountDir = join(UPLOADS_DIR, `account-${ctx.accountId}`);
@@ -107,6 +108,13 @@ export async function POST() {
       synced++;
     }
 
+    if (synced > 0) {
+      await audit({ ...auditCtx(req ?? null, ctx), correlationId: crypto.randomUUID() }, {
+        action: "import.completed",
+        target: { type: "file", label: "Files found on the server" },
+        meta: { count: synced },
+      });
+    }
     return NextResponse.json({ synced });
   } catch (err) {
     return toErrorResponse(err);

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { contentMatchesType, isAllowedMime, saveAccountFile } from '@/lib/files/account-files'
+import { audit, auditCtx } from '@/lib/audit'
 
 /**
  * A file from the agent's own PC or phone, for an email.
@@ -78,6 +79,12 @@ export async function POST(req: Request) {
     }
 
     const saved = await saveAccountFile({ accountId: ctx.accountId, name: file.name, mime, bytes })
+    // Type and size only — a file name can carry a customer's name.
+    await audit(auditCtx(req, ctx), {
+      action: 'file.uploaded',
+      target: { type: 'file', id: saved.id },
+      meta: { purpose: 'email_attachment', content_type: mime, size: saved.size },
+    })
     return NextResponse.json({
       file: { id: saved.id, name: saved.original_name, size: saved.size, url: saved.url, mime: saved.mime_type },
     })

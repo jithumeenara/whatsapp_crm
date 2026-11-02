@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { getCurrentAccount, requireRole, toErrorResponse } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { saveSmsConfig, testSmsConnection, registerTextBeeWebhook, deleteTextBeeWebhook, type SmsProvider } from "@/lib/messaging/channels/sms"
 import { decrypt } from "@/lib/whatsapp/encryption"
@@ -150,6 +152,12 @@ export async function POST(request: Request) {
       }
     }
 
+    // Which fields were sent — never the API key or the webhook secret.
+    await auditConfigChange(auditCtx(request ?? null, { accountId, userId: session.user.id, role: "owner" }), "config.channel_changed", {
+      area: "sms",
+      fields: ["provider", "auth_key", "sender_id", "route", "dlt_entity_id", "dlt_template_id", "device_id"].filter((k) => body[k] !== undefined && body[k] !== null && body[k] !== ""),
+      meta: { provider, created: !existing },
+    })
     return NextResponse.json({ success: true, saved: true, message: test.message, webhook_secret: webhookSecret, webhook_warning: webhookWarning })
   } catch (error) {
     console.error("Error in SMS config POST:", error)
@@ -158,7 +166,7 @@ export async function POST(request: Request) {
 }
 
 /** DELETE /api/sms/config — "Reset Configuration" recovery flow. */
-export async function DELETE() {
+export async function DELETE(request?: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -182,6 +190,7 @@ export async function DELETE() {
       if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ success: true })
       throw err
     }
+    await auditConfigChange(auditCtx(request ?? null, { accountId, userId: session.user.id, role: "owner" }), "config.channel_changed", { area: "sms", fields: [], meta: { removed: true } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error in SMS config DELETE:", error)

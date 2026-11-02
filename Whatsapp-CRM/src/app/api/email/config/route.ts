@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { getCurrentAccount, requireRole, toErrorResponse } from "@/lib/auth/account"
+import { auditCtx } from "@/lib/audit"
+import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { saveEmailConfig, testEmailConnection } from "@/lib/messaging/channels/email"
 import { decrypt } from "@/lib/whatsapp/encryption"
@@ -116,6 +118,11 @@ export async function POST(request: Request) {
       await prisma.emailConfig.update({ where: { account_id: accountId }, data: { inbound_secret: inboundSecret } })
     }
 
+    await auditConfigChange(auditCtx(request ?? null, { accountId, userId: session.user.id, role: "owner" }), "config.channel_changed", {
+      area: "email_sendgrid",
+      fields: ["api_key", "from_email", "from_name", "inbound_parse_host"].filter((k) => body[k] !== undefined && body[k] !== null && body[k] !== ""),
+      meta: { created: !existing },
+    })
     return NextResponse.json({ success: true, saved: true, message: test.message, inbound_secret: inboundSecret, config_id: saved.id })
   } catch (error) {
     console.error("Error in Email config POST:", error)
@@ -124,7 +131,7 @@ export async function POST(request: Request) {
 }
 
 /** DELETE /api/email/config — "Reset Configuration" recovery flow. */
-export async function DELETE() {
+export async function DELETE(request?: Request) {
   try {
     const session = await auth()
     if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -144,6 +151,7 @@ export async function DELETE() {
       if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ success: true })
       throw err
     }
+    await auditConfigChange(auditCtx(request ?? null, { accountId, userId: session.user.id, role: "owner" }), "config.channel_changed", { area: "email_sendgrid", fields: [], meta: { removed: true } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error in Email config DELETE:", error)

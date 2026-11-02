@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 
 /** GET /api/meta-ads/pixel — the standard Meta Pixel settings for a
  *  client's own website, separate from the WhatsApp Ads connection
@@ -39,7 +41,8 @@ export async function POST(req: Request) {
     // Writes config — 'owner' floor, matching every other credentials-
     // bearing settings route. Found with no role check at all in the
     // full-app audit.
-    const { accountId } = await requireRole('owner')
+    const ctx = await requireRole('owner')
+    const { accountId } = ctx
 
     const { pixel_id } = await req.json().catch(() => ({}))
     if (!pixel_id || typeof pixel_id !== 'string' || !pixel_id.trim()) {
@@ -57,6 +60,10 @@ export async function POST(req: Request) {
       data: { pixel_id: pixel_id.trim(), web_events_secret: webEventsSecret },
     })
 
+    await auditConfigChange(auditCtx(req, ctx), 'config.integration_changed', {
+      area: 'meta_pixel',
+      fields: ['pixel_id', ...(existing.web_events_secret ? [] : ['web_events_secret'])],
+    })
     return NextResponse.json({ success: true, pixel_id: pixel_id.trim(), web_events_secret: webEventsSecret })
   } catch (error) {
     return toErrorResponse(error)

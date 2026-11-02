@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { requireRole, toErrorResponse } from "@/lib/auth/account"
+import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { encrypt, decrypt } from "@/lib/whatsapp/encryption"
 import { fetchCatalogProducts } from "@/lib/whatsapp/catalog-api"
@@ -114,6 +115,21 @@ export async function PUT(request: Request) {
       await prisma.catalogConfig.create({ data: { account_id: ctx.accountId, user_id: ctx.userId, ...data } })
     }
 
+    // Which settings changed — names only; the token is never recorded.
+    await audit(auditCtx(request, ctx), {
+      action: "config.integration_changed",
+      target: { type: "catalog", id: catalog_id, label: "WhatsApp catalog" },
+      meta: {
+        connected: !existing,
+        fields: [
+          ...(existing?.catalog_id !== catalog_id ? ["catalog_id"] : []),
+          ...(access_token ? ["access_token"] : []),
+          ...(data.business_id !== (existing?.business_id ?? null) ? ["business_id"] : []),
+          ...(data.default_pipeline_id !== (existing?.default_pipeline_id ?? null) ? ["default_pipeline_id"] : []),
+          ...(data.default_stage_id !== (existing?.default_stage_id ?? null) ? ["default_stage_id"] : []),
+        ],
+      },
+    })
     return NextResponse.json({ success: true, saved: true })
   } catch (err) {
     return toErrorResponse(err)
@@ -121,7 +137,7 @@ export async function PUT(request: Request) {
 }
 
 /** DELETE /api/catalog/config — disconnect. Local Product/Order rows are kept (historical record), only the connection is removed. */
-export async function DELETE() {
+export async function DELETE(request?: Request) {
   try {
     const ctx = await requireRole("owner")
     try {
@@ -130,6 +146,11 @@ export async function DELETE() {
       if ((err as { code?: string })?.code === "P2025") return NextResponse.json({ success: true })
       throw err
     }
+    await audit(auditCtx(request ?? null, ctx), {
+      action: "config.integration_changed",
+      target: { type: "catalog", label: "WhatsApp catalog" },
+      meta: { disconnected: true },
+    })
     return NextResponse.json({ success: true })
   } catch (err) {
     return toErrorResponse(err)

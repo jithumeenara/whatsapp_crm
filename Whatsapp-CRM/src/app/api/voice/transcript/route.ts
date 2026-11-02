@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { checkVoiceAgentAuth, VOICE_AUTH_RESPONSES } from '@/lib/voice/agent-auth'
+import { webhookWrote } from '@/lib/audit/actors'
 
 /**
  * What was actually said on the call.
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
   const call = await prisma.call
     .findUnique({
       where: { provider_call_id: callId },
-      select: { id: true, transcript: true },
+      select: { id: true, account_id: true, transcript: true },
     })
     .catch(() => null)
   if (!call) {
@@ -94,6 +95,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Could not save the transcript.' }, { status: 500 })
   }
 
+  // Length only — the transcript is the customer's own words.
+  await webhookWrote('voice_agent', call.account_id, { type: 'call', id: call.id }, { field: 'transcript', chars: stored.length }, request)
   console.log(`[calls] transcript saved for ${callId} (${stored.length} chars)`)
   return NextResponse.json({ saved: true, chars: stored.length })
 }

@@ -41,7 +41,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { secret } = await params
   const config = await resolveAccountBySecret(secret)
-  if (!config) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!config) {
+    void import("@/lib/audit/actors").then((m) => m.webhookRejected("email", null, "bad_secret"))
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
 
   let form: FormData
   try {

@@ -80,7 +80,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { secret } = await params
   const config = await resolveAccountBySecret(secret)
-  if (!config) return NextResponse.json({ error: "Not found" }, { status: 404 })
+  if (!config) {
+    void import("@/lib/audit/actors").then((m) => m.webhookRejected("sms", null, "bad_secret"))
+    return NextResponse.json({ error: "Not found" }, { status: 404 })
+  }
 
   const rawBody = await request.text()
 
@@ -90,6 +93,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (config.provider === "textbee") {
     const signature = request.headers.get("x-signature")
     if (!verifyTextBeeSignature(rawBody, signature, secret)) {
+      void import("@/lib/audit/actors").then((m) => m.webhookRejected("sms", null, "bad_signature"))
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 })
     }
   }

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { auditCtx } from '@/lib/audit'
+import { auditConfigChange } from '@/lib/audit/config-change'
 import { hasMinRole, isAccountRole } from '@/lib/auth/roles'
 import { requireStepUp, StepUpError } from '@/lib/admin-chat/step-up'
 import { writeAudit } from '@/lib/admin-chat/audit'
@@ -88,6 +90,13 @@ export async function POST(req: Request) {
       memberId: created.id,
       actorUserId: ctx.userId,
       detail: { channel, scope: fields.scope, valid_until: body.valid_until },
+    })
+    // Mirrored; the phone number and the verify code are never recorded.
+    await auditConfigChange(auditCtx(req, ctx), 'config.other_changed', {
+      area: 'admin_chat_member',
+      fields: [],
+      target: { type: 'admin_chat_member', id: created.id },
+      meta: { added: true, member_user_id: userId, channel, scope: fields.scope },
     })
     return NextResponse.json({ ok: true, id: created.id, verify_code: `CRM-${code}`, verify_minutes: VERIFY_MINUTES })
   } catch (err) {

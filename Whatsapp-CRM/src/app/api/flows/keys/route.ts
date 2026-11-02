@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { denyUnlessRole } from '@/lib/flows/route-guard'
+import { auditFlowAction } from '@/lib/flows/audit-ctx'
 import crypto from 'crypto'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/db'
@@ -205,7 +206,7 @@ export async function GET() {
  * which looks to the customer like a Flow that opens blank, and to the
  * owner like nothing at all.
  */
-export async function POST() {
+export async function POST(request?: Request) {
   const denied = await denyUnlessRole('admin')
   if (denied) return denied
   const session = await auth()
@@ -274,6 +275,15 @@ export async function POST() {
     } catch (err) {
       uploadError = reason(err)
     }
+  }
+
+  // The key itself is never recorded — only that a new pair was made.
+  if (stored || uploadedToMeta) {
+    await auditFlowAction(request ?? null, {
+      action: 'config.whatsapp_changed',
+      target: { type: 'flows_key', label: 'Flows encryption key pair' },
+      meta: { generated: true, stored, uploaded_to_meta: uploadedToMeta },
+    })
   }
 
   return NextResponse.json({

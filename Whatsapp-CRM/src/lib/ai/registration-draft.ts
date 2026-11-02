@@ -237,7 +237,12 @@ async function toTeam(ctx: Ctx, d: Draft, reason: string, customerText: string):
   await deleteDraft(ctx.conversationId).catch(() => {})
   await say(ctx, customerText).catch(() => {})
   const { handOver } = await import('./auto-reply')
-  await handOver({ accountId: ctx.accountId, conversationId: ctx.conversationId, note: `${reason}\n\nNothing was saved; please finish this registration with them.` })
+  await handOver({
+    accountId: ctx.accountId,
+    conversationId: ctx.conversationId,
+    note: `${reason}\n\nNothing was saved; please finish this registration with them.`,
+    auditAs: { kind: 'registration', conversationId: ctx.conversationId, correlationId: `registration:${ctx.conversationId}` },
+  })
 }
 
 // ── Choices ─────────────────────────────────────────────────────────
@@ -574,7 +579,11 @@ async function register(ctx: Ctx, d: Draft, form: RegistrationForm): Promise<voi
   const t = TEXT[d.lang]
   const result = (await REGISTRATION_TOOLS.submit_registration.run(
     { table_id: form.table_id, values: d.values },
-    { accountId: ctx.accountId, contactId: ctx.contactId },
+    {
+      accountId: ctx.accountId,
+      contactId: ctx.contactId,
+      audit: { kind: 'registration', conversationId: ctx.conversationId, correlationId: `registration:${ctx.conversationId}` },
+    },
   )) as { saved?: boolean; already_registered?: boolean; full?: boolean; problems?: string[]; say?: string; error?: string }
 
   if (result.saved) {
