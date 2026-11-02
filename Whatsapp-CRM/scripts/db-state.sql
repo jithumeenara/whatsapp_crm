@@ -111,7 +111,10 @@ FROM (VALUES
   ('148_contact_age_address',          EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'contacts' AND column_name = 'address')),
   ('149_data_record_batch',            EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'batch_id')),
   ('150_sheet_verifications',          EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sheet_verifications')),
-  ('151_data_record_public_ref',       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'public_ref'))
+  ('151_data_record_public_ref',       EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_records' AND column_name = 'public_ref')),
+  ('155_sheet_verification_help',      EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'sheet_verifications' AND column_name = 'help_call_phone')),
+  -- 156 removes what 119 made: after it, 119 reads false and 156 true.
+  ('156_drop_old_reports',             to_regclass('saved_reports') IS NULL AND to_regclass('report_exports') IS NULL)
 ) AS m(migration, present)
 ORDER BY m.migration;
 
