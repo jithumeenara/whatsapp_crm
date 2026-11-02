@@ -64,3 +64,6 @@ pw-*.js
 /.playwright/
 *.auth-state.json
 storage-state-*.json
+
+# Audit fallback file and other runtime logs (never committed)
+logs/

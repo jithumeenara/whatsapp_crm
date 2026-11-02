@@ -126,7 +126,15 @@ DECLARE
   part   text := format('audit_events_%s', to_char(from_d, 'YYYYMM'));
 BEGIN
   IF to_regclass(part) IS NULL THEN
-    EXECUTE format('CREATE TABLE %I PARTITION OF audit_events FOR VALUES FROM (%L) TO (%L)', part, from_d, to_d);
+    BEGIN
+      EXECUTE format('CREATE TABLE %I PARTITION OF audit_events FOR VALUES FROM (%L) TO (%L)', part, from_d, to_d);
+    EXCEPTION WHEN check_violation OR invalid_object_definition THEN
+      -- The default partition already holds rows for this month: never
+      -- block the writer over it. The month's rows stay in the default
+      -- partition and the daily check reports it.
+      RAISE WARNING 'audit partition % not created: %', part, SQLERRM;
+      RETURN NULL;
+    END;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'audit_part_no_truncate' AND tgrelid = part::regclass) THEN
     EXECUTE format('CREATE TRIGGER audit_part_no_truncate BEFORE TRUNCATE ON %I FOR EACH STATEMENT EXECUTE FUNCTION audit_refuse_change()', part);

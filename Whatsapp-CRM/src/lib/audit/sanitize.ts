@@ -6,7 +6,7 @@
  */
 
 /** Keys whose values are never kept, only the fact that they changed. */
-const SECRET_KEY = /(pass(word)?|secret|token|otp|\bpin\b|cvv|api[_-]?key|private|signature|totp|mfa|session|cookie|authori[sz]ation|encrypted|credential|hash|salt|aadha+r|pan(_?no|_?number)?$|ifsc|account_?(no|number)|card_?(no|number)?$|bank_?(no|account))/i
+const SECRET_KEY = /(pass(word)?|secret|token|otp|\bpin\b|cvv|api[_-]?key|private|signature|totp|mfa|session|cookie|authori[sz]ation|encrypted|credential|hash|salt|aadha+r|(^|_)pan(_?no|_?number)?$|ifsc|account_?(no|number)|card_?(no|number)?$|bank_?(no|account))/i
 
 /** Fields whose content is long or private: kept as "(N chars)". */
 const BODY_KEY = /(^|_)(body|content|text|message|prompt|notes?|description|html|markup|transcript|knowledge|instructions?|system_prompt|template_body)$/i
@@ -17,12 +17,29 @@ const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f\\u2028\\u2029]+', 'g')
 
 const DATE_LIKE = /^\d{4}-\d{2}-\d{2}$|^\d{2}-\d{2}-\d{4}$/
 
+/** Replaces lone UTF-16 surrogates (they cannot be stored as UTF-8). */
+function wellFormed(s: string): string {
+  const w = (s as string & { toWellFormed?: () => string }).toWellFormed
+  return typeof w === 'function' ? w.call(s) : s.replace(/[�-�](?![�-�])|(?<![�-�])[�-�]/g, '�')
+}
+
 export const MAX_STRING = 200
 export const MAX_REASON = 500
 export const MAX_EVENT_BYTES = 8 * 1024
 
-/** Masks numbers that look like phones, IDs, bank or card numbers, and emails. */
+const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
+
+/** Masks numbers that look like phones, IDs, bank or card numbers, and
+ *  emails. Record ids (UUIDs) are left whole: a run of digits inside one
+ *  is not a phone number, and a masked id could never be looked up. */
 export function maskText(input: string): string {
+  const ids = input.match(UUID_ANYWHERE)
+  if (!ids) return maskPlain(input)
+  const parts = input.split(UUID_ANYWHERE)
+  return parts.map((p, i) => maskPlain(p) + (ids[i] ?? '')).join('')
+}
+
+function maskPlain(input: string): string {
   return input
     // 8+ digits, possibly split by spaces or dashes: keep the last four.
     .replace(/(?<![\w])(\+?\d[\d\s-]{6,}\d)(?![\w])/g, (run) => {
@@ -40,7 +57,7 @@ export function maskText(input: string): string {
 /** One line, no control characters, capped (log injection: OWASP). */
 export function cleanText(input: unknown, max = MAX_STRING): string | null {
   if (input === null || input === undefined) return null
-  const s = String(input).replace(CONTROL, ' ').trim()
+  const s = wellFormed(String(input)).replace(CONTROL, ' ').trim()
   if (!s) return null
   const masked = maskText(s)
   return masked.length > max ? `${masked.slice(0, max - 1)}…` : masked
@@ -58,7 +75,8 @@ export function cleanValue(key: string, value: unknown, depth = 0): unknown {
     if (BODY_KEY.test(key) && value.length > 0) return `(${value.length} chars)`
     return cleanText(value)
   }
-  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isInteger(value) && Math.abs(value) >= 1e7 ? maskText(String(value)) : value
+  if (typeof value === 'boolean') return value
   if (value instanceof Date) return value.toISOString()
   if (typeof value === 'bigint') return value.toString()
   if (depth >= 2) return '(nested)'

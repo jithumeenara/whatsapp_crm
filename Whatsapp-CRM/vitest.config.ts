@@ -15,6 +15,9 @@ export default defineConfig({
       ENCRYPTION_KEY:
         "0000000000000000000000000000000000000000000000000000000000000000",
       META_APP_SECRET: "test-meta-app-secret",
+      // Route tests mock the database, so the audit writer has nothing to
+      // write to; it is off unless a test about auditing turns it on.
+      AUDIT_LOG: "off",
     },
     clearMocks: true,
   },

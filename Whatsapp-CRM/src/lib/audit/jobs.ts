@@ -33,4 +33,21 @@ export function startAuditHousekeeping(version: string | null): void {
   })
   setInterval(() => void run('partitions', partitionsOnce), 24 * 60 * 60_000).unref()
   setInterval(() => void run('replay', replayAuditFallback), 10 * 60_000).unref()
+
+  // pm2 stops the app with SIGINT/SIGTERM: write the last minute of
+  // grouped login failures and refusals before going, then exit as the
+  // signal meant (at most 3 seconds later).
+  const onStop = (signal: NodeJS.Signals) => {
+    const done = () => process.exit(signal === 'SIGINT' ? 130 : 143)
+    setTimeout(done, 3_000).unref()
+    // Grouped counters (login failures, refusals, API-key use, throttled
+    // webhook rejections) are written before going, not lost.
+    Promise.allSettled([
+      import('./aggregate').then((m) => m.flushAuditAggregates()),
+      import('./usage').then((m) => m.flushApiKeyUsage()),
+      import('./throttle').then((m) => m.flushThrottled()),
+    ]).finally(done)
+  }
+  process.once('SIGINT', onStop)
+  process.once('SIGTERM', onStop)
 }

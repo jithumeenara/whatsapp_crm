@@ -63,6 +63,12 @@ type Prepared = Omit<ChainRow, 'id' | 'seq' | 'prev_hash' | 'occurred_at' | 'ing
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** A record id is kept exactly (it must stay findable); only an id-like
+ *  value qualifies — anything else is treated as text and masked. */
+function cleanId(v: string): string | null {
+  return /^[A-Za-z0-9_:.\-]{1,100}$/.test(v) ? v : cleanText(v, 100)
+}
+
 export function auditEnabled(): boolean {
   return (process.env.AUDIT_LOG ?? 'on').trim().toLowerCase() !== 'off'
 }
@@ -71,7 +77,8 @@ export function auditEnabled(): boolean {
 export function prepare(ctx: AuditContext, e: AuditEntry): Prepared {
   const category = categoryOf(e.action)
   if (!category) throw new Error(`Unknown audit action: ${String(e.action).slice(0, 60)}`)
-  const accountId = ctx.accountId && UUID.test(ctx.accountId) ? ctx.accountId : PLATFORM_ACCOUNT
+  // Lower case: Postgres stores uuids that way, so the hash and the lock key match what is read back.
+  const accountId = ctx.accountId && UUID.test(ctx.accountId) ? ctx.accountId.toLowerCase() : PLATFORM_ACCOUNT
   const changes = e.changes !== undefined ? cleanObject(e.changes) : diff(e.before, e.after, { only: e.only })
   let meta = cleanObject(e.meta ?? null)
   // Keep each event small: the list view and the hash both stay cheap.
@@ -83,13 +90,13 @@ export function prepare(ctx: AuditContext, e: AuditEntry): Prepared {
     actor_id: cleanText(ctx.actor.id, 100),
     actor_label: cleanText(ctx.actor.label, 120),
     actor_role: cleanText(ctx.actor.role, 30),
-    on_behalf_of: ctx.actor.onBehalfOf && UUID.test(ctx.actor.onBehalfOf) ? ctx.actor.onBehalfOf : null,
+    on_behalf_of: ctx.actor.onBehalfOf && UUID.test(ctx.actor.onBehalfOf) ? ctx.actor.onBehalfOf.toLowerCase() : null,
     action: e.action,
     category,
     outcome: e.outcome ?? 'success',
     reason: cleanText(e.reason, MAX_REASON),
     target_type: cleanText(e.target?.type, 40),
-    target_id: e.target?.id === null || e.target?.id === undefined ? null : cleanText(String(e.target.id), 100),
+    target_id: e.target?.id === null || e.target?.id === undefined ? null : cleanId(String(e.target.id)),
     target_label: cleanText(e.target?.label, 120),
     changes: size > MAX_EVENT_BYTES ? { note: 'too large to keep' } : changes,
     request_id: cleanText(ctx.requestId, 80),
@@ -107,11 +114,22 @@ type Tx = Prisma.TransactionClient
 /** Partitions this process has already asked for, by "YYYY-MM". */
 const ensuredMonths = new Set<string>()
 
-async function ensureMonth(tx: Tx, d: Date): Promise<void> {
-  const key = d.toISOString().slice(0, 7)
-  if (ensuredMonths.has(key)) return
-  await tx.$queryRaw`SELECT audit_ensure_partition(${`${key}-01`}::date)::text`
-  ensuredMonths.add(key)
+/**
+ * Asks for a month's partition OUTSIDE any business transaction, and never
+ * lets a failure stop the write: a missing partition only means the row
+ * lands in the default partition (and the daily check alarms). Cached only
+ * once it has really been created.
+ */
+async function ensureMonths(dates: Date[]): Promise<void> {
+  for (const key of new Set(dates.map((d) => d.toISOString().slice(0, 7)))) {
+    if (ensuredMonths.has(key)) continue
+    try {
+      await prisma.$queryRaw`SELECT audit_ensure_partition(${`${key}-01`}::date)::text`
+      ensuredMonths.add(key)
+    } catch (err) {
+      console.error(`[audit] partition ${key} not created (rows go to the default partition):`, err instanceof Error ? err.message : err)
+    }
+  }
 }
 
 /** Appends rows that all belong to one account, under that chain's lock. */
@@ -127,7 +145,6 @@ async function appendInTx(tx: Tx, accountId: string, rows: Prepared[], replay?: 
     const now = new Date()
     const occurredAt = r.occurred_at ?? now
     const ingestedAt = replay?.ingestedAt ?? now
-    await ensureMonth(tx, occurredAt)
     const idRow = await tx.$queryRaw<Array<{ id: bigint }>>`SELECT nextval('audit_events_id_seq') AS id`
     const id = idRow[0].id
     seq += BigInt(1)
@@ -163,6 +180,7 @@ function group(rows: Prepared[]): Map<string, Prepared[]> {
 
 /** Low-level: append already-prepared rows (used by audit() and the fallback replay). */
 export async function appendPrepared(rows: Prepared[], replay?: { ingestedAt: Date }): Promise<void> {
+  await ensureMonths(rows.map((r) => r.occurred_at ?? new Date()))
   for (const [accountId, list] of group(rows)) {
     await prisma.$transaction((tx) => appendInTx(tx, accountId, list, replay), { timeout: 10_000 })
   }

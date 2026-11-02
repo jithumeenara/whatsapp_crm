@@ -19,6 +19,30 @@ describe('what never enters the log', () => {
     expect(t).toContain('a•••@example.com')
   })
 
+  it('keeps record ids whole, even when a run of their digits looks like a phone (bug)', () => {
+    const id = '22222222-2222-4222-8222-222222222222'
+    expect(maskText(`row ${id} by 9847012345`)).toBe(`row ${id} by ••••2345`)
+    const r = prepare({ accountId: ACC, actor: { type: 'user' }, source: 'web' }, { action: 'record.updated', target: { type: 'lead', id }, meta: { verification_id: id, numeric_id: '123456789012' } })
+    expect(r.target_id).toBe(id)
+    expect((r.meta as Record<string, unknown>).verification_id).toBe(id)
+    expect(prepare({ accountId: ACC, actor: { type: 'user' }, source: 'web' }, { action: 'record.updated', target: { type: 'data_record', id: '123456789012' } }).target_id).toBe('123456789012')
+  })
+
+  it('a broken (lone surrogate) name is stored as a valid character, so the hash matches what Postgres keeps', () => {
+    expect(cleanText('Anu\uD800 S')).toBe('Anu� S')
+  })
+
+  it('masks a phone or ID number passed as a number, and does not treat "japan" as a PAN field', () => {
+    expect(diff({ phone_n: 9847012345 }, { phone_n: 9847099999 })).toEqual({ phone_n: ['••••2345', '••••9999'] })
+    expect(diff({ japan: 'x' }, { japan: 'y' })).toEqual({ japan: ['x', 'y'] })
+  })
+
+  it('stores account and on-behalf-of ids in lower case', () => {
+    const r = prepare({ accountId: ACC.toUpperCase(), actor: { type: 'api_key', onBehalfOf: ACC.toUpperCase() }, source: 'api' }, { action: 'record.updated' })
+    expect(r.account_id).toBe(ACC)
+    expect(r.on_behalf_of).toBe(ACC)
+  })
+
   it('keeps short numbers, amounts and dates', () => {
     expect(maskText('3 leads, ₹1,250 on 2026-11-02')).toBe('3 leads, ₹1,250 on 2026-11-02')
   })

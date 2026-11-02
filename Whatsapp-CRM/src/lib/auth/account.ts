@@ -5,6 +5,41 @@ import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
 import { canOpenPath } from "./page-access";
 import { verifyApiKey } from "./api-key";
 import { checkRateLimit, RATE_LIMITS, type RateLimitResult } from "@/lib/rate-limit";
+import { recordDenied } from "@/lib/audit/aggregate";
+import { recordApiKeyUse } from "@/lib/audit/usage";
+import { clientIp } from "@/lib/net/client-ip";
+
+/**
+ * Counts a 403 for the audit log (access.denied, one event per person per
+ * route per minute — lib/audit/aggregate.ts). The request's path, address
+ * and id come from the headers the proxy set; outside a request there are
+ * none and the refusal is still counted. Never throws, never changes the
+ * refusal itself.
+ */
+async function noteDenied(ctx: { accountId: string; userId: string; role: string }, required: string | null, page: string | null) {
+  try {
+    let h: { get(name: string): string | null } | null = null
+    try {
+      const { headers } = await import("next/headers")
+      h = await headers()
+    } catch {
+      h = null
+    }
+    recordDenied({
+      accountId: ctx.accountId,
+      userId: ctx.userId,
+      role: ctx.role,
+      required,
+      page,
+      path: h?.get("x-pathname") ?? null,
+      ip: h ? clientIp(h) : null,
+      userAgent: h?.get("user-agent") ?? null,
+      requestId: h?.get("x-request-id") ?? null,
+    })
+  } catch {
+    /* counting a refusal must never turn it into a different error */
+  }
+}
 
 // ------------------------------------------------------------
 // Errors
@@ -187,6 +222,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
 export async function requireRole(min: AccountRole): Promise<AccountContext> {
   const ctx = await getCurrentAccount();
   if (!hasMinRole(ctx.role, min)) {
+    await noteDenied(ctx, min, null);
     throw new ForbiddenError(
       `This action requires the '${min}' role or higher`
     );
@@ -237,6 +273,7 @@ export async function requireRole(min: AccountRole): Promise<AccountContext> {
  */
 export function assertPageAccess(ctx: AccountContext, page: string): void {
   if (!canOpenPath(ctx.role, ctx.pageAccess, page)) {
+    void noteDenied(ctx, null, page);
     throw new ForbiddenError(
       "You do not have access to this section. An administrator can grant it in Settings → Members.",
     );
@@ -249,6 +286,7 @@ export async function requirePageAccess(
 ): Promise<AccountContext> {
   const ctx = await requireRole(min);
   if (!canOpenPath(ctx.role, ctx.pageAccess, page)) {
+    await noteDenied(ctx, min, page);
     throw new ForbiddenError(
       "You do not have access to this section. An administrator can grant it in Settings → Members.",
     );
@@ -302,6 +340,9 @@ export async function requireRoleOrApiKey(
       include: { account: { select: { id: true, name: true } } },
     });
     if (!profile?.account) throw new ForbiddenError("Account not found.");
+
+    // Grouped per key per endpoint per hour (audit/usage.ts), never per call.
+    recordApiKeyUse({ accountId: result.accountId, keyId: result.keyId, url: req.url, method: req.method, ip: clientIp(req.headers) });
 
     return {
       db: prisma,

@@ -41,6 +41,7 @@ const PUBLIC_PATHS = new Set([
   // verifies the signature. Behind the session check every call got a
   // 401, so a paid link never marked itself paid.
   '/api/whatsapp/payments/webhook',
+  '/api/audit/head', // off-server audit check; GET only, bearer AUDIT_HEAD_TOKEN checked in the route
 ])
 
 // Paths whose prefix is always public (NextAuth internals, public API)
