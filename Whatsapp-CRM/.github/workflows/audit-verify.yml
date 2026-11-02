@@ -1,0 +1,70 @@
+# Off-server audit check (docs/plans/audit-log-plan.md §20a,
+# docs/deploy/audit-setup.md step 7). Runs daily, away from the servers:
+# reads each server's R2 copy with a READ-ONLY token, compares it with the
+# server's /api/audit/head, fails and mails an alarm on any mismatch.
+#
+# Secrets, per server, prefixed with its name in capitals (ACSTI_, HOSPITAL_):
+#   <S>_AUDIT_HEAD_URL, <S>_AUDIT_HEAD_TOKEN, <S>_AUDIT_PUBLIC_KEY,
+#   <S>_R2_ENDPOINT, <S>_R2_BUCKET, <S>_R2_READ_ACCESS_KEY_ID, <S>_R2_READ_SECRET_ACCESS_KEY
+# Shared:
+#   AUDIT_SMTP_HOST, AUDIT_SMTP_PORT, AUDIT_SMTP_USER, AUDIT_SMTP_PASS, AUDIT_SMTP_FROM, AUDIT_ALARM_TO
+
+name: Audit off-server check
+
+on:
+  schedule:
+    - cron: '30 1 * * *' # 07:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [ACSTI, HOSPITAL]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Only what the check needs: tsx to run TypeScript, pg types are not
+      # used here, nodemailer for the alarm. No app install, no build.
+      - name: Install tools
+        run: |
+          mkdir -p /tmp/audit-tools && cd /tmp/audit-tools
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund tsx@4.22.4 nodemailer@6.9.16 > /dev/null
+
+      - name: Verify
+        env:
+          NODE_PATH: /tmp/audit-tools/node_modules
+          AUDIT_LABEL: ${{ matrix.server }}
+          AUDIT_HEAD_URL: ${{ secrets[format('{0}_AUDIT_HEAD_URL', matrix.server)] }}
+          AUDIT_HEAD_TOKEN: ${{ secrets[format('{0}_AUDIT_HEAD_TOKEN', matrix.server)] }}
+          AUDIT_PUBLIC_KEY: ${{ secrets[format('{0}_AUDIT_PUBLIC_KEY', matrix.server)] }}
+          R2_ENDPOINT: ${{ secrets[format('{0}_R2_ENDPOINT', matrix.server)] }}
+          R2_BUCKET: ${{ secrets[format('{0}_R2_BUCKET', matrix.server)] }}
+          R2_READ_ACCESS_KEY_ID: ${{ secrets[format('{0}_R2_READ_ACCESS_KEY_ID', matrix.server)] }}
+          R2_READ_SECRET_ACCESS_KEY: ${{ secrets[format('{0}_R2_READ_SECRET_ACCESS_KEY', matrix.server)] }}
+          SMTP_HOST: ${{ secrets.AUDIT_SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.AUDIT_SMTP_PORT }}
+          SMTP_USER: ${{ secrets.AUDIT_SMTP_USER }}
+          SMTP_PASS: ${{ secrets.AUDIT_SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.AUDIT_SMTP_FROM }}
+          ALARM_TO: ${{ secrets.AUDIT_ALARM_TO }}
+        run: |
+          if [ -z "$AUDIT_HEAD_URL" ]; then echo "No secrets for $AUDIT_LABEL yet — skipped"; exit 0; fi
+          /tmp/audit-tools/node_modules/.bin/tsx --tsconfig tsconfig.json scripts/audit/external-verify.ts
