@@ -28,6 +28,10 @@ import { LeadFollowUps, type LeadFollowUp } from "@/components/leads/lead-follow
 import { ContactForm } from "@/components/contacts/contact-form"
 import { useRealtime } from "@/hooks/use-realtime"
 import type { MessageTemplate, Contact } from "@/types"
+import dynamic from "next/dynamic"
+
+// Admins only (the component checks, the API enforces); loaded on demand.
+const RecordHistoryButton = dynamic(() => import("@/components/audit/record-history").then((m) => m.RecordHistoryButton))
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -714,6 +718,7 @@ export default function LeadDetailPage() {
                   className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50">
                   {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
                 </button>
+                <RecordHistoryButton targetType="lead" targetId={String(lead.id)} className="h-10 min-w-10 rounded-xl" iconOnlyOnPhone />
               </div>
 
               {/* The numbers: the main one copies, the other one calls */}
@@ -782,6 +787,9 @@ export default function LeadDetailPage() {
                 className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 @3xl:flex">
                 {contactEditLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
               </button>
+              <span className="hidden @3xl:inline-flex">
+                <RecordHistoryButton targetType="lead" targetId={String(lead.id)} className="h-10 rounded-xl" />
+              </span>
             </div>
             </div>
           </div>

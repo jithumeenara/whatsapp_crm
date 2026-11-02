@@ -13,6 +13,10 @@ import {
 import { format } from "date-fns"
 import { checkEmail, checkPhone, isPlaceholderPhone } from "@/lib/contacts/validate"
 import { readableTextColor } from "@/lib/readable-color"
+import dynamic from "next/dynamic"
+
+// Admins only (the component checks, the API enforces); loaded on demand.
+const RecordHistoryButton = dynamic(() => import("@/components/audit/record-history").then((m) => m.RecordHistoryButton))
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -355,6 +359,9 @@ export function ContactDetailViewV2({ open, onOpenChange, contactId, onUpdated }
               {/* Close + title */}
               <div className="flex items-center justify-between px-5 pt-4 pb-3">
                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Contact Details</span>
+                <span className="ml-auto mr-2">
+                  <RecordHistoryButton targetType="contact" targetId={contact.id} label={displayName} />
+                </span>
                 <button
                   type="button"
                   onClick={() => onOpenChange(false)}

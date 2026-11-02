@@ -10,6 +10,7 @@ import {
   Phone,
   Layers,
   Sheet,
+  FileClock,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -37,6 +38,7 @@ const AdsTab = dynamic(() => import("@/components/settings/ads-tab").then((m) =>
 const CatalogTab = dynamic(() => import("@/components/settings/catalog-tab").then((m) => m.CatalogTab), { loading: PanelLoading })
 const PaymentsTab = dynamic(() => import("@/components/settings/payments-tab").then((m) => m.PaymentsTab), { loading: PanelLoading })
 const CallsTab = dynamic(() => import("@/components/settings/calls-tab").then((m) => m.CallsTab), { loading: PanelLoading })
+const AuditLog = dynamic(() => import("@/components/settings/audit-log").then((m) => m.AuditLog), { loading: PanelLoading })
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -104,6 +106,9 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       { key: "database",     label: "Database",      icon: Database, adminOnly: true },
       { key: "api-keys",     label: "API Keys",      icon: Key,     ownerOnly: true },
       { key: "webhooks",     label: "Webhooks",      icon: Webhook, ownerOnly: true },
+      // Admin and owner only, and never in PAGE_SECTIONS: page access can
+      // not hand the audit log to anyone else (the API refuses them too).
+      { key: "audit",        label: "Audit log",     icon: FileClock, adminOnly: true, aliases: ["Activity", "History", "Security log", "Who changed"] },
     ],
   },
 ]
@@ -124,6 +129,7 @@ const TAB_TITLES: Record<string, string> = {
   notifications: "Notifications",
   "api-keys": "API Keys",
   webhooks: "Webhooks",
+  audit: "Audit log",
   google: "Google",
 }
 
@@ -143,6 +149,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   notifications: "Browser push alerts for new conversations, assignments, follow-ups and tasks — even when this tab is in the background",
   "api-keys": "Secret keys so external apps can read and write Data Store records via the REST API",
   webhooks: "Get an HTTPS POST whenever a Data Store record changes, signed with HMAC-SHA256",
+  audit: "Who did what, when and from where — sign-ins, team and settings changes, records, exports and AI actions. Read-only",
 }
 
 function SettingsContent() {
@@ -247,6 +254,7 @@ function SettingsContent() {
       case "notifications":    return <NotificationsPanel />
       case "api-keys":         return isOwner ? <ApiKeysPanel /> : null
       case "webhooks":         return isOwner ? <WebhooksPanel /> : null
+      case "audit":            return isAdmin ? <AuditLog /> : null
       default:                 return <ProfileForm />
     }
   }
