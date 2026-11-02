@@ -4038,3 +4038,66 @@ model SheetVerificationPerson {
   @@index([wa_message_id], map: "sheet_verification_people_wa_idx")
   @@map("sheet_verification_people")
 }
+
+/// Audit log (migration 157, docs/plans/audit-log-plan.md). Append-only:
+/// the database refuses UPDATE, DELETE and TRUNCATE. Written only through
+/// src/lib/audit; partitioned by month on occurred_at.
+model AuditEvent {
+  id             BigInt
+  seq            BigInt
+  account_id     String   @db.Uuid
+  occurred_at    DateTime @db.Timestamptz(6)
+  ingested_at    DateTime @db.Timestamptz(6)
+  actor_type     String
+  actor_id       String?
+  actor_label    String?
+  actor_role     String?
+  on_behalf_of   String?  @db.Uuid
+  action         String
+  category       String
+  outcome        String
+  reason         String?
+  target_type    String?
+  target_id      String?
+  target_label   String?
+  changes        Json?
+  request_id     String?
+  correlation_id String?
+  source         String
+  ip             String?
+  user_agent     String?
+  meta           Json?
+  prev_hash      String
+  row_hash       String
+
+  @@id([id, occurred_at])
+  @@index([account_id, seq], map: "audit_events_account_seq")
+  @@map("audit_events")
+}
+
+/// The newest seq/hash of each account's audit chain (migration 157).
+model AuditChainHead {
+  account_id String   @id @db.Uuid
+  last_seq   BigInt
+  last_id    BigInt
+  last_hash  String
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("audit_chain_heads")
+}
+
+/// A signed summary of an audit chain, written by the crm-audit signer
+/// (migration 157). Append-only.
+model AuditCheckpoint {
+  id           BigInt   @id @default(autoincrement())
+  account_id   String   @db.Uuid
+  through_seq  BigInt
+  through_hash String
+  row_count    BigInt
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  signature    String
+  key_id       String
+
+  @@index([account_id, through_seq(sort: Desc)], map: "audit_checkpoints_account")
+  @@map("audit_checkpoints")
+}

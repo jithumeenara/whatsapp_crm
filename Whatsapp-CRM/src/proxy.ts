@@ -159,8 +159,14 @@ export async function proxy(req: NextRequest) {
   // which uses it to refuse a page this member may not open.
   forwarded.set('x-pathname', req.nextUrl.pathname)
   forwarded.set('Content-Security-Policy', strictCsp(nonce))
+  // Every request gets an id made here, never taken from the caller, so
+  // the audit log can group what one request did and a caller cannot
+  // slip their request into someone else's group (audit plan §7).
+  const requestId = crypto.randomUUID()
+  forwarded.set('x-request-id', requestId)
 
   const res = await route(req, forwarded)
+  res.headers.set('x-request-id', requestId)
 
   // Report-only, never enforcing. The policy in next.config.ts is what
   // the browser actually obeys; this one it only checks and reports on,

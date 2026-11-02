@@ -34,6 +34,7 @@ import { attachWebChatNamespace } from "./src/lib/webchat/realtime";
 import { sweepExpiredWebChatSessions } from "./src/lib/webchat/session";
 import { installDevSendGuard, isDevelopment } from "./src/lib/dev/send-guard";
 import { singleFlight } from "./src/lib/jobs/single-flight";
+import { startAuditHousekeeping } from "./src/lib/audit/jobs";
 import { checkStartupEnv, isDevServer } from "./src/lib/security/startup-check";
 
 // Development mode only when asked for by name — see isDevServer for what
@@ -191,6 +192,10 @@ app.prepare().then(() => {
     // been opened up says so in its own first line of log.
     console.log(`> Ready on http://${hostname}:${port} (bound to ${bindHost})`);
   });
+
+  // The audit log's own upkeep (boot event, partitions, replay). It sends
+  // nothing, so it runs on development servers too.
+  startAuditHousekeeping(process.env.GIT_COMMIT ?? null);
 
   // Background jobs send to customers and change data. On a laptop
   // (APP_ENV=development) they would do it from whatever database the

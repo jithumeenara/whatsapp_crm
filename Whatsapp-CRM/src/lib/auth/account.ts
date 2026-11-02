@@ -132,6 +132,10 @@ export interface AccountContext {
    *  "not decided" and an empty array means "decided: none", and the
    *  difference matters. */
   pageAccess: unknown;
+  /** Set when the caller is an API key rather than a signed-in person:
+   *  the key's id, so the audit log can say "API key" instead of naming
+   *  the member who created it. Access is unchanged by it. */
+  apiKeyId?: string;
 }
 
 export async function getCurrentAccount(): Promise<AccountContext> {
@@ -311,6 +315,7 @@ export async function requireRoleOrApiKey(
       // role". Carrying the profile's value here would make a key's
       // reach depend on which member happened to be created first.
       pageAccess: null,
+      apiKeyId: result.keyId,
     };
   }
 
