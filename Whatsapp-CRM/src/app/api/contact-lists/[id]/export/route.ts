@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 // A name like =HYPERLINK(...) stays text in whatever opens the file next.
-import { safeText } from "@/lib/reports/excel";
+import { safeText } from "@/lib/files/spreadsheet-safe";
 import { requireRoleOrApiKey, toErrorResponse, assertPageAccess } from "@/lib/auth/account";
 
 /** GET /api/contact-lists/[id]/export — the list's people as a spreadsheet. */

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 // A name like =HYPERLINK(...) stays text in whatever opens the file next.
-import { safeText } from "@/lib/reports/excel";
+import { safeText } from "@/lib/files/spreadsheet-safe";
 import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from "@/lib/auth/account";
 import { businessTimezone } from "@/lib/ai/human-date";
 import { OUTCOMES, OUTCOME_INFO, isOutcome, outcomeOf, type Outcome } from "@/lib/broadcasts/outcomes";

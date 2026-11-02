@@ -411,9 +411,9 @@ function MemberDialog({
               <legend className="text-[12px] font-semibold text-slate-700">What they may see</legend>
               {(
                 [
-                  ['reports', 'Reports only', 'Counts and summaries — no names or numbers of people.'],
-                  ['lookup', 'Reports and find a customer', 'Also look up a person; phone numbers and emails are masked.'],
-                  ['actions', 'Reports, find and actions', 'Also add follow-ups, tags, leads and assign chats after a YES; templates and broadcast drafts are confirmed in the CRM too.'],
+                  ['reports', 'Counts only', 'Counts and summaries — no names or numbers of people.'],
+                  ['lookup', 'Counts and find a customer', 'Also look up a person; phone numbers and emails are masked.'],
+                  ['actions', 'Counts, find and actions', 'Also add follow-ups, tags, leads and assign chats after a YES; templates and broadcast drafts are confirmed in the CRM too.'],
                 ] as const
               ).map(([value, label, hint]) => (
                 <label key={value} className={cn('flex cursor-pointer gap-2.5 rounded-xl border p-3', draft.scope === value ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200')}>
@@ -823,7 +823,7 @@ export function AdminChatSettings() {
                       </div>
                       <p className="mt-0.5 text-[12px] text-slate-500">
                         {m.channel === 'whatsapp' ? (m.phone ? `+${m.phone}` : 'WhatsApp') : m.telegram_linked ? 'Telegram linked' : 'Telegram'} ·{' '}
-                        {m.scope === 'actions' ? 'Reports, find and actions' : m.scope === 'lookup' ? 'Reports + find a customer' : 'Reports only'}
+                        {m.scope === 'actions' ? 'Counts, find and actions' : m.scope === 'lookup' ? 'Counts + find a customer' : 'Counts only'}
                       </p>
                       <p className="mt-0.5 flex items-center gap-1 text-[12px] text-slate-500">
                         <Clock className="h-3 w-3 shrink-0" aria-hidden="true" />

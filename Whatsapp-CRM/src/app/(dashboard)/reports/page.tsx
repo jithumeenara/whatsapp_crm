@@ -1,6 +1,6 @@
 /**
  * Reports — emptied while the section is rebuilt. The menu entry and page
- * permissions stay as they are; the API under /api/reports is untouched.
+ * permissions stay as they are.
  */
 
 export default function ReportsPage() {
