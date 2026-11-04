@@ -5,8 +5,8 @@ import { everyWhileVisible } from "@/lib/visible-interval"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types"
 import { useRealtime } from "@/hooks/use-realtime"
-import { ConversationListV2 } from "@/components/inbox/conversation-list-v2"
-import { MessageThread } from "@/components/inbox/message-thread"
+import { ConversationListV2, type MessageHit } from "@/components/inbox/conversation-list-v2"
+import { MessageThread, type FocusMessage } from "@/components/inbox/message-thread"
 import { ContactSidebarV2 } from "@/components/inbox/contact-sidebar-v2"
 import { useMobileBar } from "@/components/layout-v2/dashboard-shell-v2"
 import { WifiOff } from "lucide-react"
@@ -239,6 +239,24 @@ function InboxV2Content() {
     [activeConversation?.id, router, closeSidebar],
   )
 
+  // A message search result: open its chat, and tell the thread which
+  // message to bring into view (it may have to load older pages first).
+  const [focusMessage, setFocusMessage] = useState<FocusMessage | null>(null)
+  const focusNonce = useRef(0)
+  const handleOpenMessage = useCallback(
+    (hit: MessageHit) => {
+      const conv = conversations.find((c) => c.id === hit.conversation_id)
+      if (!conv) {
+        toast.error("Could not open that conversation. Refresh the Inbox and try again.")
+        return
+      }
+      setFocusMessage({ id: hit.id, conversationId: hit.conversation_id, nonce: ++focusNonce.current })
+      handleSelectConversation(conv)
+      setMobileView("thread")
+    },
+    [conversations, handleSelectConversation],
+  )
+
   const handleNewChatCreated = useCallback(
     async (convId: string) => {
       try {
@@ -333,6 +351,7 @@ function InboxV2Content() {
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
             onNewChatCreated={handleNewChatCreated}
+            onOpenMessage={handleOpenMessage}
           />
         </div>
 
@@ -352,6 +371,7 @@ function InboxV2Content() {
             onAssignChange={handleAssignChange}
             onBack={handleCloseConversation}
             resyncToken={resyncToken}
+            focusMessage={focusMessage}
             onRefresh={handleManualRefresh}
           />
         </div>

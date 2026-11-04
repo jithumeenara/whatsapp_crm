@@ -46,6 +46,7 @@ import { SendOtpDialog } from "./send-otp-dialog";
 import { AssistantPausedNotice } from "./assistant-paused-notice";
 import { buildReplyPreview } from "./reply-quote";
 import { toast } from "sonner";
+import { apiFetch, errorText } from "@/lib/api-fetch";
 import { everyWhileVisible } from "@/lib/visible-interval";
 
 interface ReplyDraft {
@@ -63,6 +64,17 @@ function renderTemplateBody(body: string, params: string[], bodyByName?: Record<
     return params[idx] ?? `{{${raw}}}`;
   });
 }
+
+export interface FocusMessage {
+  id: string;
+  conversationId: string;
+  /** Changes on every open, so opening the same result again works. */
+  nonce: number;
+}
+
+/** Pages of older messages to walk through looking for a search result. */
+const FOCUS_MAX_PAGES = 8;
+const FOCUS_PAGE = 500;
 
 interface MessageThreadProps {
   conversation: Conversation | null;
@@ -91,6 +103,8 @@ interface MessageThreadProps {
    * keep working.
    */
   resyncToken?: number;
+  /** A message to bring into view and mark, from the Inbox message search. */
+  focusMessage?: FocusMessage | null;
   /**
    * Fired by the manual-refresh button in the thread header. The parent
    * typically bumps the same `resyncToken` it controls — this gives the
@@ -225,6 +239,7 @@ export function MessageThread({
   onAssignChange,
   onBack,
   resyncToken = 0,
+  focusMessage = null,
   onRefresh,
 }: Readonly<MessageThreadProps>) {
   const { userId } = useAuth();
@@ -504,6 +519,61 @@ export function MessageThread({
     lastShownRef.current = last;
     el.scrollTop = el.scrollHeight;
   }, [messages, mergedView, mergedMessages, conversationId]);
+
+  // A message search result: load older pages until it is here, then bring
+  // it into view. Runs once per open (the nonce), after the thread's own
+  // first load; a chat too long to walk through says so.
+  const [markedMessageId, setMarkedMessageId] = useState<string | null>(null);
+  const focusDoneRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusMessage || focusMessage.conversationId !== conversationId) return;
+    if (focusDoneRef.current === focusMessage.nonce || loading || messages.length === 0) return;
+    if (messages[0].conversation_id !== conversationId) return;
+    if (mergedView) {
+      setMergedView(false);
+      return;
+    }
+    focusDoneRef.current = focusMessage.nonce;
+    const target = focusMessage.id;
+    void (async () => {
+      let list = messages;
+      let more = hasOlder;
+      try {
+        for (let page = 0; page < FOCUS_MAX_PAGES && more && !list.some((m) => m.id === target); page++) {
+          const res = await apiFetch(
+            `/api/conversations/${conversationId}/messages?limit=${FOCUS_PAGE}&before=${encodeURIComponent(String(list[0].created_at))}`,
+          );
+          const older = (await res.json()) as Message[];
+          more = res.headers.get("X-Has-More") === "1";
+          const seen = new Set(list.map((m) => m.id));
+          list = [...older.filter((m) => !seen.has(m.id)), ...list];
+        }
+      } catch (err) {
+        console.error("Failed to load the message from search:", err);
+        toast.error(errorText(err, "Could not load that message."));
+        return;
+      }
+      if (list !== messages) {
+        const el = scrollRef.current;
+        if (el) prependFromBottomRef.current = el.scrollHeight - el.scrollTop;
+        setHasOlder(more);
+        onMessagesLoadedRef.current(list);
+      }
+      if (list.some((m) => m.id === target)) setMarkedMessageId(target);
+      else toast.error("Could not find that message in this chat. It may be too far back.");
+    })();
+  }, [focusMessage, conversationId, loading, messages, hasOlder, mergedView]);
+
+  useEffect(() => {
+    if (!markedMessageId) return;
+    const row = scrollRef.current?.querySelector(`[data-message-id="${CSS.escape(markedMessageId)}"]`);
+    if (!row) return;
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
+    const timer = setTimeout(() => setMarkedMessageId(null), 3000);
+    return () => clearTimeout(timer);
+    // `messages` is here so the row is found once a page of older ones lands.
+  }, [markedMessageId, messages]);
 
   const loadOlder = useCallback(async () => {
     const oldest = messages[0];
@@ -1177,8 +1247,12 @@ export function MessageThread({
                   void postReaction(msg.id, next);
                 };
                 return (
-                  <MessageActions
+                  <div
                     key={msg.id}
+                    data-message-id={msg.id}
+                    className={cn("rounded-xl transition-colors", markedMessageId === msg.id && "bg-amber-100/80 ring-2 ring-amber-300")}
+                  >
+                  <MessageActions
                     message={msg}
                     onReply={() => handleStartReply(msg)}
                     onReact={(emoji) => {
@@ -1211,6 +1285,7 @@ export function MessageThread({
                       }
                     />
                   </MessageActions>
+                  </div>
                 );
               })}
             </div>

@@ -4,6 +4,9 @@ import { memo, useCallback, useState, useEffect, useMemo, useRef } from "react"
 import type { Conversation, ConversationStatus } from "@/types"
 import { Search, X, MessageSquare, ChevronDown, Mail, Radio, CalendarClock, MoreVertical, Globe } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { apiFetch, errorText } from "@/lib/api-fetch"
+import { MIN_QUERY, splitOnMatch } from "@/lib/inbox/message-search"
 import { ScheduledContactsOverview } from "./scheduled-contacts-overview"
 import { NewChatDialog } from "@/components/shared/new-chat-dialog"
 import { WhatsAppQrButton } from "@/components/shared/whatsapp-qr-button"
@@ -114,6 +117,8 @@ function ChannelPill({ channel }: { channel?: string | null }) {
 interface Props {
   activeConversationId: string | null
   onSelect: (conv: Conversation) => void
+  /** A message search result was opened: show that chat at that message. */
+  onOpenMessage?: (hit: MessageHit) => void
   conversations: Conversation[]
   onConversationsLoaded: (convs: Conversation[]) => void
   resyncToken?: number
@@ -124,6 +129,22 @@ interface Props {
 }
 
 type Filter = ConversationStatus | "all"
+
+const SEARCH_MODES = [
+  { label: "Contact", value: "contact" },
+  { label: "Message", value: "message" },
+] as const
+
+/** One match from /api/conversations/search. */
+export interface MessageHit {
+  id: string
+  conversation_id: string
+  sender_type: string
+  snippet: string
+  created_at: string
+  contact_name: string | null
+  contact_phone: string | null
+}
 
 const FILTERS: { label: string; value: Filter }[] = [
   { label: "All", value: "all" },
@@ -160,9 +181,14 @@ function initials(name?: string | null, phone?: string | null) {
   return "?"
 }
 
-export function ConversationListV2({ activeConversationId, onSelect, conversations, onConversationsLoaded, resyncToken = 0, onNewChatCreated }: Props) {
+export function ConversationListV2({ activeConversationId, onSelect, conversations, onConversationsLoaded, resyncToken = 0, onNewChatCreated, onOpenMessage }: Props) {
   const [search, setSearch] = useState("")
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchMode, setSearchMode] = useState<"contact" | "message">("contact")
+  const [messageResults, setMessageResults] = useState<MessageHit[] | null>(null)
+  const [messageMore, setMessageMore] = useState(false)
+  const [messageLoading, setMessageLoading] = useState(false)
+  const [messageError, setMessageError] = useState<string | null>(null)
   const [scheduledOverviewOpen, setScheduledOverviewOpen] = useState(false)
   const [filter, setFilter] = useState<Filter>("all")
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all")
@@ -223,16 +249,52 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
     let list = conversations
     if (filter !== "all") list = list.filter((c) => c.status === filter)
     if (channelFilter !== "all") list = list.filter((c) => (c.channel ?? "whatsapp") === channelFilter)
-    if (search.trim()) {
-      const q = search.toLowerCase()
+    if (searchMode === "contact" && search.trim()) {
+      const q = search.trim().toLowerCase()
       list = list.filter((c) =>
         (c.contact?.name ?? "").toLowerCase().includes(q) ||
-        (c.contact?.phone ?? "").toLowerCase().includes(q) ||
-        (c.last_message_text ?? "").toLowerCase().includes(q)
+        (c.contact?.phone ?? "").toLowerCase().includes(q)
       )
     }
     return list
-  }, [conversations, filter, channelFilter, search])
+  }, [conversations, filter, channelFilter, search, searchMode])
+
+  // Message search runs on the server: the browser only holds the last
+  // message of each chat. Debounced, and only the newest response counts.
+  const messageQuery = searchOpen && searchMode === "message" ? search.trim() : ""
+  const messageSeq = useRef(0)
+  useEffect(() => {
+    const seq = ++messageSeq.current
+    if (messageQuery.length < MIN_QUERY) {
+      setMessageResults(null)
+      setMessageMore(false)
+      setMessageError(null)
+      setMessageLoading(false)
+      return
+    }
+    setMessageLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({ q: messageQuery })
+        if (filter !== "all") qs.set("status", filter)
+        if (channelFilter !== "all") qs.set("channel", channelFilter)
+        const res = await apiFetch(`/api/conversations/search?${qs}`)
+        const body = (await res.json()) as { results?: MessageHit[]; more?: boolean }
+        if (seq !== messageSeq.current) return
+        setMessageResults(Array.isArray(body.results) ? body.results : [])
+        setMessageMore(body.more === true)
+        setMessageError(null)
+      } catch (err) {
+        console.error("[inbox] message search failed:", err)
+        if (seq !== messageSeq.current) return
+        setMessageResults(null)
+        setMessageError(errorText(err, "Could not search messages. Try again."))
+      } finally {
+        if (seq === messageSeq.current) setMessageLoading(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [messageQuery, filter, channelFilter])
 
   const totalUnread = useMemo(() => conversations.reduce((s, c) => s + (c.unread_count ?? 0), 0), [conversations])
 
@@ -355,9 +417,23 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input autoComplete="off" autoFocus value={search} onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search conversations…"
+                aria-label={searchMode === "contact" ? "Search contacts" : "Search messages"}
+                placeholder={searchMode === "contact" ? "Search name or number…" : "Search message text…"}
                 className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white outline-none transition-colors" />
             </div>
+            <RadioGroup
+              aria-label="Search in"
+              value={searchMode}
+              onValueChange={(v) => setSearchMode(v === "message" ? "message" : "contact")}
+              className="mt-1 -mb-2 flex items-center gap-4 lg:mb-0"
+            >
+              {SEARCH_MODES.map((m) => (
+                <label key={m.value} className="flex min-h-11 cursor-pointer items-center gap-1.5 text-[12px] font-medium text-slate-600 lg:min-h-7">
+                  <RadioGroupItem value={m.value} />
+                  {m.label}
+                </label>
+              ))}
+            </RadioGroup>
           </div>
         )}
 
@@ -387,7 +463,16 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
 
       {/* List */}
       <div className="flex-1 overflow-y-auto scroll-styled">
-        {loading ? (
+        {searchOpen && searchMode === "message" ? (
+          <MessageResults
+            query={messageQuery}
+            results={messageResults}
+            more={messageMore}
+            loading={messageLoading}
+            error={messageError}
+            onOpen={(hit) => onOpenMessage?.(hit)}
+          />
+        ) : loading ? (
           <div className="space-y-px p-2">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="flex items-center gap-3 rounded-2xl p-3 animate-pulse">
@@ -427,6 +512,46 @@ export function ConversationListV2({ activeConversationId, onSelect, conversatio
       </div>
 
       <ScheduledContactsOverview open={scheduledOverviewOpen} onOpenChange={setScheduledOverviewOpen} />
+    </div>
+  )
+}
+
+/** What the message search shows in place of the conversation list. */
+function MessageResults({ query, results, more, loading, error, onOpen }: {
+  query: string
+  results: MessageHit[] | null
+  more: boolean
+  loading: boolean
+  error: string | null
+  onOpen: (hit: MessageHit) => void
+}) {
+  const note = (text: string, role?: "alert" | "status") => (
+    <p role={role} className="px-4 py-10 text-center text-[12px] text-slate-400">{text}</p>
+  )
+  if (error) return note(error, "alert")
+  if (query.length < MIN_QUERY) return note(`Type at least ${MIN_QUERY} characters to search messages.`)
+  if (!results) return note("Searching…", "status")
+  if (results.length === 0) return loading ? note("Searching…", "status") : note("No messages found. Try a different word.", "status")
+  return (
+    <div className={cn("space-y-px p-2", loading && "opacity-60")}>
+      {results.map((hit) => (
+        <button key={hit.id} type="button" onClick={() => onOpen(hit)}
+          className="w-full rounded-2xl px-3 py-2.5 text-left transition-colors hover:bg-slate-50">
+          <span className="flex items-center justify-between gap-2">
+            <span className="truncate text-[13px] font-semibold text-slate-700">{hit.contact_name || hit.contact_phone || "Unknown"}</span>
+            <span className="shrink-0 text-[11px] text-slate-400">{relTime(hit.created_at)}</span>
+          </span>
+          <span className="mt-0.5 line-clamp-2 break-words text-[12px] text-slate-500">
+            {hit.sender_type === "customer" ? null : <span className="text-slate-400">Team: </span>}
+            {splitOnMatch(hit.snippet, query).map((part, i) =>
+              part.match
+                ? <mark key={i} className="rounded-sm bg-amber-100 text-slate-900">{part.text}</mark>
+                : <span key={i}>{part.text}</span>,
+            )}
+          </span>
+        </button>
+      ))}
+      {more && <p className="px-3 py-3 text-center text-[11px] text-slate-400">Showing the newest {results.length}. Add a word to narrow it down.</p>}
     </div>
   )
 }
