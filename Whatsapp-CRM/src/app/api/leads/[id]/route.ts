@@ -309,7 +309,11 @@ export async function PATCH(
       data.lost_at = lost_reason ? new Date() : null
     }
     if (converted_at !== undefined) {
-      data.converted_at = converted_at ? new Date(converted_at) : null
+      // Reports count a win in the period it is dated. Only a supervisor
+      // may give the real date of an earlier win; anyone else's is dated
+      // now, so an agent cannot move a win into another period.
+      const given = converted_at && isPrivileged ? new Date(converted_at) : null
+      data.converted_at = converted_at ? (given && !Number.isNaN(given.getTime()) ? given : new Date()) : null
       // Won and lost are not both true. Recording a conversion clears
       // the loss, which is what reopening-then-winning actually means.
       if (converted_at) {
@@ -327,8 +331,10 @@ export async function PATCH(
       }
       data.lost_reason_key = lostReasonKey || null
     }
-    // A win or loss is credited to whoever closed the lead.
+    // A win or loss is credited to whoever closed the lead, and a win of a
+    // lead closed as lost earlier to whoever won it.
     if (status === 'closed' && existing.status !== 'closed') data.closed_by = ctx.userId
+    if (data.converted_at instanceof Date && !existing.converted_at) data.closed_by = ctx.userId
     // Reopening ends the decision those markers recorded. The page sends
     // only the new status, so the markers are cleared here or not at all.
     if (status !== undefined && status !== 'closed' && existing.status === 'closed') {
@@ -464,8 +470,18 @@ export async function PATCH(
       )
     }
 
-    // Every call, so reports count calls rather than status changes.
-    if (callResult) {
+    // Every call, so reports count calls rather than status changes. The
+    // same person logging a call on the same lead again within half a
+    // minute is a double press or a replay, not a second call.
+    // A failed check never stops the call from being recorded.
+    const repeatCall = callResult
+      ? await (async () =>
+          prisma.leadActivity.findFirst({
+            where: { lead_id: id, account_id: ctx.accountId, user_id: ctx.userId, type: 'call', created_at: { gte: new Date(Date.now() - 30_000) } },
+            select: { id: true },
+          }))().catch(() => null)
+      : null
+    if (callResult && !repeatCall) {
       const connected = callResult === 'connected'
       const outcome = connected ? (status ?? existing.status) : (call_outcome ?? null)
       activities.push(

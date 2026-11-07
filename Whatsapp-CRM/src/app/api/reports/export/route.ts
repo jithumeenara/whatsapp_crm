@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+
+/** Each download builds the whole report: a few a minute is plenty for a person. */
+const EXPORT_LIMIT = { limit: 10, windowMs: 60_000 }
 import { businessTimezone } from '@/lib/ai/human-date'
 import { audit, auditCtx } from '@/lib/audit'
 import { resolvePeriod, type PeriodInput } from '@/lib/reports/period'
@@ -21,7 +24,7 @@ export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRole('supervisor')
     assertPageAccess(ctx, '/reports')
-    const limit = checkRateLimit(`reports-export:${ctx.userId}`, RATE_LIMITS.apiRead)
+    const limit = checkRateLimit(`reports-export:${ctx.userId}`, EXPORT_LIMIT)
     if (!limit.success) return rateLimitResponse(limit)
 
     const q = req.nextUrl.searchParams

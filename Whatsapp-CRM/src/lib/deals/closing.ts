@@ -17,6 +17,18 @@ export const isDealStatus = (v: unknown): v is DealStatus =>
 
 export const MAX_LOST_REASON = 300
 
+/** ISO 4217-shaped: three letters, any case on input. Anything else could
+ *  carry a spreadsheet formula into the report download. */
+export const isCurrencyCode = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z]{3}$/.test(v)
+
+/** A number, or a numeric string as API callers send, 0 up to 9,999,999,999. */
+export function isDealValue(v: unknown): boolean {
+  if (typeof v !== 'number' && typeof v !== 'string') return false
+  if (typeof v === 'string' && v.trim() === '') return false
+  const n = Number(v)
+  return Number.isFinite(n) && n >= 0 && n <= 9_999_999_999
+}
+
 interface Previous {
   status: string
   won_at?: Date | null

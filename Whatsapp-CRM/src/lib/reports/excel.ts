@@ -211,12 +211,12 @@ export function buildReportWorkbook(input: ReportWorkbookInput): ExcelJS.Workboo
   tableSheet(wb, 'Pipeline', [
     { header: 'Pipeline', width: 24 }, { header: 'Stage', width: 24 }, { header: 'Open deals', width: 12, numFmt: INT },
     { header: amountHeader(s.pipelineByStage.map((x) => x.currency)), width: 16, numFmt: INT }, { header: 'Currency', width: 10 },
-  ], s.pipelineByStage.map((x) => [safeText(x.pipeline), safeText(x.stage), x.deals, x.amount, x.currency]), 'No open deals.')
+  ], s.pipelineByStage.map((x) => [safeText(x.pipeline), safeText(x.stage), x.deals, x.amount, safeText(x.currency)]), 'No open deals.')
 
   tableSheet(wb, 'Revenue by category', [
     { header: 'Category', width: 30 }, { header: 'Won deals', width: 12, numFmt: INT },
     { header: amountHeader(s.byCategory.map((x) => x.currency)), width: 16, numFmt: INT }, { header: 'Currency', width: 10 },
-  ], s.byCategory.map((x) => [safeText(x.category), x.deals, x.amount, x.currency]), 'No deals were won this period.')
+  ], s.byCategory.map((x) => [safeText(x.category), x.deals, x.amount, safeText(x.currency)]), 'No deals were won this period.')
 
   tableSheet(wb, 'Team', [
     { header: 'Name', width: 24 }, { header: 'Leads', width: 10, numFmt: INT }, { header: 'Calls', width: 10, numFmt: INT },

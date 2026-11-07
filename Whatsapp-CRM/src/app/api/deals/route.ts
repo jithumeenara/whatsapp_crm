@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { audit, auditCtx } from '@/lib/audit'
 import type { Prisma } from '@prisma/client'
-import { closingFields, isDealStatus, MAX_LOST_REASON, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
+import { closingFields, isCurrencyCode, isDealStatus, MAX_LOST_REASON, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
 
 export async function GET(req: NextRequest) {
   try {
@@ -70,6 +70,9 @@ export async function POST(req: NextRequest) {
     }
     const status: DealStatus = body.status ?? (isDealStatus(stage.stage_type) ? stage.stage_type : 'open')
     // A number, or a numeric string as API callers have always been able to send.
+    if (body.currency !== undefined && body.currency !== null && !isCurrencyCode(body.currency)) {
+      return NextResponse.json({ error: 'Use a three-letter currency code, for example INR.' }, { status: 400 })
+    }
     const value = body.value === undefined || body.value === null || body.value === '' ? 0 : Number(body.value)
     if (!Number.isFinite(value) || value < 0 || value > 9_999_999_999) {
       return NextResponse.json({ error: 'The amount must be a number of 0 or more.' }, { status: 400 })
@@ -91,7 +94,7 @@ export async function POST(req: NextRequest) {
         assigned_to:         body.assigned_to  ?? null,
         title,
         value,
-        currency:            body.currency ?? pipeline.account.default_currency,
+        currency:            body.currency ? String(body.currency).toUpperCase() : pipeline.account.default_currency,
         notes:               body.notes ?? null,
         expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : null,
         status,

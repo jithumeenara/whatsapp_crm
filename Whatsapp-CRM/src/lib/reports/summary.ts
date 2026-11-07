@@ -173,7 +173,7 @@ async function leaks(s: Scope, now: Date, hours: number) {
       AND l.created_at < ${cutoff} AND l.first_response_at IS NULL ${mine}
       AND NOT EXISTS (
         SELECT 1 FROM lead_activities a
-        WHERE a.lead_id = l.id AND a.user_id IS NOT NULL AND a.type IN ('call', 'stage_change', 'follow_up')
+        WHERE a.lead_id = l.id AND a.user_id IS NOT NULL AND a.type IN ('call', 'stage_change', 'follow_up', 'stage')
       )
     ORDER BY l.created_at ASC
     LIMIT ${LEAK_ROWS}`

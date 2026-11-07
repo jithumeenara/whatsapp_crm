@@ -4,7 +4,8 @@ import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
 import { audit, auditCtx } from '@/lib/audit'
-import { closingFields, isDealStatus, MAX_LOST_REASON, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
+import { closingFields, isCurrencyCode, isDealStatus, isDealValue, MAX_LOST_REASON, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
+import { canViewAllLeads } from '@/lib/auth/roles'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -19,6 +20,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // into an open stage reopens it — unless the caller explicitly passed
     // its own status. This is what makes dragging a deal into the Won/Lost
     // column on the board actually close it.
+    // An agent works their own deals and unassigned ones, as with leads: a
+    // colleague's deal is theirs, and revenue is credited to whoever closes it.
+    if (!canViewAllLeads(ctx.role)) {
+      if (existing.assigned_to && existing.assigned_to !== ctx.userId) {
+        return NextResponse.json({ error: 'This deal belongs to another team member.' }, { status: 403 })
+      }
+      if (body.assigned_to !== undefined && body.assigned_to !== null && body.assigned_to !== '' && body.assigned_to !== ctx.userId) {
+        return NextResponse.json({ error: 'Only a supervisor can give a deal to somebody else.' }, { status: 403 })
+      }
+    }
+    if (body.currency !== undefined && body.currency !== null && !isCurrencyCode(body.currency)) {
+      return NextResponse.json({ error: 'Use a three-letter currency code, for example INR.' }, { status: 400 })
+    }
+    if (body.value !== undefined && body.value !== null && !isDealValue(body.value)) {
+      return NextResponse.json({ error: 'The amount must be a number of 0 or more.' }, { status: 400 })
+    }
     if (body.status !== undefined && !isDealStatus(body.status)) {
       return NextResponse.json({ error: 'Status must be open, won or lost.' }, { status: 400 })
     }
@@ -41,8 +58,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       data: {
         stage_id:            body.stage_id            ?? undefined,
         title:               body.title               ?? undefined,
-        value:               body.value               ?? undefined,
-        currency:            body.currency            ?? undefined,
+        value:               body.value === undefined || body.value === null ? undefined : Number(body.value),
+        currency:            body.currency ? String(body.currency).toUpperCase() : undefined,
         notes:               body.notes               ?? undefined,
         expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : undefined,
         status,

@@ -117,7 +117,9 @@ export async function GET() {
           timeRange: { since: win.since, until: win.until },
         })
       } catch (err) {
-        insightsError = err instanceof Error ? err.message : 'Failed to fetch ad spend from Meta'
+        // Meta's own error text stays in the server log; the screen gets a plain sentence.
+        console.error('[meta-ads/dashboard] insights failed:', err instanceof Error ? err.message : err)
+        insightsError = 'Could not read ad spend from Meta. Check the ad account and its access in Ads settings.'
       }
     }
 
