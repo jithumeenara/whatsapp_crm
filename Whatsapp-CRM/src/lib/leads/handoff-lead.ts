@@ -19,6 +19,7 @@
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { webhookWrote } from '@/lib/audit/actors'
+import { leadOrigin } from './origin'
 
 const CLOSED = 'closed'
 const POOL_STATUSES = ['new', 'follow_up']
@@ -51,6 +52,7 @@ export async function leadForHandoff(args: {
       const contact = await prisma.contact
         .findFirst({ where: { id: args.contactId, account_id: args.accountId }, select: { name: true } })
         .catch(() => null)
+      const origin = await leadOrigin({ accountId: args.accountId, contactId: args.contactId, conversationId: args.conversationId })
       const lead = await prisma.lead.create({
         data: {
           account_id: args.accountId,
@@ -59,6 +61,8 @@ export async function leadForHandoff(args: {
           title: contact?.name || 'Website visitor',
           source: args.source,
           status: 'new',
+          whatsapp_config_id: origin.whatsapp_config_id,
+          ad_id: origin.ad_id,
         },
       })
       await note(args, lead.id, `Asked to talk to a person (${channel}) — lead created`)

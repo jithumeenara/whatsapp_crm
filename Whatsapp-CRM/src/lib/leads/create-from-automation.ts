@@ -33,6 +33,7 @@ import { thinkingConfigFor } from '@/lib/ai/reasoning'
 import { LEAD_DETECT_MODEL, loadAiLeadSettings } from './ai-detect'
 import { signalsFor } from './ai-signals'
 import { matchKeywords, normalizeMatchMode, type MatchMode } from './keyword-match'
+import { leadOrigin } from './origin'
 
 export type CreateLeadMatchMode = MatchMode | 'ai'
 
@@ -175,6 +176,7 @@ export async function createLeadFromAutomation(args: {
     }
   }
 
+  const origin = await leadOrigin({ accountId: args.accountId, contactId: args.contactId, conversationId: args.conversationId })
   const lead = await prisma.lead.create({
     data: {
       account_id: args.accountId,
@@ -183,6 +185,8 @@ export async function createLeadFromAutomation(args: {
       title: contact.name || contact.phone,
       source: config.source?.trim() || 'whatsapp',
       status: 'new',
+      whatsapp_config_id: origin.whatsapp_config_id,
+      ad_id: origin.ad_id,
       ...(config.score?.trim() ? { score: config.score.trim() } : {}),
       ...(assignee ? { assigned_to: assignee.userId, claimed_at: new Date() } : {}),
     },

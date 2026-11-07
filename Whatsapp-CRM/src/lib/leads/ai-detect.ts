@@ -43,6 +43,7 @@ import { prisma } from '@/lib/db'
 import { geminiCredentials } from '@/lib/ai/providers/registry'
 import { recordAiUsage, tokensFromGemini } from '@/lib/ai/usage'
 import { thinkingConfigFor } from '@/lib/ai/reasoning'
+import { leadOrigin } from './origin'
 import {
   normalizeMode,
   normalizeThreshold,
@@ -534,6 +535,7 @@ async function writeLead(args: {
   const conversation = await prisma.conversation
     .findUnique({ where: { id: args.conversationId }, select: { channel: true } })
     .catch(() => null)
+  const origin = await leadOrigin({ accountId: args.accountId, contactId: args.contactId, conversationId: args.conversationId })
 
   try {
     const lead = await prisma.lead.create({
@@ -543,6 +545,8 @@ async function writeLead(args: {
         contact_id: args.contactId,
         title: contact.name || contact.phone,
         source: conversation?.channel || 'whatsapp',
+        whatsapp_config_id: origin.whatsapp_config_id,
+        ad_id: origin.ad_id,
         // In suggest mode the row exists but stays off the working
         // lists: the Suggested tab is the only place it shows until
         // somebody accepts it. In create mode it joins the New pool

@@ -27,6 +27,7 @@ import { sendAndRecordConversationEmail, cleanSubject, parseAddresses, type Emai
 import { sendRcsText } from '@/lib/messaging/channels/rcs'
 import { sendToWebsiteVisitor } from '@/lib/webchat/outbound'
 import { audit, auditCtx } from '@/lib/audit'
+import { stampFirstResponse } from '@/lib/leads/first-response'
 
 
 // ── Instagram send helper ─────────────────────────────────────────────────────
@@ -329,6 +330,7 @@ interface SentBy {
   role: string
   apiKeyId?: string
   conversationId: string
+  contactId: string
   channel: string
   messageType: string
   template: string | null
@@ -344,6 +346,15 @@ export async function POST(request: Request) {
   const res = await sendPost(request, (w) => { sentBy = w })
   const who = sentBy as SentBy | null
   if (who && res.status >= 200 && res.status < 300) {
+    // A person answered: the contact's open leads get their first
+    // response time (reports). Only a signed-in staff member's send
+    // counts — an API key is an integration acting under its creator's
+    // name, often automatically, so it is not "a person replied".
+    // Fire-and-forget: it never fails or slows the send.
+    if (!who.apiKeyId) {
+      void stampFirstResponse({ accountId: who.accountId, contactId: who.contactId, userId: who.userId })
+        .catch((err) => console.error('[send] first response stamp failed:', err instanceof Error ? err.message : err))
+    }
     const data = (await res.clone().json().catch(() => null)) as { message_id?: string } | null
     await audit(
       auditCtx(request, { accountId: who.accountId, userId: who.userId, role: who.role, apiKeyId: who.apiKeyId }),
@@ -508,7 +519,7 @@ async function sendPost(request: Request, onSender: (who: SentBy) => void): Prom
     const convChannel = (conversation as { channel?: string }).channel ?? 'whatsapp'
     onSender({
       accountId, userId, role: senderRole, apiKeyId,
-      conversationId: conversation.id, channel: convChannel, messageType: String(message_type),
+      conversationId: conversation.id, contactId: conversation.contact_id, channel: convChannel, messageType: String(message_type),
       template: message_type === 'template' && typeof template_name === 'string' ? template_name : null,
     })
     if (body.telegram_ask_number === true && convChannel !== 'telegram') {

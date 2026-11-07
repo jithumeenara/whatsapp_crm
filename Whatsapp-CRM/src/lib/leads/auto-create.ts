@@ -19,6 +19,7 @@
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { webhookWrote } from '@/lib/audit/actors'
+import { leadOrigin } from './origin'
 
 const CHANNEL_NAMES: Record<string, string> = {
   whatsapp: 'WhatsApp',
@@ -35,6 +36,8 @@ export async function autoCreateLead(args: {
   title: string
   /** leads.source — the channel the customer came from. */
   source: string
+  /** The chat the first message arrived in, when the caller has it. */
+  conversationId?: string | null
 }): Promise<void> {
   try {
     const settings = await prisma.leadSettings.findUnique({
@@ -49,6 +52,7 @@ export async function autoCreateLead(args: {
     })
     if (existing) return
 
+    const origin = await leadOrigin({ accountId: args.accountId, contactId: args.contactId, conversationId: args.conversationId })
     const lead = await prisma.lead.create({
       data: {
         account_id: args.accountId,
@@ -57,6 +61,8 @@ export async function autoCreateLead(args: {
         title: args.title,
         source: args.source,
         status: 'new',
+        whatsapp_config_id: origin.whatsapp_config_id,
+        ad_id: origin.ad_id,
       },
     })
     await prisma.leadActivity.create({

@@ -6,6 +6,7 @@ import { emitToAccount } from '@/lib/socket'
 import { findOrCreateContact } from '@/lib/contacts/find-or-create'
 import { parseFollowUpInput } from '@/lib/leads/new-follow-up'
 import { claimIfUnassigned } from '@/lib/leads/claim'
+import { leadOrigin } from '@/lib/leads/origin'
 import { audit, auditCtx } from '@/lib/audit'
 
 /**
@@ -81,6 +82,7 @@ export async function POST(req: NextRequest) {
     }
     const assignee = lead?.assigned_to ?? ctx.userId
     const label = contact.name || contact.phone
+    const origin = lead ? null : await leadOrigin({ accountId: ctx.accountId, contactId: contact.id })
 
     const result = await prisma.$transaction(async (tx) => {
       let leadId: string
@@ -105,6 +107,8 @@ export async function POST(req: NextRequest) {
             score: 'warm',
             notes: input.description,
             assigned_to: assignee,
+            whatsapp_config_id: origin?.whatsapp_config_id ?? null,
+            ad_id: origin?.ad_id ?? null,
           },
           select: { id: true },
         })

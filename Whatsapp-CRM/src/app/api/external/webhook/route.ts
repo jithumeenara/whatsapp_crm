@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { webhookRejected, webhookWrote } from '@/lib/audit/actors'
+import { leadOrigin } from '@/lib/leads/origin'
 
 // POST /api/external/webhook?secret=<WEBHOOK_SECRET>
 //
@@ -178,6 +179,8 @@ export async function POST(req: NextRequest) {
       leadId = updated.id
       void webhookWrote('external', accountId, { type: 'lead', id: updated.id }, { op: 'update', fields: ['score', 'source', 'status', 'title'] }, req)
     } else {
+      // From the contact's own chats in this account, never the payload.
+      const origin = await leadOrigin({ accountId, contactId })
       const created = await prisma.lead.create({
         data: {
           account_id: accountId,
@@ -189,6 +192,8 @@ export async function POST(req: NextRequest) {
           notes: notes ?? null,
           contact_id: contactId,
           external_id: externalId,
+          whatsapp_config_id: origin.whatsapp_config_id,
+          ad_id: origin.ad_id,
         },
       })
       leadId = created.id

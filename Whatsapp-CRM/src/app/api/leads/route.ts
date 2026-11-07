@@ -3,6 +3,7 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
+import { leadOrigin } from '@/lib/leads/origin'
 import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { audit, auditCtx } from '@/lib/audit'
@@ -329,6 +330,9 @@ export async function POST(req: NextRequest) {
     }
     // ── End duplicate detection ─────────────────────────────────────────────────
 
+    // Number and ad come from the contact's own chats in this account —
+    // never from the body.
+    const origin = await leadOrigin({ accountId: ctx.accountId, contactId: contact_id ?? null })
     const lead = await prisma.lead.create({
       data: {
         account_id: ctx.accountId,
@@ -343,6 +347,8 @@ export async function POST(req: NextRequest) {
         place: (place as string) ?? null,
         notes: (notes as string) ?? null,
         assigned_to: (assigned_to as string) ?? null,
+        whatsapp_config_id: origin.whatsapp_config_id,
+        ad_id: origin.ad_id,
       },
       include: {
         contact: { select: { id: true, name: true, phone: true, alternate_phone: true } },

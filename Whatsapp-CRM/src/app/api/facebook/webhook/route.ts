@@ -406,6 +406,8 @@ async function processLeadgenChange(
       status: "new",
       contact_id: contact.id,
       external_id: `${externalIdPrefix}:${leadgenId}`,
+      // The form's ad. No WhatsApp number: a form fill arrives on no chat.
+      ad_id: value.ad_id || null,
     },
   })
 

@@ -2747,6 +2747,8 @@ The assistant could not generate a reply: ${detail}`,
               });
               auditRun(run, "create_lead", "update", { type: "lead", id: existingLead.id });
             } else {
+              const { leadOrigin } = await import("@/lib/leads/origin");
+              const origin = await leadOrigin({ accountId: run.account_id, contactId: run.contact_id, conversationId: run.conversation_id });
               const newLead = await prisma.lead.create({
                 data: {
                   account_id: run.account_id,
@@ -2754,6 +2756,8 @@ The assistant could not generate a reply: ${detail}`,
                   contact_id: run.contact_id,
                   title,
                   source: cfg.lead_source || "whatsapp",
+                  whatsapp_config_id: origin.whatsapp_config_id,
+                  ad_id: origin.ad_id,
                   status: cfg.lead_status || "new",
                   score: cfg.lead_score || "warm",
                   ...(cfg.lead_quality ? { lead_quality: cfg.lead_quality } : {}),

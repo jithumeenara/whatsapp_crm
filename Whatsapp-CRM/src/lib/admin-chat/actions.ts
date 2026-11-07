@@ -26,6 +26,7 @@ import { liveSendableContactWhere } from '@/lib/broadcasts/sendable'
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils'
 import { sendPushToUser } from '@/lib/push'
 import { emitToAccount } from '@/lib/socket'
+import { leadOrigin } from '@/lib/leads/origin'
 import { businessTimezone } from '@/lib/ai/human-date'
 import { localNow } from './rules'
 import { zonedDayRange, templateVariableCount } from './brief-rules'
@@ -404,8 +405,9 @@ export async function executeAction(actionId: string, actorUserId: string, from:
       }
       case 'create_lead': {
         const contact = await contactForSend(accountId, action.requested_by, String(p.phone), (p.name as string | null) ?? null)
+        const origin = await leadOrigin({ accountId, contactId: contact.id })
         const lead = await prisma.lead.create({
-          data: { account_id: accountId, user_id: action.requested_by, contact_id: contact.id, title: (p.name as string | null) || contact.name || contact.phone, source: 'admin_chat', status: 'new' },
+          data: { account_id: accountId, user_id: action.requested_by, contact_id: contact.id, title: (p.name as string | null) || contact.name || contact.phone, source: 'admin_chat', status: 'new', whatsapp_config_id: origin.whatsapp_config_id, ad_id: origin.ad_id },
           select: { id: true },
         })
         await prisma.leadActivity
