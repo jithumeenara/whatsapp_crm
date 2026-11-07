@@ -20,6 +20,7 @@ import { outcomeOf } from '@/lib/leads/outcome'
 import type { ReportPeriod } from './period'
 import { countFunnel, type FunnelRow } from './funnel'
 import { parseFunnel, parseReportSettings } from './settings'
+import { zoneOffsetMinutes } from '@/lib/audit/zoned'
 
 export interface Count { total: number; won: number; lost: number; closedNoOutcome: number; open: number }
 export interface Money { currency: string; amount: number; deals: number; withAmount: number }
@@ -250,9 +251,28 @@ async function leaks(s: Scope, now: Date, hours: number) {
   }
 }
 
+/**
+ * The zone as Postgres should read it in `AT TIME ZONE`. A name Node
+ * accepts is not always one this server's Postgres knows: "Asia/Calcutta"
+ * (the old name of Asia/Kolkata) made a live report fail with "time zone
+ * not recognized". Unknown names fall back to the zone's current offset,
+ * which is exact for zones without daylight saving and off by an hour on
+ * transition days for the rest.
+ */
+export async function zoneForSql(db: Pick<Db, '$queryRaw'>, tz: string, now = new Date()): Promise<Prisma.Sql> {
+  try {
+    const known = await db.$queryRaw<Array<{ ok: number }>>`SELECT 1 AS ok FROM pg_timezone_names WHERE name = ${tz} LIMIT 1`
+    if (known.length) return Prisma.sql`${tz}`
+  } catch (err) {
+    console.error('[reports] time zone lookup failed:', err instanceof Error ? err.message : err)
+  }
+  return Prisma.sql`make_interval(mins => ${zoneOffsetMinutes(now, tz)})`
+}
+
 /** `tz` counts "days worked" as the business's calendar days. */
 async function agents(s: Scope, p: ReportPeriod, now: Date, tz: string): Promise<AgentRow[]> {
   const who = s.userId ? Prisma.sql`AND x.uid = ${s.userId}::uuid` : Prisma.empty
+  const zone = await zoneForSql(s.db, tz, now)
   const rows = await s.db.$queryRaw<Array<{
     uid: string; leads: bigint; calls: bigint; connected: bigint; won: bigint; lost: bigint; overdue: bigint; days: bigint; median_reply: number | null
   }>>`
@@ -271,7 +291,7 @@ async function agents(s: Scope, p: ReportPeriod, now: Date, tz: string): Promise
       (SELECT count(*) FROM leads l WHERE l.account_id = ${s.accountId}::uuid AND l.status = 'closed' AND l.is_hidden = false AND l.converted_at IS NULL
          AND COALESCE(l.closed_by, l.assigned_to) = x.uid AND l.lost_at >= ${p.from} AND l.lost_at < ${p.to}) AS lost,
       (SELECT count(*) FROM follow_ups f WHERE f.account_id = ${s.accountId}::uuid AND f.assigned_to = x.uid AND f.status = 'pending' AND f.due_at < ${now}) AS overdue,
-      (SELECT count(DISTINCT (a.created_at AT TIME ZONE ${tz})::date) FROM lead_activities a WHERE a.account_id = ${s.accountId}::uuid AND a.user_id = x.uid
+      (SELECT count(DISTINCT (a.created_at AT TIME ZONE ${zone})::date) FROM lead_activities a WHERE a.account_id = ${s.accountId}::uuid AND a.user_id = x.uid
          AND a.created_at >= ${p.from} AND a.created_at < ${p.to}) AS days,
       (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (l.first_response_at - l.created_at)) / 60)
          FROM leads l WHERE l.account_id = ${s.accountId}::uuid AND l.first_response_by = x.uid
