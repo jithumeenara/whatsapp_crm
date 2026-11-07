@@ -180,7 +180,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
         >
           <DialogTitle className="flex items-center gap-2 text-[17px] font-bold text-slate-800">
             <Sparkles className={cn("h-4 w-4", outcome === "won" ? "text-emerald-500" : outcome === "lost" ? "text-rose-500" : "text-slate-400")} />
-            Close Enquiry
+            Close enquiry
           </DialogTitle>
           <p className="text-[12px] text-slate-400 mt-0.5">Choose won or lost, then record why.</p>
         </DialogHeader>
@@ -241,7 +241,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
           {/* Add to Pipeline */}
           <div className="rounded-2xl border border-slate-100 bg-slate-50/60 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[13px] font-semibold text-slate-700">Add to Pipeline</span>
+              <span className="text-[13px] font-semibold text-slate-700">Add to pipeline</span>
               <button type="button" role="switch" aria-checked={addToPipeline}
                 onClick={() => setAddToPipeline((v) => !v)}
                 className={cn(
@@ -350,7 +350,7 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
                 outcome === "won" ? "bg-emerald-500 hover:bg-emerald-600" : outcome === "lost" ? "bg-rose-500 hover:bg-rose-600" : "bg-slate-400",
               )}>
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              Confirm Close
+              Confirm close
             </button>
           </div>
         </div>

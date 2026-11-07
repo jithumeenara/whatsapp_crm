@@ -49,6 +49,8 @@ export const PAGE_SECTIONS: PageSection[] = [
       { href: '/leads', label: 'Leads', agentAllowed: true },
       { href: '/pipelines', label: 'Pipelines', agentAllowed: false },
       { href: '/contacts', label: 'Contacts', agentAllowed: true },
+      // Not by default. An agent an admin grants it to sees only their own
+      // report: the API decides the scope from the role.
       { href: '/reports', label: 'Reports', agentAllowed: false },
       { href: '/ads', label: 'Ads', agentAllowed: false },
       { href: '/catalog', label: 'Catalog', agentAllowed: true },
