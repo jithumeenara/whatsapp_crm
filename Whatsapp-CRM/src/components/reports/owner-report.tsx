@@ -138,9 +138,9 @@ function FunnelView({ rows, total }: { rows: FunnelRow[]; total: number }) {
           const prev = i === 0 ? total : path[i - 1].count
           return (
             <li key={r.key}>
-              <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+              <div className="flex flex-col gap-0.5 text-[12.5px] sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
                 <span className="min-w-0 [overflow-wrap:anywhere] font-medium text-slate-700">{r.label}{r.outcome === "won" && <span className="ml-1.5 rounded bg-emerald-50 px-1.5 text-[10.5px] font-semibold text-emerald-700">win</span>}</span>
-                <span className="shrink-0 text-right tabular-nums text-slate-600">
+                <span className="tabular-nums text-slate-600 sm:shrink-0 sm:text-right">
                   {n(r.count)} <span className="text-slate-400">· {pct(r.count, total)} of leads · {pct(r.count, prev)} from {i === 0 ? "leads" : "before"}</span>
                 </span>
               </div>
