@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
 import { audit, auditCtx } from '@/lib/audit'
+import { closingFields, isDealStatus, MAX_LOST_REASON, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -18,13 +19,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // into an open stage reopens it — unless the caller explicitly passed
     // its own status. This is what makes dragging a deal into the Won/Lost
     // column on the board actually close it.
-    let status = body.status ?? undefined
+    if (body.status !== undefined && !isDealStatus(body.status)) {
+      return NextResponse.json({ error: 'Status must be open, won or lost.' }, { status: 400 })
+    }
+    if (body.lost_reason !== undefined && body.lost_reason !== null && (typeof body.lost_reason !== 'string' || body.lost_reason.length > MAX_LOST_REASON)) {
+      return NextResponse.json({ error: `Keep the reason under ${MAX_LOST_REASON} characters.` }, { status: 400 })
+    }
+    let status: DealStatus | undefined = body.status ?? undefined
     if (body.stage_id && body.stage_id !== existing.stage_id) {
       // A stage of this deal's own pipeline only — any stage id used to
       // be written as given, another pipeline's or another workspace's.
       const targetStage = await prisma.pipelineStage.findFirst({ where: { id: body.stage_id, pipeline_id: existing.pipeline_id } })
       if (!targetStage) return NextResponse.json({ error: 'Stage not found in this pipeline' }, { status: 400 })
-      if (status === undefined) status = targetStage.stage_type
+      if (status === undefined && isDealStatus(targetStage.stage_type)) status = targetStage.stage_type
     }
     const refProblem = await checkOwnedRefs(ctx.accountId, { contact_id: body.contact_id, assigned_to: body.assigned_to })
     if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
@@ -41,6 +48,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         status,
         assigned_to:         body.assigned_to         ?? undefined,
         contact_id:          body.contact_id          ?? undefined,
+        ...(status !== undefined ? closingFields(existing, status, ctx.userId) : {}),
+        // After the closing fields: a reason given with a loss is kept.
+        ...(body.lost_reason !== undefined ? { lost_reason: body.lost_reason?.trim() || null } : {}),
       },
       include: {
         stage:   { select: { id: true, name: true, color: true } },
@@ -48,6 +58,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         lead:    { select: { id: true, title: true, score: true, status: true } },
       },
     })
+
+    if (deal.stage_id !== existing.stage_id || deal.status !== existing.status) {
+      await recordDealEvent({
+        accountId: ctx.accountId, dealId: id,
+        fromStageId: existing.stage_id, toStageId: deal.stage_id,
+        fromStatus: existing.status, toStatus: deal.status,
+        value: deal.value, userId: ctx.userId,
+      })
+    }
 
     {
       const after: Record<string, unknown> = {

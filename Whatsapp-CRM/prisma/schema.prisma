@@ -2343,6 +2343,14 @@ model Deal {
   // ("whatsapp_order"); every other Deal is still created manually by an
   // agent, so this stays null for those.
   source              String?
+  /// When the deal reached a won or lost stage (migration 158). Empty on
+  /// deals closed before then; reports say from when they are complete.
+  won_at              DateTime? @db.Timestamptz(6)
+  lost_at             DateTime? @db.Timestamptz(6)
+  lost_reason         String?
+  /// Who moved it to won or lost. Plain column; the database link to
+  /// users is ON DELETE RESTRICT (migration 158).
+  closed_by           String?   @db.Uuid
   created_at          DateTime  @default(now()) @db.Timestamptz(6)
   updated_at          DateTime  @updatedAt @db.Timestamptz(6)
 
@@ -2871,6 +2879,20 @@ model Lead {
   /// updated_at, which moves whenever anything on the row is touched.
   lost_at         DateTime? @db.Timestamptz(6)
   converted_at    DateTime? @db.Timestamptz(6)
+  // ── For reports (migration 158). Empty on leads from before it. ──
+  /// Whoever closed it; a win is credited to them, not to the current holder.
+  closed_by            String?   @db.Uuid
+  /// The first reply a person (not the bot) sent this lead's contact.
+  first_response_at    DateTime? @db.Timestamptz(6)
+  first_response_by    String?   @db.Uuid
+  /// The reason picked from the business's list; lost_reason keeps the words.
+  lost_reason_key      String?
+  /// The Meta ad that brought it (click-to-WhatsApp source_id or a lead form's ad_id).
+  ad_id                String?
+  /// Which WhatsApp number it came in on.
+  whatsapp_config_id   String?   @db.Uuid
+  /// What the enquiry is about: a ServiceCategory key of the same account.
+  service_category_key String?
   external_id     String? // dedup key for external integrations (HMS, LMS, etc.)
   is_hidden       Boolean   @default(false) // hidden from agent view (set via raw SQL in PATCH)
 
@@ -2981,6 +3003,12 @@ model LeadSettings {
   /// reactions and one number cannot say both.
   sla_warn_hours   Int @default(24)
   sla_breach_hours Int @default(72)
+
+  /// The business's own funnel (migration 158):
+  /// [{ key, label, order, outcome: "open" | "won" | "lost" }].
+  funnel_stages   Json @default("[]")
+  /// Settings → Reports: digest, thresholds, manual ad spend.
+  report_settings Json @default("{}")
 
   // ── AI lead detection ──────────────────────────────────────────
   //
@@ -4100,4 +4128,26 @@ model AuditCheckpoint {
 
   @@index([account_id, through_seq(sort: Desc)], map: "audit_checkpoints_account")
   @@map("audit_checkpoints")
+}
+
+/// Every stage or status change of a Pipeline deal (migration 158), so a
+/// report can say what was in the pipeline on a past date and how long
+/// deals sat in each stage. Plain columns: the database links account and
+/// deal with ON DELETE CASCADE and user with ON DELETE RESTRICT.
+model DealStageEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  account_id    String   @db.Uuid
+  deal_id       String   @db.Uuid
+  from_stage_id String?  @db.Uuid
+  to_stage_id   String?  @db.Uuid
+  from_status   String?
+  to_status     String?
+  /// The deal's value at the moment of the change.
+  value         Decimal? @db.Decimal(12, 2)
+  user_id       String?  @db.Uuid
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([account_id, created_at], map: "deal_stage_events_account_time")
+  @@index([deal_id, created_at], map: "deal_stage_events_deal_time")
+  @@map("deal_stage_events")
 }

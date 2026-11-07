@@ -3,6 +3,8 @@ import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { audit, auditCtx } from '@/lib/audit'
+import type { Prisma } from '@prisma/client'
+import { closingFields, isDealStatus, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
 
 export async function GET(req: NextRequest) {
   try {
@@ -63,8 +65,14 @@ export async function POST(req: NextRequest) {
     })
     if (refProblem) return NextResponse.json({ error: refProblem }, { status: 400 })
 
+    if (body.status !== undefined && !isDealStatus(body.status)) {
+      return NextResponse.json({ error: 'Status must be open, won or lost.' }, { status: 400 })
+    }
+    const status: DealStatus = body.status ?? (isDealStatus(stage.stage_type) ? stage.stage_type : 'open')
+
     const deal = await prisma.deal.create({
       data: {
+        ...closingFields(null, status, ctx.userId),
         account_id:          ctx.accountId,
         user_id:             ctx.userId,
         pipeline_id:         body.pipeline_id,
@@ -78,13 +86,17 @@ export async function POST(req: NextRequest) {
         currency:            body.currency ?? pipeline.account.default_currency,
         notes:               body.notes ?? null,
         expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : null,
-        status:              body.status ?? stage.stage_type,
-      },
+        status,
+      } as Prisma.DealUncheckedCreateInput,
       include: {
         stage:   { select: { id: true, name: true, color: true } },
         contact: { select: { id: true, name: true, phone: true } },
         lead:    { select: { id: true, title: true, score: true, status: true } },
       },
+    })
+
+    await recordDealEvent({
+      accountId: ctx.accountId, dealId: deal.id, toStageId: deal.stage_id, toStatus: deal.status, value: deal.value, userId: ctx.userId,
     })
 
     await audit(auditCtx(req, ctx), {

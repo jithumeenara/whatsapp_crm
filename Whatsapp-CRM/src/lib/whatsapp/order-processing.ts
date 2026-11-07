@@ -9,6 +9,7 @@
  * no cart API to call. This module only ever sees the finished order.
  */
 import { prisma } from '@/lib/db'
+import { recordDealEvent } from '@/lib/deals/closing'
 import { emitToAccount } from '@/lib/socket'
 import type { Prisma } from '@prisma/client'
 
@@ -99,6 +100,7 @@ export async function processInboundOrder(args: {
         },
       })
       dealId = deal.id
+      await recordDealEvent({ accountId: args.accountId, dealId: deal.id, toStageId: deal.stage_id, toStatus: deal.status, value: deal.value })
       await prisma.order.update({ where: { id: order.id }, data: { deal_id: deal.id, status: 'converted' } })
     }
 

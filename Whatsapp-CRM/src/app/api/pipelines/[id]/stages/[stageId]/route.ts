@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { prisma } from '@/lib/db'
 import { audit, auditCtx } from '@/lib/audit'
+import { recordDealEvent } from '@/lib/deals/closing'
 
 export async function PATCH(
   req: NextRequest,
@@ -77,7 +78,14 @@ export async function DELETE(
       orderBy: { position: 'asc' },
     })
     if (otherStage) {
+      const moved = await prisma.deal.findMany({ where: { stage_id: stageId }, select: { id: true, status: true, value: true } })
       await prisma.deal.updateMany({ where: { stage_id: stageId }, data: { stage_id: otherStage.id } })
+      for (const d of moved) {
+        await recordDealEvent({
+          accountId: ctx.accountId, dealId: d.id, fromStageId: stageId, toStageId: otherStage.id,
+          fromStatus: d.status, toStatus: d.status, value: d.value, userId: ctx.userId,
+        })
+      }
     }
 
     await prisma.pipelineStage.delete({ where: { id: stageId } })
