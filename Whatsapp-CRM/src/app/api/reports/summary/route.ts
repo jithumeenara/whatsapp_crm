@@ -53,6 +53,9 @@ export async function GET(req: NextRequest) {
       summary,
     })
   } catch (err) {
-    return toErrorResponse(err)
+    // The detail is logged by toErrorResponse; the screen gets plain words.
+    const res = toErrorResponse(err)
+    if (res.status === 500) return NextResponse.json({ error: 'Could not build the report right now. Try again in a minute.' }, { status: 500 })
+    return res
   }
 }

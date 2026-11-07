@@ -266,7 +266,9 @@ export async function zoneForSql(db: Pick<Db, '$queryRaw'>, tz: string, now = ne
   } catch (err) {
     console.error('[reports] time zone lookup failed:', err instanceof Error ? err.message : err)
   }
-  return Prisma.sql`make_interval(mins => ${zoneOffsetMinutes(now, tz)})`
+  // ::int: Prisma sends a JS number as bigint, and make_interval takes int
+  // (without the cast a live server failed with "function does not exist").
+  return Prisma.sql`make_interval(mins => ${zoneOffsetMinutes(now, tz)}::int)`
 }
 
 /** `tz` counts "days worked" as the business's calendar days. */

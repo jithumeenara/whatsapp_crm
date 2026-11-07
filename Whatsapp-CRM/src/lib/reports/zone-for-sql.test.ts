@@ -23,6 +23,8 @@ describe('zoneForSql', () => {
     const db = { $queryRaw: vi.fn(async () => []) }
     const sql = flat(await zoneForSql(db as never, 'Asia/Calcutta', new Date('2026-11-07T12:00:00Z')))
     expect(sql.text).toContain('make_interval')
+    // Cast, or Postgres refuses make_interval(mins => bigint).
+    expect(sql.text).toContain('::int')
     expect(sql.values).toEqual([330])
   })
 
