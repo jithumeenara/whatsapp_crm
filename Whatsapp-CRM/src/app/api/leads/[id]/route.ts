@@ -298,6 +298,15 @@ export async function PATCH(
         data.lost_at = null
       }
     }
+    // And the other way: a recorded loss clears an earlier conversion.
+    if (lost_reason && converted_at === undefined) data.converted_at = null
+    // Reopening ends the decision those markers recorded. The page sends
+    // only the new status, so the markers are cleared here or not at all.
+    if (status !== undefined && status !== 'closed' && existing.status === 'closed') {
+      data.converted_at = null
+      data.lost_reason = null
+      data.lost_at = null
+    }
 
     // ── Acting on a lead claims it ───────────────────────────────────
     //

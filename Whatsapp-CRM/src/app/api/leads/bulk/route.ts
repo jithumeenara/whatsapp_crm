@@ -149,6 +149,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Unknown status "${body.status}".` }, { status: 400 })
     }
     data.status = body.status
+    // Any status but closed means the lead is being worked: a won or
+    // lost decision recorded earlier no longer stands.
+    if (body.status !== 'closed') {
+      data.converted_at = null
+      data.lost_reason = null
+      data.lost_at = null
+    }
     action = `status to ${body.status.replace(/_/g, ' ')}`
   } else if (body.assigned_to !== undefined) {
     // Reassigning somebody else's work is a supervisor's job. An agent

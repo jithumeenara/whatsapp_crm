@@ -1,0 +1,51 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+/**
+ * Bug: moving closed leads back to an open status in bulk left their
+ * won/lost markers (converted_at, lost_reason, lost_at), so leads being
+ * worked again still counted as wins or losses in reports.
+ */
+
+const h = vi.hoisted(() => ({ data: [] as Record<string, unknown>[] }))
+
+vi.mock('@/lib/audit', () => ({ audit: () => Promise.resolve(), auditCtx: () => ({}) }))
+vi.mock('@/lib/auth/account', () => ({
+  requireRole: () => Promise.resolve({ accountId: 'acc', userId: 'u1', role: 'supervisor' }),
+  toErrorResponse: (err: unknown) => {
+    throw err
+  },
+}))
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    lead: {
+      findMany: () => Promise.resolve([{ id: 'l1', contact_id: null, assigned_to: null }]),
+      updateMany: (a: { data: Record<string, unknown> }) => {
+        h.data.push(a.data)
+        return Promise.resolve({ count: 1 })
+      },
+    },
+    leadActivity: { createMany: () => Promise.resolve({ count: 1 }) },
+    conversation: { updateMany: () => Promise.resolve({ count: 0 }) },
+  },
+}))
+
+import { POST } from './route'
+
+const post = (body: Record<string, unknown>) =>
+  POST(new Request('http://x', { method: 'POST', body: JSON.stringify(body) }) as never)
+
+describe('leads bulk: won and lost markers', () => {
+  beforeEach(() => {
+    h.data = []
+  })
+
+  it('reopening in bulk clears the won and lost markers', async () => {
+    expect((await post({ ids: ['l1'], status: 'follow_up' })).status).toBe(200)
+    expect(h.data[0]).toMatchObject({ status: 'follow_up', converted_at: null, lost_reason: null, lost_at: null })
+  })
+
+  it('closing in bulk leaves them as they are', async () => {
+    expect((await post({ ids: ['l1'], status: 'closed' })).status).toBe(200)
+    expect(h.data[0]).not.toHaveProperty('converted_at')
+  })
+})
