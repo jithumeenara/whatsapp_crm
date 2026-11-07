@@ -1,12 +1,12 @@
 import { prisma } from "@/lib/db";
 import { isPlaceholderPhone } from "@/lib/contacts/validate";
+import { businessTimezone } from "@/lib/ai/human-date";
+import { dayKey } from "@/lib/audit/zoned";
 import {
-  daysAgoStart,
   DOW_SHORT_MON_FIRST,
-  lastNDayKeys,
-  localDayKey,
-  mondayIndex,
-  startOfLocalDay,
+  zonedDaysAgoStart,
+  zonedLastNDayKeys,
+  zonedMondayIndex,
 } from './date-utils'
 import type {
   ActivityItem,
@@ -50,8 +50,10 @@ function ownedWhere(accountId: string, agentId: string | null) {
 // --- 1. Metric cards ---------------------------------------------------
 
 export async function loadMetrics(accountId: string, agentId: string | null = null): Promise<MetricsBundle> {
-  const todayStart = startOfLocalDay()
-  const yesterdayStart = daysAgoStart(1)
+  // Days are the business's, not the server clock's (AGENTS.md rule 10).
+  const tz = await businessTimezone(accountId)
+  const todayStart = zonedDaysAgoStart(0, tz)
+  const yesterdayStart = zonedDaysAgoStart(1, tz)
 
   const [
     openConvCur,
@@ -106,7 +108,8 @@ export async function loadConversationsSeries(
   rangeDays: number,
   agentId: string | null = null,
 ): Promise<ConversationsSeriesPoint[]> {
-  const start = daysAgoStart(rangeDays - 1)
+  const tz = await businessTimezone(accountId)
+  const start = zonedDaysAgoStart(rangeDays - 1, tz)
 
   const messages = await prisma.message.findMany({
     where: {
@@ -117,12 +120,12 @@ export async function loadConversationsSeries(
     orderBy: { created_at: 'asc' },
   })
 
-  const keys = lastNDayKeys(rangeDays)
+  const keys = zonedLastNDayKeys(rangeDays, tz)
   const buckets = new Map<string, { incoming: number; outgoing: number }>()
   for (const k of keys) buckets.set(k, { incoming: 0, outgoing: 0 })
 
   for (const row of messages) {
-    const key = localDayKey(row.created_at.toISOString())
+    const key = dayKey(row.created_at, tz)
     const bucket = buckets.get(key)
     if (!bucket) continue
     if (row.sender_type === 'customer') bucket.incoming += 1
@@ -135,7 +138,8 @@ export async function loadConversationsSeries(
 // --- 3. Response time by day of week ----------------------------------
 
 export async function loadResponseTime(accountId: string, agentId: string | null = null): Promise<ResponseTimeSummary> {
-  const fourteenDaysAgo = daysAgoStart(13)
+  const tz = await businessTimezone(accountId)
+  const fourteenDaysAgo = zonedDaysAgoStart(13, tz)
 
   const rows = await prisma.message.findMany({
     where: {
@@ -166,8 +170,8 @@ export async function loadResponseTime(accountId: string, agentId: string | null
   }
 
   const now = new Date()
-  const thisWeekStart = daysAgoStart(mondayIndex(now))
-  const lastWeekStart = daysAgoStart(mondayIndex(now) + 7)
+  const thisWeekStart = zonedDaysAgoStart(zonedMondayIndex(now, tz), tz, now)
+  const lastWeekStart = zonedDaysAgoStart(zonedMondayIndex(now, tz) + 7, tz, now)
 
   const byDow = new Map<number, number[]>()
   for (let i = 0; i < 7; i++) byDow.set(i, [])
@@ -177,7 +181,7 @@ export async function loadResponseTime(accountId: string, agentId: string | null
   for (const s of samples) {
     const diffMin = (s.responseAt.getTime() - s.customerAt.getTime()) / 60_000
     if (diffMin < 0) continue
-    const dow = mondayIndex(s.customerAt)
+    const dow = zonedMondayIndex(s.customerAt, tz)
     byDow.get(dow)!.push(diffMin)
     if (s.customerAt >= thisWeekStart) {
       thisWeekMins.push(diffMin)
@@ -393,8 +397,9 @@ export async function loadCRMStats(accountId: string, agentId: string | null = n
 // --- 6. Small trend lines for the headline cards ------------------------
 
 export async function loadSparks(accountId: string, days = 7, agentId: string | null = null): Promise<Sparks> {
-  const start = daysAgoStart(days - 1)
-  const keys = lastNDayKeys(days)
+  const tz = await businessTimezone(accountId)
+  const start = zonedDaysAgoStart(days - 1, tz)
+  const keys = zonedLastNDayKeys(days, tz)
   const index = new Map(keys.map((k, i) => [k, i]))
   const zeros = () => keys.map(() => 0)
 
@@ -420,7 +425,7 @@ export async function loadSparks(accountId: string, days = 7, agentId: string | 
   // A conversation counts once a day, on any day the customer wrote.
   const seen = new Set<string>()
   for (const m of messages) {
-    const i = index.get(localDayKey(m.created_at.toISOString()))
+    const i = index.get(dayKey(m.created_at, tz))
     if (i === undefined) continue
     if (m.sender_type === 'customer') {
       const k = `${i}:${m.conversation_id}`
@@ -430,11 +435,11 @@ export async function loadSparks(accountId: string, days = 7, agentId: string | 
     }
   }
   for (const c of contacts) {
-    const i = index.get(localDayKey(c.created_at.toISOString()))
+    const i = index.get(dayKey(c.created_at, tz))
     if (i !== undefined) newContacts[i] += 1
   }
   for (const l of hot) {
-    const i = index.get(localDayKey(l.created_at.toISOString()))
+    const i = index.get(dayKey(l.created_at, tz))
     if (i !== undefined) hotLeads[i] += 1
   }
   return { days: keys, conversations, newContacts, messagesSent, hotLeads }

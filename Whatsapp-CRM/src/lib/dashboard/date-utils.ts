@@ -2,6 +2,9 @@
 // agrees on what "today", "day boundary", and "day of week" mean.
 // All boundaries are computed in the user's LOCAL timezone — which is
 // what a business user intuitively expects when they say "today".
+// Server code must use the zoned* helpers at the bottom instead.
+
+import { dayKey, dayStartIso } from '@/lib/audit/zoned'
 
 export function startOfLocalDay(d: Date = new Date()): Date {
   const out = new Date(d)
@@ -50,3 +53,36 @@ export function mondayIndex(d: Date): number {
 }
 
 export const DOW_SHORT_MON_FIRST = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+
+// --- Business-zone days (server side) ----------------------------------
+//
+// The helpers above use the clock of whatever machine runs them. On a
+// server that is the VPS's zone (often UTC), not the business's, so a
+// day in India began at 05:30 IST. Server code cuts days with these
+// instead, passing `businessTimezone(accountId)` (AGENTS.md rule 10).
+
+/** "2026-11-08" moved by n calendar days. */
+function shiftDayKey(key: string, n: number): string {
+  const [y, m, d] = key.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
+/** Midnight in the zone, `daysAgo` calendar days before the zone's today. */
+export function zonedDaysAgoStart(daysAgo: number, timeZone: string, now: Date = new Date()): Date {
+  const key = shiftDayKey(dayKey(now, timeZone), -daysAgo)
+  return new Date(dayStartIso(key, timeZone) as string)
+}
+
+/** The last `n` calendar days in the zone, oldest first, ending today. */
+export function zonedLastNDayKeys(n: number, timeZone: string, now: Date = new Date()): string[] {
+  const today = dayKey(now, timeZone)
+  const keys: string[] = []
+  for (let i = n - 1; i >= 0; i--) keys.push(shiftDayKey(today, -i))
+  return keys
+}
+
+/** 0 = Monday … 6 = Sunday, for the day the instant falls on in the zone. */
+export function zonedMondayIndex(d: Date, timeZone: string): number {
+  const jsDow = new Date(`${dayKey(d, timeZone)}T00:00:00Z`).getUTCDay()
+  return (jsDow + 6) % 7
+}

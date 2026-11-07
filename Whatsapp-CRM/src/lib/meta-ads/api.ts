@@ -324,9 +324,15 @@ export async function fetchAdAccountInsights(args: {
   adAccountId: string
   accessToken: string
   datePreset?: 'today' | 'yesterday' | 'last_7d' | 'last_30d' | 'this_month'
+  /** Exact days, "YYYY-MM-DD", both inclusive; wins over datePreset.
+   *  Meta reads them in the ad account's own time zone. */
+  timeRange?: { since: string; until: string }
 }): Promise<AdInsights | null> {
-  const preset = args.datePreset ?? 'last_30d'
-  const url = `${META_API_BASE}/${args.adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm&date_preset=${preset}`
+  const DAY = /^\d{4}-\d{2}-\d{2}$/
+  const range = args.timeRange && DAY.test(args.timeRange.since) && DAY.test(args.timeRange.until)
+    ? `time_range=${encodeURIComponent(JSON.stringify({ since: args.timeRange.since, until: args.timeRange.until }))}`
+    : `date_preset=${args.datePreset ?? 'last_30d'}`
+  const url = `${META_API_BASE}/${args.adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm&${range}`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${args.accessToken}` } })
   if (!res.ok) await throwMetaError(res, 'Failed to fetch ad account insights from Meta')
   const data = (await res.json()) as { data?: Array<Record<string, string>> }
