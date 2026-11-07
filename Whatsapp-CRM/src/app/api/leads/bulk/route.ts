@@ -157,9 +157,8 @@ export async function POST(req: NextRequest) {
       data.lost_at = null
       data.lost_reason_key = null
       data.closed_by = null
-    } else {
-      data.closed_by = ctx.userId
     }
+    // Closing credit is given below, only to leads that were still open.
     action = `status to ${body.status.replace(/_/g, ' ')}`
   } else if (body.assigned_to !== undefined) {
     // Reassigning somebody else's work is a supervisor's job. An agent
@@ -212,6 +211,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Before the status changes: a lead closed or won earlier keeps the
+    // person who closed it.
+    if (body.status === 'closed') {
+      await prisma.lead.updateMany({ where: { ...where, status: { not: 'closed' } }, data: { closed_by: ctx.userId } })
+    }
     const result = await prisma.lead.updateMany({ where, data })
 
     // An assignment: recorded with who did it, and the chat follows when asked.

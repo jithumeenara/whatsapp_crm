@@ -92,28 +92,61 @@ const leadBase = (s: Scope): Prisma.LeadWhereInput => ({
   ...(s.userId ? { assigned_to: s.userId } : {}),
 })
 
-async function cohort(s: Scope, from: Date, to: Date) {
-  return s.db.lead.findMany({
-    where: { ...leadBase(s), created_at: { gte: from, lt: to } },
-    select: { id: true, status: true, converted_at: true, lost_reason: true, source: true },
-  })
+/** The leads a cohort covers, as SQL: same rule as leadBase. */
+const cohortSql = (s: Scope, from: Date, to: Date) => Prisma.sql`
+  l.account_id = ${s.accountId}::uuid AND l.is_hidden = false AND l.ai_suggested = false
+  AND l.created_at >= ${from} AND l.created_at < ${to}
+  ${s.userId ? Prisma.sql`AND l.assigned_to = ${s.userId}::uuid` : Prisma.empty}`
+
+/**
+ * This period's leads by source and outcome, counted by the database
+ * (security review L4: a year of leads is never loaded into memory). The
+ * outcome rule is outcomeOf's, in SQL: won = closed with a conversion;
+ * lost = closed, no conversion, a reason; otherwise closed without
+ * outcome; anything not closed is open.
+ */
+async function cohort(s: Scope, from: Date, to: Date): Promise<{ total: Count; bySource: Array<{ source: string } & Count> }> {
+  const rows = await s.db.$queryRaw<Array<{ source: string | null; total: bigint; won: bigint; lost: bigint; closed_no: bigint; open: bigint }>>`
+    SELECT l.source,
+      count(*) AS total,
+      count(*) FILTER (WHERE l.status = 'closed' AND l.converted_at IS NOT NULL) AS won,
+      count(*) FILTER (WHERE l.status = 'closed' AND l.converted_at IS NULL AND btrim(coalesce(l.lost_reason, '')) <> '') AS lost,
+      count(*) FILTER (WHERE l.status = 'closed' AND l.converted_at IS NULL AND btrim(coalesce(l.lost_reason, '')) = '') AS closed_no,
+      count(*) FILTER (WHERE l.status <> 'closed') AS open
+    FROM leads l WHERE ${cohortSql(s, from, to)}
+    GROUP BY l.source`
+  const total: Count = { ...NO_OUTCOME }
+  const bySource = new Map<string, { source: string } & Count>()
+  for (const r of rows) {
+    const c = { total: Number(r.total), won: Number(r.won), lost: Number(r.lost), closedNoOutcome: Number(r.closed_no), open: Number(r.open) }
+    total.total += c.total; total.won += c.won; total.lost += c.lost; total.closedNoOutcome += c.closedNoOutcome; total.open += c.open
+    const key = r.source || 'Unknown'
+    const prev = bySource.get(key) ?? { source: key, ...NO_OUTCOME }
+    bySource.set(key, { source: key, total: prev.total + c.total, won: prev.won + c.won, lost: prev.lost + c.lost, closedNoOutcome: prev.closedNoOutcome + c.closedNoOutcome, open: prev.open + c.open })
+  }
+  return { total, bySource: [...bySource.values()].sort((a, b) => b.total - a.total) }
 }
 
 /** The business's own funnel for this period's leads; empty until stages are set up. */
-async function funnel(s: Scope, leads: Array<{ id: string; status: string; converted_at: Date | null; lost_reason: string | null }>): Promise<FunnelRow[]> {
+async function funnel(s: Scope, from: Date, to: Date): Promise<FunnelRow[]> {
   const settings = await s.db.leadSettings.findUnique({ where: { account_id: s.accountId }, select: { funnel_stages: true } })
   const stages = parseFunnel(settings?.funnel_stages)
   if (stages.length === 0) return []
-  const ids = leads.map((l) => l.id)
-  const marks = ids.length
-    ? await s.db.$queryRaw<Array<{ lead_id: string; stage_key: string }>>`
-        SELECT DISTINCT lead_id, metadata->>'stage_key' AS stage_key FROM lead_activities
-        WHERE account_id = ${s.accountId}::uuid AND type = 'stage' AND lead_id = ANY(${ids}::uuid[])`
-    : []
+  // Only leads that were marked or won come back, never the whole period.
+  const [marks, won] = await Promise.all([
+    s.db.$queryRaw<Array<{ lead_id: string; stage_key: string | null }>>`
+      SELECT DISTINCT a.lead_id, a.metadata->>'stage_key' AS stage_key
+      FROM lead_activities a JOIN leads l ON l.id = a.lead_id
+      WHERE a.account_id = ${s.accountId}::uuid AND a.type = 'stage' AND ${cohortSql(s, from, to)}`,
+    s.db.$queryRaw<Array<{ id: string }>>`
+      SELECT l.id FROM leads l WHERE ${cohortSql(s, from, to)} AND l.status = 'closed' AND l.converted_at IS NOT NULL`,
+  ])
+  const wonIds = new Set(won.map((w) => w.id))
+  const ids = new Set([...wonIds, ...marks.map((m) => m.lead_id)])
   return countFunnel(
     stages,
-    leads.map((l) => ({ id: l.id, won: outcomeOf(l) === 'won' })),
-    marks.filter((m) => m.stage_key).map((m) => ({ leadId: m.lead_id, stageKey: m.stage_key })),
+    [...ids].map((id) => ({ id, won: wonIds.has(id) })),
+    marks.filter((m) => m.stage_key).map((m) => ({ leadId: m.lead_id, stageKey: m.stage_key as string })),
   )
 }
 
@@ -336,9 +369,6 @@ export async function buildSummary(args: { accountId: string; userId: string | n
   }
 
   // Cohort by source.
-  const bySourceMap = new Map<string, typeof cur>()
-  for (const r of cur) bySourceMap.set(r.source || 'Unknown', [...(bySourceMap.get(r.source || 'Unknown') ?? []), r])
-  const bySource = [...bySourceMap].map(([source, rows]) => ({ source, ...tally(rows) })).sort((a, b) => b.total - a.total)
 
   // Why leads were lost in the period: the picked reason, else the words.
   const lostRows = await s.db.lead.findMany({
@@ -354,20 +384,20 @@ export async function buildSummary(args: { accountId: string; userId: string | n
   return {
     generatedAt: now.toISOString(),
     scope: s.userId ? 'self' : 'team',
-    cohort: tally(cur),
-    previousCohort: tally(prev),
+    cohort: cur.total,
+    previousCohort: prev.total,
     excluded,
     wonInPeriod: wl.won,
     lostInPeriod: wl.lost,
     previousWonInPeriod: prevWl.won,
     calls: { ...callNow, previousTotal: callPrev.total, countedSince: firstCall?.created_at.toISOString() ?? null },
     revenue, previousRevenue: prevRevenue, lostAmount, pipeline, pipelineByStage, wonWithoutDate,
-    bySource,
+    bySource: cur.bySource,
     byCategory: [...byCat.values()].sort((a, b) => b.amount - a.amount),
     lostReasons: [...reasons].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count).slice(0, 8),
     leaks: leakSet,
     leakHours,
     agents: agentRows,
-    funnel: await funnel(s, cur),
+    funnel: await funnel(s, p.from, p.to),
   }
 }

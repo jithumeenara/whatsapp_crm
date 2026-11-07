@@ -9,6 +9,7 @@ import { emitToAccount } from '@/lib/socket'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
 import { audit, auditCtx } from '@/lib/audit'
 import { parseFunnel, type FunnelStage } from '@/lib/reports/settings'
+import { closeReasonLabels } from '@/lib/leads/close-reasons'
 
 async function getLead(id: string, accountId: string) {
   return prisma.lead.findFirst({
@@ -328,6 +329,16 @@ export async function PATCH(
     if (lostReasonKey !== undefined) {
       if (lostReasonKey !== null && (typeof lostReasonKey !== 'string' || lostReasonKey.length > 60)) {
         return NextResponse.json({ error: 'Choose a reason from the list.' }, { status: 400 })
+      }
+      // Only the business's own reasons (or the defaults) and its lost
+      // stages, so the Lost reasons report holds nothing typed in.
+      if (lostReasonKey) {
+        const own = await prisma.leadSettings.findUnique({ where: { account_id: ctx.accountId }, select: { close_enquiry_reasons: true, funnel_stages: true } })
+        const allowed = new Set([
+          ...closeReasonLabels(own?.close_enquiry_reasons),
+          ...parseFunnel(own?.funnel_stages).filter((s) => s.outcome === 'lost').map((s) => s.key),
+        ])
+        if (!allowed.has(lostReasonKey)) return NextResponse.json({ error: 'Choose a reason from the list.' }, { status: 400 })
       }
       data.lost_reason_key = lostReasonKey || null
     }

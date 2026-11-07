@@ -37,6 +37,8 @@ vi.mock('@/lib/db', () => ({
       },
       updateMany: () => Promise.resolve({ count: 1 }),
     },
+    // The business's own close reasons: the reason key must be one of them (L3).
+    leadSettings: { findUnique: () => Promise.resolve({ close_enquiry_reasons: [{ icon: '', label: 'competitor' }], funnel_stages: [] }) },
     profile: { findFirst: () => Promise.resolve({ user_id: 'me' }), findUnique: () => Promise.resolve({ full_name: 'X' }) },
     leadActivity: {
       create: (a: { data: Record<string, unknown> }) => {

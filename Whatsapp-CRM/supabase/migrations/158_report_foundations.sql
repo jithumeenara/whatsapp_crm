@@ -83,6 +83,10 @@ BEGIN
 END $$;
 
 -- ── Indexes report queries read by ────────────────────────────────────
+-- Plain CREATE INDEX (migrations run inside one transaction, where
+-- CONCURRENTLY is not allowed): writes to these tables wait while each
+-- builds. On tables of a few thousand rows that is well under a second;
+-- on a much larger database, apply this file in a quiet hour.
 CREATE INDEX IF NOT EXISTS lead_activities_account_time ON lead_activities (account_id, created_at);
 CREATE INDEX IF NOT EXISTS leads_account_converted ON leads (account_id, converted_at) WHERE converted_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS leads_account_lost ON leads (account_id, lost_at) WHERE lost_at IS NOT NULL;

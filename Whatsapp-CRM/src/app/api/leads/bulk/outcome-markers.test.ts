@@ -50,9 +50,11 @@ describe('leads bulk: won and lost markers', () => {
   })
 
   it('closing in bulk records who closed them; reopening clears it', async () => {
+    // Closing writes the credit in its own update (only open leads get it,
+    // closer-credit.test.ts), so the reopen is the last update, not the second.
     await post({ ids: ['l1'], status: 'closed' })
     await post({ ids: ['l1'], status: 'open' })
-    expect(h.data[0]).toMatchObject({ closed_by: 'u1' })
-    expect(h.data[1]).toMatchObject({ closed_by: null, lost_reason_key: null })
+    expect(h.data.some((d) => d.closed_by === 'u1')).toBe(true)
+    expect(h.data[h.data.length - 1]).toMatchObject({ closed_by: null, lost_reason_key: null })
   })
 })

@@ -4,6 +4,7 @@ import { auditCtx } from "@/lib/audit"
 import { auditConfigChange } from "@/lib/audit/config-change"
 import { prisma } from "@/lib/db"
 import { DEFAULT_SIGNALS, normalizeMode, normalizeThreshold, sanitizeSignals } from "@/lib/leads/ai-signals"
+import { DEFAULT_CLOSE_REASONS } from "@/lib/leads/close-reasons"
 
 const VALID_SCORING_MODES = ["score", "quality", "both"] as const
 
@@ -18,11 +19,6 @@ const DEFAULT_NOT_CONNECTED: ListItem[] = [
 ]
 const DEFAULT_CONNECTED: ListItem[] = [
   { icon: "🏢", label: "Visited" }, { icon: "📅", label: "Appointment Fixed" }, { icon: "🔄", label: "Follow-up" },
-]
-const DEFAULT_CLOSE_REASONS: ListItem[] = [
-  { icon: "🎉", label: "Converted / Enrolled" }, { icon: "👎", label: "Not Interested" },
-  { icon: "💰", label: "Budget Issue" }, { icon: "❓", label: "Wrong Enquiry" },
-  { icon: "📋", label: "Duplicate" }, { icon: "📝", label: "Other" },
 ]
 const DEFAULT_LEAD_SOURCES: ListItem[] = [
   { icon: "", label: "WhatsApp" }, { icon: "", label: "Instagram" }, { icon: "", label: "Telegram" },

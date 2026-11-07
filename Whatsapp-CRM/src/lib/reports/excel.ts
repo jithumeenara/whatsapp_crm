@@ -149,6 +149,8 @@ function summarySheet(wb: ExcelJS.Workbook, input: ReportWorkbookInput) {
   const missing = s.revenue.reduce((n, m) => n + m.deals - m.withAmount, 0)
   if (missing) notes.push(`${missing.toLocaleString('en-IN')} won deals have no amount, so revenue is incomplete.`)
   if (s.revenue.length > 1) notes.push('Money in different currencies is listed separately, never added together.')
+  // Security review L7: the "Needs doing" sheet names customers.
+  notes.push('This file contains customer names and lead titles. Share it only with people who need it, and delete it when done.')
   if (notes.length) {
     sheet.addRow([])
     sheet.addRow(['About these numbers']).font = { bold: true }

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { businessTimezone } from '@/lib/ai/human-date'
 import { resolvePeriod, type PeriodInput } from '@/lib/reports/period'
 import { buildSummary } from '@/lib/reports/summary'
 import { actions, headline } from '@/lib/reports/headline'
+
+/** Each load runs the whole report: plenty for a person switching periods. */
+const REPORT_LIMIT = { limit: 30, windowMs: 60_000 }
 
 const WORD: Record<string, string> = { today: 'today', week: 'this week', month: 'this month', custom: 'in these days' }
 
@@ -21,7 +24,7 @@ export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRole('viewer')
     assertPageAccess(ctx, '/reports')
-    const limit = checkRateLimit(`reports:${ctx.userId}`, RATE_LIMITS.apiRead)
+    const limit = checkRateLimit(`reports:${ctx.userId}`, REPORT_LIMIT)
     if (!limit.success) return rateLimitResponse(limit)
 
     const q = req.nextUrl.searchParams
