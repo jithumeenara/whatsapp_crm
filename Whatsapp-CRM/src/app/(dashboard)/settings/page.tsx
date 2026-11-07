@@ -11,6 +11,7 @@ import {
   Layers,
   Sheet,
   FileClock,
+  BarChart2,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
 import { useSidebarCollapse } from "@/components/layout-v2/dashboard-shell-v2"
@@ -39,6 +40,7 @@ const CatalogTab = dynamic(() => import("@/components/settings/catalog-tab").the
 const PaymentsTab = dynamic(() => import("@/components/settings/payments-tab").then((m) => m.PaymentsTab), { loading: PanelLoading })
 const CallsTab = dynamic(() => import("@/components/settings/calls-tab").then((m) => m.CallsTab), { loading: PanelLoading })
 const AuditLog = dynamic(() => import("@/components/settings/audit-log").then((m) => m.AuditLog), { loading: PanelLoading })
+const ReportsSettings = dynamic(() => import("@/components/settings/reports-settings").then((m) => m.ReportsSettings), { loading: PanelLoading })
 
 function cn(...c: (string | boolean | undefined | null)[]) { return c.filter(Boolean).join(" ") }
 
@@ -85,6 +87,10 @@ const NAV_SECTIONS: { label: string; tabs: TabDef[] }[] = [
       // page is a page people do not find. Supervisor and above: it
       // decides how the whole team's work is scored and routed.
       { key: "leads",     label: "Leads",           icon: Layers,        aliases: ["Lead Scoring", "Call Outcomes", "SLA", "AI Leads", "Judgement", "Offers", "Follow-up"] },
+      // The business's own funnel, the "needs doing" threshold and ad
+      // spend from outside Meta. Admin and owner: it changes what every
+      // report counts as a win.
+      { key: "reports",   label: "Reports",         icon: BarChart2,     adminOnly: true, aliases: ["Funnel", "Stages", "Pipeline stages", "Ad spend", "Cost per lead", "Won", "Lost"] },
     ],
   },
   {
@@ -131,6 +137,7 @@ const TAB_TITLES: Record<string, string> = {
   webhooks: "Webhooks",
   audit: "Audit log",
   google: "Google",
+  reports: "Reports",
 }
 
 const TAB_DESCRIPTIONS: Record<string, string> = {
@@ -149,6 +156,7 @@ const TAB_DESCRIPTIONS: Record<string, string> = {
   notifications: "Browser push alerts for new conversations, assignments, follow-ups and tasks — even when this tab is in the background",
   "api-keys": "Secret keys so external apps can read and write Data Store records via the REST API",
   webhooks: "Get an HTTPS POST whenever a Data Store record changes, signed with HMAC-SHA256",
+  reports: "Your funnel stages, when open work counts as needing attention, and ad spend from outside Meta",
   audit: "Who did what, when and from where — sign-ins, team and settings changes, records, exports and AI actions. Read-only",
 }
 
@@ -255,6 +263,7 @@ function SettingsContent() {
       case "api-keys":         return isOwner ? <ApiKeysPanel /> : null
       case "webhooks":         return isOwner ? <WebhooksPanel /> : null
       case "audit":            return isAdmin ? <AuditLog /> : null
+      case "reports":          return isAdmin ? <ReportsSettings /> : null
       default:                 return <ProfileForm />
     }
   }

@@ -14,6 +14,7 @@ import { GenderBadge } from "@/components/contacts/gender-badge"
 import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
 import { outcomeOf, OUTCOME_COLOR, OUTCOME_LABEL } from "@/lib/leads/outcome"
 import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-lead-dialog"
+import { LeadStageCard } from "@/components/leads/lead-stage-card"
 import { ScheduleFollowupDialog } from "@/components/leads/schedule-followup-dialog"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
@@ -940,6 +941,9 @@ export default function LeadDetailPage() {
                 </div>
               </div>
             </div>
+
+            {/* The business's own funnel stage; hidden until stages are set up. */}
+            <LeadStageCard leadId={id} onChanged={loadLead} />
 
             {/* Log Call Outcome */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">

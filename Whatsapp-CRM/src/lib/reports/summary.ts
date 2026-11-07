@@ -18,6 +18,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { outcomeOf } from '@/lib/leads/outcome'
 import type { ReportPeriod } from './period'
+import { countFunnel, type FunnelRow } from './funnel'
+import { parseFunnel, parseReportSettings } from './settings'
 
 export interface Count { total: number; won: number; lost: number; closedNoOutcome: number; open: number }
 export interface Money { currency: string; amount: number; deals: number; withAmount: number }
@@ -60,6 +62,8 @@ export interface ReportSummary {
   leaks: { neverContacted: Leak; overdueFollowUps: Leak; unassigned: Leak; waitingChats: Leak }
   leakHours: number
   agents: AgentRow[]
+  /** This period's leads through the business's own stages; empty until set up. */
+  funnel: FunnelRow[]
 }
 
 const NO_OUTCOME: Count = { total: 0, won: 0, lost: 0, closedNoOutcome: 0, open: 0 }
@@ -91,8 +95,26 @@ const leadBase = (s: Scope): Prisma.LeadWhereInput => ({
 async function cohort(s: Scope, from: Date, to: Date) {
   return s.db.lead.findMany({
     where: { ...leadBase(s), created_at: { gte: from, lt: to } },
-    select: { status: true, converted_at: true, lost_reason: true, source: true },
+    select: { id: true, status: true, converted_at: true, lost_reason: true, source: true },
   })
+}
+
+/** The business's own funnel for this period's leads; empty until stages are set up. */
+async function funnel(s: Scope, leads: Array<{ id: string; status: string; converted_at: Date | null; lost_reason: string | null }>): Promise<FunnelRow[]> {
+  const settings = await s.db.leadSettings.findUnique({ where: { account_id: s.accountId }, select: { funnel_stages: true } })
+  const stages = parseFunnel(settings?.funnel_stages)
+  if (stages.length === 0) return []
+  const ids = leads.map((l) => l.id)
+  const marks = ids.length
+    ? await s.db.$queryRaw<Array<{ lead_id: string; stage_key: string }>>`
+        SELECT DISTINCT lead_id, metadata->>'stage_key' AS stage_key FROM lead_activities
+        WHERE account_id = ${s.accountId}::uuid AND type = 'stage' AND lead_id = ANY(${ids}::uuid[])`
+    : []
+  return countFunnel(
+    stages,
+    leads.map((l) => ({ id: l.id, won: outcomeOf(l) === 'won' })),
+    marks.filter((m) => m.stage_key).map((m) => ({ leadId: m.lead_id, stageKey: m.stage_key })),
+  )
 }
 
 /** A win or loss belongs to whoever closed it; before closed_by existed, to the holder. */
@@ -241,8 +263,10 @@ export async function buildSummary(args: { accountId: string; userId: string | n
   const s: Scope = { accountId: args.accountId, userId: args.userId, db: args.db ?? prisma }
   const { period: p, now } = args
 
-  const settings = await s.db.leadSettings.findUnique({ where: { account_id: s.accountId }, select: { sla_warn_hours: true } })
-  const leakHours = settings?.sla_warn_hours && settings.sla_warn_hours > 0 ? settings.sla_warn_hours : 24
+  const settings = await s.db.leadSettings.findUnique({ where: { account_id: s.accountId }, select: { sla_warn_hours: true, report_settings: true } })
+  // Settings → Reports first, then the Leads SLA warning, then a day.
+  const leakHours = parseReportSettings(settings?.report_settings).leakHours
+    ?? (settings?.sla_warn_hours && settings.sla_warn_hours > 0 ? settings.sla_warn_hours : 24)
 
   const dealMine: Prisma.DealWhereInput = s.userId ? { OR: [{ closed_by: s.userId }, { closed_by: null, assigned_to: s.userId }] } : {}
   const dealBase: Prisma.DealWhereInput = { account_id: s.accountId, ...dealMine }
@@ -344,5 +368,6 @@ export async function buildSummary(args: { accountId: string; userId: string | n
     leaks: leakSet,
     leakHours,
     agents: agentRows,
+    funnel: await funnel(s, cur),
   }
 }

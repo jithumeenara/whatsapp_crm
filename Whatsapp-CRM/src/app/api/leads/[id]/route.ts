@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db'
 import { emitToAccount } from '@/lib/socket'
 import { reportMetaAdsOutcome } from '@/lib/meta-ads/triggers'
 import { audit, auditCtx } from '@/lib/audit'
+import { parseFunnel, type FunnelStage } from '@/lib/reports/settings'
 
 async function getLead(id: string, accountId: string) {
   return prisma.lead.findFirst({
@@ -252,6 +253,24 @@ export async function PATCH(
       return NextResponse.json(withCallablePhones({ lead }))
     }
 
+    // A stage of the business's own funnel (Settings → Reports). A won or
+    // lost stage closes the lead exactly as the close dialog does, by
+    // feeding the same fields into the code below.
+    let funnelStage: FunnelStage | null = null
+    if (body.funnel_stage !== undefined) {
+      const settings = await prisma.leadSettings.findUnique({ where: { account_id: ctx.accountId }, select: { funnel_stages: true } })
+      funnelStage = parseFunnel(settings?.funnel_stages).find((s) => s.key === body.funnel_stage) ?? null
+      if (!funnelStage) return NextResponse.json({ error: 'That stage is not in this business’s list. Refresh and try again.' }, { status: 400 })
+      if (funnelStage.outcome === 'won' && !existing.converted_at) {
+        body.status = 'closed'
+        body.converted_at = new Date().toISOString()
+      } else if (funnelStage.outcome === 'lost' && existing.status !== 'closed') {
+        body.status = 'closed'
+        body.lost_reason = funnelStage.label
+        body.lost_reason_key = funnelStage.key
+      }
+    }
+
     const {
       title, contact_id, source, status, score, notes, assigned_to,
       lost_reason, converted_at, lead_quality, call_outcome,
@@ -425,6 +444,23 @@ export async function PATCH(
             metadata: { previous_status: existing.status, new_status: status, call_outcome: call_outcome ?? null },
           },
         })
+      )
+    }
+
+    // The funnel stage, which reports count as "reached".
+    if (funnelStage) {
+      activities.push(
+        prisma.leadActivity.create({
+          data: {
+            account_id: ctx.accountId,
+            lead_id: id,
+            contact_id: lead.contact_id ?? null,
+            user_id: ctx.userId,
+            type: 'stage',
+            title: `Stage: ${funnelStage.label}`,
+            metadata: { stage_key: funnelStage.key, label: funnelStage.label, outcome: funnelStage.outcome },
+          },
+        }),
       )
     }
 

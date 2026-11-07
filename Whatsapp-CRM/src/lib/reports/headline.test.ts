@@ -16,7 +16,7 @@ function summary(over: Partial<ReportSummary> = {}): ReportSummary {
     revenue: [], previousRevenue: [], lostAmount: [], pipeline: [], pipelineByStage: [], wonWithoutDate: 0,
     bySource: [], byCategory: [], lostReasons: [],
     leaks: { neverContacted: leak(), overdueFollowUps: leak(), unassigned: leak(), waitingChats: leak() },
-    leakHours: 24, agents: [],
+    leakHours: 24, agents: [], funnel: [],
     ...over,
   }
 }

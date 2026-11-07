@@ -12,6 +12,8 @@ import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Info, Loader2, Refresh
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { change, formatMoney, type Action } from "@/lib/reports/headline"
 import type { Count, Leak, Money, ReportSummary } from "@/lib/reports/summary"
+import type { FunnelRow } from "@/lib/reports/funnel"
+import { ReportExportButton } from "./report-export-button"
 
 type Kind = "today" | "week" | "month" | "custom"
 
@@ -118,6 +120,41 @@ function LeakBlock({ title, leak, href, empty }: { title: string; leak: Leak; hr
           ))}
           {leak.count > leak.rows.length && <li className="px-2 text-[11px] text-slate-400">and {n(leak.count - leak.rows.length)} more</li>}
         </ul>
+      )}
+    </div>
+  )
+}
+
+/** The business's own stages: count, share of the period's leads, and the
+ *  step from the one before. Lost stages sit apart, as they are not a step. */
+function FunnelView({ rows, total }: { rows: FunnelRow[]; total: number }) {
+  const path = rows.filter((r) => r.outcome !== "lost")
+  const lost = rows.filter((r) => r.outcome === "lost")
+  const max = Math.max(1, total)
+  return (
+    <div className="space-y-3">
+      <ol className="space-y-2.5">
+        {path.map((r, i) => {
+          const prev = i === 0 ? total : path[i - 1].count
+          return (
+            <li key={r.key}>
+              <div className="flex items-baseline justify-between gap-3 text-[12.5px]">
+                <span className="min-w-0 [overflow-wrap:anywhere] font-medium text-slate-700">{r.label}{r.outcome === "won" && <span className="ml-1.5 rounded bg-emerald-50 px-1.5 text-[10.5px] font-semibold text-emerald-700">win</span>}</span>
+                <span className="shrink-0 text-right tabular-nums text-slate-600">
+                  {n(r.count)} <span className="text-slate-400">· {pct(r.count, total)} of leads · {pct(r.count, prev)} from {i === 0 ? "leads" : "before"}</span>
+                </span>
+              </div>
+              <div className="mt-1 h-2.5 rounded-full bg-slate-100">
+                <div className={`h-2.5 rounded-full ${r.outcome === "won" ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${r.count ? Math.max(2, (r.count / max) * 100) : 0}%` }} />
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+      {lost.length > 0 && (
+        <p className="text-[12px] text-slate-500">
+          {lost.map((r) => `${r.label}: ${n(r.count)}`).join(" · ")}
+        </p>
       )}
     </div>
   )
@@ -251,6 +288,7 @@ export function OwnerReport() {
               </button>
             ))}
           </div>
+          {team && <ReportExportButton period={kind} from={from} to={to} disabled={loading || (kind === "custom" && (!from || !to))} />}
           <button type="button" onClick={() => void load()} aria-label="Refresh report" disabled={loading}
             className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50">
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin motion-reduce:animate-none" : ""}`} />
@@ -326,6 +364,16 @@ export function OwnerReport() {
               </div>
             </Section>
           </div>
+
+          {s.funnel.length > 0 ? (
+            <Section title="Your stages" hint="How far this period's leads got. A lead that skipped a step still counts as passing it.">
+              <FunnelView rows={s.funnel} total={s.cohort.total} />
+            </Section>
+          ) : team ? (
+            <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-3 text-[12px] text-slate-500">
+              Add your own stages (for example Appointment → Visited → Surgery) in Settings → Reports to see how far leads get here.
+            </p>
+          ) : null}
 
           <Section title="Needs doing now" hint={`Open work older than ${s.leakHours} hours, oldest first. Tap one to open it.`}>
             <div className="grid gap-3 md:grid-cols-2">
