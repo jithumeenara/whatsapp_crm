@@ -11,7 +11,8 @@ import { whatsappWebhookSecrets } from '@/lib/whatsapp/webhook-secrets'
  * signature does not match.
  *
  * The secrets are the WhatsApp webhook's (.env META_APP_SECRET and the
- * Quick Connect app secret): the same Meta app delivers both.
+ * Quick Connect app secret), plus META_FLOWS_APP_SECRET when the Flow is
+ * connected to a different Meta app.
  *
  * META_FLOWS_SIGNATURE=observe lets a bad or missing signature through
  * with a log line, for rolling this out on a server whose secret is not
@@ -25,7 +26,13 @@ export async function checkFlowRequestSignature(
 ): Promise<{ request: Request; response?: never } | { response: Response; request?: never }> {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
-  const check = checkMetaWebhookSignature(rawBody, signature, await whatsappWebhookSecrets())
+  // A Flow can be connected to its own Meta app, which signs with that
+  // app's secret (seen live: every Flows request failed against the
+  // webhook secrets). META_FLOWS_APP_SECRET is that secret, accepted here
+  // only, never for the WhatsApp webhook.
+  const flowsSecret = process.env.META_FLOWS_APP_SECRET?.trim()
+  const secrets = [...(await whatsappWebhookSecrets()), ...(flowsSecret ? [flowsSecret] : [])]
+  const check = checkMetaWebhookSignature(rawBody, signature, secrets)
   const forward = () => ({ request: new Request(request.url, { method: 'POST', headers: request.headers, body: rawBody }) })
   if (check === 'ok') return forward()
 
