@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { audit, auditCtx } from '@/lib/audit'
 import type { Prisma } from '@prisma/client'
-import { closingFields, isDealStatus, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
+import { closingFields, isDealStatus, MAX_LOST_REASON, recordDealEvent, type DealStatus } from '@/lib/deals/closing'
 
 export async function GET(req: NextRequest) {
   try {
@@ -69,6 +69,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Status must be open, won or lost.' }, { status: 400 })
     }
     const status: DealStatus = body.status ?? (isDealStatus(stage.stage_type) ? stage.stage_type : 'open')
+    // A number, or a numeric string as API callers have always been able to send.
+    const value = body.value === undefined || body.value === null || body.value === '' ? 0 : Number(body.value)
+    if (!Number.isFinite(value) || value < 0 || value > 9_999_999_999) {
+      return NextResponse.json({ error: 'The amount must be a number of 0 or more.' }, { status: 400 })
+    }
+    if (body.lost_reason !== undefined && body.lost_reason !== null && (typeof body.lost_reason !== 'string' || body.lost_reason.length > MAX_LOST_REASON)) {
+      return NextResponse.json({ error: `Keep the reason under ${MAX_LOST_REASON} characters.` }, { status: 400 })
+    }
 
     const deal = await prisma.deal.create({
       data: {
@@ -82,11 +90,12 @@ export async function POST(req: NextRequest) {
         conversation_id:     body.conversation_id ?? null,
         assigned_to:         body.assigned_to  ?? null,
         title,
-        value:               body.value ?? 0,
+        value,
         currency:            body.currency ?? pipeline.account.default_currency,
         notes:               body.notes ?? null,
         expected_close_date: body.expected_close_date ? new Date(body.expected_close_date) : null,
         status,
+        lost_reason:         status === 'lost' ? body.lost_reason?.trim() || null : null,
       } as Prisma.DealUncheckedCreateInput,
       include: {
         stage:   { select: { id: true, name: true, color: true } },

@@ -364,7 +364,7 @@ export default function LeadDetailPage() {
     if (!connectedChoice) return
     if (connectedChoice === "follow_up") { setFollowupOpen(true); return }
     setRecording("connected")
-    await patchLead({ status: connectedChoice })
+    await patchLead({ status: connectedChoice, call_result: "connected" })
     setRecording(null)
     setConnectedChoice("")
     toast.success("Outcome recorded")
@@ -373,14 +373,15 @@ export default function LeadDetailPage() {
   async function recordNotConnected() {
     if (!notConnectedChoice) return
     setRecording("not_connected")
-    await patchLead({ status: "call_not_connected", call_outcome: notConnectedChoice })
+    await patchLead({ status: "call_not_connected", call_outcome: notConnectedChoice, call_result: "not_connected" })
     setRecording(null)
     setNotConnectedChoice("")
     toast.success("Outcome recorded")
   }
 
   async function handleFollowupSave(data: { due_at: string; note: string }) {
-    await patchLead({ status: "follow_up", due_at: data.due_at, follow_up_note: data.note })
+    // Only reached from "Connected → Follow-up", so it is a connected call.
+    await patchLead({ status: "follow_up", due_at: data.due_at, follow_up_note: data.note, call_result: "connected" })
     setFollowupOpen(false)
     setConnectedChoice("")
     toast.success("Follow-up scheduled")
@@ -389,7 +390,10 @@ export default function LeadDetailPage() {
   async function handleCloseConfirm(result: CloseLeadResult) {
     const patch: Record<string, unknown> = { status: "closed", closing_remarks: result.remarks }
     if (result.outcome === "won") patch.converted_at = new Date().toISOString()
-    else patch.lost_reason = result.remarks
+    else {
+      patch.lost_reason = result.remarks
+      if (result.reasonKey) patch.lost_reason_key = result.reasonKey
+    }
     await patchLead(patch)
 
     if (result.pipelineId && result.stageId && lead) {
@@ -402,6 +406,8 @@ export default function LeadDetailPage() {
           stage_id: result.stageId,
           contact_id: lead.contact_id ?? undefined,
           lead_id: lead.id,
+          value: result.dealValue,
+          lost_reason: result.outcome === "lost" ? result.remarks : undefined,
         }),
       })
       if (!res.ok) toast.error("Lead closed, but adding to pipeline failed")

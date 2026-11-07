@@ -48,4 +48,11 @@ describe('leads bulk: won and lost markers', () => {
     expect((await post({ ids: ['l1'], status: 'closed' })).status).toBe(200)
     expect(h.data[0]).not.toHaveProperty('converted_at')
   })
+
+  it('closing in bulk records who closed them; reopening clears it', async () => {
+    await post({ ids: ['l1'], status: 'closed' })
+    await post({ ids: ['l1'], status: 'open' })
+    expect(h.data[0]).toMatchObject({ closed_by: 'u1' })
+    expect(h.data[1]).toMatchObject({ closed_by: null, lost_reason_key: null })
+  })
 })

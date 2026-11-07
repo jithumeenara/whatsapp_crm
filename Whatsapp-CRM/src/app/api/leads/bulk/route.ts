@@ -155,6 +155,10 @@ export async function POST(req: NextRequest) {
       data.converted_at = null
       data.lost_reason = null
       data.lost_at = null
+      data.lost_reason_key = null
+      data.closed_by = null
+    } else {
+      data.closed_by = ctx.userId
     }
     action = `status to ${body.status.replace(/_/g, ' ')}`
   } else if (body.assigned_to !== undefined) {

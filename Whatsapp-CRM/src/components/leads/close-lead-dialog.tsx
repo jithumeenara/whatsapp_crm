@@ -13,6 +13,10 @@ interface ReasonLite { icon: string; label: string }
 export interface CloseLeadResult {
   outcome: 'won' | 'lost'
   remarks: string
+  /** The reason picked from the business's list, when one was. */
+  reasonKey?: string
+  /** The Deal's amount, when added to a pipeline. */
+  dealValue?: number
   pipelineId?: string
   stageId?: string
   /** Only meaningful when pipelineId/stageId are set — the Deal's own
@@ -33,7 +37,10 @@ interface CloseLeadDialogProps {
 }
 
 export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, contactId }: CloseLeadDialogProps) {
-  const [outcome, setOutcome] = useState<'won' | 'lost'>('won')
+  // No default: a preselected Won was confirmed by people who meant Lost,
+  // and every such click is a false win in the reports.
+  const [outcome, setOutcome] = useState<'won' | 'lost' | null>(null)
+  const [dealValue, setDealValue] = useState('')
   const [reason, setReason] = useState('')
   const [reasons, setReasons] = useState<ReasonLite[]>([])
   const [remarks, setRemarks] = useState('')
@@ -74,7 +81,8 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
 
   useEffect(() => {
     if (!open) return
-    setOutcome('won')
+    setOutcome(null)
+    setDealValue('')
     setReason('')
     setRemarks('')
     setAddToPipeline(false)
@@ -122,14 +130,22 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
     setStageId(match?.id ?? selectedPipeline.stages[0]?.id ?? '')
   }, [selectedPipeline, outcome])
 
+  // Empty is allowed (the report then says the amount is missing); a
+  // typed amount must be a real, non-negative number.
+  const parsedValue = dealValue.trim() === '' ? undefined : Number(dealValue.replace(/,/g, ''))
+  const valueInvalid = parsedValue !== undefined && (!Number.isFinite(parsedValue) || parsedValue < 0 || parsedValue > 9_999_999_999)
+  const canConfirm = outcome !== null && !!remarks.trim() && !valueInvalid &&
+    !(addToPipeline && (!pipelineId || !stageId || !dealTitle.trim()))
+
   const handleConfirm = async () => {
-    if (!remarks.trim()) return
-    if (addToPipeline && (!pipelineId || !stageId || !dealTitle.trim())) return
+    if (!canConfirm || outcome === null) return
     setSaving(true)
     try {
       await onConfirm({
         outcome,
         remarks: remarks.trim(),
+        reasonKey: reason || undefined,
+        dealValue: addToPipeline ? parsedValue : undefined,
         pipelineId: addToPipeline ? pipelineId : undefined,
         stageId: addToPipeline ? stageId : undefined,
         dealTitle: addToPipeline ? dealTitle.trim() : undefined,
@@ -159,14 +175,14 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
         <DialogHeader
           className={cn(
             "px-6 pt-6 pb-5 transition-colors",
-            outcome === "won" ? "bg-gradient-to-br from-emerald-50 to-white" : "bg-gradient-to-br from-rose-50 to-white",
+            outcome === "won" ? "bg-gradient-to-br from-emerald-50 to-white" : outcome === "lost" ? "bg-gradient-to-br from-rose-50 to-white" : "bg-white",
           )}
         >
           <DialogTitle className="flex items-center gap-2 text-[17px] font-bold text-slate-800">
-            <Sparkles className={cn("h-4 w-4", outcome === "won" ? "text-emerald-500" : "text-rose-500")} />
+            <Sparkles className={cn("h-4 w-4", outcome === "won" ? "text-emerald-500" : outcome === "lost" ? "text-rose-500" : "text-slate-400")} />
             Close Enquiry
           </DialogTitle>
-          <p className="text-[12px] text-slate-400 mt-0.5">Record the final outcome for this lead.</p>
+          <p className="text-[12px] text-slate-400 mt-0.5">Choose won or lost, then record why.</p>
         </DialogHeader>
 
         <div className="px-6 pb-6 pt-1 space-y-5">
@@ -211,13 +227,13 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
 
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-              {outcome === 'won' ? 'Closing Notes' : 'Reason for Losing'} <span className="text-rose-500">*</span>
+              {outcome === 'won' ? 'Closing notes' : outcome === 'lost' ? 'Reason for losing' : 'Notes'} <span className="text-rose-500">*</span>
             </label>
             <textarea autoComplete="off"
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-[13px] text-slate-800 min-h-[90px] resize-none focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400"
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              placeholder={outcome === 'won' ? 'What closed this deal…' : 'Why this enquiry is being lost…'}
+              placeholder={outcome === 'won' ? 'What closed this deal…' : outcome === 'lost' ? 'Why this enquiry is being lost…' : 'Choose won or lost first…'}
               autoFocus
             />
           </div>
@@ -247,6 +263,20 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
                   placeholder="Deal name…"
                   className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                 />
+                <input autoComplete="off"
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Deal amount"
+                  aria-invalid={valueInvalid}
+                  value={dealValue}
+                  onChange={(e) => setDealValue(e.target.value)}
+                  placeholder="Amount (optional)"
+                  className={cn(
+                    "h-10 w-full rounded-xl border bg-white px-3 text-[13px] tabular-nums text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100",
+                    valueInvalid ? "border-rose-300" : "border-slate-200",
+                  )}
+                />
+                {valueInvalid && <p role="alert" className="text-[11.5px] text-rose-600">Enter the amount as a number, for example 45000.</p>}
                 <div className="grid grid-cols-2 gap-2">
                   <select value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}
                     className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-100">
@@ -314,10 +344,10 @@ export function CloseLeadDialog({ open, onOpenChange, onConfirm, leadTitle, cont
               Cancel
             </button>
             <button type="button" onClick={handleConfirm}
-              disabled={saving || !remarks.trim() || (addToPipeline && (!pipelineId || !stageId || !dealTitle.trim()))}
+              disabled={saving || !canConfirm}
               className={cn(
                 "h-10 px-5 rounded-xl text-[13px] font-bold text-white flex items-center gap-2 disabled:opacity-50 transition-colors",
-                outcome === "won" ? "bg-emerald-500 hover:bg-emerald-600" : "bg-rose-500 hover:bg-rose-600",
+                outcome === "won" ? "bg-emerald-500 hover:bg-emerald-600" : outcome === "lost" ? "bg-rose-500 hover:bg-rose-600" : "bg-slate-400",
               )}>
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               Confirm Close

@@ -300,13 +300,33 @@ export async function PATCH(
     }
     // And the other way: a recorded loss clears an earlier conversion.
     if (lost_reason && converted_at === undefined) data.converted_at = null
+    // The reason picked from the business's list, beside the words.
+    const lostReasonKey = body.lost_reason_key
+    if (lostReasonKey !== undefined) {
+      if (lostReasonKey !== null && (typeof lostReasonKey !== 'string' || lostReasonKey.length > 60)) {
+        return NextResponse.json({ error: 'Choose a reason from the list.' }, { status: 400 })
+      }
+      data.lost_reason_key = lostReasonKey || null
+    }
+    // A win or loss is credited to whoever closed the lead.
+    if (status === 'closed' && existing.status !== 'closed') data.closed_by = ctx.userId
     // Reopening ends the decision those markers recorded. The page sends
     // only the new status, so the markers are cleared here or not at all.
     if (status !== undefined && status !== 'closed' && existing.status === 'closed') {
       data.converted_at = null
       data.lost_reason = null
       data.lost_at = null
+      data.lost_reason_key = null
+      data.closed_by = null
     }
+    // A call outcome from the lead page. Every call is recorded below,
+    // even one that changes nothing else; a call that got through ends
+    // the last "not connected" reason.
+    const callResult = body.call_result
+    if (callResult !== undefined && callResult !== 'connected' && callResult !== 'not_connected') {
+      return NextResponse.json({ error: 'Unknown call result.' }, { status: 400 })
+    }
+    if (callResult === 'connected' && call_outcome === undefined) data.call_outcome = null
 
     // ── Acting on a lead claims it ───────────────────────────────────
     //
@@ -405,6 +425,26 @@ export async function PATCH(
             metadata: { previous_status: existing.status, new_status: status, call_outcome: call_outcome ?? null },
           },
         })
+      )
+    }
+
+    // Every call, so reports count calls rather than status changes.
+    if (callResult) {
+      const connected = callResult === 'connected'
+      const outcome = connected ? (status ?? existing.status) : (call_outcome ?? null)
+      activities.push(
+        prisma.leadActivity.create({
+          data: {
+            account_id: ctx.accountId,
+            lead_id: id,
+            contact_id: lead.contact_id ?? null,
+            user_id: ctx.userId,
+            type: 'call',
+            title: connected ? 'Call connected' : 'Call not connected',
+            description: outcome ? String(outcome).replace(/_/g, ' ') : null,
+            metadata: { connected, outcome },
+          },
+        }),
       )
     }
 
