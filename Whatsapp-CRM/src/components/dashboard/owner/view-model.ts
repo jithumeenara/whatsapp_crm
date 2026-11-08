@@ -38,7 +38,10 @@ const SOURCE_WORDS: Record<string, string> = {
   api: 'API',
   manual: 'Added by hand',
   whatsapp: 'WhatsApp',
+  whatsapp_ai: 'WhatsApp (AI)',
   ctwa: 'Click-to-WhatsApp ad',
+  chatbot: 'Chatbot',
+  admin_chat: 'Admin chat',
 }
 
 /** A lead source as a person reads it: "walk_in" → "Walk in". Display only;

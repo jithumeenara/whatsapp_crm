@@ -37,7 +37,7 @@ interface Args {
 }
 
 /** Calls cannot be tied to one person (a missed call has nobody on it), so an agent view says null. */
-async function missedCallsToday(accountId: string, tz: string, now: Date): Promise<number> {
+export async function missedCallsToday(accountId: string, tz: string, now: Date): Promise<number> {
   return prisma.call.count({
     where: { account_id: accountId, status: { in: [...MISSED_CALL_STATUSES] }, started_at: { gte: zonedDaysAgoStart(0, tz, now), lt: zonedDaysAgoStart(-1, tz, now) } },
   })

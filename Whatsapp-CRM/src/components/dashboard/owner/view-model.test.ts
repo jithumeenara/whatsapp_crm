@@ -25,6 +25,9 @@ describe('sourceName', () => {
     expect(sourceName('api')).toBe('API')
     expect(sourceName('manual')).toBe('Added by hand')
     expect(sourceName('WhatsApp')).toBe('WhatsApp')
+    expect(sourceName('whatsapp')).toBe('WhatsApp')
+    expect(sourceName('whatsapp_ai')).toBe('WhatsApp (AI)')
+    expect(sourceName('chatbot')).toBe('Chatbot')
   })
   it('says Unknown for an empty source', () => {
     expect(sourceName('')).toBe('Unknown')

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
 import { NAV_SECTIONS } from '@/lib/navigation/sections';
+import { NotificationBell } from '@/components/layout-v2/notification-bell';
 import { LeadMagnetLogo, LeadMagnetMark } from "@/components/brand/lead-magnet-mark"
 
 // ---- navigation ----
@@ -152,14 +153,18 @@ export function SidebarV2({
           </Link>
 
           {!collapsed && (
-            <button
-              type="button"
-              onClick={onToggleCollapse}
-              aria-label="Collapse sidebar"
-              className="hidden lg:flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
+            <div className="hidden lg:flex items-center gap-1">
+              {/* Phones have the bell in the top bar instead. */}
+              <NotificationBell side="bottom" align="start" />
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                aria-label="Collapse sidebar"
+                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+            </div>
           )}
           {collapsed && (
             <button
@@ -172,6 +177,12 @@ export function SidebarV2({
             </button>
           )}
         </div>
+
+        {collapsed && (
+          <div className="hidden lg:flex justify-center border-b border-slate-100 py-2">
+            <NotificationBell side="right" align="start" />
+          </div>
+        )}
 
         {/* Navigation */}
         <nav aria-label="Pages" className="flex-1 overflow-y-auto scroll-styled px-2 py-3 space-y-5">
