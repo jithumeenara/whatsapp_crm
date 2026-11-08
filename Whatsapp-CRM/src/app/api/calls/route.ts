@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { businessTimezone } from '@/lib/ai/human-date'
+import { todayWindow } from '@/lib/leads/my-tasks-view'
+import { MISSED_CALL_STATUSES } from '@/lib/calls/statuses'
 
 /**
  * GET /api/calls — the call list.
@@ -22,7 +25,7 @@ const PAGE_SIZE_MAX = 100
 /** What the tabs above the list mean, in terms of stored rows. */
 const FILTERS: Record<string, Prisma.CallWhereInput> = {
   all: {},
-  missed: { status: { in: ['missed', 'rejected'] } },
+  missed: { status: { in: [...MISSED_CALL_STATUSES] } },
   received: { direction: 'inbound', status: { in: ['completed', 'in_progress'] } },
   made: { direction: 'outbound' },
   /** Handled end-to-end by the assistant, never passed to a person. */
@@ -50,6 +53,13 @@ export async function GET(request: Request) {
   const where: Prisma.CallWhereInput = {
     account_id: accountId,
     ...(FILTERS[filter] ?? {}),
+  }
+
+  // ?day=today: only calls that started today in the business zone (the
+  // dashboard's "missed today" link).
+  if (url.searchParams.get('day') === 'today') {
+    const { gte, lt } = todayWindow(new Date(), await businessTimezone(accountId))
+    where.started_at = { gte, lt }
   }
 
   if (q) {

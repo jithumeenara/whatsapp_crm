@@ -13,8 +13,11 @@
  * measurements and are never shown in the same column.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ErrorBanner } from "@/components/ui/error-banner";
+import { parseCallsParams } from "@/lib/leads/my-tasks-view";
 import {
   PhoneIncoming,
   PhoneOutgoing,
@@ -101,7 +104,21 @@ function waitedFor(call: CallRow): string | null {
 }
 
 export default function CallsPage() {
-  const [filter, setFilter] = useState<string>("all");
+  return (
+    <Suspense fallback={null}>
+      <CallsPageInner />
+    </Suspense>
+  );
+}
+
+function CallsPageInner() {
+  // ?status=missed&day=today comes from the dashboard's missed-calls link.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const asked = parseCallsParams(searchParams.get("status"), searchParams.get("day"));
+  const [onlyToday, setOnlyToday] = useState(asked.today);
+  const [filter, setFilter] = useState<string>(asked.filter);
   const [query, setQuery] = useState("");
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -150,16 +167,22 @@ export default function CallsPage() {
     try {
       const params = new URLSearchParams({ filter, limit: "50" });
       if (query.trim()) params.set("q", query.trim());
+      if (onlyToday) params.set("day", "today");
       const res = await fetch(`/api/calls?${params}`);
-      if (!res.ok || seq !== loadSeq.current) return;
+      if (seq !== loadSeq.current) return;
+      if (!res.ok) throw new Error(`Request failed (${res.status})`);
       const body = await res.json();
-      if (seq === loadSeq.current) setData(body);
-    } catch {
-      /* the page renders empty rather than breaking */
+      if (seq === loadSeq.current) {
+        setData(body);
+        setLoadError(null);
+      }
+    } catch (err) {
+      console.error("calls load failed", err);
+      if (seq === loadSeq.current) setLoadError("Could not load calls. Check your connection and try again.");
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
-  }, [filter, query]);
+  }, [filter, query, onlyToday]);
 
   useEffect(() => {
     // Debounced so typing in the search box does not fire a request per
@@ -167,6 +190,15 @@ export default function CallsPage() {
     const t = setTimeout(load, 220);
     return () => clearTimeout(t);
   }, [load]);
+
+  /** Clears the filter and the address, so a reload does not bring it back. */
+  function clearToday() {
+    setOnlyToday(false);
+    const next = new URLSearchParams(window.location.search);
+    next.delete("day");
+    const qs = next.toString();
+    router.replace(qs ? `/calls?${qs}` : "/calls");
+  }
 
   const missedCount =
     (data?.status_counts.missed ?? 0) + (data?.status_counts.rejected ?? 0);
@@ -235,6 +267,15 @@ export default function CallsPage() {
           ))}
         </div>
 
+        {onlyToday && (
+          <span className="flex items-center gap-2 rounded-full bg-indigo-50 px-2.5 py-1 text-[12px] font-semibold text-indigo-700">
+            Today only
+            <button type="button" onClick={clearToday} className="underline underline-offset-2">
+              Clear
+            </button>
+          </span>
+        )}
+
         <div className="relative ml-auto min-w-[180px] flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
@@ -253,16 +294,24 @@ export default function CallsPage() {
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading calls…
           </div>
+        ) : loadError ? (
+          <div className="p-4">
+            <ErrorBanner message={loadError} onRetry={load} />
+          </div>
         ) : !data || data.calls.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <span className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 text-slate-400">
               <Phone className="h-5 w-5" />
             </span>
             <p className="mt-3 text-[14px] font-medium text-slate-800">
-              {query || filter !== "all" ? "Nothing matches that" : "No calls yet"}
+              {onlyToday
+                ? filter === "missed" ? "No missed calls today" : "No calls today"
+                : query || filter !== "all" ? "Nothing matches that" : "No calls yet"}
             </p>
             <p className="mx-auto mt-1 max-w-sm text-[12.5px] leading-relaxed text-slate-500">
-              {query || filter !== "all"
+              {onlyToday
+                ? "Clear the filter to see all calls."
+                : query || filter !== "all"
                 ? "Try a different tab, or clear the search."
                 : "Calls to your WhatsApp number will appear here once calling is switched on for it."}
             </p>

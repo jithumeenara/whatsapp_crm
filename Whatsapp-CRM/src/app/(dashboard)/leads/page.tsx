@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { MyTasksTab } from "@/components/leads/my-tasks-tab"
 import {
   TrendingUp, Plus, Search, RefreshCw, Flame, Snowflake,
   Thermometer, MapPin, Phone, User, UserCheck,
   X, Filter, MoreHorizontal, Trash2, EyeOff, Eye, AlertTriangle,
-  LayoutGrid, Table2, ChevronRight, Clock, Calendar, CheckSquare,
-  Sparkles, CheckCircle2, Bell, UserPlus, Globe, Megaphone, Share2, Bot,
+  LayoutGrid, Table2, ChevronRight, Clock, Calendar,
+  Sparkles, Bell, UserPlus, Globe, Megaphone, Share2, Bot,
   Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -37,13 +38,6 @@ interface FollowUp {
   contact?: { id: string; name?: string | null; phone?: string | null } | null
   assignee?: { email: string; profile?: { full_name?: string | null } | null } | null
 }
-interface Task {
-  id: string; title: string; status: string; priority: string; due_date?: string | null; description?: string | null
-  lead?: { id: string; title: string } | null
-  contact?: { id: string; name?: string | null; phone?: string | null } | null
-  assignee?: { email: string; profile?: { full_name?: string | null } | null } | null
-}
-
 // ---- constants ----
 
 const KERALA_DISTRICTS = [
@@ -1050,76 +1044,6 @@ function FollowUpRow({ item, index, onNavigate }: {
   )
 }
 
-// ---- task row ----
-
-const TASK_PRIORITY: Record<string, string> = {
-  urgent: "bg-rose-50 text-rose-700 border-rose-200",
-  high:   "bg-orange-50 text-orange-700 border-orange-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  low:    "bg-slate-50 text-slate-600 border-slate-200",
-}
-
-function TaskRow({ item, index, onNavigate }: {
-  item: Task; index: number; onNavigate: (id: string) => void
-}) {
-  const isOdd = index % 2 !== 0
-  const overdue = item.status !== "done" && !!item.due_date && isPast(item.due_date)
-
-  return (
-    <tr
-      onClick={() => item.lead && onNavigate(item.lead.id)}
-      className={cn(
-        "group border-b border-slate-100 transition-colors",
-        item.lead ? "cursor-pointer" : "",
-        overdue
-          ? "bg-rose-50/40 hover:bg-rose-50/70"
-          : isOdd ? "bg-slate-50/60 hover:bg-violet-50/40" : "bg-white hover:bg-violet-50/40"
-      )}>
-      <td className="px-5 py-3.5">
-        <div className="flex items-center gap-2">
-          <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-            item.status === "done" ? "bg-emerald-50" : "bg-violet-50")}>
-            <CheckSquare className={cn("h-3.5 w-3.5",
-              item.status === "done" ? "text-emerald-500" : "text-violet-500")} />
-          </div>
-          <div className="min-w-0">
-            <p className={cn("text-[13px] font-semibold truncate",
-              item.status === "done" ? "line-through text-slate-400" : "text-slate-800")}>
-              {item.title}
-            </p>
-            {item.lead && <p className="text-[11px] text-slate-400 truncate">{item.lead.title}</p>}
-          </div>
-        </div>
-      </td>
-      <td className="px-4 py-3.5">
-        <span className={cn("rounded-full border px-2.5 py-1 text-[11px] font-bold",
-          TASK_PRIORITY[item.priority] ?? "bg-slate-50 text-slate-600 border-slate-200")}>
-          {item.priority}
-        </span>
-      </td>
-      <td className="px-4 py-3.5">
-        {item.due_date ? (
-          <span className={cn("flex items-center gap-1 text-[12px]",
-            overdue ? "font-semibold text-rose-700" : "text-slate-600")}>
-            <Calendar className="h-3 w-3 text-slate-400 shrink-0" />
-            {fmtDate(item.due_date)}
-            {overdue && <span className="ml-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold text-white">OVERDUE</span>}
-          </span>
-        ) : <span className="text-slate-300">—</span>}
-      </td>
-      <td className="px-4 py-3.5 hidden lg:table-cell">
-        <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-medium",
-          item.status === "done" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200")}>
-          {item.status}
-        </span>
-      </td>
-      <td className="px-4 py-3.5 hidden xl:table-cell text-[12px] text-slate-500">
-        {item.assignee?.profile?.full_name ?? item.assignee?.email ?? "—"}
-      </td>
-    </tr>
-  )
-}
-
 // ---- skeletons ----
 
 function SkeletonTile() {
@@ -1234,7 +1158,9 @@ function LeadsV2() {
   const [bulkBusy, setBulkBusy] = useState(false)
   const [leads, setLeads] = useState<Lead[]>([])
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
-  const [tasks, setTasks] = useState<Task[]>([])
+  // The Tasks tab loads and polls its own list (components/leads/my-tasks-tab.tsx).
+  const [taskCount, setTaskCount] = useState(0)
+  const [tasksReload, setTasksReload] = useState(0)
   const [tags, setTags] = useState<TagItem[]>([])
   const [activeTagId, setActiveTagId] = useState("")
   const [scoreFilter, setScoreFilter] = useState("")
@@ -1309,9 +1235,7 @@ function LeadsV2() {
         if (seq !== loadSeq.current) return
         setFollowUps(r.followUps ?? r ?? [])
       } else if (tab === "tasks") {
-        const r = await fetch("/api/tasks?limit=100").then((x) => x.json())
-        if (seq !== loadSeq.current) return
-        setTasks(r.tasks ?? r ?? [])
+        // Nothing to load here: the tab fetches its own list.
       } else {
         const params = new URLSearchParams({ tab: effectiveTab })
         if (activeTagId) params.set("tag_id", activeTagId)
@@ -1582,7 +1506,7 @@ function LeadsV2() {
         ? leads.length
         : tab === "follow_ups"
           ? followUps.length
-          : tasks.length
+          : taskCount
 
   return (
     <div className="min-h-full">
@@ -1601,7 +1525,7 @@ function LeadsV2() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={loadData}
+            <button type="button" onClick={tab === "tasks" ? () => setTasksReload((n) => n + 1) : loadData}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="Refresh" aria-label="Refresh">
               <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
             </button>
@@ -1798,38 +1722,7 @@ function LeadsV2() {
 
         {/* ── Tasks tab ── */}
         {tab === "tasks" && (
-          loading ? (
-            <table className="w-full text-[13px]">
-              <thead><tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                <th className="px-5 py-3 text-left">Task</th>
-                <th className="px-4 py-3 text-left">Priority</th>
-                <th className="px-4 py-3 text-left">Due</th>
-                <th className="px-4 py-3 text-left hidden lg:table-cell">Status</th>
-                <th className="px-4 py-3 text-left hidden xl:table-cell">Assignee</th>
-              </tr></thead>
-              <tbody>{[...Array(6)].map((_, i) => <SkeletonRow key={i} cols={5} />)}</tbody>
-            </table>
-          ) : tasks.length === 0 ? (
-            <EmptyState icon={<CheckSquare className="h-8 w-8 text-violet-300" />} title="No tasks" desc="Tasks linked to leads will appear here" />
-          ) : (
-            <table className="w-full text-[13px]">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3 text-left">Task</th>
-                  <th className="px-4 py-3 text-left">Priority</th>
-                  <th className="px-4 py-3 text-left">Due</th>
-                  <th className="px-4 py-3 text-left hidden lg:table-cell">Status</th>
-                  <th className="px-4 py-3 text-left hidden xl:table-cell">Assignee</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tasks.map((t, i) => (
-                  <TaskRow key={t.id} item={t} index={i}
-                    onNavigate={(id) => router.push(`/leads/${id}`)} />
-                ))}
-              </tbody>
-            </table>
-          )
+          <MyTasksTab initialGroup={searchParams.get("group")} reloadKey={tasksReload} onCount={setTaskCount} />
         )}
 
         {/* What is ticked, and what can be done with it.

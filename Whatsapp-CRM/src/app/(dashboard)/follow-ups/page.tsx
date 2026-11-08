@@ -1,12 +1,15 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { Suspense, useEffect, useRef, useState, useCallback } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import {
   CalendarCheck, Plus, CheckCircle2, SkipForward, Clock,
   AlertTriangle, ChevronDown, ChevronUp, MoreHorizontal, X,
 } from "lucide-react"
 import { apiFetch, errorText } from "@/lib/api-fetch"
+import { parseDueFilter } from "@/lib/leads/my-tasks-view"
+import { ErrorBanner } from "@/components/ui/error-banner"
 
 function FollowUpFormDialog({ open, onOpenChange, onSave }: { open: boolean; onOpenChange: (v: boolean) => void; onSave: () => void }) {
   const [saving, setSaving] = useState(false)
@@ -103,26 +106,61 @@ function StatusBadge({ status, due_at }: { status: string; due_at: string }) {
   return <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700"><Clock className="h-2.5 w-2.5" /> Pending</span>
 }
 
-export default function FollowUpsV2() {
+const DUE_LABEL = { overdue: "Overdue", today: "Due today", next7: "Next 7 days" } as const
+
+export default function FollowUpsPage() {
+  return (
+    <Suspense fallback={null}>
+      <FollowUpsV2 />
+    </Suspense>
+  )
+}
+
+function FollowUpsV2() {
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [loading, setLoading] = useState(true)
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("pending")
+  // ?due=overdue|today|next7 comes from the dashboard; it narrows the
+  // list by business-zone day until "Clear" is pressed.
+  const router = useRouter()
+  const params0 = useSearchParams()
+  const [dueFilter, setDueFilter] = useState(() => parseDueFilter(params0.get("due")))
+  const [mine, setMine] = useState(() => params0.get("mine") === "1")
+  const [loadError, setLoadError] = useState<string | null>(null)
+  // Only the newest load may write; a slow older one must not overwrite it.
+  const loadSeq = useRef(0)
+
+  /** Clearing a filter also clears it from the address, so a reload does not bring it back. */
+  function clearParam(name: "due" | "mine") {
+    if (name === "due") setDueFilter(null)
+    else setMine(false)
+    const next = new URLSearchParams(window.location.search)
+    next.delete(name)
+    const qs = next.toString()
+    router.replace(qs ? `/follow-ups?${qs}` : "/follow-ups")
+  }
   const [createOpen, setCreateOpen] = useState(false)
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current
     setLoading(true)
+    setLoadError(null)
     try {
       const params = new URLSearchParams()
       if (filterStatus !== "all") params.set("status", filterStatus)
-      const data = await fetch(`/api/follow-ups?${params}`).then((r) => r.json())
+      if (dueFilter) params.set("due", dueFilter)
+      if (mine) params.set("mine", "1")
+      const data = await (await apiFetch(`/api/follow-ups?${params}`)).json()
+      if (seq !== loadSeq.current) return
       setFollowUps(Array.isArray(data) ? data : (data?.followUps ?? []))
-    } catch {
-      toast.error("Failed to load follow-ups")
+    } catch (err) {
+      console.error("follow-ups load failed", err)
+      if (seq === loadSeq.current) setLoadError(errorText(err, "Could not load follow-ups."))
     } finally {
-      setLoading(false)
+      if (seq === loadSeq.current) setLoading(false)
     }
-  }, [filterStatus])
+  }, [filterStatus, dueFilter, mine])
 
   useEffect(() => { load() }, [load])
 
@@ -200,6 +238,24 @@ export default function FollowUpsV2() {
             </button>
           ))}
         </div>
+        {dueFilter && (
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-slate-600">
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700">
+              {DUE_LABEL[dueFilter]}
+            </span>
+            <button type="button" onClick={() => clearParam("due")} className="font-semibold text-indigo-700 underline underline-offset-2">
+              Clear
+            </button>
+          </p>
+        )}
+        {mine && (
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-slate-600">
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-indigo-700">My follow-ups</span>
+            <button type="button" onClick={() => clearParam("mine")} className="font-semibold text-indigo-700 underline underline-offset-2">
+              Clear
+            </button>
+          </p>
+        )}
       </div>
 
       {/* Overdue alert */}
@@ -211,6 +267,8 @@ export default function FollowUpsV2() {
           </p>
         </div>
       )}
+
+      {loadError && <div className="mx-6 mt-4"><ErrorBanner message={loadError} onRetry={load} /></div>}
 
       {/* List */}
       <div className="p-6 space-y-2">
@@ -226,12 +284,12 @@ export default function FollowUpsV2() {
               </div>
             </div>
           ))
-        ) : followUps.length === 0 ? (
+        ) : loadError ? null : followUps.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 mb-4">
               <CalendarCheck className="h-7 w-7 text-slate-400" />
             </div>
-            <p className="text-[14px] font-semibold text-slate-700">No follow-ups</p>
+            <p className="text-[14px] font-semibold text-slate-700">{dueFilter || mine ? "No follow-ups match this filter" : "No follow-ups"}</p>
             <p className="mt-1 text-[12px] text-slate-400">Schedule your first follow-up to stay on top of leads</p>
             <button
               type="button"

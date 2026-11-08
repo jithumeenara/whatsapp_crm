@@ -40,6 +40,7 @@ import { WhatsAppQrButton } from "@/components/shared/whatsapp-qr-button"
 import { QuickLinks } from "@/components/dashboard/quick-links"
 import { NewLeadsButton } from "@/components/dashboard/new-leads-button"
 import { pathAllowedBy } from "@/lib/auth/page-access"
+import { OwnerDashboardView } from "@/components/dashboard/owner/owner-dashboard"
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
@@ -306,7 +307,7 @@ function QuickTile({
 
 // ─── page ──────────────────────────────────────────────────────────────
 
-export default function Dashboard() {
+function ClassicDashboard() {
   const { profile, accountRole } = useAuth()
   // useAuth's role flags are exact matches, so rank explicitly: the team
   // panels are for supervisors and above, never for a viewer.
@@ -582,5 +583,89 @@ export default function Dashboard() {
         isAgent={accountRole === "agent"}
       />
     </div>
+  )
+}
+
+// ─── view switch ───────────────────────────────────────────────────────
+// Classic stays the default. `?view=new|classic` wins and is remembered per
+// browser; storage may be missing or blocked, so every access is guarded.
+
+type DashboardViewChoice = "classic" | "new"
+const VIEW_KEY = "dashboard-view"
+
+function readStoredView(): DashboardViewChoice | null {
+  try {
+    const v = window.localStorage.getItem(VIEW_KEY)
+    return v === "new" || v === "classic" ? v : null
+  } catch {
+    return null
+  }
+}
+
+function storeView(v: DashboardViewChoice) {
+  try {
+    window.localStorage.setItem(VIEW_KEY, v)
+  } catch {
+    // storage blocked: the choice just lasts until the page is left
+  }
+}
+
+export default function Dashboard() {
+  const [view, setView] = useState<DashboardViewChoice | null>(null)
+
+  useEffect(() => {
+    let fromUrl: string | null = null
+    try {
+      fromUrl = new URLSearchParams(window.location.search).get("view")
+    } catch {
+      fromUrl = null
+    }
+    // The URL and localStorage only exist in the browser, so they can be read only after hydration
+    // (reading them in the first render would not match the server HTML). One setState per mount.
+    if (fromUrl === "new" || fromUrl === "classic") {
+      storeView(fromUrl)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- browser-only source, see above
+      setView(fromUrl)
+    } else {
+      setView(readStoredView() ?? "classic")
+    }
+  }, [])
+
+  const choose = (v: DashboardViewChoice) => {
+    setView(v)
+    storeView(v)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.set("view", v)
+      window.history.replaceState(null, "", url.toString())
+    } catch {
+      // the address bar is a convenience
+    }
+  }
+
+  if (view === null) return null
+
+  return (
+    <>
+      <div className="relative z-10 flex items-center justify-end gap-2 px-5 pt-3 lg:px-8">
+        <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Dashboard version">
+          {([["classic", "Classic"], ["new", "New (beta)"]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={view === key}
+              onClick={() => choose(key)}
+              className={cn(
+                "h-7 rounded-md px-3 text-[12px] font-semibold transition-colors",
+                view === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {view === "new" ? <OwnerDashboardView /> : <ClassicDashboard />}
+    </>
   )
 }

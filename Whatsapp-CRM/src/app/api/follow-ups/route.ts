@@ -4,6 +4,9 @@ import { withCallablePhones } from '@/lib/contacts/callable'
 import { prisma } from '@/lib/db'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
 import { audit, auditCtx } from '@/lib/audit'
+import { businessTimezone } from '@/lib/ai/human-date'
+import { parseDueFilter } from '@/lib/leads/my-tasks-view'
+import { followUpWindow } from '@/lib/leads/my-tasks'
 
 const PAGE_SIZE = 25
 
@@ -18,6 +21,17 @@ export async function GET(req: NextRequest) {
 
     const where: Record<string, unknown> = { account_id: ctx.accountId }
     if (status) where.status = status
+    // ?due=overdue|today|next7: the dashboard's drill-down links, cut on
+    // business-zone days. An unknown value is ignored, like status.
+    const due = parseDueFilter(searchParams.get('due'))
+    if (due) {
+      where.due_at = followUpWindow(due, new Date(), await businessTimezone(ctx.accountId))
+    }
+    // ?mine=1: only this person's follow-ups: named to them, or nobody's
+    // and made by them (the same rule as the Tasks tab and the dashboard).
+    if (searchParams.get('mine') === '1') {
+      where.OR = [{ assigned_to: ctx.userId }, { assigned_to: null, user_id: ctx.userId }]
+    }
 
     const [followUps, total] = await Promise.all([
       prisma.followUp.findMany({
