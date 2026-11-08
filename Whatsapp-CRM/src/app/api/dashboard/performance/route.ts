@@ -1,6 +1,8 @@
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
+import { businessTimezone } from '@/lib/ai/human-date'
+import { zonedDaysAgoStart } from '@/lib/dashboard/date-utils'
 import { summarise, type StageChange, type Performance } from '@/lib/leads/performance'
 import { NextResponse, type NextRequest } from 'next/server'
 
@@ -43,7 +45,10 @@ export async function GET(req: NextRequest) {
     const days = Number.isFinite(asked) && asked > 0
       ? Math.min(Math.floor(asked), MAX_DAYS)
       : DEFAULT_DAYS
-    const since = new Date(Date.now() - days * 24 * 60 * 60_000)
+    // N days = today plus the N-1 before it, from the business's midnight
+    // (never the server clock's hour).
+    const tz = await businessTimezone(ctx.accountId)
+    const since = zonedDaysAgoStart(days - 1, tz)
 
     // A supervisor or above gets everybody; an agent gets themselves,
     // whatever they ask for.

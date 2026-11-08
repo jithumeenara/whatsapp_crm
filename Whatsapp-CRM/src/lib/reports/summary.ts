@@ -423,3 +423,19 @@ export async function buildSummary(args: { accountId: string; userId: string | n
     funnel: await funnel(s, p.from, p.to),
   }
 }
+
+/**
+ * Median minutes from a lead arriving to its first reply by a person, for
+ * first replies that happened inside [from, to). Same rule as the per-person
+ * median in agents(); `userId` narrows it to that person's replies.
+ */
+export async function medianFirstReply(args: { accountId: string; userId?: string | null; from: Date; to: Date; db?: Pick<Db, '$queryRaw'> }): Promise<number | null> {
+  const db = args.db ?? prisma
+  const who = args.userId ? Prisma.sql`AND l.first_response_by = ${args.userId}::uuid` : Prisma.sql`AND l.first_response_by IS NOT NULL`
+  const rows = await db.$queryRaw<Array<{ median: number | null }>>`
+    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (l.first_response_at - l.created_at)) / 60) AS median
+    FROM leads l WHERE l.account_id = ${args.accountId}::uuid
+      AND l.first_response_at >= ${args.from} AND l.first_response_at < ${args.to} ${who}`
+  const m = rows[0]?.median
+  return m == null ? null : Math.round(Number(m))
+}

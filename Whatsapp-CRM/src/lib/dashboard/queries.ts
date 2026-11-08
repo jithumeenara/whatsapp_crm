@@ -340,6 +340,10 @@ export async function loadActivity(
 
 export async function loadCRMStats(accountId: string, agentId: string | null = null): Promise<CRMStats> {
   const now = new Date()
+  // Task.due_date is a calendar DATE (stored as that day at 00:00 UTC), so
+  // it is compared with today's date in the business zone, not the instant.
+  const tz = await businessTimezone(accountId)
+  const today = new Date(`${dayKey(now, tz)}T00:00:00.000Z`)
 
   const [leadGroups, hotLeads, pendingFollowUps, overdueFollowUps, pendingTasks, overdueTasks, teamMembers] =
     await Promise.all([
@@ -364,14 +368,14 @@ export async function loadCRMStats(accountId: string, agentId: string | null = n
         where: {
           ...ownedWhere(accountId, agentId),
           status: { in: ['todo', 'in_progress'] },
-          due_date: { not: null, gte: now },
+          due_date: { not: null, gte: today },
         },
       }),
       prisma.task.count({
         where: {
           ...ownedWhere(accountId, agentId),
           status: { in: ['todo', 'in_progress'] },
-          due_date: { not: null, lt: now },
+          due_date: { not: null, lt: today },
         },
       }),
       prisma.profile.count({

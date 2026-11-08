@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
-import { hasMinRole } from "@/lib/auth/roles";
+import { assertPageAccess, requireRole, toErrorResponse } from "@/lib/auth/account";
+import { resolveDashboardScope } from "@/lib/dashboard/scope";
 import {
   loadMetrics,
   loadConversationsSeries,
@@ -22,16 +22,23 @@ function readRange(searchParams: URLSearchParams): number {
 export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRole("viewer");
+    assertPageAccess(ctx, "/dashboard");
     const { searchParams } = new URL(req.url);
     const section = searchParams.get("section");
     const rangeDays = readRange(searchParams);
     const limit = Math.min(Math.max(parseInt(searchParams.get("limit") ?? "50", 10) || 50, 1), 100);
     // What customers wrote is shown only to people who manage the team;
     // the feed spans the whole account.
-    const withDetail = hasMinRole(ctx.role, "supervisor");
-    // An agent sees their own work, as in the Inbox: the chats assigned
-    // to them, their leads, follow-ups and tasks — not the account's.
-    const agentId = ctx.role === "agent" ? ctx.userId : null;
+    // An agent, a viewer, and anybody whose profile says "assigned only"
+    // (whatever their rank; nothing exempts an owner or admin) sees their
+    // own work: the chats assigned to them, their leads, follow-ups and
+    // tasks — not the account's.
+    // One rule for both dashboards: lib/dashboard/scope.ts.
+    const scope = await resolveDashboardScope(ctx);
+    const own = scope.view === "agent";
+    const agentId = own ? ctx.userId : null;
+    // Previews only for people who see the account AND manage the team.
+    const withDetail = !own;
 
     switch (section) {
       case "metrics":
