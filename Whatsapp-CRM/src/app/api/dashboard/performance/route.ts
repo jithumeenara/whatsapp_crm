@@ -1,4 +1,4 @@
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { assertPageAccess, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { prisma } from '@/lib/db'
 import { businessTimezone } from '@/lib/ai/human-date'
@@ -40,6 +40,7 @@ interface Row extends Performance {
 export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRole('agent')
+    assertPageAccess(ctx, '/dashboard')
 
     const asked = Number(req.nextUrl.searchParams.get('days'))
     const days = Number.isFinite(asked) && asked > 0

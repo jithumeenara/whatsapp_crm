@@ -46,7 +46,7 @@ export interface TaskGroup {
 
 /**
  * One person's Task list (the user's definition, 8 Nov 2026):
- *  - overdue:  pending follow-ups that were due before today (business zone).
+ *  - overdue:  pending follow-ups whose time has passed (due_at < now).
  *  - dueToday: pending follow-ups due today, in time order. These are the
  *              dates set after a call ("call me tomorrow", "at 4:30").
  *  - newLeads: leads still 'new' that are mine: assigned to me by a

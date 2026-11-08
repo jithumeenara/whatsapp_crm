@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import type { OwnerDashboard } from "@/lib/dashboard/owner-types"
 import { cn } from "@/lib/utils"
 import { Definition, MaybeLink, Section } from "./shared"
-import { biggestDropSentence, topNWithOther, winRate } from "./view-model"
+import { biggestDropSentence, sourceName, topNWithOther, winRate } from "./view-model"
 
 const RAMP = ["bg-ramp-1", "bg-ramp-2", "bg-ramp-3", "bg-ramp-4", "bg-ramp-5"]
 const CHART = ["bg-chart-1", "bg-chart-2", "bg-chart-3", "bg-chart-4", "bg-chart-5", "bg-chart-6", "bg-chart-7", "bg-chart-8"]
@@ -76,7 +76,7 @@ export function SourceSection({ data, allowed }: { data: OwnerDashboard; allowed
             const wr = winRate(r, data.smallNumber)
             return (
               <li key={`${r.source}-${i}`} className="grid grid-cols-[minmax(0,6.5rem)_minmax(0,1fr)_auto] items-center gap-2 text-[12.5px] sm:grid-cols-[minmax(0,8rem)_minmax(0,1fr)_auto]">
-                <span className="min-w-0 break-words text-slate-700">{r.folded ? "All other sources" : r.source || "Unknown"}</span>
+                <span className="min-w-0 break-words text-slate-700">{r.folded ? "All other sources" : sourceName(r.source)}</span>
                 <span className="h-4 overflow-hidden rounded bg-slate-100" aria-hidden="true">
                   <span
                     className={cn("block h-full rounded", isOther ? "bg-slate-400" : CHART[i])}

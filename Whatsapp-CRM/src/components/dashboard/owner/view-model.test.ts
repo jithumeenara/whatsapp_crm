@@ -7,6 +7,7 @@ import {
   linkOrText,
   minutesSince,
   periodLabel,
+  sourceName,
   topNWithOther,
   winRate,
   type SourceRow,
@@ -16,6 +17,20 @@ const c = (total: number, won = 0): Pick<SourceRow, 'total' | 'won' | 'lost' | '
   total, won, lost: 0, closedNoOutcome: 0, open: total - won,
 })
 const src = (source: string, total: number, won = 0): SourceRow => ({ source, ...c(total, won) })
+
+describe('sourceName', () => {
+  it('turns stored source keys into words a person reads', () => {
+    expect(sourceName('facebook')).toBe('Facebook')
+    expect(sourceName('walk_in')).toBe('Walk in')
+    expect(sourceName('api')).toBe('API')
+    expect(sourceName('manual')).toBe('Added by hand')
+    expect(sourceName('WhatsApp')).toBe('WhatsApp')
+  })
+  it('says Unknown for an empty source', () => {
+    expect(sourceName('')).toBe('Unknown')
+    expect(sourceName(null)).toBe('Unknown')
+  })
+})
 
 describe('topNWithOther', () => {
   it('sorts by size and keeps all rows when there are few', () => {

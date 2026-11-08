@@ -7,13 +7,16 @@ import { NextRequest } from 'next/server'
 
 const h = vi.hoisted(() => {
   process.env.TZ = 'UTC' // the VPS
-  return { sinces: [] as Date[] }
+  return {
+    sinces: [] as Date[],
+    ctx: { accountId: 'acc', userId: 'me', role: 'supervisor' } as Record<string, unknown>,
+  }
 })
 
 vi.mock('@/auth', () => ({ auth: async () => null }))
 vi.mock('@/lib/auth/account', async () => {
   const actual = await vi.importActual<typeof import('@/lib/auth/account')>('@/lib/auth/account')
-  return { ...actual, requireRole: async () => ({ accountId: 'acc', userId: 'me', role: 'supervisor' }) }
+  return { ...actual, requireRole: async () => h.ctx }
 })
 vi.mock('@/lib/ai/human-date', () => ({ businessTimezone: async () => 'Asia/Kolkata' }))
 vi.mock('@/lib/db', () => {
@@ -39,6 +42,7 @@ import { GET } from './route'
 
 beforeEach(() => {
   h.sinces = []
+  h.ctx = { accountId: 'acc', userId: 'me', role: 'supervisor' }
   vi.useFakeTimers({ toFake: ['Date'] })
   // 20:00 UTC on 7 Nov is 01:30 on 8 Nov in Kolkata.
   vi.setSystemTime(new Date('2026-11-07T20:00:00Z'))
@@ -54,5 +58,14 @@ describe('GET /api/dashboard/performance window', () => {
     expect(h.sinces.length).toBeGreaterThan(0)
     for (const s of h.sinces) expect(s.toISOString()).toBe(expected)
     expect((await res.json()).since).toBe(expected)
+  })
+})
+
+describe('GET /api/dashboard/performance page access', () => {
+  it('refuses a member whose page access does not include the Dashboard', async () => {
+    h.ctx = { accountId: 'acc', userId: 'me', role: 'agent', pageAccess: ['/inbox'] }
+    const res = await GET(new NextRequest('http://x/api/dashboard/performance?days=7'))
+    expect(res.status).toBe(403)
+    expect(h.sinces).toHaveLength(0)
   })
 })

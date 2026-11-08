@@ -19,9 +19,10 @@ export function FollowUpsSection({ data, allowed }: { data: OwnerDashboard; allo
       <ul className="grid list-none grid-cols-3 gap-2 p-0">
         {buckets.map((b) => (
           <li key={b.label} className="min-w-0">
-            <MaybeLink href={b.href} allowed={allowed} className={cn("block h-full rounded-lg border p-3 hover:brightness-[0.98]", b.tone)}>
-              <span className="block text-[24px] font-bold leading-none tabular-nums">{b.n.toLocaleString()}</span>
-              <span className="mt-1 block break-words text-[12px] font-semibold">{b.label}</span>
+            <MaybeLink href={b.href} allowed={allowed} className={cn("block h-full rounded-lg border px-2 py-3 hover:brightness-[0.98] sm:px-3", b.tone)}>
+              <span className="block text-[22px] font-bold leading-none tabular-nums sm:text-[24px]">{b.n.toLocaleString()}</span>
+              {/* Whole words only: "Overdue" must not break into "Overdu / e" at 360px. */}
+              <span className="mt-1 block text-[11.5px] font-semibold leading-tight [overflow-wrap:normal] [word-break:keep-all] sm:text-[12px]">{b.label}</span>
             </MaybeLink>
           </li>
         ))}

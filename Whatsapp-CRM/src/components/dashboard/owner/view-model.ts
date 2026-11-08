@@ -33,6 +33,25 @@ export function topNWithOther(rows: SourceRow[], n = 6): SourceBar[] {
 }
 
 /** One sentence naming the two neighbouring stages that lose the most leads, or null. */
+/** Stored keys a sentence-case rule would get wrong. */
+const SOURCE_WORDS: Record<string, string> = {
+  api: 'API',
+  manual: 'Added by hand',
+  whatsapp: 'WhatsApp',
+  ctwa: 'Click-to-WhatsApp ad',
+}
+
+/** A lead source as a person reads it: "walk_in" → "Walk in". Display only;
+ *  the counts are grouped by the stored key, as in Reports. */
+export function sourceName(source: string | null | undefined): string {
+  const raw = (source ?? '').trim()
+  if (!raw) return 'Unknown'
+  const known = SOURCE_WORDS[raw.toLowerCase()]
+  if (known) return known
+  const words = raw.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
 export function biggestDropSentence(funnel: FunnelRow[]): string | null {
   const path = funnel.filter((r) => r.outcome !== 'lost')
   let best: { from: FunnelRow; to: FunnelRow; lost: number } | null = null

@@ -1,5 +1,8 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+/** The arguments a Prisma call receives, as far as these tests read them. */
+type MockArgs = { where?: Record<string, { gte?: Date; lt?: Date } | undefined> } | undefined
+
 // Bug: the dashboard's "today", "yesterday" and per-day buckets were cut
 // on the SERVER clock. One customer VPS runs on UTC while the business is
 // in India, so "today" began at 05:30 IST and a message sent at 00:30 IST
@@ -11,7 +14,7 @@ const h = vi.hoisted(() => {
   process.env.TZ = 'UTC' // the VPS
   return {
     originalTz,
-    calls: [] as Array<{ model: string; method: string; args: any }>,
+    calls: [] as Array<{ model: string; method: string; args: MockArgs }>,
     rows: {} as Record<string, unknown[]>,
   }
 })
@@ -21,7 +24,7 @@ vi.mock('@/lib/db', () => {
     new Proxy(
       {},
       {
-        get: (_t, method: string) => (args?: any) => {
+        get: (_t, method: string) => (args?: MockArgs) => {
           h.calls.push({ model: name, method, args })
           if (name === 'companyProfile') return Promise.resolve({ timezone: 'Asia/Kolkata' })
           if (method === 'count') return Promise.resolve(0)
@@ -58,7 +61,7 @@ afterAll(() => {
 function createdAt(model: string): Array<{ gte?: Date; lt?: Date }> {
   return h.calls
     .filter((c) => c.model === model && c.args?.where?.created_at)
-    .map((c) => c.args.where.created_at)
+    .map((c) => c.args!.where!.created_at!)
 }
 
 describe('dashboard days follow the business time zone, not the server clock', () => {

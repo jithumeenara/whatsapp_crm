@@ -30,7 +30,7 @@ function buildTiles(d: OwnerDashboard, nowMs: number): Tile[] {
   const tiles: Tile[] = []
   tiles.push({
     key: "overdue", label: "Overdue follow-ups", n: a.overdueFollowUps, tone: "rose", icon: CalendarClock,
-    context: "Due before today and not done", href: followUpHref("overdue", d.view), linkText: "Open list",
+    context: "Past their time and not done", href: followUpHref("overdue", d.view), linkText: "Open list",
   })
   const since = a.oldestWaitingChatSince ? Date.parse(a.oldestWaitingChatSince) : NaN
   tiles.push({
