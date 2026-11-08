@@ -67,3 +67,6 @@ storage-state-*.json
 
 # Audit fallback file and other runtime logs (never committed)
 logs/
+
+# Made by the production build (src/lib/deploy/deployment-id.ts)
+.deployment-id

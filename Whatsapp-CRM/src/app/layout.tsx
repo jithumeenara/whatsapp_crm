@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Anek_Malayalam } from "next/font/google";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Toaster } from "sonner";
 import "./globals.css";
 // Real flag SVGs (fi-xx classes, keyed by lowercase ISO code) — the
@@ -11,6 +11,7 @@ import "flag-icons/css/flag-icons.min.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { Providers } from "@/components/providers";
 import { auth } from "@/auth";
+import { CHUNK_RELOAD_SCRIPT } from "@/lib/deploy/chunk-reload";
 import { DEFAULT_THEME, STORAGE_KEY, THEME_IDS } from "@/lib/themes";
 import type { ThemeId } from "@/lib/themes";
 
@@ -68,7 +69,9 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [theme, session] = await Promise.all([getThemeCookie(), auth().catch(() => null)]);
+  const [theme, session, hdrs] = await Promise.all([getThemeCookie(), auth().catch(() => null), headers()]);
+  // The proxy makes a nonce per request (src/proxy.ts); the inline script carries it.
+  const nonce = hdrs.get("x-nonce") ?? undefined;
   // A development machine says so on every page (src/lib/dev/send-guard.ts).
   const isDevMachine = ["development", "dev", "local"].includes((process.env.APP_ENV ?? "").trim().toLowerCase());
 
@@ -78,6 +81,10 @@ export default async function RootLayout({
       data-theme={theme}
       className={`${inter.variable} ${anekMalayalam.variable} h-full antialiased`}
     >
+      <head>
+        {/* Reloads once when a tab from before an update asks for files that are gone (src/lib/deploy/chunk-reload.ts). */}
+        <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: CHUNK_RELOAD_SCRIPT }} />
+      </head>
       <body className="min-h-full bg-white text-slate-900 font-sans">
         {isDevMachine && (
           <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-[9999] flex justify-center">
