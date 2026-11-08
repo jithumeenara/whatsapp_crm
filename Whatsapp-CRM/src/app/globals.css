@@ -23,11 +23,19 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --color-chart-8: var(--chart-8);
+  --color-chart-7: var(--chart-7);
+  --color-chart-6: var(--chart-6);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-ramp-5: var(--ramp-5);
+  --color-ramp-4: var(--ramp-4);
+  --color-ramp-3: var(--ramp-3);
+  --color-ramp-2: var(--ramp-2);
+  --color-ramp-1: var(--ramp-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -107,11 +115,25 @@ html[data-theme="whatsapp"] {
   --border: oklch(0.918 0.003 256);        /* very light border */
   --input: oklch(0.918 0.003 256);
   --ring: oklch(0.74 0.19 149);
-  --chart-1: oklch(0.74 0.19 149);
-  --chart-2: oklch(0.52 0.10 175);
-  --chart-3: oklch(0.7 0.14 195);
-  --chart-4: oklch(0.62 0.16 162);
-  --chart-5: oklch(0.39 0.09 162);
+  /* Chart colours, validated for a WHITE surface (dataviz script). Every
+     screen in this app draws its cards on bg-white, in the dark themes
+     too, so these values are NOT overridden per theme: a dark-surface
+     set drawn on a white card made the lightest funnel step nearly
+     invisible. If cards ever follow --card in the dark themes, add a
+     dark set to those theme blocks and validate it against that surface. */
+  --chart-1: #2a78d6;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #eda100;
+  --chart-5: #e87ba4;
+  --chart-6: #008300;
+  --chart-7: #6250d6;
+  --chart-8: #e34948;
+  --ramp-1: #86b6ef;
+  --ramp-2: #5598e7;
+  --ramp-3: #2a78d6;
+  --ramp-4: #1c5cab;
+  --ramp-5: #184f95;
   /* The whole app's corner radius comes from here. Every rounded-*
      class is derived from it, so this one number decides how round a
      button, a field, a dialog and a dropdown all are at once — which is
@@ -153,11 +175,6 @@ html[data-theme="violet"] {
   --border: oklch(0.28 0.01 260);
   --input: oklch(0.28 0.01 260);
   --ring: oklch(0.526 0.247 293);
-  --chart-1: oklch(0.526 0.247 293);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
   --radius: 0.5rem;
   --sidebar: oklch(0.16 0.01 260);
   --sidebar-foreground: oklch(0.985 0 0);
@@ -191,11 +208,6 @@ html[data-theme="emerald"] {
   --border: oklch(0.285 0.01 200);
   --input: oklch(0.285 0.01 200);
   --ring: oklch(0.62 0.16 162);
-  --chart-1: oklch(0.62 0.16 162);
-  --chart-2: oklch(0.7 0.14 195);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.165 0.01 200);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.62 0.16 162);
@@ -228,11 +240,6 @@ html[data-theme="cobalt"] {
   --border: oklch(0.28 0.015 252);
   --input: oklch(0.28 0.015 252);
   --ring: oklch(0.585 0.2 254);
-  --chart-1: oklch(0.585 0.2 254);
-  --chart-2: oklch(0.7 0.15 220);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.16 0.015 252);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.585 0.2 254);
@@ -265,11 +272,6 @@ html[data-theme="amber"] {
   --border: oklch(0.285 0.012 60);
   --input: oklch(0.285 0.012 60);
   --ring: oklch(0.745 0.16 65);
-  --chart-1: oklch(0.745 0.16 65);
-  --chart-2: oklch(0.7 0.15 35);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.165 0.012 60);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.745 0.16 65);
@@ -302,11 +304,6 @@ html[data-theme="rose"] {
   --border: oklch(0.28 0.012 15);
   --input: oklch(0.28 0.012 15);
   --ring: oklch(0.645 0.22 16);
-  --chart-1: oklch(0.645 0.22 16);
-  --chart-2: oklch(0.7 0.18 340);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.16 0.012 15);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.645 0.22 16);
