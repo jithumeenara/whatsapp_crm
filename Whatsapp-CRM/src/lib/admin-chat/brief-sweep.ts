@@ -30,6 +30,7 @@ import {
   type BriefStats,
 } from './brief-rules'
 import { writeAudit } from './audit'
+import { weeklyDigestFor } from '@/lib/reports/weekly-digest'
 
 let running = false
 
@@ -143,6 +144,8 @@ async function sweepAdminChatBriefsRun(now: Date = new Date()): Promise<{ briefs
       const local = localNow(zone, now)
       let stats: BriefStats | null = null
       let waiting: number | null = null
+      // Monday's brief also carries last week's report (reports plan, Phase 4).
+      const digestCache = new Map<string, string | null>()
 
       for (const member of members) {
         if (!windowCheck(member, local).ok) continue
@@ -155,9 +158,12 @@ async function sweepAdminChatBriefsRun(now: Date = new Date()): Promise<{ briefs
             })
             if (claimed.count > 0) {
               stats ??= await gatherBriefStats(settings.account_id, previousDate(local.date), zone)
-              const how = await sendToAdmin(member, settings, composeBrief(stats, settings.keyword), briefOneLine(stats), now)
+              const weekly = await weeklyDigestFor({ accountId: settings.account_id, userId: member.user_id, localDate: local.date, timeZone: zone, now, cache: digestCache })
+              const brief = composeBrief(stats, settings.keyword)
+              const text = weekly ? [brief, weekly].join('\n\n') : brief
+              const how = await sendToAdmin(member, settings, text, briefOneLine(stats), now)
               if (how === 'text' || how === 'template') briefs++
-              await writeAudit({ accountId: settings.account_id, event: 'brief_sent', memberId: member.id, detail: { how, date: stats.date } })
+              await writeAudit({ accountId: settings.account_id, event: 'brief_sent', memberId: member.id, detail: { how, date: stats.date, weekly: Boolean(weekly) } })
             }
           }
 
