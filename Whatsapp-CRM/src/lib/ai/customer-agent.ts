@@ -35,6 +35,8 @@ import {
 } from './customer-tools'
 import { thinkingConfigFor, isThinkingRejection } from './reasoning'
 import { tokensFromGemini, type GeminiUsageMetadata } from './pricing'
+import { buildContents } from './turns'
+export { buildContents, NO_TEXT_MESSAGE, BUSINESS_STARTED } from './turns'
 
 /** Enough rounds for "look up their enquiry, then check the catalog",
  *  which is the deepest real chain seen. Past this the model is looping
@@ -230,10 +232,7 @@ async function runToolLoop(args: {
     }
   }
 
-  const contents: Content[] = [
-    ...args.conversationHistory.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
-    { role: 'user', parts: [{ text: args.userMessage }] },
-  ]
+  const contents: Content[] = buildContents(args.conversationHistory, args.userMessage)
 
   const toolsUsed: string[] = []
   const toolOutputs: string[] = []

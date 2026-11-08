@@ -3,6 +3,7 @@ import type { AiGenerateArgs, AiGenerateResult, AiProviderAdapter, ClassifiedAiE
 import { AI_REQUEST_TIMEOUT_MS } from './types'
 import { thinkingConfigFor, isThinkingRejection } from '../reasoning'
 import { tokensFromGemini } from '../pricing'
+import { buildContents } from '../turns'
 
 /**
  * AiConfig.safety_filter -> Gemini's own HarmBlockThreshold, applied to
@@ -36,10 +37,11 @@ function buildSafetySettings(filter: string | undefined) {
 async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
   const genAI = new GoogleGenerativeAI(args.apiKey)
 
-  const history = args.conversationHistory.map((m) => ({
-    role: m.role,
-    parts: [{ text: m.text }],
-  }))
+  // Arranged the way Gemini accepts (see ../turns.ts): an empty latest
+  // message or two replies in a row made it refuse the request.
+  const contents = buildContents(args.conversationHistory, args.userMessage)
+  const latest = contents.pop()?.parts ?? [{ text: args.userMessage }]
+  const history = contents
 
   // `thinking` is typed nowhere in the installed SDK (0.24.1 predates
   // Gemini 3) but the SDK does not whitelist generationConfig — it
@@ -63,7 +65,7 @@ async function generateReply(args: AiGenerateArgs): Promise<AiGenerateResult> {
       { timeout: AI_REQUEST_TIMEOUT_MS },
     )
     const chat = model.startChat({ history })
-    return chat.sendMessage(args.userMessage)
+    return chat.sendMessage(latest)
   }
 
   const thinking = thinkingConfigFor(args.model, args.reasoningEffort)
