@@ -13,6 +13,7 @@ import { resolvePeriod } from '@/lib/reports/period'
 import { loadFollowUpBuckets, loadMyTasks, loadTeamTasks } from '@/lib/leads/my-tasks'
 import { MISSED_CALL_STATUSES } from '@/lib/calls/statuses'
 import { zonedDaysAgoStart } from './date-utils'
+import { loadManualSpend, spendTable } from './spend'
 import type { OwnerDashboard } from './owner-types'
 import type { DashboardScope } from './scope'
 
@@ -50,7 +51,10 @@ async function build(a: Args): Promise<OwnerDashboard> {
   const wide = scope.view !== 'agent'
   const who = scope.userId
 
-  const [summary, median, prevMedian, missed, followUps, tasks, teamTasks] = await Promise.all([
+  // Spend is typed in per month, so it is set beside the leads only when
+  // the period is a month; and it is money, so only for owner and admin.
+  const wantSpend = scope.money && a.period === 'month'
+  const [summary, median, prevMedian, missed, followUps, tasks, teamTasks, manualSpend] = await Promise.all([
     buildSummary({ accountId, userId: who, period: p, now, tz }),
     medianFirstReply({ accountId, userId: who, from: p.from, to: p.to }),
     medianFirstReply({ accountId, userId: who, from: p.prevFrom, to: p.prevTo }),
@@ -58,7 +62,9 @@ async function build(a: Args): Promise<OwnerDashboard> {
     loadFollowUpBuckets({ accountId, userId: who, tz, now }),
     loadMyTasks({ accountId, userId: viewerId, tz, now, limit: 8 }),
     wide ? loadTeamTasks({ accountId, tz, now }) : Promise.resolve(null),
+    wantSpend ? loadManualSpend(accountId) : Promise.resolve(null),
   ])
+  const month = p.firstDay.slice(0, 7)
 
   const leaks = summary.leaks
   return {
@@ -92,6 +98,9 @@ async function build(a: Args): Promise<OwnerDashboard> {
     },
     funnel: summary.funnel,
     bySource: summary.bySource,
+    spend: manualSpend
+      ? { month, rows: spendTable(summary.bySource, manualSpend, month), entered: manualSpend.some((s) => s.month === month) }
+      : null,
     followUps,
     team: wide ? summary.agents : null,
     tasks,

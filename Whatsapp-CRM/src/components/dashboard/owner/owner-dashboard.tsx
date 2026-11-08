@@ -21,8 +21,12 @@ import { AttentionTiles } from "./attention"
 import { FunnelSection, SourceSection } from "./charts"
 import { FollowUpsSection, TeamSection } from "./followups-team"
 import { KpiTiles } from "./kpis"
+import { SpendSection } from "./spend"
 import { TasksSection } from "./tasks"
 import { periodLabel, type PeriodKind } from "./view-model"
+
+/** A cached period younger than this is shown without asking again (the server caches 30 s too). */
+const FRESH_MS = 30_000
 
 const PERIODS: Array<{ key: PeriodKind; label: string }> = [
   { key: "today", label: "Today" },
@@ -82,11 +86,30 @@ export function OwnerDashboardView() {
     periodRef.current = period
   }, [period])
 
+  // Each period's last answer, so switching Today / This week / This month
+  // shows figures at once and refreshes behind them. One request per
+  // period at a time, however often a button is hovered or pressed.
+  const cacheRef = useRef(new Map<PeriodKind, { data: OwnerDashboard; at: number }>())
+  const inflightRef = useRef(new Map<PeriodKind, Promise<OwnerDashboard>>())
+
+  const fetchPeriod = useCallback((p: PeriodKind): Promise<OwnerDashboard> => {
+    const running = inflightRef.current.get(p)
+    if (running) return running
+    const req = (async () => {
+      const res = await apiFetch(`/api/dashboard/owner?period=${p}`, { cache: "no-store" })
+      const body = (await res.json()) as OwnerDashboard
+      cacheRef.current.set(p, { data: body, at: Date.now() })
+      return body
+    })()
+    inflightRef.current.set(p, req)
+    void req.finally(() => inflightRef.current.delete(p)).catch(() => {})
+    return req
+  }, [])
+
   const load = useCallback(async (p: PeriodKind) => {
     const seq = ++loadSeq.current
     try {
-      const res = await apiFetch(`/api/dashboard/owner?period=${p}`, { cache: "no-store" })
-      const body = (await res.json()) as OwnerDashboard
+      const body = await fetchPeriod(p)
       if (seq !== loadSeq.current) return
       setData(body)
       setLoadedPeriod(p)
@@ -98,13 +121,32 @@ export function OwnerDashboardView() {
       if (seq !== loadSeq.current) return
       setError(errorText(err, "The dashboard could not be loaded. Check your connection and try again."))
     }
-  }, [])
+  }, [fetchPeriod])
+
+  /** Hovering or focusing a period fetches it ahead, so the press is instant. */
+  const prefetch = useCallback((p: PeriodKind) => {
+    const hit = cacheRef.current.get(p)
+    if (hit && Date.now() - hit.at < FRESH_MS) return
+    fetchPeriod(p).catch((err) => console.warn("[dashboard] prefetch failed", err))
+  }, [fetchPeriod])
+
+  const selectPeriod = useCallback((p: PeriodKind) => {
+    setPeriod(p)
+    const hit = cacheRef.current.get(p)
+    if (hit) {
+      loadSeq.current++ // an older answer for another period must not land on top
+      setData(hit.data)
+      setLoadedPeriod(p)
+      setLoadedAt(hit.at)
+      setError(null)
+    }
+    if (!hit || Date.now() - hit.at >= FRESH_MS) void load(p)
+  }, [load])
 
   useEffect(() => {
-    // Fetching on mount and when the period changes; the state is set after the response, never synchronously.
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load, the rule cannot see the await
-    void load(period)
-  }, [load, period])
+    // The first load; the state is set after the response, never synchronously.
+    void load(periodRef.current)
+  }, [load])
 
   useEffect(() => everyWhileVisible(() => { void load(periodRef.current) }, 60_000), [load])
   useEffect(() => everyWhileVisible(() => setNowMs(Date.now()), 10_000), [])
@@ -120,33 +162,38 @@ export function OwnerDashboardView() {
 
   return (
     <RoleContext.Provider value={accountRole ?? null}>
-    <div className="min-h-full">
-      <div className="mx-auto max-w-[1400px] space-y-4 p-4 lg:p-6">
-        <header className="flex flex-wrap items-start justify-between gap-3">
+    {/* A soft wash behind the glass cards; the cards stay white so every theme reads the same. */}
+    <div className="min-h-full bg-[radial-gradient(1200px_600px_at_0%_0%,rgba(237,233,254,0.7),transparent_60%),radial-gradient(900px_500px_at_100%_100%,rgba(255,228,230,0.55),transparent_60%)]">
+      <div className="mx-auto max-w-[1400px] space-y-4 px-4 pb-4 sm:space-y-5 lg:px-6 lg:pb-6">
+        {/* From sm, stays at the top while the page scrolls, so the period is always one click away.
+            Not on phones: there it would cover a third of the screen. */}
+        <header className="z-20 -mx-4 flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:sticky sm:top-0 sm:bg-white/40 sm:backdrop-blur-xl lg:-mx-6 lg:px-6 lg:py-4">
           <div className="min-w-0">
-            <h1 className="break-words text-[20px] font-bold tracking-tight text-foreground">
-              {zone ? greetingFor(nowMs, zone) : "Hello"}, {firstName}
+            <h1 className="break-words text-[22px] font-semibold tracking-tight text-slate-900 sm:text-[26px]">
+              {zone ? greetingFor(nowMs, zone) : "Hello"}, {firstName}!
             </h1>
             {dateText ? <p className="mt-0.5 text-[12.5px] text-muted-foreground">{dateText}</p> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-lg bg-slate-100 p-0.5" role="group" aria-label="Period">
+            <div className="inline-flex rounded-full bg-slate-900/[0.04] p-1 ring-1 ring-slate-200/70 backdrop-blur" role="group" aria-label="Period">
               {PERIODS.map((p) => (
                 <button
                   key={p.key}
                   type="button"
                   aria-pressed={period === p.key}
-                  onClick={() => setPeriod(p.key)}
+                  onClick={() => selectPeriod(p.key)}
+                  onPointerEnter={() => prefetch(p.key)}
+                  onFocus={() => prefetch(p.key)}
                   className={cn(
-                    "h-8 rounded-md px-3 text-[12.5px] font-semibold transition-colors",
-                    period === p.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900",
+                    "h-9 rounded-full px-4 text-[13px] font-medium transition-[background-color,color,box-shadow]",
+                    period === p.key ? "bg-white text-slate-900 shadow-[0_2px_10px_rgba(15,23,42,0.10)]" : "text-slate-600 hover:text-slate-900",
                   )}
                 >
                   {p.label}
                 </button>
               ))}
             </div>
-            <WhatsAppQrButton className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50" />
+            <WhatsAppQrButton className="flex size-10 items-center justify-center rounded-full bg-white text-slate-600 shadow-[0_2px_10px_rgba(15,23,42,0.08)] ring-1 ring-slate-200/60 hover:text-slate-900" />
             {agentLeads ? (
               <NewLeadsButton initial={data?.attention.unassigned ?? null} />
             ) : canWork && (
@@ -182,9 +229,10 @@ export function OwnerDashboardView() {
             {stale && loadedPeriod ? (
               <p className="text-[12px] font-semibold text-foreground" role="status">Showing {periodLabel(loadedPeriod)}{error ? "" : ". Loading " + periodLabel(period) + "…"}</p>
             ) : null}
-          <div className={cn("space-y-4 transition-opacity", stale && "opacity-60")} aria-busy={stale && !error}>
+          {/* Keyed on the period on screen: new figures fade in instead of jumping. */}
+          <div key={loadedPeriod ?? "none"} className={cn("animate-in fade-in-0 space-y-4 transition-opacity duration-200", stale && "opacity-60")} aria-busy={stale && !error}>
             <AttentionTiles data={data} allowed={allowed} nowMs={nowMs} />
-            <TasksSection tasks={data.tasks} teamTasks={data.teamTasks} zone={data.period.timeZone} allowed={allowed} />
+            <TasksSection tasks={data.tasks} teamTasks={data.teamTasks} zone={data.period.timeZone} allowed={allowed} nowMs={nowMs} />
             <KpiTiles data={data} allowed={allowed} />
             {/* One grid, no duplicate DOM: phones read follow-ups, funnel, source, team; from lg the mock's two rows. */}
             <div className="grid gap-4 lg:grid-cols-2">
@@ -193,6 +241,7 @@ export function OwnerDashboardView() {
               <div className="order-3 min-w-0 lg:order-2"><SourceSection data={data} allowed={allowed} /></div>
               {data.team ? <div className="order-4 min-w-0"><TeamSection data={data} /></div> : null}
             </div>
+            <SpendSection data={data} allowed={allowed} onShowMonth={() => selectPeriod("month")} />
           </div>
           </div>
         ) : null}

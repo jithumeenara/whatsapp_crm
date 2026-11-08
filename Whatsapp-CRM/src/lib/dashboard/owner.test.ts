@@ -39,7 +39,11 @@ const SUMMARY = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/db', () => ({
-  prisma: { call: { count: async ({ where }: { where: unknown }) => { h.callWheres.push(where); return h.missed } } },
+  prisma: {
+    call: { count: async ({ where }: { where: unknown }) => { h.callWheres.push(where); return h.missed } },
+    // Added with the ad-spend table: Settings → Reports spend rows.
+    leadSettings: { findUnique: async () => ({ report_settings: { manualSpend: [{ month: '2026-11', source: 'website', amount: 2000, currency: 'INR' }] } }) },
+  },
 }))
 vi.mock('@/lib/reports/summary', () => ({
   buildSummary: async (a: { accountId: string; userId: string | null }) => { h.summaryCalls.push(a); return SUMMARY },
@@ -216,5 +220,22 @@ describe('owner dashboard cache', () => {
     h.summaryCalls = []
     await getOwnerDashboard({ accountId: 'a1', viewerId: 'v0', scope: agentScope('v0'), ...base })
     expect(h.summaryCalls).toHaveLength(1) // the oldest entry was dropped
+  })
+})
+
+describe('owner dashboard: ad spend beside the leads', () => {
+  it('an owner looking at a month gets spend per source from the month’s own leads', async () => {
+    const d = await getOwnerDashboard({ accountId: 'a1', viewerId: 'v1', scope: ownerScope, ...base })
+    expect(d.spend).toEqual({
+      month: '2026-11',
+      entered: true,
+      rows: [{ source: 'Website', currency: 'INR', spend: 2000, leads: 20, won: 3, costPerLead: 100, costPerWin: 666.67 }],
+    })
+  })
+
+  it('nobody without money sees it, and a week has none (spend is per month)', async () => {
+    expect((await getOwnerDashboard({ accountId: 'a1', viewerId: 'v1', scope: teamScope, ...base })).spend).toBeNull()
+    expect((await getOwnerDashboard({ accountId: 'a1', viewerId: 'v1', scope: agentScope('v1'), ...base })).spend).toBeNull()
+    expect((await getOwnerDashboard({ accountId: 'a1', viewerId: 'v1', scope: ownerScope, ...base, period: 'week' })).spend).toBeNull()
   })
 })

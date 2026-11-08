@@ -314,6 +314,8 @@ export interface AdInsights {
   cpm: number | null
   date_start: string
   date_stop: string
+  /** The ad account's currency (ISO code), when Meta sends it. */
+  currency?: string | null
 }
 
 /** Campaign-level spend for the Ads dashboard — joined against real
@@ -332,7 +334,7 @@ export async function fetchAdAccountInsights(args: {
   const range = args.timeRange && DAY.test(args.timeRange.since) && DAY.test(args.timeRange.until)
     ? `time_range=${encodeURIComponent(JSON.stringify({ since: args.timeRange.since, until: args.timeRange.until }))}`
     : `date_preset=${args.datePreset ?? 'last_30d'}`
-  const url = `${META_API_BASE}/${args.adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm&${range}`
+  const url = `${META_API_BASE}/${args.adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm,account_currency&${range}`
   const res = await fetch(url, { headers: { Authorization: `Bearer ${args.accessToken}` } })
   if (!res.ok) await throwMetaError(res, 'Failed to fetch ad account insights from Meta')
   const data = (await res.json()) as { data?: Array<Record<string, string>> }
@@ -346,6 +348,7 @@ export async function fetchAdAccountInsights(args: {
     cpm: row.cpm ? Number(row.cpm) : null,
     date_start: row.date_start ?? '',
     date_stop: row.date_stop ?? '',
+    currency: /^[A-Z]{3}$/.test(row.account_currency ?? '') ? row.account_currency : null,
   }
 }
 

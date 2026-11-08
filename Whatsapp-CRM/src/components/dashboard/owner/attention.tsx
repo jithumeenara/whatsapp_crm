@@ -1,17 +1,28 @@
 "use client"
 
-import { AlertTriangle, CalendarClock, CheckCircle2, MessageSquare, PhoneMissed, UserCheck, UserPlus } from "lucide-react"
+import { CalendarClock, CheckCircle2, MessageSquare, PhoneMissed, UserCheck, UserPlus } from "lucide-react"
 import type { ComponentType } from "react"
 import type { OwnerDashboard } from "@/lib/dashboard/owner-types"
 import { cn } from "@/lib/utils"
-import { MaybeLink } from "./shared"
+import { ArrowChip, CARD, MaybeLink } from "./shared"
 import { followUpHref, formatMinutes, minutesSince } from "./view-model"
 
 type Tone = "rose" | "amber" | "indigo"
-const TONE: Record<Tone, string> = {
-  rose: "border-rose-200 bg-rose-50 text-rose-700",
-  amber: "border-amber-200 bg-amber-50 text-amber-800",
-  indigo: "border-indigo-200 bg-indigo-50 text-indigo-700",
+/** Icon chip and number colour; the card itself stays white. */
+const CHIP: Record<Tone, string> = {
+  rose: "bg-rose-50 text-rose-700",
+  amber: "bg-amber-50 text-amber-800",
+  indigo: "bg-indigo-50 text-indigo-700",
+}
+const DOT: Record<Tone, string> = {
+  rose: "bg-rose-500",
+  amber: "bg-amber-500",
+  indigo: "bg-indigo-500",
+}
+const NUMBER: Record<Tone, string> = {
+  rose: "text-rose-700",
+  amber: "text-amber-800",
+  indigo: "text-indigo-700",
 }
 
 interface Tile {
@@ -63,7 +74,7 @@ function buildTiles(d: OwnerDashboard, nowMs: number): Tile[] {
 export function AttentionTiles({ data, allowed, nowMs }: { data: OwnerDashboard; allowed: string[] | null | undefined; nowMs: number }) {
   const tiles = buildTiles(data, nowMs)
   return (
-    <ul className="grid list-none grid-cols-2 gap-2.5 p-0 sm:gap-3 lg:grid-cols-3 xl:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]" aria-label="Needs attention">
+    <ul className="grid list-none grid-cols-2 gap-3 p-0 sm:gap-4 lg:grid-cols-3 xl:grid-cols-[repeat(auto-fit,minmax(11rem,1fr))]" aria-label="Needs attention">
       {tiles.map((t) => {
         const n = t.n ?? 0
         const urgent = n > 0
@@ -73,25 +84,30 @@ export function AttentionTiles({ data, allowed, nowMs }: { data: OwnerDashboard;
             <MaybeLink
               href={t.href}
               allowed={allowed}
+              ariaLabel={`${t.label}: ${n.toLocaleString()}. ${urgent ? "Needs action." : "All clear."} ${t.linkText}`}
               className={cn(
-                "flex h-full min-w-0 flex-col gap-1 rounded-xl border p-3 transition-colors hover:brightness-[0.98]",
-                urgent ? TONE[t.tone] : "border-slate-200 bg-white text-slate-700",
+                CARD,
+                "group flex h-full min-w-0 flex-col p-4 text-slate-700 sm:p-5",
+                "transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(15,23,42,0.10)]",
               )}
             >
-              <span className="flex items-start gap-1.5 text-[12px] font-semibold">
-                <Icon aria-hidden className="mt-0.5 size-4 shrink-0" />
-                <span className="min-w-0 break-words">{t.label}</span>
-              </span>
-              <span className="text-[26px] font-bold leading-none tabular-nums">{n.toLocaleString()}</span>
-              {urgent ? (
-                <span className="inline-flex w-fit items-center gap-1 rounded-full bg-white/70 px-1.5 py-0.5 text-[10.5px] font-semibold">
-                  <AlertTriangle aria-hidden className="size-3" /> Needs action
+              <span className="flex items-start justify-between gap-2">
+                <span className={cn("flex size-10 items-center justify-center rounded-2xl", urgent ? CHIP[t.tone] : "bg-emerald-50 text-emerald-700")}>
+                  <Icon aria-hidden className="size-5" strokeWidth={1.75} />
                 </span>
-              ) : (
-                <span className="text-[11.5px] font-semibold text-emerald-700">All clear</span>
-              )}
-              <span className="min-w-0 break-words text-[11.5px]">{t.context}</span>
-              <span className="mt-auto pt-1 text-[12px] font-semibold underline underline-offset-2">{t.linkText}</span>
+                <ArrowChip />
+              </span>
+              <span className={cn("mt-4 text-[32px] font-semibold leading-none tracking-tight tabular-nums", urgent ? NUMBER[t.tone] : "text-slate-900")}>
+                {n.toLocaleString()}
+              </span>
+              <span className="mt-2 min-w-0 break-words text-[13px] leading-snug text-slate-500">{t.label}</span>
+              <span className="mt-3 flex min-w-0 items-start gap-1.5 text-[11.5px] leading-snug">
+                <span aria-hidden className={cn("mt-1 size-1.5 shrink-0 rounded-full", urgent ? DOT[t.tone] : "bg-emerald-500")} />
+                <span className="min-w-0 break-words text-slate-500">
+                  <span className={cn("font-semibold", urgent ? "text-slate-800" : "text-emerald-700")}>{urgent ? "Needs action" : "All clear"}</span>
+                  {" · "}{t.context}
+                </span>
+              </span>
             </MaybeLink>
           </li>
         )

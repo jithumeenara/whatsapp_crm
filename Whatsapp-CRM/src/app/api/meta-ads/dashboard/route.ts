@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { fetchAdAccountInsights } from '@/lib/meta-ads/api'
+import { countAdLeads } from '@/lib/meta-ads/ad-leads'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { businessTimezone } from '@/lib/ai/human-date'
 import { dayEndIso, dayKey, dayStartIso } from '@/lib/audit/zoned'
@@ -54,8 +55,7 @@ export async function GET() {
       leadAdsCaptured,
       qualifiedFromAds,
       recentSubmissions,
-      formLeadsInWindow,
-      ctwaLeadsInWindow,
+      adLeads,
     ] = await Promise.all([
       prisma.conversation.count({
         where: { account_id: accountId, channel: 'whatsapp', ctwa_clid: { not: null } },
@@ -77,21 +77,12 @@ export async function GET() {
           lead: { select: { id: true, status: true, lead_quality: true, contact: { select: { name: true, phone: true } } } },
         },
       }),
-      // Lead form submissions received in the window.
-      prisma.leadAdSubmission.count({ where: { account_id: accountId, created_at: inWindow } }),
-      // Leads created in the window whose contact came in through a
-      // click-to-WhatsApp ad — minus any that also have a form
-      // submission, which are already counted above.
-      prisma.lead.count({
-        where: {
-          account_id: accountId,
-          ai_suggested: false,
-          created_at: inWindow,
-          lead_ad_submissions: { none: {} },
-          contact: { conversations: { some: { channel: 'whatsapp', ctwa_clid: { not: null } } } },
-        },
-      }),
+      // Form leads plus click-to-WhatsApp leads in the window (one
+      // definition, shared with the owner dashboard).
+      countAdLeads(accountId, inWindow.gte, inWindow.lt),
     ])
+    const formLeadsInWindow = adLeads.form
+    const ctwaLeadsInWindow = adLeads.clickToWhatsApp
 
     const recentLeads = recentSubmissions.map((s) => ({
       id: s.id,

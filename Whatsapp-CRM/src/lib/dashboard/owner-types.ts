@@ -10,6 +10,7 @@
 
 import type { AgentRow, Count, Money } from '@/lib/reports/summary'
 import type { FunnelRow } from '@/lib/reports/funnel'
+import type { SpendRow } from './spend'
 
 /**
  * Who is looking decides how much they see:
@@ -126,6 +127,12 @@ export interface OwnerDashboard {
   kpis: Kpis
   funnel: FunnelRow[]
   bySource: Array<{ source: string } & Count>
+  /**
+   * Ad spend beside the leads it bought (lib/dashboard/spend.ts). Null for
+   * anybody who may not see money, and for a period that is not a month
+   * (spend is typed in per month).
+   */
+  spend: { month: string; rows: SpendRow[]; entered: boolean } | null
   followUps: FollowUpBuckets
   /** Supervisors and above only. */
   team: AgentRow[] | null
