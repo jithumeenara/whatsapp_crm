@@ -47,6 +47,9 @@ export const PAGE_SECTIONS: PageSection[] = [
     items: [
       { href: '/dashboard', label: 'Dashboard', agentAllowed: true },
       { href: '/leads', label: 'Leads', agentAllowed: true },
+      // The manual to-do list. The lead Tasks tab is the work list; this is
+      // the person's own notes-to-self.
+      { href: '/tasks', label: 'My to-do', agentAllowed: true },
       { href: '/pipelines', label: 'Pipelines', agentAllowed: false },
       { href: '/contacts', label: 'Contacts', agentAllowed: true },
       // Not by default. An agent an admin grants it to sees only their own

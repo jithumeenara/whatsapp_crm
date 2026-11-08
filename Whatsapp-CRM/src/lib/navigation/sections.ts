@@ -33,6 +33,7 @@ import {
   HardDrive,
   Plug,
   Globe,
+  CheckSquare,
 } from 'lucide-react'
 import { PAGE_SECTIONS } from './pages'
 
@@ -59,6 +60,7 @@ export interface NavSection {
 const ICONS: Record<string, NavItem['icon']> = {
   '/dashboard': LayoutDashboard,
   '/leads': TrendingUp,
+  '/tasks': CheckSquare,
   '/pipelines': Kanban,
   '/contacts': Users,
   '/reports': BarChart2,

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { NextRequest } from 'next/server'
 
 /**
  * Reports (migration 158): a lead typed in on the Leads page records the
@@ -10,11 +11,18 @@ const h = vi.hoisted(() => ({
   created: [] as Array<Record<string, unknown>>,
   convWheres: [] as Array<Record<string, unknown>>,
   conv: null as null | { whatsapp_config_id: string | null; ctwa_source_id: string | null },
+  ctx: { accountId: 'acc', userId: 'me', role: 'admin' } as Record<string, unknown>,
+  denyPage: false,
+  pagesChecked: [] as string[],
 }))
 
 vi.mock('@/lib/audit', () => ({ audit: () => Promise.resolve(), auditCtx: () => ({}) }))
 vi.mock('@/lib/auth/account', () => ({
-  requireRoleOrApiKey: () => Promise.resolve({ accountId: 'acc', userId: 'me', role: 'admin' }),
+  requireRoleOrApiKey: () => Promise.resolve(h.ctx),
+  assertPageAccess: (_ctx: unknown, page: string) => {
+    h.pagesChecked.push(page)
+    if (h.denyPage) throw new Error('no access')
+  },
   toErrorResponse: (err: unknown) => {
     throw err
   },
@@ -45,7 +53,7 @@ vi.mock('@/lib/db', () => ({
   },
 }))
 
-import { POST } from './route'
+import { GET, POST } from './route'
 
 const post = (body: Record<string, unknown>) =>
   POST(new Request('http://x/api/leads', { method: 'POST', body: JSON.stringify(body) }) as never)
@@ -54,6 +62,42 @@ beforeEach(() => {
   h.created = []
   h.convWheres = []
   h.conv = { whatsapp_config_id: 'wa-1', ctwa_source_id: 'ad-42' }
+  h.ctx = { accountId: 'acc', userId: 'me', role: 'admin' }
+  h.denyPage = false
+  h.pagesChecked = []
+})
+
+describe('POST /api/leads source for integration keys', () => {
+  it('a lead made through an API key with no source is "api", not "manual"', async () => {
+    h.ctx = { accountId: 'acc', userId: 'owner-of-key', role: 'admin', apiKeyId: 'k1' }
+    const res = await post({ title: 'From a form plugin' })
+    expect(res.status).toBe(201)
+    expect(h.created[0]).toMatchObject({ source: 'api' })
+  })
+
+  it('an API key that sends its own source keeps it', async () => {
+    h.ctx = { accountId: 'acc', userId: 'owner-of-key', role: 'admin', apiKeyId: 'k1' }
+    await post({ title: 'x', source: 'website' })
+    expect(h.created[0]).toMatchObject({ source: 'website' })
+  })
+
+  it('a person typing a lead in is still "manual"', async () => {
+    await post({ title: 'x' })
+    expect(h.created[0]).toMatchObject({ source: 'manual' })
+  })
+})
+
+describe('GET /api/leads page access', () => {
+  it('checks the Leads page permission before reading', async () => {
+    h.denyPage = true
+    await GET(new NextRequest('http://x/api/leads')).catch(() => {})
+    expect(h.pagesChecked).toContain('/leads')
+  })
+
+  it('refuses a member who has no access to the Leads page', async () => {
+    h.denyPage = true
+    await expect(GET(new NextRequest('http://x/api/leads'))).rejects.toThrow('no access')
+  })
 })
 
 describe('POST /api/leads records where the lead came from', () => {

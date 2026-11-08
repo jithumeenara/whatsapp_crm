@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
+import { assertPageAccess, requireRoleOrApiKey, toErrorResponse } from '@/lib/auth/account'
 import { withCallablePhones } from '@/lib/contacts/callable'
 import { canViewAllLeads } from '@/lib/auth/roles'
 import { checkOwnedRefs } from '@/lib/leads/owned-refs'
@@ -59,6 +59,7 @@ const CLOSED = 'closed'
 export async function GET(req: NextRequest) {
   try {
     const ctx = await requireRoleOrApiKey(req, 'viewer')
+    assertPageAccess(ctx, '/leads')
     const { searchParams } = req.nextUrl
 
     const tab = searchParams.get('tab')?.trim() ?? 'all'
@@ -339,7 +340,9 @@ export async function POST(req: NextRequest) {
         user_id: ctx.userId,
         title: title as string,
         contact_id: (contact_id as string) ?? null,
-        source: (source as string) ?? 'manual',
+        // A lead made through an integration key is not "made by hand": the
+        // dashboard's "new for me" counts only hand-made leads as the maker's own.
+        source: (source as string) ?? (ctx.apiKeyId ? 'api' : 'manual'),
         status: (status as string) ?? 'new',
         score: (score as string) ?? 'warm',
         lead_quality: (lead_quality as string) ?? null,
