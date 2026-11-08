@@ -5,6 +5,7 @@ import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { businessTimezone } from '@/lib/ai/human-date'
 import { resolvePeriod, type PeriodInput } from '@/lib/reports/period'
 import { buildSummary } from '@/lib/reports/summary'
+import { replySpeed, speedFinding } from '@/lib/reports/reply-speed'
 import { actions, headline } from '@/lib/reports/headline'
 
 /** Each load runs the whole report: plenty for a person switching periods. */
@@ -40,7 +41,15 @@ export async function GET(req: NextRequest) {
     if (!period) return NextResponse.json({ error: 'Choose a start and end date in order, up to one year apart.' }, { status: 400 })
 
     const team = hasMinRole(ctx.role, 'supervisor')
-    const summary = await buildSummary({ accountId: ctx.accountId, userId: team ? null : ctx.userId, period, now, tz })
+    const userId = team ? null : ctx.userId
+    const [summary, speed] = await Promise.all([
+      buildSummary({ accountId: ctx.accountId, userId, period, now, tz }),
+      // An extra section: if it fails, the rest of the report still shows (logged here).
+      replySpeed({ accountId: ctx.accountId, userId, from: period.from, to: period.to }).catch((err) => {
+        console.error('[reports] reply speed failed:', err instanceof Error ? err.message : err)
+        return null
+      }),
+    ])
 
     return NextResponse.json({
       period: {
@@ -51,6 +60,7 @@ export async function GET(req: NextRequest) {
       headline: headline(summary, WORD[period.kind]),
       actions: actions(summary),
       summary,
+      speed: speed ? { ...speed, finding: speedFinding(speed.rows) } : null,
     })
   } catch (err) {
     // The detail is logged by toErrorResponse; the screen gets plain words.

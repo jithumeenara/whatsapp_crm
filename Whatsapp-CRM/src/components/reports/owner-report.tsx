@@ -13,6 +13,7 @@ import { apiFetch, errorText } from "@/lib/api-fetch"
 import { change, formatMoney, type Action } from "@/lib/reports/headline"
 import type { Count, Leak, Money, ReportSummary } from "@/lib/reports/summary"
 import type { FunnelRow } from "@/lib/reports/funnel"
+import type { ReplySpeed, SpeedBucket } from "@/lib/reports/reply-speed"
 import { ReportExportButton } from "./report-export-button"
 
 type Kind = "today" | "week" | "month" | "custom"
@@ -22,6 +23,15 @@ interface Response {
   headline: string
   actions: Action[]
   summary: ReportSummary
+  speed?: (ReplySpeed & { finding: string | null }) | null
+}
+
+const SPEED_LABEL: Record<SpeedBucket, string> = {
+  min5: "Within 5 minutes",
+  hour1: "5 to 60 minutes",
+  day1: "1 to 24 hours",
+  later: "After a day",
+  none: "Not answered yet",
 }
 
 const PERIODS: Array<{ key: Kind; label: string }> = [
@@ -203,6 +213,33 @@ function readUrl(): { kind: Kind; from: string; to: string } {
   const f = q.get("from") ?? ""
   const t = q.get("to") ?? ""
   return { kind: k && KINDS.includes(k) ? k : "week", from: DAY_RE.test(f) ? f : "", to: DAY_RE.test(t) ? t : "" }
+}
+
+function SpeedView({ speed, team, timeZone }: { speed: ReplySpeed & { finding: string | null }; team: boolean; timeZone: string }) {
+  const total = speed.rows.reduce((sum, r) => sum + r.leads, 0)
+  const max = Math.max(1, ...speed.rows.map((r) => r.leads))
+  const since = new Date(speed.countedSince ?? "").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone })
+  return (
+    <Section
+      title="How fast leads got a first answer"
+      hint={`Time from a lead coming in to ${team ? "a person's" : "your"} first WhatsApp reply or call. Bots and broadcasts do not count. Counted from ${since}.`}
+    >
+      {total === 0 ? <p className="text-[12.5px] text-slate-500">No leads to measure in this period yet.</p> : (
+        <div className="space-y-2.5">
+          {speed.finding && <p className="text-[13px] font-medium text-slate-800">{speed.finding}</p>}
+          {speed.rows.map((r) => (
+            <Bar
+              key={r.bucket}
+              label={SPEED_LABEL[r.bucket]}
+              value={r.leads}
+              max={max}
+              right={`${n(r.leads)} · ${r.winRate == null ? (r.leads ? "too few to compare" : "—") : `${r.winRate}% won`}`}
+            />
+          ))}
+        </div>
+      )}
+    </Section>
+  )
 }
 
 export function OwnerReport() {
@@ -400,6 +437,8 @@ export function OwnerReport() {
               )}
             </Section>
           </div>
+
+          {data?.speed?.countedSince && <SpeedView speed={data.speed} team={team} timeZone={data.period.timeZone} />}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Section title="Pipeline by stage" hint="Open deals now, in your own stages.">
