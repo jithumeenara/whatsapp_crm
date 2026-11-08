@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { deploymentIdFor } from "./src/lib/deploy/deployment-id";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -301,5 +302,21 @@ const nextConfig: NextConfig = {
     ];
   },
 };
+
+/**
+ * The deployment id (src/lib/deploy/deployment-id.ts): with it, a tab opened
+ * before an update reloads on its next navigation instead of asking for
+ * files that are gone. Made by `next build` (the config is loaded before
+ * Next sets NEXT_PHASE, so the command line says which phase this is) and
+ * read back by everything else in production, including the build's own
+ * workers, so all of them agree. None in development or tests.
+ */
+const PHASE = process.argv.includes("build")
+  ? "phase-production-build"
+  : process.env.NODE_ENV === "production"
+    ? "phase-production-server"
+    : "phase-other";
+const deploymentId = deploymentIdFor(PHASE, APP_ROOT);
+if (deploymentId) nextConfig.deploymentId = deploymentId;
 
 export default nextConfig;

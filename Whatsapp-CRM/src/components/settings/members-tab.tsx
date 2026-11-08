@@ -277,36 +277,6 @@ export function MembersTab() {
     return () => clearInterval(t);
   }, [loadEverything]);
 
-  async function handleRestrictToggle(member: Member, nextValue: boolean) {
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.user_id === member.user_id ? { ...m, restrict_to_assigned: nextValue } : m,
-      ),
-    );
-    try {
-      const res = await fetch(`/api/account/members/${member.user_id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restrict_to_assigned: nextValue }),
-      });
-      if (!res.ok) {
-        setMembers((prev) =>
-          prev.map((m) =>
-            m.user_id === member.user_id ? { ...m, restrict_to_assigned: !nextValue } : m,
-          ),
-        );
-        toast.error('Failed to update chat restriction');
-      }
-    } catch {
-      setMembers((prev) =>
-        prev.map((m) =>
-          m.user_id === member.user_id ? { ...m, restrict_to_assigned: !nextValue } : m,
-        ),
-      );
-      toast.error('Could not reach the server');
-    }
-  }
-
   async function handleRoleChange(member: Member, nextRole: AccountRole) {
     if (member.role === nextRole) return;
     // Optimistic update — flip the dropdown immediately so the UI
@@ -569,29 +539,10 @@ export function MembersTab() {
                     Joined {fmtDate(member.joined_at)}
                   </div>
 
-                  {/* Restrict-to-assigned toggle — agents only, admin+ can flip */}
-                  {canManageMembers && member.role === 'agent' && (
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={member.restrict_to_assigned}
-                        onClick={() => handleRestrictToggle(member, !member.restrict_to_assigned)}
-                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none ${
-                          member.restrict_to_assigned ? 'bg-[#4A5CE8]' : 'bg-slate-200'
-                        }`}
-                      >
-                        <span
-                          className={`pointer-events-none inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
-                            member.restrict_to_assigned ? 'translate-x-4' : 'translate-x-0'
-                          }`}
-                        />
-                      </button>
-                      <span className="hidden sm:inline whitespace-nowrap">
-                        {member.restrict_to_assigned ? 'Assigned only' : 'All chats'}
-                      </span>
-                    </div>
-                  )}
+                  {/* The "Assigned only / All chats" switch was removed: agents
+                      always see only the chats assigned to them (Inbox routes
+                      enforce it by role), so the switch changed nothing and
+                      "All chats" promised access it never gave. */}
 
                   {/* Actions cluster. On mobile this is its own row
                       below the identity block; on desktop it sits
