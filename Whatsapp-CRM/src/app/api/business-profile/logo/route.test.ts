@@ -1,3 +1,4 @@
+import zlib from 'node:zlib'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextResponse } from 'next/server'
 
@@ -69,15 +70,34 @@ vi.mock('@/lib/db', () => ({
 
 import { GET, POST, DELETE } from './route'
 
-/** A PNG header with real signature and IHDR, claiming w x h pixels. */
-function png(w = 200, hgt = 80, extra = 64): Buffer {
-  const b = Buffer.alloc(33 + extra)
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0)
-  b.writeUInt32BE(13, 8)
-  b.write('IHDR', 12, 'ascii')
-  b.writeUInt32BE(w, 16)
-  b.writeUInt32BE(hgt, 20)
-  return b
+/** A PNG chunk with a real CRC. */
+function chunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(data.length)
+  const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+  let crc = 0xffffffff
+  for (const b of body) {
+    crc ^= b
+    for (let k = 0; k < 8; k++) crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1
+  }
+  const out = Buffer.alloc(4)
+  out.writeUInt32BE((crc ^ 0xffffffff) >>> 0)
+  return Buffer.concat([len, body, out])
+}
+
+/** A real, decodable w x h RGBA PNG; `trailing` bytes are appended after its end. */
+function png(w = 200, hgt = 80, trailing = 0, idat?: Buffer): Buffer {
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(hgt, 4)
+  ihdr[8] = 8
+  ihdr[9] = 6
+  const data = idat ?? zlib.deflateSync(Buffer.alloc((w * 4 + 1) * Math.min(hgt, 4000)))
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr), chunk('IDAT', data), chunk('IEND', Buffer.alloc(0)),
+    Buffer.alloc(trailing),
+  ])
 }
 
 const upload = (bytes: Buffer | string, type: string, name = 'logo.png') => {
@@ -138,8 +158,22 @@ describe('POST /api/business-profile/logo', () => {
   })
 
   it('refuses an image with absurd dimensions, which could exhaust the PDF writer', async () => {
-    expect((await upload(png(20000, 20000), 'image/png')).status).toBe(400)
-    expect((await upload(png(0, 0), 'image/png')).status).toBe(400)
+    expect((await upload(png(20000, 20000, 0, zlib.deflateSync(Buffer.alloc(10))), 'image/png')).status).toBe(400)
+    expect((await upload(png(0, 0, 0, zlib.deflateSync(Buffer.alloc(10))), 'image/png')).status).toBe(400)
+    expect(h.saved).toHaveLength(0)
+  })
+
+  it('refuses a PNG whose header is fine and whose data is corrupt: it would crash the PDF writer later', async () => {
+    const res = await upload(png(10, 10, 0, Buffer.from('this is not zlib data at all')), 'image/png')
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/damaged/i)
+    expect(h.saved).toHaveLength(0)
+  })
+
+  it('refuses a small file that claims to be a huge picture (a decompression bomb)', async () => {
+    const bomb = png(2000, 2000, 0, zlib.deflateSync(Buffer.alloc(20 * 1024 * 1024)))
+    expect(bomb.length).toBeLessThan(100 * 1024)
+    expect((await upload(bomb, 'image/png')).status).toBe(400)
     expect(h.saved).toHaveLength(0)
   })
 

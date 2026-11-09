@@ -1,5 +1,6 @@
+import zlib from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { imageDimensions, logoDimensionsOk } from './image-size'
+import { imageDimensions, imageProblem, logoDimensionsOk } from './image-size'
 
 function png(w: number, h: number): Buffer {
   const b = Buffer.alloc(40)
@@ -43,10 +44,108 @@ describe('imageDimensions', () => {
 describe('logoDimensionsOk', () => {
   it('accepts an ordinary logo and refuses empty, huge or unreadable ones', () => {
     expect(logoDimensionsOk({ width: 600, height: 200 })).toBe(true)
-    expect(logoDimensionsOk({ width: 6000, height: 2666 })).toBe(true)
+    expect(logoDimensionsOk({ width: 2000, height: 2000 })).toBe(true) // 4 million pixels
     expect(logoDimensionsOk({ width: 0, height: 10 })).toBe(false)
     expect(logoDimensionsOk({ width: 6001, height: 10 })).toBe(false)
-    expect(logoDimensionsOk({ width: 5000, height: 5000 })).toBe(false) // 25 million pixels
+    expect(logoDimensionsOk({ width: 3000, height: 3000 })).toBe(false) // 9 million pixels
     expect(logoDimensionsOk(null)).toBe(false)
+  })
+})
+
+/** A PNG chunk with a real CRC. */
+function chunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(data.length)
+  const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+  let crc = 0xffffffff
+  for (const b of body) {
+    crc ^= b
+    for (let k = 0; k < 8; k++) crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1
+  }
+  const out = Buffer.alloc(4)
+  out.writeUInt32BE((crc ^ 0xffffffff) >>> 0)
+  return Buffer.concat([len, body, out])
+}
+
+const SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+
+function realPng(w: number, h: number, o: { color?: number; depth?: number; interlace?: number; idat?: Buffer; plte?: boolean; iend?: boolean } = {}): Buffer {
+  const { color = 6, depth = 8, interlace = 0, plte = color === 3, iend = true } = o
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(w, 0)
+  ihdr.writeUInt32BE(h, 4)
+  ihdr[8] = depth
+  ihdr[9] = color
+  ihdr[12] = interlace
+  const channels = ({ 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 } as Record<number, number>)[color]
+  const rowBytes = Math.ceil((w * channels * depth) / 8) + 1
+  const idat = o.idat ?? zlib.deflateSync(Buffer.alloc(rowBytes * h))
+  return Buffer.concat([
+    SIG,
+    chunk('IHDR', ihdr),
+    ...(plte ? [chunk('PLTE', Buffer.alloc(3 * (1 << Math.min(depth, 8))))] : []),
+    chunk('IDAT', idat),
+    ...(iend ? [chunk('IEND', Buffer.alloc(0))] : []),
+  ])
+}
+
+describe('imageProblem: what a PDF writer must never be handed', () => {
+  it('accepts real PNGs of the usual kinds', () => {
+    expect(imageProblem('image/png', realPng(200, 80))).toBeNull()
+    expect(imageProblem('image/png', realPng(64, 64, { color: 2 }))).toBeNull()
+    expect(imageProblem('image/png', realPng(64, 64, { color: 3, depth: 8 }))).toBeNull()
+    expect(imageProblem('image/png', realPng(64, 64, { color: 0, depth: 4 }))).toBeNull()
+    expect(imageProblem('image/png', realPng(64, 64, { color: 4, depth: 16 }))).toBeNull()
+  })
+
+  it('accepts a JPEG with a readable header', () => {
+    expect(imageProblem('image/jpeg', jpeg(800, 300))).toBeNull()
+  })
+
+  it('refuses a PNG whose header is fine and whose data is not (it crashed the PDF writer)', () => {
+    expect(imageProblem('image/png', realPng(10, 10, { idat: Buffer.from('this is not zlib data at all') }))).toMatch(/damaged|corrupt/i)
+  })
+
+  it('refuses a PNG with no image data, no end, or a cut-off file', () => {
+    const good = realPng(10, 10)
+    expect(imageProblem('image/png', realPng(10, 10, { iend: false }))).not.toBeNull()
+    expect(imageProblem('image/png', good.subarray(0, good.length - 20))).not.toBeNull()
+    const noIdat = Buffer.concat([SIG, chunk('IHDR', good.subarray(16, 29)), chunk('IEND', Buffer.alloc(0))])
+    expect(imageProblem('image/png', noIdat)).not.toBeNull()
+  })
+
+  it('refuses data that decodes to a different size than the header promises', () => {
+    // Header says 100x100 RGBA; the data is for a 10x10 one.
+    const ihdr = realPng(100, 100, { idat: zlib.deflateSync(Buffer.alloc((10 * 4 + 1) * 10)) })
+    expect(imageProblem('image/png', ihdr)).not.toBeNull()
+  })
+
+  it('refuses a decompression bomb: a tiny file that claims a huge picture', () => {
+    const bomb = realPng(2000, 2000, { idat: zlib.deflateSync(Buffer.alloc(20 * 1024 * 1024)) })
+    expect(bomb.length).toBeLessThan(100 * 1024)
+    expect(imageProblem('image/png', bomb)).not.toBeNull()
+  })
+
+  it('refuses an interlaced PNG, and a palette PNG with no palette', () => {
+    expect(imageProblem('image/png', realPng(32, 32, { interlace: 1 }))).toMatch(/interlaced/i)
+    expect(imageProblem('image/png', realPng(32, 32, { color: 3, plte: false }))).not.toBeNull()
+  })
+
+  it('refuses an impossible colour type or bit depth, and absurd dimensions', () => {
+    // The colour type is byte 25 of the file and the bit depth byte 24.
+    const badColour = realPng(10, 10)
+    badColour[25] = 5
+    expect(imageProblem('image/png', badColour)).not.toBeNull()
+    const badDepth = realPng(10, 10, { color: 2 })
+    badDepth[24] = 4
+    expect(imageProblem('image/png', badDepth)).not.toBeNull()
+    expect(imageProblem('image/png', realPng(20000, 20000, { idat: zlib.deflateSync(Buffer.alloc(10)) }))).not.toBeNull()
+  })
+
+  it('refuses text, other types and empty input', () => {
+    expect(imageProblem('image/png', Buffer.from('<svg onload=alert(1)></svg>'))).not.toBeNull()
+    expect(imageProblem('image/jpeg', Buffer.from('hello'))).not.toBeNull()
+    expect(imageProblem('image/gif', realPng(10, 10))).not.toBeNull()
+    expect(imageProblem('image/png', Buffer.alloc(0))).not.toBeNull()
   })
 })

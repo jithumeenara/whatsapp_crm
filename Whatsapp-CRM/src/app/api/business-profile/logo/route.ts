@@ -5,7 +5,7 @@ import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { contentMatchesType, readAccountFile, saveAccountFile } from '@/lib/files/account-files'
-import { imageDimensions, logoDimensionsOk } from '@/lib/files/image-size'
+import { imageProblem } from '@/lib/files/image-size'
 
 /**
  * The logo printed at the top of report PDFs.
@@ -40,9 +40,10 @@ export async function POST(req: Request) {
     if (bytes.length > MAX_BYTES) return bad('The logo must be 2 MB or smaller.', 413)
     // What the file really is, from its first bytes.
     if (!contentMatchesType(file.type, bytes)) return bad('That file is not a real PNG or JPEG image.')
-    if (!logoDimensionsOk(imageDimensions(file.type, bytes))) {
-      return bad('The logo image is too large in pixels (up to 6000 x 6000) or its size cannot be read.')
-    }
+    // The whole structure, not just the first bytes: a PNG with a fine header
+    // and corrupt data would crash the PDF writer later (see image-size.ts).
+    const problem = imageProblem(file.type, bytes)
+    if (problem) return bad(problem)
 
     const saved = await saveAccountFile({ accountId: ctx.accountId, name: 'business-logo', mime: file.type, bytes })
     await prisma.accountReportProfile.upsert({

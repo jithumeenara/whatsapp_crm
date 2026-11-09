@@ -13,7 +13,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react"
 import { apiFetch, errorText } from "@/lib/api-fetch"
 import { formatAmount } from "@/lib/format/money"
-import type { Money, SpendingReport } from "@/lib/reports/spending-assemble"
+import { channelLabel, type Money, type SpendingReport } from "@/lib/reports/spending-assemble"
+import { SpendingPdfButton } from "./spending-pdf-button"
 
 type Kind = "today" | "week" | "month" | "custom"
 type Response = SpendingReport & {
@@ -250,6 +251,7 @@ export function SpendingReportView() {
               </button>
             ))}
           </div>
+          <SpendingPdfButton period={kind} from={from} to={to} disabled={loading || (kind === "custom" && (!from || !to))} />
           <button type="button" onClick={() => void load()} aria-label="Refresh spending report" disabled={loading}
             className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-50">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
@@ -390,7 +392,7 @@ export function SpendingReportView() {
                     <tbody>
                       {data.byChannel.map((c) => (
                         <tr key={c.channel} className="border-t border-slate-100">
-                          <th scope="row" className="py-1.5 pr-3 font-medium capitalize text-slate-700">{c.channel}</th>
+                          <th scope="row" className="py-1.5 pr-3 font-medium text-slate-700">{channelLabel(c.channel)}</th>
                           <td className="py-1.5 pr-3 text-right tabular-nums">{moneyText(c.messages)}</td>
                           <td className="py-1.5 text-right tabular-nums">{formatAmount(c.aiUsd, "USD")}</td>
                         </tr>

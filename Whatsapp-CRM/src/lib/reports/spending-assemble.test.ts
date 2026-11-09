@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assembleSpending, type SpendingRows } from './spending-assemble'
+import { assembleSpending, channelLabel, type SpendingRows } from './spending-assemble'
 
 /**
  * The Spending report's arithmetic, apart from the database.
@@ -17,6 +17,15 @@ const empty = (over: Partial<SpendingRows> = {}): SpendingRows => ({
   ads: { connected: false, spend: null, currency: null, clicks: 0, impressions: 0, error: null },
   leads: 0, wonDeals: 0, businessCurrency: 'INR', usdRate: 88.5,
   ...over,
+})
+
+describe('channelLabel', () => {
+  it('writes channels the way people do, and leaves anything else alone', () => {
+    expect(channelLabel('whatsapp')).toBe('WhatsApp')
+    expect(channelLabel('sms')).toBe('SMS')
+    expect(channelLabel('Not attributed')).toBe('Not attributed')
+    expect(channelLabel('something-new')).toBe('something-new')
+  })
 })
 
 describe('assembleSpending: an empty period', () => {

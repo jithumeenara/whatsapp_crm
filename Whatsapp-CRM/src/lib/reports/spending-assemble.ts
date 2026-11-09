@@ -54,6 +54,17 @@ export interface SpendingRows {
   usdRate: number
 }
 
+const CHANNEL_NAMES: Record<string, string> = {
+  whatsapp: 'WhatsApp', instagram: 'Instagram', facebook: 'Facebook', telegram: 'Telegram',
+  website: 'Website', sms: 'SMS', email: 'Email', rcs: 'RCS',
+}
+
+/** A channel's name as people write it: "WhatsApp", not "whatsapp". Anything
+ *  else (including "Not attributed") is returned as it is. */
+export function channelLabel(channel: string): string {
+  return CHANNEL_NAMES[channel] ?? channel
+}
+
 const FORMER = 'Former member'
 const NOT_ATTRIBUTED = 'Not attributed'
 const NOT_RECORDED = 'Not recorded'
