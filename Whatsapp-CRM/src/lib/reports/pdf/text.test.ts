@@ -70,7 +70,7 @@ describe('brackets in right-to-left text', () => {
 describe('a Latin phrase in brackets inside right-to-left text', () => {
   it('stays whole and in order, with its brackets facing the right way', () => {
     // Seen on a rendered page: the Arabic tax line printed "GST) 32AAB( الرقم الضريبي".
-    const { toks } = tokenize('الرقم الضريبي (GST) 32AABCU9603R1ZX', 'rtl')
+    const { toks } = tokenize('الرقم الضريبي (GST) 29AAAAA0000A1Z5', 'rtl')
     const gst = toks.find((t) => t.text.includes('GST'))!
     expect(gst.text).toBe('(GST)')
     expect(gst.level % 2).toBe(0) // read left to right, so its brackets are not mirrored

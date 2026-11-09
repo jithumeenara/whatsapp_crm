@@ -6,6 +6,7 @@ import { auditConfigChange } from '@/lib/audit/config-change'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { contentMatchesType, readAccountFile, saveAccountFile } from '@/lib/files/account-files'
 import { imageProblem } from '@/lib/files/image-size'
+import { pdfkitProblem } from '@/lib/reports/pdf/logo-check'
 
 /**
  * The logo printed at the top of report PDFs.
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     if (!contentMatchesType(file.type, bytes)) return bad('That file is not a real PNG or JPEG image.')
     // The whole structure, not just the first bytes: a PNG with a fine header
     // and corrupt data would crash the PDF writer later (see image-size.ts).
-    const problem = imageProblem(file.type, bytes)
+    const problem = imageProblem(file.type, bytes) ?? pdfkitProblem(bytes)
     if (problem) return bad(problem)
 
     const saved = await saveAccountFile({ accountId: ctx.accountId, name: 'business-logo', mime: file.type, bytes })

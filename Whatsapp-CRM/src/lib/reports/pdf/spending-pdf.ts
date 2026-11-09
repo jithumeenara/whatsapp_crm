@@ -17,6 +17,8 @@ import PDFDocument from 'pdfkit'
 import { formatAmount, formatCost } from '@/lib/format/money'
 import { channelLabel, dayAmount, type Money, type SpendingReport } from '../spending-assemble'
 import { imageProblem } from '@/lib/files/image-size'
+import { pdfkitProblem } from './logo-check'
+import { UNSAFE_NAME_CHARS } from '@/lib/auth/person-name'
 import { isRtlLanguage, t, type Key } from '../i18n'
 import { line, paragraph } from './text'
 
@@ -62,7 +64,9 @@ const GREEN = '#10b981'
 /** A count with thousands separators: 1234567 → 12,34,567. */
 const num = (n: number) => new Intl.NumberFormat('en-IN').format(n)
 
-const clean = (s: string, max: number) => s.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
+// Control characters and direction overrides go: an override in a name could reorder what follows it on the page.
+const UNSAFE = new RegExp(`${UNSAFE_NAME_CHARS.source}+`, 'g')
+const clean = (s: string, max: number) => s.replace(UNSAFE, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
 
 function moneyText(m: Money): string {
   const parts = Object.entries(m).map(([c, a]) => formatAmount(a, c))
@@ -159,20 +163,24 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
   // corrupt data, so the picture is checked whole before it is handed over.
   // A logo that cannot be used costs the report its logo, never the report,
   // and leaves no gap where it would have been.
-  const logoProblem = business.logo ? imageProblem(business.logo.mime, business.logo.bytes) : null
+  const logoProblem = business.logo ? (imageProblem(business.logo.mime, business.logo.bytes) ?? pdfkitProblem(business.logo.bytes)) : null
   if (logoProblem) console.error('[spending-pdf] logo skipped:', logoProblem)
   const logo = business.logo && !logoProblem ? business.logo : null
   const textW = logo ? CW - 64 : CW
   const textX = logo && !rtl ? M + 64 : M
   const logoX = rtl ? W - M - 48 : M
   if (logo) {
-    try {
-      tag(root, 'Figure', { alt: `${name} logo` }, () => {
+    // The catch is INSIDE the structure callback: pdfkit runs it while the
+    // structure element is open, and a throw that escapes it leaves that element
+    // unclosed, so the document never ends (found in review). pdfkitProblem above
+    // already asked pdfkit to read the picture; this is the second line.
+    tag(root, 'Figure', { alt: `${name} logo` }, () => {
+      try {
         doc.image(logo.bytes, logoX, y, { fit: [48, 48] })
-      })
-    } catch (err) {
-      console.error('[spending-pdf] logo skipped:', err instanceof Error ? err.message : err)
-    }
+      } catch (err) {
+        console.error('[spending-pdf] logo skipped:', err instanceof Error ? err.message : String(err))
+      }
+    })
   }
   tag(root, 'H1', {}, () => line(doc, name, textX, y, { size: 14, bold: true, color: BRAND, width: textW, align: start }))
   let hy = y + 20

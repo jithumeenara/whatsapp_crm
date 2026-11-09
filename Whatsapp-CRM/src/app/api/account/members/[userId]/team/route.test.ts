@@ -121,3 +121,17 @@ describe('PUT /api/account/members/[userId]/team', () => {
     expect(JSON.stringify(h.audits)).not.toContain('SECRET-TEAM-NAME')
   })
 })
+
+describe('PUT /api/account/members/[userId]/team: direction characters', () => {
+  it('refuses a team name that carries a direction override, which could reorder the report around it', async () => {
+    // Found in review: only control characters were refused.
+    expect((await put({ team: 'Sales ‮evil' })).status).toBe(400)
+    expect((await put({ team: 'Sales ⁦x' })).status).toBe(400)
+    expect((await put({ team: 'Sales ‏x' })).status).toBe(400)
+    expect(h.upserts).toHaveLength(0)
+  })
+
+  it('still accepts ordinary names in any script', async () => {
+    for (const team of ['Sales', 'വിൽപ്പന', 'المبيعات', 'बिक्री']) expect((await put({ team })).status).toBe(200)
+  })
+})

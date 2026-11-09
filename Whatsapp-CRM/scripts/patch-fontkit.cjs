@@ -6,7 +6,7 @@
 // in a virama (ലീഡ്, ചെലവ്, ...). That would make the Malayalam report PDF crash.
 //
 // Runs from npm's postinstall, so `npm ci` on the server applies it too.
-// src/lib/reports/pdf/fontkit-patch.test.ts fails if it was not applied.
+// the first test in src/lib/reports/pdf/text.test.ts fails if it was not applied.
 const fs = require('fs')
 const path = require('path')
 

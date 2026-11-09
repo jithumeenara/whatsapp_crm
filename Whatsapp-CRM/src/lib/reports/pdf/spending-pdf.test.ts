@@ -47,7 +47,7 @@ const report = (over: Partial<SpendingRows> = {}) => ({
 const business: PdfBusiness = {
   name: 'Malabar Skills Academy',
   lines: ['12/345 Mavoor Road, Kozhikode, Kerala', 'Phone +91 495 000 0000 · hello@example.com'],
-  taxId: '32AABCU9603R1ZX',
+  taxId: '29AAAAA0000A1Z5',
   logo: null,
 }
 
@@ -73,7 +73,7 @@ describe('buildSpendingPdf', () => {
     const [first] = await pagesOf(pdf)
     expect(first).toContain('Malabar Skills Academy')
     expect(first).toContain('Mavoor Road')
-    expect(first).toContain('32AABCU9603R1ZX')
+    expect(first).toContain('29AAAAA0000A1Z5')
     expect(first).toContain('Spending report')
     expect(first).toContain('Total spend')
     expect(first).toContain('Lead Magnet CRM')
@@ -156,7 +156,7 @@ describe('buildSpendingPdf', () => {
     // Found in review: the tax number was the sixth header line and was cut silently.
     const lines = ['Line 1 address', 'Line 2 address', 'Line 3 address', 'Line 4 address', 'Line 5 address', 'Line 6 address']
     const [first] = await pagesOf(await build({ business: { ...business, lines } }))
-    expect(first).toContain('32AABCU9603R1ZX')
+    expect(first).toContain('29AAAAA0000A1Z5')
     expect(first).toContain('Line 1 address')
   })
 
@@ -206,6 +206,29 @@ describe('buildSpendingPdf', () => {
     const [first] = await pagesOf(await build({ report: big }))
     expect(first).toContain('12,34,567')
     expect(first).not.toMatch(/\b1 (leads|calls|deals)/)
+  })
+
+  it('finishes, without the logo, when pdfkit cannot read a picture that passed our checks (it used to hang)', async () => {
+    const chunk = (type: string, data: Buffer) => {
+      const len = Buffer.alloc(4)
+      len.writeUInt32BE(data.length)
+      return Buffer.concat([len, Buffer.from(type, 'ascii'), data, Buffer.alloc(4)])
+    }
+    const ihdr = Buffer.alloc(13)
+    ihdr.writeUInt32BE(8, 0)
+    ihdr.writeUInt32BE(8, 4)
+    ihdr[8] = 8
+    ihdr[9] = 6
+    const idat = require('node:zlib').deflateSync(Buffer.alloc((8 * 4 + 1) * 8))
+    const bigText = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr), chunk('tEXt', Buffer.alloc(200_000, 0x41)), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0)),
+    ])
+    const t0 = performance.now()
+    const pdf = await build({ business: { ...business, logo: { bytes: bigText, mime: 'image/png' } } })
+    expect(performance.now() - t0).toBeLessThan(5000)
+    const [first] = await pagesOf(pdf)
+    expect(first).toContain('Malabar Skills Academy')
   })
 
   it('says so when a period has nothing in it, and still makes a valid report', async () => {

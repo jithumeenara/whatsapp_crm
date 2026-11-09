@@ -107,9 +107,9 @@ describe('PUT /api/business-profile: who and what', () => {
   })
 
   it('stores country and currency upper case whatever case came in, and trims the tax number', async () => {
-    const res = await put({ country_iso: 'in', currency: 'inr', tax_id: '  32AABCU9603R1ZX  ', report_language: 'ml' })
+    const res = await put({ country_iso: 'in', currency: 'inr', tax_id: '  29AAAAA0000A1Z5  ', report_language: 'ml' })
     expect(res.status).toBe(200)
-    expect(h.upserts[0].update).toMatchObject({ country_iso: 'IN', tax_id: '32AABCU9603R1ZX', report_language: 'ml' })
+    expect(h.upserts[0].update).toMatchObject({ country_iso: 'IN', tax_id: '29AAAAA0000A1Z5', report_language: 'ml' })
     expect(h.accountUpdates[0].default_currency).toBe('INR')
   })
 

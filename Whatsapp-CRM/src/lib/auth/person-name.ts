@@ -9,8 +9,11 @@
  */
 export const MAX_PERSON_NAME = 100
 
+// Control characters, and the direction overrides and isolates that reorder what
+// follows them. Shared with the team name, the PDF writer and the sign-up check.
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g
+export const UNSAFE_NAME_CHARS = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/
+const CONTROL = new RegExp(UNSAFE_NAME_CHARS.source, 'g')
 
 export function cleanPersonName(raw: string): string {
   const spaced = String(raw ?? '').replace(/[\n\r\t]+/g, ' ')

@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
+import { UNSAFE_NAME_CHARS } from '@/lib/auth/person-name'
 
 /**
  * PUT /api/account/members/[userId]/team   { team: string | null }
@@ -14,9 +15,9 @@ import { auditConfigChange } from '@/lib/audit/config-change'
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-// Any control character (NUL, newline, tab...) has no place in a name.
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f]/
+// Any control character (NUL, newline, tab...) or direction override has no
+// place in a name: the override can reorder the report around it.
+const CONTROL = UNSAFE_NAME_CHARS
 
 export async function PUT(req: Request, { params }: { params: Promise<{ userId: string }> }) {
   try {

@@ -7,10 +7,10 @@ import { publicSignupOpen } from "@/lib/auth/signup-policy";
 import { audit } from "@/lib/audit";
 import { clientIp } from "@/lib/net/client-ip";
 import { claimInvitation, InvitationUnavailableError, plausibleInviteToken } from "@/lib/auth/claim-invitation";
+import { cleanPersonName } from "@/lib/auth/person-name";
 
 // The same floor as changing a password (/api/auth/password).
 const MIN_PASSWORD = 8;
-const MAX_NAME_LEN = 120;
 
 const CLOSED_MESSAGE = "Sign-ups are closed on this workspace. Ask your administrator for an invitation link.";
 const INVITE_GONE_MESSAGE = "This invitation has already been used or has expired. Ask your administrator for a new link.";
@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
     const rawEmail = body?.email;
     const password = typeof body?.password === "string" ? body.password : "";
-    const fullName = typeof body?.full_name === "string" ? body.full_name.trim().slice(0, MAX_NAME_LEN) : "";
+    // Cleaned and capped like every display name (lib/auth/person-name.ts): no
+    // direction overrides or control characters, not thousands of characters.
+    const fullName = typeof body?.full_name === "string" ? cleanPersonName(body.full_name) : "";
     const phone = body?.phone;
     const invite = body?.invite;
     // Stored trimmed and lowercased, and checked without regard to case:
