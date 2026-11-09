@@ -306,6 +306,7 @@ export async function detectLead(args: {
       accountId: args.accountId,
       model: LEAD_DETECT_MODEL,
       feature: 'lead_detect',
+      conversationId: args.conversationId,
       tokens: tokensFromGemini(result.response.usageMetadata),
       latencyMs: Date.now() - started,
     })

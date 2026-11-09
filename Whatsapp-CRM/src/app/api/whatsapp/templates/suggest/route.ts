@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
         generationConfig: { responseMimeType: "application/json", responseSchema: SCHEMA, ...(thinkingConfigFor(MODEL, "low") ?? {}) },
       })
       const result = await model.generateContent(prompt(profileText, languages))
-      void recordAiUsage({ accountId: ctx.accountId, model: MODEL, feature: "template_kit", tokens: tokensFromGemini(result.response.usageMetadata), latencyMs: Date.now() - started })
+      void recordAiUsage({ accountId: ctx.accountId, userId: ctx.userId, model: MODEL, feature: "template_kit", tokens: tokensFromGemini(result.response.usageMetadata), latencyMs: Date.now() - started })
       raw = JSON.parse(result.response.text())
     } catch (err) {
       console.error("[template-kit] model failed:", err instanceof Error ? err.message : err)

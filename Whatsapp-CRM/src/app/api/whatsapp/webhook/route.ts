@@ -10,6 +10,7 @@ import { sameToken } from '@/lib/social/webhook-secrets'
 import { noteDelivered, noteRejected } from '@/lib/whatsapp/webhook-health'
 import { attributeBroadcastReply } from '@/lib/broadcasts/replies'
 import { applyMessageStatus, isValidStatusTransition } from '@/lib/whatsapp/message-status'
+import { recordMessageCost, type MetaPricing } from '@/lib/whatsapp/message-cost'
 import { optOutIntent } from '@/lib/broadcasts/rules'
 import { getBroadcastSettings } from '@/lib/broadcasts/settings'
 import { applyMetaUserPreferences, setMarketingConsent, CONSENT_REPLY, type MetaUserPreference } from '@/lib/broadcasts/opt-out'
@@ -166,6 +167,7 @@ interface WhatsAppWebhookEntry {
         recipient_id: string
         /** On a "failed" status: why (131049, 131050, …). */
         errors?: Array<{ code?: number; title?: string; message?: string }>
+        pricing?: MetaPricing
       }>
     }
     field: string
@@ -498,6 +500,8 @@ async function handleStatusUpdate(
     timestamp: string
     recipient_id: string
     errors?: Array<{ code?: number; title?: string; message?: string }>
+    /** What Meta will charge for this message (category and type, never the price). */
+    pricing?: MetaPricing
   },
   accountId: string,
 ) {
@@ -508,6 +512,21 @@ async function handleStatusUpdate(
     await applyMessageStatus(status.id, status.status, accountId)
   } catch (err) {
     console.error('Error updating message status:', err)
+  }
+
+  // 1a) What this message cost: Meta's pricing category and type, priced from
+  //     its rate card. Never allowed to break the status handling.
+  try {
+    await recordMessageCost({
+      accountId,
+      wamid: status.id,
+      status: status.status,
+      timestamp: new Date(parseInt(status.timestamp, 10) * 1000),
+      recipient: status.recipient_id,
+      pricing: status.pricing,
+    })
+  } catch (err) {
+    console.error('Error recording message cost:', err)
   }
 
   // 1b) A "check your details" link: delivered, read, or why it failed.

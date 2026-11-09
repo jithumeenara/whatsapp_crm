@@ -3,6 +3,10 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 import { usdToInr, usdToInrRate, rateNote } from '@/lib/ai/currency'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
+import { businessTimezone } from '@/lib/ai/human-date'
+import { dayStartIso } from '@/lib/audit/zoned'
+import { zoneForSql } from '@/lib/reports/summary'
 
 /**
  * Everything the Usage tab renders, in one round trip: headline totals
@@ -36,13 +40,24 @@ function emptyTotals(): Totals {
 
 export async function GET(req: Request) {
   let accountId: string
+  let userId: string
   try {
     // Usage is spend data. Same 'admin' floor as the rest of the AI
     // section's read paths, not the 'viewer' floor used for content.
-    accountId = (await requireRole('admin')).accountId
+    const ctx = await requireRole('admin')
+    accountId = ctx.accountId
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
+  // Each load runs about eight queries.
+  const limit = checkRateLimit(`ai-usage:${userId}`, { limit: 60, windowMs: 60_000 })
+  if (!limit.success) return rateLimitResponse(limit)
+
+  // Days and months are cut in the business's own zone, never the server's.
+  const timeZone = await businessTimezone(accountId)
+  // The zone as this server's Postgres reads it (it rejects some old names).
+  const zone = await zoneForSql(prisma, timeZone)
 
   const url = new URL(req.url)
   const requestedDays = Number(url.searchParams.get('days') ?? '30')
@@ -57,12 +72,17 @@ export async function GET(req: Request) {
   // a query string should show the default view, not an error page.
   const monthParam = url.searchParams.get('month') ?? ''
   const monthMatch = /^(\d{4})-(\d{2})$/.exec(monthParam)
-  const monthStart = monthMatch
-    ? new Date(Number(monthMatch[1]), Number(monthMatch[2]) - 1, 1)
+  const monthNo = monthMatch ? Number(monthMatch[2]) : 0
+  const validMonth = monthMatch !== null && monthNo >= 1 && monthNo <= 12
+  const monthStartIso = validMonth ? dayStartIso(`${monthMatch![1]}-${monthMatch![2]}-01`, timeZone) : null
+  const nextMonthKey = validMonth
+    ? monthNo === 12
+      ? `${Number(monthMatch![1]) + 1}-01-01`
+      : `${monthMatch![1]}-${String(monthNo + 1).padStart(2, '0')}-01`
     : null
-  const monthEnd = monthStart
-    ? new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1)
-    : null
+  const monthEndIso = nextMonthKey ? dayStartIso(nextMonthKey, timeZone) : null
+  const monthStart = monthStartIso ? new Date(monthStartIso) : null
+  const monthEnd = monthEndIso ? new Date(monthEndIso) : null
 
   const now = new Date()
   const windowStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
@@ -90,7 +110,7 @@ export async function GET(req: Request) {
     // wire for a chart with at most 90 points.
     prisma.$queryRaw<Array<{ day: Date; requests: bigint; input_tokens: bigint; output_tokens: bigint; cost_usd: Prisma.Decimal }>>(
       Prisma.sql`
-        SELECT date_trunc('day', created_at) AS day,
+        SELECT date_trunc('day', created_at AT TIME ZONE ${zone}) AS day,
                COUNT(*)                      AS requests,
                COALESCE(SUM(input_tokens), 0)  AS input_tokens,
                COALESCE(SUM(output_tokens), 0) AS output_tokens,
@@ -123,7 +143,7 @@ export async function GET(req: Request) {
   // scrolls and keeps the dropdown a dropdown.
   const months = await prisma.$queryRaw<Array<{ month: string }>>(
     Prisma.sql`
-      SELECT DISTINCT to_char(created_at, 'YYYY-MM') AS month
+      SELECT DISTINCT to_char(created_at AT TIME ZONE ${zone}, 'YYYY-MM') AS month
       FROM ai_usage_events
       WHERE account_id = ${accountId}::uuid
       ORDER BY 1 DESC

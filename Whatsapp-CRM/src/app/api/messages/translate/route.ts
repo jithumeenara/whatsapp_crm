@@ -93,6 +93,7 @@ export async function POST(req: Request) {
         result = await detectAndTranslate({ apiKey: geminiApiKey, text: message.content_text, targetLanguage, includeRomanized: romanized === true })
         void recordAiUsage({
           accountId: ctx.accountId,
+          userId: ctx.userId,
           model: TRANSLATE_MODEL,
           feature: 'translation',
           tokens: result.usage,
@@ -134,6 +135,7 @@ export async function POST(req: Request) {
         result = await detectAndTranslate({ apiKey: geminiApiKey, text: text.trim(), targetLanguage, includeRomanized: romanized === true })
         void recordAiUsage({
           accountId: ctx.accountId,
+          userId: ctx.userId,
           model: TRANSLATE_MODEL,
           feature: 'translation',
           tokens: result.usage,

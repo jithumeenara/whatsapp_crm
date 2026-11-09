@@ -501,6 +501,9 @@ async function runAutoReply(args: AutoReplyArgs): Promise<AutoReplyOutcome> {
     provider: aiConfig.active_provider,
     model,
     feature: 'chat_customer',
+    // Which conversation (so its channel and number are known); no person:
+    // the assistant answered, not a team member.
+    conversationId: args.conversationId,
     // Previously omitted, so the single most-used feature in the app
     // recorded zero tokens and zero cost on every reply. The Usage tab
     // was not under-reporting the chat; it was reporting none of it.

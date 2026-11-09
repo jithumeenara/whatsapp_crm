@@ -113,6 +113,14 @@ export interface RecordUsageArgs {
    *  billed in tokens — Google Cloud TTS charges per character — where
    *  deriving a cost from a token count would be inventing one. */
   costUsd?: number
+  /** Whom the call was for: the signed-in person whose action caused it.
+   *  Leave out for work done for nobody in particular (training, evaluation). */
+  userId?: string | null
+  /** The conversation it was about. Its channel and WhatsApp number are
+   *  looked up from it, inside the business, unless given. */
+  conversationId?: string | null
+  channel?: string | null
+  whatsappConfigId?: string | null
 }
 
 export async function recordAiUsage(args: RecordUsageArgs): Promise<void> {
@@ -124,6 +132,21 @@ export async function recordAiUsage(args: RecordUsageArgs): Promise<void> {
   }
 
   try {
+    // Who and where. A conversation that cannot be found leaves the channel
+    // and number empty; the call is still recorded.
+    let channel = args.channel ?? null
+    let whatsappConfigId = args.whatsappConfigId ?? null
+    if (args.conversationId && (!channel || !whatsappConfigId)) {
+      const conversation = await prisma.conversation
+        .findFirst({
+          where: { id: args.conversationId, account_id: args.accountId },
+          select: { channel: true, whatsapp_config_id: true },
+        })
+        .catch(() => null)
+      channel = channel ?? conversation?.channel ?? null
+      whatsappConfigId = whatsappConfigId ?? conversation?.whatsapp_config_id ?? null
+    }
+
     await prisma.aiUsageEvent.create({
       data: {
         account_id: args.accountId,
@@ -139,6 +162,10 @@ export async function recordAiUsage(args: RecordUsageArgs): Promise<void> {
         // Usage tab, not for storing a full stack trace per call.
         error: args.error ? args.error.slice(0, 500) : null,
         latency_ms: args.latencyMs ?? null,
+        user_id: args.userId ?? null,
+        conversation_id: args.conversationId ?? null,
+        channel,
+        whatsapp_config_id: whatsappConfigId,
       },
     })
   } catch (err) {

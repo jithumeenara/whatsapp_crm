@@ -134,6 +134,8 @@ export async function POST(req: Request) {
         provider: result.usedProvider,
         model: result.usedModel ?? 'unknown',
         feature: 'message_polish',
+        userId,
+        conversationId,
         tokens: result.usage,
         latencyMs: Date.now() - startedPolish,
       })
@@ -206,6 +208,8 @@ export async function POST(req: Request) {
       provider: aiConfig.active_provider,
       model: getProviderKeys(aiConfig)[aiConfig.active_provider]?.model ?? 'unknown',
       feature: 'chat_customer',
+      userId,
+      conversationId,
       latencyMs: Date.now() - startedAt,
     })
 

@@ -224,6 +224,7 @@ model Account {
   ai_config                     AiConfig?
   ai_knowledge_items            AiKnowledgeItem[]
   ai_usage_events               AiUsageEvent[]
+  whatsapp_message_costs        WhatsAppMessageCost[]
   ai_eval_cases                 AiEvalCase[]
   ai_eval_runs                  AiEvalRun[]
   conversation_feedback         ConversationFeedback[]
@@ -1801,6 +1802,15 @@ model AiUsageEvent {
   error      String?
   latency_ms Int?
 
+  /// Migration 159 — whom the call was for. All optional: a call made for
+  /// nobody in particular (training, evaluation) stays unattributed, and rows
+  /// from before this column stay empty rather than guessed. user_id is
+  /// ON DELETE RESTRICT in the database (migration 132's rule).
+  user_id            String? @db.Uuid
+  conversation_id    String? @db.Uuid
+  channel            String?
+  whatsapp_config_id String? @db.Uuid
+
   created_at DateTime @default(now()) @db.Timestamptz(6)
 
   account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
@@ -1808,6 +1818,51 @@ model AiUsageEvent {
   @@index([account_id, created_at])
   @@index([account_id, feature, created_at])
   @@map("ai_usage_events")
+}
+
+/// Migration 159 — what one WhatsApp message cost. Meta's status webhook gives
+/// the category and type of the charge, never the price; the price is worked
+/// out from Meta's rate card (src/lib/whatsapp/rate-card.ts) and stored with
+/// the card it came from, so history is never repriced. One row per message
+/// (unique on account + WhatsApp id), so a repeated status cannot count twice.
+model WhatsAppMessageCost {
+  id                 String    @id @default(uuid()) @db.Uuid
+  account_id         String    @db.Uuid
+  /// Meta's message id (wamid).
+  message_id         String
+  conversation_id    String?   @db.Uuid
+  whatsapp_config_id String?   @db.Uuid
+  /// A person for agent sends and broadcasts; null for the bot, automations
+  /// and system messages. ON DELETE RESTRICT in the database.
+  sender_user_id     String?   @db.Uuid
+  sender_type        String?
+  template_name      String?
+  broadcast_id       String?   @db.Uuid
+  recipient_market   String?
+  recipient_iso      String?
+  pricing_category   String?
+  pricing_type       String?
+  pricing_model      String?
+  pricing_subtype    String?
+  raw_pricing        Json?
+  /// Null when no honest price exists; 0 is a real figure (a free message).
+  amount             Decimal?  @db.Decimal(14, 6)
+  currency           String?
+  rate_known         Boolean   @default(false)
+  rate_version       String?
+  occurred_at        DateTime  @db.Timestamptz(6)
+  delivered_at       DateTime? @db.Timestamptz(6)
+  /// Failed before delivery: not charged.
+  voided_at          DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@unique([account_id, message_id], map: "whatsapp_message_costs_message")
+  @@index([account_id, occurred_at], map: "whatsapp_message_costs_time")
+  @@index([account_id, whatsapp_config_id, occurred_at], map: "whatsapp_message_costs_number")
+  @@index([account_id, pricing_category, occurred_at], map: "whatsapp_message_costs_category")
+  @@map("whatsapp_message_costs")
 }
 
 // ============================================================
