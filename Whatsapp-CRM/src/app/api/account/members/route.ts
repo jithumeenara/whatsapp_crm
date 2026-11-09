@@ -48,6 +48,13 @@ export async function GET() {
       select: { timezone: true },
     });
 
+    // Teams (Spending report). A server without migration 161 has no such
+    // table: the roster still loads, with nobody in a team.
+    const teamRows = await prisma.memberTeam
+      .findMany({ where: { account_id: ctx.accountId }, select: { user_id: true, team: true } })
+      .catch(() => []);
+    const teamOf = new Map(teamRows.map((t) => [t.user_id, t.team]));
+
     const canSeeEmails = canManageMembers(ctx.role);
 
     const members: AccountMember[] = rows.flatMap((row) => {
@@ -83,6 +90,7 @@ export async function GET() {
           // the default set" (an array that happens to match), and a
           // resolved list loses that difference.
           page_access: Array.isArray(row.page_access) ? row.page_access : null,
+          team: teamOf.get(row.user_id) ?? null,
           handles_categories: Array.isArray(row.handles_categories)
             ? (row.handles_categories as unknown[]).filter(
                 (h): h is string => typeof h === "string",

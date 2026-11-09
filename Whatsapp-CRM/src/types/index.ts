@@ -93,6 +93,8 @@ export interface AccountMember {
   /** Subject keys this agent handles. Empty means anything — a
    *  preference in routing, never a wall. */
   handles_categories?: string[];
+  /** The team this member is in (Spending report), or null. */
+  team?: string | null;
 }
 
 /**

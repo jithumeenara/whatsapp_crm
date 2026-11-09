@@ -64,6 +64,7 @@ import { apiFetch, errorText } from '@/lib/api-fetch';
 import type { CreatedAgent } from '@/lib/auth/agent-credentials';
 import { WorkingHoursDialog } from './working-hours-dialog';
 import { AgentSubjectsDialog } from './agent-subjects-dialog';
+import { MemberTeamDialog } from './member-team-dialog';
 import { MemberPagesDialog } from './member-pages-dialog';
 import { describeShift, type WorkingHours } from '@/lib/agents/working-hours';
 import {
@@ -89,6 +90,8 @@ interface Member {
   handles_categories?: string[];
   /** Raw: null means this member follows their role's default. */
   page_access?: string[] | null;
+  /** The team this member is in (Spending report), or none. */
+  team?: string | null;
 }
 
 interface Invitation {
@@ -186,6 +189,7 @@ export function MembersTab() {
   const [issuedCredentials, setIssuedCredentials] = useState<CreatedAgent | null>(null);
   const [hoursMember, setHoursMember] = useState<Member | null>(null);
   const [subjectsMember, setSubjectsMember] = useState<Member | null>(null);
+  const [teamMember, setTeamMember] = useState<Member | null>(null);
   const [pagesMember, setPagesMember] = useState<Member | null>(null);
   const [accountTimezone, setAccountTimezone] = useState<string | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
@@ -642,6 +646,21 @@ export function MembersTab() {
                       </Button>
                     )}
 
+                    {/* The team, for the Spending report's "by team". */}
+                    {canManageMembers && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTeamMember(member)}
+                        disabled={isBusy}
+                        title={member.team ? `Team: ${member.team}` : 'Set a team'}
+                        aria-label={`Team for ${member.full_name || 'this member'}`}
+                        className={member.team ? 'border-indigo-200 bg-indigo-50 text-indigo-600 hover:bg-indigo-100' : 'text-slate-500'}
+                      >
+                        <UsersRound className="size-4" />
+                      </Button>
+                    )}
+
                     {canManageMembers && (
                       <Button
                         variant="outline"
@@ -830,6 +849,16 @@ export function MembersTab() {
           open={Boolean(pagesMember)}
           onOpenChange={(open) => !open && setPagesMember(null)}
           member={pagesMember}
+          onSaved={() => void loadEverything()}
+        />
+      )}
+
+      {teamMember && (
+        <MemberTeamDialog
+          open={Boolean(teamMember)}
+          onOpenChange={(open) => !open && setTeamMember(null)}
+          member={teamMember}
+          teams={[...new Set(members.map((m) => m.team).filter((t): t is string => Boolean(t)))].sort()}
           onSaved={() => void loadEverything()}
         />
       )}
