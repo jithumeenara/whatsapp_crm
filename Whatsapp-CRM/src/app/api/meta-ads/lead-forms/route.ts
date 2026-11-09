@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { adsReadGate } from '@/lib/meta-ads/access'
 import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 
@@ -12,8 +13,11 @@ import { auditConfigChange } from '@/lib/audit/config-change'
  *  itself needs). */
 export async function GET() {
   try {
-    // Read-only — found with no role floor at all in the full-app audit.
-    const { accountId } = await requireRole('viewer')
+    // Read-only, but it needs the Ads page grant and is limited.
+    const ctx = await requireRole('viewer')
+    const denied = adsReadGate(ctx, 'lead-forms')
+    if (denied) return denied
+    const { accountId } = ctx
 
     // Both reads are independent (scoped only by accountId) — run
     // concurrently instead of paying the sum of both query latencies on

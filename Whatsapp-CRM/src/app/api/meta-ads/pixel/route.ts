@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { prisma } from '@/lib/db'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { hasMinRole } from '@/lib/auth/roles'
+import { adsReadGate } from '@/lib/meta-ads/access'
 import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 
@@ -11,11 +13,13 @@ import { auditConfigChange } from '@/lib/audit/config-change'
  *  that same access token, it doesn't need its own). */
 export async function GET() {
   try {
-    // Read-only — any account member can view the pixel_id/tracking
-    // snippet token (web_events_secret is explicitly not a login
-    // credential, only authorizes "send one web conversion event").
-    // Found with no role floor at all in the full-app audit.
-    const { accountId } = await requireRole('viewer')
+    // Needs the Ads page grant. web_events_secret is not a login credential,
+    // but it authorizes "send one web conversion event" to this account, so
+    // only an admin sees it; the pixel id alone is shown to anyone with the page.
+    const ctx = await requireRole('viewer')
+    const denied = adsReadGate(ctx, 'pixel')
+    if (denied) return denied
+    const { accountId } = ctx
 
     const config = await prisma.metaAdsConfig.findUnique({
       where: { account_id: accountId },
@@ -26,7 +30,7 @@ export async function GET() {
     return NextResponse.json({
       has_ads_config: true,
       pixel_id: config.pixel_id,
-      web_events_secret: config.web_events_secret,
+      ...(hasMinRole(ctx.role, 'admin') ? { web_events_secret: config.web_events_secret } : {}),
     })
   } catch (error) {
     return toErrorResponse(error)

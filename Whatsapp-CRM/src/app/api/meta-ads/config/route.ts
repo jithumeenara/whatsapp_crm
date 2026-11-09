@@ -4,6 +4,7 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { testMetaAdsConnection, createOrGetDataset } from '@/lib/meta-ads/api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { adsReadGate } from '@/lib/meta-ads/access'
 import { auditCtx } from '@/lib/audit'
 import { auditConfigChange } from '@/lib/audit/config-change'
 
@@ -15,11 +16,12 @@ import { auditConfigChange } from '@/lib/audit/config-change'
  */
 export async function GET() {
   try {
-    // Read-only status (no secrets in the response) — any account member
-    // can view it. POST/DELETE below (which touch real credentials)
-    // require 'owner', found missing entirely in the full-app audit —
-    // this route previously had no role floor at all, only auth.
+    // Read-only status (no secrets in the response), but each call tests the
+    // connection with Meta, so it needs the Ads page grant and is limited.
+    // POST/DELETE below (which touch real credentials) require 'owner'.
     const ctx = await requireRole('viewer')
+    const denied = adsReadGate(ctx, 'config')
+    if (denied) return denied
     const accountId = ctx.accountId
 
     const config = await prisma.metaAdsConfig.findUnique({ where: { account_id: accountId } })

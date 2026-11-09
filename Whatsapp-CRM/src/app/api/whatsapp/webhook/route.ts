@@ -379,8 +379,14 @@ async function processWebhook(
 
       // Handle status updates
       if (value.statuses) {
-        for (const status of value.statuses) {
-          await handleStatusUpdate(status)
+        // Which business owns the number this event came in on. An event for
+        // a number we cannot place (none, or more than one business) changes
+        // nothing: it is not provably ours.
+        const statusAccountId = await accountForPhoneNumber(value.metadata?.phone_number_id)
+        if (statusAccountId) {
+          for (const status of value.statuses) {
+            await handleStatusUpdate(status, statusAccountId)
+          }
         }
       }
 
@@ -464,18 +470,42 @@ async function processWebhook(
 // "failed" only before delivery) lives in src/lib/whatsapp/message-status.ts,
 // shared by messages and broadcast recipients.
 
-async function handleStatusUpdate(status: {
-  id: string
-  status: string
-  timestamp: string
-  recipient_id: string
-  errors?: Array<{ code?: number; title?: string; message?: string }>
-}) {
+/** The one business that owns this WhatsApp number, or null when the number
+ *  is unknown or shared (logged, so the cause is visible). */
+async function accountForPhoneNumber(phoneNumberId: string | undefined): Promise<string | null> {
+  if (!phoneNumberId) return null
+  try {
+    const rows = await prisma.whatsAppConfig.findMany({
+      where: { phone_number_id: phoneNumberId },
+      select: { account_id: true },
+    })
+    if (rows.length === 1) return rows[0].account_id
+    console.error(
+      rows.length === 0
+        ? `[status] no business owns phone_number_id ${phoneNumberId}; status ignored`
+        : `[status] ${rows.length} businesses share phone_number_id ${phoneNumberId}; status ignored`,
+    )
+  } catch (err) {
+    console.error('[status] could not place the number for a status update:', err)
+  }
+  return null
+}
+
+async function handleStatusUpdate(
+  status: {
+    id: string
+    status: string
+    timestamp: string
+    recipient_id: string
+    errors?: Array<{ code?: number; title?: string; message?: string }>
+  },
+  accountId: string,
+) {
   // 1) Our message: forward only, and the open Inbox hears at once
   //    (src/lib/whatsapp/message-status.ts) — blue ticks used to wait for
   //    the chat to be reopened.
   try {
-    await applyMessageStatus(status.id, status.status)
+    await applyMessageStatus(status.id, status.status, accountId)
   } catch (err) {
     console.error('Error updating message status:', err)
   }
@@ -490,17 +520,19 @@ async function handleStatusUpdate(status: {
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
   const tsIso = new Date(parseInt(status.timestamp) * 1000)
 
-  let recipient: { id: string; status: string; broadcast_id: string } | null
+  let recipient: { id: string; status: string; broadcast_id: string; broadcast: { account_id: string } } | null
   try {
     recipient = await prisma.broadcastRecipient.findUnique({
       where: { whatsapp_message_id: status.id },
-      select: { id: true, status: true, broadcast_id: true },
+      select: { id: true, status: true, broadcast_id: true, broadcast: { select: { account_id: true } } },
     })
   } catch (err) {
     console.error('Error fetching broadcast recipient:', err)
     return
   }
   if (!recipient) return // message wasn't part of a broadcast — fine
+  // Another business's broadcast: not this event's to change.
+  if (recipient.broadcast.account_id !== accountId) return
 
   // Guard transitions — forward-only on the success ladder.
   if (!isValidStatusTransition(recipient.status, status.status)) return

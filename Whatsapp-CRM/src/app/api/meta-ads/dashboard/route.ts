@@ -5,6 +5,7 @@ import { fetchAdAccountInsights } from '@/lib/meta-ads/api'
 import { countAdLeads } from '@/lib/meta-ads/ad-leads'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { businessTimezone } from '@/lib/ai/human-date'
+import { adsReadGate } from '@/lib/meta-ads/access'
 import { dayEndIso, dayKey, dayStartIso } from '@/lib/audit/zoned'
 
 /** Days of spend and leads behind the cost per lead, today included. */
@@ -36,8 +37,13 @@ function cplWindow(timeZone: string, days: number, now: Date = new Date()) {
  */
 export async function GET() {
   try {
-    // Read-only — found with no role floor at all in the full-app audit.
-    const { accountId } = await requireRole('viewer')
+    // Read-only, but it carries ad spend and the names and numbers of the
+    // leads behind it: the Ads page grant is required, and calls are limited
+    // (each one reaches out to Meta).
+    const ctx = await requireRole('viewer')
+    const denied = adsReadGate(ctx, 'dashboard')
+    if (denied) return denied
+    const { accountId } = ctx
 
     const config = await prisma.metaAdsConfig.findUnique({ where: { account_id: accountId } })
     if (!config || config.status !== 'connected') {

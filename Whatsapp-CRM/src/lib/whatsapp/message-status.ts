@@ -29,10 +29,15 @@ export function isValidStatusTransition(current: string, incoming: string): bool
  * Out-of-order reports (a "delivered" after "read") change nothing. Each
  * write is conditional on the status it read, so two reports racing can't
  * step back either.
+ *
+ * `accountId` is the business the event came in for (resolved from the
+ * phone number it arrived on). When given, only that business's messages
+ * are touched: the WhatsApp id alone is not unique across businesses, and
+ * one business's event must never move another's rows.
  */
-export async function applyMessageStatus(wamid: string, status: string): Promise<void> {
+export async function applyMessageStatus(wamid: string, status: string, accountId?: string): Promise<void> {
   const rows = await prisma.message.findMany({
-    where: { message_id: wamid },
+    where: { message_id: wamid, ...(accountId ? { conversation: { account_id: accountId } } : {}) },
     select: { id: true, status: true, conversation_id: true, conversation: { select: { account_id: true } } },
   })
   if (rows.length === 0) return
