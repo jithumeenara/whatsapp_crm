@@ -225,6 +225,7 @@ model Account {
   ai_knowledge_items            AiKnowledgeItem[]
   ai_usage_events               AiUsageEvent[]
   whatsapp_message_costs        WhatsAppMessageCost[]
+  report_profile                AccountReportProfile?
   ai_eval_cases                 AiEvalCase[]
   ai_eval_runs                  AiEvalRun[]
   conversation_feedback         ConversationFeedback[]
@@ -1818,6 +1819,24 @@ model AiUsageEvent {
   @@index([account_id, created_at])
   @@index([account_id, feature, created_at])
   @@map("ai_usage_events")
+}
+
+/// Migration 160 — the business's country, report logo, tax number and report
+/// language. Its own table so that no existing query reads a column that an
+/// un-migrated server lacks. The currency itself stays in accounts.default_currency.
+model AccountReportProfile {
+  account_id              String    @id @db.Uuid
+  country_iso             String?
+  logo_file_id            String?   @db.Uuid
+  tax_id                  String?
+  report_language         String    @default("en")
+  /// When accounts.default_currency last changed; null = never.
+  currency_effective_from DateTime? @db.Timestamptz(6)
+  updated_at              DateTime  @default(now()) @db.Timestamptz(6)
+
+  account Account @relation(fields: [account_id], references: [id], onDelete: Cascade)
+
+  @@map("account_report_profile")
 }
 
 /// Migration 159 — what one WhatsApp message cost. Meta's status webhook gives

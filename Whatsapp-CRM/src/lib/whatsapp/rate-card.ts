@@ -81,6 +81,12 @@ const six = (n: number) => n.toFixed(6)
 
 export function priceMessage(input: PriceInput): Priced {
   const { market, iso } = marketForNumber(input.recipient)
+  return priceInMarket({ ...input, market, iso })
+}
+
+/** The same price for a market already known (a stored cost row keeps its market, not the number). */
+export function priceInMarket(input: Omit<PriceInput, 'recipient'> & { market: string; iso: string | null }): Priced {
+  const { market, iso } = input
   const card = rateCardFor(input.currency)
   const unknown: Priced = {
     amount: null, rateKnown: false, market, iso,

@@ -18,7 +18,7 @@
  */
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
-import { priceMessage } from './rate-card'
+import { priceInMarket, priceMessage, rateCardFor } from './rate-card'
 
 export interface MetaPricing {
   billable?: boolean
@@ -38,6 +38,44 @@ export interface RecordCostInput {
   /** The recipient's number (the status's recipient_id). */
   recipient: string | undefined
   pricing: MetaPricing | undefined
+}
+
+/**
+ * Prices again the costs that were recorded without a price because the
+ * business had no rate card for its currency at the time (it was still on the
+ * default). Each one is priced from the card in force on its own date, once;
+ * a cost that already has a price, belongs to another business, failed before
+ * delivery, or whose date is before the card is left alone. Returns how many
+ * were priced. Bounded, so one call never loads a whole history.
+ */
+export async function repriceUnpricedCosts(accountId: string, limit = 5000): Promise<number> {
+  const account = await prisma.account.findUnique({ where: { id: accountId }, select: { default_currency: true } })
+  if (!account || !rateCardFor(account.default_currency)) return 0
+
+  const rows = await prisma.whatsAppMessageCost.findMany({
+    where: { account_id: accountId, rate_known: false, amount: null, voided_at: null, pricing_category: { not: null } },
+    take: limit,
+    select: { id: true, recipient_market: true, recipient_iso: true, pricing_category: true, pricing_type: true, occurred_at: true },
+  })
+  let priced = 0
+  for (const r of rows) {
+    const p = priceInMarket({
+      currency: account.default_currency,
+      market: r.recipient_market ?? 'Other',
+      iso: r.recipient_iso,
+      category: r.pricing_category,
+      type: r.pricing_type,
+      at: r.occurred_at,
+    })
+    if (!p.rateKnown || p.amount === null) continue
+    // Conditional, so two runs at once cannot both write.
+    const res = await prisma.whatsAppMessageCost.updateMany({
+      where: { id: r.id, rate_known: false },
+      data: { amount: p.amount, currency: p.currency, rate_known: true, rate_version: p.rateVersion },
+    })
+    priced += res.count
+  }
+  return priced
 }
 
 export async function recordMessageCost(input: RecordCostInput): Promise<void> {

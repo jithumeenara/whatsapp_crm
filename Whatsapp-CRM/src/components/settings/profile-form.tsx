@@ -18,6 +18,7 @@ import { SessionsCard } from '@/components/settings/sessions-card';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { ChatTranslationPanel } from '@/components/settings/chat-translation-panel';
 import { CompanyProfilePanel } from '@/components/settings/company-profile-panel';
+import { BusinessHeaderPanel } from '@/components/settings/business-header-panel';
 import { WhatsAppIcon } from '@/components/icons/brand-icons';
 import { CountryCodeSelect } from '@/components/shared/country-code-select';
 import { COUNTRY_CODES, DEFAULT_COUNTRY_ISO, splitE164 } from '@/lib/country-codes';
@@ -677,6 +678,11 @@ export function ProfileForm() {
           owner fills in once, and it is what stops the AI describing the
           business generically. */}
       <CompanyProfilePanel />
+
+      {/* ── Country, currency and report header ──
+          Directly under the company details it completes: the Spending
+          report PDF prints both at the top of every page one. */}
+      <BusinessHeaderPanel />
 
       {/* ── Security (Password + 2FA merged) ── */}
       <SecurityCard />

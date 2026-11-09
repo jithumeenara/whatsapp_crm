@@ -19,6 +19,7 @@ import {
   RATE_LIMITS,
 } from "@/lib/rate-limit";
 import { prisma } from "@/lib/db";
+import { isValidCurrency } from "@/lib/countries";
 
 export async function GET() {
   try {
@@ -78,6 +79,14 @@ export async function PATCH(request: Request) {
       if (typeof body.default_currency !== "string") {
         return NextResponse.json(
           { error: "'default_currency' must be a string" },
+          { status: 400 },
+        );
+      }
+      // A real currency from the list, never whatever text was sent: this is
+      // what every deal and report prints.
+      if (!isValidCurrency(body.default_currency)) {
+        return NextResponse.json(
+          { error: "Choose a currency from the list." },
           { status: 400 },
         );
       }
