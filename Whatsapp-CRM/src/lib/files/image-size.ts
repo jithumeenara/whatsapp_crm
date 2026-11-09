@@ -93,6 +93,12 @@ function pngProblem(bytes: Buffer): string | null {
     // Bounded: a small file cannot be made to inflate into gigabytes.
     const out = zlib.inflateSync(Buffer.concat(idat), { maxOutputLength: expected + 1 })
     if (out.length !== expected) return 'The PNG image is damaged (its data does not match its size).'
+    // Every scanline starts with a filter byte that must be 0 to 4. pdfkit
+    // throws "Invalid filter algorithm" in a callback nobody can catch for
+    // any other value (found in review, proven with a crafted RGBA PNG).
+    for (let row = 0; row < ihdr.h; row++) {
+      if (out[row * rowBytes] > 4) return 'The PNG image is damaged (a row has an impossible filter).'
+    }
   } catch {
     return 'The PNG image is damaged (its data is corrupt).'
   }

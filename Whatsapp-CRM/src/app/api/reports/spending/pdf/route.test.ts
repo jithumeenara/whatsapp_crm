@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   readCalls: [] as Array<{ accountId: string; fileId: string }>,
   reportProfile: { logo_file_id: 'file-1', tax_id: 'GSTIN123', report_language: 'ml' } as null | Record<string, any>,
   buildFails: false,
+  hold: null as null | Promise<void>,
 }))
 
 vi.mock('@/lib/auth/account', () => {
@@ -51,6 +52,7 @@ vi.mock('@/lib/reports/pdf/spending-pdf', () => ({
   buildSpendingPdf: (input: Record<string, any>) => {
     h.built.push(input)
     if (h.buildFails) return Promise.reject(new Error('pdfkit exploded at /srv/app/node_modules/x.js:1'))
+    if (h.hold) return h.hold.then(() => Buffer.from('%PDF-1.7 fake'))
     return Promise.resolve(Buffer.from('%PDF-1.7 fake'))
   },
 }))
@@ -88,6 +90,7 @@ beforeEach(() => {
   h.readCalls = []
   h.reportProfile = { logo_file_id: 'file-1', tax_id: 'GSTIN123', report_language: 'ml' }
   h.buildFails = false
+  h.hold = null
 })
 
 describe('GET /api/reports/spending/pdf', () => {
@@ -153,6 +156,23 @@ describe('GET /api/reports/spending/pdf', () => {
     let last = 200
     for (let i = 0; i < 7; i++) last = (await get('period=month')).status
     expect(last).toBe(429)
+  })
+
+  it('builds at most two PDFs at once: a build uses a CPU for seconds, and more would starve everyone else', async () => {
+    let release: () => void = () => {}
+    h.hold = new Promise<void>((r) => { release = r })
+    const a = get('period=month')
+    const b = get('period=week')
+    await new Promise((r) => setTimeout(r, 20))
+    const third = await get('period=today')
+    expect(third.status).toBe(503)
+    expect((await third.json()).error).toMatch(/try again/i)
+    release()
+    expect((await a).status).toBe(200)
+    expect((await b).status).toBe(200)
+    // and once they are done the slot is free again
+    h.hold = null
+    expect((await get('period=month')).status).toBe(200)
   })
 
   it('says plainly that it could not be built, without leaking the error', async () => {

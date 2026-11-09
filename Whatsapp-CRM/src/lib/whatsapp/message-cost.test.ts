@@ -109,11 +109,15 @@ describe('recordMessageCost', () => {
     expect(h.costs[0].delivered_at).toEqual(T1)
   })
 
-  it('records nothing for a message that is not this business\'s, or that we never sent', async () => {
+  it('still records the charge when our own copy of the message is not saved yet, with nobody attributed', async () => {
+    // Meta reports pricing on only one status, and the first one can arrive before our own
+    // insert of the message (found in review): dropping it would lose the cost for good.
+    // The business is known from the number the event arrived on, so the cost is safe to keep.
     h.message = null
     await recordMessageCost({ ...base, status: 'sent', timestamp: T0, pricing: PRICING })
-    expect(h.costs).toHaveLength(0)
-    // the lookup is scoped to the business
+    expect(h.costs).toHaveLength(1)
+    expect(h.costs[0]).toMatchObject({ account_id: 'acc-A', amount: '0.863100', sender_user_id: null, sender_type: null, conversation_id: null })
+    // the lookup is still scoped to the business
     expect(JSON.stringify(h.messageWhere)).toContain('acc-A')
   })
 

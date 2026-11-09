@@ -7,13 +7,15 @@ import { prisma } from '@/lib/db'
 import { invalidateBusinessCount } from '@/lib/files/legacy-access'
 import { isDeactivatedMember, reviveMember } from '@/lib/auth/deactivate-member'
 import { audit, auditCtx } from '@/lib/audit'
+import { cleanPersonName } from '@/lib/auth/person-name'
 
 export async function POST(req: Request) {
   try {
     const ctx = await requireRole('admin')
 
     const body = (await req.json()) as { name?: unknown; whatsapp?: unknown; role?: unknown }
-    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    // Cleaned and capped, like every display name (see lib/auth/person-name.ts).
+    const name = typeof body.name === 'string' ? cleanPersonName(body.name) : ''
     const whatsapp = typeof body.whatsapp === 'string' ? body.whatsapp.trim() : ''
     // Default to 'agent' if no role is provided (the Add Agent dialog omits it)
     const rawRole = body.role

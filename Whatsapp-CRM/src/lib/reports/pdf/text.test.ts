@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import PDFDocument from 'pdfkit'
 import { describe, expect, it } from 'vitest'
-import { drawnText, isRtlText, line, mirrorBrackets, paragraph, scriptOf, tokenize, visualOrder } from './text'
+import { drawnText, isRtlText, line, mirrorBrackets, paragraph, scriptOf, stripUnprintable, tokenize, visualOrder } from './text'
 
 const newDoc = () => new PDFDocument({ size: 'A4', margin: 40 })
 
@@ -67,6 +67,17 @@ describe('brackets in right-to-left text', () => {
   })
 })
 
+describe('a Latin phrase in brackets inside right-to-left text', () => {
+  it('stays whole and in order, with its brackets facing the right way', () => {
+    // Seen on a rendered page: the Arabic tax line printed "GST) 32AAB( الرقم الضريبي".
+    const { toks } = tokenize('الرقم الضريبي (GST) 32AABCU9603R1ZX', 'rtl')
+    const gst = toks.find((t) => t.text.includes('GST'))!
+    expect(gst.text).toBe('(GST)')
+    expect(gst.level % 2).toBe(0) // read left to right, so its brackets are not mirrored
+    expect(drawnText(gst)).toBe('(GST)')
+  })
+})
+
 describe('line and paragraph', () => {
   it('draws every supported language without throwing, and reports a width', () => {
     const doc = newDoc()
@@ -82,6 +93,36 @@ describe('line and paragraph', () => {
     const doc = newDoc()
     const w = line(doc, 'A very long business name that cannot possibly fit in a narrow column', 40, 40, { size: 10, width: 80 })
     expect(w).toBeLessThanOrEqual(80)
+  })
+
+  it('cuts a very long string quickly: its cost must not grow with the square of its length', () => {
+    // Found in security review: 4,000 characters froze the server for 75 seconds
+    // because every character cut re-ran the bidi algorithm on the whole string.
+    const doc = newDoc()
+    for (const text of ['x'.repeat(5000), 'ആ'.repeat(5000), 'ع'.repeat(5000), 'Name ആശ محمد '.repeat(400)]) {
+      const t0 = performance.now()
+      const w = line(doc, text, 40, 40, { size: 8, width: 120 })
+      expect(w).toBeLessThanOrEqual(120)
+      expect(performance.now() - t0, `${text.slice(0, 6)}`).toBeLessThan(400)
+    }
+  })
+
+  it('shrinks text to fit before it ever cuts it, so money is never lost to an ellipsis', () => {
+    const doc = newDoc()
+    const money = '₹1,23,45,67,890.67 + $99,999.99 + €5.50 + £3.20'
+    const plain = line(doc, money, 40, 40, { size: 13, bold: true, width: 160 })
+    expect(plain).toBeLessThanOrEqual(160) // cut: the old behaviour
+    const w = line(doc, money, 40, 40, { size: 13, bold: true, width: 160, shrinkTo: 6 })
+    expect(w).toBeLessThanOrEqual(160)
+    // Nothing was cut: no ellipsis in what was drawn (checked through the tokens).
+    expect(tokenize(money, 'ltr').toks.map((x) => x.text).join('')).toContain('£3.20')
+  })
+
+  it('draws emoji as nothing rather than as empty boxes (no font has them)', () => {
+    expect(stripUnprintable('Ravi 👩🏽‍💻 Kumar 🎉')).toBe('Ravi Kumar')
+    expect(stripUnprintable('Zoë Müller')).toBe('Zoë Müller')
+    // The joiner that shapes Malayalam letters must stay.
+    expect(stripUnprintable('ന്‍ ആശ')).toBe('ന്‍ ആശ')
   })
 
   it('wraps a paragraph inside its width and returns where it ended', () => {

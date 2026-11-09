@@ -39,7 +39,9 @@ export function scriptOf(cp: number): Script | null {
 // numbers" and '2026-10-01' flips to '01-10-2026' (a classic UAX#9 trap that
 // browsers share). Latin and number runs are wrapped in LRI..PDI isolates,
 // which draw nothing.
-const isolateLtr = (t: string) => t.replace(/[A-Za-z0-9]+(?:[ .,:/\-+%@_()&#]+[A-Za-z0-9]+)*/g, '⁦$&⁩')
+// A bracketed Latin phrase, "(GST)", is one run: its brackets belong to it, not to the Arabic around it.
+const isolateLtr = (t: string) =>
+  t.replace(/\([A-Za-z0-9][A-Za-z0-9 .,:/\-+%@_&#]*\)|[A-Za-z0-9]+(?:[ .,:/\-+%@_()&#]+[A-Za-z0-9]+)*/g, '⁦$&⁩')
 
 export interface Token {
   text: string
@@ -148,38 +150,73 @@ function drawTokens(doc: Doc, visual: Token[], x: number, y: number, size: numbe
   if (needActual) (doc as unknown as MarkDoc).endMarkedContent()
 }
 
+/**
+ * What no font here can draw, taken out: emoji (a picture, drawn as empty
+ * boxes by every text font), their skin-tone and variation marks, and the
+ * joiner that glues one emoji to the next. The joiner that shapes Indic
+ * letters (Malayalam chillu forms) is kept: only a joiner sitting between two
+ * emoji goes. Spaces left behind are closed up.
+ */
+const EMOJI = '\\p{Extended_Pictographic}|\\p{Regional_Indicator}'
+const EMOJI_TAIL = '[\\uFE0E\\uFE0F\\u{1F3FB}-\\u{1F3FF}\\u20E3]*'
+const EMOJI_SEQUENCE = new RegExp(`(?:${EMOJI})${EMOJI_TAIL}(?:\\u200D(?:${EMOJI})${EMOJI_TAIL})*`, 'gu')
+
+export function stripUnprintable(text: string): string {
+  return String(text ?? '').replace(EMOJI_SEQUENCE, ' ').replace(/[︎️]/g, '').replace(/ {2,}/g, ' ').trim()
+}
+
+/** No cell or label is longer than this when drawn; the work grows with length. */
+const MAX_DRAWN_CHARS = 600
+
 export interface LineOptions {
   size?: number
   bold?: boolean
   color?: string
-  /** The box the line must fit in; longer text is cut with an ellipsis. */
+  /** The box the line must fit in. */
   width?: number | null
+  /** Before cutting with an ellipsis, shrink the text down to this size, so
+   *  an amount is never lost: a financial figure is shrunk, not truncated. */
+  shrinkTo?: number
   align?: 'left' | 'right' | 'center'
   rtl?: boolean
 }
 
-/** One line: per-word font, bidi order, alignment, ellipsis. Returns the width drawn. */
+/** One line: per-word font, bidi order, alignment, shrink-then-ellipsis. Returns the width drawn. */
 export function line(doc: Doc, text: string, x: number, y: number, o: LineOptions = {}): number {
-  const { size = 9, bold = false, color = '#111111', width = null, align = 'left', rtl = false } = o
-  const str = String(text ?? '')
+  const { size = 9, bold = false, color = '#111111', width = null, align = 'left', rtl = false, shrinkTo } = o
+  // Bounded work: whatever arrives, at most this much is ever laid out.
+  const str = Array.from(stripUnprintable(String(text ?? ''))).slice(0, MAX_DRAWN_CHARS).join('')
   const dir = rtl || isRtlText(str) ? 'rtl' : 'ltr'
-  const fit = (s: string) => {
+  const fit = (s: string, sz: number) => {
     const { toks } = tokenize(s, dir)
-    return { toks, w: toks.reduce((a, t) => a + tokenWidth(doc, t, size, bold), 0) }
+    return { toks, w: toks.reduce((a, t) => a + tokenWidth(doc, t, sz, bold), 0) }
   }
-  let { toks, w } = fit(str)
+
+  let drawSize = size
+  let { toks, w } = fit(str, drawSize)
+  // Smaller first, down to the floor, when the caller says the text must not be cut.
+  while (width && w > width && shrinkTo !== undefined && drawSize > shrinkTo) {
+    drawSize = Math.max(shrinkTo, drawSize - 0.5)
+    ;({ toks, w } = fit(str, drawSize))
+  }
   if (width && w > width) {
+    // The longest prefix that fits with an ellipsis, found by halving: about
+    // ten layouts however long the text is (it used to be one per character).
     const chars = Array.from(str)
-    while (chars.length > 1 && w > width) {
-      chars.pop()
-      ;({ toks, w } = fit(`${chars.join('').trimEnd()}…`))
+    let lo = 1
+    let hi = chars.length
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2)
+      if (fit(`${chars.slice(0, mid).join('').trimEnd()}…`, drawSize).w <= width) lo = mid
+      else hi = mid - 1
     }
+    ;({ toks, w } = fit(`${chars.slice(0, lo).join('').trimEnd()}…`, drawSize))
   }
   let cx = x
   if (width && align === 'right') cx = x + width - w
   else if (width && align === 'center') cx = x + (width - w) / 2
   doc.fillColor(color)
-  drawTokens(doc, visualOrder(toks), cx, y, size, bold, toks)
+  drawTokens(doc, visualOrder(toks), cx, y, drawSize, bold, toks)
   return w
 }
 

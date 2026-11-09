@@ -76,8 +76,15 @@ function sortKey(m: Money, business: string): number {
   return v.length ? Math.max(...v) : 0
 }
 
+/** What a day's bar is drawn from: the business currency only. Another currency
+ *  is never drawn as if it were this one (it used to be, as the largest value). */
+export function dayAmount(m: Money, business: string): number {
+  return m[business.toUpperCase()] ?? 0
+}
+
 export function assembleSpending(r: SpendingRows) {
-  const business = r.businessCurrency
+  // Upper case, so a currency typed in lower case is not a different one.
+  const business = r.businessCurrency.trim().toUpperCase()
 
   // ── WhatsApp ───────────────────────────────────────────────────────
   const waTotal: Money = {}

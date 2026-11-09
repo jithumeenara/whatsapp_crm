@@ -63,6 +63,9 @@ export function resolvePeriod(input: PeriodInput, now: Date, tz: string): Report
     if (!DAY.test(from) || !DAY.test(to) || !dayStartIso(from, tz) || !dayStartIso(to, tz)) return null
     const len = daysBetween(from, to) + 1
     if (len < 1 || len > MAX_CUSTOM_DAYS) return null
+    // A range that starts after today has nothing in it, and made the ad-spend
+    // call fail (found in review).
+    if (from > today) return null
     const lastDay = to > today ? today : to
     const partial = to >= today
     const f = start(from, tz)

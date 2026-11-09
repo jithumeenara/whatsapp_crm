@@ -12,8 +12,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react"
 import { apiFetch, errorText } from "@/lib/api-fetch"
-import { formatAmount } from "@/lib/format/money"
-import { channelLabel, type Money, type SpendingReport } from "@/lib/reports/spending-assemble"
+import { formatAmount, formatCost } from "@/lib/format/money"
+import { channelLabel, dayAmount, type Money, type SpendingReport } from "@/lib/reports/spending-assemble"
 import { SpendingPdfButton } from "./spending-pdf-button"
 import { useCountUp } from "@/hooks/use-count-up"
 
@@ -146,7 +146,7 @@ function DailyChart({ data }: { data: Response }) {
   const business = data.businessCurrency
   const aiRate = data.ai.inBusinessCurrency?.rate ?? null
   const days = data.byDay.map((d) => {
-    const wa = barValue(d.whatsapp, business)
+    const wa = dayAmount(d.whatsapp, business)
     const ai = aiRate !== null ? d.aiUsd * aiRate : 0
     return { day: d.day, wa, ai, total: wa + ai }
   })
@@ -164,7 +164,7 @@ function DailyChart({ data }: { data: Response }) {
       </div>
       <div className="mt-1.5 flex justify-between text-[10.5px] text-slate-400">
         <span>{dayLabel(days[0].day)}</span>
-        <span>{dayLabel(days[days.length - 1].day)}</span>
+        {days.length > 1 && <span>{dayLabel(days[days.length - 1].day)}</span>}
       </div>
       <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-slate-600">
         <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-primary" aria-hidden="true" />WhatsApp messages</span>
@@ -242,7 +242,7 @@ export function SpendingReportView() {
   const maxFeature = Math.max(0, ...(data?.ai.byFeature.map((f) => f.costUsd) ?? [0]))
   const maxAiPerson = Math.max(0, ...(data?.ai.byPerson.map((p) => p.costUsd) ?? [0]))
   const ai = data?.ai
-  const aiText = ai ? (ai.inBusinessCurrency ? formatAmount(ai.inBusinessCurrency.amount, ai.inBusinessCurrency.currency) : formatAmount(ai.costUsd, "USD")) : "—"
+  const aiText = ai ? (ai.inBusinessCurrency ? formatAmount(ai.inBusinessCurrency.amount, ai.inBusinessCurrency.currency) : formatCost(ai.costUsd, "USD")) : "—"
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-6xl space-y-4 p-4 sm:p-6">
@@ -316,25 +316,25 @@ export function SpendingReportView() {
               index={2}
               label="AI (estimated)"
               value={ai ? <AnimatedAmount amount={ai.inBusinessCurrency ? ai.inBusinessCurrency.amount : ai.costUsd} currency={ai.inBusinessCurrency ? ai.inBusinessCurrency.currency : "USD"} /> : aiText}
-              sub={`${count(data.ai.calls)} calls${data.ai.inBusinessCurrency?.currency === "INR" ? ` · at ₹${data.ai.inBusinessCurrency.rate}/$` : ""}`}
+              sub={`Calls: ${count(data.ai.calls)}${data.ai.inBusinessCurrency?.currency === "INR" ? ` · at ₹${data.ai.inBusinessCurrency.rate}/$` : ""}`}
             />
             <Kpi
               index={3}
               label="Meta Ads"
               value={!data.ads.connected ? "Not connected" : data.ads.spend === null ? "Not available" : <AnimatedAmount amount={data.ads.spend} currency={data.ads.currency ?? business} />}
-              sub={data.ads.error ?? (data.ads.connected ? `${count(data.ads.clicks)} clicks` : "Connect it in Settings → Ads")}
+              sub={data.ads.error ?? (data.ads.connected ? `Clicks: ${count(data.ads.clicks)}` : "Connect it in Settings → Ads")}
             />
             <Kpi
               index={4}
               label="Cost per lead"
               value={data.outcomes.costPerLead === null ? "—" : <AnimatedAmount amount={data.outcomes.costPerLead} currency={business} />}
-              sub={`${count(data.outcomes.leads)} leads in this period`}
+              sub={`Leads in this period: ${count(data.outcomes.leads)}`}
             />
             <Kpi
               index={5}
               label="Cost per won deal"
               value={data.outcomes.costPerWon === null ? "—" : <AnimatedAmount amount={data.outcomes.costPerWon} currency={business} />}
-              sub={`${count(data.outcomes.wonDeals)} deals won`}
+              sub={`Deals won: ${count(data.outcomes.wonDeals)}`}
             />
           </div>
 
@@ -392,7 +392,7 @@ export function SpendingReportView() {
                           <th scope="row" className="py-1.5 pr-3 font-medium text-slate-700 [overflow-wrap:anywhere]">{t.team}</th>
                           <td className="py-1.5 pr-3 text-right tabular-nums">{count(t.people)}</td>
                           <td className="py-1.5 pr-3 text-right tabular-nums">{moneyText(t.whatsapp)}</td>
-                          <td className="py-1.5 text-right tabular-nums">{formatAmount(t.aiUsd, "USD")}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatCost(t.aiUsd, "USD")}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -413,7 +413,7 @@ export function SpendingReportView() {
                         <tr key={c.channel} className="border-t border-slate-100">
                           <th scope="row" className="py-1.5 pr-3 font-medium text-slate-700">{channelLabel(c.channel)}</th>
                           <td className="py-1.5 pr-3 text-right tabular-nums">{moneyText(c.messages)}</td>
-                          <td className="py-1.5 text-right tabular-nums">{formatAmount(c.aiUsd, "USD")}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatCost(c.aiUsd, "USD")}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -425,7 +425,7 @@ export function SpendingReportView() {
             <Section title="AI by feature" hint="Estimated from the provider's own token counts. Shown in US dollars.">
               {data.ai.byFeature.length === 0 ? <Empty /> : (
                 <ul className="space-y-2.5">
-                  {data.ai.byFeature.map((f) => <Row key={f.feature} label={FEATURE[f.feature] ?? f.feature.replace(/_/g, " ")} value={f.costUsd} max={maxFeature} right={`${count(f.calls)} · ${formatAmount(f.costUsd, "USD")}`} />)}
+                  {data.ai.byFeature.map((f) => <Row key={f.feature} label={FEATURE[f.feature] ?? f.feature.replace(/_/g, " ")} value={f.costUsd} max={maxFeature} right={`${count(f.calls)} · ${formatCost(f.costUsd, "USD")}`} />)}
                 </ul>
               )}
             </Section>
@@ -433,7 +433,7 @@ export function SpendingReportView() {
             <Section title="AI by person" hint="Whose action started the AI work. Work done for nobody in particular is listed as not attributed.">
               {data.ai.byPerson.length === 0 ? <Empty /> : (
                 <ul className="space-y-2.5">
-                  {data.ai.byPerson.map((p) => <Row key={p.userId ?? "none"} label={p.name} value={p.costUsd} max={maxAiPerson} right={`${count(p.calls)} · ${formatAmount(p.costUsd, "USD")}`} />)}
+                  {data.ai.byPerson.map((p) => <Row key={p.userId ?? "none"} label={p.name} value={p.costUsd} max={maxAiPerson} right={`${count(p.calls)} · ${formatCost(p.costUsd, "USD")}`} />)}
                 </ul>
               )}
             </Section>

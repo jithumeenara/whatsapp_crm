@@ -20,6 +20,11 @@ describe('marketForNumber: the market Meta prices a recipient in', () => {
     expect(marketForNumber('79161234567').market).toBe('Russia')
   })
 
+  it('does not call a US number Canadian: +1 is shared, so no single country is claimed', () => {
+    expect(marketForNumber('14155550123')).toEqual({ market: 'North America', iso: null })
+    expect(marketForNumber('16045550123')).toEqual({ market: 'North America', iso: null })
+  })
+
   it('uses the area prefix: the Dominican Republic is not North America', () => {
     expect(marketForNumber('18095551234').market).toBe('Rest of Latin America')
     expect(marketForNumber('17875551234').market).toBe('Rest of Latin America') // Puerto Rico
@@ -71,6 +76,11 @@ describe('priceMessage', () => {
   it('does not apply today\'s card to a message from before it took effect', () => {
     const p = priceMessage({ ...base, at: new Date('2026-09-30T10:00:00Z'), category: 'marketing', type: 'regular' })
     expect(p).toMatchObject({ amount: null, rateKnown: false })
+  })
+
+  it("prices Marketing Messages Lite as marketing: Meta's card says marketing rates apply to both", () => {
+    const p = priceMessage({ ...base, category: 'marketing_lite', type: 'regular' })
+    expect(p).toMatchObject({ amount: '0.863100', rateKnown: true })
   })
 
   it('does not guess an unknown category', () => {

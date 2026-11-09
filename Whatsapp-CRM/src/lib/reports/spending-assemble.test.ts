@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { assembleSpending, channelLabel, type SpendingRows } from './spending-assemble'
+import { assembleSpending, channelLabel, dayAmount, type SpendingRows } from './spending-assemble'
 
 /**
  * The Spending report's arithmetic, apart from the database.
@@ -233,5 +233,25 @@ describe('assembleSpending: days', () => {
     }))
     expect(r.byDay.map((d) => d.day)).toEqual(['2026-11-01', '2026-11-02', '2026-11-03'])
     expect(r.byDay[1]).toMatchObject({ whatsapp: { INR: 5 }, aiUsd: 0.5 })
+  })
+})
+
+describe('dayAmount: only the business currency goes in a day bar', () => {
+  it('uses the business currency and ignores any other, never labelling one as another', () => {
+    expect(dayAmount({ INR: 12.5, USD: 3 }, 'INR')).toBe(12.5)
+    expect(dayAmount({ USD: 1 }, 'INR')).toBe(0) // found in review: it used to draw 1 as rupees
+    expect(dayAmount({}, 'INR')).toBe(0)
+  })
+})
+
+describe('assembleSpending: a business currency typed in lower case', () => {
+  it('behaves as the same currency, not as a different one that silently empties the total', () => {
+    const r = assembleSpending(empty({
+      businessCurrency: 'inr',
+      waCategory: [{ category: 'marketing', type: 'regular', currency: 'INR', n: 1, amount: 100, unpriced: 0 }],
+    }))
+    expect(r.totals.combined).toBe(100)
+    expect(r.totals.excluded).toEqual([])
+    expect(r.businessCurrency).toBe('INR')
   })
 })

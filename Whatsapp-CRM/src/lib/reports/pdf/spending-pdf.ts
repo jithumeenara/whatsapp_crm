@@ -14,8 +14,8 @@
  * customer names or numbers: there are none in the report.
  */
 import PDFDocument from 'pdfkit'
-import { formatAmount } from '@/lib/format/money'
-import { channelLabel, type Money, type SpendingReport } from '../spending-assemble'
+import { formatAmount, formatCost } from '@/lib/format/money'
+import { channelLabel, dayAmount, type Money, type SpendingReport } from '../spending-assemble'
 import { imageProblem } from '@/lib/files/image-size'
 import { isRtlLanguage, t, type Key } from '../i18n'
 import { line, paragraph } from './text'
@@ -59,6 +59,9 @@ const SOFT = '#eef2ff'
 const SOFT_LINE = '#c7d2fe'
 const GREEN = '#10b981'
 
+/** A count with thousands separators: 1234567 → 12,34,567. */
+const num = (n: number) => new Intl.NumberFormat('en-IN').format(n)
+
 const clean = (s: string, max: number) => s.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max)
 
 function moneyText(m: Money): string {
@@ -88,7 +91,6 @@ const FEATURE_KEY: Record<string, Key> = {
 }
 
 type Col = { label: string; frac: number; align: 'left' | 'right' }
-type Doc = InstanceType<typeof PDFDocument>
 type Tagged = {
   struct(type: string, opts?: Record<string, unknown>, fn?: () => void): { add(c: unknown): void; end(): void }
   addStructure(el: unknown): void
@@ -153,32 +155,31 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
   }
 
   // ── header (first page): logo, business name, address, tax number ──
-  const textW = CW - 64
-  const textX = rtl ? M : M + 64
+  // pdfkit throws an uncatchable exception on a PNG with fine headers and
+  // corrupt data, so the picture is checked whole before it is handed over.
+  // A logo that cannot be used costs the report its logo, never the report,
+  // and leaves no gap where it would have been.
+  const logoProblem = business.logo ? imageProblem(business.logo.mime, business.logo.bytes) : null
+  if (logoProblem) console.error('[spending-pdf] logo skipped:', logoProblem)
+  const logo = business.logo && !logoProblem ? business.logo : null
+  const textW = logo ? CW - 64 : CW
+  const textX = logo && !rtl ? M + 64 : M
   const logoX = rtl ? W - M - 48 : M
-  if (business.logo) {
-    // pdfkit throws an uncatchable exception on a PNG with fine headers and
-    // corrupt data, so the picture is checked whole before it is handed over.
-    // A logo that cannot be used costs the report its logo, never the report.
-    const problem = imageProblem(business.logo.mime, business.logo.bytes)
-    if (problem) {
-      console.error('[spending-pdf] logo skipped:', problem)
-    } else {
-      try {
-        const bytes = business.logo.bytes
-        tag(root, 'Figure', { alt: `${name} logo` }, () => {
-          doc.image(bytes, logoX, y, { fit: [48, 48] })
-        })
-      } catch (err) {
-        console.error('[spending-pdf] logo skipped:', err instanceof Error ? err.message : err)
-      }
+  if (logo) {
+    try {
+      tag(root, 'Figure', { alt: `${name} logo` }, () => {
+        doc.image(logo.bytes, logoX, y, { fit: [48, 48] })
+      })
+    } catch (err) {
+      console.error('[spending-pdf] logo skipped:', err instanceof Error ? err.message : err)
     }
   }
   tag(root, 'H1', {}, () => line(doc, name, textX, y, { size: 14, bold: true, color: BRAND, width: textW, align: start }))
   let hy = y + 20
-  const headerLines = [...business.lines.map((l) => clean(l, 160)).filter(Boolean)]
+  // At most four address lines, then the tax number: it is never the line that is cut.
+  const headerLines = business.lines.map((l) => clean(l, 160)).filter(Boolean).slice(0, 4)
   if (business.taxId) headerLines.push(clean(tr('taxId', { id: business.taxId }), 120))
-  for (const l of headerLines.slice(0, 5)) {
+  for (const l of headerLines) {
     tag(root, 'P', {}, () => line(doc, l, textX, hy, { size: 8.5, color: MUTED, width: textW, align: start }))
     hy += 12
   }
@@ -198,15 +199,15 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
   // ── KPI cards: three across, two rows ──────────────────────────────
   const aiValue = r.ai.inBusinessCurrency
     ? formatAmount(r.ai.inBusinessCurrency.amount, r.ai.inBusinessCurrency.currency)
-    : formatAmount(r.ai.costUsd, 'USD')
+    : formatCost(r.ai.costUsd, 'USD')
   const adsValue = !r.ads.connected ? tr('notConnected') : r.ads.spend === null ? tr('notAvailable') : formatAmount(r.ads.spend, r.ads.currency ?? biz)
   const kpis: Array<[string, string, string]> = [
     [tr('kTotal'), formatAmount(r.totals.combined, biz), ''],
-    [tr('kWhatsapp'), moneyText(r.whatsapp.total), tr('subDelivered', { n: r.whatsapp.delivered, free: r.whatsapp.free })],
-    [tr('kAi'), aiValue, tr('subCalls', { n: r.ai.calls })],
+    [tr('kWhatsapp'), moneyText(r.whatsapp.total), tr('subDelivered', { n: num(r.whatsapp.delivered), free: num(r.whatsapp.free) })],
+    [tr('kAi'), aiValue, tr('subCalls', { n: num(r.ai.calls) })],
     [tr('kAds'), adsValue, ''],
-    [tr('kCpl'), r.outcomes.costPerLead === null ? '—' : formatAmount(r.outcomes.costPerLead, biz), tr('subLeads', { n: r.outcomes.leads })],
-    [tr('kCpw'), r.outcomes.costPerWon === null ? '—' : formatAmount(r.outcomes.costPerWon, biz), tr('subWon', { n: r.outcomes.wonDeals })],
+    [tr('kCpl'), r.outcomes.costPerLead === null ? '—' : formatAmount(r.outcomes.costPerLead, biz), tr('subLeads', { n: num(r.outcomes.leads) })],
+    [tr('kCpw'), r.outcomes.costPerWon === null ? '—' : formatAmount(r.outcomes.costPerWon, biz), tr('subWon', { n: num(r.outcomes.wonDeals) })],
   ]
   const kw = (CW - 2 * 10) / 3
   const kh = 58
@@ -217,9 +218,10 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
     const ky = y + Math.floor(i / 3) * (kh + 10)
     artifact('Layout', () => doc.roundedRect(kx, ky, kw, kh, 6).fillAndStroke(SOFT, SOFT_LINE))
     tag(root, 'P', {}, () => {
-      line(doc, label, kx + 8, ky + 8, { size: 8, color: BRAND, width: kw - 16, align: start })
-      line(doc, value, kx + 8, ky + 22, { size: 13, bold: true, color: INK, width: kw - 16, align: start })
-      if (sub) line(doc, sub, kx + 8, ky + 42, { size: 7.5, color: MUTED, width: kw - 16, align: start })
+      // Shrunk to fit before anything is cut: a long label or a many-currency amount stays whole.
+      line(doc, label, kx + 8, ky + 8, { size: 8, color: BRAND, width: kw - 16, align: start, shrinkTo: 6 })
+      line(doc, value, kx + 8, ky + 22, { size: 13, bold: true, color: INK, width: kw - 16, align: start, shrinkTo: 6.5 })
+      if (sub) line(doc, sub, kx + 8, ky + 42, { size: 7.5, color: MUTED, width: kw - 16, align: start, shrinkTo: 5.5 })
     })
   })
   y += 2 * kh + 10 + 14
@@ -235,7 +237,11 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
     const ny = paragraph(doc, `• ${n}`, M, y, CW, { size: 8.5, color: '#92400e' })
     y = ny + 2
   }
-  if (notes.length) y += 6
+  // How to read the numbers sits up here with the other notes, where it is seen,
+  // and where it can never be left alone on a last page.
+  ensure(24)
+  tag(root, 'P', {}, () => { y = paragraph(doc, tr('noteEstimate'), M, y, CW, { size: 8, color: MUTED }) })
+  y += 8
 
   // ── daily chart (vector) ───────────────────────────────────────────
   const section = (title: string) => {
@@ -247,7 +253,7 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
   section(tr('secDaily'))
   const aiRate = r.ai.inBusinessCurrency?.rate ?? null
   const days = r.byDay.map((x) => {
-    const wa = x.whatsapp[biz] ?? Math.max(0, ...Object.values(x.whatsapp))
+    const wa = dayAmount(x.whatsapp, biz)
     const ai = aiRate !== null ? x.aiUsd * aiRate : 0
     return { day: x.day, wa, ai, total: wa + ai }
   })
@@ -277,7 +283,8 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
     const first = days[0].day
     const last = days[days.length - 1].day
     line(doc, rtl ? last : first, M, y + ch + 3, { size: 7, color: MUTED, width: CW / 2 - 4, align: 'left' })
-    line(doc, rtl ? first : last, M + CW / 2 + 4, y + ch + 3, { size: 7, color: MUTED, width: CW / 2 - 4, align: 'right' })
+    // One day is one label, not the same date at both ends.
+    if (days.length > 1) line(doc, rtl ? first : last, M + CW / 2 + 4, y + ch + 3, { size: 7, color: MUTED, width: CW / 2 - 4, align: 'right' })
     y += ch + 16
     artifact('Layout', () => {
       doc.rect(rtl ? W - M - 8 : M, y + 2, 8, 8).fill(BRAND)
@@ -340,7 +347,9 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
       let cx = M
       cols.forEach((c, ci) => {
         const w = CW * c.frac
-        tag(row, 'TD', {}, () => line(doc, cells[ci] ?? '', cx + 5, y + 4, { size: 8, color: INK, width: w - 10, align: c.align }))
+        // Every cell is cleaned and capped (a name can be any length), and an
+        // amount is shrunk to fit rather than cut.
+        tag(row, 'TD', {}, () => line(doc, clean(cells[ci] ?? '', 160), cx + 5, y + 4, { size: 8, color: INK, width: w - 10, align: c.align, shrinkTo: 5.5 }))
         cx += w
       })
       row.end()
@@ -363,29 +372,26 @@ export async function buildSpendingPdf(input: BuildPdfInput): Promise<Buffer> {
   ], r.whatsapp.byCategory.map((c) => {
     const free = (c.type ?? '').startsWith('free')
     const base = CATEGORY_KEY[c.category ?? ''] ? tr(CATEGORY_KEY[c.category ?? '']) : (c.category ?? '—')
-    return [`${base}${free ? ` (${tr('free')})` : ''}`, String(c.count), free ? tr('free') : moneyText(c.amount)]
+    return [`${base}${free ? ` (${tr('free')})` : ''}`, num(c.count), free ? tr('free') : moneyText(c.amount)]
   }))
   table(tr('secNumber'), [
     { label: tr('colName'), frac: 0.46, align: 'left' }, { label: tr('colMessages'), frac: 0.2, align: 'right' }, { label: tr('colAmount'), frac: 0.34, align: 'right' },
-  ], r.whatsapp.byNumber.map((c) => [nm(c.label), String(c.count), moneyText(c.amount)]))
+  ], r.whatsapp.byNumber.map((c) => [nm(c.label), num(c.count), moneyText(c.amount)]))
   table(tr('secPerson'), [
     { label: tr('colName'), frac: 0.46, align: 'left' }, { label: tr('colMessages'), frac: 0.2, align: 'right' }, { label: tr('colAmount'), frac: 0.34, align: 'right' },
-  ], r.whatsapp.byPerson.map((p) => [nm(p.name), String(p.count), moneyText(p.amount)]))
+  ], r.whatsapp.byPerson.map((p) => [nm(p.name), num(p.count), moneyText(p.amount)]))
   table(tr('secTeam'), [
     { label: tr('colTeam'), frac: 0.34, align: 'left' }, { label: tr('colPeople'), frac: 0.14, align: 'right' }, { label: tr('colWhatsapp'), frac: 0.28, align: 'right' }, { label: tr('colAiUsd'), frac: 0.24, align: 'right' },
-  ], r.byTeam.map((x) => [nm(x.team), String(x.people), moneyText(x.whatsapp), formatAmount(x.aiUsd, 'USD')]))
+  ], r.byTeam.map((x) => [nm(x.team), num(x.people), moneyText(x.whatsapp), formatCost(x.aiUsd, 'USD')]))
   table(tr('secChannel'), [
-    { label: tr('colChannel'), frac: 0.34, align: 'left' }, { label: tr('colMessages'), frac: 0.36, align: 'right' }, { label: tr('colAiUsd'), frac: 0.3, align: 'right' },
-  ], r.byChannel.map((c) => [nm(channelLabel(c.channel)), moneyText(c.messages), formatAmount(c.aiUsd, 'USD')]))
+    { label: tr('colChannel'), frac: 0.34, align: 'left' }, { label: tr('colWhatsapp'), frac: 0.36, align: 'right' }, { label: tr('colAiUsd'), frac: 0.3, align: 'right' },
+  ], r.byChannel.map((c) => [nm(channelLabel(c.channel)), moneyText(c.messages), formatCost(c.aiUsd, 'USD')]))
   table(tr('secAiFeature'), [
     { label: tr('kAi'), frac: 0.5, align: 'left' }, { label: tr('colCalls'), frac: 0.2, align: 'right' }, { label: tr('colAiUsd'), frac: 0.3, align: 'right' },
-  ], r.ai.byFeature.map((f) => [tr(FEATURE_KEY[f.feature] ?? 'featOther'), String(f.calls), formatAmount(f.costUsd, 'USD')]))
+  ], r.ai.byFeature.map((f) => [tr(FEATURE_KEY[f.feature] ?? 'featOther'), num(f.calls), formatCost(f.costUsd, 'USD')]))
   table(tr('secAiPerson'), [
     { label: tr('colName'), frac: 0.5, align: 'left' }, { label: tr('colCalls'), frac: 0.2, align: 'right' }, { label: tr('colAiUsd'), frac: 0.3, align: 'right' },
-  ], r.ai.byPerson.map((p) => [nm(p.name), String(p.calls), formatAmount(p.costUsd, 'USD')]))
-
-  ensure(30)
-  tag(root, 'P', {}, () => { y = paragraph(doc, tr('noteEstimate'), M, y, CW, { size: 8, color: MUTED }) })
+  ], r.ai.byPerson.map((p) => [nm(p.name), num(p.calls), formatCost(p.costUsd, 'USD')]))
 
   root.end()
 

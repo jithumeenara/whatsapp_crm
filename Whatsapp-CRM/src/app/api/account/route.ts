@@ -20,6 +20,7 @@ import {
 } from "@/lib/rate-limit";
 import { prisma } from "@/lib/db";
 import { isValidCurrency } from "@/lib/countries";
+import { repriceUnpricedCosts } from "@/lib/whatsapp/message-cost";
 
 export async function GET() {
   try {
@@ -104,6 +105,9 @@ export async function PATCH(request: Request) {
       where: { id: ctx.accountId },
       select: { name: true, default_currency: true },
     });
+    const currencyChanged =
+      typeof updateData.default_currency === "string" &&
+      updateData.default_currency !== (previous?.default_currency ?? "").toUpperCase();
     const account = await prisma.account.update({
       where: { id: ctx.accountId },
       data: updateData,
@@ -116,6 +120,24 @@ export async function PATCH(request: Request) {
       before: previous ?? null,
       after: updateData,
     });
+
+    // The same follow-through as Settings → Country, currency and report
+    // header, so the two ways of changing it cannot behave differently (found
+    // in review): note when it changed, and price the WhatsApp costs that had
+    // no rate card for the old currency. Neither undoes the save if it fails.
+    if (currencyChanged) {
+      const now = new Date();
+      await prisma.accountReportProfile
+        .upsert({
+          where: { account_id: ctx.accountId },
+          update: { currency_effective_from: now, updated_at: now },
+          create: { account_id: ctx.accountId, currency_effective_from: now },
+        })
+        .catch((e: unknown) => console.error("[account] could not note the currency change date:", e instanceof Error ? e.message : e));
+      await repriceUnpricedCosts(ctx.accountId).catch((e: unknown) =>
+        console.error("[account] repricing failed:", e instanceof Error ? e.message : e),
+      );
+    }
 
     return NextResponse.json({ account });
   } catch (err) {

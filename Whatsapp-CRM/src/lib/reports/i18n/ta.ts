@@ -11,14 +11,14 @@ export const ta: Dict = {
 
   kTotal: 'மொத்த செலவு',
   kWhatsapp: 'WhatsApp செய்திகள்',
-  kAi: 'AI (மதிப்பீடு)',
+  kAi: 'AI (மதிப்பிடப்பட்டது)',
   kAds: 'Meta விளம்பரங்கள்',
   kCpl: 'ஒரு லீடுக்கான செலவு',
   kCpw: 'வெற்றி பெற்ற ஒரு டீலுக்கான செலவு',
   subDelivered: '{n} சென்றடைந்தன · {free} இலவசம்',
-  subCalls: '{n} அழைப்புகள்',
-  subLeads: '{n} லீடுகள்',
-  subWon: '{n} டீல்கள் வென்றன',
+  subCalls: 'அழைப்புகள்: {n}',
+  subLeads: 'லீடுகள்: {n}',
+  subWon: 'வென்ற டீல்கள்: {n}',
   notConnected: 'இணைக்கப்படவில்லை',
   notAvailable: 'கிடைக்கவில்லை',
 
@@ -55,11 +55,11 @@ export const ta: Dict = {
   removedNumber: 'நீக்கப்பட்ட எண்',
   formerMember: 'முன்னாள் உறுப்பினர்',
   aiAssistant: 'AI உதவியாளர்',
-  system: 'அமைப்பு',
+  system: 'சிஸ்டம்',
   noTeam: 'குழு இல்லை',
 
   legendWhatsapp: 'WhatsApp செய்திகள்',
-  legendAi: 'AI (மதிப்பீடு)',
+  legendAi: 'AI (மதிப்பிடப்பட்டது)',
 
   featChat: 'வாடிக்கையாளர் அரட்டை பதில்கள்',
   featTranslation: 'மொழிபெயர்ப்பு',

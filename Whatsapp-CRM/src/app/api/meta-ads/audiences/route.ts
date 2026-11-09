@@ -7,12 +7,17 @@ import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { buildContactWhere, type FilterConfig } from '@/lib/segments/filter'
 import { audit, auditCtx } from '@/lib/audit'
+import { adsReadGate } from '@/lib/meta-ads/access'
 
 /** GET /api/meta-ads/audiences — every Segment, with its Meta sync status if any. */
 export async function GET() {
   try {
-    // Read-only — found with no role floor at all in the full-app audit.
-    const { accountId } = await requireRole('viewer')
+    // Read-only, but it needs the Ads page grant and is limited (found in
+    // review: the same gap as the other Ads read routes had).
+    const ctx = await requireRole('viewer')
+    const denied = adsReadGate(ctx, 'audiences')
+    if (denied) return denied
+    const { accountId } = ctx
 
     const [segments, adsConfig] = await Promise.all([
       prisma.segment.findMany({

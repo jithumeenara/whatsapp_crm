@@ -72,6 +72,23 @@ describe('validation is an allow-list', () => {
   })
 })
 
+describe('data corrections found in review', () => {
+  it('has the right currency and time zone for the countries that were wrong', () => {
+    expect(countryByIso('LS')?.currency).toBe('LSL')
+    expect(countryByIso('PG')?.timezone).toBe('Pacific/Port_Moresby')
+    expect(countryByIso('ER')?.timezone).toBe('Africa/Asmara')
+  })
+
+  it('does not offer a currency that has been retired', async () => {
+    const { listCurrencies } = await import('./countries')
+    for (const retired of ['BGN', 'HRK', 'SLL', 'ZWL', 'CUC', 'SVC']) {
+      expect(listCurrencies(), retired).not.toContain(retired)
+      expect(isValidCurrency(retired), retired).toBe(false)
+    }
+    expect(isValidCurrency('EUR')).toBe(true)
+  })
+})
+
 describe('searchCountries', () => {
   const first = (q: string) => searchCountries(q)[0]?.iso
 
@@ -96,6 +113,15 @@ describe('searchCountries', () => {
     expect(first('uae')).toBe('AE')
     expect(first('usa')).toBe('US')
     expect(first('uk')).toBe('GB')
+  })
+
+  it('finds by the forms people actually type: accents, saint, short names', () => {
+    expect(searchCountries('saint').map((c) => c.iso)).toContain('LC')
+    expect(first('cote')).toBe('CI')
+    expect(first('turkiye')).toBe('TR')
+    expect(first('swiss')).toBe('CH')
+    expect(first('macau')).toBe('MO')
+    expect(first('palestine')).toBe('PS')
   })
 
   it('puts the main country of a shared calling code first', () => {

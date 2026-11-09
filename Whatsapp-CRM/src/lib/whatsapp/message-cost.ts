@@ -92,7 +92,11 @@ export async function recordMessageCost(input: RecordCostInput): Promise<void> {
   if (status !== 'sent' && status !== 'delivered' && status !== 'read') return
 
   if (pricing && (pricing.category || pricing.type)) {
-    // Only a message of this business's own.
+    // Attribution (who sent it, which conversation and number) comes from this
+    // business's own copy of the message. The business itself is known from the
+    // number the event arrived on, so a charge is kept even when that copy is
+    // not saved yet: Meta reports pricing on only one status, and it can be the
+    // first, which can beat our own insert (found in review).
     const message = await prisma.message.findFirst({
       where: { message_id: wamid, conversation: { account_id: accountId } },
       select: {
@@ -104,10 +108,7 @@ export async function recordMessageCost(input: RecordCostInput): Promise<void> {
         conversation: { select: { whatsapp_config_id: true } },
       },
     })
-    if (!message) {
-      console.error(`[cost] ${wamid}: no message of this business with that id; pricing ignored`)
-      return
-    }
+    if (!message) console.error(`[cost] ${wamid}: our copy of the message is not saved yet; cost kept without attribution`)
 
     const account = await prisma.account.findUnique({
       where: { id: accountId },
@@ -126,12 +127,12 @@ export async function recordMessageCost(input: RecordCostInput): Promise<void> {
       data: [{
         account_id: accountId,
         message_id: wamid,
-        conversation_id: message.conversation_id,
-        whatsapp_config_id: message.conversation?.whatsapp_config_id ?? null,
-        sender_user_id: message.sender_id,
-        sender_type: message.sender_type,
-        template_name: message.template_name,
-        broadcast_id: message.broadcast_id,
+        conversation_id: message?.conversation_id ?? null,
+        whatsapp_config_id: message?.conversation?.whatsapp_config_id ?? null,
+        sender_user_id: message?.sender_id ?? null,
+        sender_type: message?.sender_type ?? null,
+        template_name: message?.template_name ?? null,
+        broadcast_id: message?.broadcast_id ?? null,
         recipient_market: priced.market,
         recipient_iso: priced.iso,
         pricing_category: pricing.category ?? null,

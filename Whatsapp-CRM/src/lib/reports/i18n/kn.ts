@@ -16,9 +16,9 @@ export const kn: Dict = {
   kCpl: 'ಒಂದು ಲೀಡ್‌ಗೆ ವೆಚ್ಚ',
   kCpw: 'ಗೆದ್ದ ಒಂದು ಡೀಲ್‌ಗೆ ವೆಚ್ಚ',
   subDelivered: '{n} ತಲುಪಿದವು · {free} ಉಚಿತ',
-  subCalls: '{n} ಕರೆಗಳು',
-  subLeads: '{n} ಲೀಡ್‌ಗಳು',
-  subWon: '{n} ಡೀಲ್‌ಗಳು ಗೆದ್ದವು',
+  subCalls: 'ಕರೆಗಳು: {n}',
+  subLeads: 'ಲೀಡ್‌ಗಳು: {n}',
+  subWon: 'ಗೆದ್ದ ಡೀಲ್‌ಗಳು: {n}',
   notConnected: 'ಸಂಪರ್ಕಿಸಿಲ್ಲ',
   notAvailable: 'ಲಭ್ಯವಿಲ್ಲ',
 

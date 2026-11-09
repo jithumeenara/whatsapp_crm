@@ -14,6 +14,9 @@ import { isValidReportLanguage } from '@/lib/countries'
 /** A PDF builds the whole report and holds it in memory: a few a minute is plenty. */
 const PDF_LIMIT = { limit: 6, windowMs: 60_000 }
 const MAX_LOGO_BYTES = 2 * 1024 * 1024
+/** PDFs being built right now, in this process. */
+const MAX_CONCURRENT_BUILDS = 2
+let activeBuilds = 0
 
 /**
  * GET /api/reports/spending/pdf?period=today|week|month|custom&from=&to=
@@ -69,6 +72,12 @@ export async function GET(req: NextRequest) {
     }
     const language = isValidReportLanguage(extra?.report_language) ? extra.report_language : 'en'
 
+    // A build uses a CPU for seconds; a few at once would starve everything
+    // else on the server (found in review). The rest are asked to try again.
+    if (activeBuilds >= MAX_CONCURRENT_BUILDS) {
+      return NextResponse.json({ error: 'Other reports are being built right now. Try again in a few seconds.' }, { status: 503, headers: { 'Retry-After': '5' } })
+    }
+    activeBuilds += 1
     let pdf: Buffer
     try {
       pdf = await buildSpendingPdf({
@@ -81,6 +90,8 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.error('[spending-pdf] build failed:', err instanceof Error ? err.message : err)
       return NextResponse.json({ error: 'Could not build the PDF right now. Try again in a minute.' }, { status: 500 })
+    } finally {
+      activeBuilds -= 1
     }
 
     // What was taken and for which days; never the amounts.

@@ -51,11 +51,19 @@ export function isValidCountryIso(iso: unknown): iso is string {
 const DIGITS = new Map<string, number>()
 for (const c of COUNTRIES) if (!DIGITS.has(c.currency)) DIGITS.set(c.currency, c.currencyDigits)
 
+/** Currencies that no longer exist (replaced by the euro, redenominated, or
+ *  withdrawn). Intl still knows them for old records; none is offered for a
+ *  business to choose today. */
+const RETIRED_CURRENCIES = new Set([
+  'BGN', 'HRK', 'SLL', 'ZWL', 'CUC', 'SVC', 'MRO', 'STD', 'VEF', 'LVL', 'LTL', 'EEK', 'CYP', 'MTL',
+  'SKK', 'SIT', 'ZWD', 'ZWN', 'ZWR', 'TRL', 'VEB', 'GHC', 'ANG',
+])
+
 let intlCurrencies: Set<string> | null = null
 function allCurrencies(): Set<string> {
   if (!intlCurrencies) {
     const fromIntl = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('currency') ?? []
-    intlCurrencies = new Set([...DIGITS.keys(), ...fromIntl])
+    intlCurrencies = new Set([...DIGITS.keys(), ...fromIntl].filter((c) => !RETIRED_CURRENCIES.has(c)))
   }
   return intlCurrencies
 }
@@ -121,20 +129,26 @@ const ALIASES: Record<string, string> = {
   uk: 'GB', britain: 'GB', 'great britain': 'GB', england: 'GB', scotland: 'GB',
   burma: 'MM', 'ivory coast': 'CI', 'czech republic': 'CZ', 'south korea': 'KR', korea: 'KR',
   russia: 'RU', holland: 'NL', turkey: 'TR', vietnam: 'VN', laos: 'LA', swaziland: 'SZ', macedonia: 'MK',
+  swiss: 'CH', macau: 'MO', palestine: 'PS', 'czechia': 'CZ', 'east timor': 'TL',
 }
 
 /** Countries matching what was typed: a name, a calling code (+91 or 91), a
  *  currency code, or a common alias. Best matches first; the main country of
  *  a shared calling code before the others. Empty search: everyone, by name. */
+/** Lower case, accents removed, full stops dropped, "saint" as "st": so
+ *  "cote" finds Côte d'Ivoire, "turkiye" finds Türkiye and "saint" finds St. Lucia. */
+const fold = (s: string) =>
+  s.normalize('NFD').replace(/\p{M}+/gu, '').toLowerCase().replace(/\./g, '').replace(/\bsaint\b/g, 'st').replace(/\s+/g, ' ').trim()
+
 export function searchCountries(query: string): Country[] {
-  const q = String(query ?? '').trim().toLowerCase()
+  const q = fold(String(query ?? ''))
   const byName = (a: Country, b: Country) => a.name.localeCompare(b.name)
   if (!q) return [...COUNTRIES].sort(byName)
 
   const dialQuery = /^\+?\d+$/.test(q) ? `+${q.replace('+', '')}` : null
   const ranked: Array<{ c: Country; rank: number }> = []
   for (const c of COUNTRIES) {
-    const name = c.name.toLowerCase()
+    const name = fold(c.name)
     let rank = -1
     if (ALIASES[q] === c.iso || c.iso.toLowerCase() === q || c.currency.toLowerCase() === q) rank = 0
     else if (dialQuery && c.dial.startsWith(dialQuery)) rank = c.dial === dialQuery ? 0 : 1

@@ -16,9 +16,9 @@ export const ar: Dict = {
   kCpl: 'التكلفة لكل عميل محتمل',
   kCpw: 'التكلفة لكل صفقة رابحة',
   subDelivered: '{n} تم تسليمها · {free} مجانية',
-  subCalls: '{n} مكالمات',
-  subLeads: '{n} عملاء محتملون',
-  subWon: '{n} صفقات رابحة',
+  subCalls: 'المكالمات: {n}',
+  subLeads: 'العملاء المحتملون: {n}',
+  subWon: 'الصفقات الرابحة: {n}',
   notConnected: 'غير متصل',
   notAvailable: 'غير متاح',
 
@@ -50,7 +50,7 @@ export const ar: Dict = {
   catFreeEntry: 'نقطة دخول مجانية',
   free: 'مجانية',
 
-  notAttributed: 'غير منسوب',
+  notAttributed: 'غير مُسنَد',
   notRecorded: 'غير مسجل',
   removedNumber: 'رقم محذوف',
   formerMember: 'عضو سابق',

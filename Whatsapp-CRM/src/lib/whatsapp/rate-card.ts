@@ -45,7 +45,10 @@ export function marketForNumber(recipient: string | null | undefined): { market:
   if (digits.startsWith('00')) digits = digits.slice(2)
   if (!digits) return { market: 'Other', iso: null }
   for (const p of PREFIXES) {
-    if (digits.startsWith(p.prefix)) return { market: p.market, iso: p.iso }
+    if (digits.startsWith(p.prefix)) {
+      // +1 alone is shared by the US and Canada: neither is claimed, only the market.
+      return { market: p.market, iso: p.prefix === '1' ? null : p.iso }
+    }
   }
   return { market: 'Other', iso: null }
 }
@@ -108,7 +111,9 @@ export function priceInMarket(input: Omit<PriceInput, 'recipient'> & { market: s
   if (!rates) return unknown
   let rate: number | null | undefined
   switch (category) {
-    case 'marketing': rate = rates.marketing; break
+    // Marketing Messages Lite: Meta's card says marketing rates apply to both.
+    case 'marketing':
+    case 'marketing_lite': rate = rates.marketing; break
     case 'utility': rate = rates.utility; break
     case 'authentication': rate = rates.authentication; break
     case 'authentication-international':

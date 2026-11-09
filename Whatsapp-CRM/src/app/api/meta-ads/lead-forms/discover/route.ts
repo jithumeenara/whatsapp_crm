@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { fetchLeadForms } from '@/lib/meta-ads/api'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { openStoredSecret } from '@/lib/whatsapp/encryption'
+import { adsReadGate } from '@/lib/meta-ads/access'
 
 type FbConfigRow = { access_token: string | null; page_id: string | null }
 
@@ -18,8 +19,12 @@ type FbConfigRow = { access_token: string | null; page_id: string | null }
  */
 export async function GET() {
   try {
-    // Read-only — found with no role floor at all in the full-app audit.
-    const { accountId } = await requireRole('viewer')
+    // Read-only, but it calls Meta with the Page token on every request: it
+    // needs the Ads page grant and is limited (found in review).
+    const ctx = await requireRole('viewer')
+    const denied = adsReadGate(ctx, 'discover')
+    if (denied) return denied
+    const { accountId } = ctx
 
     const rows = await prisma.$queryRaw<FbConfigRow[]>`
       SELECT access_token, page_id FROM facebook_config WHERE account_id = ${accountId}::uuid LIMIT 1
@@ -33,8 +38,9 @@ export async function GET() {
     try {
       metaForms = await fetchLeadForms({ pageId: fb.page_id, accessToken: openStoredSecret(fb.access_token) })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to list forms from Meta'
-      return NextResponse.json({ discoverable: false, reason: message })
+      // Meta's own words stay in the server log; the screen gets a sentence.
+      console.error('[meta-ads/discover] listing forms failed:', err instanceof Error ? err.message : err)
+      return NextResponse.json({ discoverable: false, reason: 'Could not list the forms from Meta. Check the Facebook connection in Settings → Channels.' })
     }
 
     const tracked = await prisma.leadAdForm.findMany({

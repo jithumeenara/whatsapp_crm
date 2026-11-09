@@ -152,6 +152,62 @@ describe('buildSpendingPdf', () => {
     expect(first).toContain('Lead Magnet CRM')
   })
 
+  it('never drops the tax number, however many address lines there are', async () => {
+    // Found in review: the tax number was the sixth header line and was cut silently.
+    const lines = ['Line 1 address', 'Line 2 address', 'Line 3 address', 'Line 4 address', 'Line 5 address', 'Line 6 address']
+    const [first] = await pagesOf(await build({ business: { ...business, lines } }))
+    expect(first).toContain('32AABCU9603R1ZX')
+    expect(first).toContain('Line 1 address')
+  })
+
+  it('never cuts an amount: every currency in a crowded cell is printed', async () => {
+    const crowded = report({
+      waNumber: [{ id: 'n1', currency: 'INR', n: 5, amount: 12345678.55 }, { id: 'n1', currency: 'USD', n: 5, amount: 99999.99 }, { id: 'n1', currency: 'EUR', n: 5, amount: 5.5 }, { id: 'n1', currency: 'GBP', n: 5, amount: 3.2 }],
+      waCategory: [{ category: 'marketing', type: 'regular', currency: 'INR', n: 1, amount: 12345678.55, unpriced: 0 }, { category: 'marketing', type: 'regular', currency: 'USD', n: 1, amount: 99999.99, unpriced: 0 }, { category: 'marketing', type: 'regular', currency: 'EUR', n: 1, amount: 5.5, unpriced: 0 }, { category: 'marketing', type: 'regular', currency: 'GBP', n: 1, amount: 3.2, unpriced: 0 }],
+    })
+    const pages = await pagesOf(await build({ report: crowded }))
+    const text = pages.join(' ').replace(/\s/g, '')
+    expect(text).toContain('£3.20')
+    expect(text).toContain('€5.50')
+    expect(text).not.toContain('…')
+  })
+
+  it('is not slowed by absurdly long names (they once froze the server for minutes)', async () => {
+    const evil = 'ആശ Kumar محمد '.repeat(300)
+    const heavy = report({
+      waPerson: [{ userId: 'u1', senderType: 'agent', currency: 'INR', n: 1, amount: 1 }],
+      aiPerson: [{ userId: 'u1', calls: 1, costUsd: 0.1 }],
+      people: { u1: evil }, teams: { u1: evil }, numbers: { n1: evil },
+    })
+    const t0 = performance.now()
+    const pdf = await build({ report: heavy, business: { ...business, name: evil, lines: [evil] } })
+    expect(performance.now() - t0).toBeLessThan(5000)
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  })
+
+  it('labels the by-channel money column as money, not as messages', async () => {
+    const pages = await pagesOf(await build())
+    const text = pages.join(' ')
+    const channel = text.slice(text.indexOf('By channel'), text.indexOf('AI by feature'))
+    expect(channel).toContain('WhatsApp')
+    expect(channel).not.toContain('Messages')
+  })
+
+  it('puts the estimate note where it cannot be left alone on a last page', async () => {
+    const pages = await pagesOf(await build())
+    const last = pages[pages.length - 1]
+    // The note is up with the other notes, so the last page is never only that note.
+    expect(pages[0]).toContain('estimate')
+    expect(last.replace(/Lead Magnet CRM|Page \d+ of \d+/g, '').trim().length).toBeGreaterThan(60)
+  })
+
+  it('groups large counts and does not print a plural with a one', async () => {
+    const big = report({ aiFeature: [{ feature: 'chat_customer', calls: 1234567, costUsd: 1 }], leads: 1, wonDeals: 1 })
+    const [first] = await pagesOf(await build({ report: big }))
+    expect(first).toContain('12,34,567')
+    expect(first).not.toMatch(/\b1 (leads|calls|deals)/)
+  })
+
   it('says so when a period has nothing in it, and still makes a valid report', async () => {
     const empty = { ...assembleSpending(rows({ waCategory: [], waNumber: [], waPerson: [], waDay: [], aiFeature: [], aiChannel: [], aiPerson: [], aiDay: [], ads: { connected: false, spend: null, currency: null, clicks: 0, impressions: 0, error: null }, leads: 0, wonDeals: 0 })), period: report().period, warnings: [] }
     const [first] = await pagesOf(await build({ report: empty }))

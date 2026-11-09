@@ -58,6 +58,8 @@ vi.mock('@/lib/db', () => {
       leadAdSubmission: { count: counted(0), findMany: counted([]), groupBy: counted([]) },
       lead: { count: counted(0) },
       leadAdForm: { findMany: counted([]) },
+      segment: { findMany: counted([]) },
+      $queryRaw: counted([]),
     },
   }
 })
@@ -66,12 +68,16 @@ import { GET as dashboardGET } from './dashboard/route'
 import { GET as configGET } from './config/route'
 import { GET as pixelGET } from './pixel/route'
 import { GET as leadFormsGET } from './lead-forms/route'
+import { GET as audiencesGET } from './audiences/route'
+import { GET as discoverGET } from './lead-forms/discover/route'
 
 const ROUTES: Array<[string, () => Promise<Response>]> = [
   ['dashboard', () => dashboardGET()],
   ['config', () => configGET()],
   ['pixel', () => pixelGET()],
   ['lead-forms', () => leadFormsGET()],
+  ['audiences', () => audiencesGET()],
+  ['lead-forms/discover', () => discoverGET()],
 ]
 
 beforeEach(() => {

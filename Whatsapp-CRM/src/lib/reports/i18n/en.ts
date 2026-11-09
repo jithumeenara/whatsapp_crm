@@ -18,9 +18,9 @@ export const en = {
   kCpl: 'Cost per lead',
   kCpw: 'Cost per won deal',
   subDelivered: '{n} delivered · {free} free',
-  subCalls: '{n} calls',
-  subLeads: '{n} leads',
-  subWon: '{n} deals won',
+  subCalls: 'Calls: {n}',
+  subLeads: 'Leads: {n}',
+  subWon: 'Deals won: {n}',
   notConnected: 'Not connected',
   notAvailable: 'Not available',
 

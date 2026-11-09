@@ -3,6 +3,7 @@ import { audit, auditCtx } from "@/lib/audit"
 import { prisma } from "@/lib/db"
 import { sanitizeQuickLinks } from "@/lib/navigation/sections"
 import { isValidE164 } from "@/lib/whatsapp/phone-utils"
+import { cleanPersonName } from "@/lib/auth/person-name"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -28,7 +29,9 @@ export async function PATCH(req: NextRequest) {
 
     const data: Record<string, unknown> = {}
     if (typeof body.full_name === "string") {
-      const name = body.full_name.trim()
+      // Cleaned and capped: a name of thousands of characters later froze the
+      // PDF build for minutes (found in security review).
+      const name = cleanPersonName(body.full_name)
       if (!name) {
         return NextResponse.json(
           { error: "full_name cannot be empty" },

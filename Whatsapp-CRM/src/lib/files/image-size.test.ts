@@ -126,6 +126,23 @@ describe('imageProblem: what a PDF writer must never be handed', () => {
     expect(imageProblem('image/png', bomb)).not.toBeNull()
   })
 
+  it('refuses a PNG with an impossible filter byte: it crashed the PDF writer even though its size was right', () => {
+    // Found in review: every scanline starts with a filter byte that must be 0 to 4.
+    // pdfkit throws "Invalid filter algorithm" in a callback nobody can catch.
+    const withFilter = (color: number, depth: number, w: number, h: number, filter: number, row = 0) => {
+      const channels = ({ 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 } as Record<number, number>)[color]
+      const rowBytes = Math.ceil((w * channels * depth) / 8) + 1
+      const raw = Buffer.alloc(rowBytes * h)
+      raw[row * rowBytes] = filter
+      return realPng(w, h, { color, depth, idat: zlib.deflateSync(raw) })
+    }
+    for (const [color, depth] of [[6, 8], [2, 8], [3, 8], [4, 8], [0, 8]] as const) {
+      expect(imageProblem('image/png', withFilter(color, depth, 10, 10, 9)), `colour ${color} first row`).toMatch(/damaged/i)
+      expect(imageProblem('image/png', withFilter(color, depth, 10, 10, 5, 9)), `colour ${color} last row`).toMatch(/damaged/i)
+      expect(imageProblem('image/png', withFilter(color, depth, 10, 10, 4)), `colour ${color} valid filter 4`).toBeNull()
+    }
+  })
+
   it('refuses an interlaced PNG, and a palette PNG with no palette', () => {
     expect(imageProblem('image/png', realPng(32, 32, { interlace: 1 }))).toMatch(/interlaced/i)
     expect(imageProblem('image/png', realPng(32, 32, { color: 3, plte: false }))).not.toBeNull()
