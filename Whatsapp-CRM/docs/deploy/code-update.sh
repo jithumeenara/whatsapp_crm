@@ -96,12 +96,35 @@ ok "build done"
 
 say "5. Start in production mode"
 NODE_ENV=production pm2 restart "$PM2_NAME" --update-env >/dev/null 2>&1 || rollback "pm2 could not start the app"
-sleep 15
-if pm2 logs "$PM2_NAME" --lines 60 --nostream 2>/dev/null | grep -q 'Refusing to start'; then
-  rollback "The new code refused to start"
+
+# The new version's last log lines, printed BEFORE any rollback restarts the app
+# and the evidence scrolls away. Error log first, then the normal one.
+show_logs() {
+  printf '\n   --- last lines of the new version'"'"'s error log ---\n'
+  pm2 logs "$PM2_NAME" --err --lines 40 --nostream 2>&1 | tail -45 | sed 's/^/   /'
+  printf '\n   --- last lines of its normal log ---\n'
+  pm2 logs "$PM2_NAME" --out --lines 25 --nostream 2>&1 | tail -30 | sed 's/^/   /'
+}
+
+# A new version can take a while to start (a slower machine, a newer Node, a
+# first load of the code): wait for the login page for up to 90 seconds instead
+# of a fixed 15, and say plainly what was seen. It used to roll back a build
+# that was merely still starting.
+CODE=000
+for _ in $(seq 1 30); do
+  sleep 3
+  if pm2 logs "$PM2_NAME" --lines 60 --nostream 2>/dev/null | grep -q 'Refusing to start'; then
+    show_logs
+    rollback "The new code refused to start"
+  fi
+  CODE="$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:${PORT:-3000}/login)"
+  [ "$CODE" = 200 ] && break
+done
+if [ "$CODE" != 200 ]; then
+  show_logs
+  rollback "Login page still answered $CODE after 90 seconds"
 fi
-CODE="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:${PORT:-3000}/login)"
-[ "$CODE" = 200 ] || rollback "Login page answered $CODE instead of 200"
+ok "login page answers 200"
 pm2 save >/dev/null 2>&1
 
 say "DONE ✅  $(git rev-parse --short HEAD) is live"
