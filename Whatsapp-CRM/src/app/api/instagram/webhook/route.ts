@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import { prisma } from "@/lib/db"
+import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
 import { emitToAccount } from "@/lib/socket"
 import { isUniqueViolation } from "@/lib/contacts/dedupe"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
@@ -127,12 +128,16 @@ interface IgMessagingEvent {
     // Present when the customer replied to one of the business's own
     // Stories — a normal `messages` event, not a separate subscription.
     reply_to?: { story?: { url?: string; id?: string }; mid?: string }
+    // A Click-to-Instagram-Direct ad: Meta puts it on the message itself
+    // (ad_id, ads_context_data.ad_title) — read by referralFromMeta.
+    referral?: unknown
   }
   // Button Template tap fires messaging_postbacks (not messages)
   postback?: {
     title: string
     payload: string
     mid?: string
+    referral?: unknown
   }
   read?:     { watermark: number }
   delivery?: { watermark: number }
@@ -143,13 +148,7 @@ interface IgMessagingEvent {
   // field; whichever identifier Meta actually sends is stored into the
   // same Conversation.ctwa_clid column WhatsApp uses, since it serves the
   // identical purpose (the per-click attribution token).
-  referral?: {
-    ref?: string
-    source_id?: string
-    source_type?: string
-    source_url?: string
-    headline?: string
-  }
+  referral?: unknown
 }
 
 // IG·01 gated scaffolding — Meta's documented comments webhook shape.
@@ -268,7 +267,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           quickReplyPayload: msg.quick_reply?.payload ?? null,
           postbackPayload:   null,
           storyReply:        msg.reply_to?.story ?? null,
-          referral:          val.referral ?? null,
+          referral:          msg.referral ?? val.referral ?? null,
         })
       }
 
@@ -290,7 +289,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           quickReplyPayload: null,
           postbackPayload:   postback.payload,
           storyReply:        null,
-          referral:          val.referral ?? null,
+          referral:          postback.referral ?? val.referral ?? null,
         })
       }
     }
@@ -315,7 +314,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           quickReplyPayload: msg.quick_reply?.payload ?? null,
           postbackPayload:   null,
           storyReply:        msg.reply_to?.story ?? null,
-          referral:          event.referral ?? null,
+          referral:          msg.referral ?? event.referral ?? null,
         })
       }
 
@@ -333,7 +332,7 @@ async function processInstagramWebhook(body: IgWebhookBody, scope: SocialWebhook
           quickReplyPayload: null,
           postbackPayload:   postback.payload,
           storyReply:        null,
-          referral:          event.referral ?? null,
+          referral:          postback.referral ?? event.referral ?? null,
         })
       }
     }
@@ -363,7 +362,7 @@ async function processIgMessage({
   quickReplyPayload: string | null
   postbackPayload:   string | null
   storyReply:        { url?: string; id?: string } | null
-  referral:          { ref?: string; source_id?: string; source_type?: string; source_url?: string; headline?: string } | null
+  referral:          unknown
 }) {
   // --- Find or create owner (admin) user for this account ---
   const ownerProfile = await prisma.profile.findFirst({
@@ -484,20 +483,36 @@ async function processIgMessage({
   // stored into the same Conversation.ctwa_clid column, since it serves the
   // identical purpose. Also grants the 72h Free Entry Point window from
   // this first reply — see fep_expires_at on Conversation.
-  if (isFirstInboundMessage && referral && !conversation.ctwa_clid) {
+  //
+  // Instagram's documented fields are ad_id and ads_context_data.ad_title
+  // (not WhatsApp's source_id / headline, which left the ad empty before).
+  const adReferral = referralFromMeta(referral)
+  if (isFirstInboundMessage && adReferral && !conversation.ctwa_clid) {
     try {
       await prisma.conversation.update({
         where: { id: conversation.id },
         data: {
-          ctwa_clid: referral.ref ?? referral.source_id ?? null,
-          ctwa_ad_headline: referral.headline ?? null,
-          ctwa_source_id: referral.source_id ?? null,
+          ctwa_clid: adReferral.clickId ?? adReferral.adId ?? null,
+          ctwa_ad_headline: adReferral.headline,
+          ctwa_source_id: adReferral.adId,
           fep_expires_at: new Date(Date.now() + 72 * 3600 * 1000),
         },
       })
     } catch (err) {
       console.error('[Instagram] failed to store ctwa attribution (non-fatal):', err)
     }
+  }
+  // Every ad arrival, also a returning customer's (src/lib/ads/attribution.ts).
+  if (adReferral) {
+    await recordAdTouch({
+      accountId,
+      channel: 'instagram',
+      externalId: messageId,
+      referral: adReferral,
+      contactId: contact.id,
+      conversationId: conversation.id,
+      at: Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp) : undefined,
+    })
   }
 
   // Awaited (not fire-and-forget) so we know whether the Flow engine

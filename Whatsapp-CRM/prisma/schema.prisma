@@ -4242,3 +4242,47 @@ model DealStageEvent {
   @@index([deal_id, created_at], map: "deal_stage_events_deal_time")
   @@map("deal_stage_events")
 }
+
+/// Each arrival from a Meta ad (migration 162): CTWA / Messenger / Instagram
+/// referral, or a Lead Ads form. Deduped on Meta's own id.
+model AdTouch {
+  id              String   @id @default(uuid()) @db.Uuid
+  account_id      String   @db.Uuid
+  contact_id      String?  @db.Uuid
+  conversation_id String?  @db.Uuid
+  channel         String
+  external_id     String
+  ad_id           String?
+  post_id         String?
+  source_type     String?
+  headline        String?
+  click_id        String?
+  source_url      String?
+  media_url       String?
+  touched_at      DateTime @default(now()) @db.Timestamptz(6)
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([account_id, channel, external_id], map: "ad_touches_dedupe")
+  @@index([contact_id, touched_at], map: "ad_touches_contact_time")
+  @@index([account_id, ad_id, touched_at], map: "ad_touches_account_ad_time")
+  @@map("ad_touches")
+}
+
+/// An ad's name, ad set and campaign, read once from Meta (migration 162).
+model AdCatalog {
+  id               String   @id @default(uuid()) @db.Uuid
+  account_id       String   @db.Uuid
+  ad_id            String
+  ad_name          String?
+  adset_id         String?
+  adset_name       String?
+  campaign_id      String?
+  campaign_name    String?
+  thumbnail_url    String?
+  effective_status String?
+  error            String?
+  fetched_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([account_id, ad_id], map: "ad_catalog_account_ad")
+  @@map("ad_catalog")
+}

@@ -15,6 +15,7 @@ import type { Lead, LeadActivity, Message, ContactNote } from "@/types"
 import { outcomeOf, OUTCOME_COLOR, OUTCOME_LABEL } from "@/lib/leads/outcome"
 import { CloseLeadDialog, type CloseLeadResult } from "@/components/leads/close-lead-dialog"
 import { LeadStageCard } from "@/components/leads/lead-stage-card"
+import { LeadAdCard } from "@/components/leads/lead-ad-card"
 import { ScheduleFollowupDialog } from "@/components/leads/schedule-followup-dialog"
 import { LeadActivityTimeline } from "@/components/leads/lead-activity-timeline"
 import { MessageBubble } from "@/components/inbox/message-bubble"
@@ -944,6 +945,9 @@ export default function LeadDetailPage() {
 
             {/* The business's own funnel stage; hidden until stages are set up. */}
             <LeadStageCard leadId={id} onChanged={loadLead} />
+
+            {/* Which ad brought this lead in; hidden when none did. */}
+            <LeadAdCard leadId={id} />
 
             {/* Log Call Outcome */}
             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">

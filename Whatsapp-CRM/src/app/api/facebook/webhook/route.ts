@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { sameToken, scopeAllows, socialWebhookScope, type SocialWebhookScope } from "@/lib/social/webhook-secrets"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
+import { recordAdTouch, referralFromMeta } from "@/lib/ads/attribution"
 import { emitToAccount } from "@/lib/socket"
 import { dispatchInboundToFlows } from "@/lib/flows/engine"
 import { normalizePhone } from "@/lib/whatsapp/phone-utils"
@@ -115,12 +116,16 @@ interface FbMessage {
   attachments?: Array<{ type: string; payload: { url?: string } }>
   is_echo?: boolean
   quick_reply?: { payload: string }
+  /** A Click-to-Messenger ad: ad_id, ads_context_data (src/lib/ads/attribution.ts). */
+  referral?: unknown
 }
 
 interface FbPostback {
   title: string
   payload: string
   mid?: string
+  /** A new thread opened from an ad arrives as a postback with its referral. */
+  referral?: unknown
 }
 
 interface FbMessagingEvent {
@@ -131,6 +136,8 @@ interface FbMessagingEvent {
   postback?:  FbPostback
   read?:     { watermark: number }
   delivery?: { watermark: number }
+  /** messaging_referrals: someone with an existing thread came back through an ad. */
+  referral?: unknown
 }
 
 interface FbFeedChange {
@@ -227,6 +234,12 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
       // Skip read/delivery receipts
       if (event.read || event.delivery) continue
 
+      // A returning customer came back through an ad, before writing anything.
+      if (event.referral && !event.message && !event.postback) {
+        await recordFbReferralEvent(config.account_id, senderPsid, event.referral, event.timestamp)
+        continue
+      }
+
       if (event.message) {
         await processFbMessage({
           accountId:         config.account_id,
@@ -239,6 +252,7 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
           quickReplyPayload: event.message.quick_reply?.payload ?? null,
           postbackPayload:   null,
           postbackTitle:     null,
+          referral:          event.message.referral ?? null,
         })
       }
 
@@ -254,6 +268,7 @@ async function processFacebookWebhook(body: FbWebhookBody, scope: SocialWebhookS
           quickReplyPayload: null,
           postbackPayload:   event.postback.payload,
           postbackTitle:     event.postback.title ?? null,
+          referral:          event.postback.referral ?? null,
         })
       }
     }
@@ -445,7 +460,52 @@ async function processLeadgenChange(
     },
   })
 
+  // The same ad journey as chats (src/lib/ads/attribution.ts), and the
+  // ad's name looked up. Never throws.
+  if (value.ad_id) {
+    await recordAdTouch({
+      accountId,
+      channel: "lead_form",
+      externalId: leadgenId,
+      referral: { adId: /^\d{5,30}$/.test(value.ad_id) ? value.ad_id : null, postId: null, sourceType: "lead_form", headline: form?.name ?? null, clickId: null, sourceUrl: null, mediaUrl: null },
+      contactId: contact.id,
+    })
+  }
+
   emitToAccount(accountId, "lead", { eventType: "INSERT", new: createdLead })
+}
+
+/**
+ * messaging_referrals: a customer who already has a thread opened it again
+ * from an ad. Only an existing contact is recorded — a brand-new thread
+ * carries its referral on the first message or postback instead.
+ */
+async function recordFbReferralEvent(accountId: string, psid: string, raw: unknown, timestamp: number) {
+  const adReferral = referralFromMeta(raw)
+  if (!adReferral) return
+  try {
+    const contact = await prisma.contact.findUnique({
+      where: { contacts_account_facebook_id: { account_id: accountId, facebook_id: psid } },
+      select: { id: true },
+    })
+    if (!contact) return
+    const conversation = await prisma.conversation.findFirst({
+      where: { account_id: accountId, contact_id: contact.id, channel: "facebook" },
+      select: { id: true },
+    })
+    await recordAdTouch({
+      accountId,
+      channel: "messenger",
+      // No message id on this event: the person and the moment identify it.
+      externalId: `referral:${psid}:${timestamp}`,
+      referral: adReferral,
+      contactId: contact.id,
+      conversationId: conversation?.id ?? null,
+      at: Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp) : undefined,
+    })
+  } catch (err) {
+    console.error("[Facebook] ad referral not recorded:", err instanceof Error ? err.message : err)
+  }
 }
 
 async function processFbMessage({
@@ -459,6 +519,7 @@ async function processFbMessage({
   quickReplyPayload,
   postbackPayload,
   postbackTitle,
+  referral = null,
 }: {
   accountId:         string
   accessToken:       string
@@ -470,6 +531,7 @@ async function processFbMessage({
   quickReplyPayload: string | null
   postbackPayload:   string | null
   postbackTitle:     string | null
+  referral?:         unknown
 }) {
   const ownerProfile = await prisma.profile.findFirst({
     where: { account_id: accountId },
@@ -484,6 +546,20 @@ async function processFbMessage({
 
   const conversation = await findOrCreateFbConversation(accountId, ownerUserId, contact.id)
   if (!conversation) return
+
+  // Which ad brought them in (Click-to-Messenger). Never throws.
+  const adReferral = referralFromMeta(referral)
+  if (adReferral) {
+    await recordAdTouch({
+      accountId,
+      channel: "messenger",
+      externalId: messageId,
+      referral: adReferral,
+      contactId: contact.id,
+      conversationId: conversation.id,
+      at: Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp) : undefined,
+    })
+  }
 
   let contentText: string | null = text
   let mediaUrl:    string | null = null

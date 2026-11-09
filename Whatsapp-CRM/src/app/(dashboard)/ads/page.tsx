@@ -7,6 +7,7 @@ import {
   Loader2, AlertTriangle, IndianRupee, MousePointer, ArrowUpRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { AdsByAd } from "@/components/ads/ads-by-ad"
 
 const META_BLUE = "#0866FF"
 const META_BLUE_SOFT = "#EAF2FF"
@@ -78,6 +79,9 @@ export default function AdsPage() {
           <p className="text-[12px] text-slate-500">Track Meta and Google ad performance without leaving this CRM</p>
         </div>
       </div>
+
+      {/* Every ad from click to sale; shows its own empty state, owners and admins only. */}
+      <div className="mb-6"><AdsByAd /></div>
 
       {loading ? (
         <div className="flex items-center justify-center py-16">

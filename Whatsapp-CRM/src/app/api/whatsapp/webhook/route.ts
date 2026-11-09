@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { describeFlowSubmission } from '@/lib/flows/describe-submission'
 import { prisma } from '@/lib/db'
+import { recordAdTouch, referralFromWhatsApp } from '@/lib/ads/attribution'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
@@ -858,6 +859,23 @@ async function processMessage(
     } catch (err) {
       console.error('[webhook] failed to store ctwa_clid (non-fatal):', err)
     }
+  }
+
+  // Which ad brought them in, on any message that carries a referral —
+  // also a Status ad without ctwa_clid, and a returning customer clicking
+  // a new ad in an old chat (src/lib/ads/attribution.ts). Never throws.
+  const adReferral = referralFromWhatsApp(message.referral)
+  if (adReferral && message.id) {
+    const sentAt = Number(message.timestamp) * 1000
+    await recordAdTouch({
+      accountId,
+      channel: 'whatsapp',
+      externalId: message.id,
+      referral: adReferral,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      at: Number.isFinite(sentAt) && sentAt > 0 ? new Date(sentAt) : undefined,
+    })
   }
 
   try {
